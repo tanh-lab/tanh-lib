@@ -1,5 +1,7 @@
 #include "tanh/state/State.h"
 
+#include <sanitizer/rtsan_interface.h>
+
 namespace thl {
 
 State::State(size_t max_string_size, size_t max_levels) : m_max_string_size(max_string_size), m_max_levels(max_levels), StateGroup(nullptr, nullptr, ""), m_parameters_rcu(ParameterMap{}) {
@@ -230,6 +232,7 @@ T State::get_from_root(std::string_view key) const [[clang::nonblocking]] {
         } else if constexpr (std::is_same_v<T, bool>) {
             return it->second.bool_value.load(std::memory_order_acquire);
         } else if constexpr (std::is_same_v<T, std::string>) {
+            __rtsan::ScopedDisabler sd;
             auto type = it->second.type.load(std::memory_order_acquire);
             switch (type) {
                 case ParameterType::String: {
