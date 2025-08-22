@@ -67,7 +67,7 @@ Parameter State::get_from_root(std::string_view key) const {
 }
 
 // Parameter notification method
-void Parameter::notify() const {
+void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) const {
     // Create a temporary parameter object for notification
     Parameter param_obj(m_state, m_key);
     
@@ -91,13 +91,13 @@ void Parameter::notify() const {
         
         if (found_group) {
             // This will notify both the group listener and propagate up to the root
-            found_group->notify_listeners(path, param_obj);
+            found_group->notify_listeners(path, param_obj, strategy, source);
             return;
         }
     }
     
     // Otherwise notify directly from State
-    const_cast<State*>(m_state)->notify_listeners(path, param_obj);
+    const_cast<State*>(m_state)->notify_listeners(path, param_obj, strategy, source);
 }
 
 // Get full path for this parameter

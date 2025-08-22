@@ -13,14 +13,15 @@ public:
     // Ensure RCU is initialized for the current thread
     void ensure_rcu_initialized();
 
-    // Thread-safe direct parameter management
+    // Thread-safe direct parameter management (without path resolution)
     template<typename T>
-    void set_in_root(std::string_view key, T value, bool notify = true);
+    void set_in_root(std::string_view key, T value, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr);
+
     // Special case for const char* to std::string
-    void set_in_root(std::string_view key, const char* value, bool notify = true);
-    
+    void set_in_root(std::string_view key, const char* value, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr);
+
     // Update state from JSON
-    void update_from_json(const nlohmann::json& json_data, bool notify = false);
+    void update_from_json(const nlohmann::json& json_data, NotifyStrategies strategy = NotifyStrategies::none, ParameterListener* source = nullptr);
 
     // Direct parameter getters (real-time safe for numeric types)
     template<typename T>
