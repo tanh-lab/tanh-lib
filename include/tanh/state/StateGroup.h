@@ -64,11 +64,11 @@ public:
     
     // Parameter management with path support 
     template<typename T>
-    void set(std::string_view path, T value, bool notify = true, bool create = true);
+    void set(std::string_view path, T value, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr, bool create = true);
 
     // Special case for const char* to std::string
-    void set(std::string_view path, const char* value, bool notify = true, bool create = true);
-    
+    void set(std::string_view path, const char* value, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr, bool create = true);
+
     // Parameter getters (real-time safe for numeric types)
     template<typename T>
     T get(std::string_view path) const;
@@ -105,7 +105,7 @@ private:
     friend class Parameter;
     
     // Notify all listeners about a parameter change
-    void notify_listeners(std::string_view path, const Parameter& param) const;
+    void notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr) const;
     
     // Helper for parameter resolution with paths
     std::pair<StateGroup*, std::string_view> resolve_path(std::string_view path) const;

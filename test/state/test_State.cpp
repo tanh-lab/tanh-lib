@@ -188,48 +188,49 @@ TEST(StateTests, ParameterObjectTests) {
 }
 
 // Test for the create parameter in set() method
+// Test for the create parameter in set() method
 TEST(StateTests, CreateParameterFlag) {
     State state;
     
     // Test with create=true (default behavior)
     // This should create the parameter if it doesn't exist
-    state.set("audio.volume", 0.75, true, true);
+    state.set("audio.volume", 0.75, NotifyStrategies::all, nullptr, true);
     EXPECT_DOUBLE_EQ(0.75, state.get<double>("audio.volume"));
     EXPECT_TRUE(state.has_group("audio"));
     
     // Update an existing parameter with create=false
     // This should work since the parameter already exists
-    state.set("audio.volume", 0.5, true, false);
+    state.set("audio.volume", 0.5, NotifyStrategies::all, nullptr, false);
     EXPECT_DOUBLE_EQ(0.5, state.get<double>("audio.volume"));
     
     // Test with create=false on a non-existent parameter
     // This should throw StateKeyNotFoundException
     EXPECT_THROW({
-        state.set("nonexistent.parameter", 100, true, false);
+        state.set("nonexistent.parameter", 100, NotifyStrategies::all, nullptr, false);
     }, StateKeyNotFoundException);
     
     // Test deep nesting with create=true
-    state.set("visual.display.brightness", 85, true, true);
+    state.set("visual.display.brightness", 85, NotifyStrategies::all, nullptr, true);
     EXPECT_EQ(85, state.get<int>("visual.display.brightness"));
     
     // Test with create=false on a non-existent nested parameter
     EXPECT_THROW({
         // "color" doesn't exist under visual.display
-        state.set("visual.display.color", "blue", true, false);
+        state.set("visual.display.color", "blue", NotifyStrategies::all, nullptr, false);
     }, StateKeyNotFoundException);
     
     // Test with create=false on a non-existent group
     EXPECT_THROW({
         // "effects" doesn't exist under audio
-        state.set("audio.effects.reverb", 0.3, true, false);
+        state.set("audio.effects.reverb", 0.3, NotifyStrategies::all, nullptr, false);
     }, StateKeyNotFoundException);
     
     // Create that missing group and then test again
-    state.set("audio.effects.reverb", 0.3, true, true);
+    state.set("audio.effects.reverb", 0.3, NotifyStrategies::all, nullptr, true);
     EXPECT_DOUBLE_EQ(0.3, state.get<double>("audio.effects.reverb"));
     
     // Now it should work with create=false since it exists
-    state.set("audio.effects.reverb", 0.4, true, false);
+    state.set("audio.effects.reverb", 0.4, NotifyStrategies::all, nullptr, false);
     EXPECT_DOUBLE_EQ(0.4, state.get<double>("audio.effects.reverb"));
 }
 
@@ -626,7 +627,7 @@ TEST(StateTests, ParameterNotification) {
     EXPECT_EQ("test.param", listener.last_path);
     
     // Test optional notification - should not notify
-    state.set("test.param", 84.0, false);
+    state.set("test.param", 84.0, NotifyStrategies::none);
     
     // Verify no additional notification occurred
     EXPECT_EQ(1, listener.notification_count);
@@ -649,7 +650,7 @@ TEST(StateTests, ParameterNotification) {
     EXPECT_EQ("audio.volume", group_listener.last_path);
     
     // Test manual notification through Parameter object
-    state.set("audio.bass", 0.5, false);  // Set without notification
+    state.set("audio.bass", 0.5, NotifyStrategies::none);  // Set without notification
     
     // Verify no notification occurred
     EXPECT_EQ(2, listener.notification_count);
@@ -707,7 +708,7 @@ TEST(StateTests, ManualNotification) {
     state.add_listener(&listener);
     
     // Set a parameter without notification
-    state.set("manual.test", 42.0, false);
+    state.set("manual.test", 42.0, NotifyStrategies::none);
     
     // Verify no notification occurred
     EXPECT_EQ(0, listener.notification_count);

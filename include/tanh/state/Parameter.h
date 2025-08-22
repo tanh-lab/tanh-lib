@@ -9,9 +9,13 @@ namespace thl {
 
 class State;
 class StateGroup;
+class ParameterListener;
 
 // Parameter type enum
 enum class ParameterType { Double, Float, Int, Bool, String, Unknown };
+
+// different strategies for notification
+enum class NotifyStrategies {all, none, others, self};
 
 // Internal parameter storage - using atomic values for all numeric types
 struct ParameterData {
@@ -90,7 +94,7 @@ public:
     bool is_string() const;
     
     // Notification
-    void notify() const;
+    void notify(NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr) const;
     
     // Get the path for this parameter
     std::string get_path() const;

@@ -146,23 +146,31 @@ void StateGroup::notify_parameter_change(std::string_view path) [[clang::nonbloc
     }
 }
 
-void StateGroup::notify_listeners(std::string_view path, const Parameter& param) const [[clang::nonblocking]] {
+void StateGroup::notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy, ParameterListener* source ) const [[clang::nonblocking]] {
+    if (strategy == NotifyStrategies::none){
+        return;
+    }
     // Notify listeners at this level using RCU (lock-free read)
     m_listeners_rcu.read([&](const ListenerData& data) {
         // Notify object-based listeners
         for (auto listener : data.object_listeners) {
+            if ((strategy == NotifyStrategies::others && listener == source) || (strategy == NotifyStrategies::self && listener != source)) {
+                continue;
+            }
             listener->on_parameter_changed(path, param);
         }
         
         // Notify callback-based listeners
-        for (const auto& [id, callback] : data.callback_listeners) {
-            callback(path, param);
+        if (strategy != NotifyStrategies::self) {
+            for (const auto& [id, callback] : data.callback_listeners) {
+                callback(path, param);
+            }
         }
     });
     
     // Then, notify parent groups to propagate up the hierarchy
     if (m_parent) {
-        m_parent->notify_listeners(path, param);
+        m_parent->notify_listeners(path, param, strategy, source);
     }
 }
 
@@ -407,7 +415,7 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
 
 // Parameter setters with path support
 template<typename T>
-void StateGroup::set(std::string_view path, T value, bool notify, bool create) {
+void StateGroup::set(std::string_view path, T value, NotifyStrategies strategy, ParameterListener* source, bool create) {
 
     // Use different path resolution based on whether we want to create missing elements
     std::pair<StateGroup*, std::string> resolution;
@@ -440,23 +448,23 @@ void StateGroup::set(std::string_view path, T value, bool notify, bool create) {
             }
         }
         
-        m_rootState->set_in_root(m_rootState->m_path_buffer_2, value, notify); // Pass the notify parameter
+        m_rootState->set_in_root(m_rootState->m_path_buffer_2, value, strategy, source); // Pass the notify parameter
     } else {
         // Parameter in a child group
-        group->set(param_name, value, notify, create);
+        group->set(param_name, value, strategy, source, create);
     }
 }
 
 // After all the StateGroup::set implementations, add the const char* overload
-void StateGroup::set(std::string_view path, const char* value, bool notify, bool create) {
-    set(path, std::string(value), notify, create);
+void StateGroup::set(std::string_view path, const char* value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    set(path, std::string(value), strategy, source, create);
 }
 
-template void StateGroup::set(std::string_view path, const double value, bool notify, bool create);
-template void StateGroup::set(std::string_view path, const float value, bool notify, bool create);
-template void StateGroup::set(std::string_view path, const int value, bool notify, bool create);
-template void StateGroup::set(std::string_view path, const bool value, bool notify, bool create);
-template void StateGroup::set(std::string_view path, const std::string value, bool notify, bool create);
+template void StateGroup::set(std::string_view path, const double value, NotifyStrategies strategy, ParameterListener* source, bool create);
+template void StateGroup::set(std::string_view path, const float value, NotifyStrategies strategy, ParameterListener* source, bool create);
+template void StateGroup::set(std::string_view path, const int value, NotifyStrategies strategy, ParameterListener* source, bool create);
+template void StateGroup::set(std::string_view path, const bool value, NotifyStrategies strategy, ParameterListener* source, bool create);
+template void StateGroup::set(std::string_view path, const std::string value, NotifyStrategies strategy, ParameterListener* source, bool create);
 
 
 template double StateGroup::get(std::string_view path) const [[clang::nonblocking]];

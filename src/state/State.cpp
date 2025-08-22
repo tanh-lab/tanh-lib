@@ -51,7 +51,7 @@ void State::ensure_rcu_initialized() {
 }
 
 template<typename T>
-void State::set_in_root(std::string_view key, T value, bool notify) {
+void State::set_in_root(std::string_view key, T value, NotifyStrategies strategy, ParameterListener* source) {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> || 
                   std::is_same_v<T, bool> || std::is_same_v<T, std::string>, "Unsupported type for set_in_root");
     
@@ -194,7 +194,7 @@ void State::set_in_root(std::string_view key, T value, bool notify) {
     }
     
     // Handle notification
-    if (notify) {
+    if (strategy != NotifyStrategies::none) {
         Parameter param_obj(this, key);
         
         auto [group, param_name] = resolve_path(key);
@@ -202,16 +202,16 @@ void State::set_in_root(std::string_view key, T value, bool notify) {
         // Notify through the most specific group (which will propagate up)
         // or notify directly from State if no group was found
         if (group) {
-            group->notify_listeners(key, param_obj);
+            group->notify_listeners(key, param_obj, strategy, source);
         } else {
-            const_cast<State*>(this)->notify_listeners(key, param_obj);
+            const_cast<State*>(this)->notify_listeners(key, param_obj, strategy, source);
         }
     }
 }
 
 // Add const char* overload for set_in_root
-void State::set_in_root(std::string_view key, const char* value, bool notify) {
-    set_in_root(key, std::string(value), notify);
+void State::set_in_root(std::string_view key, const char* value, NotifyStrategies strategy, ParameterListener* source) {
+    set_in_root(key, std::string(value), strategy, source);
 }
 
 // Parameter getters (real-time safe for numeric types)
@@ -294,7 +294,7 @@ bool State::is_empty() const {
 }
 
 // Implementation of update_from_json method
-void State::update_from_json(const nlohmann::json& json_data, bool notify) {
+void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies strategy, ParameterListener* source) {
     // Helper function to check if a parameter exists before updating
     auto check_parameter_exists = [this](std::string_view key) {
         // Use heterogeneous lookup - no temporary string creation
@@ -305,8 +305,8 @@ void State::update_from_json(const nlohmann::json& json_data, bool notify) {
 
     // Helper function for recursive update of parameters
     std::function<void(const nlohmann::json&, std::string_view)> update_parameters;
-    
-    update_parameters = [this, &check_parameter_exists, &update_parameters, &notify](const nlohmann::json& json, std::string_view prefix) {
+
+    update_parameters = [this, &check_parameter_exists, &update_parameters, &strategy, &source](const nlohmann::json& json, std::string_view prefix) {
         for (auto it = json.begin(); it != json.end(); ++it) {
             const std::string& key = it.key();
             std::string path;
@@ -329,16 +329,16 @@ void State::update_from_json(const nlohmann::json& json_data, bool notify) {
 
                 // Update based on JSON type
                 if (it.value().is_number_float()) {
-                    set(path, it.value().get<double>(), notify, false);
+                    set(path, it.value().get<double>(), strategy, source, false);
                 } 
                 else if (it.value().is_number_integer()) {
-                    set(path, it.value().get<int>(), notify, false);
+                    set(path, it.value().get<int>(), strategy, source, false);
                 } 
                 else if (it.value().is_boolean()) {
-                    set(path, it.value().get<bool>(), notify, false);
+                    set(path, it.value().get<bool>(), strategy, source, false);
                 } 
                 else if (it.value().is_string()) {
-                    set(path, it.value().get<std::string>(), notify, false);
+                    set(path, it.value().get<std::string>(), strategy, source, false);
                 }
                 else if (it.value().is_null()) {
                     // Simply log a warning for null values
@@ -363,11 +363,11 @@ void State::update_from_json(const nlohmann::json& json_data, bool notify) {
     }
 }
 
-template void State::set_in_root(std::string_view key, const double value, bool notify);
-template void State::set_in_root(std::string_view key, const float value, bool notify);
-template void State::set_in_root(std::string_view key, const int value, bool notify);
-template void State::set_in_root(std::string_view key, const bool value, bool notify);
-template void State::set_in_root(std::string_view key, const std::string value, bool notify);
+template void State::set_in_root(std::string_view key, const double value, NotifyStrategies strategy, ParameterListener* source);
+template void State::set_in_root(std::string_view key, const float value, NotifyStrategies strategy, ParameterListener* source);
+template void State::set_in_root(std::string_view key, const int value, NotifyStrategies strategy, ParameterListener* source);
+template void State::set_in_root(std::string_view key, const bool value, NotifyStrategies strategy, ParameterListener* source);
+template void State::set_in_root(std::string_view key, const std::string value, NotifyStrategies strategy, ParameterListener* source);
 
 template double State::get_from_root(std::string_view key) const [[clang::nonblocking]];
 template float State::get_from_root(std::string_view key) const [[clang::nonblocking]];
