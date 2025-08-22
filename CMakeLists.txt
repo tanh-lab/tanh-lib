@@ -10,7 +10,7 @@ option(TANH_WITH_INSTALL "Add install targets" ON)
 option(TANH_WITH_TESTS "Add Build Tests" ON)
 option(TANH_WITH_DOCS "Add Build Documentation" ON)
 
-option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" ON)
+option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" OFF)
 
 # Define available components
 set(TANH_COMPONENTS Core State)
