@@ -1,7 +1,5 @@
 #include "tanh/state/State.h"
 
-#include <sanitizer/rtsan_interface.h>
-
 namespace thl {
 
 State::State(size_t max_string_size, size_t max_levels) : m_max_string_size(max_string_size), m_max_levels(max_levels), StateGroup(nullptr, nullptr, ""), m_parameters_rcu(ParameterMap{}) {
@@ -216,7 +214,7 @@ void State::set_in_root(std::string_view key, const char* value, NotifyStrategie
 
 // Parameter getters (real-time safe for numeric types)
 template<typename T>
-T State::get_from_root(std::string_view key) const [[clang::nonblocking]] {
+T State::get_from_root(std::string_view key) const TANH_NONBLOCKING {
     return m_parameters_rcu.read([&](const ParameterMap& params) -> T {
         auto it = params.find(key);
         if (it == params.end()) {
@@ -232,7 +230,9 @@ T State::get_from_root(std::string_view key) const [[clang::nonblocking]] {
         } else if constexpr (std::is_same_v<T, bool>) {
             return it->second.bool_value.load(std::memory_order_acquire);
         } else if constexpr (std::is_same_v<T, std::string>) {
+#ifdef TANH_WITH_RTSAN
             __rtsan::ScopedDisabler sd;
+#endif
             auto type = it->second.type.load(std::memory_order_acquire);
             switch (type) {
                 case ParameterType::String: {
@@ -254,7 +254,7 @@ T State::get_from_root(std::string_view key) const [[clang::nonblocking]] {
 }
 
 // Get the type of a parameter - renamed to get_type_from_root
-ParameterType State::get_type_from_root(std::string_view key) const [[clang::nonblocking]] {
+ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOCKING {
     // Use heterogeneous lookup with string_view directly - no temporary string creation
     return m_parameters_rcu.read([&](const ParameterMap& params) -> ParameterType {
         auto it = params.find(key);
@@ -369,10 +369,10 @@ template void State::set_in_root(std::string_view key, const int value, NotifySt
 template void State::set_in_root(std::string_view key, const bool value, NotifyStrategies strategy, ParameterListener* source);
 template void State::set_in_root(std::string_view key, const std::string value, NotifyStrategies strategy, ParameterListener* source);
 
-template double State::get_from_root(std::string_view key) const [[clang::nonblocking]];
-template float State::get_from_root(std::string_view key) const [[clang::nonblocking]];
-template int State::get_from_root(std::string_view key) const [[clang::nonblocking]];
-template bool State::get_from_root(std::string_view key) const [[clang::nonblocking]];
-template std::string State::get_from_root(std::string_view key) const [[clang::nonblocking]];
+template double State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
+template float State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
+template int State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
+template bool State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
+template std::string State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
 
 } // namespace thl

@@ -10,9 +10,13 @@
 #include <shared_mutex>
 #include <atomic>
 #include <functional>
+
+#ifdef TANH_WITH_RTSAN
 #include <sanitizer/rtsan_interface.h>
+#endif
 
 #include "tanh/core/threading/RCU.h"
+#include "tanh/utils/RealtimeSanitizer.h"
 
 #include "Parameter.h"
 #include "path_helpers.h"

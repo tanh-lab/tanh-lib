@@ -59,7 +59,7 @@ void StateGroup::clear() {
     clear_groups();
 }
 
-bool StateGroup::is_empty() const [[clang::nonblocking]] {
+bool StateGroup::is_empty() const TANH_NONBLOCKING {
     // Check if we have any subgroups using RCU (lock-free read)
     bool has_groups = false;
     m_groups_rcu.read([&](const GroupMap& groups) {
@@ -125,7 +125,7 @@ void StateGroup::remove_callback_listener(size_t listener_id) {
     });
 }
 
-void StateGroup::notify_parameter_change(std::string_view path) [[clang::nonblocking]] {
+void StateGroup::notify_parameter_change(std::string_view path) TANH_NONBLOCKING {
     // Resolve the path to get the parameter
     auto [group, param_name] = resolve_path(path);
     if (!group || !group->m_rootState) return;
@@ -146,7 +146,7 @@ void StateGroup::notify_parameter_change(std::string_view path) [[clang::nonbloc
     }
 }
 
-void StateGroup::notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy, ParameterListener* source ) const [[clang::nonblocking]] {
+void StateGroup::notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy, ParameterListener* source ) const TANH_NONBLOCKING {
     if (strategy == NotifyStrategies::none){
         return;
     }
@@ -207,7 +207,7 @@ StateGroup* StateGroup::create_group(std::string_view name) {
     return group_ptr;
 }
 
-StateGroup* StateGroup::get_group(std::string_view name) const [[clang::nonblocking]] {
+StateGroup* StateGroup::get_group(std::string_view name) const TANH_NONBLOCKING {
     std::string name_str(name);
     StateGroup* found_group = nullptr;
     
@@ -221,7 +221,7 @@ StateGroup* StateGroup::get_group(std::string_view name) const [[clang::nonblock
     return found_group;
 }
 
-bool StateGroup::has_group(std::string_view name) const [[clang::nonblocking]] {
+bool StateGroup::has_group(std::string_view name) const TANH_NONBLOCKING {
     std::string name_str(name);
     bool found = false;
     
@@ -233,7 +233,7 @@ bool StateGroup::has_group(std::string_view name) const [[clang::nonblocking]] {
 }
 
 // Get the full path of this group
-std::string_view StateGroup::get_full_path() const [[clang::nonblocking]] {
+std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING {
     if (!m_parent || m_parent == m_rootState) {
         return m_name;
     }
@@ -286,7 +286,7 @@ std::string_view StateGroup::get_full_path() const [[clang::nonblocking]] {
 }
 
 // Helper for parameter resolution with paths
-std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_view path) const [[clang::nonblocking]] {
+std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_view path) const TANH_NONBLOCKING {
     // If path is empty or has no dots, it refers to a parameter in this group
     if (path.empty() || path.find('.') == std::string::npos) {
         return {const_cast<StateGroup*>(this), path};
@@ -342,7 +342,7 @@ std::pair<StateGroup*, std::string_view> StateGroup::resolve_path_create(std::st
 
 // Parameter access methods
 template<typename T>
-T StateGroup::get(std::string_view path) const [[clang::nonblocking]] {
+T StateGroup::get(std::string_view path) const TANH_NONBLOCKING {
     auto [group, param_name] = resolve_path(path);
     if (group == this) {
         // Parameter in this group, delegate to root state
@@ -357,7 +357,7 @@ T StateGroup::get(std::string_view path) const [[clang::nonblocking]] {
     return group->get<T>(param_name);
 }
 
-ParameterType StateGroup::get_parameter_type(std::string_view path) const [[clang::nonblocking]] {
+ParameterType StateGroup::get_parameter_type(std::string_view path) const TANH_NONBLOCKING {
     auto [group, param_name] = resolve_path(path);
     if (group == this) {
         // Parameter in this group, delegate to root state
@@ -467,10 +467,10 @@ template void StateGroup::set(std::string_view path, const bool value, NotifyStr
 template void StateGroup::set(std::string_view path, const std::string value, NotifyStrategies strategy, ParameterListener* source, bool create);
 
 
-template double StateGroup::get(std::string_view path) const [[clang::nonblocking]];
-template float StateGroup::get(std::string_view path) const [[clang::nonblocking]];
-template int StateGroup::get(std::string_view path) const [[clang::nonblocking]];
-template bool StateGroup::get(std::string_view path) const [[clang::nonblocking]];
-template std::string StateGroup::get(std::string_view path) const [[clang::nonblocking]];
+template double StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
+template float StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
+template int StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
+template bool StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
+template std::string StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
 
 } // namespace thl
