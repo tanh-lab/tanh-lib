@@ -1,7 +1,12 @@
 #pragma once
 
 #include "StateGroup.h"
+#include "tanh/utils/RealtimeSanitizer.h"
 #include <nlohmann/json.hpp>
+
+#ifdef TANH_WITH_RTSAN
+#include <sanitizer/rtsan_interface.h>
+#endif
 
 namespace thl {
 
