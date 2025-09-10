@@ -8,6 +8,10 @@
 #include <chrono>
 #include <functional>
 
+#ifdef TANH_WITH_RTSAN
+#include <sanitizer/rtsan_interface.h>
+#endif
+
 namespace thl {
 
 /**
@@ -291,6 +295,9 @@ public:
     }
 
     void ensure_thread_registered() const {
+#ifdef TANH_WITH_RTSAN
+        __rtsan::ScopedDisabler sd; // TODO: Find a better solution
+#endif
         if (!t_rcu_state.registered) [[unlikely]] {
             // Allocate node on heap so it persists beyond thread lifetime
             t_rcu_state.node = std::make_unique<ReaderNode>();
