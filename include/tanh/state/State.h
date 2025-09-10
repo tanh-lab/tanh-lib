@@ -45,7 +45,7 @@ private:
     friend class StateGroup;
     
     // Real-time safe string buffers for path operations
-    static inline thread_local std::string m_path_buffer_1;
+    static inline thread_local std::string m_path_buffer_1; // TODO: Problem if these are thread_local, how to initialize on audio thread?
     static inline thread_local std::string m_path_buffer_2; 
     static inline thread_local std::string m_path_buffer_3;
     static inline thread_local std::string m_temp_buffer;
@@ -57,6 +57,8 @@ private:
     // Maximum string size and levels for path resolution
     size_t m_max_string_size;
     size_t m_max_levels;
+
+    static inline thread_local bool thread_registered = false;
 };
 
 } // namespace thl

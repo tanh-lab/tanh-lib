@@ -157,6 +157,9 @@ void StateGroup::notify_listeners(std::string_view path, const Parameter& param,
             if ((strategy == NotifyStrategies::others && listener == source) || (strategy == NotifyStrategies::self && listener != source)) {
                 continue;
             }
+#ifdef TANH_WITH_RTSAN
+            __rtsan::ScopedDisabler sd;
+#endif
             listener->on_parameter_changed(path, param);
         }
         
