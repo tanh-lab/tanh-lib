@@ -13,11 +13,12 @@ option(TANH_WITH_DOCS "Add Build Documentation" ON)
 option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" OFF)
 
 # Define available components
-set(TANH_COMPONENTS Core State)
+set(TANH_COMPONENTS Core State DSP)
 
 # Option to control which components to build
 option(TANH_BUILD_CORE "Build Core component" ON)
 option(TANH_BUILD_STATE "Build State component" ON)
+option(TANH_BUILD_DSP "Build DSP component" ON)
 
 # ==============================================================================
 # Get project version
@@ -64,11 +65,21 @@ set (PROJECT_NAME tanh)
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_SHORT})
 
 if(APPLE)
-    set(TANH_OPERATING_SYSTEM "macOS")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(TANH_OPERATING_SYSTEM "macOS")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(TANH_OPERATING_SYSTEM "iOS")
+    else()
+        set(TANH_OPERATING_SYSTEM "Unknown Apple OS")
+    endif()
 elseif(UNIX)
     set(TANH_OPERATING_SYSTEM "Linux")
 elseif(WIN32)
     set(TANH_OPERATING_SYSTEM "Windows")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(TANH_OPERATING_SYSTEM "Android")
+else()
+    set(TANH_OPERATING_SYSTEM "Unknown")
 endif()
 
 message(STATUS "Project version: ${PROJECT_VERSION_SHORT} (${PROJECT_VERSION_FULL})")
@@ -83,20 +94,6 @@ endif ()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-
-## ==============================================================================
-# Fetch dependencies
-# ==============================================================================
-
-include(FetchContent)
-
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.12.0
-    GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(nlohmann_json)
 
 # ==============================================================================
 # Build the library with components
@@ -132,7 +129,7 @@ if(TANH_BUILD_CORE)
         -DTANH_VERSION="${PROJECT_VERSION_FULL}"
     )
 
-    target_link_libraries(${PROJECT_NAME}_core PUBLIC nlohmann_json::nlohmann_json)
+    target_link_libraries(${PROJECT_NAME}_core)
     
     list(APPEND TANH_BUILT_COMPONENTS Core)
 endif()
@@ -167,6 +164,34 @@ if(TANH_BUILD_STATE)
     list(APPEND TANH_BUILT_COMPONENTS State)
 endif()
 
+# DSP component (depends on Core)
+if(TANH_BUILD_DSP)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "DSP component requires Core component")
+    endif()
+
+    add_library(${PROJECT_NAME}_dsp
+        src/dsp/synth/SineProcessor.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_dsp PROPERTIES 
+        POSITION_INDEPENDENT_CODE ON 
+        VERSION ${PROJECT_VERSION} 
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::DSP ALIAS ${PROJECT_NAME}_dsp)
+
+    target_include_directories(${PROJECT_NAME}_dsp
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_dsp PUBLIC ${PROJECT_NAME}_core)
+
+    list(APPEND TANH_BUILT_COMPONENTS DSP)
+endif()
+
 # Apply common settings to all components
 set(TARGETS_TO_CONFIGURE "")
 if(TARGET ${PROJECT_NAME}_core)
@@ -174,6 +199,9 @@ if(TARGET ${PROJECT_NAME}_core)
 endif()
 if(TARGET ${PROJECT_NAME}_state)
     list(APPEND TARGETS_TO_CONFIGURE ${PROJECT_NAME}_state)
+endif()
+if(TARGET ${PROJECT_NAME}_dsp)
+    list(APPEND TARGETS_TO_CONFIGURE ${PROJECT_NAME}_dsp)
 endif()
 
 foreach(target ${TARGETS_TO_CONFIGURE})
@@ -220,6 +248,9 @@ if (TANH_WITH_TESTS)
     endif()
     if (TANH_BUILD_STATE)
         add_subdirectory(test/state)
+    endif()
+    if (TANH_BUILD_DSP)
+        add_subdirectory(test/dsp)
     endif()
 endif()
 
