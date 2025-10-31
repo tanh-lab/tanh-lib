@@ -95,6 +95,12 @@ endif ()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+## ==============================================================================
+# Fetch dependencies
+# ==============================================================================
+
+include(FetchContent)
+
 # ==============================================================================
 # Build the library with components
 # ==============================================================================
@@ -139,6 +145,14 @@ if(TANH_BUILD_STATE)
     if(NOT TARGET ${PROJECT_NAME}_core)
         message(FATAL_ERROR "State component requires Core component")
     endif()
+
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.12.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
     
     add_library(${PROJECT_NAME}_state
         src/state/Parameter.cpp
@@ -159,7 +173,7 @@ if(TANH_BUILD_STATE)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     
-    target_link_libraries(${PROJECT_NAME}_state PUBLIC ${PROJECT_NAME}_core)
+    target_link_libraries(${PROJECT_NAME}_state PUBLIC ${PROJECT_NAME}_core nlohmann_json)
     
     list(APPEND TANH_BUILT_COMPONENTS State)
 endif()
@@ -250,7 +264,7 @@ if (TANH_WITH_TESTS)
         add_subdirectory(test/state)
     endif()
     if (TANH_BUILD_DSP)
-        add_subdirectory(test/dsp)
+        # add_subdirectory(test/dsp) # TODO: add dsp tests
     endif()
 endif()
 

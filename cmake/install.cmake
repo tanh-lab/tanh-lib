@@ -18,6 +18,10 @@ if(TARGET ${PROJECT_NAME}_core)
 endif()
 if(TARGET ${PROJECT_NAME}_state)
     list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_state)
+    # nlohmann_json is a public dependency of State, so it must be in the export
+    if(TARGET nlohmann_json)
+        list(APPEND TARGETS_TO_INSTALL nlohmann_json)
+    endif()
 endif()
 if(TARGET ${PROJECT_NAME}_dsp)
     list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_dsp)
@@ -29,8 +33,9 @@ if(TARGET ${PROJECT_NAME}_processing)
     list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_processing)
 endif()
 
+# Install all targets to the export set
 if(TARGETS_TO_INSTALL)
-    install(TARGETS ${TARGETS_TO_INSTALL} nlohmann_json
+    install(TARGETS ${TARGETS_TO_INSTALL}
         EXPORT "tanhTargets"
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -39,8 +44,8 @@ if(TARGETS_TO_INSTALL)
     )
 endif()
 
-# Note: We don't install nlohmann_json as it's an external dependency
-# that consumers should find themselves via find_dependency(nlohmann_json)
+# Note: nlohmann_json is installed with the export set because it's a public
+# dependency of tanh_state (used in the public API)
 
 # define the directory where the library will be installed CMAKE_INSTALL_PREFIX
 if(DEFINED CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)

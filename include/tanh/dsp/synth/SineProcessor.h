@@ -13,6 +13,7 @@ class SineProcessor {
 
 public:
     SineProcessor();
+    ~SineProcessor();
     
     // Process audio data
     void prepare(const float& sample_rate, const int& samples_per_block);
