@@ -146,6 +146,9 @@ if(TANH_BUILD_STATE)
         message(FATAL_ERROR "State component requires Core component")
     endif()
 
+    # Enable installation for nlohmann_json so it can be exported with tanh_state
+    # set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
+    
     FetchContent_Declare(
         nlohmann_json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
