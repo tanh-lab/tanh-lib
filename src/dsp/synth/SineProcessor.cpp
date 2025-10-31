@@ -1,5 +1,7 @@
 #include "tanh/dsp/synth/SineProcessor.h"
 
+using namespace thl::dsp::synth;
+
 SineProcessor::SineProcessor()
 {
     // Initialize the parameters from the selected code
