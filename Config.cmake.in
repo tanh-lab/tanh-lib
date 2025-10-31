@@ -27,11 +27,6 @@ if(tanh_FIND_COMPONENTS)
         endif()
     endif()
     
-    # Processing needs Threads
-    if("Processing" IN_LIST tanh_FIND_COMPONENTS)
-        find_dependency(Threads)
-    endif()
-    
     # State needs nlohmann_json
     if("State" IN_LIST tanh_FIND_COMPONENTS)
         find_dependency(nlohmann_json)
@@ -41,11 +36,6 @@ else()
     # No specific components requested, include all available
     set(REQUIRED_COMPONENTS ${tanh_AVAILABLE_COMPONENTS})
     
-    # Find all potential dependencies
-    if("Processing" IN_LIST tanh_AVAILABLE_COMPONENTS)
-        find_dependency(Threads)
-    endif()
-    
     # State needs nlohmann_json
     if("State" IN_LIST tanh_AVAILABLE_COMPONENTS)
         find_dependency(nlohmann_json)
@@ -54,6 +44,15 @@ endif()
 
 # Include the targets file (this creates the imported targets)
 include("${CMAKE_CURRENT_LIST_DIR}/tanhTargets.cmake")
+
+# Set component feature flags
+if(TARGET tanh::tanh_state)
+    target_compile_definitions(tanh::tanh_state INTERFACE TANH_STATE_ENABLED)
+endif()
+
+if(TARGET tanh::tanh_dsp)
+    target_compile_definitions(tanh::tanh_dsp INTERFACE TANH_DSP_ENABLED)
+endif()
 
 # Verify all requested components are available as targets
 foreach(comp ${tanh_FIND_COMPONENTS})

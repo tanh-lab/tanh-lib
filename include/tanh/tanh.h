@@ -1,13 +1,11 @@
 #pragma once
 
-#ifdef TANH_BUILD_CORE
 #include "core.h"
-#endif
 
-#ifdef TANH_BUILD_STATE
+#ifdef TANH_STATE_ENABLED
 #include "state.h"
 #endif
 
-#ifdef TANH_BUILD_DSP
+#ifdef TANH_DSP_ENABLED
 #include "dsp.h"
 #endif

@@ -7,11 +7,45 @@ include(GNUInstallDirs)
 
 # Install all targets to the export set
 if(TANH_BUILT_COMPONENTS)
+    foreach(target ${TANH_BUILT_COMPONENTS})
+        if(${target} STREQUAL "${PROJECT_NAME}_state")
+            install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/state
+                COMPONENT dev
+            )
+            install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state.h
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/
+                COMPONENT dev
+            )
+        elseif(${target} STREQUAL "${PROJECT_NAME}_dsp")
+            install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/dsp
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/dsp
+                COMPONENT dev
+            )
+            install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/dsp.h
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/
+                COMPONENT dev
+            )
+        elseif(${target} STREQUAL "${PROJECT_NAME}_core")
+            install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/core
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/core
+                COMPONENT dev
+            )
+            install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/core.h
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/
+                COMPONENT dev
+            )
+        endif()
+        install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/tanh.h
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/
+            COMPONENT dev
+        )
+    endforeach()
+
     # Prepare list of targets to install
     set(TARGETS_TO_EXPORT ${TANH_BUILT_COMPONENTS})
     
-    # Add nlohmann_json to export if State component is built (it's a public dependency)
-    # nlohmann_json is a header-only INTERFACE library, so we include it in the export
+    # Add nlohmann_json to export if State component is built (it's a PUBLIC dependency)
     if(TARGET ${PROJECT_NAME}_state AND TARGET nlohmann_json)
         list(APPEND TARGETS_TO_EXPORT nlohmann_json)
     endif()
@@ -21,7 +55,6 @@ if(TANH_BUILT_COMPONENTS)
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
 endif()
 
@@ -38,14 +71,14 @@ endif()
 # $ORIGIN in Linux is a special token that gets replaced by the directory of the library at runtime from that point we could navigate to the other libraries
 # The same token for macOS is @loader_path
 if(TANH_OPERATING_SYSTEM STREQUAL "Linux")
-    foreach(target ${TARGETS_TO_INSTALL})
+    foreach(target ${TARGETS_TO_EXPORT})
         set_target_properties(${target}
             PROPERTIES
                 INSTALL_RPATH "$ORIGIN"
         )
     endforeach()
 elseif(TANH_OPERATING_SYSTEM STREQUAL "macOS")
-    foreach(target ${TARGETS_TO_INSTALL})
+    foreach(target ${TARGETS_TO_EXPORT})
         set_target_properties(${target}
             PROPERTIES
                 INSTALL_RPATH "@loader_path"
