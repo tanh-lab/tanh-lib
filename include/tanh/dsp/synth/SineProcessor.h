@@ -1,8 +1,11 @@
-#ifndef SINEPROCESSOR_H
-#define SINEPROCESSOR_H
+#pragma once
 
 #include <cmath>
 #include <vector>
+
+namespace thl {
+namespace dsp {
+namespace synth {
 
 class SineProcessor {
 
@@ -29,4 +32,6 @@ private:
     int m_samples_per_block = 512;
 };
 
-#endif // SINEPROCESSOR_H
+} // namespace synth
+} // namespace dsp
+} // namespace thl
