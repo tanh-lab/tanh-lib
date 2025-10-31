@@ -7,7 +7,16 @@ include(GNUInstallDirs)
 
 # Install all targets to the export set
 if(TANH_BUILT_COMPONENTS)
-    install(TARGETS ${TANH_BUILT_COMPONENTS}
+    # Prepare list of targets to install
+    set(TARGETS_TO_EXPORT ${TANH_BUILT_COMPONENTS})
+    
+    # Add nlohmann_json to export if State component is built (it's a public dependency)
+    # nlohmann_json is a header-only INTERFACE library, so we include it in the export
+    if(TARGET ${PROJECT_NAME}_state AND TARGET nlohmann_json)
+        list(APPEND TARGETS_TO_EXPORT nlohmann_json)
+    endif()
+    
+    install(TARGETS ${TARGETS_TO_EXPORT}
         EXPORT "tanhTargets"
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -15,9 +24,6 @@ if(TANH_BUILT_COMPONENTS)
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
 endif()
-
-# Note: nlohmann_json is installed with the export set because it's a public
-# dependency of tanh_state (used in the public API)
 
 # define the directory where the library will be installed CMAKE_INSTALL_PREFIX
 if(DEFINED CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)

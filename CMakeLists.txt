@@ -173,7 +173,11 @@ if(TANH_BUILD_STATE)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     
-    target_link_libraries(${PROJECT_NAME}_state PUBLIC ${PROJECT_NAME}_core nlohmann_json)
+    target_link_libraries(${PROJECT_NAME}_state 
+        PUBLIC 
+            ${PROJECT_NAME}_core 
+            nlohmann_json::nlohmann_json
+    )
 
     target_compile_definitions(${PROJECT_NAME}_state
         PUBLIC
