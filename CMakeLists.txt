@@ -136,8 +136,8 @@ if(TANH_BUILD_CORE)
     )
 
     target_link_libraries(${PROJECT_NAME}_core)
-    
-    list(APPEND TANH_BUILT_COMPONENTS Core)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
 endif()
 
 # State component (depends on Core)
@@ -174,8 +174,14 @@ if(TANH_BUILD_STATE)
     )
     
     target_link_libraries(${PROJECT_NAME}_state PUBLIC ${PROJECT_NAME}_core nlohmann_json)
-    
-    list(APPEND TANH_BUILT_COMPONENTS State)
+
+    target_compile_definitions(${PROJECT_NAME}_state
+        PUBLIC
+        # Set TANH_STATE_ENABLED to enable state features
+        -DTANH_STATE_ENABLED
+    )
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_state)
 endif()
 
 # DSP component (depends on Core)
@@ -203,22 +209,18 @@ if(TANH_BUILD_DSP)
 
     target_link_libraries(${PROJECT_NAME}_dsp PUBLIC ${PROJECT_NAME}_core)
 
-    list(APPEND TANH_BUILT_COMPONENTS DSP)
+    target_compile_definitions(${PROJECT_NAME}_dsp
+        PUBLIC
+        # Set TANH_DSP_ENABLED to enable DSP features
+        -DTANH_DSP_ENABLED
+    )
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_dsp)
 endif()
 
 # Apply common settings to all components
-set(TARGETS_TO_CONFIGURE "")
-if(TARGET ${PROJECT_NAME}_core)
-    list(APPEND TARGETS_TO_CONFIGURE ${PROJECT_NAME}_core)
-endif()
-if(TARGET ${PROJECT_NAME}_state)
-    list(APPEND TARGETS_TO_CONFIGURE ${PROJECT_NAME}_state)
-endif()
-if(TARGET ${PROJECT_NAME}_dsp)
-    list(APPEND TARGETS_TO_CONFIGURE ${PROJECT_NAME}_dsp)
-endif()
 
-foreach(target ${TARGETS_TO_CONFIGURE})
+foreach(target ${TANH_BUILT_COMPONENTS})
     if(TANH_WITH_RTSAN)
         include(cmake/real-time-sanitizers.cmake)
         tanh_rtsan_configure(${target})

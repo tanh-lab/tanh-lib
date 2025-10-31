@@ -5,37 +5,9 @@
 # for CMAKE_INSTALL_INCLUDEDIR and others definition
 include(GNUInstallDirs)
 
-# Install headers
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    COMPONENT dev
-)
-
-# Install libraries and create export set
-set(TARGETS_TO_INSTALL)
-if(TARGET ${PROJECT_NAME}_core)
-    list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_core)
-endif()
-if(TARGET ${PROJECT_NAME}_state)
-    list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_state)
-    # nlohmann_json is a public dependency of State, so it must be in the export
-    if(TARGET nlohmann_json)
-        list(APPEND TARGETS_TO_INSTALL nlohmann_json)
-    endif()
-endif()
-if(TARGET ${PROJECT_NAME}_dsp)
-    list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_dsp)
-endif()
-if(TARGET ${PROJECT_NAME}_advanced)
-    list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_advanced)
-endif()
-if(TARGET ${PROJECT_NAME}_processing)
-    list(APPEND TARGETS_TO_INSTALL ${PROJECT_NAME}_processing)
-endif()
-
 # Install all targets to the export set
-if(TARGETS_TO_INSTALL)
-    install(TARGETS ${TARGETS_TO_INSTALL}
+if(TANH_BUILT_COMPONENTS)
+    install(TARGETS ${TANH_BUILT_COMPONENTS}
         EXPORT "tanhTargets"
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
