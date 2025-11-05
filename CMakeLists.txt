@@ -84,11 +84,20 @@ endif()
 
 message(STATUS "Project version: ${PROJECT_VERSION_SHORT} (${PROJECT_VERSION_FULL})")
 
-# Sets the minimum macOS version, c++20 is only available from macOS 11.0
+# Sets the minimum macOS/iOS version, c++20 is only available from macOS 11.0
 if (APPLE)
-	set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum version of the target platform" FORCE) 
-	if(CMAKE_OSX_DEPLOYMENT_TARGET)
-		message("The minimum macOS version is set to " $CACHE{CMAKE_OSX_DEPLOYMENT_TARGET}.)
+	# For iOS builds, use 14.0 as minimum (required for SwiftUI @main)
+	# For macOS builds, use 12.0 as minimum
+	if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET LESS "14.0")
+			set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum iOS deployment version")
+		endif()
+		message(STATUS "The minimum iOS version is set to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+	else()
+		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET LESS "12.0")
+			set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version" FORCE)
+		endif()
+		message(STATUS "The minimum macOS version is set to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 	endif()
 endif ()
 
