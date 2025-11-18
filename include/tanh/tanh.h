@@ -1,8 +1,7 @@
 #pragma once
 
-#include "core.h"
-
 #ifdef TANH_STATE_ENABLED
+#include "core.h"
 #include "state.h"
 #endif
 
