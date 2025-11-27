@@ -207,6 +207,8 @@ if(TANH_BUILD_DSP)
     endif()
 
     add_library(${PROJECT_NAME}_dsp
+        src/dsp/utils/SmoothedValue.cpp
+
         src/dsp/synth/SineProcessor.cpp
     )
 

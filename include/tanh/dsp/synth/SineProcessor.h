@@ -2,34 +2,45 @@
 
 #include <cmath>
 #include <vector>
+#include "tanh/dsp/BaseProcessor.h"
+#include "tanh/dsp/utils/SmoothedValue.h"
 
 namespace thl {
 namespace dsp {
 namespace synth {
 
-class SineProcessor {
-
+class SineProcessor : public BaseProcessor {
+public:
     enum Parameters {
-        FREQUENCY,
-        AMPLITUDE
+        FREQUENCY = 0,
+        AMPLITUDE = 1
     };
 
-public:
     SineProcessor();
-    ~SineProcessor();
-    
-    // Process audio data
-    void prepare(const float& sample_rate, const int& samples_per_block);
-    void process(float* output_buffer, unsigned int n_buffer_frames);
-    void set_parameter(const Parameters& param, float value);
-    float get_parameter(const Parameters& param) const;
+    ~SineProcessor() override;
+
+    // BaseProcessor overrides
+    void prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) override;
+    void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
+
+    void set_parameter(Parameters param, float value);
+
+    float get_parameter(Parameters param) const;
 
 private:
+    void set_parameter(int param_id, float value) override;
+    float get_parameter(int param_id) const override;
+
     std::vector<float> m_phase;
-    float m_frequency = 100.f; // Default frequency
-    float m_amplitude = 0.5f;  // Default amplitude
-    float m_sample_rate = 44100.f;
-    int m_samples_per_block = 512;
+
+    float m_frequency = 100.f;
+    float m_amplitude = 0.5f;
+
+    SmoothedValue smoothed_frequency;
+    SmoothedValue smoothed_amplitude;
+
+    double m_sample_rate = 44100.f;
+    size_t m_samples_per_block = 512;
 };
 
 } // namespace synth

@@ -2,67 +2,76 @@
 
 using namespace thl::dsp::synth;
 
-SineProcessor::SineProcessor()
-{
-    // Initialize the parameters from the selected code
-    m_phase.resize(2);
-    m_phase[0] = 0.f;
-    m_phase[1] = 0.f;
-}
-
+SineProcessor::SineProcessor() = default;
 SineProcessor::~SineProcessor() = default;
 
-void SineProcessor::set_parameter(const Parameters& param, float value)
-{
-    switch (param) {
+void SineProcessor::prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) {
+    m_phase.resize(num_channels, 0.f);
+
+    m_sample_rate = sample_rate;
+    m_samples_per_block = samples_per_block;
+
+    smoothed_frequency.reset(sample_rate, 0.005, SmoothedValue::Linear);
+    smoothed_amplitude.reset(sample_rate, 0.005, SmoothedValue::Linear);
+
+    smoothed_frequency.set_current_and_target_value(m_frequency);
+    smoothed_amplitude.set_current_and_target_value(m_amplitude);
+}
+
+void SineProcessor::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
+        constexpr float two_pi = 2.0f * static_cast<float>(M_PI);
+        const auto sample_rate_f = static_cast<float>(m_sample_rate);
+
+        for (size_t i = 0; i < num_samples; ++i) {
+            const float current_freq = smoothed_frequency.get_smoothed_value(1);
+            const float current_amp  = smoothed_amplitude.get_smoothed_value(1);
+
+            const float phase_increment = two_pi * current_freq / sample_rate_f;
+
+            for (size_t ch = 0; ch < num_channels; ++ch) {
+                float& phase = m_phase[ch];
+
+                buffer[ch][i] = current_amp * std::sin(phase);
+                phase += phase_increment;
+
+                if (phase >= two_pi)
+                    phase -= two_pi;
+                else if (phase < 0.0f)
+                    phase += two_pi;
+            }
+        }
+    }
+
+void SineProcessor::set_parameter(Parameters param, float value) {
+    set_parameter(static_cast<int>(param), value);
+}
+
+float SineProcessor::get_parameter(Parameters param) const {
+    return get_parameter(static_cast<int>(param));
+}
+
+void SineProcessor::set_parameter(int param_id, float value) {
+    switch (param_id) {
         case FREQUENCY:
             m_frequency = value;
+            smoothed_frequency.set_target_value(m_frequency);
             break;
         case AMPLITUDE:
             m_amplitude = value;
+            smoothed_amplitude.set_target_value(m_amplitude);
             break;
         default:
             break;
     }
 }
 
-float SineProcessor::get_parameter(const Parameters& param) const
-{
-    switch (param) {
+float SineProcessor::get_parameter(int param_id) const {
+    switch (param_id) {
         case FREQUENCY:
             return m_frequency;
         case AMPLITUDE:
             return m_amplitude;
         default:
             return 0.f;
-    }
-}
-
-void SineProcessor::prepare(const float& sample_rate, const int& samples_per_block)
-{
-    m_sample_rate = sample_rate;
-    m_samples_per_block = samples_per_block;
-}
-
-void SineProcessor::process(float* output_buffer, unsigned int n_buffer_frames)
-{
-    float* out = output_buffer;
-    
-    float phase_increment = 2.0f * (float) M_PI * m_frequency / (float) m_sample_rate;
-
-    for (unsigned int i = 0; i < n_buffer_frames; i++) {
-        float sample_left = m_amplitude * std::sin(m_phase[0]);
-        float sample_right = m_amplitude * std::sin(m_phase[1]);
-        out[i] = sample_left;  // left channel
-        out[i + n_buffer_frames] = sample_right;  // right channel
-
-        m_phase[0] += phase_increment;
-        m_phase[1] += phase_increment * 1.5f;
-        if (m_phase[0] >= 2.0f * (float) M_PI) {
-            m_phase[0] -= 2.0f * (float) M_PI;
-        }
-        if (m_phase[1] >= 2.0f * (float) M_PI) {
-            m_phase[1] -= 2.0f * (float) M_PI;
-        }
     }
 }
