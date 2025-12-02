@@ -18,7 +18,7 @@ public:
     // Ensure RCU is initialized for the current thread
     void ensure_rcu_initialized();
 
-    // Thread-safe direct parameter management (without path resolution)
+    // Direct parameter setters
     template<typename T>
     void set_in_root(std::string_view key, T value, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr);
 
