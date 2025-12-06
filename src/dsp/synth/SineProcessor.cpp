@@ -2,6 +2,10 @@
 
 using namespace thl::dsp::synth;
 
+#ifndef M_PI
+    #define M_PI 3.14159265358979323846
+#endif
+
 SineProcessor::SineProcessor() = default;
 SineProcessor::~SineProcessor() = default;
 
