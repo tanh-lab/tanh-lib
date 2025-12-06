@@ -256,11 +256,11 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING {
         depth++;
     }
     
-    // Now build the path by walking up the tree and indexing backwards
-    // We'll use a fixed-size array on the stack for path components
-    std::string_view components[m_rootState->m_max_levels];
+    // Use a fixed-size array with a reasonable maximum depth (compliant with MSVC)
+    constexpr int MAX_DEPTH = 32; // Compile-time constant
+    std::string_view components[MAX_DEPTH];
 
-    if (depth > m_rootState->m_max_levels) {
+    if (depth > MAX_DEPTH) {
         // Fallback for extremely deep hierarchies - just return the name
         return m_name;
     }
