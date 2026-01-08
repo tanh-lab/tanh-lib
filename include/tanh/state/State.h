@@ -41,6 +41,9 @@ public:
     void clear() override;
     bool is_empty() const override;
     
+    // State Dump
+    std::string get_state_dump() const;
+
 private:
     friend class StateGroup;
     

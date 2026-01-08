@@ -261,6 +261,29 @@ T State::get_from_root(std::string_view key) const TANH_NONBLOCKING {
     });
 }
 
+std::string State::get_state_dump() const {
+  nlohmann::json root = nlohmann::json::object();
+
+  m_parameters_rcu.read([&](const ParameterMap &params) {
+    for (const auto &[key, data] : params) {
+      auto type = data.type.load(std::memory_order_relaxed);
+      if (type == ParameterType::Double) {
+        root[key] = data.double_value.load(std::memory_order_relaxed);
+      } else if (type == ParameterType::Float) {
+        root[key] = data.float_value.load(std::memory_order_relaxed);
+      } else if (type == ParameterType::Int) {
+        root[key] = data.int_value.load(std::memory_order_relaxed);
+      } else if (type == ParameterType::Bool) {
+        root[key] = data.bool_value.load(std::memory_order_relaxed);
+      } else if (type == ParameterType::String) {
+        root[key] = data.string_value;
+      }
+    }
+  });
+
+  return root.dump();
+}
+
 // Get the type of a parameter - renamed to get_type_from_root
 ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOCKING {
     // Use heterogeneous lookup with string_view directly - no temporary string creation
