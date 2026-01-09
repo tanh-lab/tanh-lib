@@ -339,6 +339,13 @@ private:
         
         ~ThreadRCUState() {
             if (registered && node) {
+                // Ensure we're not in a read section before marking as dead
+                // This prevents race where thread is marked dead while still reading
+                if (node->read_count.load(std::memory_order_acquire) != 0) {
+                    // Should never happen, but be defensive
+                    node->read_count.store(0, std::memory_order_release);
+                }
+                
                 // Mark node as dead - it will be cleaned up during next synchronize_rcu
                 node->is_dead.store(true, std::memory_order_release);
                 // Don't delete the node here; let cleanup_dead_nodes handle it
@@ -353,7 +360,8 @@ private:
     void rcu_read_lock() const {
         if (t_rcu_state.node) {
             // Increment read count to signal we're in a read section
-            t_rcu_state.node->read_count.fetch_add(1, std::memory_order_acquire);
+            // Relaxed is sufficient since synchronize_rcu uses acquire when checking
+            t_rcu_state.node->read_count.fetch_add(1, std::memory_order_relaxed);
             // Record current grace period when entering read section
             t_rcu_state.node->read_generation.store(
                 m_grace_period.load(std::memory_order_acquire), 
@@ -411,7 +419,7 @@ private:
     void cleanup_dead_nodes() {
         // Rebuild the list without dead nodes
         std::vector<ReaderNode*> live_nodes;
-        std::vector<ReaderNode*> dead_nodes;
+        std::vector<std::unique_ptr<ReaderNode>> dead_nodes;
         
         ReaderNode* current = s_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
@@ -420,7 +428,8 @@ private:
             if (!current->is_dead.load(std::memory_order_acquire)) {
                 live_nodes.push_back(current);
             } else {
-                dead_nodes.push_back(current);
+                // Transfer ownership to unique_ptr for automatic cleanup
+                dead_nodes.emplace_back(current);
             }
             
             current = next;
@@ -437,10 +446,8 @@ private:
             s_reader_head.store(live_nodes[0], std::memory_order_relaxed);
         }
         
-        // Now safely delete the dead nodes (they were heap-allocated)
-        for (ReaderNode* dead_node : dead_nodes) {
-            delete dead_node;
-        }
+        // Dead nodes automatically cleaned up when unique_ptrs go out of scope
+        // Exception-safe: if vector reallocation throws, already-collected nodes are freed
     }
 };
 
