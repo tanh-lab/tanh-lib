@@ -48,9 +48,21 @@ public:
     }
 
     ~RCU() {
-        // Clean up any remaining data
+        // Clean up any remaining retired data
+        for (auto& retired : m_retired_list) {
+            delete retired.ptr;
+        }
+        m_retired_list.clear();
+        
+        // Clean up current data
         auto* ptr = m_data_ptr.load(std::memory_order_acquire);
         delete ptr;
+        
+        // Clean up dead reader nodes from exited threads
+        // Safe because dead nodes are from threads that have already exited
+        // and won't be reading from any RCU instance anymore
+        std::lock_guard<std::mutex> lock(s_writer_mutex);
+        cleanup_dead_nodes();
     }
 
     // Non-copyable, non-movable for simplicity
@@ -133,11 +145,44 @@ public:
         // Atomically publish new version
         m_data_ptr.store(new_data.release(), std::memory_order_release);
         
-        // Wait for all current readers to finish
-        synchronize_rcu();
+        // Retire old version with current grace period
+        uint64_t retire_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel) + 1;
+        m_retired_list.push_back({const_cast<T*>(old_data), retire_period});
         
-        // Safe to delete old data
-        delete old_data;
+        // ═══════════════════════════════════════════════════
+        // TIER 1: Opportunistic cleanup (always try, non-blocking)
+        // ═══════════════════════════════════════════════════
+        cleanup_safe_versions();
+        
+        // ═══════════════════════════════════════════════════
+        // TIER 2: Threshold cleanup (occasional, still non-blocking)
+        // ═══════════════════════════════════════════════════
+        if (m_retired_list.size() >= CLEANUP_THRESHOLD) {
+            // Try multiple times to catch stragglers
+            for (int i = 0; i < 3 && !m_retired_list.empty(); ++i) {
+                cleanup_safe_versions();
+                if (m_retired_list.size() < CLEANUP_THRESHOLD / 2) {
+                    break;  // Good enough
+                }
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════
+        // TIER 3: Emergency cleanup (rare, blocking)
+        // ═══════════════════════════════════════════════════
+        if (m_retired_list.size() >= EMERGENCY_THRESHOLD) {
+            // Pathological case - bite the bullet and wait
+            synchronize_rcu();  // BLOCKING
+            
+            // Now delete everything in retired list
+            for (auto& retired : m_retired_list) {
+                delete retired.ptr;
+            }
+            m_retired_list.clear();
+        }
+        
+        // Clean up dead reader nodes periodically
+        cleanup_dead_nodes();
     }
 
     /**
@@ -322,6 +367,17 @@ private:
     mutable std::atomic<uint64_t> m_grace_period{0};
     static std::mutex s_writer_mutex;
     
+    // Retired data tracking for deferred reclamation
+    struct RetiredData {
+        T* ptr;
+        uint64_t grace_period;
+    };
+    std::vector<RetiredData> m_retired_list;
+    
+    // Cleanup thresholds
+    static constexpr size_t CLEANUP_THRESHOLD = 8;      // Try harder to cleanup
+    static constexpr size_t EMERGENCY_THRESHOLD = 32;   // Force blocking cleanup
+    
     // Lock-free linked list node for reader registration
     struct ReaderNode {
         std::atomic<uint64_t> read_generation{0};
@@ -379,18 +435,73 @@ private:
         }
     }
     
+    /**
+     * @brief Non-blocking cleanup of retired versions that are safe to delete
+     * 
+     * Finds the minimum grace period any reader is currently in, then batch
+     * deletes all retired versions older than that period.
+     * 
+     * Must be called while holding s_writer_mutex.
+     */
+    void cleanup_safe_versions() {
+        if (m_retired_list.empty()) return;
+        
+        // Find minimum period any reader is still in
+        uint64_t min_active_period = UINT64_MAX;
+        bool any_active_readers = false;
+        
+        ReaderNode* current = s_reader_head.load(std::memory_order_acquire);
+        while (current != nullptr) {
+            if (!current->is_dead.load(std::memory_order_acquire)) {
+                int32_t count = current->read_count.load(std::memory_order_acquire);
+                if (count > 0) {
+                    any_active_readers = true;
+                    uint64_t reader_period = current->read_generation.load(std::memory_order_acquire);
+                    if (reader_period > 0) {
+                        min_active_period = std::min(min_active_period, reader_period);
+                    }
+                }
+            }
+            current = current->next.load(std::memory_order_acquire);
+        }
+        
+        // If no active readers, can delete everything!
+        if (!any_active_readers) {
+            for (auto& retired : m_retired_list) {
+                delete retired.ptr;
+            }
+            m_retired_list.clear();
+            return;
+        }
+        
+        // Delete all versions older than minimum active reader period
+        auto it = m_retired_list.begin();
+        while (it != m_retired_list.end()) {
+            if (it->grace_period < min_active_period) {
+                delete it->ptr;  // Safe - all readers past this period
+                it = m_retired_list.erase(it);
+            } else {
+                ++it;  // Keep newer versions
+            }
+        }
+    }
+    
+    /**
+     * @brief Blocking wait for all current readers to finish
+     * 
+     * Used as emergency cleanup when retired list grows too large.
+     * Must be called while holding s_writer_mutex.
+     */
     void synchronize_rcu() {
         // Start new grace period
         uint64_t new_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel) + 1;
         
         // Wait for all live readers to finish their read sections
-        // Note: s_writer_mutex must already be held by caller
         ReaderNode* current = s_reader_head.load(std::memory_order_acquire);
         while (current != nullptr) {
             // Skip dead nodes - they can't be in read sections
             if (!current->is_dead.load(std::memory_order_acquire)) {
                 // Wait for the reader to exit its read section
-                // Check both read_count (active readers) and read_generation (for grace period tracking)
                 while (true) {
                     int32_t count = current->read_count.load(std::memory_order_acquire);
                     uint64_t reader_period = current->read_generation.load(std::memory_order_acquire);
@@ -408,9 +519,6 @@ private:
             }
             current = current->next.load(std::memory_order_acquire);
         }
-        
-        // Clean up dead nodes (this is safe because we hold the writer mutex)
-        cleanup_dead_nodes();
     }
     
 private:
