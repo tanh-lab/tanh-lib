@@ -105,6 +105,10 @@ std::string Parameter::get_path() const {
     return m_key;
 }
 
+ParameterDefinition* Parameter::get_definition() const {
+    return m_state->get_definition_from_root(m_key);
+}
+
 template double Parameter::to<double>() const;
 template float Parameter::to<float>() const;
 template int Parameter::to<int>() const;

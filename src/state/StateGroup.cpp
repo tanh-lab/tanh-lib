@@ -463,6 +463,52 @@ void StateGroup::set(std::string_view path, const char* value, NotifyStrategies 
     set(path, std::string(value), strategy, source, create);
 }
 
+// Set with parameter definition (registers definition and sets default value)
+// Private parameter definition setter implementation
+void StateGroup::set(std::string_view path, const ParameterDefinition& def, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    switch (def.m_type) {
+        case PluginParamType::ParamFloat:
+            set(path, def.as_float(), strategy, source, create);
+            break;
+        case PluginParamType::ParamInt:
+            set(path, def.as_int(), strategy, source, create);
+            break;
+        case PluginParamType::ParamBool:
+            set(path, def.as_bool(), strategy, source, create);
+            break;
+        case PluginParamType::ParamChoice:
+            set(path, def.as_int(), strategy, source, create);
+            break;
+    }
+    
+    // Then store the definition (need to construct the full path)
+    m_rootState->m_path_buffer_3.clear();
+    std::string_view group_path = get_full_path();
+    detail::join_path(group_path, path, m_rootState->m_path_buffer_3);
+    m_rootState->set_definition_in_root(m_rootState->m_path_buffer_3, def);
+}
+
+// Template specializations for parameter definition types - forward to private base implementation
+template<>
+void StateGroup::set<ParameterFloat>(std::string_view path, ParameterFloat value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
+}
+
+template<>
+void StateGroup::set<ParameterInt>(std::string_view path, ParameterInt value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
+}
+
+template<>
+void StateGroup::set<ParameterBool>(std::string_view path, ParameterBool value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
+}
+
+template<>
+void StateGroup::set<ParameterChoice>(std::string_view path, ParameterChoice value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
+}
+
 template void StateGroup::set(std::string_view path, const double value, NotifyStrategies strategy, ParameterListener* source, bool create);
 template void StateGroup::set(std::string_view path, const float value, NotifyStrategies strategy, ParameterListener* source, bool create);
 template void StateGroup::set(std::string_view path, const int value, NotifyStrategies strategy, ParameterListener* source, bool create);

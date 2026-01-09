@@ -37,6 +37,10 @@ public:
     // Get direct parameter type
     ParameterType get_type_from_root(std::string_view key) const;
     
+    // Parameter definition management
+    void set_definition_in_root(std::string_view key, const ParameterDefinition& def);
+    ParameterDefinition* get_definition_from_root(std::string_view key) const;
+    
     // State management
     void clear() override;
     bool is_empty() const override;
