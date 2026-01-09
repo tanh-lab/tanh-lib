@@ -1270,3 +1270,163 @@ TEST(StateTests, AutomationModulationFlags) {
     EXPECT_FALSE(def3->m_automation);
     EXPECT_FALSE(def3->m_modulation);
 }
+
+// Test state dump with parameter definitions
+TEST(StateTests, StateDumpWithDefinitions) {
+    State state;
+    
+    // Create parameters with definitions
+    state.set("synth.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f, 1.0f), 0.75f, 2, true, true));
+    state.set("synth.pitch", ParameterInt("Pitch", Range(-12, 12, 1), 0, true, false));
+    state.set("synth.enabled", ParameterBool("Enabled", true, true, false));
+    
+    std::vector<std::string> waveforms = {"Sine", "Saw", "Square"};
+    state.set("synth.waveform", ParameterChoice("Waveform", waveforms, 1, true, false));
+    
+    // Create a parameter without definition
+    state.set("synth.internal_state", 42);
+    
+    // Get state dump
+    std::string dump = state.get_state_dump();
+    
+    // Parse JSON
+    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    
+    // Verify it's an array
+    EXPECT_TRUE(json_dump.is_array());
+    EXPECT_EQ(5, json_dump.size());
+    
+    // Find and verify each parameter
+    for (const auto& param_obj : json_dump) {
+        EXPECT_TRUE(param_obj.contains("key"));
+        EXPECT_TRUE(param_obj.contains("value"));
+        
+        std::string key = param_obj["key"];
+        
+        if (key == "synth.volume") {
+            // Check value
+            EXPECT_FLOAT_EQ(0.75f, param_obj["value"].get<float>());
+            
+            // Check definition exists
+            ASSERT_TRUE(param_obj.contains("definition"));
+            auto def = param_obj["definition"];
+            
+            EXPECT_EQ("Volume", def["name"]);
+            EXPECT_EQ("float", def["type"]);
+            EXPECT_FLOAT_EQ(0.0f, def["min"].get<float>());
+            EXPECT_FLOAT_EQ(1.0f, def["max"].get<float>());
+            EXPECT_FLOAT_EQ(0.01f, def["step"].get<float>());
+            EXPECT_FLOAT_EQ(1.0f, def["skew"].get<float>());
+            EXPECT_FLOAT_EQ(0.75f, def["default_value"].get<float>());
+            EXPECT_EQ(2, def["decimal_places"].get<int>());
+            EXPECT_TRUE(def["automation"].get<bool>());
+            EXPECT_TRUE(def["modulation"].get<bool>());
+        }
+        else if (key == "synth.pitch") {
+            // Check value
+            EXPECT_EQ(0, param_obj["value"].get<int>());
+            
+            // Check definition
+            ASSERT_TRUE(param_obj.contains("definition"));
+            auto def = param_obj["definition"];
+            
+            EXPECT_EQ("Pitch", def["name"]);
+            EXPECT_EQ("int", def["type"]);
+            EXPECT_FLOAT_EQ(-12.0f, def["min"].get<float>());
+            EXPECT_FLOAT_EQ(12.0f, def["max"].get<float>());
+            EXPECT_FLOAT_EQ(1.0f, def["step"].get<float>());
+            EXPECT_EQ(0, def["default_value"].get<int>());
+            EXPECT_EQ(0, def["decimal_places"].get<int>());
+            EXPECT_TRUE(def["automation"].get<bool>());
+            EXPECT_FALSE(def["modulation"].get<bool>());
+        }
+        else if (key == "synth.enabled") {
+            // Check value
+            EXPECT_TRUE(param_obj["value"].get<bool>());
+            
+            // Check definition
+            ASSERT_TRUE(param_obj.contains("definition"));
+            auto def = param_obj["definition"];
+            
+            EXPECT_EQ("Enabled", def["name"]);
+            EXPECT_EQ("bool", def["type"]);
+            EXPECT_FLOAT_EQ(0.0f, def["min"].get<float>());
+            EXPECT_FLOAT_EQ(1.0f, def["max"].get<float>());
+            EXPECT_TRUE(def["automation"].get<bool>());
+            EXPECT_FALSE(def["modulation"].get<bool>());
+        }
+        else if (key == "synth.waveform") {
+            // Check value
+            EXPECT_EQ(1, param_obj["value"].get<int>());
+            
+            // Check definition
+            ASSERT_TRUE(param_obj.contains("definition"));
+            auto def = param_obj["definition"];
+            
+            EXPECT_EQ("Waveform", def["name"]);
+            EXPECT_EQ("choice", def["type"]);
+            EXPECT_FLOAT_EQ(0.0f, def["min"].get<float>());
+            EXPECT_FLOAT_EQ(2.0f, def["max"].get<float>());
+            
+            // Check choice data
+            ASSERT_TRUE(def.contains("data"));
+            EXPECT_EQ(3, def["data"].size());
+            EXPECT_EQ("Sine", def["data"][0]);
+            EXPECT_EQ("Saw", def["data"][1]);
+            EXPECT_EQ("Square", def["data"][2]);
+        }
+        else if (key == "synth.internal_state") {
+            // Check value
+            EXPECT_EQ(42, param_obj["value"].get<int>());
+            
+            // Should NOT have definition
+            EXPECT_FALSE(param_obj.contains("definition"));
+        }
+    }
+}
+
+// Test state dump with mixed parameters
+TEST(StateTests, StateDumpMixedParameters) {
+    State state;
+    
+    // Some with definitions
+    state.set("audio.gain", ParameterFloat("Gain", Range(0.0f, 2.0f), 1.0f, 2));
+    
+    // Some without
+    state.set("audio.sample_rate", 44100);
+    state.set("audio.buffer_size", 512);
+    
+    // Get dump
+    std::string dump = state.get_state_dump();
+    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    
+    // Verify structure
+    EXPECT_TRUE(json_dump.is_array());
+    EXPECT_EQ(3, json_dump.size());
+    
+    // Count parameters with and without definitions
+    int with_def = 0;
+    int without_def = 0;
+    
+    for (const auto& param : json_dump) {
+        if (param.contains("definition")) {
+            with_def++;
+        } else {
+            without_def++;
+        }
+    }
+    
+    EXPECT_EQ(1, with_def);
+    EXPECT_EQ(2, without_def);
+}
+
+// Test empty state dump
+TEST(StateTests, EmptyStateDump) {
+    State state;
+    
+    std::string dump = state.get_state_dump();
+    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    
+    EXPECT_TRUE(json_dump.is_array());
+    EXPECT_TRUE(json_dump.empty());
+}
