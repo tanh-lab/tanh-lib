@@ -262,22 +262,63 @@ T State::get_from_root(std::string_view key) const TANH_NONBLOCKING {
 }
 
 std::string State::get_state_dump() const {
-  nlohmann::json root = nlohmann::json::object();
+  nlohmann::json root = nlohmann::json::array();
 
   m_parameters_rcu.read([&](const ParameterMap &params) {
     for (const auto &[key, data] : params) {
+      nlohmann::json param_obj = nlohmann::json::object();
+      param_obj["key"] = key;
+      
+      // Get current value based on type
       auto type = data.type.load(std::memory_order_relaxed);
       if (type == ParameterType::Double) {
-        root[key] = data.double_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.double_value.load(std::memory_order_relaxed);
       } else if (type == ParameterType::Float) {
-        root[key] = data.float_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.float_value.load(std::memory_order_relaxed);
       } else if (type == ParameterType::Int) {
-        root[key] = data.int_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.int_value.load(std::memory_order_relaxed);
       } else if (type == ParameterType::Bool) {
-        root[key] = data.bool_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.bool_value.load(std::memory_order_relaxed);
       } else if (type == ParameterType::String) {
-        root[key] = data.string_value;
+        param_obj["value"] = data.string_value;
       }
+      
+      // Include definition if it exists
+      if (data.parameter_definition) {
+        nlohmann::json def_obj = nlohmann::json::object();
+        const auto& def = *data.parameter_definition;
+        
+        def_obj["name"] = def.m_name;
+        def_obj["type"] = [&]() {
+          switch(def.m_type) {
+            case PluginParamType::ParamFloat: return "float";
+            case PluginParamType::ParamInt: return "int";
+            case PluginParamType::ParamBool: return "bool";
+            case PluginParamType::ParamChoice: return "choice";
+            default: return "unknown";
+          }
+        }();
+        
+        // Range information
+        def_obj["min"] = def.m_range.m_min;
+        def_obj["max"] = def.m_range.m_max;
+        def_obj["step"] = def.m_range.m_step;
+        def_obj["skew"] = def.m_range.m_skew;
+        
+        def_obj["default_value"] = def.m_default_value;
+        def_obj["decimal_places"] = def.m_decimal_places;
+        def_obj["automation"] = def.m_automation;
+        def_obj["modulation"] = def.m_modulation;
+        
+        // Include choice data if available
+        if (!def.m_data.empty()) {
+          def_obj["data"] = def.m_data;
+        }
+        
+        param_obj["definition"] = def_obj;
+      }
+      
+      root.push_back(param_obj);
     }
   });
 
