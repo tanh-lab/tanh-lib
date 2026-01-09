@@ -422,9 +422,6 @@ void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies s
     
     try {
         // Start recursive update from root level
-#ifdef TANH_WITH_RTSAN
-        __rtsan::ScopedDisabler sd; // TODO: Find a better solution
-#endif
         update_parameters(json_data, "");
     }
     catch (const StateKeyNotFoundException& e) {
