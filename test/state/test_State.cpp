@@ -188,7 +188,6 @@ TEST(StateTests, ParameterObjectTests) {
 }
 
 // Test for the create parameter in set() method
-// Test for the create parameter in set() method
 TEST(StateTests, CreateParameterFlag) {
     State state;
     
@@ -866,4 +865,408 @@ TEST(StateTests, GetParametersEdgeCases) {
     std::map<std::string, Parameter> empty_parent_params = empty_parent->get_parameters();
     EXPECT_EQ(1, empty_parent_params.size()); // Contains only the child parameter
     EXPECT_TRUE(empty_parent_params.find("empty_parent.child.param") != empty_parent_params.end());
+}
+
+// ===== Parameter Definition Tests =====
+
+// Test basic ParameterFloat definition
+TEST(StateTests, ParameterDefinitionFloat) {
+    State state;
+    
+    // Create a float parameter with definition
+    ParameterFloat volume_def(
+        "Volume",
+        Range(0.0f, 1.0f, 0.01f, 1.0f),
+        0.75f,
+        2, // 2 decimal places
+        true, // automation
+        true  // modulation
+    );
+    
+    // Set the parameter with definition
+    state.set("audio.volume", volume_def);
+    
+    // Verify the value was set correctly
+    EXPECT_FLOAT_EQ(0.75f, state.get<float>("audio.volume"));
+    
+    // Get the parameter and check its definition
+    Parameter param = state.get_parameter("audio.volume");
+    ParameterDefinition* def = param.get_definition();
+    
+    ASSERT_NE(nullptr, def);
+    EXPECT_EQ("Volume", def->m_name);
+    EXPECT_EQ(PluginParamType::ParamFloat, def->m_type);
+    EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
+    EXPECT_FLOAT_EQ(1.0f, def->m_range.m_max);
+    EXPECT_FLOAT_EQ(0.01f, def->m_range.m_step);
+    EXPECT_FLOAT_EQ(1.0f, def->m_range.m_skew);
+    EXPECT_FLOAT_EQ(0.75f, def->m_default_value);
+    EXPECT_EQ(2, def->m_decimal_places);
+    EXPECT_TRUE(def->m_automation);
+    EXPECT_TRUE(def->m_modulation);
+}
+
+// Test basic ParameterInt definition
+TEST(StateTests, ParameterDefinitionInt) {
+    State state;
+    
+    // Create an int parameter with definition
+    ParameterInt filter_cutoff_def(
+        "Filter Cutoff",
+        Range(20, 20000, 1),
+        1000,
+        true,  // automation
+        true   // modulation
+    );
+    
+    // Set the parameter with definition
+    state.set("synth.filter.cutoff", filter_cutoff_def);
+    
+    // Verify the value was set correctly
+    EXPECT_EQ(1000, state.get<int>("synth.filter.cutoff"));
+    
+    // Get the parameter and check its definition
+    Parameter param = state.get_parameter("synth.filter.cutoff");
+    ParameterDefinition* def = param.get_definition();
+    
+    ASSERT_NE(nullptr, def);
+    EXPECT_EQ("Filter Cutoff", def->m_name);
+    EXPECT_EQ(PluginParamType::ParamInt, def->m_type);
+    EXPECT_EQ(20, def->m_range.min_int());
+    EXPECT_EQ(20000, def->m_range.max_int());
+    EXPECT_EQ(1, def->m_range.step_int());
+    EXPECT_EQ(1000, def->as_int());
+    EXPECT_EQ(0, def->m_decimal_places); // Int should have 0 decimal places
+    EXPECT_TRUE(def->m_automation);
+    EXPECT_TRUE(def->m_modulation);
+}
+
+// Test basic ParameterBool definition
+TEST(StateTests, ParameterDefinitionBool) {
+    State state;
+    
+    // Create a bool parameter with definition
+    ParameterBool bypass_def(
+        "Bypass",
+        false,  // default value
+        true,   // automation
+        false   // modulation (typically off for bools)
+    );
+    
+    // Set the parameter with definition
+    state.set("effects.reverb.bypass", bypass_def);
+    
+    // Verify the value was set correctly
+    EXPECT_FALSE(state.get<bool>("effects.reverb.bypass"));
+    
+    // Get the parameter and check its definition
+    Parameter param = state.get_parameter("effects.reverb.bypass");
+    ParameterDefinition* def = param.get_definition();
+    
+    ASSERT_NE(nullptr, def);
+    EXPECT_EQ("Bypass", def->m_name);
+    EXPECT_EQ(PluginParamType::ParamBool, def->m_type);
+    EXPECT_EQ(0, def->m_range.min_int());
+    EXPECT_EQ(1, def->m_range.max_int());
+    EXPECT_FALSE(def->as_bool());
+    EXPECT_EQ(0, def->m_decimal_places);
+    EXPECT_TRUE(def->m_automation);
+    EXPECT_FALSE(def->m_modulation);
+}
+
+// Test basic ParameterChoice definition
+TEST(StateTests, ParameterDefinitionChoice) {
+    State state;
+    
+    // Create a choice parameter with definition
+    std::vector<std::string> waveforms = {"Sine", "Saw", "Square", "Triangle"};
+    ParameterChoice waveform_def(
+        "Waveform",
+        waveforms,
+        0,     // default index
+        true,  // automation
+        false  // modulation
+    );
+    
+    // Set the parameter with definition
+    state.set("oscillator.waveform", waveform_def);
+    
+    // Verify the value was set correctly (as int index)
+    EXPECT_EQ(0, state.get<int>("oscillator.waveform"));
+    
+    // Get the parameter and check its definition
+    Parameter param = state.get_parameter("oscillator.waveform");
+    ParameterDefinition* def = param.get_definition();
+    
+    ASSERT_NE(nullptr, def);
+    EXPECT_EQ("Waveform", def->m_name);
+    EXPECT_EQ(PluginParamType::ParamChoice, def->m_type);
+    EXPECT_EQ(0, def->m_range.min_int());
+    EXPECT_EQ(3, def->m_range.max_int()); // 4 choices: 0-3
+    EXPECT_EQ(1, def->m_range.step_int());
+    EXPECT_EQ(0, def->as_int());
+    EXPECT_EQ(4, def->m_data.size());
+    EXPECT_EQ("Sine", def->m_data[0]);
+    EXPECT_EQ("Saw", def->m_data[1]);
+    EXPECT_EQ("Square", def->m_data[2]);
+    EXPECT_EQ("Triangle", def->m_data[3]);
+    EXPECT_TRUE(def->m_automation);
+    EXPECT_FALSE(def->m_modulation);
+}
+
+// Test updating parameter value preserves definition
+TEST(StateTests, ParameterDefinitionPersistence) {
+    State state;
+    
+    // Create and set a parameter with definition
+    ParameterFloat gain_def(
+        "Gain",
+        Range(0.0f, 2.0f, 0.01f, 1.0f),
+        1.0f,
+        2,
+        true,
+        true
+    );
+    
+    state.set("gain", gain_def);
+    
+    // Verify initial value
+    EXPECT_FLOAT_EQ(1.0f, state.get<float>("gain"));
+    
+    // Update the parameter value without definition
+    state.set("gain", 1.5f);
+    
+    // Verify the value was updated
+    EXPECT_FLOAT_EQ(1.5f, state.get<float>("gain"));
+    
+    // Verify the definition is still present and unchanged
+    Parameter param = state.get_parameter("gain");
+    ParameterDefinition* def = param.get_definition();
+    
+    ASSERT_NE(nullptr, def);
+    EXPECT_EQ("Gain", def->m_name);
+    EXPECT_FLOAT_EQ(1.0f, def->m_default_value); // Default should still be 1.0
+    EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
+    EXPECT_FLOAT_EQ(2.0f, def->m_range.m_max);
+}
+
+// Test multiple parameters with definitions
+TEST(StateTests, MultipleParameterDefinitions) {
+    State state;
+    
+    // Create a complex audio effect with multiple parameters
+    state.set("reverb.dry_wet", ParameterFloat("Dry/Wet", Range(0.0f, 1.0f), 0.3f, 2));
+    state.set("reverb.room_size", ParameterFloat("Room Size", Range(0.0f, 1.0f), 0.5f, 2));
+    state.set("reverb.damping", ParameterFloat("Damping", Range(0.0f, 1.0f), 0.5f, 2));
+    state.set("reverb.enabled", ParameterBool("Enabled", true));
+    
+    std::vector<std::string> room_types = {"Small", "Medium", "Large", "Hall"};
+    state.set("reverb.type", ParameterChoice("Room Type", room_types, 1));
+    
+    // Verify all values
+    EXPECT_FLOAT_EQ(0.3f, state.get<float>("reverb.dry_wet"));
+    EXPECT_FLOAT_EQ(0.5f, state.get<float>("reverb.room_size"));
+    EXPECT_FLOAT_EQ(0.5f, state.get<float>("reverb.damping"));
+    EXPECT_TRUE(state.get<bool>("reverb.enabled"));
+    EXPECT_EQ(1, state.get<int>("reverb.type"));
+    
+    // Verify all definitions exist
+    EXPECT_NE(nullptr, state.get_parameter("reverb.dry_wet").get_definition());
+    EXPECT_NE(nullptr, state.get_parameter("reverb.room_size").get_definition());
+    EXPECT_NE(nullptr, state.get_parameter("reverb.damping").get_definition());
+    EXPECT_NE(nullptr, state.get_parameter("reverb.enabled").get_definition());
+    EXPECT_NE(nullptr, state.get_parameter("reverb.type").get_definition());
+    
+    // Check specific definition properties
+    ParameterDefinition* type_def = state.get_parameter("reverb.type").get_definition();
+    EXPECT_EQ("Room Type", type_def->m_name);
+    EXPECT_EQ(4, type_def->m_data.size());
+    EXPECT_EQ("Medium", type_def->m_data[1]);
+}
+
+// Test parameter without definition
+TEST(StateTests, ParameterWithoutDefinition) {
+    State state;
+    
+    // Set a parameter without a definition (old style)
+    state.set("simple.param", 42.0);
+    
+    // Verify the value is set
+    EXPECT_DOUBLE_EQ(42.0, state.get<double>("simple.param"));
+    
+    // Verify no definition exists
+    Parameter param = state.get_parameter("simple.param");
+    ParameterDefinition* def = param.get_definition();
+    
+    EXPECT_EQ(nullptr, def);
+}
+
+// Test Range construction and conversions
+TEST(StateTests, RangeConstructionAndConversion) {
+    // Float range
+    Range float_range(0.0f, 100.0f, 0.1f, 2.0f);
+    EXPECT_FLOAT_EQ(0.0f, float_range.m_min);
+    EXPECT_FLOAT_EQ(100.0f, float_range.m_max);
+    EXPECT_FLOAT_EQ(0.1f, float_range.m_step);
+    EXPECT_FLOAT_EQ(2.0f, float_range.m_skew);
+    
+    // Convert to int
+    EXPECT_EQ(0, float_range.min_int());
+    EXPECT_EQ(100, float_range.max_int());
+    EXPECT_EQ(0, float_range.step_int()); // 0.1 rounds to 0
+    
+    // Int range
+    Range int_range(0, 127, 1);
+    EXPECT_FLOAT_EQ(0.0f, int_range.m_min);
+    EXPECT_FLOAT_EQ(127.0f, int_range.m_max);
+    EXPECT_FLOAT_EQ(1.0f, int_range.m_step);
+    EXPECT_FLOAT_EQ(1.0f, int_range.m_skew); // Linear by default
+    
+    EXPECT_EQ(0, int_range.min_int());
+    EXPECT_EQ(127, int_range.max_int());
+    EXPECT_EQ(1, int_range.step_int());
+    
+    // Bool range
+    Range bool_range = Range::Bool();
+    EXPECT_FLOAT_EQ(0.0f, bool_range.m_min);
+    EXPECT_FLOAT_EQ(1.0f, bool_range.m_max);
+    EXPECT_FLOAT_EQ(1.0f, bool_range.m_step);
+    EXPECT_EQ(0, bool_range.min_int());
+    EXPECT_EQ(1, bool_range.max_int());
+}
+
+// Test type conversions in ParameterDefinition
+TEST(StateTests, ParameterDefinitionTypeConversions) {
+    // Float parameter
+    ParameterFloat float_param("Test Float", Range(0.0f, 1.0f), 0.5f);
+    EXPECT_FLOAT_EQ(0.5f, float_param.as_float());
+    EXPECT_EQ(0, float_param.as_int()); // 0.5 truncates to 0
+    EXPECT_TRUE(float_param.as_bool()); // 0.5 != 0.0, so true
+    
+    // Int parameter
+    ParameterInt int_param("Test Int", Range(0, 100), 42);
+    EXPECT_FLOAT_EQ(42.0f, int_param.as_float());
+    EXPECT_EQ(42, int_param.as_int());
+    EXPECT_TRUE(int_param.as_bool()); // Non-zero
+    
+    // Bool parameter (true)
+    ParameterBool bool_param_true("Test Bool True", true);
+    EXPECT_FLOAT_EQ(1.0f, bool_param_true.as_float());
+    EXPECT_EQ(1, bool_param_true.as_int());
+    EXPECT_TRUE(bool_param_true.as_bool());
+    
+    // Bool parameter (false)
+    ParameterBool bool_param_false("Test Bool False", false);
+    EXPECT_FLOAT_EQ(0.0f, bool_param_false.as_float());
+    EXPECT_EQ(0, bool_param_false.as_int());
+    EXPECT_FALSE(bool_param_false.as_bool());
+    
+    // Choice parameter
+    std::vector<std::string> choices = {"A", "B", "C"};
+    ParameterChoice choice_param("Test Choice", choices, 1);
+    EXPECT_FLOAT_EQ(1.0f, choice_param.as_float());
+    EXPECT_EQ(1, choice_param.as_int());
+    EXPECT_TRUE(choice_param.as_bool()); // Index 1 is non-zero
+}
+
+// Test updating parameter with new definition
+TEST(StateTests, UpdateParameterDefinition) {
+    State state;
+    
+    // Set initial parameter with definition
+    state.set("param", ParameterFloat("Initial", Range(0.0f, 1.0f), 0.5f, 2));
+    
+    // Verify initial definition
+    ParameterDefinition* def1 = state.get_parameter("param").get_definition();
+    ASSERT_NE(nullptr, def1);
+    EXPECT_EQ("Initial", def1->m_name);
+    EXPECT_FLOAT_EQ(0.5f, def1->m_default_value);
+    
+    // Update with new definition
+    state.set("param", ParameterFloat("Updated", Range(0.0f, 10.0f), 5.0f, 3));
+    
+    // Verify updated definition
+    ParameterDefinition* def2 = state.get_parameter("param").get_definition();
+    ASSERT_NE(nullptr, def2);
+    EXPECT_EQ("Updated", def2->m_name);
+    EXPECT_FLOAT_EQ(5.0f, def2->m_default_value);
+    EXPECT_FLOAT_EQ(10.0f, def2->m_range.m_max);
+    EXPECT_EQ(3, def2->m_decimal_places);
+    
+    // Value should be updated to new default
+    EXPECT_FLOAT_EQ(5.0f, state.get<float>("param"));
+}
+
+// Test choice parameter with actual usage
+TEST(StateTests, ChoiceParameterUsage) {
+    State state;
+    
+    // Create a filter type parameter
+    std::vector<std::string> filter_types = {
+        "Low Pass",
+        "High Pass",
+        "Band Pass",
+        "Notch"
+    };
+    
+    ParameterChoice filter_type_def(
+        "Filter Type",
+        filter_types,
+        0  // Default to Low Pass
+    );
+    
+    state.set("filter.type", filter_type_def);
+    
+    // Get the definition
+    ParameterDefinition* def = state.get_parameter("filter.type").get_definition();
+    ASSERT_NE(nullptr, def);
+    
+    // Verify range is correct
+    EXPECT_EQ(0, def->m_range.min_int());
+    EXPECT_EQ(3, def->m_range.max_int());
+    
+    // Verify choices
+    EXPECT_EQ(4, def->m_data.size());
+    EXPECT_EQ("Low Pass", def->m_data[0]);
+    EXPECT_EQ("High Pass", def->m_data[1]);
+    EXPECT_EQ("Band Pass", def->m_data[2]);
+    EXPECT_EQ("Notch", def->m_data[3]);
+    
+    // Change the value
+    state.set("filter.type", 2); // Select Band Pass
+    EXPECT_EQ(2, state.get<int>("filter.type"));
+    
+    // Definition should still be intact
+    def = state.get_parameter("filter.type").get_definition();
+    ASSERT_NE(nullptr, def);
+    EXPECT_EQ("Band Pass", def->m_data[2]);
+}
+
+// Test automation and modulation flags
+TEST(StateTests, AutomationModulationFlags) {
+    State state;
+    
+    // Parameter with automation but no modulation
+    state.set("param1", ParameterFloat("Param 1", Range(0.0f, 1.0f), 0.5f, 2, true, false));
+    
+    // Parameter with both
+    state.set("param2", ParameterFloat("Param 2", Range(0.0f, 1.0f), 0.5f, 2, true, true));
+    
+    // Parameter with neither
+    state.set("param3", ParameterFloat("Param 3", Range(0.0f, 1.0f), 0.5f, 2, false, false));
+    
+    // Check param1
+    ParameterDefinition* def1 = state.get_parameter("param1").get_definition();
+    EXPECT_TRUE(def1->m_automation);
+    EXPECT_FALSE(def1->m_modulation);
+    
+    // Check param2
+    ParameterDefinition* def2 = state.get_parameter("param2").get_definition();
+    EXPECT_TRUE(def2->m_automation);
+    EXPECT_TRUE(def2->m_modulation);
+    
+    // Check param3
+    ParameterDefinition* def3 = state.get_parameter("param3").get_definition();
+    EXPECT_FALSE(def3->m_automation);
+    EXPECT_FALSE(def3->m_modulation);
 }

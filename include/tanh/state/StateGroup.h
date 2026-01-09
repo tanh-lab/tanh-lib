@@ -108,6 +108,10 @@ private:
     friend class State;
     friend class Parameter;
     
+    // Internal: Set with parameter definition (registers definition and sets default value)
+    // This is private - users should use typed versions (ParameterFloat, ParameterInt, etc.)
+    void set(std::string_view path, const ParameterDefinition& def, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr, bool create = true);
+    
     // Notify all listeners about a parameter change
     void notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr) const;
     

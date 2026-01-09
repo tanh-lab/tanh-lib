@@ -3,6 +3,7 @@
 #include <atomic>
 #include <string>
 
+#include "ParameterDefinitions.h"
 #include "path_helpers.h"
 
 namespace thl {
@@ -25,6 +26,7 @@ struct ParameterData {
     std::atomic<int> int_value;
     std::atomic<bool> bool_value;
     std::string string_value; // Requires mutex protection for modification
+    std::unique_ptr<ParameterDefinition> parameter_definition;
     
     // Default constructor with initialization
     ParameterData() : 
@@ -32,7 +34,8 @@ struct ParameterData {
         double_value(0.0),
         float_value(0.0f),
         int_value(0),
-        bool_value(false) {}
+        bool_value(false),
+        parameter_definition(nullptr) {}
         
     // Custom copy constructor for RCU map copying
     ParameterData(const ParameterData& other) :
@@ -41,7 +44,8 @@ struct ParameterData {
         float_value(other.float_value.load()),
         int_value(other.int_value.load()),
         bool_value(other.bool_value.load()),
-        string_value(other.string_value) {}
+        string_value(other.string_value),
+        parameter_definition(other.parameter_definition ? std::make_unique<ParameterDefinition>(*other.parameter_definition) : nullptr) {}
         
     // Custom assignment operator
     ParameterData& operator=(const ParameterData& other) {
@@ -52,6 +56,7 @@ struct ParameterData {
             int_value.store(other.int_value.load());
             bool_value.store(other.bool_value.load());
             string_value = other.string_value;
+            parameter_definition = other.parameter_definition ? std::make_unique<ParameterDefinition>(*other.parameter_definition) : nullptr;
         }
         return *this;
     }
@@ -63,7 +68,8 @@ struct ParameterData {
         float_value(other.float_value.load()),
         int_value(other.int_value.load()),
         bool_value(other.bool_value.load()),
-        string_value(std::move(other.string_value)) {}
+        string_value(std::move(other.string_value)),
+        parameter_definition(std::move(other.parameter_definition)) {}
         
     ParameterData& operator=(ParameterData&& other) noexcept {
         if (this != &other) {
@@ -73,6 +79,7 @@ struct ParameterData {
             int_value.store(other.int_value.load());
             bool_value.store(other.bool_value.load());
             string_value = std::move(other.string_value);
+            parameter_definition = std::move(other.parameter_definition);
         }
         return *this;
     }
@@ -98,7 +105,10 @@ public:
     
     // Get the path for this parameter
     std::string get_path() const;
-    
+
+    // Get the parameter definition (if set)
+    [[nodiscard]] ParameterDefinition* get_definition() const;
+
 private:
     friend class State;
     friend class StateGroup;

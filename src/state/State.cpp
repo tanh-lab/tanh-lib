@@ -397,6 +397,29 @@ void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies s
     }
 }
 
+// Parameter definition management
+void State::set_definition_in_root(std::string_view key, const ParameterDefinition& def) {
+    m_parameters_rcu.update([&](const ParameterMap& params) {
+        auto it = params.find(key);
+        if (it != params.end()) {
+            const_cast<ParameterData&>(it->second).parameter_definition =
+                std::make_unique<ParameterDefinition>(def);
+        } else {
+            throw StateKeyNotFoundException(key);
+        }
+    });
+}
+
+ParameterDefinition* State::get_definition_from_root(std::string_view key) const {
+    return m_parameters_rcu.read([&](const ParameterMap& params) -> ParameterDefinition* {
+        auto it = params.find(key);
+        if (it == params.end()) {
+            throw StateKeyNotFoundException(key);
+        }
+        return it->second.parameter_definition.get();
+    });
+}
+
 template void State::set_in_root(std::string_view key, const double value, NotifyStrategies strategy, ParameterListener* source);
 template void State::set_in_root(std::string_view key, const float value, NotifyStrategies strategy, ParameterListener* source);
 template void State::set_in_root(std::string_view key, const int value, NotifyStrategies strategy, ParameterListener* source);
