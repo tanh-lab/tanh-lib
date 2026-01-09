@@ -325,6 +325,7 @@ private:
     // Lock-free linked list node for reader registration
     struct ReaderNode {
         std::atomic<uint64_t> read_generation{0};
+        std::atomic<int32_t> read_count{0};  // Count of active read sections
         std::atomic<ReaderNode*> next{nullptr};
         std::atomic<bool> is_dead{false};  // Mark node as dead when thread exits
     };
@@ -350,8 +351,10 @@ private:
     
     // RCU operations
     void rcu_read_lock() const {
-        // Record current grace period when entering read section
         if (t_rcu_state.node) {
+            // Increment read count to signal we're in a read section
+            t_rcu_state.node->read_count.fetch_add(1, std::memory_order_acquire);
+            // Record current grace period when entering read section
             t_rcu_state.node->read_generation.store(
                 m_grace_period.load(std::memory_order_acquire), 
                 std::memory_order_relaxed
@@ -360,9 +363,11 @@ private:
     }
     
     void rcu_read_unlock() const {
-        // Mark that we're no longer in a read section
         if (t_rcu_state.node) {
-            t_rcu_state.node->read_generation.store(0, std::memory_order_relaxed);
+            // Mark that we're no longer in a read section
+            t_rcu_state.node->read_generation.store(0, std::memory_order_release);
+            // Decrement read count
+            t_rcu_state.node->read_count.fetch_sub(1, std::memory_order_release);
         }
     }
     
@@ -370,17 +375,26 @@ private:
         // Start new grace period
         uint64_t new_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel) + 1;
         
-        // Wait for all live readers who started before the grace period to finish
+        // Wait for all live readers to finish their read sections
         // Note: s_writer_mutex must already be held by caller
         ReaderNode* current = s_reader_head.load(std::memory_order_acquire);
         while (current != nullptr) {
             // Skip dead nodes - they can't be in read sections
             if (!current->is_dead.load(std::memory_order_acquire)) {
+                // Wait for the reader to exit its read section
+                // Check both read_count (active readers) and read_generation (for grace period tracking)
                 while (true) {
+                    int32_t count = current->read_count.load(std::memory_order_acquire);
                     uint64_t reader_period = current->read_generation.load(std::memory_order_acquire);
-                    if (reader_period == 0 || reader_period >= new_period) {
-                        break; // Reader finished or started after grace period
+                    
+                    // Reader is safe if:
+                    // 1. Not in a read section (count == 0), OR
+                    // 2. Started reading after grace period began (reader_period >= new_period)
+                    if (count == 0 || reader_period >= new_period) {
+                        break;
                     }
+                    
+                    // Yield to give readers a chance to complete
                     std::this_thread::sleep_for(std::chrono::microseconds(1));
                 }
             }
