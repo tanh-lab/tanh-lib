@@ -1271,6 +1271,43 @@ TEST(StateTests, AutomationModulationFlags) {
     EXPECT_FALSE(def3->m_modulation);
 }
 
+// Test slider polarity
+TEST(StateTests, SliderPolarityFlags) {
+    State state;
+    
+    // Float parameter with unipolar polarity (default)
+    state.set("unipolar_float", ParameterFloat("Unipolar Float", Range(0.0f, 1.0f), 0.5f));
+    
+    // Float parameter with bipolar polarity (explicit)
+    state.set("bipolar_float", ParameterFloat("Bipolar Float", Range(-1.0f, 1.0f), 0.0f, 2, true, true, SliderPolarity::Bipolar));
+    
+    // Int parameter with bipolar polarity
+    state.set("bipolar_int", ParameterInt("Bipolar Int", Range(-12, 12), 0, true, true, SliderPolarity::Bipolar));
+    
+    // Check unipolar float (should default to Unipolar)
+    ParameterDefinition* def1 = state.get_parameter("unipolar_float").get_definition();
+    EXPECT_EQ(SliderPolarity::Unipolar, def1->m_slider_polarity);
+    
+    // Check bipolar float
+    ParameterDefinition* def2 = state.get_parameter("bipolar_float").get_definition();
+    EXPECT_EQ(SliderPolarity::Bipolar, def2->m_slider_polarity);
+    
+    // Check bipolar int
+    ParameterDefinition* def3 = state.get_parameter("bipolar_int").get_definition();
+    EXPECT_EQ(SliderPolarity::Bipolar, def3->m_slider_polarity);
+    
+    // Bool parameter (should default to Unipolar)
+    state.set("bool_param", ParameterBool("Bool Param", false));
+    ParameterDefinition* def4 = state.get_parameter("bool_param").get_definition();
+    EXPECT_EQ(SliderPolarity::Unipolar, def4->m_slider_polarity);
+    
+    // Choice parameter (should default to Unipolar)
+    std::vector<std::string> choices = {"A", "B", "C"};
+    state.set("choice_param", ParameterChoice("Choice Param", choices, 0));
+    ParameterDefinition* def5 = state.get_parameter("choice_param").get_definition();
+    EXPECT_EQ(SliderPolarity::Unipolar, def5->m_slider_polarity);
+}
+
 // Test state dump with parameter definitions
 TEST(StateTests, StateDumpWithDefinitions) {
     State state;
@@ -1321,6 +1358,7 @@ TEST(StateTests, StateDumpWithDefinitions) {
             EXPECT_EQ(2, def["decimal_places"].get<int>());
             EXPECT_TRUE(def["automation"].get<bool>());
             EXPECT_TRUE(def["modulation"].get<bool>());
+            EXPECT_EQ("unipolar", def["slider_polarity"].get<std::string>());
         }
         else if (key == "synth.pitch") {
             // Check value
@@ -1339,6 +1377,7 @@ TEST(StateTests, StateDumpWithDefinitions) {
             EXPECT_EQ(0, def["decimal_places"].get<int>());
             EXPECT_TRUE(def["automation"].get<bool>());
             EXPECT_FALSE(def["modulation"].get<bool>());
+            EXPECT_EQ("unipolar", def["slider_polarity"].get<std::string>());
         }
         else if (key == "synth.enabled") {
             // Check value
@@ -1354,6 +1393,7 @@ TEST(StateTests, StateDumpWithDefinitions) {
             EXPECT_FLOAT_EQ(1.0f, def["max"].get<float>());
             EXPECT_TRUE(def["automation"].get<bool>());
             EXPECT_FALSE(def["modulation"].get<bool>());
+            EXPECT_EQ("unipolar", def["slider_polarity"].get<std::string>());
         }
         else if (key == "synth.waveform") {
             // Check value
@@ -1374,6 +1414,7 @@ TEST(StateTests, StateDumpWithDefinitions) {
             EXPECT_EQ("Sine", def["data"][0]);
             EXPECT_EQ("Saw", def["data"][1]);
             EXPECT_EQ("Square", def["data"][2]);
+            EXPECT_EQ("unipolar", def["slider_polarity"].get<std::string>());
         }
         else if (key == "synth.internal_state") {
             // Check value
@@ -1429,4 +1470,83 @@ TEST(StateTests, EmptyStateDump) {
     
     EXPECT_TRUE(json_dump.is_array());
     EXPECT_TRUE(json_dump.empty());
+}
+
+// Test data field for all parameter types
+TEST(StateTests, ParameterDataField) {
+    State state;
+    
+    // Float parameter with custom data
+    std::vector<std::string> float_data = {"unit:dB", "display:log"};
+    state.set("gain_db", ParameterFloat("Gain", Range(-60.0f, 12.0f), 0.0f, 2, true, true, SliderPolarity::Bipolar, float_data));
+    
+    // Int parameter with custom data
+    std::vector<std::string> int_data = {"midi:cc1", "channel:1"};
+    state.set("midi_value", ParameterInt("MIDI Value", Range(0, 127), 64, true, true, SliderPolarity::Unipolar, int_data));
+    
+    // Bool parameter with custom data
+    std::vector<std::string> bool_data = {"shortcut:space", "icon:play"};
+    state.set("play_state", ParameterBool("Play", false, true, false, SliderPolarity::Unipolar, bool_data));
+    
+    // Verify float parameter data
+    ParameterDefinition* float_def = state.get_parameter("gain_db").get_definition();
+    ASSERT_NE(nullptr, float_def);
+    EXPECT_EQ(2, float_def->m_data.size());
+    EXPECT_EQ("unit:dB", float_def->m_data[0]);
+    EXPECT_EQ("display:log", float_def->m_data[1]);
+    EXPECT_EQ(SliderPolarity::Bipolar, float_def->m_slider_polarity);
+    
+    // Verify int parameter data
+    ParameterDefinition* int_def = state.get_parameter("midi_value").get_definition();
+    ASSERT_NE(nullptr, int_def);
+    EXPECT_EQ(2, int_def->m_data.size());
+    EXPECT_EQ("midi:cc1", int_def->m_data[0]);
+    EXPECT_EQ("channel:1", int_def->m_data[1]);
+    
+    // Verify bool parameter data
+    ParameterDefinition* bool_def = state.get_parameter("play_state").get_definition();
+    ASSERT_NE(nullptr, bool_def);
+    EXPECT_EQ(2, bool_def->m_data.size());
+    EXPECT_EQ("shortcut:space", bool_def->m_data[0]);
+    EXPECT_EQ("icon:play", bool_def->m_data[1]);
+    
+    // Choice parameter already uses data for choices - verify it still works
+    std::vector<std::string> waveforms = {"Sine", "Saw", "Square"};
+    state.set("waveform", ParameterChoice("Waveform", waveforms, 0));
+    
+    ParameterDefinition* choice_def = state.get_parameter("waveform").get_definition();
+    ASSERT_NE(nullptr, choice_def);
+    EXPECT_EQ(3, choice_def->m_data.size());
+    EXPECT_EQ("Sine", choice_def->m_data[0]);
+    EXPECT_EQ("Saw", choice_def->m_data[1]);
+    EXPECT_EQ("Square", choice_def->m_data[2]);
+}
+
+// Test slider polarity in JSON dump
+TEST(StateTests, SliderPolarityInJsonDump) {
+    State state;
+    
+    // Create parameters with different polarities
+    state.set("unipolar_param", ParameterFloat("Unipolar", Range(0.0f, 1.0f), 0.5f));
+    state.set("bipolar_param", ParameterFloat("Bipolar", Range(-1.0f, 1.0f), 0.0f, 2, true, true, SliderPolarity::Bipolar));
+    
+    // Get state dump
+    std::string dump = state.get_state_dump();
+    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    
+    // Find and verify each parameter
+    for (const auto& param_obj : json_dump) {
+        std::string key = param_obj["key"];
+        
+        if (key == "unipolar_param") {
+            ASSERT_TRUE(param_obj.contains("definition"));
+            auto def = param_obj["definition"];
+            EXPECT_EQ("unipolar", def["slider_polarity"].get<std::string>());
+        }
+        else if (key == "bipolar_param") {
+            ASSERT_TRUE(param_obj.contains("definition"));
+            auto def = param_obj["definition"];
+            EXPECT_EQ("bipolar", def["slider_polarity"].get<std::string>());
+        }
+    }
 }

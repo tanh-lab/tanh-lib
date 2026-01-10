@@ -13,6 +13,12 @@ enum class PluginParamType {
     ParamChoice
 };
 
+enum class SliderPolarity
+{
+    Unipolar,   // (linear)
+    Bipolar     // (centered)
+};
+
 struct Range {
     float m_min;
     float m_max;
@@ -49,12 +55,13 @@ struct Range {
 
 struct ParameterDefinition {
     const std::string m_name;
-    const PluginParamType m_type = PluginParamType::ParamFloat;
+    const PluginParamType m_type;
     const Range m_range;
-    const float m_default_value = 0.0f;
-    const size_t m_decimal_places = 0;
-    const bool m_automation = true;
-    const bool m_modulation = true;
+    const float m_default_value;
+    const size_t m_decimal_places;
+    const SliderPolarity m_slider_polarity;
+    const bool m_automation;
+    const bool m_modulation;
     const std::vector<std::string> m_data;
     
     ParameterDefinition(
@@ -62,15 +69,17 @@ struct ParameterDefinition {
         PluginParamType type,
         Range range,
         float default_value,
-        size_t decimal_places = 0,
-        bool automation = true,
-        bool modulation = true,
-        std::vector<std::string> data = {}
+        size_t decimal_places,
+        bool automation,
+        bool modulation,
+        std::vector<std::string> data,
+        SliderPolarity slider_polarity
     ) : m_name(std::move(name)),
         m_type(type),
         m_range(range),
         m_default_value(default_value),
         m_decimal_places(decimal_places),
+        m_slider_polarity(slider_polarity),
         m_automation(automation),
         m_modulation(modulation),
         m_data(std::move(data)) {}
@@ -87,9 +96,11 @@ struct ParameterFloat : public ParameterDefinition {
         float default_val,
         size_t decimal_places = 2,
         bool automation = true,
-        bool modulation = true
+        bool modulation = true,
+        SliderPolarity slider_polarity = SliderPolarity::Unipolar,
+        std::vector<std::string> data = {}
     ) : ParameterDefinition(std::move(name), PluginParamType::ParamFloat,
-                           range, default_val, decimal_places, automation, modulation) {}
+                           range, default_val, decimal_places, automation, modulation, std::move(data), slider_polarity) {}
 };
 
 struct ParameterInt : public ParameterDefinition {
@@ -98,9 +109,11 @@ struct ParameterInt : public ParameterDefinition {
         Range range,
         int default_val,
         bool automation = true,
-        bool modulation = true
+        bool modulation = true,
+        SliderPolarity slider_polarity = SliderPolarity::Unipolar,
+        std::vector<std::string> data = {}
     ) : ParameterDefinition(std::move(name), PluginParamType::ParamInt,
-                           range, static_cast<float>(default_val), 0, automation, modulation) {}
+                           range, static_cast<float>(default_val), 0, automation, modulation, std::move(data), slider_polarity) {}
 };
 
 struct ParameterBool : public ParameterDefinition {
@@ -108,9 +121,11 @@ struct ParameterBool : public ParameterDefinition {
         std::string name,
         bool default_val = false,
         bool automation = true,
-        bool modulation = false
+        bool modulation = true,
+        SliderPolarity slider_polarity = SliderPolarity::Unipolar,
+        std::vector<std::string> data = {}
     ) : ParameterDefinition(std::move(name), PluginParamType::ParamBool,
-                           Range::Bool(), default_val ? 1.0f : 0.0f, 0, automation, modulation) {}
+                           Range::Bool(), default_val ? 1.0f : 0.0f, 0, automation, modulation, std::move(data), slider_polarity) {}
 };
 
 struct ParameterChoice : public ParameterDefinition {
@@ -119,10 +134,11 @@ struct ParameterChoice : public ParameterDefinition {
         std::vector<std::string> choices,
         int default_val = 0,
         bool automation = true,
-        bool modulation = false
+        bool modulation = true,
+        SliderPolarity slider_polarity = SliderPolarity::Unipolar
     ) : ParameterDefinition(std::move(name), PluginParamType::ParamChoice,
                            Range(0, static_cast<int>(choices.size()) - 1, 1),
-                           static_cast<float>(default_val), 0, automation, modulation, std::move(choices)) {}
+                           static_cast<float>(default_val), 0, automation, modulation, std::move(choices), slider_polarity) {}
 };
 
 } // namespace thl
