@@ -206,7 +206,7 @@ TEST(StateTests, CreateParameterFlag) {
     // This should throw StateKeyNotFoundException
     EXPECT_THROW({
         state.set("nonexistent.parameter", 100, NotifyStrategies::all, nullptr, false);
-    }, StateKeyNotFoundException);
+    }, StateGroupNotFoundException);
     
     // Test deep nesting with create=true
     state.set("visual.display.brightness", 85, NotifyStrategies::all, nullptr, true);
@@ -222,7 +222,7 @@ TEST(StateTests, CreateParameterFlag) {
     EXPECT_THROW({
         // "effects" doesn't exist under audio
         state.set("audio.effects.reverb", 0.3, NotifyStrategies::all, nullptr, false);
-    }, StateKeyNotFoundException);
+    }, StateGroupNotFoundExceptio);
     
     // Create that missing group and then test again
     state.set("audio.effects.reverb", 0.3, NotifyStrategies::all, nullptr, true);
