@@ -6,25 +6,7 @@ State::State(size_t max_string_size, size_t max_levels) : m_max_string_size(max_
     // Initialize the StateGroup with this as the root state
     m_rootState = this;
 
-    // Ensure RCU is initialized for the current thread
-    m_parameters_rcu.ensure_thread_registered();
-    m_groups_rcu.ensure_thread_registered();
-    m_listeners_rcu.ensure_thread_registered();
-    
-    // Initialize string buffers for real-time safe operations (one-time allocation)
-    if (m_path_buffer_1.size() < max_string_size) {
-        // Reserve space only if the buffer is not already large enough
-        m_path_buffer_1.reserve(max_string_size);
-        m_path_buffer_2.reserve(max_string_size);
-        m_path_buffer_3.reserve(max_string_size);
-        m_temp_buffer.reserve(max_string_size);
-        m_path_buffer_1.clear();
-        m_path_buffer_2.clear();
-        m_path_buffer_3.clear();
-        m_temp_buffer.clear();
-    }
-
-    thread_registered = true;
+    ensure_rcu_initialized();
 }
 
 State::~State() {
@@ -33,9 +15,6 @@ State::~State() {
 
 void State::ensure_rcu_initialized() {
     if (!thread_registered) [[ unlikely ]] {   
-#ifdef TANH_WITH_RTSAN
-        __rtsan::ScopedDisabler sd; // TODO: Find a better solution
-#endif
         // Ensure RCU is initialized for the current thread
         m_parameters_rcu.ensure_thread_registered();
         m_groups_rcu.ensure_thread_registered();
@@ -223,6 +202,13 @@ void State::set_in_root(std::string_view key, const char* value, NotifyStrategie
 // Parameter getters (real-time safe for numeric types)
 template<typename T>
 T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
+    // String access requires allow_blocking=true as it may allocate memory
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (!allow_blocking) {
+            throw BlockingException(key);
+        }
+    }
+    
     auto reader_fn = [&](const ParameterMap& params) -> T {
         auto it = params.find(key);
         if (it == params.end()) {

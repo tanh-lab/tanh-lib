@@ -6,6 +6,7 @@
 
 #include "ParameterDefinitions.h"
 #include "path_helpers.h"
+#include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl {
 
@@ -86,29 +87,125 @@ struct ParameterData {
     }
 };
 
-// Parameter class for object-oriented parameter access
+/**
+ * @class Parameter
+ * @brief Object-oriented wrapper for parameter access with type conversion support.
+ * 
+ * Parameter provides a convenient interface for accessing parameter values with
+ * automatic type conversion. It wraps a reference to the underlying State and
+ * parameter key.
+ * 
+ * @section rt_safety Real-Time Safety
+ * 
+ * - Type checking methods (`is_double()`, `is_float()`, etc.) are **real-time safe**
+ * - `to<T>()` for numeric types (double, float, int, bool) is **real-time safe**
+ * - `to<std::string>()` requires `allow_blocking=true` as it may allocate memory
+ * 
+ * @see State for the root state container
+ * @see StateGroup for hierarchical parameter organization
+ */
 class Parameter {
 public:
-    // Conversion methods
+    /**
+     * @brief Converts the parameter value to the specified type.
+     * 
+     * Provides type conversion with automatic casting between numeric types.
+     * 
+     * @tparam T Target type (double, float, int, bool, or std::string)
+     * @param allow_blocking If true, allows blocking operations (required for string type).
+     *                       When false and T is std::string, throws BlockingException.
+     * 
+     * @return The parameter value converted to type T
+     * 
+     * @throws BlockingException if T is std::string and allow_blocking is false
+     * @throws StateKeyNotFoundException if the parameter doesn't exist
+     * 
+     * @note **REAL-TIME SAFE** for numeric types (double, float, int, bool)
+     * @warning String type requires `allow_blocking=true` as it may allocate memory
+     * 
+     * @par Example
+     * @code
+     * Parameter param = state.get_parameter("volume");
+     * double vol = param.to<double>();           // Real-time safe
+     * std::string str = param.to<std::string>(true);  // Requires allow_blocking=true
+     * @endcode
+     */
     template<typename T>
-    T to() const;
+    T to(bool allow_blocking = false) const TANH_NONBLOCKING_FUNCTION;
 
-    // Type checking
-    ParameterType get_type() const;
-    bool is_double() const;
-    bool is_float() const;
-    bool is_int() const;
-    bool is_bool() const;
-    bool is_string() const;
+    /**
+     * @brief Gets the type of the parameter.
+     * 
+     * @return ParameterType enum indicating the stored type
+     * 
+     * @note **REAL-TIME SAFE**
+     */
+    ParameterType get_type() const TANH_NONBLOCKING_FUNCTION;
     
-    // Notification
+    /**
+     * @brief Checks if the parameter is stored as a double.
+     * @return true if the parameter type is Double
+     * @note **REAL-TIME SAFE**
+     */
+    bool is_double() const TANH_NONBLOCKING_FUNCTION;
+    
+    /**
+     * @brief Checks if the parameter is stored as a float.
+     * @return true if the parameter type is Float
+     * @note **REAL-TIME SAFE**
+     */
+    bool is_float() const TANH_NONBLOCKING_FUNCTION;
+    
+    /**
+     * @brief Checks if the parameter is stored as an int.
+     * @return true if the parameter type is Int
+     * @note **REAL-TIME SAFE**
+     */
+    bool is_int() const TANH_NONBLOCKING_FUNCTION;
+    
+    /**
+     * @brief Checks if the parameter is stored as a bool.
+     * @return true if the parameter type is Bool
+     * @note **REAL-TIME SAFE**
+     */
+    bool is_bool() const TANH_NONBLOCKING_FUNCTION;
+    
+    /**
+     * @brief Checks if the parameter is stored as a string.
+     * @return true if the parameter type is String
+     * @note **REAL-TIME SAFE**
+     */
+    bool is_string() const TANH_NONBLOCKING_FUNCTION;
+    
+    /**
+     * @brief Notifies all listeners about this parameter.
+     * 
+     * Triggers parameter change callbacks for registered listeners.
+     * 
+     * @param strategy Notification strategy (all, none, others, self)
+     * @param source Source listener to exclude from notifications (optional)
+     * 
+     * @warning NOT real-time safe - invokes listener callbacks
+     */
     void notify(NotifyStrategies strategy = NotifyStrategies::all, ParameterListener* source = nullptr) const;
     
-    // Get the path for this parameter
+    /**
+     * @brief Gets the full path for this parameter.
+     * 
+     * @return The dot-separated path string
+     * 
+     * @warning NOT real-time safe - allocates memory for the returned string
+     */
     std::string get_path() const;
 
-    // Get the parameter definition (if set)
-    [[nodiscard]] ParameterDefinition* get_definition() const;
+    /**
+     * @brief Gets the parameter definition if one was set.
+     * 
+     * @return Pointer to the ParameterDefinition, or nullptr if not set
+     * 
+     * @note **REAL-TIME SAFE** - returns a pointer to existing data
+     */
+    [[nodiscard]] ParameterDefinition* get_definition() const TANH_NONBLOCKING_FUNCTION;
 
 private:
     friend class State;

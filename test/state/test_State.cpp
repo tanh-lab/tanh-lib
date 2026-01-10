@@ -29,7 +29,7 @@ TEST(StateTests, BasicParameterOperations) {
     EXPECT_FLOAT_EQ(2.71828f, state.get<float>("float_param"));
     EXPECT_EQ(42, state.get<int>("int_param"));
     EXPECT_TRUE(state.get<bool>("bool_param"));
-    EXPECT_EQ("hello world", state.get<std::string>("string_param")); // Still SSO, non-blocking
+    EXPECT_EQ("hello world", state.get<std::string>("string_param", true));
     EXPECT_EQ(std::string(1000, 'a'), state.get<std::string>("string_param_long", true)); // May block due to heap allocation
 
     
@@ -72,14 +72,19 @@ TEST(StateTests, AutoGroupCreation) {
     EXPECT_DOUBLE_EQ(0.75, audio_group->get<double>("mixer.volume"));
     EXPECT_DOUBLE_EQ(0.75, mixer_group->get<double>("volume"));
 
+    // Disable RTSan for exception tests, as the desctructor of the exception triggers RTSan (can't be scope disabled, because it happens during stack unwinding)
+    // Also using __rtsan_disable() shall not be used in the destructor as this will disable RTSan globally for the thread, and __rtsan_enable() would mark all following code as non-real-time safe
+    // The only solution could be a rtsan suppression file TODO: add suppression file for tests
+#ifndef TANH_WITH_RTSAN
     EXPECT_THROW({
         state.get<double>("audio.nonexistent", true); // Blocking because of the exception
     }, StateKeyNotFoundException);
-
+    
     EXPECT_THROW({
         audio_group->get<double>("nonexistent.volume", true); // Blocking because of the exception
     }, StateGroupNotFoundException);
-    
+#endif
+
     // Set another parameter in a different hierarchy
     state.set("audio.effects.reverb.size", 0.5);
     
@@ -150,8 +155,8 @@ TEST(StateTests, TypeConversions) {
     EXPECT_DOUBLE_EQ(0.0, state.get<double>("bool_false"));
     EXPECT_EQ(1, state.get<int>("bool_true"));
     EXPECT_EQ(0, state.get<int>("bool_false"));
-    EXPECT_EQ("true", state.get<std::string>("bool_true"));
-    EXPECT_EQ("false", state.get<std::string>("bool_false"));
+    EXPECT_EQ("true", state.get<std::string>("bool_true", true));
+    EXPECT_EQ("false", state.get<std::string>("bool_false", true));
 }
 
 // Parameter object tests
@@ -187,7 +192,7 @@ TEST(StateTests, ParameterObjectTests) {
     EXPECT_DOUBLE_EQ(3.14159, double_param.to<double>());
     EXPECT_EQ(42, int_param.to<int>());
     EXPECT_TRUE(bool_param.to<bool>());
-    EXPECT_EQ("hello world", string_param.to<std::string>());
+    EXPECT_EQ("hello world", string_param.to<std::string>(true)); // Allow blocking for string conversion
     
     // Test cross-type conversions
     EXPECT_FLOAT_EQ(3.14159f, double_param.to<float>());
@@ -387,7 +392,7 @@ TEST(StateTests, ThreadSafety) {
             double volume = state.get<double>("audio.volume");
             
             // String read is not real-time safe, but is necessary for the test
-            std::string str = state.get<std::string>("string_param");
+            std::string str = state.get<std::string>("string_param", true);
             
             // Just to avoid compiler optimization
             EXPECT_GE(counter, 0);
@@ -438,7 +443,7 @@ TEST(StateTests, ThreadSafety) {
     EXPECT_DOUBLE_EQ(expected_volume, state.get<double>("audio.volume"));
     
     // String parameter should have been updated multiple times, but we can't know the final value
-    EXPECT_FALSE(state.get<std::string>("string_param").empty());
+    EXPECT_FALSE(state.get<std::string>("string_param", true).empty());
 }
 
 // Test for JSON state updates
@@ -466,7 +471,7 @@ TEST(StateTests, UpdateFromJson) {
     // Verify the updated values
     EXPECT_DOUBLE_EQ(0.8, state.get<double>("volume"));
     EXPECT_TRUE(state.get<bool>("muted"));
-    EXPECT_EQ("default device", state.get<std::string>("name")); // Unchanged
+    EXPECT_EQ("default device", state.get<std::string>("name", true)); // Unchanged
     
     // Test nested JSON update
     nlohmann::json nested_update = {
@@ -492,7 +497,7 @@ TEST(StateTests, UpdateFromJson) {
     
     state.update_from_json(mixed_update);
     
-    EXPECT_EQ("new device", state.get<std::string>("name"));
+    EXPECT_EQ("new device", state.get<std::string>("name", true));
     EXPECT_EQ(10, state.get<int>("eq.bass"));
     EXPECT_EQ(4, state.get<int>("eq.treble")); // Unchanged
 }
@@ -764,7 +769,7 @@ TEST(StateTests, GetParametersMethod) {
     
     auto param2_it = root_params.find("root_param2");
     EXPECT_NE(param2_it, root_params.end());
-    EXPECT_EQ("root value", param2_it->second.to<std::string>());
+    EXPECT_EQ("root value", param2_it->second.to<std::string>(true)); // Allow blocking for string conversion
     
     // Create a nested structure with parameters
     StateGroup* audio_group = state.create_group("audio");
@@ -787,47 +792,47 @@ TEST(StateTests, GetParametersMethod) {
     EXPECT_NE(muted_it, audio_params.end());
     EXPECT_FALSE(muted_it->second.to<bool>());
     
-    // // Create a deeper nested structure
-    // StateGroup* effects_group = audio_group->create_group("effects");
-    // effects_group->set("reverb", 0.5);
-    // effects_group->set("delay", 0.3);
-    // effects_group->set("chorus", 0.2);
+    // Create a deeper nested structure
+    StateGroup* effects_group = audio_group->create_group("effects");
+    effects_group->set("reverb", 0.5);
+    effects_group->set("delay", 0.3);
+    effects_group->set("chorus", 0.2);
     
-    // // Check effects group parameters
-    // std::map<std::string, Parameter> effects_params = effects_group->get_parameters();
-    // EXPECT_EQ(3, effects_params.size());
-    // EXPECT_TRUE(effects_params.find("audio.effects.reverb") != effects_params.end());
-    // EXPECT_TRUE(effects_params.find("audio.effects.delay") != effects_params.end());
-    // EXPECT_TRUE(effects_params.find("audio.effects.chorus") != effects_params.end());
-    // EXPECT_DOUBLE_EQ(0.5, effects_params["audio.effects.reverb"].to<double>());
+    // Check effects group parameters
+    std::map<std::string, Parameter> effects_params = effects_group->get_parameters();
+    EXPECT_EQ(3, effects_params.size());
+    EXPECT_TRUE(effects_params.find("audio.effects.reverb") != effects_params.end());
+    EXPECT_TRUE(effects_params.find("audio.effects.delay") != effects_params.end());
+    EXPECT_TRUE(effects_params.find("audio.effects.chorus") != effects_params.end());
+    EXPECT_DOUBLE_EQ(0.5, effects_params.at("audio.effects.reverb").to<double>());
     
-    // // Check that audio group parameters now include effects parameters
-    // audio_params = audio_group->get_parameters();
-    // EXPECT_EQ(5, audio_params.size()); // 2 in audio + 3 in effects
-    // EXPECT_TRUE(audio_params.find("audio.effects.reverb") != audio_params.end());
+    // Check that audio group parameters now include effects parameters
+    audio_params = audio_group->get_parameters();
+    EXPECT_EQ(5, audio_params.size()); // 2 in audio + 3 in effects
+    EXPECT_TRUE(audio_params.find("audio.effects.reverb") != audio_params.end());
     
-    // // Add another group with parameters
-    // StateGroup* visual_group = state.create_group("visual");
-    // visual_group->set("brightness", 75);
-    // visual_group->set("contrast", 100);
+    // Add another group with parameters
+    StateGroup* visual_group = state.create_group("visual");
+    visual_group->set("brightness", 75);
+    visual_group->set("contrast", 100);
     
-    // // Check visual group parameters
-    // std::map<std::string, Parameter> visual_params = visual_group->get_parameters();
-    // EXPECT_EQ(2, visual_params.size());
+    // Check visual group parameters
+    std::map<std::string, Parameter> visual_params = visual_group->get_parameters();
+    EXPECT_EQ(2, visual_params.size());
     
-    // // Root should now have all parameters
-    // root_params = state.get_parameters();
-    // EXPECT_EQ(9, root_params.size()); // 2 root + 2 audio + 3 effects + 2 visual
+    // Root should now have all parameters
+    root_params = state.get_parameters();
+    EXPECT_EQ(9, root_params.size()); // 2 root + 2 audio + 3 effects + 2 visual
     
-    // // Clear one group and verify its parameters are removed
-    // effects_group->clear();
-    // audio_params = audio_group->get_parameters();
-    // EXPECT_EQ(2, audio_params.size()); // Only the direct audio parameters remain
+    // Clear one group and verify its parameters are removed
+    effects_group->clear();
+    audio_params = audio_group->get_parameters();
+    EXPECT_EQ(2, audio_params.size()); // Only the direct audio parameters remain
     
-    // // Clear the entire state
-    // state.clear();
-    // root_params = state.get_parameters();
-    // EXPECT_TRUE(root_params.empty());
+    // Clear the entire state
+    state.clear();
+    root_params = state.get_parameters();
+    EXPECT_TRUE(root_params.empty());
 }
 
 // Test edge cases for get_parameters
