@@ -365,8 +365,10 @@ bool State::is_empty() const TANH_NONBLOCKING_FUNCTION {
 void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies strategy, ParameterListener* source) {
     // Helper function to check if a parameter exists before updating
     auto check_parameter_exists = [this](std::string_view key) {
-        // Use heterogeneous lookup - no temporary string creation
-        if (!m_parameters_rcu.has(key)) {
+        bool exists = m_parameters_rcu.read([&](const ParameterMap& params) {
+            return params.find(key) != params.end();
+        });
+        if (!exists) {
             throw StateKeyNotFoundException(key);
         }
     };

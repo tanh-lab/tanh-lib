@@ -34,17 +34,29 @@ public:
     /**
      * @brief Construct RCU with initial data
      * @param initial_data Initial value (will be copied)
+     * @param cleanup_threshold Number of retired versions before aggressive cleanup
+     * @param emergency_threshold Number of retired versions before blocking cleanup
      */
-    explicit RCU(const T& initial_data = T{}) 
-        : m_data_ptr(new T(initial_data)) {
+    explicit RCU(const T& initial_data = T{}, 
+                 size_t cleanup_threshold = 8, 
+                 size_t emergency_threshold = 32) 
+        : m_data_ptr(new T(initial_data))
+        , m_cleanup_threshold(cleanup_threshold)
+        , m_emergency_threshold(emergency_threshold) {
     }
     
     /**
      * @brief Construct RCU with moved data
      * @param initial_data Initial value (will be moved)
+     * @param cleanup_threshold Number of retired versions before aggressive cleanup
+     * @param emergency_threshold Number of retired versions before blocking cleanup
      */
-    explicit RCU(T&& initial_data) 
-        : m_data_ptr(new T(std::move(initial_data))) {
+    explicit RCU(T&& initial_data, 
+                 size_t cleanup_threshold = 8, 
+                 size_t emergency_threshold = 32) 
+        : m_data_ptr(new T(std::move(initial_data)))
+        , m_cleanup_threshold(cleanup_threshold)
+        , m_emergency_threshold(emergency_threshold) {
     }
 
     ~RCU() {
@@ -155,11 +167,11 @@ public:
         // ═══════════════════════════════════════════════════
         // TIER 2: Threshold cleanup (occasional, still non-blocking)
         // ═══════════════════════════════════════════════════
-        if (m_retired_list.size() >= CLEANUP_THRESHOLD) {
+        if (m_retired_list.size() >= m_cleanup_threshold) {
             // Try multiple times to catch stragglers
             for (int i = 0; i < 3 && !m_retired_list.empty(); ++i) {
                 cleanup_safe_versions();
-                if (m_retired_list.size() < CLEANUP_THRESHOLD / 2) {
+                if (m_retired_list.size() < m_cleanup_threshold / 2) {
                     break;  // Good enough
                 }
             }
@@ -168,7 +180,7 @@ public:
         // ═══════════════════════════════════════════════════
         // TIER 3: Emergency cleanup (rare, blocking)
         // ═══════════════════════════════════════════════════
-        if (m_retired_list.size() >= EMERGENCY_THRESHOLD) {
+        if (m_retired_list.size() >= m_emergency_threshold) {
             // Pathological case - bite the bullet and wait
             synchronize_rcu();  // BLOCKING
             
@@ -181,160 +193,6 @@ public:
         
         // Clean up dead reader nodes periodically
         cleanup_dead_nodes();
-    }
-
-    /**
-     * @brief Replace entire data structure
-     * 
-     * Atomically replaces the entire data structure with a new one.
-     * 
-     * @param new_data New data to replace current data
-     */
-    void replace(const T& new_data) {
-        update([&](T& data) {
-            data = new_data;
-        });
-    }
-
-    /**
-     * @brief Replace entire data structure (move version)
-     * 
-     * Atomically replaces the entire data structure with a new one.
-     * 
-     * @param new_data New data to replace current data (will be moved)
-     */
-    void replace(T&& new_data) {
-        update([&](T& data) {
-            data = std::move(new_data);
-        });
-    }
-
-    /**
-     * @brief Get a snapshot of current data
-     * 
-     * Creates a copy of the current data. This is useful for operations
-     * that need to work with the data outside of the read() function.
-     * Note: This involves copying the entire data structure.
-     * 
-     * @return Copy of current data
-     */
-    T snapshot() const {
-        return read([](const T& data) { return data; });
-    }
-
-    /**
-     * @brief Check if data structure is empty
-     * 
-     * Uses the data structure's empty() method if available.
-     * 
-     * @return true if empty, false otherwise
-     */
-    bool empty() const {
-        return read([](const T& data) { return data.empty(); });
-    }
-
-    /**
-     * @brief Get size of data structure
-     * 
-     * Uses the data structure's size() method if available.
-     * 
-     * @return Size of data structure
-     */
-    size_t size() const {
-        return read([](const T& data) { return data.size(); });
-    }
-
-    /**
-     * @brief Set a value at a specific path without full copy-on-write
-     * 
-     * This function allows setting values in nested data structures using a path,
-     * similar to StateGroup::set. It uses a more efficient update mechanism that
-     * only copies what's necessary.
-     * 
-     * @tparam ValueType The type of value to set
-     * @param path The path to the value (e.g., "group1.subgroup.parameter")
-     * @param value The value to set
-     * @param create Whether to create missing intermediate paths
-     * 
-     * Usage:
-     * ```cpp
-     * RCU<StateGroup> state_rcu;
-     * state_rcu.set("audio.volume", 0.8f);
-     * state_rcu.set("effects.reverb.enabled", true);
-     * ```
-     */
-    template<typename ValueType>
-    void set(std::string_view path, ValueType&& value, bool create = true) {
-        update([&](T& data) {
-            // Delegate to the data structure's set method if it has one
-            if constexpr (requires { data.set(path, std::forward<ValueType>(value), true, create); }) {
-                data.set(path, std::forward<ValueType>(value), true, create);
-            } else {
-                // For other data structures, we'd need a different approach
-                // This could be extended to support map-like structures with path parsing
-                static_assert(sizeof(ValueType) == 0, "Type T must have a set(path, value, notify, create) method");
-            }
-        });
-    }
-
-    /**
-     * @brief Get a value at a specific path
-     * 
-     * This function allows getting values from nested data structures using a path,
-     * similar to StateGroup::get. This is lock-free and real-time safe.
-     * 
-     * @tparam ValueType The type of value to get
-     * @param path The path to the value (e.g., "group1.subgroup.parameter")
-     * @return The value at the specified path
-     * 
-     * Usage:
-     * ```cpp
-     * float volume = state_rcu.get<float>("audio.volume");
-     * bool enabled = state_rcu.get<bool>("effects.reverb.enabled");
-     * ```
-     */
-    template<typename ValueType>
-    ValueType get(std::string_view path) const {
-        return read([&](const T& data) {
-            // Delegate to the data structure's get method if it has one
-            if constexpr (requires { data.template get<ValueType>(path); }) {
-                return data.template get<ValueType>(path);
-            } else {
-                // For other data structures, we'd need a different approach
-                static_assert(sizeof(ValueType) == 0, "Type T must have a get<ValueType>(path) method");
-            }
-        });
-    }
-
-    /**
-     * @brief Check if a path exists in the data structure
-     * 
-     * @param path The path to check
-     * @return true if the path exists, false otherwise
-     */
-    bool has(std::string_view path) const {
-        return read([&](const T& data) {
-            // Try to use the data structure's has method or similar
-            if constexpr (requires { data.has_parameter(path); }) {
-                return data.has_parameter(path);
-            } else if constexpr (requires { data.contains(path); }) {
-                return data.contains(path);
-            } else if constexpr (requires { data.count(path) > 0; }) {
-                return data.count(path) > 0;
-            } else {
-                // Try to get the value and catch exceptions
-                try {
-                    if constexpr (requires { data.template get<int>(path); }) {
-                        data.template get<int>(path);  // Just try to access, don't care about type
-                        return true;
-                    } else {
-                        return false;
-                    }
-                } catch (...) {
-                    return false;
-                }
-            }
-        });
     }
 
     void ensure_thread_registered() const {
@@ -369,9 +227,9 @@ private:
     };
     std::vector<RetiredData> m_retired_list;
     
-    // Cleanup thresholds
-    static constexpr size_t CLEANUP_THRESHOLD = 8;      // Try harder to cleanup
-    static constexpr size_t EMERGENCY_THRESHOLD = 32;   // Force blocking cleanup
+    // Per-instance cleanup thresholds (tunable per use case)
+    size_t m_cleanup_threshold;     // Try harder to cleanup
+    size_t m_emergency_threshold;   // Force blocking cleanup
     
     // Lock-free linked list node for reader registration
     struct ReaderNode {
@@ -516,7 +374,6 @@ private:
         }
     }
     
-private:
     // Clean up dead nodes from the linked list
     // Must be called while holding s_writer_mutex
     void cleanup_dead_nodes() {
