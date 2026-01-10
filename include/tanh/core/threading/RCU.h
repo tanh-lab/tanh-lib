@@ -94,22 +94,20 @@ public:
     auto read(Func&& read_func) const -> decltype(read_func(std::declval<const T&>())) {
         ensure_thread_registered();
         
-        // Enter RCU read-side critical section
-        rcu_read_lock();
+        // RAII guard to ensure rcu_read_unlock() is always called, even if callback throws
+        struct ReadGuard {
+            const RCU* rcu;
+            ReadGuard(const RCU* r) : rcu(r) { rcu->rcu_read_lock(); }
+            ~ReadGuard() { rcu->rcu_read_unlock(); }
+        };
+        
+        ReadGuard guard(this);
         
         // Load current data pointer (guaranteed valid during read section)
         const T* data = m_data_ptr.load(std::memory_order_acquire);
         
-        // Call user function with data and handle void/non-void return types
-        if constexpr (std::is_void_v<decltype(read_func(*data))>) {
-            read_func(*data);
-            rcu_read_unlock();
-            return;
-        } else {
-            auto result = read_func(*data);
-            rcu_read_unlock();
-            return result;
-        }
+        // Call user function with data - guard ensures unlock on normal return or exception
+        return read_func(*data);
     }
 
     /**

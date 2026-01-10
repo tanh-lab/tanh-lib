@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <string>
 
@@ -20,43 +19,37 @@ enum class ParameterType { Double, Float, Int, Bool, String, Unknown };
 // different strategies for notification
 enum class NotifyStrategies {all, none, others, self};
 
-// Internal parameter storage - using atomic values for all numeric types
+// Internal parameter storage - RCU provides synchronization, no atomics needed
 struct ParameterData {
-    std::atomic<ParameterType> type;
-    std::atomic<double> double_value;
-    std::atomic<float> float_value;
-    std::atomic<int> int_value;
-    std::atomic<bool> bool_value;
-    std::string string_value; // Requires mutex protection for modification
+    ParameterType type = ParameterType::Double;
+    double double_value = 0.0;
+    float float_value = 0.0f;
+    int int_value = 0;
+    bool bool_value = false;
+    std::string string_value;
     std::unique_ptr<ParameterDefinition> parameter_definition;
     
-    // Default constructor with initialization
-    ParameterData() : 
-        type(ParameterType::Double),
-        double_value(0.0),
-        float_value(0.0f),
-        int_value(0),
-        bool_value(false),
-        parameter_definition(nullptr) {}
+    // Default constructor
+    ParameterData() = default;
         
-    // Custom copy constructor for RCU map copying
+    // Custom copy constructor for RCU map copying (deep copy the definition)
     ParameterData(const ParameterData& other) :
-        type(other.type.load()),
-        double_value(other.double_value.load()),
-        float_value(other.float_value.load()),
-        int_value(other.int_value.load()),
-        bool_value(other.bool_value.load()),
+        type(other.type),
+        double_value(other.double_value),
+        float_value(other.float_value),
+        int_value(other.int_value),
+        bool_value(other.bool_value),
         string_value(other.string_value),
         parameter_definition(other.parameter_definition ? std::make_unique<ParameterDefinition>(*other.parameter_definition) : nullptr) {}
         
     // Custom assignment operator
     ParameterData& operator=(const ParameterData& other) {
         if (this != &other) {
-            type.store(other.type.load());
-            double_value.store(other.double_value.load());
-            float_value.store(other.float_value.load());
-            int_value.store(other.int_value.load());
-            bool_value.store(other.bool_value.load());
+            type = other.type;
+            double_value = other.double_value;
+            float_value = other.float_value;
+            int_value = other.int_value;
+            bool_value = other.bool_value;
             string_value = other.string_value;
             parameter_definition = other.parameter_definition ? std::make_unique<ParameterDefinition>(*other.parameter_definition) : nullptr;
         }
@@ -64,27 +57,8 @@ struct ParameterData {
     }
     
     // Move operations
-    ParameterData(ParameterData&& other) noexcept :
-        type(other.type.load()),
-        double_value(other.double_value.load()),
-        float_value(other.float_value.load()),
-        int_value(other.int_value.load()),
-        bool_value(other.bool_value.load()),
-        string_value(std::move(other.string_value)),
-        parameter_definition(std::move(other.parameter_definition)) {}
-        
-    ParameterData& operator=(ParameterData&& other) noexcept {
-        if (this != &other) {
-            type.store(other.type.load());
-            double_value.store(other.double_value.load());
-            float_value.store(other.float_value.load());
-            int_value.store(other.int_value.load());
-            bool_value.store(other.bool_value.load());
-            string_value = std::move(other.string_value);
-            parameter_definition = std::move(other.parameter_definition);
-        }
-        return *this;
-    }
+    ParameterData(ParameterData&& other) noexcept = default;
+    ParameterData& operator=(ParameterData&& other) noexcept = default;
 };
 
 /**
