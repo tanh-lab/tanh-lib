@@ -40,37 +40,36 @@ void State::set_in_root(std::string_view key, T value, NotifyStrategies strategy
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> || 
                   std::is_same_v<T, bool> || std::is_same_v<T, std::string>, "Unsupported type for set_in_root");
     
-    // Try to update existing parameter first (lock-free for numeric types)
+    // Try to update existing parameter first
     bool parameter_exists = false;
-    m_parameters_rcu.update([&](const ParameterMap& params) {
-        // Use RCU to update parameter (not real-time safe)
+    m_parameters_rcu.update([&](ParameterMap& params) {
         auto it = params.find(key);
         if (it != params.end()) {
             parameter_exists = true;
             
-            // Update atomic values directly for numeric types
+            // Update values directly
             if constexpr (std::is_same_v<T, double>) {
-                const_cast<ParameterData&>(it->second).double_value.store(value, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).float_value.store(static_cast<float>(value), std::memory_order_release);
-                const_cast<ParameterData&>(it->second).int_value.store(static_cast<int>(value), std::memory_order_release);
-                const_cast<ParameterData&>(it->second).bool_value.store(value != 0.0, std::memory_order_release);
+                it->second.double_value = value;
+                it->second.float_value = static_cast<float>(value);
+                it->second.int_value = static_cast<int>(value);
+                it->second.bool_value = value != 0.0;
             } else if constexpr (std::is_same_v<T, float>) {
-                const_cast<ParameterData&>(it->second).float_value.store(value, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).double_value.store(static_cast<double>(value), std::memory_order_release);
-                const_cast<ParameterData&>(it->second).int_value.store(static_cast<int>(value), std::memory_order_release);
-                const_cast<ParameterData&>(it->second).bool_value.store(value != 0.0f, std::memory_order_release);
+                it->second.float_value = value;
+                it->second.double_value = static_cast<double>(value);
+                it->second.int_value = static_cast<int>(value);
+                it->second.bool_value = value != 0.0f;
             } else if constexpr (std::is_same_v<T, int>) {
-                const_cast<ParameterData&>(it->second).int_value.store(value, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).double_value.store(static_cast<double>(value), std::memory_order_release);
-                const_cast<ParameterData&>(it->second).float_value.store(static_cast<float>(value), std::memory_order_release);
-                const_cast<ParameterData&>(it->second).bool_value.store(value != 0, std::memory_order_release);
+                it->second.int_value = value;
+                it->second.double_value = static_cast<double>(value);
+                it->second.float_value = static_cast<float>(value);
+                it->second.bool_value = value != 0;
             } else if constexpr (std::is_same_v<T, bool>) {
-                const_cast<ParameterData&>(it->second).bool_value.store(value, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).double_value.store(value ? 1.0 : 0.0, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).float_value.store(value ? 1.0f : 0.0f, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).int_value.store(value ? 1 : 0, std::memory_order_release);
+                it->second.bool_value = value;
+                it->second.double_value = value ? 1.0 : 0.0;
+                it->second.float_value = value ? 1.0f : 0.0f;
+                it->second.int_value = value ? 1 : 0;
             } else if constexpr (std::is_same_v<T, std::string>) {
-                const_cast<ParameterData&>(it->second).string_value = value;
+                it->second.string_value = value;
                 
                 // Convert string to numeric values
                 double d_value = 0.0;
@@ -99,46 +98,45 @@ void State::set_in_root(std::string_view key, T value, NotifyStrategies strategy
                     // Leave default values if conversion fails
                 }
                 
-                // Update atomic values
-                const_cast<ParameterData&>(it->second).double_value.store(d_value, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).float_value.store(f_value, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).int_value.store(i_value, std::memory_order_release);
-                const_cast<ParameterData&>(it->second).bool_value.store(b_value, std::memory_order_release);
+                it->second.double_value = d_value;
+                it->second.float_value = f_value;
+                it->second.int_value = i_value;
+                it->second.bool_value = b_value;
             }
         }
     });
     
     if (!parameter_exists) {
-        // Parameter doesn't exist - use RCU to create it (not real-time safe)
+        // Parameter doesn't exist - use RCU to create it
         m_parameters_rcu.update([&](ParameterMap& params) {
             ParameterData new_param;
             
             if constexpr (std::is_same_v<T, double>) {
-                new_param.type.store(ParameterType::Double, std::memory_order_release);
-                new_param.double_value.store(value, std::memory_order_release);
-                new_param.float_value.store(static_cast<float>(value), std::memory_order_release);
-                new_param.int_value.store(static_cast<int>(value), std::memory_order_release);
-                new_param.bool_value.store(value != 0.0, std::memory_order_release);
+                new_param.type = ParameterType::Double;
+                new_param.double_value = value;
+                new_param.float_value = static_cast<float>(value);
+                new_param.int_value = static_cast<int>(value);
+                new_param.bool_value = value != 0.0;
             } else if constexpr (std::is_same_v<T, float>) {
-                new_param.type.store(ParameterType::Float, std::memory_order_release);
-                new_param.float_value.store(value, std::memory_order_release);
-                new_param.double_value.store(static_cast<double>(value), std::memory_order_release);
-                new_param.int_value.store(static_cast<int>(value), std::memory_order_release);
-                new_param.bool_value.store(value != 0.0f, std::memory_order_release);
+                new_param.type = ParameterType::Float;
+                new_param.float_value = value;
+                new_param.double_value = static_cast<double>(value);
+                new_param.int_value = static_cast<int>(value);
+                new_param.bool_value = value != 0.0f;
             } else if constexpr (std::is_same_v<T, int>) {
-                new_param.type.store(ParameterType::Int, std::memory_order_release);
-                new_param.int_value.store(value, std::memory_order_release);
-                new_param.double_value.store(static_cast<double>(value), std::memory_order_release);
-                new_param.float_value.store(static_cast<float>(value), std::memory_order_release);
-                new_param.bool_value.store(value != 0, std::memory_order_release);
+                new_param.type = ParameterType::Int;
+                new_param.int_value = value;
+                new_param.double_value = static_cast<double>(value);
+                new_param.float_value = static_cast<float>(value);
+                new_param.bool_value = value != 0;
             } else if constexpr (std::is_same_v<T, bool>) {
-                new_param.type.store(ParameterType::Bool, std::memory_order_release);
-                new_param.bool_value.store(value, std::memory_order_release);
-                new_param.double_value.store(value ? 1.0 : 0.0, std::memory_order_release);
-                new_param.float_value.store(value ? 1.0f : 0.0f, std::memory_order_release);
-                new_param.int_value.store(value ? 1 : 0, std::memory_order_release);
+                new_param.type = ParameterType::Bool;
+                new_param.bool_value = value;
+                new_param.double_value = value ? 1.0 : 0.0;
+                new_param.float_value = value ? 1.0f : 0.0f;
+                new_param.int_value = value ? 1 : 0;
             } else if constexpr (std::is_same_v<T, std::string>) {
-                new_param.type.store(ParameterType::String, std::memory_order_release);
+                new_param.type = ParameterType::String;
                 new_param.string_value = value;
                 
                 // Convert string to numeric values
@@ -168,10 +166,10 @@ void State::set_in_root(std::string_view key, T value, NotifyStrategies strategy
                     // Leave default values if conversion fails
                 }
                 
-                new_param.double_value.store(d_value, std::memory_order_release);
-                new_param.float_value.store(f_value, std::memory_order_release);
-                new_param.int_value.store(i_value, std::memory_order_release);
-                new_param.bool_value.store(b_value, std::memory_order_release);
+                new_param.double_value = d_value;
+                new_param.float_value = f_value;
+                new_param.int_value = i_value;
+                new_param.bool_value = b_value;
             }
             
             params[std::string(key)] = std::move(new_param);
@@ -216,28 +214,28 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
         }
         
         if constexpr (std::is_same_v<T, double>) {
-            return it->second.double_value.load(std::memory_order_acquire);
+            return it->second.double_value;
         } else if constexpr (std::is_same_v<T, float>) {
-            return it->second.float_value.load(std::memory_order_acquire);
+            return it->second.float_value;
         } else if constexpr (std::is_same_v<T, int>) {
-            return it->second.int_value.load(std::memory_order_acquire);
+            return it->second.int_value;
         } else if constexpr (std::is_same_v<T, bool>) {
-            return it->second.bool_value.load(std::memory_order_acquire);
+            return it->second.bool_value;
         } else if constexpr (std::is_same_v<T, std::string>) {
             // If the string is longer than the SSO buffer, this may allocate memory!
-            auto type = it->second.type.load(std::memory_order_acquire);
+            auto type = it->second.type;
             switch (type) {
                 case ParameterType::String: {
                     return it->second.string_value;
                 }
                 case ParameterType::Double:
-                    return std::to_string(it->second.double_value.load(std::memory_order_acquire));
+                    return std::to_string(it->second.double_value);
                 case ParameterType::Float:
-                    return std::to_string(it->second.float_value.load(std::memory_order_acquire));
+                    return std::to_string(it->second.float_value);
                 case ParameterType::Int:
-                    return std::to_string(it->second.int_value.load(std::memory_order_acquire));
+                    return std::to_string(it->second.int_value);
                 case ParameterType::Bool:
-                    return it->second.bool_value.load(std::memory_order_acquire) ? "true" : "false";
+                    return it->second.bool_value ? "true" : "false";
                 default:
                     return ""; // Unknown type
             }
@@ -261,15 +259,15 @@ std::string State::get_state_dump() const {
       param_obj["key"] = key;
       
       // Get current value based on type
-      auto type = data.type.load(std::memory_order_relaxed);
+      auto type = data.type;
       if (type == ParameterType::Double) {
-        param_obj["value"] = data.double_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.double_value;
       } else if (type == ParameterType::Float) {
-        param_obj["value"] = data.float_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.float_value;
       } else if (type == ParameterType::Int) {
-        param_obj["value"] = data.int_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.int_value;
       } else if (type == ParameterType::Bool) {
-        param_obj["value"] = data.bool_value.load(std::memory_order_relaxed);
+        param_obj["value"] = data.bool_value;
       } else if (type == ParameterType::String) {
         param_obj["value"] = data.string_value;
       }
@@ -333,7 +331,7 @@ ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOC
         }
 
         // Return the stored parameter type
-        return it->second.type.load(std::memory_order_acquire);
+        return it->second.type;
     });
 }
 
@@ -435,10 +433,10 @@ void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies s
 
 // Parameter definition management
 void State::set_definition_in_root(std::string_view key, const ParameterDefinition& def) {
-    m_parameters_rcu.update([&](const ParameterMap& params) {
+    m_parameters_rcu.update([&](ParameterMap& params) {
         auto it = params.find(key);
         if (it != params.end()) {
-            const_cast<ParameterData&>(it->second).parameter_definition =
+            it->second.parameter_definition =
                 std::make_unique<ParameterDefinition>(def);
         } else {
             throw StateKeyNotFoundException(key);
