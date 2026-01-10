@@ -311,8 +311,8 @@ std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_vi
         return found_group->resolve_path(rest);
     }
 
-    // If group not found, return this group and an empty string
-    return {const_cast<StateGroup*>(this), std::string("")};
+    // If not found, throw exception
+    throw StateGroupNotFoundException(group_name);
 }
 
 // Helper for parameter resolution with paths that creates missing groups

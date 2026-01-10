@@ -35,6 +35,15 @@ private:
     std::string m_key;
 };
 
+class StateGroupNotFoundException : public std::runtime_error {
+public:
+    explicit StateGroupNotFoundException(std::string_view groupName) 
+        : std::runtime_error("State group not found: " + std::string(groupName)), m_groupName(groupName) {}
+
+private:
+    std::string m_groupName;
+};
+
 // Forward declarations
 class State;
 class StateGroup;
