@@ -310,7 +310,14 @@ std::string State::get_state_dump() const {
         def_obj["automation"] = def.m_automation;
         def_obj["modulation"] = def.m_modulation;
         
-        // Include choice data if available
+        def_obj["slider_polarity"] = [&]() {
+          switch(def.m_slider_polarity) {
+            case SliderPolarity::Unipolar: return "unipolar";
+            case SliderPolarity::Bipolar: return "bipolar";
+            default: return "unipolar";
+          }
+        }();
+        
         if (!def.m_data.empty()) {
           def_obj["data"] = def.m_data;
         }
