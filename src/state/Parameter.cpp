@@ -1,5 +1,6 @@
 #include <tanh/state/Parameter.h>
 #include <tanh/state/State.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 namespace thl {
 
@@ -18,17 +19,17 @@ Parameter::Parameter(const StateGroup* group, std::string_view key, const State*
 
 // Parameter conversion methods
 template<typename T>
-T Parameter::to() const {
+T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
     if constexpr (std::is_same_v<T, double>) {
-        return m_state->get_from_root<double>(m_key);
+        return m_state->get_from_root<double>(m_key, allow_blocking);
     } else if constexpr (std::is_same_v<T, float>) {
-        return m_state->get_from_root<float>(m_key);
+        return m_state->get_from_root<float>(m_key, allow_blocking);
     } else if constexpr (std::is_same_v<T, int>) {
-        return m_state->get_from_root<int>(m_key);
+        return m_state->get_from_root<int>(m_key, allow_blocking);
     } else if constexpr (std::is_same_v<T, bool>) {
-        return m_state->get_from_root<bool>(m_key);
+        return m_state->get_from_root<bool>(m_key, allow_blocking);
     } else if constexpr (std::is_same_v<T, std::string>) {
-        return m_state->get_from_root<std::string>(m_key);
+        return m_state->get_from_root<std::string>(m_key, allow_blocking);
     } else {
         static_assert(std::is_same_v<T, void>, "Unsupported type for Parameter::to()");
         // This line will never be reached, but needed to avoid compiler warnings
@@ -37,27 +38,27 @@ T Parameter::to() const {
 }
 
 // Parameter type checking
-ParameterType Parameter::get_type() const {
+ParameterType Parameter::get_type() const TANH_NONBLOCKING_FUNCTION {
     return m_state->get_type_from_root(m_key);
 }
 
-bool Parameter::is_double() const {
+bool Parameter::is_double() const TANH_NONBLOCKING_FUNCTION {
     return get_type() == ParameterType::Double;
 }
 
-bool Parameter::is_float() const {
+bool Parameter::is_float() const TANH_NONBLOCKING_FUNCTION {
     return get_type() == ParameterType::Float;
 }
 
-bool Parameter::is_int() const {
+bool Parameter::is_int() const TANH_NONBLOCKING_FUNCTION {
     return get_type() == ParameterType::Int;
 }
 
-bool Parameter::is_bool() const {
+bool Parameter::is_bool() const TANH_NONBLOCKING_FUNCTION {
     return get_type() == ParameterType::Bool;
 }
 
-bool Parameter::is_string() const {
+bool Parameter::is_string() const TANH_NONBLOCKING_FUNCTION {
     return get_type() == ParameterType::String;
 }
 
@@ -105,14 +106,13 @@ std::string Parameter::get_path() const {
     return m_key;
 }
 
-ParameterDefinition* Parameter::get_definition() const {
+ParameterDefinition* Parameter::get_definition() const TANH_NONBLOCKING_FUNCTION {
     return m_state->get_definition_from_root(m_key);
 }
 
-template double Parameter::to<double>() const;
-template float Parameter::to<float>() const;
-template int Parameter::to<int>() const;
-template bool Parameter::to<bool>() const;
-template std::string Parameter::to<std::string>() const;
-
+template double Parameter::to<double>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template float Parameter::to<float>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template int Parameter::to<int>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template bool Parameter::to<bool>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template std::string Parameter::to<std::string>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 } // namespace thl

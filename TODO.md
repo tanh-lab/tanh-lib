@@ -1,6 +1,7 @@
 TODOs
 
 - [ ] Fix the update from json method to be real-time safe and lock-free??? (Really)
-- [ ] Find a solution for atomic only lock-free setting (We don't need this yet!)
 - [ ] Delete unecessary convinience methods in RCU (set, get, has, replace, ...?)
-- [ ] Fix the weird string buffers in the state class for path resolution (or think about it more)
+- [ ] Add an in gestrue parameter...
+- [ ] Think about the buffered strings implementation in the path resolution. Is there no more elegant way?
+- [ ] Atomics not needed in the parameter class, as RCU already provides thread-safety!

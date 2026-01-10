@@ -343,6 +343,13 @@ std::pair<StateGroup*, std::string_view> StateGroup::resolve_path_create(std::st
 // Parameter access methods
 template<typename T>
 T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
+    // String access requires allow_blocking=true as it may allocate memory
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (!allow_blocking) {
+            throw BlockingException(path);
+        }
+    }
+    
     auto getter_fn = [&]() -> T {
         auto [group, param_name] = resolve_path(path);
         if (group == this) {
