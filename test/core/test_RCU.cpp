@@ -110,7 +110,7 @@ TEST(RCU, MapFunctionality) {
     EXPECT_EQ(errors.load(), 0);
 
     // Check final state
-    auto final_size = rcu_map.size();
+    auto final_size = rcu_map.read([](const auto& map) { return map.size(); });
     EXPECT_EQ(final_size, 102); // 100 updates + 2 initial keys
 }
 
@@ -177,5 +177,6 @@ TEST(RCU, VectorFunctionalityBig) {
     
     // Check notifications count
     EXPECT_GT(notifications.load(), 0);
-    EXPECT_EQ(rcu_vec.size(), 43); // Initial 3 + 50 adds + 10 removes
+    auto final_vec_size = rcu_vec.read([](const auto& vec) { return vec.size(); });
+    EXPECT_EQ(final_vec_size, 43); // Initial 3 + 50 adds + 10 removes
 }
