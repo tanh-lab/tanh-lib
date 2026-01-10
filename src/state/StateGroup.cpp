@@ -130,6 +130,9 @@ void StateGroup::notify_parameter_change(std::string_view path) {
     auto [group, param_name] = resolve_path(path);
     if (!group || !group->m_rootState) return;
     
+    // Ensure thread is registered for RCU and buffers
+    m_rootState->ensure_thread_registered();
+    
     try {
         // Get the parameter
         // Use State's pre-allocated buffer
@@ -237,6 +240,9 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
     if (!m_parent || m_parent == m_rootState) {
         return m_name;
     }
+    
+    // Ensure thread is registered for RCU and buffers
+    m_rootState->ensure_thread_registered();
     
     // Use State's pre-allocated buffer
     m_rootState->m_path_buffer_1.clear();
@@ -350,6 +356,9 @@ T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOC
         }
     }
     
+    // Ensure thread is registered for RCU and buffers
+    m_rootState->ensure_thread_registered();
+    
     auto getter_fn = [&]() -> T {
         auto [group, param_name] = resolve_path(path);
         if (group == this) {
@@ -374,6 +383,9 @@ T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOC
 }
 
 ParameterType StateGroup::get_parameter_type(std::string_view path) const TANH_NONBLOCKING_FUNCTION {
+    // Ensure thread is registered for RCU and buffers
+    m_rootState->ensure_thread_registered();
+    
     auto [group, param_name] = resolve_path(path);
     if (group == this) {
         // Parameter in this group, delegate to root state
@@ -432,6 +444,9 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
 // Parameter setters with path support
 template<typename T>
 void StateGroup::set(std::string_view path, T value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    // Ensure thread is registered for RCU and buffers
+    m_rootState->ensure_thread_registered();
+    
     // Use different path resolution based on whether we want to create missing elements
     std::pair<StateGroup*, std::string> resolution;
     if (create) {
@@ -478,6 +493,9 @@ void StateGroup::set(std::string_view path, const char* value, NotifyStrategies 
 // Set with parameter definition (registers definition and sets default value)
 // Private parameter definition setter implementation
 void StateGroup::set(std::string_view path, const ParameterDefinition& def, NotifyStrategies strategy, ParameterListener* source, bool create) {
+    // Ensure thread is registered for RCU and buffers
+    m_rootState->ensure_thread_registered();
+    
     switch (def.m_type) {
         case PluginParamType::ParamFloat:
             set(path, def.as_float(), strategy, source, create);
