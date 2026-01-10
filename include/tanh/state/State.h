@@ -30,7 +30,7 @@ public:
 
     // Direct parameter getters (real-time safe for numeric types)
     template<typename T>
-    T get_from_root(std::string_view key) const;
+    T get_from_root(std::string_view key, bool allow_blocking = false) const;
 
     Parameter get_from_root(std::string_view key) const;
 

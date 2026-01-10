@@ -18,7 +18,8 @@ TEST(StateTests, BasicParameterOperations) {
     state.set("float_param", 2.71828f);
     state.set("int_param", 42);
     state.set("bool_param", true);
-    state.set("string_param", "hello world");
+    state.set("string_param", "hello world"); // Short string falls within SSO buffer
+    state.set("string_param_long", std::string(1000, 'a')); // Long string exceeds SSO buffer
     
     // Test that the state is no longer empty
     EXPECT_FALSE(state.is_empty());
@@ -28,7 +29,9 @@ TEST(StateTests, BasicParameterOperations) {
     EXPECT_FLOAT_EQ(2.71828f, state.get<float>("float_param"));
     EXPECT_EQ(42, state.get<int>("int_param"));
     EXPECT_TRUE(state.get<bool>("bool_param"));
-    EXPECT_EQ("hello world", state.get<std::string>("string_param"));
+    EXPECT_EQ("hello world", state.get<std::string>("string_param")); // Still SSO, non-blocking
+    EXPECT_EQ(std::string(1000, 'a'), state.get<std::string>("string_param_long", true)); // May block due to heap allocation
+
     
     // Test parameter type identification
     EXPECT_EQ(ParameterType::Double, state.get_parameter_type("double_param"));
@@ -68,6 +71,14 @@ TEST(StateTests, AutoGroupCreation) {
     EXPECT_DOUBLE_EQ(0.75, state.get<double>("audio.mixer.volume"));
     EXPECT_DOUBLE_EQ(0.75, audio_group->get<double>("mixer.volume"));
     EXPECT_DOUBLE_EQ(0.75, mixer_group->get<double>("volume"));
+
+    EXPECT_THROW({
+        state.get<double>("audio.nonexistent", true); // Blocking because of the exception
+    }, StateKeyNotFoundException);
+
+    EXPECT_THROW({
+        audio_group->get<double>("nonexistent.volume", true); // Blocking because of the exception
+    }, StateGroupNotFoundException);
     
     // Set another parameter in a different hierarchy
     state.set("audio.effects.reverb.size", 0.5);
@@ -222,7 +233,7 @@ TEST(StateTests, CreateParameterFlag) {
     EXPECT_THROW({
         // "effects" doesn't exist under audio
         state.set("audio.effects.reverb", 0.3, NotifyStrategies::all, nullptr, false);
-    }, StateGroupNotFoundExceptio);
+    }, StateGroupNotFoundException);
     
     // Create that missing group and then test again
     state.set("audio.effects.reverb", 0.3, NotifyStrategies::all, nullptr, true);
