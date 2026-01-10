@@ -59,7 +59,7 @@ void StateGroup::clear() {
     clear_groups();
 }
 
-bool StateGroup::is_empty() const TANH_NONBLOCKING {
+bool StateGroup::is_empty() const TANH_NONBLOCKING_FUNCTION {
     // Check if we have any subgroups using RCU (lock-free read)
     bool has_groups = false;
     m_groups_rcu.read([&](const GroupMap& groups) {
@@ -77,8 +77,8 @@ bool StateGroup::is_empty() const TANH_NONBLOCKING {
     bool has_parameters = false;
     m_rootState->m_parameters_rcu.read([&](const auto& parameters) {
         for (const auto& [key, param] : parameters) {
-            // String operations like find() aren't real-time safe, but we're doing this under RCU read
-            // and in a controlled environment where we know the strings won't cause memory allocation
+            // std::string::find() isn't formally guaranteed RT-safe by the standard,
+            // but in practice doesn't allocate - we're only searching pre-existing strings
             if (key.find(fullPath) == 0) {
                 // If the parameter belongs to this group, we're not empty
                 has_parameters = true;
@@ -125,7 +125,7 @@ void StateGroup::remove_callback_listener(size_t listener_id) {
     });
 }
 
-void StateGroup::notify_parameter_change(std::string_view path) TANH_NONBLOCKING {
+void StateGroup::notify_parameter_change(std::string_view path) {
     // Resolve the path to get the parameter
     auto [group, param_name] = resolve_path(path);
     if (!group || !group->m_rootState) return;
@@ -146,7 +146,7 @@ void StateGroup::notify_parameter_change(std::string_view path) TANH_NONBLOCKING
     }
 }
 
-void StateGroup::notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy, ParameterListener* source ) const TANH_NONBLOCKING {
+void StateGroup::notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy, ParameterListener* source ) const {
     if (strategy == NotifyStrategies::none){
         return;
     }
@@ -157,9 +157,6 @@ void StateGroup::notify_listeners(std::string_view path, const Parameter& param,
             if ((strategy == NotifyStrategies::others && listener == source) || (strategy == NotifyStrategies::self && listener != source)) {
                 continue;
             }
-#ifdef TANH_WITH_RTSAN
-            __rtsan::ScopedDisabler sd;
-#endif
             listener->on_parameter_changed(path, param);
         }
         
@@ -210,7 +207,7 @@ StateGroup* StateGroup::create_group(std::string_view name) {
     return group_ptr;
 }
 
-StateGroup* StateGroup::get_group(std::string_view name) const TANH_NONBLOCKING {
+StateGroup* StateGroup::get_group(std::string_view name) const TANH_NONBLOCKING_FUNCTION {
     std::string name_str(name);
     StateGroup* found_group = nullptr;
     
@@ -224,7 +221,7 @@ StateGroup* StateGroup::get_group(std::string_view name) const TANH_NONBLOCKING 
     return found_group;
 }
 
-bool StateGroup::has_group(std::string_view name) const TANH_NONBLOCKING {
+bool StateGroup::has_group(std::string_view name) const TANH_NONBLOCKING_FUNCTION {
     std::string name_str(name);
     bool found = false;
     
@@ -236,7 +233,7 @@ bool StateGroup::has_group(std::string_view name) const TANH_NONBLOCKING {
 }
 
 // Get the full path of this group
-std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING {
+std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
     if (!m_parent || m_parent == m_rootState) {
         return m_name;
     }
@@ -289,7 +286,7 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING {
 }
 
 // Helper for parameter resolution with paths
-std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_view path) const TANH_NONBLOCKING {
+std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_view path) const {
     // If path is empty or has no dots, it refers to a parameter in this group
     if (path.empty() || path.find('.') == std::string::npos) {
         return {const_cast<StateGroup*>(this), path};
@@ -345,22 +342,31 @@ std::pair<StateGroup*, std::string_view> StateGroup::resolve_path_create(std::st
 
 // Parameter access methods
 template<typename T>
-T StateGroup::get(std::string_view path) const TANH_NONBLOCKING {
-    auto [group, param_name] = resolve_path(path);
-    if (group == this) {
-        // Parameter in this group, delegate to root state
-        // Use State's pre-allocated buffer
-        m_rootState->m_path_buffer_2.clear();
-        
-        std::string_view group_path = get_full_path();
-        detail::join_path(group_path, param_name, m_rootState->m_path_buffer_2);
-        return m_rootState->get_from_root<T>(m_rootState->m_path_buffer_2);
+T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
+    auto getter_fn = [&]() -> T {
+        auto [group, param_name] = resolve_path(path);
+        if (group == this) {
+            // Parameter in this group, delegate to root state
+            // Use State's pre-allocated buffer
+            m_rootState->m_path_buffer_2.clear();
+            
+            std::string_view group_path = get_full_path();
+            detail::join_path(group_path, param_name, m_rootState->m_path_buffer_2);
+            return m_rootState->get_from_root<T>(m_rootState->m_path_buffer_2, allow_blocking);
+        }
+        // Parameter in a child group
+        return group->get<T>(param_name, allow_blocking);
+    };
+    
+    if (!allow_blocking) {
+        return getter_fn();
+    } else {
+        TANH_NONBLOCKING_SCOPED_DISABLER
+        return getter_fn();
     }
-    // Parameter in a child group
-    return group->get<T>(param_name);
 }
 
-ParameterType StateGroup::get_parameter_type(std::string_view path) const TANH_NONBLOCKING {
+ParameterType StateGroup::get_parameter_type(std::string_view path) const TANH_NONBLOCKING_FUNCTION {
     auto [group, param_name] = resolve_path(path);
     if (group == this) {
         // Parameter in this group, delegate to root state
@@ -419,7 +425,6 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
 // Parameter setters with path support
 template<typename T>
 void StateGroup::set(std::string_view path, T value, NotifyStrategies strategy, ParameterListener* source, bool create) {
-
     // Use different path resolution based on whether we want to create missing elements
     std::pair<StateGroup*, std::string> resolution;
     if (create) {
@@ -516,10 +521,9 @@ template void StateGroup::set(std::string_view path, const bool value, NotifyStr
 template void StateGroup::set(std::string_view path, const std::string value, NotifyStrategies strategy, ParameterListener* source, bool create);
 
 
-template double StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
-template float StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
-template int StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
-template bool StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
-template std::string StateGroup::get(std::string_view path) const TANH_NONBLOCKING;
-
+template double StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template float StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template int StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template bool StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template std::string StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 } // namespace thl

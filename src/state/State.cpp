@@ -222,8 +222,8 @@ void State::set_in_root(std::string_view key, const char* value, NotifyStrategie
 
 // Parameter getters (real-time safe for numeric types)
 template<typename T>
-T State::get_from_root(std::string_view key) const TANH_NONBLOCKING {
-    return m_parameters_rcu.read([&](const ParameterMap& params) -> T {
+T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
+    auto reader_fn = [&](const ParameterMap& params) -> T {
         auto it = params.find(key);
         if (it == params.end()) {
             throw StateKeyNotFoundException(key);
@@ -238,9 +238,7 @@ T State::get_from_root(std::string_view key) const TANH_NONBLOCKING {
         } else if constexpr (std::is_same_v<T, bool>) {
             return it->second.bool_value.load(std::memory_order_acquire);
         } else if constexpr (std::is_same_v<T, std::string>) {
-#ifdef TANH_WITH_RTSAN
-            __rtsan::ScopedDisabler sd;
-#endif
+            // If the string is longer than the SSO buffer, this may allocate memory!
             auto type = it->second.type.load(std::memory_order_acquire);
             switch (type) {
                 case ParameterType::String: {
@@ -258,7 +256,14 @@ T State::get_from_root(std::string_view key) const TANH_NONBLOCKING {
                     return ""; // Unknown type
             }
         }
-    });
+    };
+    
+    if (!allow_blocking) {
+        return m_parameters_rcu.read(reader_fn);
+    } else {
+        TANH_NONBLOCKING_SCOPED_DISABLER
+        return m_parameters_rcu.read(reader_fn);
+    }
 }
 
 std::string State::get_state_dump() const {
@@ -333,7 +338,7 @@ std::string State::get_state_dump() const {
 }
 
 // Get the type of a parameter - renamed to get_type_from_root
-ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOCKING {
+ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOCKING_FUNCTION {
     // Use heterogeneous lookup with string_view directly - no temporary string creation
     return m_parameters_rcu.read([&](const ParameterMap& params) -> ParameterType {
         auto it = params.find(key);
@@ -357,7 +362,7 @@ void State::clear() {
     StateGroup::clear_groups();
 }
 
-bool State::is_empty() const {
+bool State::is_empty() const TANH_NONBLOCKING_FUNCTION {
     // Check if parameters are empty
     bool parametersEmpty = m_parameters_rcu.read([](const ParameterMap& params) {
         return params.empty();
@@ -455,7 +460,7 @@ void State::set_definition_in_root(std::string_view key, const ParameterDefiniti
     });
 }
 
-ParameterDefinition* State::get_definition_from_root(std::string_view key) const {
+ParameterDefinition* State::get_definition_from_root(std::string_view key) const TANH_NONBLOCKING_FUNCTION {
     return m_parameters_rcu.read([&](const ParameterMap& params) -> ParameterDefinition* {
         auto it = params.find(key);
         if (it == params.end()) {
@@ -471,10 +476,9 @@ template void State::set_in_root(std::string_view key, const int value, NotifySt
 template void State::set_in_root(std::string_view key, const bool value, NotifyStrategies strategy, ParameterListener* source);
 template void State::set_in_root(std::string_view key, const std::string value, NotifyStrategies strategy, ParameterListener* source);
 
-template double State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
-template float State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
-template int State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
-template bool State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
-template std::string State::get_from_root(std::string_view key) const TANH_NONBLOCKING;
-
+template double State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template float State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template int State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template bool State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template std::string State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 } // namespace thl

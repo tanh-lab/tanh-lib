@@ -28,6 +28,9 @@ class StateKeyNotFoundException : public std::runtime_error {
 public:
     explicit StateKeyNotFoundException(std::string_view key) 
         : std::runtime_error("Key not found in state: " + std::string(key)), m_key(key) {}
+    ~StateKeyNotFoundException() {
+        TANH_NONBLOCKING_DISABLE // Disable RT sanitizer during stack unwinding, needed if exception thrown in RT context
+    }
     
     const std::string& key() const { return m_key; }
     
@@ -39,6 +42,9 @@ class StateGroupNotFoundException : public std::runtime_error {
 public:
     explicit StateGroupNotFoundException(std::string_view groupName) 
         : std::runtime_error("State group not found: " + std::string(groupName)), m_groupName(groupName) {}
+    ~StateGroupNotFoundException() {
+        TANH_NONBLOCKING_DISABLE // Disable RT sanitizer during stack unwinding, needed if exception thrown in RT context
+    }
 
 private:
     std::string m_groupName;
@@ -69,7 +75,7 @@ public:
     StateGroup* get_group(std::string_view name) const;
     bool has_group(std::string_view name) const;
     
-    // Parameter access with path support (can navigate through nested groups)
+    // Parameter access with path support (can navigate through nested groups), !BLOCKING
     Parameter get_parameter(std::string_view path) const;
 
     // Get all parameters in this group
@@ -84,7 +90,7 @@ public:
 
     // Parameter getters (real-time safe for numeric types)
     template<typename T>
-    T get(std::string_view path) const;
+    T get(std::string_view path, bool allow_blocking = false) const;
     
     // Get parameter type with path support
     ParameterType get_parameter_type(std::string_view path) const;
