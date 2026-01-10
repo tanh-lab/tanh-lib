@@ -3,6 +3,7 @@
 #include "StateGroup.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 #include <nlohmann/json.hpp>
+#include <unordered_set>
 
 namespace thl {
 
@@ -17,7 +18,7 @@ namespace thl {
  * @section rt_safety Real-Time Safety
  * 
  * Functions marked with `TANH_NONBLOCKING_FUNCTION` are designed to be real-time safe when:
- * - The thread has been registered via ensure_rcu_initialized()
+ * - The thread has been registered via ensure_thread_registered()
  * - For numeric types (double, float, int, bool): fully real-time safe
  * - For string types: may allocate if string exceeds SSO buffer size
  * 
@@ -49,16 +50,19 @@ public:
     ~State();
 
     /**
-     * @brief Ensures RCU is initialized for the current thread.
+     * @brief Ensures the current thread is registered for real-time safe access.
      * 
      * Must be called from each thread that will access the state before any
-     * parameter operations. Initializes thread-local RCU data structures and
-     * pre-allocates string buffers.
+     * parameter operations (The thread that constructs the state is registered automatically!). Registers with all internal RCU structures and
+     * pre-allocates string buffers for this State instance.
+     * 
+     * Safe to call multiple times - subsequent calls are no-ops for already
+     * registered State instances.
      * 
      * @warning NOT real-time safe - should be called during thread initialization,
      *          not in the audio processing callback.
      */
-    void ensure_rcu_initialized();
+    void ensure_thread_registered();
 
     /**
      * @brief Sets a parameter value directly in the root parameter map.
@@ -221,8 +225,13 @@ private:
     /// @brief Maximum depth levels for path resolution
     size_t m_max_levels;
 
-    /// @brief Thread-local flag indicating if RCU has been initialized for this thread
-    static inline thread_local bool thread_registered = false;
+    /// @brief Thread-local set tracking which State instances have fully registered this thread
+    static inline thread_local std::unordered_set<const State*> t_registered_states;
+    
+    /// @brief Registers current thread with this State's RCU structures
+    void register_reader_thread();
+    /// @brief Reserves thread-local string buffers for path operations
+    void reserve_temporary_string_buffers();
 };
 
 } // namespace thl

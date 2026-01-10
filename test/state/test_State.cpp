@@ -336,7 +336,7 @@ TEST(StateTests, ThreadSafety) {
 
     // Function for writer threads (increment counter) - made real-time safe
     auto writer = [&state, &start_flag, &ready_thread_count, &operations_completed, &volume_increments](int id) {
-        state.ensure_rcu_initialized(); // Ensure RCU is initialized for this thread
+        state.ensure_thread_registered(); // Ensure thread is registered for RT-safe access
         // Signal that thread is ready
         ready_thread_count.fetch_add(1);
         
@@ -375,7 +375,7 @@ TEST(StateTests, ThreadSafety) {
     
     // Function for reader threads - made real-time safe
     auto reader = [&state, &start_flag, &ready_thread_count](int id) {
-        state.ensure_rcu_initialized(); // Ensure RCU is initialized for this thread
+        state.ensure_thread_registered(); // Ensure thread is registered for RT-safe access
 
         // Signal that thread is ready
         ready_thread_count.fetch_add(1);

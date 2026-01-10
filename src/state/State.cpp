@@ -6,33 +6,42 @@ State::State(size_t max_string_size, size_t max_levels) : m_max_string_size(max_
     // Initialize the StateGroup with this as the root state
     m_rootState = this;
 
-    ensure_rcu_initialized();
+    ensure_thread_registered();
 }
 
 State::~State() {
     // RCU destructors handle cleanup automatically
 }
 
-void State::ensure_rcu_initialized() {
-    if (!thread_registered) [[ unlikely ]] {   
-        // Ensure RCU is initialized for the current thread
-        m_parameters_rcu.ensure_thread_registered();
-        m_groups_rcu.ensure_thread_registered();
-        m_listeners_rcu.ensure_thread_registered();
-
-        if (m_path_buffer_1.size() < m_max_string_size) {
-            // Reserve space only if the buffer is not already large enough
-            m_path_buffer_1.reserve(m_max_string_size);
-            m_path_buffer_2.reserve(m_max_string_size);
-            m_path_buffer_3.reserve(m_max_string_size);
-            m_temp_buffer.reserve(m_max_string_size);
-            m_path_buffer_1.clear();
-            m_path_buffer_2.clear();
-            m_path_buffer_3.clear();
-            m_temp_buffer.clear();
-        }
-        thread_registered = true;
+void State::ensure_thread_registered() {
+    // Check if this thread is already registered with this State instance
+    if (t_registered_states.find(this) == t_registered_states.end()) [[unlikely]] {
+        register_reader_thread();
+        reserve_temporary_string_buffers();
+        t_registered_states.insert(this);
     }
+}
+
+void State::register_reader_thread() {
+    // Register this thread with all RCU structures for this State
+    m_parameters_rcu.register_reader_thread();
+    m_groups_rcu.register_reader_thread();
+    m_listeners_rcu.register_reader_thread();
+}
+
+void State::reserve_temporary_string_buffers() {
+    // Reserve buffers - no separate tracking needed, called from ensure_thread_registered
+    if (m_path_buffer_1.capacity() < m_max_string_size) {
+        // Reserve space only if the buffer is not already large enough
+        m_path_buffer_1.reserve(m_max_string_size);
+        m_path_buffer_2.reserve(m_max_string_size);
+        m_path_buffer_3.reserve(m_max_string_size);
+        m_temp_buffer.reserve(m_max_string_size);
+    }
+    m_path_buffer_1.clear();
+    m_path_buffer_2.clear();
+    m_path_buffer_3.clear();
+    m_temp_buffer.clear();
 }
 
 template<typename T>
@@ -363,6 +372,10 @@ bool State::is_empty() const TANH_NONBLOCKING_FUNCTION {
 
 // Implementation of update_from_json method
 void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies strategy, ParameterListener* source) {
+
+    // Ensure thread is registered for RT-safe access
+    ensure_thread_registered();
+    
     // Helper function to check if a parameter exists before updating
     auto check_parameter_exists = [this](std::string_view key) {
         bool exists = m_parameters_rcu.read([&](const ParameterMap& params) {
