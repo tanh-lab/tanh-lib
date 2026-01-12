@@ -1,7 +1,7 @@
 TODOs
 
-- [ ] Fix the problem where after adding groups their listeners and group rcus are not registered in the threads
-- [ ] Fix the update from json method to be real-time safe and lock-free??? (Really)
-- [ ] Delete unecessary convinience methods in RCU (set, get, has, replace, ...?)
-- [ ] Add an in gestrue parameter...
+- [ ] Fix the update from json method and the param to json method.
+- [ ] Add an in_gesture option to the state
+- [ ] How to register threads without beeing on them? For rcu and buffer registration! So that we don't have a single real-time violation on audio threads.
 - [ ] Think about the buffered strings implementation in the path resolution. Is there no more elegant way?
+- 

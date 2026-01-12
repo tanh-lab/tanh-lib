@@ -9,17 +9,15 @@ State::State(size_t max_string_size, size_t max_levels) : m_max_string_size(max_
     ensure_thread_registered();
 }
 
-State::~State() {
-    // RCU destructors handle cleanup automatically
-}
-
 void State::ensure_thread_registered() {
     // Check if this thread is already registered with this State instance
-    if (t_registered_states.find(this) == t_registered_states.end()) [[unlikely]] {
-        register_reader_thread();
-        reserve_temporary_string_buffers();
-        t_registered_states.insert(this);
+    if (t_registered_states.find(this) != t_registered_states.end()) [[ likely ]] {
+        return; // Already registered
     }
+    register_reader_thread();
+    reserve_temporary_string_buffers();
+    ensure_child_groups_registered();
+    t_registered_states.insert(this);
 }
 
 void State::register_reader_thread() {
@@ -31,17 +29,17 @@ void State::register_reader_thread() {
 
 void State::reserve_temporary_string_buffers() {
     // Reserve buffers - no separate tracking needed, called from ensure_thread_registered
-    if (m_path_buffer_1.capacity() < m_max_string_size) {
+    if (m_temp_buffer_0.capacity() < m_max_string_size) {
         // Reserve space only if the buffer is not already large enough
-        m_path_buffer_1.reserve(m_max_string_size);
-        m_path_buffer_2.reserve(m_max_string_size);
-        m_path_buffer_3.reserve(m_max_string_size);
-        m_temp_buffer.reserve(m_max_string_size);
+        m_temp_buffer_0.reserve(m_max_string_size);
+        m_temp_buffer_1.reserve(m_max_string_size);
+        m_temp_buffer_2.reserve(m_max_string_size);
+        m_temp_buffer_3.reserve(m_max_string_size);
     }
-    m_path_buffer_1.clear();
-    m_path_buffer_2.clear();
-    m_path_buffer_3.clear();
-    m_temp_buffer.clear();
+    m_temp_buffer_0.clear();
+    m_temp_buffer_1.clear();
+    m_temp_buffer_2.clear();
+    m_temp_buffer_3.clear();
 }
 
 template<typename T>
@@ -397,9 +395,9 @@ void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies s
                 path = key;
             } else {
                 // Use State's pre-allocated buffer
-                m_rootState->m_temp_buffer.clear();
-                detail::join_path(prefix, key, m_rootState->m_temp_buffer);
-                path = m_rootState->m_temp_buffer;
+                m_rootState->m_temp_buffer_0.clear();
+                detail::join_path(prefix, key, m_rootState->m_temp_buffer_0);
+                path = m_rootState->m_temp_buffer_0;
             }
             
             // Check if the value is a nested object

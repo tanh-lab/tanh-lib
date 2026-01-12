@@ -336,7 +336,6 @@ TEST(StateTests, ThreadSafety) {
 
     // Function for writer threads (increment counter) - made real-time safe
     auto writer = [&state, &start_flag, &ready_thread_count, &operations_completed, &volume_increments](int id) {
-        state.ensure_thread_registered(); // Ensure thread is registered for RT-safe access
         // Signal that thread is ready
         ready_thread_count.fetch_add(1);
         
@@ -345,7 +344,11 @@ TEST(StateTests, ThreadSafety) {
             // Real-time safe spin wait
             std::atomic_thread_fence(std::memory_order_acquire);
         }
+
+        // Ensure thread is registered after start signal to account for the nested group created after initial thread creation
+        state.ensure_thread_registered();
         
+
         for (int i = 0; i < NUM_OPERATIONS; ++i) {
             // Atomically increment the shared operation counter
             operations_completed.fetch_add(1, std::memory_order_relaxed);
@@ -375,8 +378,6 @@ TEST(StateTests, ThreadSafety) {
     
     // Function for reader threads - made real-time safe
     auto reader = [&state, &start_flag, &ready_thread_count](int id) {
-        state.ensure_thread_registered(); // Ensure thread is registered for RT-safe access
-
         // Signal that thread is ready
         ready_thread_count.fetch_add(1);
         
@@ -386,10 +387,14 @@ TEST(StateTests, ThreadSafety) {
             std::atomic_thread_fence(std::memory_order_acquire);
         }
         
+        // Ensure thread is registered after start signal to account for the nested group created after initial thread creation
+        state.ensure_thread_registered();
+        
         for (int i = 0; i < NUM_OPERATIONS; ++i) {
             // Read various parameters - these are real-time safe operations
             int counter = state.get<int>("counter");
             double volume = state.get<double>("audio.volume");
+            int test_param = state.get<int>("nested.group.param");
             
             // String read is not real-time safe, but is necessary for the test
             std::string str = state.get<std::string>("string_param", true);
@@ -397,11 +402,17 @@ TEST(StateTests, ThreadSafety) {
             // Just to avoid compiler optimization
             EXPECT_GE(counter, 0);
             EXPECT_GE(volume, 0.0);
+            EXPECT_EQ(test_param, 10);
             EXPECT_FALSE(str.empty());
             
             // Sleep to simulate work - not real-time safe
             std::this_thread::sleep_for(std::chrono::microseconds(1));
         }
+        
+        // Exit real-time context before thread cleanup to avoid RTSan false positive
+        // Thread destruction involves free(), which RTSan would flag if still in RT context
+        TANH_NONBLOCKING_SCOPED_DISABLER
+        
         return true; // All reads completed successfully
     };
     
@@ -419,7 +430,10 @@ TEST(StateTests, ThreadSafety) {
         // Small sleep here is acceptable as it's not in the real-time path
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    
+
+    // Nested group with parameter
+    state.create_group("nested")->create_group("group")->set("param", 10);
+
     // Start all threads simultaneously - real-time safe trigger
     start_flag.store(true, std::memory_order_release);
     
