@@ -10,6 +10,7 @@
 #include <shared_mutex>
 #include <atomic>
 #include <functional>
+#include <unordered_set>
 
 #include "tanh/core/threading/RCU.h"
 #include "tanh/utils/RealtimeSanitizer.h"
@@ -378,6 +379,13 @@ public:
      * @warning NOT real-time safe - initialization
      */
     StateGroup(State* rootState, StateGroup* parent = nullptr, std::string_view name = "");
+
+    /**
+     * @brief Destroys the StateGroup.
+     * 
+     * @warning NOT real-time safe - cleanup
+     */
+    virtual ~StateGroup();
     
 private:
     friend class State;
@@ -466,6 +474,15 @@ private:
     /// @brief RCU-protected groups map for lock-free group access
     using GroupMap = std::map<std::string, std::shared_ptr<StateGroup>>;
     mutable RCU<GroupMap> m_groups_rcu;
+
+    /// @brief Registers current thread with this State's RCU structures
+    virtual void ensure_thread_registered();
+
+    /// @brief Registers child groups recursively for the current thread
+    void ensure_child_groups_registered();
+
+    /// @brief Thread-local set tracking which State instances have fully registered this thread
+    static inline thread_local std::unordered_set<const StateGroup*> t_registered_states;
 };
 
 } // namespace thl

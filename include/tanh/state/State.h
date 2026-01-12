@@ -3,7 +3,6 @@
 #include "StateGroup.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 #include <nlohmann/json.hpp>
-#include <unordered_set>
 
 namespace thl {
 
@@ -42,12 +41,6 @@ public:
      * @warning NOT real-time safe - allocates memory
      */
     State(size_t max_string_size = 512, size_t max_levels = 10);
-    
-    /**
-     * @brief Destructor.
-     * @warning NOT real-time safe
-     */
-    ~State();
 
     /**
      * @brief Ensures the current thread is registered for real-time safe access.
@@ -61,8 +54,11 @@ public:
      * 
      * @warning NOT real-time safe - should be called during thread initialization,
      *          not in the audio processing callback.
+     *          This will only register the thread for this State instance; and its current child state groups.
+     *          If the thread will access other State instances, it must register with those separately.
+     *          if the State will create new child StateGroups after this call on other threads, this thread must reregister again after those groups are created.
      */
-    void ensure_thread_registered();
+    void ensure_thread_registered() override;
 
     /**
      * @brief Sets a parameter value directly in the root parameter map.
@@ -208,13 +204,13 @@ private:
     
     /// @brief Thread-local string buffer for path operations (real-time safe after initialization)
     /// @todo Problem if these are thread_local, how to initialize on audio thread?
-    static inline thread_local std::string m_path_buffer_1;
-    /// @brief Thread-local string buffer for path operations (real-time safe after initialization)
-    static inline thread_local std::string m_path_buffer_2; 
-    /// @brief Thread-local string buffer for path operations (real-time safe after initialization)
-    static inline thread_local std::string m_path_buffer_3;
+    static inline thread_local std::string m_temp_buffer_0;
     /// @brief Thread-local temporary buffer for path operations (real-time safe after initialization)
-    static inline thread_local std::string m_temp_buffer;
+    static inline thread_local std::string m_temp_buffer_1;
+    /// @brief Thread-local string buffer for path operations (real-time safe after initialization)
+    static inline thread_local std::string m_temp_buffer_2; 
+    /// @brief Thread-local string buffer for path operations (real-time safe after initialization)
+    static inline thread_local std::string m_temp_buffer_3;
 
     /// @brief RCU-protected parameter map for lock-free reads
     using ParameterMap = std::map<std::string, ParameterData, std::less<>>;
@@ -225,9 +221,6 @@ private:
     /// @brief Maximum depth levels for path resolution
     size_t m_max_levels;
 
-    /// @brief Thread-local set tracking which State instances have fully registered this thread
-    static inline thread_local std::unordered_set<const State*> t_registered_states;
-    
     /// @brief Registers current thread with this State's RCU structures
     void register_reader_thread();
     /// @brief Reserves thread-local string buffers for path operations

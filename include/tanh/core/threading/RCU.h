@@ -182,7 +182,8 @@ public:
         m_data_ptr.store(new_data.release(), std::memory_order_release);
         
         // Retire old version with current grace period
-        uint64_t retire_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel) + 1;
+        // Note: At 1 billion updates/sec, takes 584 years to overflow uint64_t
+        uint64_t retire_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel);
         m_retired_list.push_back({const_cast<T*>(old_data), retire_period});
         
         // ═══════════════════════════════════════════════════
@@ -247,10 +248,12 @@ public:
      */
     void register_reader_thread() const {
         if (!t_rcu_state.get_node(this)) {
+            // Serialize with cleanup and count
+            std::lock_guard<std::mutex> lock(m_writer_mutex);
+
             // Allocate node on heap so it persists beyond thread lifetime
             auto node = std::make_unique<ReaderNode>();
             ReaderNode* node_ptr = node.get();
-            
             // Lock-free registration using atomic compare-and-swap
             ReaderNode* current_head = m_reader_head.load(std::memory_order_acquire);
             do {
@@ -263,12 +266,27 @@ public:
         }
     }
 
+    unsigned int get_reader_count() const {
+        // Serialize with cleanup and registration
+        std::lock_guard<std::mutex> lock(m_writer_mutex);
+        unsigned int count = 0;
+        ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
+        while (node != nullptr) {
+            if (!node->is_dead.load(std::memory_order_acquire)) {
+                ++count;
+            }
+            node = node->next.load(std::memory_order_acquire);
+        }
+        return count;
+    }
+
 private:
     // RCU-protected data pointer
     std::atomic<T*> m_data_ptr;
     
     // RCU control structures (per-instance for independence)
-    mutable std::atomic<uint64_t> m_grace_period{0};
+    // Start grace period at 1 so that readers not reading can be marked with period 0
+    mutable std::atomic<uint64_t> m_grace_period{1};
     mutable std::mutex m_writer_mutex;
     
     // Retired data tracking for deferred reclamation
@@ -285,7 +303,6 @@ private:
     // Lock-free linked list node for reader registration
     struct ReaderNode {
         std::atomic<uint64_t> read_generation{0};
-        std::atomic<int32_t> read_count{0};  // Count of active read sections
         std::atomic<ReaderNode*> next{nullptr};
         std::atomic<bool> is_dead{false};  // Mark node as dead when thread exits
     };
@@ -308,8 +325,8 @@ private:
             for (auto& [_, node] : nodes) {
                 if (node) {
                     // Ensure we're not in a read section before marking as dead
-                    if (node->read_count.load(std::memory_order_acquire) != 0) {
-                        node->read_count.store(0, std::memory_order_release);
+                    while (node->read_generation.load(std::memory_order_acquire) != 0) {
+                        std::this_thread::yield();
                     }
                     node->is_dead.store(true, std::memory_order_release);
                     node.release(); // Let cleanup_dead_nodes handle deletion
@@ -321,24 +338,15 @@ private:
     
     // RCU operations
     void rcu_read_lock() const {
-        if (auto* node = t_rcu_state.get_node(this)) {
-            // Increment read count to signal we're in a read section
-            // Relaxed is sufficient since synchronize_rcu uses acquire when checking
-            node->read_count.fetch_add(1, std::memory_order_relaxed);
-            // Record current grace period when entering read section
-            node->read_generation.store(
-                m_grace_period.load(std::memory_order_acquire), 
-                std::memory_order_relaxed
-            );
+        if (auto* node = t_rcu_state.get_node(this)) {          
+            uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
+            node->read_generation.store(current_period, std::memory_order_release);
         }
     }
     
     void rcu_read_unlock() const {
         if (auto* node = t_rcu_state.get_node(this)) {
-            // Mark that we're no longer in a read section
             node->read_generation.store(0, std::memory_order_release);
-            // Decrement read count
-            node->read_count.fetch_sub(1, std::memory_order_release);
         }
     }
     
@@ -353,35 +361,28 @@ private:
     void cleanup_safe_versions() {
         if (m_retired_list.empty()) return;
         
-        // Find minimum period any reader is still in
-        uint64_t min_active_period = UINT64_MAX;
-        bool any_active_readers = false;
+        // Get current grace period - we can never delete data from current or previous period
+        uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
         
-        ReaderNode* current = m_reader_head.load(std::memory_order_acquire);
-        while (current != nullptr) {
-            if (!current->is_dead.load(std::memory_order_acquire)) {
-                int32_t count = current->read_count.load(std::memory_order_acquire);
-                if (count > 0) {
-                    any_active_readers = true;
-                    uint64_t reader_period = current->read_generation.load(std::memory_order_acquire);
-                    if (reader_period > 0) {
-                        min_active_period = std::min(min_active_period, reader_period);
+        // Find minimum period any active reader is in
+        uint64_t min_active_period = UINT64_MAX;
+        
+        ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
+        while (node != nullptr) {
+            if (!node->is_dead.load(std::memory_order_acquire)) {
+                uint64_t reader_period = node->read_generation.load(std::memory_order_acquire);
+                
+                if (reader_period != 0) {
+                    // Active reader - consider its period
+                    if (reader_period < min_active_period) {
+                        min_active_period = reader_period;
                     }
                 }
             }
-            current = current->next.load(std::memory_order_acquire);
+            node = node->next.load(std::memory_order_acquire);
         }
         
-        // If no active readers, can delete everything!
-        if (!any_active_readers) {
-            for (auto& retired : m_retired_list) {
-                delete retired.ptr;
-            }
-            m_retired_list.clear();
-            return;
-        }
-        
-        // Delete all versions older than minimum active reader period
+        // Delete all versions older than the threshold
         auto it = m_retired_list.begin();
         while (it != m_retired_list.end()) {
             if (it->grace_period < min_active_period) {
@@ -401,8 +402,8 @@ private:
      */
     void synchronize_rcu() {
         // Start new grace period
-        uint64_t new_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel) + 1;
-        
+        uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
+
         // Wait for all live readers to finish their read sections
         ReaderNode* current = m_reader_head.load(std::memory_order_acquire);
         while (current != nullptr) {
@@ -410,16 +411,13 @@ private:
             if (!current->is_dead.load(std::memory_order_acquire)) {
                 // Wait for the reader to exit its read section
                 while (true) {
-                    int32_t count = current->read_count.load(std::memory_order_acquire);
                     uint64_t reader_period = current->read_generation.load(std::memory_order_acquire);
-                    
-                    // Reader is safe if:
-                    // 1. Not in a read section (count == 0), OR
-                    // 2. Started reading after grace period began (reader_period >= new_period)
-                    if (count == 0 || reader_period >= new_period) {
-                        break;
+                    if (reader_period == 0) {
+                        break;  // Truly idle - not reading and not starting
                     }
-                    
+                    if (reader_period == current_period) {
+                        break;  // Reading current data, safe to proceed
+                    }
                     // Yield to give readers a chance to complete
                     std::this_thread::sleep_for(std::chrono::microseconds(1));
                 }
