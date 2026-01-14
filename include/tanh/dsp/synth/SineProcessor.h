@@ -28,8 +28,8 @@ public:
     float get_parameter(Parameters param) const;
 
 private:
-    void set_parameter(int param_id, float value) override;
-    float get_parameter(int param_id) const override;
+    void set_parameter(int param_id, float value);
+    float get_parameter(int param_id) const;
 
     std::vector<float> m_phase;
 
