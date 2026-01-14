@@ -36,8 +36,8 @@ private:
     float m_frequency = 100.f;
     float m_amplitude = 0.5f;
 
-    SmoothedValue smoothed_frequency;
-    SmoothedValue smoothed_amplitude;
+    utils::SmoothedValue smoothed_frequency;
+    utils::SmoothedValue smoothed_amplitude;
 
     double m_sample_rate = 44100.f;
     size_t m_samples_per_block = 512;
