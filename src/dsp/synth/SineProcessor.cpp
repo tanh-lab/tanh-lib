@@ -15,8 +15,8 @@ void SineProcessor::prepare(const double& sample_rate, const size_t& samples_per
     m_sample_rate = sample_rate;
     m_samples_per_block = samples_per_block;
 
-    smoothed_frequency.reset(sample_rate, 0.005, SmoothedValue::Linear);
-    smoothed_amplitude.reset(sample_rate, 0.005, SmoothedValue::Linear);
+    smoothed_frequency.reset(sample_rate, 0.005, utils::SmoothedValue::Linear);
+    smoothed_amplitude.reset(sample_rate, 0.005, utils::SmoothedValue::Linear);
 
     smoothed_frequency.set_current_and_target_value(m_frequency);
     smoothed_amplitude.set_current_and_target_value(m_amplitude);
