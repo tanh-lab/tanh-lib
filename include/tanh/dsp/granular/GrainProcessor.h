@@ -45,6 +45,7 @@ public:
     // Load a new WAV file
     bool prepare_audio_data();
     bool load_wav_file(const std::string& file_path, const size_t sample_pack_index, const size_t sample_index, const float gain);
+    bool load_mp3_file(const std::string& file_path, const size_t sample_pack_index, const size_t sample_index, const float gain);
     bool load_all_samples();
 
 protected:
