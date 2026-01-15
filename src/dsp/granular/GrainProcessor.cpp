@@ -1,7 +1,8 @@
 #include <tanh/dsp/granular/GrainProcessor.h>
 #include <tanh/dsp/utils/Scales.h>
 
-#include <sndfile.h>
+#include <choc/audio/choc_AudioFileFormat.h>
+#include <choc/audio/choc_AudioFileFormat_WAV.h>
 
 #include <cstring>
 #include <iostream>
@@ -197,91 +198,78 @@ bool GrainProcessorImpl::load_all_samples(){
 }
 
 bool GrainProcessorImpl::load_wav_file(const std::string& file_path, const size_t sample_pack_index, const size_t sample_index, const float gain) {
-    // // Clear current data
+    // Clear current data
     m_audio_data[sample_pack_index][sample_index].clear();
 
-    // Open the WAV file
-    SF_INFO sf_info;
-    std::memset(&sf_info, 0, sizeof(sf_info));
+    // Create a reader using choc
+    choc::audio::AudioFileFormatList formatList;
+    formatList.addFormat<choc::audio::WAVAudioFileFormat<false>>();
 
-    SNDFILE* file = sf_open(file_path.c_str(), SFM_READ, &sf_info);
-    if (!file) {
-        std::cerr << "Error opening audio file: " << sf_strerror(nullptr) << std::endl;
+    auto reader = formatList.createReader(file_path);
+    if (!reader) {
+        std::cerr << "Error opening audio file: " << file_path << std::endl;
         return false;
     }
+
+    auto props = reader->getProperties();
 
     // Store file information
     if (m_channels == -1 || m_sample_rate == -1){
-        m_channels = sf_info.channels;
-        m_sample_rate = sf_info.samplerate;
+        m_channels = props.numChannels;
+        m_sample_rate = props.sampleRate;
     } else if (
-        m_channels != sf_info.channels || m_sample_rate != sf_info.samplerate
+        m_channels != props.numChannels || m_sample_rate != props.sampleRate
     ) {
         std::cerr << "Error opening audio file: invalid channel count or samplerate" << std::endl;
+        // Proceeding anyway as strictly matching might be too restrictive if we just want to read what we can?
+        // Original code printed error but didn't return false, but it did exit(1) on sample rate mismatch.
     }
+    
     if (m_sample_rate != 48000) {
-        std::cerr << "Sample rate mismatch: expected "
-                  << "48000.0"
-                  << ", got " << m_sample_rate << std::endl;
-        exit(1);
+         std::cerr << "Sample rate mismatch: expected "
+                   << "48000.0"
+                   << ", got " << m_sample_rate << std::endl;
+         exit(1);
     }
 
-    // Allocate memory for audio data
-    sf_count_t num_frames = sf_info.frames;
-    sf_count_t total_samples = num_frames * m_channels;
+    // Determine read range
+    long start_frame = getParameterInt(SampleStart);
+    long end_frame = getParameterInt(SampleEnd);
 
-    //sf_count_t start_frame = m_state.get<int>("screen_" + std::to_string(m_screen_index) + ".grains.grain_" + std::to_string(m_grain_index) + ".sample_start");
-    sf_count_t start_frame = getParameterInt(SampleStart);
-    //sf_count_t end_frame = m_state.get<int>("screen_" + std::to_string(m_screen_index) + ".grains.grain_" + std::to_string(m_grain_index) + ".sample_end");
-    sf_count_t end_frame = getParameterInt(SampleEnd);
+    // Validate range against file length
+    if (end_frame > props.numFrames) end_frame = static_cast<long>(props.numFrames);
+    if (start_frame >= end_frame) start_frame = 0; // or handle error
 
-    // Set the file position to the start of the sample
-    sf_seek(file, start_frame, SEEK_SET);
-    // Calculate the number of frames to read
-    sf_count_t frames_to_read = end_frame - start_frame;
+    long frames_to_read = end_frame - start_frame;
 
-    // Resize the audio data buffer to fit the number of frames
+    // Allocate memory for audio data (planar: LLL...RRR...)
     m_audio_data[sample_pack_index][sample_index].resize(frames_to_read * m_channels);
-    // Read the audio data
-    sf_count_t frames_read = sf_readf_float(file, m_audio_data[sample_pack_index][sample_index].data(), frames_to_read);
-    if (frames_read < 0) {
-        std::cerr << "Error reading audio data: " << sf_strerror(file) << std::endl;
-        sf_close(file);
-        return false;
+
+    // Create a view into our vector that choc can write to
+    // We need to construct an array of pointers to the channel starts
+    std::vector<float*> channel_pointers(m_channels);
+    for (size_t ch = 0; ch < m_channels; ++ch) {
+        channel_pointers[ch] = m_audio_data[sample_pack_index][sample_index].data() + (ch * frames_to_read);
     }
 
-    if (m_channels > 1) {
-        // Convert from interleaved to non-interleaved (planar) format
-        std::vector<float> deinterleaved(m_audio_data[sample_pack_index][sample_index].size());
-        sf_count_t frames = frames_read;
-        for (int ch = 0; ch < m_channels; ++ch) {
-            for (sf_count_t i = 0; i < frames; ++i) {
-                deinterleaved[ch * frames + i] = m_audio_data[sample_pack_index][sample_index][i * m_channels + ch];
-            }
-        }
-        m_audio_data[sample_pack_index][sample_index] = std::move(deinterleaved);
+    auto view = choc::buffer::createChannelArrayView(channel_pointers.data(), (unsigned int)m_channels, (unsigned int)frames_to_read);
+
+    // Read the audio data directly into our planar buffer
+    if (!reader->readFrames(start_frame, view)) {
+         std::cerr << "Error reading audio data from " << file_path << std::endl;
+         return false;
     }
 
     // Apply gain to all samples if necessary
     if (gain != 1.0f){
-        for (size_t i = 0; i < m_audio_data[sample_pack_index][sample_index].size(); i++)
-        {
-            m_audio_data[sample_pack_index][sample_index][i] = m_audio_data[sample_pack_index][sample_index][i] * gain;
+        for (float & i : m_audio_data[sample_pack_index][sample_index]) {
+            i = i * gain;
         }
-
     }
 
-    // Close the file
-    sf_close(file);
-
-    if (frames_read != frames_to_read) {
-        std::cerr << "Warning: Did not read all frames from file. Expected "
-                 << frames_to_read << ", got " << frames_read << std::endl;
-    }
-
-    std::cout << "Loaded audio file for granular synthesis: " << file_path << std::endl;
+    std::cout << "Loaded audio file: " << file_path << std::endl;
     std::cout << "Channels: " << m_channels << ", Sample rate: " << m_sample_rate
-             << ", Frames: " << frames_read << "/" << total_samples << std::endl;
+             << ", Frames: " << frames_to_read << "/" << props.numFrames << std::endl;
 
     return true;
 }

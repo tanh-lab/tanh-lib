@@ -231,26 +231,7 @@ if(TANH_BUILD_DSP)
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/choc>
     )
 
-    include(FetchContent)
-    FetchContent_Declare(
-            libsndfile
-            GIT_REPOSITORY https://github.com/libsndfile/libsndfile.git
-            GIT_TAG 1.2.2  # Use a stable version
-    )
-
-    # Configure libsndfile build options
-    set(BUILD_PROGRAMS OFF CACHE INTERNAL "")
-    set(BUILD_EXAMPLES OFF CACHE INTERNAL "")
-    set(BUILD_TESTING OFF CACHE INTERNAL "")
-    set(ENABLE_MPEG OFF CACHE INTERNAL "")
-    set(ENABLE_EXTERNAL_LIBS OFF CACHE INTERNAL "")
-    set(ENABLE_PACKAGE_CONFIG OFF CACHE INTERNAL "")
-    set(INSTALL_PKGCONFIG_MODULE OFF CACHE INTERNAL "")
-
-    # Make it available without installing
-    FetchContent_MakeAvailable(libsndfile)
-
-    target_link_libraries(${PROJECT_NAME}_dsp PUBLIC ${PROJECT_NAME}_core sndfile)
+    target_link_libraries(${PROJECT_NAME}_dsp PUBLIC ${PROJECT_NAME}_core)
 
     target_compile_definitions(${PROJECT_NAME}_dsp
         PUBLIC
