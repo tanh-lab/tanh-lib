@@ -3,6 +3,7 @@
 
 #include <choc/audio/choc_AudioFileFormat.h>
 #include <choc/audio/choc_AudioFileFormat_WAV.h>
+#include <choc/audio/choc_AudioFileFormat_MP3.h>
 
 #include <cstring>
 #include <iostream>
@@ -26,18 +27,18 @@ struct Samplepack
 
         std::string file_path = this->path_to_sample_folder +
                                std::to_string(note_number) + "_" + note_name +
-                               std::to_string(octave) + "_00_00.wav";
+                               std::to_string(octave) + "_00_00.mp3";
         return file_path;
     }
 };
 
 const float global_gain = 0.7;
 const std::vector<Samplepack> samplepacks = {
-    {60, 94, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks/HurdyGurdy/", 1.266f * global_gain},      // added samples properly start with C at 60, samples start at 67 (that's a G), but at least they're tuned correctly
-    {52, 86, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks/Mellotron/", 0.878f * global_gain},       // samples start at 48; C at 52
-    {48, 102, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks/Clavichord/", 21.f * global_gain},  // samples start at 40; C at 48
-    {47, 84, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks/Regal-Organ/", 0.9f * global_gain},      // samples start at 36; C at 47
-    {48, 88, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks/Glasharmonica/", 0.7f * global_gain}      // samples start at 48 (if missing have been created); C at 48 (officially it starts at 50, with c at 60)
+    {60, 94, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/HurdyGurdy/", 1.266f * global_gain},      // added samples properly start with C at 60, samples start at 67 (that's a G), but at least they're tuned correctly
+    {52, 86, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Mellotron/", 0.878f * global_gain},       // samples start at 48; C at 52
+    {48, 102, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Clavichord/", 21.f * global_gain},  // samples start at 40; C at 48
+    {47, 84, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Regal-Organ/", 0.9f * global_gain},      // samples start at 36; C at 47
+    {48, 88, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Glasharmonica/", 0.7f * global_gain}      // samples start at 48 (if missing have been created); C at 48 (officially it starts at 50, with c at 60)
 };
 
 namespace thl::dsp::granular
@@ -70,7 +71,6 @@ void GrainProcessorImpl::init()
         }
     }
 }
-
 
 void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels)
 {
@@ -188,7 +188,7 @@ bool GrainProcessorImpl::load_all_samples(){
         for (size_t sample_index = 0; sample_index < n_samples; ++sample_index) {
             int note_number = sample_pack.note_lowest + sample_index; // Starting from 51_D#3
             std::string file_path = sample_pack.get_sample_path(note_number);
-            if (!load_wav_file(file_path, sample_pack_index, sample_index, sample_pack.gain)) {
+            if (!load_mp3_file(file_path, sample_pack_index, sample_index, sample_pack.gain)) {
                 std::cerr << "Failed to load audio file for grain " << sample_index << ": " <<  file_path << std::endl;
                 return false;
             }
@@ -247,6 +247,80 @@ bool GrainProcessorImpl::load_wav_file(const std::string& file_path, const size_
 
     // Create a view into our vector that choc can write to
     // We need to construct an array of pointers to the channel starts
+    std::vector<float*> channel_pointers(m_channels);
+    for (size_t ch = 0; ch < m_channels; ++ch) {
+        channel_pointers[ch] = m_audio_data[sample_pack_index][sample_index].data() + (ch * frames_to_read);
+    }
+
+    auto view = choc::buffer::createChannelArrayView(channel_pointers.data(), (unsigned int)m_channels, (unsigned int)frames_to_read);
+
+    // Read the audio data directly into our planar buffer
+    if (!reader->readFrames(start_frame, view)) {
+         std::cerr << "Error reading audio data from " << file_path << std::endl;
+         return false;
+    }
+
+    // Apply gain to all samples if necessary
+    if (gain != 1.0f){
+        for (float & i : m_audio_data[sample_pack_index][sample_index]) {
+            i = i * gain;
+        }
+    }
+
+    std::cout << "Loaded audio file: " << file_path << std::endl;
+    std::cout << "Channels: " << m_channels << ", Sample rate: " << m_sample_rate
+             << ", Frames: " << frames_to_read << "/" << props.numFrames << std::endl;
+
+    return true;
+}
+
+bool GrainProcessorImpl::load_mp3_file(const std::string& file_path, const size_t sample_pack_index, const size_t sample_index, const float gain) {
+    // Clear current data
+    m_audio_data[sample_pack_index][sample_index].clear();
+
+    // Create a reader using choc
+    choc::audio::AudioFileFormatList formatList;
+    formatList.addFormat<choc::audio::MP3AudioFileFormat>();
+
+    auto reader = formatList.createReader(file_path);
+    if (!reader) {
+        std::cerr << "Error opening audio file: " << file_path << std::endl;
+        return false;
+    }
+
+    auto props = reader->getProperties();
+
+    // Store file information
+    if (m_channels == -1 || m_sample_rate == -1){
+        m_channels = props.numChannels;
+        m_sample_rate = props.sampleRate;
+    } else if (
+        m_channels != props.numChannels || m_sample_rate != props.sampleRate
+    ) {
+        std::cerr << "Error opening audio file: invalid channel count or samplerate" << std::endl;
+    }
+    
+    if (m_sample_rate != 48000) {
+         std::cerr << "Sample rate mismatch: expected "
+                   << "48000.0"
+                   << ", got " << m_sample_rate << std::endl;
+         exit(1);
+    }
+
+    // Determine read range
+    long start_frame = getParameterInt(SampleStart);
+    long end_frame = getParameterInt(SampleEnd);
+
+    // Validate range against file length
+    if (end_frame > props.numFrames) end_frame = static_cast<long>(props.numFrames);
+    if (start_frame >= end_frame) start_frame = 0; // or handle error
+
+    long frames_to_read = end_frame - start_frame;
+
+    // Allocate memory for audio data (planar: LLL...RRR...)
+    m_audio_data[sample_pack_index][sample_index].resize(frames_to_read * m_channels);
+
+    // Create a view into our vector that choc can write to
     std::vector<float*> channel_pointers(m_channels);
     for (size_t ch = 0; ch < m_channels; ++ch) {
         channel_pointers[ch] = m_audio_data[sample_pack_index][sample_index].data() + (ch * frames_to_read);
