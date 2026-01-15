@@ -1,9 +1,8 @@
 #pragma once
 
-#include <cmath>
+#include <random>
 #include <string>
 #include <vector>
-#include <random>
 #include <tanh/tanh.h>
 
 #include <tanh/dsp/utils/ADSR.h>
@@ -46,6 +45,7 @@ public:
     bool prepare_audio_data();
     bool load_wav_file(const std::string& file_path, const size_t sample_pack_index, const size_t sample_index, const float gain);
     bool load_mp3_file(const std::string& file_path, const size_t sample_pack_index, const size_t sample_index, const float gain);
+    bool load_mp3_from_memory(const char* data, int size, size_t sample_pack_index, size_t sample_index, float gain);
     bool load_all_samples();
 
 protected:
@@ -71,6 +71,8 @@ protected:
         NUM_PARAMETERS = 16
     };
 
+    inline static std::vector<std::vector<std::vector<float>>> m_audio_data = {};
+
 private:
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
@@ -82,7 +84,6 @@ private:
     size_t m_grain_index;
 
     // Audio sample data
-    inline static std::vector<std::vector<std::vector<float>>> m_audio_data = {};
     size_t m_num_notes;
 
     // Grain management
