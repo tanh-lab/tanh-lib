@@ -1,14 +1,10 @@
 #include <tanh/dsp/granular/GrainProcessor.h>
-#include <tanh/dsp/utils/Scales.h>
 
 #include <choc/audio/choc_AudioFileFormat.h>
 #include <choc/audio/choc_AudioFileFormat_WAV.h>
 #include <choc/audio/choc_AudioFileFormat_MP3.h>
 
-#include <cstring>
 #include <iostream>
-#include <cmath>
-#include <algorithm>
 
 struct Samplepack
 {
@@ -34,11 +30,11 @@ struct Samplepack
 
 const float global_gain = 0.7;
 const std::vector<Samplepack> samplepacks = {
-    {60, 94, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/HurdyGurdy/", 1.266f * global_gain},      // added samples properly start with C at 60, samples start at 67 (that's a G), but at least they're tuned correctly
-    {52, 86, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Mellotron/", 0.878f * global_gain},       // samples start at 48; C at 52
-    {48, 102, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Clavichord/", 21.f * global_gain},  // samples start at 40; C at 48
-    {47, 84, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Regal-Organ/", 0.9f * global_gain},      // samples start at 36; C at 47
-    {48, 88, "/Users/vackva/Code/work/tanh-lab/cosmos/assets/samplepacks_mp3/Glasharmonica/", 0.7f * global_gain}      // samples start at 48 (if missing have been created); C at 48 (officially it starts at 50, with c at 60)
+    {60, 94, "path/to/assets/samplepacks_mp3/HurdyGurdy/", 1.266f * global_gain},      // added samples properly start with C at 60, samples start at 67 (that's a G), but at least they're tuned correctly
+    {52, 86, "path/to/assets/samplepacks_mp3/Mellotron/", 0.878f * global_gain},       // samples start at 48; C at 52
+    {48, 102, "path/to/assets/samplepacks_mp3/Clavichord/", 21.f * global_gain},  // samples start at 40; C at 48
+    {47, 84, "path/to/assets/samplepacks_mp3/Regal-Organ/", 0.9f * global_gain},      // samples start at 36; C at 47
+    {48, 88, "path/to/assets/samplepacks_mp3/Glasharmonica/", 0.7f * global_gain}      // samples start at 48 (if missing have been created); C at 48 (officially it starts at 50, with c at 60)
 };
 
 namespace thl::dsp::granular
@@ -344,6 +340,66 @@ bool GrainProcessorImpl::load_mp3_file(const std::string& file_path, const size_
     std::cout << "Loaded audio file: " << file_path << std::endl;
     std::cout << "Channels: " << m_channels << ", Sample rate: " << m_sample_rate
              << ", Frames: " << frames_to_read << "/" << props.numFrames << std::endl;
+
+    return true;
+}
+
+bool GrainProcessorImpl::load_mp3_from_memory(const char* data, int size, size_t sample_pack_index, size_t sample_index, float gain) {
+    if (data == nullptr || size == 0) return false;
+
+    // Clear current data
+    if (m_audio_data.size() <= sample_pack_index) m_audio_data.resize(sample_pack_index + 1);
+    if (m_audio_data[sample_pack_index].size() <= sample_index) m_audio_data[sample_pack_index].resize(sample_index + 1);
+    m_audio_data[sample_pack_index][sample_index].clear();
+
+    // Create a reader using choc from memory
+    choc::audio::AudioFileFormatList formatList;
+    formatList.addFormat<choc::audio::MP3AudioFileFormat>();
+
+    auto stream = std::make_shared<std::istringstream>(std::string(data, static_cast<size_t>(size)), std::ios::binary);
+    auto reader = formatList.createReader(std::move(stream));
+    if (!reader) {
+        std::cerr << "Error opening audio data from memory" << std::endl;
+        return false;
+    }
+
+    auto props = reader->getProperties();
+
+    // Store file information
+    if (m_channels == -1 || m_sample_rate == -1){
+        m_channels = props.numChannels;
+        m_sample_rate = props.sampleRate;
+    } 
+    
+    if (m_sample_rate != 48000) {
+         // std::cerr << "Sample rate mismatch: expected 48000.0, got " << m_sample_rate << std::endl;
+    }
+
+    long frames_to_read = props.numFrames;
+
+    // Allocate memory for audio data (planar: LLL...RRR...)
+    m_audio_data[sample_pack_index][sample_index].resize(frames_to_read * m_channels);
+
+    // Create a view into our vector that choc can write to
+    std::vector<float*> channel_pointers(m_channels);
+    for (size_t ch = 0; ch < m_channels; ++ch) {
+        channel_pointers[ch] = m_audio_data[sample_pack_index][sample_index].data() + (ch * frames_to_read);
+    }
+
+    auto view = choc::buffer::createChannelArrayView(channel_pointers.data(), (unsigned int)m_channels, (unsigned int)frames_to_read);
+
+    // Read the audio data directly into our planar buffer
+    if (!reader->readFrames(0, view)) {
+         std::cerr << "Error reading audio data from memory" << std::endl;
+         return false;
+    }
+
+    // Apply gain to all samples if necessary
+    if (gain != 1.0f){
+        for (float & i : m_audio_data[sample_pack_index][sample_index]) {
+            i = i * gain;
+        }
+    }
 
     return true;
 }
