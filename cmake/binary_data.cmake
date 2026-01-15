@@ -50,7 +50,6 @@ function(tanh_add_binary_data target)
 
     set(file_index 1)
     foreach(source_file IN LISTS TANH_ARG_SOURCES)
-        message(STATUS "Encoding binary data file: ${source_file}")
         tanh_make_absolute(source_file)
 
         get_filename_component(file_name "${source_file}" NAME)
@@ -64,30 +63,25 @@ function(tanh_add_binary_data target)
 
         file(SIZE "${source_file}" file_size)
         set(header_content "${header_content}${file_size};\n\n")
+        set("${var_name}Size" ${file_size})
 
         set(cpp_file "${tanh_binary_data_folder}/BinaryData${file_index}.cpp")
         list(APPEND binary_data_sources "${cpp_file}")
 
-        file(READ "${source_file}" file_data HEX)
-
-        set(cpp_content "// Auto-generated binary data file\n")
-        set(cpp_content "${cpp_content}#include \"${TANH_ARG_HEADER_NAME}\"\n\n")
-        set(cpp_content "${cpp_content}namespace ${TANH_ARG_NAMESPACE}\n{\n")
-
-        string(LENGTH "${file_data}" data_length)
-        set(cpp_content "${cpp_content}static const unsigned char ${var_name}_data[] = {\n")
-
-        if(data_length GREATER 0)
-            string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1, " file_data "${file_data}")
-            string(REGEX REPLACE "((0x[0-9a-f][0-9a-f], ){16})" "\\1\n    " file_data "${file_data}")
-            set(cpp_content "${cpp_content}    ${file_data}")
-        endif()
-
-        set(cpp_content "${cpp_content}};\n\n")
-        set(cpp_content "${cpp_content}const char* ${var_name} = reinterpret_cast<const char*>(${var_name}_data);\n\n")
-        set(cpp_content "${cpp_content}}\n")
-
-        file(WRITE "${cpp_file}" "${cpp_content}")
+        # Add custom command to generate the C++ file during build
+        add_custom_command(
+            OUTPUT "${cpp_file}"
+            COMMAND ${CMAKE_COMMAND} 
+                -DSRC=${source_file} 
+                -DDST=${cpp_file} 
+                -DHEADER=${TANH_ARG_HEADER_NAME} 
+                -DNAMESPACE=${TANH_ARG_NAMESPACE} 
+                -DVAR=${var_name} 
+                -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/bin2cpp.cmake"
+            DEPENDS "${source_file}" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/bin2cpp.cmake"
+            COMMENT "Encoding binary data file: ${file_name}"
+            VERBATIM
+        )
 
         math(EXPR file_index "${file_index} + 1")
     endforeach()
@@ -112,7 +106,7 @@ function(tanh_add_binary_data target)
 
     set(reg_content "${reg_content}    static const int dataSizes[] = {\n")
     foreach(var_name IN LISTS registry_variable_names)
-        set(reg_content "${reg_content}        ${var_name}Size,\n")
+        set(reg_content "${reg_content}        ${${var_name}Size},\n")
     endforeach()
     set(reg_content "${reg_content}        0\n    };\n\n")
 
