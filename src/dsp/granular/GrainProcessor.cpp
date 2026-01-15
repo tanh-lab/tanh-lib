@@ -286,8 +286,7 @@ bool GrainProcessorImpl::load_wav_file(const std::string& file_path, const size_
     return true;
 }
 
-void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
-    std::cout << "Triggering grain at sample index: " << sample_index << std::endl;
+void GrainProcessorImpl::trigger_grain(const size_t note_number) {
     // Find an inactive grain slot
     for (auto& grain : m_grains) {
         if (!grain.active) {
@@ -314,8 +313,17 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
 
             sample_pack_index = std::max(std::min(sample_pack_index, static_cast<int>(samplepacks.size())-1), 0);
 
-            // abort if this grain can not be played
-            if (m_audio_data[sample_pack_index].size() <= sample_index || m_audio_data[sample_pack_index][sample_index].empty()){
+            // FIX: Map the global MIDI note number to a local index within the sample pack.
+            // The audio data vector is 0-indexed (0 to num_notes-1), but the note number 
+            // is an absolute MIDI pitch (e.g., 60 for C4).
+            // We must subtract the sample pack's lowest note to get the correct 0-based index.
+            // In the original codebase, this likely worked because RootNote default was 0.
+            int local_sample_index = static_cast<int>(note_number) - samplepacks[sample_pack_index].note_lowest;
+
+            // abort if this grain can not be played (index out of bounds or empty data)
+            if (local_sample_index < 0 || 
+                local_sample_index >= m_audio_data[sample_pack_index].size() || 
+                m_audio_data[sample_pack_index][local_sample_index].empty()) {
                 return;
             }
 
@@ -339,7 +347,7 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             }
             grain_size = std::clamp(grain_size, min_size, max_size); // Clamp to valid range
 
-            long max_position = m_audio_data[sample_pack_index][sample_index].size() / m_channels - grain_size;
+            long max_position = m_audio_data[sample_pack_index][local_sample_index].size() / m_channels - grain_size;
 
             // Apply randomness based on temperature parameter
             long start_position = m_sequential_position;
@@ -409,9 +417,9 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             grain.velocity = velocity;
             grain.amplitude = 0.0f; // Start with zero amplitude for fade-in
             grain.active = true;
-            grain.sample_index = sample_index;
+            grain.sample_index = local_sample_index;
             grain.sample_pack_index = sample_pack_index;
-            // std::cout << "triggering grain with spi=" << sample_pack_index << " and si=" << sample_index << std::endl;
+            // std::cout << "triggering grain with spi=" << sample_pack_index << " and si=" << local_sample_index << std::endl;
             // Configure the Hann window envelope
             grain.envelope.set_sample_rate(static_cast<float>(m_sample_rate));
             grain.envelope.set_duration(grain_duration_ms);
