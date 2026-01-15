@@ -31,6 +31,8 @@ public:
     explicit GrainProcessorImpl(size_t grain_index);
     ~GrainProcessorImpl() override;
 
+    void init();
+
     void prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) override;
     void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
 
@@ -44,30 +46,33 @@ public:
     bool prepare_audio_data();
     bool load_wav_file(const std::string& file_path, const size_t sample_pack_index, const size_t sample_index, const float gain);
     bool load_all_samples();
+
+protected:
+    enum Parameter {
+        GlobalEnvelopeAttack = 0,
+        GlobalEnvelopeDecay = 1,
+        GlobalEnvelopeSustain = 2,
+        GlobalEnvelopeRelease = 3,
+        Playing = 4,
+        Volume = 5,
+        Temperature = 6,
+        Velocity = 7,
+        Size = 8,
+        Density = 9,
+        SamplePackIndex = 10,
+        SampleIndex = 11,
+        SampleStart = 12,
+        SampleEnd = 13,
+
+        // Player Parameter (probably not inside group) TODO check
+        KeyMode = 14,
+        RootNote = 15,
+        NUM_PARAMETERS = 16
+    };
+
 private:
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
-
-    enum Parameter {
-        GlobalEnvelopeAttack,
-        GlobalEnvelopeDecay,
-        GlobalEnvelopeSustain,
-        GlobalEnvelopeRelease,
-        Playing,
-        Volume,
-        Temperature,
-        Velocity,
-        Size,
-        Density,
-        SamplePackIndex,
-        SampleIndex,
-        SampleStart,
-        SampleEnd,
-
-        // Player Parameter (probably not inside group) TODO check
-        KeyMode,
-        RootNote,
-    };
 
     virtual float getParameterFloat(Parameter parameter) = 0;
     virtual bool getParameterBool(Parameter parameter) = 0;
