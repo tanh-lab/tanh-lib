@@ -54,6 +54,15 @@ GrainProcessorImpl::GrainProcessorImpl(size_t grain_index)
     for (auto& grain : m_grains) {
         grain.active = false;
     }
+
+}
+
+GrainProcessorImpl::~GrainProcessorImpl() {
+    // No need for special cleanup with std::vector
+}
+
+void GrainProcessorImpl::init()
+{
     if(m_audio_data.empty()){
         if (!prepare_audio_data()) {
             std::cerr << "Failed to prepare audio data" << std::endl;
@@ -61,9 +70,6 @@ GrainProcessorImpl::GrainProcessorImpl(size_t grain_index)
     }
 }
 
-GrainProcessorImpl::~GrainProcessorImpl() {
-    // No need for special cleanup with std::vector
-}
 
 void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels)
 {
@@ -107,7 +113,7 @@ void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, cons
 
     if (num_channels >= 2) {
         float* right_out = buffer[1];
-        const float* right_in = m_internal_buffer.data() + num_samples; // Planar offset
+        const float* right_in = m_internal_buffer.data() + num_samples;
         for (size_t i = 0; i < num_samples; ++i) {
             right_out[i] += right_in[i];
         }
@@ -273,14 +279,15 @@ bool GrainProcessorImpl::load_wav_file(const std::string& file_path, const size_
                  << frames_to_read << ", got " << frames_read << std::endl;
     }
 
-    // std::cout << "Loaded audio file for granular synthesis: " << file_path << std::endl;
-    // std::cout << "Channels: " << m_channels << ", Sample rate: " << m_sample_rate
-    //          << ", Frames: " << frames_read << "/" << total_samples << std::endl;
+    std::cout << "Loaded audio file for granular synthesis: " << file_path << std::endl;
+    std::cout << "Channels: " << m_channels << ", Sample rate: " << m_sample_rate
+             << ", Frames: " << frames_read << "/" << total_samples << std::endl;
 
     return true;
 }
 
 void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
+    std::cout << "Triggering grain at sample index: " << sample_index << std::endl;
     // Find an inactive grain slot
     for (auto& grain : m_grains) {
         if (!grain.active) {
