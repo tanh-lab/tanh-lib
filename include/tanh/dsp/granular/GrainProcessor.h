@@ -70,6 +70,8 @@ protected:
 
     inline static std::vector<std::vector<std::vector<float>>> m_audio_data = {};
 
+    utils::ADSR m_envelope;
+    
 private:
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
@@ -95,7 +97,6 @@ private:
     std::uniform_real_distribution<float> m_uni_dist;
 
     // Envelope
-    utils::ADSR m_envelope;
     bool m_last_playing_state;
 
     // Note management
