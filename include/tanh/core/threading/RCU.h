@@ -83,13 +83,11 @@ public:
             // Remove from thread-local state if the node is still tracked there
             // Note: For live threads, the node ownership is in t_rcu_state.nodes
             // We need to take ownership back before deleting
-            bool found_in_tls = false;
             auto it = t_rcu_state.nodes.find(this);
             if (it != t_rcu_state.nodes.end() && it->second.get() == current) {
                 // This is the current thread's node - transfer ownership back
                 it->second.release();
                 t_rcu_state.nodes.erase(it);
-                found_in_tls = true;
             }
             
             // For dead nodes or nodes from other threads (which released ownership), 
@@ -365,7 +363,7 @@ private:
         uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
         
         // Find minimum period any active reader is in
-        uint64_t min_active_period = UINT64_MAX;
+        uint64_t min_active_period = current_period;
         
         ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
