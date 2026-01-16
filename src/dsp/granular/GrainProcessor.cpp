@@ -37,6 +37,35 @@ const std::vector<Samplepack> samplepacks = {
     {48, 88, "path/to/assets/samplepacks_mp3/Glasharmonica/", 0.7f * global_gain}      // samples start at 48 (if missing have been created); C at 48 (officially it starts at 50, with c at 60)
 };
 
+
+struct MemoryReadBuffer : public std::streambuf {
+    MemoryReadBuffer(const char* data, size_t size) {
+        char* p = const_cast<char*>(data);
+        setg(p, p, p + size);
+    }
+
+    pos_type seekoff(off_type off, std::ios_base::seekdir dir, std::ios_base::openmode which = std::ios_base::in | std::ios_base::out) override {
+        if (dir == std::ios_base::cur) {
+             char* new_pos = gptr() + off;
+             if (new_pos < eback() || new_pos > egptr()) return -1;
+             setg(eback(), new_pos, egptr());
+        } else if (dir == std::ios_base::end) {
+             char* new_pos = egptr() + off;
+             if (new_pos < eback() || new_pos > egptr()) return -1;
+             setg(eback(), new_pos, egptr());
+        } else if (dir == std::ios_base::beg) {
+             char* new_pos = eback() + off;
+             if (new_pos < eback() || new_pos > egptr()) return -1;
+             setg(eback(), new_pos, egptr());
+        }
+        return gptr() - eback();
+    }
+    
+    pos_type seekpos(pos_type pos, std::ios_base::openmode which = std::ios_base::in | std::ios_base::out) override {
+         return seekoff(off_type(pos), std::ios_base::beg, which);
+    }
+};
+
 namespace thl::dsp::granular
 {
 
@@ -356,7 +385,8 @@ bool GrainProcessorImpl::load_mp3_from_memory(const char* data, int size, size_t
     choc::audio::AudioFileFormatList formatList;
     formatList.addFormat<choc::audio::MP3AudioFileFormat>();
 
-    auto stream = std::make_shared<std::istringstream>(std::string(data, static_cast<size_t>(size)), std::ios::binary);
+    MemoryReadBuffer buffer(data, static_cast<size_t>(size));
+    auto stream = std::make_shared<std::istream>(&buffer);
     auto reader = formatList.createReader(std::move(stream));
     if (!reader) {
         std::cerr << "Error opening audio data from memory" << std::endl;
