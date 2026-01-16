@@ -5,9 +5,6 @@
 #include <vector>
 #include <tanh/tanh.h>
 
-#include <tanh/dsp/utils/ADSR.h>
-#include <tanh/dsp/utils/HannWindow.h>
-
 namespace thl::dsp::granular
 {
 
@@ -20,7 +17,7 @@ struct Grain {
     float amplitude;           // Grain amplitude/volume
     float gain;
     bool active;               // Whether the grain is currently active
-    thl::dsp::utils::HannWindow envelope;       // Hann window envelope for amplitude modulation
+    utils::HannWindow envelope;       // Hann window envelope for amplitude modulation
     size_t sample_index;       // Index of the sample in the audio data
     size_t sample_pack_index;       // Index of the sample pack
 };
