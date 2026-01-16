@@ -206,6 +206,19 @@ if(TANH_BUILD_DSP)
         message(FATAL_ERROR "DSP component requires Core component")
     endif()
 
+    # Check for choc header library location
+    if(EXISTS "${CMAKE_SOURCE_DIR}/modules/choc")
+        set(CHOC_HEADER_DIR "${CMAKE_SOURCE_DIR}/modules/choc")
+        message(STATUS "Found choc headers at: ${CHOC_HEADER_DIR}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../choc")
+        set(CHOC_HEADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../choc")
+        message(STATUS "Found choc headers at: ${CHOC_HEADER_DIR}")
+    else()
+        message(FATAL_ERROR "Could not find choc headers. Checked:\n"
+                            "  - ${CMAKE_SOURCE_DIR}/modules/choc\n"
+                            "  - ${CMAKE_CURRENT_SOURCE_DIR}/../choc")
+    endif()
+
     add_library(${PROJECT_NAME}_dsp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
@@ -228,7 +241,7 @@ if(TANH_BUILD_DSP)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         # Link header only library choc
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/choc>
+        $<BUILD_INTERFACE:${CHOC_HEADER_DIR}>
     )
 
     target_link_libraries(${PROJECT_NAME}_dsp PUBLIC ${PROJECT_NAME}_core)
