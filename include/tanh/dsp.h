@@ -5,6 +5,7 @@
 #include "dsp/utils/Scales.h"
 #include "dsp/utils/SmoothedValue.h"
 
+#include "dsp/audio/AudioDataStore.h"
 #include "dsp/BaseProcessor.h"
 #include "dsp/synth/SineProcessor.h"
 #include "dsp/granular/GrainProcessor.h"
