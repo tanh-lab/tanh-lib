@@ -24,14 +24,16 @@ public:
      * RT-safe: uses acquire semantics.
      */
     const std::vector<std::vector<float>>& get_active() const {
-        return m_buffers[m_active_index.load(std::memory_order_acquire)];
+        auto active_index = static_cast<size_t>(m_active_index.load(std::memory_order_acquire));
+        return m_buffers[active_index];
     }
 
     /**
      * Check if audio data has been loaded.
      */
     bool is_loaded() const {
-        return !m_buffers[m_active_index.load(std::memory_order_acquire)].empty();
+        auto active_index = static_cast<size_t>(m_active_index.load(std::memory_order_acquire));
+        return !m_buffers[active_index].empty();
     }
 
     /**
@@ -48,7 +50,9 @@ public:
      * Only call from the loader thread.
      */
     std::vector<std::vector<float>>& get_inactive() {
-        return m_buffers[1 - m_active_index.load(std::memory_order_acquire)];
+        auto active_index = static_cast<size_t>(m_active_index.load(std::memory_order_acquire));
+        auto index_inactive = 1 - active_index;
+        return m_buffers[index_inactive];
     }
 
     /**
