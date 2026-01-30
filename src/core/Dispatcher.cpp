@@ -3,12 +3,12 @@
 
 namespace thl {
 
-void Dispatcher::add_listener(const std::string& event, Listener* listener) {
+void Dispatcher::add_listener(const std::string& event, DispatcherListener* listener) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_listeners[event].push_back(listener);
 }
 
-void Dispatcher::remove_listener(Listener* listener) {
+void Dispatcher::remove_listener(DispatcherListener* listener) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     for (auto& [event, listeners] : m_listeners) {
