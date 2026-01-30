@@ -121,6 +121,7 @@ set(TANH_BUILT_COMPONENTS "")
 if(TANH_BUILD_CORE)
     add_library(${PROJECT_NAME}_core
         src/core.cpp
+        src/core/Dispatcher.cpp
     )
     
     # enable position independent code because otherwise the static library cannot be linked into a shared library
