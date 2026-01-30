@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Dispatcher.h"
 #include "core/threading/RCU.h"
 
 #include <string>
