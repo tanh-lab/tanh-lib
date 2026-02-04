@@ -265,6 +265,15 @@ if(TANH_BUILD_AUDIO_IO)
         src/audio_io/miniaudio_impl.cpp
     )
 
+    # On Apple platforms, miniaudio implementation includes Objective-C code
+    # for CoreAudio/AVFoundation, so it must be compiled as Objective-C++
+    if(APPLE)
+        set_source_files_properties(
+            src/audio_io/miniaudio_impl.cpp
+            PROPERTIES COMPILE_FLAGS "-x objective-c++"
+        )
+    endif()
+
     set_target_properties(${PROJECT_NAME}_audio_io PROPERTIES 
         POSITION_INDEPENDENT_CODE ON 
         VERSION ${PROJECT_VERSION} 
@@ -280,6 +289,23 @@ if(TANH_BUILD_AUDIO_IO)
     )
 
     target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC ${PROJECT_NAME}_core)
+
+    # Link platform-specific frameworks required by miniaudio
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC
+            "-framework AVFoundation"
+            "-framework AudioToolbox"
+            "-framework CoreAudio"
+            "-framework CoreMIDI"
+            "-framework Accelerate"
+        )
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC
+            "-framework CoreAudio"
+            "-framework AudioToolbox"
+            "-framework CoreFoundation"
+        )
+    endif()
 
     target_compile_definitions(${PROJECT_NAME}_audio_io
         PUBLIC
