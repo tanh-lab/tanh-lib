@@ -1,0 +1,31 @@
+---
+BasedOnStyle: Google
+SortIncludes: false
+AlignEscapedNewlines: Left
+AllowShortBlocksOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowAllArgumentsOnNextLine: false
+ColumnLimit: 80
+IndentWidth: 4
+SpacesInAngles: false
+SpaceInEmptyParentheses: false
+SpacesInContainerLiterals: false
+IndentFunctionDeclarationAfterType: true
+PenaltyBreakComment: 0
+BreakBeforeBraces: Attach
+UseTab: Never
+AlignAfterOpenBracket: Align
+BinPackArguments: false
+BinPackParameters: false
+BreakConstructorInitializersBeforeComma: true
+BreakConstructorInitializers: BeforeComma
+IndentAccessModifiers: false
+AccessModifierOffset: -4
+NamespaceIndentation: None
+ObjCBlockIndentWidth: 4
+
+...

@@ -13,12 +13,13 @@ option(TANH_WITH_DOCS "Add Build Documentation" ON)
 option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" OFF)
 
 # Define available components
-set(TANH_COMPONENTS Core State DSP)
+set(TANH_COMPONENTS Core State DSP AudioIO)
 
 # Option to control which components to build
 option(TANH_BUILD_CORE "Build Core component" ON)
 option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
+option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 
 # ==============================================================================
 # Get project version
@@ -103,6 +104,7 @@ endif ()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 ## ==============================================================================
 # Fetch dependencies
@@ -241,6 +243,53 @@ if(TANH_BUILD_DSP)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_dsp)
 endif()
 
+# AudioIO component (depends on Core)
+if(TANH_BUILD_AUDIO_IO)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "AudioIO component requires Core component")
+    endif()
+
+    FetchContent_Declare(
+        miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG 0.11.24
+        GIT_SHALLOW TRUE
+    )
+    set(MINIAUDIO_NO_EXTRA_NODES ON)
+    FetchContent_MakeAvailable(miniaudio)
+
+    add_library(${PROJECT_NAME}_audio_io
+        src/audio_io/AudioDeviceManager.cpp
+        src/audio_io/AudioFileSink.cpp
+        src/audio_io/AudioPlayerSource.cpp
+        src/audio_io/miniaudio_impl.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_audio_io PROPERTIES 
+        POSITION_INDEPENDENT_CODE ON 
+        VERSION ${PROJECT_VERSION} 
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::AudioIO ALIAS ${PROJECT_NAME}_audio_io)
+
+    target_include_directories(${PROJECT_NAME}_audio_io
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        ${miniaudio_SOURCE_DIR}
+    )
+
+    target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC ${PROJECT_NAME}_core)
+
+    target_compile_definitions(${PROJECT_NAME}_audio_io
+        PUBLIC
+        # Set TANH_AUDIO_IO_ENABLED to enable AudioIO features
+        -DTANH_AUDIO_IO_ENABLED
+    )
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
+endif()
+
 # Apply common settings to all components
 
 foreach(target ${TANH_BUILT_COMPONENTS})
@@ -290,6 +339,9 @@ if (TANH_WITH_TESTS)
     endif()
     if (TANH_BUILD_DSP)
         # add_subdirectory(test/dsp) # TODO: add dsp tests
+    endif()
+    if (TANH_BUILD_AUDIO_IO)
+        add_subdirectory(test/audio_io)
     endif()
 endif()
 
