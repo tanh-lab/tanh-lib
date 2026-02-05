@@ -258,6 +258,21 @@ if(TANH_BUILD_AUDIO_IO)
     set(MINIAUDIO_NO_EXTRA_NODES ON)
     FetchContent_MakeAvailable(miniaudio)
 
+    # Disable code signing for miniaudio targets on iOS
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        get_property(miniaudio_targets DIRECTORY ${miniaudio_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
+        foreach(target ${miniaudio_targets})
+            if(TARGET ${target})
+                set_target_properties(${target} PROPERTIES
+                    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
+                    XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
+                    XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+                )
+            endif()
+        endforeach()
+    endif()
+
+
     add_library(${PROJECT_NAME}_audio_io
         src/audio_io/AudioDeviceManager.cpp
         src/audio_io/AudioFileSink.cpp
@@ -319,6 +334,15 @@ endif()
 # Apply common settings to all components
 
 foreach(target ${TANH_BUILT_COMPONENTS})
+    # Disable code signing for iOS library targets (only apps need signing)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set_target_properties(${target} PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
+            XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
+            XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+        )
+    endif()
+
     if(TANH_WITH_RTSAN)
         include(cmake/real-time-sanitizers.cmake)
         tanh_rtsan_configure(${target})
@@ -371,9 +395,10 @@ if (TANH_WITH_TESTS)
     endif()
 endif()
 
-# if(TANH_WITH_EXAMPLES)
-#     add_subdirectory(examples)
-# endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_subdirectory(examples/audio_io_ios)
+endif()
+
 
 # if (TANH_WITH_DOCS)
 #     add_subdirectory(docs)

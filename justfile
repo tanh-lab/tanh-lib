@@ -59,3 +59,22 @@ build-debug:
 build-release:
     cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DTANH_WITH_TESTS=ON
     cmake --build build --parallel
+
+# Configure for iOS
+configure-ios:
+    cmake -B build-ios -S . \
+        -DCMAKE_SYSTEM_NAME=iOS \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        -DCMAKE_OSX_SYSROOT=iphonesimulator \
+        -DTANH_WITH_TESTS=OFF \
+        -G Xcode
+
+# Build iOS example
+build-ios: configure-ios
+    cmake --build build-ios --target audio_io_ios --parallel
+
+# Open iOS project in Xcode
+open-ios: configure-ios
+    @echo "Opening Xcode project. Select 'audio_io_ios' scheme to build the example app."
+    open build-ios/tanh.xcodeproj
