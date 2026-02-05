@@ -8,10 +8,15 @@ public:
     void process(float *outputBuffer,
                  const float *inputBuffer,
                  ma_uint32 frameCount,
-                 ma_uint32 numChannels) override {
+                 ma_uint32 numInputChannels,
+                 ma_uint32 numOutputChannels) override {
         // Just output silence for now (zero out the buffer)
-        size_t totalSamples = frameCount * numChannels;
-        for (size_t i = 0; i < totalSamples; ++i) { outputBuffer[i] = 0.0f; }
+        if (outputBuffer && numOutputChannels > 0) {
+            size_t totalSamples = frameCount * numOutputChannels;
+            for (size_t i = 0; i < totalSamples; ++i) {
+                outputBuffer[i] = 0.0f;
+            }
+        }
 
         // Log every 100 callbacks to verify audio is running
         static int callbackCount = 0;
@@ -19,8 +24,10 @@ public:
             printf("Audio callback count: %d, frames: %u, channels: %u\n",
                    callbackCount,
                    frameCount,
-                   numChannels);
+                   numOutputChannels);
         }
+        (void)inputBuffer;
+        (void)numInputChannels;
     }
 
     void prepareToPlay(ma_uint32 sampleRate, ma_uint32 bufferSize) override {
@@ -138,13 +145,14 @@ public:
 
     // Initialize with default output device
     if (!outputDevices.empty()) {
-        bool success = _audioManager->initialise(nullptr,            // no input
-                                                 &outputDevices[0],  // default
-                                                                     // output
-                                                 48000,  // sample rate
-                                                 512,    // buffer size
-                                                 2       // stereo
-        );
+        bool success =
+            _audioManager->initialise(nullptr,            // no input
+                                      &outputDevices[0],  // default output
+                                      48000,             // sample rate
+                                      512,               // buffer size
+                                      0,                 // no input channels
+                                      2                  // stereo output
+            );
 
         if (success) {
             [self log:@"Audio device initialized successfully"];
@@ -155,8 +163,11 @@ public:
                 log:[NSString stringWithFormat:@"Buffer Size: %u",
                                                _audioManager->getBufferSize()]];
             [self log:[NSString
-                          stringWithFormat:@"Channels: %u",
-                                           _audioManager->getNumChannels()]];
+                          stringWithFormat:@"Output Channels: %u",
+                                           _audioManager->getNumOutputChannels()]];
+            [self log:[NSString
+                          stringWithFormat:@"Input Channels: %u",
+                                           _audioManager->getNumInputChannels()]];
 
             // Create and add callback
             _callback = std::make_unique<SimpleAudioCallback>();

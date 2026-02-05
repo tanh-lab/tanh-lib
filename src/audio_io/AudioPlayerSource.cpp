@@ -98,7 +98,9 @@ void AudioPlayerSource::setFinishedCallback(FinishedCallback callback) {
 void AudioPlayerSource::process(float* outputBuffer,
                                 const float* /*inputBuffer*/,
                                 ma_uint32 frameCount,
-                                ma_uint32 numChannels) {
+                                ma_uint32 /*numInputChannels*/,
+                                ma_uint32 numOutputChannels) {
+    if (!outputBuffer || numOutputChannels == 0) { return; }
     if (!m_loaded || !m_playing.load(std::memory_order_acquire)) { return; }
 
     ma_uint64 framesRead = 0;
@@ -108,9 +110,10 @@ void AudioPlayerSource::process(float* outputBuffer,
                                    &framesRead);
 
     if (framesRead < frameCount) {
-        std::memset(outputBuffer + framesRead * numChannels,
+        std::memset(outputBuffer + framesRead * numOutputChannels,
                     0,
-                    (frameCount - framesRead) * numChannels * sizeof(float));
+                    (frameCount - framesRead) * numOutputChannels *
+                        sizeof(float));
 
         m_playing.store(false, std::memory_order_release);
         if (m_finishedCallback) { m_finishedCallback(); }
