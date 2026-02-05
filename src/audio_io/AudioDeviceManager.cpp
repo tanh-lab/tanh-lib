@@ -165,10 +165,33 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     m_deviceInitialised = true;
     m_numInputChannels = m_device.capture.channels;
     m_numOutputChannels = m_device.playback.channels;
+    m_sampleRate = m_device.sampleRate;
+    ma_uint32 actualBufferSize = 0;
+    if (m_device.playback.internalPeriodSizeInFrames > 0) {
+        actualBufferSize = m_device.playback.internalPeriodSizeInFrames;
+    } else if (m_device.capture.internalPeriodSizeInFrames > 0) {
+        actualBufferSize = m_device.capture.internalPeriodSizeInFrames;
+    }
+    if (actualBufferSize == 0) {
+        ma_log* log = ma_device_get_log(&m_device);
+        if (log) {
+            ma_log_postf(
+                log,
+                MA_LOG_LEVEL_ERROR,
+                "AudioDeviceManager: internalPeriodSizeInFrames is 0 "
+                "(playback=%u, capture=%u). Falling back to requested "
+                "bufferSizeInFrames=%u.",
+                m_device.playback.internalPeriodSizeInFrames,
+                m_device.capture.internalPeriodSizeInFrames,
+                bufferSizeInFrames);
+        }
+    }
+    m_bufferSize = actualBufferSize > 0 ? actualBufferSize
+                                        : bufferSizeInFrames;
 
     m_callbacks.read([&](const auto& callbacks) {
         for (auto* callback : callbacks) {
-            callback->prepareToPlay(m_device.sampleRate, bufferSizeInFrames);
+            callback->prepareToPlay(m_sampleRate, m_bufferSize);
         }
     });
 
@@ -229,7 +252,32 @@ void AudioDeviceManager::removeCallback(AudioIODeviceCallback* callback) {
 
 void AudioDeviceManager::setDeviceNotificationCallback(
     DeviceNotificationCallback callback) {
-    m_notificationCallback = std::move(callback);
+    auto ptr = callback
+        ? std::make_shared<DeviceNotificationCallback>(std::move(callback))
+        : nullptr;
+    std::atomic_store_explicit(&m_notificationCallback,
+                               std::move(ptr),
+                               std::memory_order_release);
+}
+
+bool AudioDeviceManager::registerLogCallback(ma_log_callback_proc callback,
+                                             void* userData) {
+    if (!m_contextInitialised || !callback) { return false; }
+    ma_log* log = ma_context_get_log(&m_context);
+    if (!log) { return false; }
+    return ma_log_register_callback(
+               log,
+               ma_log_callback_init(callback, userData)) == MA_SUCCESS;
+}
+
+bool AudioDeviceManager::unregisterLogCallback(ma_log_callback_proc callback,
+                                               void* userData) {
+    if (!m_contextInitialised || !callback) { return false; }
+    ma_log* log = ma_context_get_log(&m_context);
+    if (!log) { return false; }
+    return ma_log_unregister_callback(
+               log,
+               ma_log_callback_init(callback, userData)) == MA_SUCCESS;
 }
 
 void AudioDeviceManager::dataCallback(ma_device* pDevice,
@@ -246,9 +294,9 @@ void AudioDeviceManager::notificationCallback(
     const ma_device_notification* pNotification) {
     auto* self =
         static_cast<AudioDeviceManager*>(pNotification->pDevice->pUserData);
-    if (self->m_notificationCallback) {
-        self->m_notificationCallback(pNotification->type);
-    }
+    auto cb = std::atomic_load_explicit(&self->m_notificationCallback,
+                                        std::memory_order_acquire);
+    if (cb) { (*cb)(pNotification->type); }
 }
 
 void AudioDeviceManager::processCallbacks(float* output,

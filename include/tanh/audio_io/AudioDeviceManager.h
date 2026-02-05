@@ -4,6 +4,7 @@
 #include "AudioIODeviceCallback.h"
 #include <tanh/core/threading/RCU.h>
 #include <atomic>
+#include <memory>
 #include <vector>
 #include <functional>
 
@@ -272,6 +273,29 @@ public:
     void setDeviceNotificationCallback(DeviceNotificationCallback callback);
 
     /**
+     * @brief Registers a logging callback with the miniaudio context log.
+     *
+     * This is post-init only. Logs emitted during context initialization
+     * will not be captured.
+     *
+     * @param callback Log callback function (must not be null).
+     * @param userData User data passed to the callback.
+     *
+     * @return true if the callback was registered, false otherwise.
+     */
+    bool registerLogCallback(ma_log_callback_proc callback, void* userData);
+
+    /**
+     * @brief Unregisters a logging callback from the miniaudio context log.
+     *
+     * @param callback Log callback function (must not be null).
+     * @param userData User data passed to the callback.
+     *
+     * @return true if the callback was unregistered, false otherwise.
+     */
+    bool unregisterLogCallback(ma_log_callback_proc callback, void* userData);
+
+    /**
      * @brief Gets the current sample rate.
      *
      * @return The actual device sample rate in Hz if initialised, otherwise
@@ -341,8 +365,8 @@ private:
     /// @brief Flag to ensure audio thread registers with RCU only once
     mutable std::atomic<bool> m_audioThreadRegistered{false};
 
-    /// @brief User-provided device notification callback
-    DeviceNotificationCallback m_notificationCallback;
+    /// @brief User-provided device notification callback (atomic load/store)
+    std::shared_ptr<DeviceNotificationCallback> m_notificationCallback;
 
     /**
      * @brief Static callback invoked by miniaudio for audio processing.
