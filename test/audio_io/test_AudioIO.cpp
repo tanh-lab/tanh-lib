@@ -52,7 +52,8 @@ TEST(AudioDeviceManager, DefaultValues) {
     AudioDeviceManager manager;
     EXPECT_EQ(manager.getSampleRate(), 44100);
     EXPECT_EQ(manager.getBufferSize(), 512);
-    EXPECT_EQ(manager.getNumChannels(), 1);
+    EXPECT_EQ(manager.getNumOutputChannels(), 1);
+    EXPECT_EQ(manager.getNumInputChannels(), 1);
     EXPECT_FALSE(manager.isRunning());
 }
 
@@ -93,10 +94,12 @@ public:
     void process(float* outputBuffer,
                  const float* inputBuffer,
                  ma_uint32 frameCount,
-                 ma_uint32 numChannels) override {
+                 ma_uint32 /*numInputChannels*/,
+                 ma_uint32 numOutputChannels) override {
         ++processCallCount;
         // Fill output with silence
-        for (ma_uint32 i = 0; i < frameCount * numChannels; ++i) {
+        if (!outputBuffer || numOutputChannels == 0) { return; }
+        for (ma_uint32 i = 0; i < frameCount * numOutputChannels; ++i) {
             outputBuffer[i] = 0.0f;
         }
         (void)inputBuffer;
@@ -129,7 +132,7 @@ TEST(AudioIODeviceCallback, ProcessFillsSilence) {
     // Fill output with non-zero values
     for (auto& sample : output) { sample = 1.0f; }
 
-    callback.process(output, input, frameCount, numChannels);
+    callback.process(output, input, frameCount, numChannels, numChannels);
 
     EXPECT_EQ(callback.processCallCount, 1);
 
@@ -221,8 +224,10 @@ public:
     void process(float* outputBuffer,
                  const float* /*inputBuffer*/,
                  ma_uint32 frameCount,
-                 ma_uint32 numChannels) override {
+                 ma_uint32 /*numInputChannels*/,
+                 ma_uint32 numOutputChannels) override {
         ++processCallCount;
+        if (!outputBuffer || numOutputChannels == 0) { return; }
 
         double phaseIncrement = (2.0 * M_PI * frequency) / sampleRate;
 
@@ -231,8 +236,8 @@ public:
             phase += phaseIncrement;
             if (phase >= 2.0 * M_PI) { phase -= 2.0 * M_PI; }
 
-            for (ma_uint32 ch = 0; ch < numChannels; ++ch) {
-                outputBuffer[frame * numChannels + ch] = sample;
+            for (ma_uint32 ch = 0; ch < numOutputChannels; ++ch) {
+                outputBuffer[frame * numOutputChannels + ch] = sample;
             }
         }
     }
@@ -290,7 +295,8 @@ TEST(HardwareTests, DISABLED_PlaySineWave) {
 
     SineCallback sineCallback(440.0);
 
-    bool initialised = manager.initialise(nullptr, &outputs[0], 48000, 256, 2);
+    bool initialised =
+        manager.initialise(nullptr, &outputs[0], 48000, 256, 0, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise audio device";
 
     manager.addCallback(&sineCallback);
@@ -323,7 +329,7 @@ TEST(HardwareTests, DISABLED_StartStopCycles) {
 
     SineCallback callback;
 
-    ASSERT_TRUE(manager.initialise(nullptr, &outputs[0], 48000, 512, 2));
+    ASSERT_TRUE(manager.initialise(nullptr, &outputs[0], 48000, 512, 0, 2));
     manager.addCallback(&callback);
 
     for (int i = 0; i < 3; ++i) {
@@ -359,7 +365,7 @@ TEST(HardwareTests, DISABLED_FullDuplex) {
     MockCallback callback;
 
     bool initialised =
-        manager.initialise(&inputs[0], &outputs[0], 48000, 512, 2);
+        manager.initialise(&inputs[0], &outputs[0], 48000, 512, 2, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise duplex device";
 
     manager.addCallback(&callback);
@@ -409,7 +415,7 @@ TEST(AudioFileSink, ProcessWithoutOpen) {
     float output[frameCount * numChannels] = {0};
     float input[frameCount * numChannels] = {0};
 
-    sink.process(output, input, frameCount, numChannels);
+    sink.process(output, input, frameCount, numChannels, 0);
     EXPECT_EQ(sink.getFramesWritten(), 0);
 }
 
@@ -467,10 +473,10 @@ TEST(AudioFileSink, WriteFrames) {
                    static_cast<float>(frameCount * numChannels);
     }
 
-    sink.process(output, input, frameCount, numChannels);
+    sink.process(output, input, frameCount, numChannels, 0);
     EXPECT_EQ(sink.getFramesWritten(), frameCount);
 
-    sink.process(output, input, frameCount, numChannels);
+    sink.process(output, input, frameCount, numChannels, 0);
     EXPECT_EQ(sink.getFramesWritten(), frameCount * 2);
 
     sink.closeFile();
@@ -546,7 +552,7 @@ TEST(AudioPlayerSource, ProcessWithoutLoad) {
 
     for (auto& sample : output) { sample = 1.0f; }
 
-    player.process(output, input, frameCount, numChannels);
+    player.process(output, input, frameCount, 0, numChannels);
 
     for (const auto& sample : output) { EXPECT_FLOAT_EQ(sample, 1.0f); }
 }
@@ -593,7 +599,7 @@ TEST(AudioFileIntegration, RecordAndPlayback) {
         sink.startRecording();
 
         float output[frameCount * numChannels] = {0};
-        sink.process(output, originalData, frameCount, numChannels);
+        sink.process(output, originalData, frameCount, numChannels, 0);
         sink.closeFile();
     }
 
@@ -613,7 +619,7 @@ TEST(AudioFileIntegration, RecordAndPlayback) {
         float playedData[frameCount * numChannels] = {0};
         float input[frameCount * numChannels] = {0};
 
-        player.process(playedData, input, frameCount, numChannels);
+        player.process(playedData, input, frameCount, 0, numChannels);
 
         for (ma_uint32 i = 0; i < frameCount * numChannels; ++i) {
             EXPECT_FLOAT_EQ(playedData[i], originalData[i])

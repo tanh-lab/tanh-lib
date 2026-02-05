@@ -51,7 +51,7 @@ namespace thl {
  *
  * auto outputs = manager.enumerateOutputDevices();
  * if (!outputs.empty()) {
- *     manager.initialise(nullptr, &outputs[0], 48000, 256, 2);
+ *     manager.initialise(nullptr, &outputs[0], 48000, 256, 0, 2);
  *     manager.addCallback(&myProcessor);
  *     manager.start();
  *     // ... audio is now running ...
@@ -156,7 +156,8 @@ public:
      * @param bufferSizeInFrames Desired buffer size in frames (default: 512).
      *                           Lower values reduce latency but increase CPU
      * load.
-     * @param numChannels Number of audio channels (default: 1).
+     * @param numInputChannels Number of input audio channels (default: 1).
+     * @param numOutputChannels Number of output audio channels (default: 1).
      *
      * @return true if initialisation succeeded, false otherwise.
      *
@@ -172,7 +173,8 @@ public:
                     const AudioDeviceInfo* outputDevice,
                     ma_uint32 sampleRate = 44100,
                     ma_uint32 bufferSizeInFrames = 512,
-                    ma_uint32 numChannels = 1);
+                    ma_uint32 numInputChannels = 1,
+                    ma_uint32 numOutputChannels = 1);
 
     /**
      * @brief Shuts down the audio device and releases associated resources.
@@ -291,13 +293,25 @@ public:
     ma_uint32 getBufferSize() const { return m_bufferSize; }
 
     /**
-     * @brief Gets the current number of channels.
+     * @brief Gets the current number of input (capture) channels.
      *
-     * @return The actual device channel count if initialised, otherwise the
-     *         default (1).
+     * @return The actual capture channel count if initialised, otherwise the
+     *         requested input channel count.
      */
-    ma_uint32 getNumChannels() const {
-        return m_deviceInitialised ? m_device.playback.channels : m_numChannels;
+    ma_uint32 getNumInputChannels() const {
+        return m_deviceInitialised ? m_device.capture.channels
+                                   : m_numInputChannels;
+    }
+
+    /**
+     * @brief Gets the current number of output (playback) channels.
+     *
+     * @return The actual playback channel count if initialised, otherwise the
+     *         requested output channel count.
+     */
+    ma_uint32 getNumOutputChannels() const {
+        return m_deviceInitialised ? m_device.playback.channels
+                                   : m_numOutputChannels;
     }
 
 private:
@@ -316,8 +330,10 @@ private:
     ma_uint32 m_sampleRate = 44100;
     /// @brief Current buffer size in frames
     ma_uint32 m_bufferSize = 512;
-    /// @brief Current number of channels
-    ma_uint32 m_numChannels = 1;
+    /// @brief Current number of input channels
+    ma_uint32 m_numInputChannels = 1;
+    /// @brief Current number of output channels
+    ma_uint32 m_numOutputChannels = 1;
 
     /// @brief RCU-protected list of registered audio callbacks (lock-free reads)
     RCU<std::vector<AudioIODeviceCallback*>> m_callbacks;

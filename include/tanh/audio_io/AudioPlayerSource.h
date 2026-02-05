@@ -224,7 +224,8 @@ public:
     void process(float* outputBuffer,
                  const float* inputBuffer,
                  ma_uint32 frameCount,
-                 ma_uint32 numChannels) override;
+                 ma_uint32 numInputChannels,
+                 ma_uint32 numOutputChannels) override;
 
     /**
      * @brief Releases resources by unloading any loaded file.

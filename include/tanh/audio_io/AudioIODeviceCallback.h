@@ -36,9 +36,12 @@ namespace thl {
  * class MyProcessor : public AudioIODeviceCallback {
  * public:
  *     void process(float* output, const float* input,
- *                  ma_uint32 frameCount, ma_uint32 numChannels) override {
+ *                  ma_uint32 frameCount,
+ *                  ma_uint32 numInputChannels,
+ *                  ma_uint32 numOutputChannels) override {
  *         // Process audio here (real-time safe!)
- *         for (ma_uint32 i = 0; i < frameCount * numChannels; ++i) {
+ *         if (!output || !input) return;
+ *         for (ma_uint32 i = 0; i < frameCount * numOutputChannels; ++i) {
  *             output[i] = input[i] * 0.5f;  // Simple gain reduction
  *         }
  *     }
@@ -63,13 +66,15 @@ public:
      * uninitialised data on entry.
      *
      * @param outputBuffer Pointer to the interleaved output buffer to fill.
-     *                     Size is frameCount * numChannels floats.
+     *                     Size is frameCount * numOutputChannels floats. May
+     *                     be nullptr if no output device is active.
      * @param inputBuffer Pointer to the interleaved input buffer containing
-     *                    captured audio. Size is frameCount * numChannels
-     * floats. May be nullptr if no input device is active.
+     *                    captured audio. Size is frameCount * numInputChannels
+     *                    floats. May be nullptr if no input device is active.
      * @param frameCount Number of audio frames to process. Each frame contains
-     *                   numChannels samples.
-     * @param numChannels Number of audio channels (interleaved in the buffers).
+     *                   numInputChannels/numOutputChannels samples.
+     * @param numInputChannels Number of input channels (interleaved).
+     * @param numOutputChannels Number of output channels (interleaved).
      *
      * @warning **MUST BE REAL-TIME SAFE** - Called from the audio thread.
      *          No allocations, locks, or blocking operations allowed.
@@ -77,7 +82,8 @@ public:
     virtual void process(float* outputBuffer,
                          const float* inputBuffer,
                          ma_uint32 frameCount,
-                         ma_uint32 numChannels) = 0;
+                         ma_uint32 numInputChannels,
+                         ma_uint32 numOutputChannels) = 0;
 
     /**
      * @brief Called before audio processing begins to allow resource

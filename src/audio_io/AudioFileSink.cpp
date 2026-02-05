@@ -44,8 +44,10 @@ void AudioFileSink::stopRecording() {
 void AudioFileSink::process(float* /*outputBuffer*/,
                             const float* inputBuffer,
                             ma_uint32 frameCount,
-                            ma_uint32 /*numChannels*/
+                            ma_uint32 numInputChannels,
+                            ma_uint32 /*numOutputChannels*/
 ) {
+    if (!inputBuffer || numInputChannels == 0) { return; }
     if (!m_open || !m_recording.load(std::memory_order_acquire)) { return; }
 
     ma_uint64 framesWritten = 0;

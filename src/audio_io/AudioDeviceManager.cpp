@@ -129,14 +129,16 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
                                     const AudioDeviceInfo* outputDevice,
                                     ma_uint32 sampleRate,
                                     ma_uint32 bufferSizeInFrames,
-                                    ma_uint32 numChannels) {
+                                    ma_uint32 numInputChannels,
+                                    ma_uint32 numOutputChannels) {
     if (!m_contextInitialised) return false;
 
     shutdown();
 
     m_sampleRate = sampleRate;
     m_bufferSize = bufferSizeInFrames;
-    m_numChannels = numChannels;
+    m_numInputChannels = numInputChannels;
+    m_numOutputChannels = numOutputChannels;
 
     ma_device_config devConfig = ma_device_config_init(ma_device_type_duplex);
 
@@ -148,9 +150,9 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     }
 
     devConfig.capture.format = ma_format_f32;
-    devConfig.capture.channels = numChannels;
+    devConfig.capture.channels = inputDevice ? numInputChannels : 0;
     devConfig.playback.format = ma_format_f32;
-    devConfig.playback.channels = numChannels;
+    devConfig.playback.channels = outputDevice ? numOutputChannels : 0;
     devConfig.sampleRate = sampleRate;
     devConfig.periodSizeInFrames = bufferSizeInFrames;
     devConfig.dataCallback = dataCallback;
@@ -161,6 +163,8 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     if (result != MA_SUCCESS) { return false; }
 
     m_deviceInitialised = true;
+    m_numInputChannels = m_device.capture.channels;
+    m_numOutputChannels = m_device.playback.channels;
 
     m_callbacks.read([&](const auto& callbacks) {
         for (auto* callback : callbacks) {
@@ -257,11 +261,31 @@ void AudioDeviceManager::processCallbacks(float* output,
         m_audioThreadRegistered.store(true, std::memory_order_relaxed);
     }
 
-    std::memset(output, 0, frameCount * m_numChannels * sizeof(float));
+    ma_uint32 outputChannels = m_numOutputChannels;
+    ma_uint32 inputChannels = m_numInputChannels;
+    if (m_deviceInitialised) {
+        outputChannels = m_device.playback.channels;
+        inputChannels = m_device.capture.channels;
+    }
+
+    if (outputChannels == 0 && inputChannels == 0) { return; }
+
+    if (output && outputChannels > 0) {
+        std::memset(output,
+                    0,
+                    frameCount * outputChannels * sizeof(float));
+    }
+
+    float* safeOutput = outputChannels > 0 ? output : nullptr;
+    const float* safeInput = inputChannels > 0 ? input : nullptr;
 
     m_callbacks.read([&](const auto& callbacks) {
         for (auto* callback : callbacks) {
-            callback->process(output, input, frameCount, m_numChannels);
+            callback->process(safeOutput,
+                              safeInput,
+                              frameCount,
+                              inputChannels,
+                              outputChannels);
         }
     });
 }
