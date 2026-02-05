@@ -21,7 +21,7 @@ namespace thl {
  * The typical usage pattern is:
  * 1. Construct an AudioPlayerSource
  * 2. Call loadFile() with the audio file path
- * 3. Register with AudioDeviceManager::addCallback()
+ * 3. Register with AudioDeviceManager::addPlaybackCallback()
  * 4. Call play() to begin playback
  * 5. Call pause() or stop() to control playback
  * 6. Call unloadFile() or let the destructor handle cleanup
@@ -53,8 +53,8 @@ namespace thl {
  * player.setFinishedCallback([]() {
  *     // Handle end of file (must be RT-safe!)
  * });
- * manager.addCallback(&player);
- * manager.start();
+ * manager.addPlaybackCallback(&player);
+ * manager.startPlayback();
  * player.play();
  * @endcode
  *

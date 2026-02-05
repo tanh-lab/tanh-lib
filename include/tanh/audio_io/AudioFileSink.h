@@ -19,7 +19,7 @@ namespace thl {
  * The typical usage pattern is:
  * 1. Construct an AudioFileSink
  * 2. Call openFile() with the desired path and format
- * 3. Register with AudioDeviceManager::addCallback()
+ * 3. Register with AudioDeviceManager::addPlaybackCallback()
  * 4. Call startRecording() to begin capturing audio
  * 5. Call stopRecording() when done
  * 6. Call closeFile() or let the destructor handle cleanup
@@ -41,12 +41,12 @@ namespace thl {
  * @code
  * AudioFileSink recorder;
  * recorder.openFile("recording.wav", 2, 48000);
- * manager.addCallback(&recorder);
- * manager.start();
+ * manager.addPlaybackCallback(&recorder);
+ * manager.startPlayback();
  * recorder.startRecording();
  * // ... record audio ...
  * recorder.stopRecording();
- * manager.stop();
+ * manager.stopPlayback();
  * @endcode
  *
  * @see AudioIODeviceCallback
