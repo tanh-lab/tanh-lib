@@ -54,7 +54,7 @@ TEST(AudioDeviceManager, DefaultValues) {
     EXPECT_EQ(manager.getBufferSize(), 512);
     EXPECT_EQ(manager.getNumOutputChannels(), 1);
     EXPECT_EQ(manager.getNumInputChannels(), 1);
-    EXPECT_FALSE(manager.isRunning());
+    EXPECT_FALSE(manager.isPlaybackRunning());
 }
 
 TEST(AudioDeviceManager, EnumerateDevicesDoesNotCrash) {
@@ -78,7 +78,7 @@ TEST(AudioDeviceManager, ShutdownWithoutInitialise) {
 TEST(AudioDeviceManager, StopWithoutStart) {
     AudioDeviceManager manager;
     // Calling stop without start should be safe
-    manager.stop();
+    manager.stopPlayback();
 }
 
 // =============================================================================
@@ -145,11 +145,11 @@ TEST(AudioDeviceManager, AddRemoveCallback) {
     MockCallback callback;
 
     // Adding and removing callbacks should not crash
-    manager.addCallback(&callback);
-    manager.removeCallback(&callback);
+    manager.addPlaybackCallback(&callback);
+    manager.removePlaybackCallback(&callback);
 
     // Removing non-existent callback should be safe
-    manager.removeCallback(&callback);
+    manager.removePlaybackCallback(&callback);
 }
 
 TEST(AudioDeviceManager, MultipleCallbacks) {
@@ -158,13 +158,13 @@ TEST(AudioDeviceManager, MultipleCallbacks) {
     MockCallback callback2;
     MockCallback callback3;
 
-    manager.addCallback(&callback1);
-    manager.addCallback(&callback2);
-    manager.addCallback(&callback3);
+    manager.addPlaybackCallback(&callback1);
+    manager.addPlaybackCallback(&callback2);
+    manager.addPlaybackCallback(&callback3);
 
-    manager.removeCallback(&callback2);
-    manager.removeCallback(&callback1);
-    manager.removeCallback(&callback3);
+    manager.removePlaybackCallback(&callback2);
+    manager.removePlaybackCallback(&callback1);
+    manager.removePlaybackCallback(&callback3);
 }
 
 TEST(AudioDeviceManager, ConcurrentCallbackModification) {
@@ -183,12 +183,12 @@ TEST(AudioDeviceManager, ConcurrentCallbackModification) {
         threads.emplace_back([&, t]() {
             while (running.load(std::memory_order_relaxed)) {
                 int idx = (t * 2) % kNumCallbacks;
-                manager.addCallback(&callbacks[idx]);
+                manager.addPlaybackCallback(&callbacks[idx]);
                 addCount.fetch_add(1, std::memory_order_relaxed);
 
                 std::this_thread::sleep_for(std::chrono::microseconds(50));
 
-                manager.removeCallback(&callbacks[idx]);
+                manager.removePlaybackCallback(&callbacks[idx]);
                 removeCount.fetch_add(1, std::memory_order_relaxed);
 
                 std::this_thread::sleep_for(std::chrono::microseconds(50));
@@ -299,16 +299,16 @@ TEST(HardwareTests, DISABLED_PlaySineWave) {
         manager.initialise(nullptr, &outputs[0], 48000, 256, 0, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise audio device";
 
-    manager.addCallback(&sineCallback);
+    manager.addPlaybackCallback(&sineCallback);
 
-    ASSERT_TRUE(manager.start()) << "Failed to start audio";
-    EXPECT_TRUE(manager.isRunning());
+    ASSERT_TRUE(manager.startPlayback()) << "Failed to start audio";
+    EXPECT_TRUE(manager.isPlaybackRunning());
 
     std::cout << "Playing 440Hz sine wave for 500ms...\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    manager.stop();
-    EXPECT_FALSE(manager.isRunning());
+    manager.stopPlayback();
+    EXPECT_FALSE(manager.isPlaybackRunning());
 
     std::cout << "Process callback was called " << sineCallback.processCallCount
               << " times\n";
@@ -330,14 +330,14 @@ TEST(HardwareTests, DISABLED_StartStopCycles) {
     SineCallback callback;
 
     ASSERT_TRUE(manager.initialise(nullptr, &outputs[0], 48000, 512, 0, 2));
-    manager.addCallback(&callback);
+    manager.addPlaybackCallback(&callback);
 
     for (int i = 0; i < 3; ++i) {
         std::cout << "Start/stop cycle " << (i + 1) << "/3\n";
 
-        ASSERT_TRUE(manager.start());
+        ASSERT_TRUE(manager.startPlayback());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        manager.stop();
+        manager.stopPlayback();
 
         EXPECT_GT(callback.processCallCount.load(), 0);
     }
@@ -368,11 +368,11 @@ TEST(HardwareTests, DISABLED_FullDuplex) {
         manager.initialise(&inputs[0], &outputs[0], 48000, 512, 2, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise duplex device";
 
-    manager.addCallback(&callback);
+    manager.addPlaybackCallback(&callback);
 
-    ASSERT_TRUE(manager.start());
+    ASSERT_TRUE(manager.startPlayback());
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    manager.stop();
+    manager.stopPlayback();
 
     std::cout << "Duplex process calls: " << callback.processCallCount << "\n";
     EXPECT_GT(callback.processCallCount, 0);

@@ -25,9 +25,11 @@ namespace thl {
  * 2. Enumerate available devices using enumerateInputDevices() /
  * enumerateOutputDevices()
  * 3. Call initialise() with the desired device configuration
- * 4. Register callbacks using addCallback()
- * 5. Call start() to begin audio processing
- * 6. Call stop() when done
+ * 4. Register callbacks using addPlaybackCallback(), addCaptureCallback(),
+ *    and/or addDuplexCallback()
+ * 5. Call startPlayback() (and optionally startCapture()/startDuplex())
+ *    to begin audio processing
+ * 6. Call stopPlayback()/stopCapture()/stopDuplex() when done
  * 7. Call shutdown() to release the device (or let destructor handle it)
  *
  * @section threading Threading Model
@@ -53,10 +55,10 @@ namespace thl {
  * auto outputs = manager.enumerateOutputDevices();
  * if (!outputs.empty()) {
  *     manager.initialise(nullptr, &outputs[0], 48000, 256, 0, 2);
- *     manager.addCallback(&myProcessor);
- *     manager.start();
+ *     manager.addPlaybackCallback(&myProcessor);
+ *     manager.startPlayback();
  *     // ... audio is now running ...
- *     manager.stop();
+ *     manager.stopPlayback();
  * }
  * @endcode
  *
@@ -146,8 +148,8 @@ public:
     /**
      * @brief Initialises the audio device with the specified configuration.
      *
-     * Sets up either a playback-only, capture-only, or full-duplex audio device
-     * depending on which device pointers are provided.
+     * Sets up separate playback, capture, and (when both devices are provided)
+     * duplex audio devices depending on which device pointers are provided.
      *
      * @param inputDevice Pointer to the input device info, or nullptr for
      * output-only.
@@ -188,11 +190,10 @@ public:
     void shutdown();
 
     /**
-     * @brief Starts audio processing.
+     * @brief Starts playback audio processing.
      *
-     * Begins audio I/O on the initialised device. All registered callbacks
-     * will receive prepareToPlay() before audio processing begins, and
-     * process() calls will start on the audio thread.
+     * Begins audio output on the playback device. Playback callbacks will
+     * receive process() calls on the audio thread.
      *
      * @return true if the device was started successfully, false otherwise.
      *
@@ -201,51 +202,153 @@ public:
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * start.
      */
-    bool start();
+    bool startPlayback();
 
     /**
-     * @brief Stops audio processing.
+     * @brief Stops playback audio processing.
      *
-     * Halts audio I/O on the device. All registered callbacks will receive
-     * releaseResources() after audio processing stops. The device remains
-     * initialised and can be restarted with start().
+     * Halts audio output on the playback device. Playback callbacks will
+     * receive releaseResources() after audio processing stops.
      *
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * stop.
      */
-    void stop();
+    void stopPlayback();
 
     /**
-     * @brief Checks if audio processing is currently running.
+     * @brief Starts capture audio processing.
      *
-     * @return true if the device is actively processing audio, false otherwise.
+     * Begins audio input on the capture device. Capture callbacks will
+     * receive process() calls on the audio thread.
+     *
+     * @return true if the device was started successfully, false otherwise.
+     *
+     * @pre initialise() must have been called successfully.
+     *
+     * @warning NOT real-time safe - may block while waiting for audio thread to
+     * start.
      */
-    bool isRunning() const { return m_running; }
+    bool startCapture();
 
     /**
-     * @brief Registers an audio callback to receive audio data.
+     * @brief Stops capture audio processing.
      *
-     * The callback's process() method will be called on the audio thread
-     * for each buffer of audio data. Multiple callbacks can be registered
-     * and will be called in registration order.
+     * Halts audio input on the capture device. Capture callbacks will
+     * receive releaseResources() after audio processing stops.
+     *
+     * @warning NOT real-time safe - may block while waiting for audio thread to
+     * stop.
+     */
+    void stopCapture();
+
+    /**
+     * @brief Starts duplex audio processing.
+     *
+     * Begins audio input and output on the duplex device. Duplex callbacks
+     * will receive process() calls on the audio thread.
+     *
+     * @return true if the device was started successfully, false otherwise.
+     *
+     * @pre initialise() must have been called successfully.
+     *
+     * @warning NOT real-time safe - may block while waiting for audio thread to
+     * start.
+     */
+    bool startDuplex();
+
+    /**
+     * @brief Stops duplex audio processing.
+     *
+     * Halts audio input and output on the duplex device. Duplex callbacks will
+     * receive releaseResources() after audio processing stops.
+     *
+     * @warning NOT real-time safe - may block while waiting for audio thread to
+     * stop.
+     */
+    void stopDuplex();
+
+    /**
+     * @brief Checks if playback processing is currently running.
+     *
+     * @return true if playback is actively processing audio, false otherwise.
+     */
+    bool isPlaybackRunning() const { return m_playbackRunning; }
+
+    /**
+     * @brief Checks if capture processing is currently running.
+     *
+     * @return true if capture is actively processing audio, false otherwise.
+     */
+    bool isCaptureRunning() const { return m_captureRunning; }
+
+    /**
+     * @brief Checks if duplex processing is currently running.
+     *
+     * @return true if duplex is actively processing audio, false otherwise.
+     */
+    bool isDuplexRunning() const { return m_duplexRunning; }
+
+    /**
+     * @brief Registers a playback audio callback to receive audio data.
+     *
+     * The callback's process() method will be called on the playback audio
+     * thread for each buffer of audio data. Multiple callbacks can be
+     * registered and will be called in registration order.
      *
      * @param callback Pointer to the callback to register. Must remain valid
      *                 until removed or the manager is destroyed.
      *
-     * @note If audio is already running, prepareToPlay() will be called on
-     *       the callback before it starts receiving process() calls.
+     * @note If the playback device is already initialised, prepareToPlay()
+     *       will be called on the callback before it starts receiving
+     *       process() calls.
      * @note Thread-safe - uses RCU for lock-free audio thread access.
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void addCallback(AudioIODeviceCallback* callback);
+    void addPlaybackCallback(AudioIODeviceCallback* callback);
 
     /**
-     * @brief Unregisters an audio callback.
+     * @brief Registers a capture audio callback to receive audio data.
+     *
+     * The callback's process() method will be called on the capture audio
+     * thread for each buffer of audio data.
+     *
+     * @param callback Pointer to the callback to register. Must remain valid
+     *                 until removed or the manager is destroyed.
+     *
+     * @note If the capture device is already initialised, prepareToPlay()
+     *       will be called on the callback before it starts receiving
+     *       process() calls.
+     * @note Thread-safe - uses RCU for lock-free audio thread access.
+     *
+     * @warning NOT real-time safe - performs allocation.
+     */
+    void addCaptureCallback(AudioIODeviceCallback* callback);
+
+    /**
+     * @brief Registers a duplex audio callback to receive audio data.
+     *
+     * The callback's process() method will be called on the duplex audio
+     * thread for each buffer of audio data.
+     *
+     * @param callback Pointer to the callback to register. Must remain valid
+     *                 until removed or the manager is destroyed.
+     *
+     * @note If the duplex device is already initialised, prepareToPlay()
+     *       will be called on the callback before it starts receiving
+     *       process() calls.
+     * @note Thread-safe - uses RCU for lock-free audio thread access.
+     *
+     * @warning NOT real-time safe - performs allocation.
+     */
+    void addDuplexCallback(AudioIODeviceCallback* callback);
+
+    /**
+     * @brief Unregisters a playback audio callback.
      *
      * Removes the callback from the list of registered callbacks. The
-     * callback's releaseResources() method will be called if audio is currently
-     * running.
+     * callback's releaseResources() method will be called if playback is
+     * currently running.
      *
      * @param callback Pointer to the callback to remove.
      *
@@ -254,7 +357,39 @@ public:
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void removeCallback(AudioIODeviceCallback* callback);
+    void removePlaybackCallback(AudioIODeviceCallback* callback);
+
+    /**
+     * @brief Unregisters a capture audio callback.
+     *
+     * Removes the callback from the list of registered callbacks. The
+     * callback's releaseResources() method will be called if capture is
+     * currently running.
+     *
+     * @param callback Pointer to the callback to remove.
+     *
+     * @note Safe to call with a callback that is not registered (no-op).
+     * @note Thread-safe - uses RCU for lock-free audio thread access.
+     *
+     * @warning NOT real-time safe - performs allocation.
+     */
+    void removeCaptureCallback(AudioIODeviceCallback* callback);
+
+    /**
+     * @brief Unregisters a duplex audio callback.
+     *
+     * Removes the callback from the list of registered callbacks. The
+     * callback's releaseResources() method will be called if duplex is
+     * currently running.
+     *
+     * @param callback Pointer to the callback to remove.
+     *
+     * @note Safe to call with a callback that is not registered (no-op).
+     * @note Thread-safe - uses RCU for lock-free audio thread access.
+     *
+     * @warning NOT real-time safe - performs allocation.
+     */
+    void removeDuplexCallback(AudioIODeviceCallback* callback);
 
     /**
      * @brief Sets a callback for device notification events.
@@ -302,7 +437,10 @@ public:
      *         the default (44100).
      */
     ma_uint32 getSampleRate() const {
-        return m_deviceInitialised ? m_device.sampleRate : m_sampleRate;
+        if (m_playbackDeviceInitialised) { return m_playbackDevice.sampleRate; }
+        if (m_duplexDeviceInitialised) { return m_duplexDevice.sampleRate; }
+        if (m_captureDeviceInitialised) { return m_captureDevice.sampleRate; }
+        return m_sampleRate;
     }
 
     /**
@@ -323,8 +461,11 @@ public:
      *         requested input channel count.
      */
     ma_uint32 getNumInputChannels() const {
-        return m_deviceInitialised ? m_device.capture.channels
-                                   : m_numInputChannels;
+        if (m_captureDeviceInitialised) {
+            return m_captureDevice.capture.channels;
+        }
+        if (m_duplexDeviceInitialised) { return m_duplexDevice.capture.channels; }
+        return m_numInputChannels;
     }
 
     /**
@@ -334,36 +475,81 @@ public:
      *         requested output channel count.
      */
     ma_uint32 getNumOutputChannels() const {
-        return m_deviceInitialised ? m_device.playback.channels
-                                   : m_numOutputChannels;
+        if (m_playbackDeviceInitialised) {
+            return m_playbackDevice.playback.channels;
+        }
+        if (m_duplexDeviceInitialised) {
+            return m_duplexDevice.playback.channels;
+        }
+        return m_numOutputChannels;
     }
 
 private:
+    enum class DeviceRole { Playback, Capture, Duplex };
+
+    struct DeviceUserData {
+        AudioDeviceManager* manager = nullptr;
+        DeviceRole role = DeviceRole::Playback;
+    };
+
     /// @brief Miniaudio context for device management
     ma_context m_context;
-    /// @brief Miniaudio device handle
-    ma_device m_device;
+    /// @brief Miniaudio playback device handle
+    ma_device m_playbackDevice;
+    /// @brief Miniaudio capture device handle
+    ma_device m_captureDevice;
+    /// @brief Miniaudio duplex device handle
+    ma_device m_duplexDevice;
     /// @brief Whether the audio context is initialised
     bool m_contextInitialised = false;
-    /// @brief Whether the audio device is initialised
-    bool m_deviceInitialised = false;
-    /// @brief Whether audio is currently running
-    bool m_running = false;
+    /// @brief Whether the playback device is initialised
+    bool m_playbackDeviceInitialised = false;
+    /// @brief Whether the capture device is initialised
+    bool m_captureDeviceInitialised = false;
+    /// @brief Whether the duplex device is initialised
+    bool m_duplexDeviceInitialised = false;
+    /// @brief Whether playback audio is currently running
+    bool m_playbackRunning = false;
+    /// @brief Whether capture audio is currently running
+    bool m_captureRunning = false;
+    /// @brief Whether duplex audio is currently running
+    bool m_duplexRunning = false;
 
     /// @brief Current sample rate in Hz
     ma_uint32 m_sampleRate = 44100;
     /// @brief Current buffer size in frames
     ma_uint32 m_bufferSize = 512;
+    /// @brief Playback buffer size in frames
+    ma_uint32 m_playbackBufferSize = 512;
+    /// @brief Capture buffer size in frames
+    ma_uint32 m_captureBufferSize = 512;
+    /// @brief Duplex buffer size in frames
+    ma_uint32 m_duplexBufferSize = 512;
     /// @brief Current number of input channels
     ma_uint32 m_numInputChannels = 1;
     /// @brief Current number of output channels
     ma_uint32 m_numOutputChannels = 1;
 
-    /// @brief RCU-protected list of registered audio callbacks (lock-free reads)
-    RCU<std::vector<AudioIODeviceCallback*>> m_callbacks;
+    /// @brief RCU-protected list of registered playback callbacks
+    RCU<std::vector<AudioIODeviceCallback*>> m_playbackCallbacks;
+    /// @brief RCU-protected list of registered capture callbacks
+    RCU<std::vector<AudioIODeviceCallback*>> m_captureCallbacks;
+    /// @brief RCU-protected list of registered duplex callbacks
+    RCU<std::vector<AudioIODeviceCallback*>> m_duplexCallbacks;
 
-    /// @brief Flag to ensure audio thread registers with RCU only once
-    mutable std::atomic<bool> m_audioThreadRegistered{false};
+    /// @brief Flag to ensure playback audio thread registers with RCU only once
+    mutable std::atomic<bool> m_playbackAudioThreadRegistered{false};
+    /// @brief Flag to ensure capture audio thread registers with RCU only once
+    mutable std::atomic<bool> m_captureAudioThreadRegistered{false};
+    /// @brief Flag to ensure duplex audio thread registers with RCU only once
+    mutable std::atomic<bool> m_duplexAudioThreadRegistered{false};
+
+    /// @brief User data for playback device callbacks
+    DeviceUserData m_playbackUserData;
+    /// @brief User data for capture device callbacks
+    DeviceUserData m_captureUserData;
+    /// @brief User data for duplex device callbacks
+    DeviceUserData m_duplexUserData;
 
     /// @brief User-provided device notification callback (atomic load/store)
     std::shared_ptr<DeviceNotificationCallback> m_notificationCallback;
@@ -390,6 +576,20 @@ private:
         const ma_device_notification* pNotification);
 
     /**
+     * @brief Attempts to initialise a specific device role.
+     *
+     * @return true if the role-specific device was initialised, false
+     * otherwise.
+     */
+    bool tryInitialiseDevice(DeviceRole role,
+                             const AudioDeviceInfo* inputDevice,
+                             const AudioDeviceInfo* outputDevice,
+                             ma_uint32 sampleRate,
+                             ma_uint32 bufferSizeInFrames,
+                             ma_uint32 numInputChannels,
+                             ma_uint32 numOutputChannels);
+
+    /**
      * @brief Dispatches audio data to all registered callbacks.
      *
      * Uses RCU for lock-free access to the callback list, ensuring no
@@ -401,9 +601,22 @@ private:
      *
      * @note Real-time safe - uses lock-free RCU reads.
      */
-    void processCallbacks(float* output,
+    void processCallbacks(DeviceRole role,
+                          ma_device* device,
+                          float* output,
                           const float* input,
                           ma_uint32 frameCount);
+
+    /**
+     * @brief Dispatches audio data to a specific callback list.
+     */
+    void dispatchCallbacks(
+        RCU<std::vector<AudioIODeviceCallback*>>& callbacks,
+        std::atomic<bool>& audioThreadRegistered,
+        ma_device* device,
+        float* output,
+        const float* input,
+        ma_uint32 frameCount);
 
     /**
      * @brief Populates sample rate information for enumerated devices.

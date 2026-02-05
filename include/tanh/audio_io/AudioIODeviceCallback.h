@@ -30,7 +30,8 @@ namespace thl {
  * 1. Derive from AudioIODeviceCallback and implement process()
  * 2. Optionally override prepareToPlay() for initialisation
  * 3. Optionally override releaseResources() for cleanup
- * 4. Register the callback with AudioDeviceManager::addCallback()
+ * 4. Register the callback with AudioDeviceManager::addPlaybackCallback(),
+ *    addCaptureCallback(), or addDuplexCallback()
  *
  * @code
  * class MyProcessor : public AudioIODeviceCallback {
@@ -48,8 +49,12 @@ namespace thl {
  * };
  * @endcode
  *
- * @see AudioDeviceManager::addCallback()
- * @see AudioDeviceManager::removeCallback()
+ * @see AudioDeviceManager::addPlaybackCallback()
+ * @see AudioDeviceManager::removePlaybackCallback()
+ * @see AudioDeviceManager::addCaptureCallback()
+ * @see AudioDeviceManager::removeCaptureCallback()
+ * @see AudioDeviceManager::addDuplexCallback()
+ * @see AudioDeviceManager::removeDuplexCallback()
  */
 class AudioIODeviceCallback {
 public:
