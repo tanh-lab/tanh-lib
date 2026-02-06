@@ -4,6 +4,7 @@
 #include <atomic>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace thl {
 
@@ -245,6 +246,8 @@ private:
     std::atomic<bool> m_playing{false};
     ma_uint32 m_channels = 0;
     ma_uint32 m_sampleRate = 0;
+    ma_uint32 m_sourceChannels = 0;  // Actual channel count of the source file
+    std::vector<float> m_tempBuffer;  // For mono-to-stereo upmixing
     FinishedCallback m_finishedCallback;
 };
 
