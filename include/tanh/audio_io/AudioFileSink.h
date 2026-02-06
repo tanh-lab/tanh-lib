@@ -1,17 +1,24 @@
 #pragma once
 #include "AudioIODeviceCallback.h"
-#include "miniaudio.h"
 #include <atomic>
+#include <cstdint>
+#include <memory>
 #include <string>
 
 namespace thl {
+
+/**
+ * @enum AudioEncodingFormat
+ * @brief Supported audio file encoding formats.
+ */
+enum class AudioEncodingFormat { WAV, FLAC };
 
 /**
  * @class AudioFileSink
  * @brief Audio callback that records input audio to a file.
  *
  * AudioFileSink implements AudioIODeviceCallback to capture audio input and
- * encode it to a file. It supports various audio formats through miniaudio's
+ * encode it to a file. It supports various audio formats through the backend
  * encoder interface.
  *
  * @section lifecycle File Lifecycle
@@ -35,8 +42,8 @@ namespace thl {
  * @section formats Supported Formats
  *
  * The format parameter in openFile() controls the output file format:
- * - ma_encoding_format_wav (default) - Uncompressed WAV
- * - ma_encoding_format_flac - FLAC lossless compression
+ * - AudioEncodingFormat::WAV (default) - Uncompressed WAV
+ * - AudioEncodingFormat::FLAC - FLAC lossless compression
  *
  * @code
  * AudioFileSink recorder;
@@ -87,9 +94,9 @@ public:
      * @warning NOT real-time safe - performs file I/O and allocations.
      */
     bool openFile(const std::string& filePath,
-                  ma_uint32 channels,
-                  ma_uint32 sampleRate,
-                  ma_encoding_format format = ma_encoding_format_wav);
+                  uint32_t channels,
+                  uint32_t sampleRate,
+                  AudioEncodingFormat format = AudioEncodingFormat::WAV);
 
     /**
      * @brief Closes the currently open file.
@@ -146,7 +153,7 @@ public:
      *
      * @note Thread-safe - uses atomic operations.
      */
-    ma_uint64 getFramesWritten() const {
+    uint64_t getFramesWritten() const {
         return m_framesWritten.load(std::memory_order_acquire);
     }
 
@@ -165,9 +172,9 @@ public:
      */
     void process(float* outputBuffer,
                  const float* inputBuffer,
-                 ma_uint32 frameCount,
-                 ma_uint32 numInputChannels,
-                 ma_uint32 numOutputChannels) override;
+                 uint32_t frameCount,
+                 uint32_t numInputChannels,
+                 uint32_t numOutputChannels) override;
 
     /**
      * @brief Releases resources by closing any open file.
@@ -180,10 +187,12 @@ public:
     void releaseResources() override;
 
 private:
-    ma_encoder m_encoder;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+
     bool m_open = false;
     std::atomic<bool> m_recording{false};
-    std::atomic<ma_uint64> m_framesWritten{0};
+    std::atomic<uint64_t> m_framesWritten{0};
 };
 
 }  // namespace thl

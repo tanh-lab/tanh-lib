@@ -1,8 +1,10 @@
 #pragma once
 #include "AudioIODeviceCallback.h"
-#include "miniaudio.h"
 #include <atomic>
+#include <cstdint>
 #include <functional>
+#include <mutex>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,9 +15,9 @@ namespace thl {
  * @brief Audio callback that plays back audio from a file using async decoding.
  *
  * AudioPlayerSource implements AudioIODeviceCallback to decode audio from a
- * file and output it to the audio device. It uses miniaudio's resource manager
- * for asynchronous streaming and decoding, making the audio thread read from
- * pre-decoded buffers rather than performing blocking file I/O.
+ * file and output it to the audio device. It uses the backend's resource
+ * manager for asynchronous streaming and decoding, making the audio thread read
+ * from pre-decoded buffers rather than performing blocking file I/O.
  *
  * @section lifecycle File Lifecycle
  *
@@ -109,8 +111,8 @@ public:
      * @warning NOT real-time safe - performs file I/O and allocations.
      */
     bool loadFile(const std::string& filePath,
-                  ma_uint32 outputChannels,
-                  ma_uint32 outputSampleRate);
+                  uint32_t outputChannels,
+                  uint32_t outputSampleRate);
 
     /**
      * @brief Unloads the currently loaded file.
@@ -157,9 +159,7 @@ public:
      *
      * @note Thread-safe - uses atomic operations.
      */
-    bool isPlaying() const {
-        return m_playing.load(std::memory_order_acquire);
-    }
+    bool isPlaying() const { return m_playing.load(std::memory_order_acquire); }
 
     /**
      * @brief Checks if a file is currently loaded.
@@ -167,7 +167,7 @@ public:
      * @return true if a file is loaded and ready for playback, false
      * otherwise.
      */
-    bool isLoaded() const { return m_loaded; }
+    bool isLoaded() const { return m_loaded.load(std::memory_order_acquire); }
 
     /**
      * @brief Seeks to a specific frame position.
@@ -176,21 +176,21 @@ public:
      *
      * @warning NOT real-time safe - may trigger buffer refill.
      */
-    void seekToFrame(ma_uint64 frame);
+    void seekToFrame(uint64_t frame);
 
     /**
      * @brief Gets the current playback position in frames.
      *
      * @return Current frame position, or 0 if no file is loaded.
      */
-    ma_uint64 getCurrentFrame() const;
+    uint64_t getCurrentFrame() const;
 
     /**
      * @brief Gets the total length of the loaded file in frames.
      *
      * @return Total number of frames, or 0 if no file is loaded.
      */
-    ma_uint64 getTotalFrames() const;
+    uint64_t getTotalFrames() const;
 
     /**
      * @brief Sets a callback to be invoked when playback finishes.
@@ -206,6 +206,8 @@ public:
      * operations.
      */
     void setFinishedCallback(FinishedCallback callback);
+
+    void prepareToPlay(uint32_t sampleRate, uint32_t bufferSize) override;
 
     /**
      * @brief Processes audio by reading from pre-decoded buffers.
@@ -224,9 +226,9 @@ public:
      */
     void process(float* outputBuffer,
                  const float* inputBuffer,
-                 ma_uint32 frameCount,
-                 ma_uint32 numInputChannels,
-                 ma_uint32 numOutputChannels) override;
+                 uint32_t frameCount,
+                 uint32_t numInputChannels,
+                 uint32_t numOutputChannels) override;
 
     /**
      * @brief Releases resources by unloading any loaded file.
@@ -239,16 +241,22 @@ public:
     void releaseResources() override;
 
 private:
-    ma_resource_manager m_resourceManager;
-    ma_resource_manager_data_source m_dataSource;
-    bool m_resourceManagerInitialised = false;
-    bool m_loaded = false;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+
+    bool rebuildDataSource(uint32_t decodedChannels,
+                           uint32_t decodedSampleRate,
+                           uint64_t initialFrame);
+
+    std::atomic<bool> m_loaded{false};
     std::atomic<bool> m_playing{false};
-    ma_uint32 m_channels = 0;
-    ma_uint32 m_sampleRate = 0;
-    ma_uint32 m_sourceChannels = 0;  // Actual channel count of the source file
-    std::vector<float> m_tempBuffer;  // For mono-to-stereo upmixing
-    FinishedCallback m_finishedCallback;
+    std::mutex m_stateMutex;
+
+    std::string m_filePath;
+    uint32_t m_channels = 0;
+    uint32_t m_sampleRate = 0;
+
+    std::shared_ptr<FinishedCallback> m_finishedCallback;
 };
 
 }  // namespace thl

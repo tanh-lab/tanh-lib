@@ -1,9 +1,16 @@
 #pragma once
-#include "miniaudio.h"
+#include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace thl {
+
+/**
+ * @enum DeviceType
+ * @brief Identifies the type of audio device.
+ */
+enum class DeviceType { Playback, Capture, Duplex };
 
 /**
  * @struct AudioDeviceInfo
@@ -28,22 +35,12 @@ struct AudioDeviceInfo {
     std::string name;
 
     /**
-     * @brief Unique identifier for the audio device.
-     *
-     * This identifier is used internally by miniaudio to reference the specific
-     * device. The identifier format is platform-specific.
-     */
-    ma_device_id deviceID;
-
-    /**
      * @brief Type of the audio device (input, output, or duplex).
      *
      * Indicates whether this device is capable of audio capture (input),
      * playback (output), or both (duplex).
-     *
-     * @see ma_device_type for possible values
      */
-    ma_device_type deviceType;
+    DeviceType deviceType = DeviceType::Playback;
 
     /**
      * @brief List of sample rates supported by the device.
@@ -51,16 +48,24 @@ struct AudioDeviceInfo {
      * Contains the discrete sample rates that this device can operate at.
      * Common values include 44100, 48000, 88200, 96000, etc.
      */
-    std::vector<ma_uint32> sampleRates;
+    std::vector<uint32_t> sampleRates;
 
     /**
-     * @brief Gets a pointer to the device ID for use with miniaudio functions.
+     * @brief Gets a pointer to the device ID for internal use.
      *
-     * @return Pointer to the internal device ID structure.
+     * @return Pointer to the internal device ID storage.
      *
      * @note This is primarily used internally when initialising devices.
      */
-    const ma_device_id* deviceIDPtr() const { return &deviceID; }
+    const void* deviceIDPtr() const { return m_deviceIdStorage.data(); }
+    void* deviceIdStoragePtr() { return m_deviceIdStorage.data(); }
+
+    static constexpr size_t kDeviceIdStorageSize = 256;
+
+private:
+    friend class AudioDeviceManager;
+
+    std::array<char, kDeviceIdStorageSize> m_deviceIdStorage{};
 };
 
 }  // namespace thl

@@ -1,22 +1,35 @@
 #pragma once
-#include "miniaudio.h"
 #include "AudioDeviceInfo.h"
 #include "AudioIODeviceCallback.h"
 #include <tanh/core/threading/RCU.h>
 #include <atomic>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
-#include <functional>
 
 namespace thl {
+
+/**
+ * @enum DeviceNotificationType
+ * @brief Types of device notification events.
+ */
+enum class DeviceNotificationType {
+    Started,
+    Stopped,
+    Rerouted,
+    InterruptionBegan,
+    InterruptionEnded,
+    Unlocked
+};
 
 /**
  * @class AudioDeviceManager
  * @brief Manages audio device initialisation, lifecycle, and callback dispatch.
  *
  * AudioDeviceManager provides a high-level interface for audio I/O using
- * miniaudio as the backend. It handles device enumeration, initialisation, and
- * dispatches audio data to registered callbacks.
+ * a cross-platform audio backend. It handles device enumeration,
+ * initialisation, and dispatches audio data to registered callbacks.
  *
  * @section lifecycle Device Lifecycle
  *
@@ -37,7 +50,7 @@ namespace thl {
  * - Device enumeration, initialisation, start/stop, and callback registration
  *   are performed on the calling thread (typically the main thread).
  * - Audio processing (AudioIODeviceCallback::process()) occurs on a dedicated
- *   audio thread created by miniaudio.
+ *   audio thread created by the audio backend.
  * - Callback registration is protected by a mutex and is safe to call from
  *   any thread, though adding/removing callbacks during audio processing
  *   may cause brief audio glitches.
@@ -48,6 +61,16 @@ namespace thl {
  * All public methods are called from the main thread and are NOT real-time
  * safe. Registered callbacks must implement process() in a real-time safe
  * manner.
+ *
+ * @section ios_rerouting iOS Audio Rerouting
+ *
+ * On iOS, audio routing is managed by AVAudioSession. When the route changes
+ * (e.g., headphones connected/disconnected, Bluetooth device paired), the
+ * sample rate, buffer size, or channel count may change. Use
+ * setDeviceNotificationCallback() to receive DeviceNotificationType::Rerouted
+ * notifications and query the new configuration via getSampleRate(),
+ * getBufferSize(), etc. Note that process() may receive varying frameCount
+ * values after a route change.
  *
  * @code
  * AudioDeviceManager manager;
@@ -74,10 +97,18 @@ public:
      * being started, stopped, or disconnected.
      *
      * @see setDeviceNotificationCallback()
-     * @see ma_device_notification_type for possible notification types
      */
     using DeviceNotificationCallback =
-        std::function<void(ma_device_notification_type)>;
+        std::function<void(DeviceNotificationType)>;
+
+    /**
+     * @brief Callback type for log messages from the audio backend.
+     *
+     * @param level Log level (0=debug, 1=info, 2=warning, 3=error)
+     * @param message The log message
+     */
+    using LogCallback =
+        std::function<void(uint32_t level, const char* message)>;
 
     /**
      * @brief Constructs an AudioDeviceManager and initialises the audio
@@ -115,7 +146,7 @@ public:
      * @note If this returns false, device enumeration and initialisation will
      * fail.
      */
-    bool isContextInitialised() const { return m_contextInitialised; }
+    bool isContextInitialised() const;
 
     /**
      * @brief Enumerates all available audio input (capture) devices.
@@ -174,10 +205,10 @@ public:
      */
     bool initialise(const AudioDeviceInfo* inputDevice,
                     const AudioDeviceInfo* outputDevice,
-                    ma_uint32 sampleRate = 44100,
-                    ma_uint32 bufferSizeInFrames = 512,
-                    ma_uint32 numInputChannels = 1,
-                    ma_uint32 numOutputChannels = 1);
+                    uint32_t sampleRate = 44100,
+                    uint32_t bufferSizeInFrames = 512,
+                    uint32_t numInputChannels = 1,
+                    uint32_t numOutputChannels = 1);
 
     /**
      * @brief Shuts down the audio device and releases associated resources.
@@ -395,10 +426,10 @@ public:
      * @brief Sets a callback for device notification events.
      *
      * The notification callback is invoked when device events occur, such as:
-     * - Device started (ma_device_notification_type_started)
-     * - Device stopped (ma_device_notification_type_stopped)
-     * - Device rerouted (ma_device_notification_type_rerouted)
-     * - Device interruption began/ended
+     * - DeviceNotificationType::Started - Device started
+     * - DeviceNotificationType::Stopped - Device stopped
+     * - DeviceNotificationType::Rerouted - Device rerouted
+     * - DeviceNotificationType::InterruptionBegan/InterruptionEnded
      *
      * @param callback The callback function to invoke on notifications,
      *                 or nullptr to disable notifications.
@@ -408,27 +439,14 @@ public:
     void setDeviceNotificationCallback(DeviceNotificationCallback callback);
 
     /**
-     * @brief Registers a logging callback with the miniaudio context log.
+     * @brief Sets a callback for log messages from the audio backend.
      *
      * This is post-init only. Logs emitted during context initialization
      * will not be captured.
      *
-     * @param callback Log callback function (must not be null).
-     * @param userData User data passed to the callback.
-     *
-     * @return true if the callback was registered, false otherwise.
+     * @param callback Log callback function, or nullptr to clear.
      */
-    bool registerLogCallback(ma_log_callback_proc callback, void* userData);
-
-    /**
-     * @brief Unregisters a logging callback from the miniaudio context log.
-     *
-     * @param callback Log callback function (must not be null).
-     * @param userData User data passed to the callback.
-     *
-     * @return true if the callback was unregistered, false otherwise.
-     */
-    bool unregisterLogCallback(ma_log_callback_proc callback, void* userData);
+    void setLogCallback(LogCallback callback);
 
     /**
      * @brief Gets the current sample rate.
@@ -436,12 +454,7 @@ public:
      * @return The actual device sample rate in Hz if initialised, otherwise
      *         the default (44100).
      */
-    ma_uint32 getSampleRate() const {
-        if (m_playbackDeviceInitialised) { return m_playbackDevice.sampleRate; }
-        if (m_duplexDeviceInitialised) { return m_duplexDevice.sampleRate; }
-        if (m_captureDeviceInitialised) { return m_captureDevice.sampleRate; }
-        return m_sampleRate;
-    }
+    uint32_t getSampleRate() const;
 
     /**
      * @brief Gets the current buffer size.
@@ -452,7 +465,7 @@ public:
      * @note This is the requested buffer size; the actual size may differ
      *       depending on the audio driver.
      */
-    ma_uint32 getBufferSize() const { return m_bufferSize; }
+    uint32_t getBufferSize() const;
 
     /**
      * @brief Gets the current number of input (capture) channels.
@@ -460,13 +473,7 @@ public:
      * @return The actual capture channel count if initialised, otherwise the
      *         requested input channel count.
      */
-    ma_uint32 getNumInputChannels() const {
-        if (m_captureDeviceInitialised) {
-            return m_captureDevice.capture.channels;
-        }
-        if (m_duplexDeviceInitialised) { return m_duplexDevice.capture.channels; }
-        return m_numInputChannels;
-    }
+    uint32_t getNumInputChannels() const;
 
     /**
      * @brief Gets the current number of output (playback) channels.
@@ -474,156 +481,61 @@ public:
      * @return The actual playback channel count if initialised, otherwise the
      *         requested output channel count.
      */
-    ma_uint32 getNumOutputChannels() const {
-        if (m_playbackDeviceInitialised) {
-            return m_playbackDevice.playback.channels;
-        }
-        if (m_duplexDeviceInitialised) {
-            return m_duplexDevice.playback.channels;
-        }
-        return m_numOutputChannels;
-    }
+    uint32_t getNumOutputChannels() const;
 
 private:
     enum class DeviceRole { Playback, Capture, Duplex };
+    struct Impl;
+    struct DeviceUserData;
 
-    struct DeviceUserData {
-        AudioDeviceManager* manager = nullptr;
-        DeviceRole role = DeviceRole::Playback;
-    };
+    std::unique_ptr<Impl> m_impl;
 
-    /// @brief Miniaudio context for device management
-    ma_context m_context;
-    /// @brief Miniaudio playback device handle
-    ma_device m_playbackDevice;
-    /// @brief Miniaudio capture device handle
-    ma_device m_captureDevice;
-    /// @brief Miniaudio duplex device handle
-    ma_device m_duplexDevice;
-    /// @brief Whether the audio context is initialised
-    bool m_contextInitialised = false;
-    /// @brief Whether the playback device is initialised
-    bool m_playbackDeviceInitialised = false;
-    /// @brief Whether the capture device is initialised
-    bool m_captureDeviceInitialised = false;
-    /// @brief Whether the duplex device is initialised
-    bool m_duplexDeviceInitialised = false;
-    /// @brief Whether playback audio is currently running
-    bool m_playbackRunning = false;
-    /// @brief Whether capture audio is currently running
-    bool m_captureRunning = false;
-    /// @brief Whether duplex audio is currently running
-    bool m_duplexRunning = false;
+    std::vector<AudioDeviceInfo> enumerateDevices(DeviceType type) const;
+    void populateSampleRates(std::vector<AudioDeviceInfo>& devices) const;
 
-    /// @brief Current sample rate in Hz
-    ma_uint32 m_sampleRate = 44100;
-    /// @brief Current buffer size in frames
-    ma_uint32 m_bufferSize = 512;
-    /// @brief Playback buffer size in frames
-    ma_uint32 m_playbackBufferSize = 512;
-    /// @brief Capture buffer size in frames
-    ma_uint32 m_captureBufferSize = 512;
-    /// @brief Duplex buffer size in frames
-    ma_uint32 m_duplexBufferSize = 512;
-    /// @brief Current number of input channels
-    ma_uint32 m_numInputChannels = 1;
-    /// @brief Current number of output channels
-    ma_uint32 m_numOutputChannels = 1;
-
-    /// @brief RCU-protected list of registered playback callbacks
-    RCU<std::vector<AudioIODeviceCallback*>> m_playbackCallbacks;
-    /// @brief RCU-protected list of registered capture callbacks
-    RCU<std::vector<AudioIODeviceCallback*>> m_captureCallbacks;
-    /// @brief RCU-protected list of registered duplex callbacks
-    RCU<std::vector<AudioIODeviceCallback*>> m_duplexCallbacks;
-
-    /// @brief Flag to ensure playback audio thread registers with RCU only once
-    mutable std::atomic<bool> m_playbackAudioThreadRegistered{false};
-    /// @brief Flag to ensure capture audio thread registers with RCU only once
-    mutable std::atomic<bool> m_captureAudioThreadRegistered{false};
-    /// @brief Flag to ensure duplex audio thread registers with RCU only once
-    mutable std::atomic<bool> m_duplexAudioThreadRegistered{false};
-
-    /// @brief User data for playback device callbacks
-    DeviceUserData m_playbackUserData;
-    /// @brief User data for capture device callbacks
-    DeviceUserData m_captureUserData;
-    /// @brief User data for duplex device callbacks
-    DeviceUserData m_duplexUserData;
-
-    /// @brief User-provided device notification callback (atomic load/store)
-    std::shared_ptr<DeviceNotificationCallback> m_notificationCallback;
-
-    /**
-     * @brief Static callback invoked by miniaudio for audio processing.
-     *
-     * @param pDevice Pointer to the miniaudio device
-     * @param pOutput Pointer to the output buffer
-     * @param pInput Pointer to the input buffer
-     * @param frameCount Number of frames to process
-     */
-    static void dataCallback(ma_device* pDevice,
-                             void* pOutput,
-                             const void* pInput,
-                             ma_uint32 frameCount);
-
-    /**
-     * @brief Static callback invoked by miniaudio for device notifications.
-     *
-     * @param pNotification Pointer to the notification data
-     */
-    static void notificationCallback(
-        const ma_device_notification* pNotification);
-
-    /**
-     * @brief Attempts to initialise a specific device role.
-     *
-     * @return true if the role-specific device was initialised, false
-     * otherwise.
-     */
     bool tryInitialiseDevice(DeviceRole role,
                              const AudioDeviceInfo* inputDevice,
                              const AudioDeviceInfo* outputDevice,
-                             ma_uint32 sampleRate,
-                             ma_uint32 bufferSizeInFrames,
-                             ma_uint32 numInputChannels,
-                             ma_uint32 numOutputChannels);
+                             uint32_t sampleRate,
+                             uint32_t bufferSizeInFrames,
+                             uint32_t numInputChannels,
+                             uint32_t numOutputChannels);
 
-    /**
-     * @brief Dispatches audio data to all registered callbacks.
-     *
-     * Uses RCU for lock-free access to the callback list, ensuring no
-     * blocking on the audio thread.
-     *
-     * @param output Pointer to the interleaved output buffer
-     * @param input Pointer to the interleaved input buffer
-     * @param frameCount Number of frames to process
-     *
-     * @note Real-time safe - uses lock-free RCU reads.
-     */
     void processCallbacks(DeviceRole role,
-                          ma_device* device,
+                          void* device,
                           float* output,
                           const float* input,
-                          ma_uint32 frameCount);
+                          uint32_t frameCount);
 
-    /**
-     * @brief Dispatches audio data to a specific callback list.
-     */
-    void dispatchCallbacks(
-        RCU<std::vector<AudioIODeviceCallback*>>& callbacks,
-        std::atomic<bool>& audioThreadRegistered,
-        ma_device* device,
-        float* output,
-        const float* input,
-        ma_uint32 frameCount);
+    static void dataCallback(void* pDevice,
+                             void* pOutput,
+                             const void* pInput,
+                             uint32_t frameCount);
 
-    /**
-     * @brief Populates sample rate information for enumerated devices.
-     *
-     * @param devices Vector of devices to populate with sample rate data
-     */
-    void populateSampleRates(std::vector<AudioDeviceInfo>& devices) const;
+    static void notificationCallback(const void* pNotification);
+
+    static void staticLogCallback(void* pUserData,
+                                  uint32_t level,
+                                  const char* pMessage);
+
+    bool m_playbackRunning = false;
+    bool m_captureRunning = false;
+    bool m_duplexRunning = false;
+
+    uint32_t m_sampleRate = 44100;
+    uint32_t m_bufferSize = 512;
+    uint32_t m_numInputChannels = 1;
+    uint32_t m_numOutputChannels = 1;
+
+    RCU<std::vector<AudioIODeviceCallback*>> m_playbackCallbacks;
+    RCU<std::vector<AudioIODeviceCallback*>> m_captureCallbacks;
+    RCU<std::vector<AudioIODeviceCallback*>> m_duplexCallbacks;
+
+    mutable std::atomic<bool> m_playbackAudioThreadRegistered{false};
+    mutable std::atomic<bool> m_captureAudioThreadRegistered{false};
+    mutable std::atomic<bool> m_duplexAudioThreadRegistered{false};
+
+    std::shared_ptr<DeviceNotificationCallback> m_notificationCallback;
 };
 
 }  // namespace thl
