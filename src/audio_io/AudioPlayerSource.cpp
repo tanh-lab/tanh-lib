@@ -37,6 +37,18 @@ bool AudioPlayerSource::loadFile(const std::string& filePath,
 
     if (result != MA_SUCCESS) { return false; }
 
+    // Get the source file's actual channel count
+    ma_format sourceFormat;
+    ma_uint32 sourceChannels;
+    ma_uint32 sourceSampleRate;
+    ma_data_source_get_data_format(&m_dataSource,
+                                   &sourceFormat,
+                                   &sourceChannels,
+                                   &sourceSampleRate,
+                                   nullptr,
+                                   0);
+    m_sourceChannels = sourceChannels;
+
     m_loaded = true;
     m_channels = outputChannels;
     m_sampleRate = outputSampleRate;
@@ -51,6 +63,7 @@ void AudioPlayerSource::unloadFile() {
         m_loaded = false;
         m_channels = 0;
         m_sampleRate = 0;
+        m_sourceChannels = 0;
     }
 }
 
@@ -104,17 +117,53 @@ void AudioPlayerSource::process(float* outputBuffer,
     if (!m_loaded || !m_playing.load(std::memory_order_acquire)) { return; }
 
     ma_uint64 framesRead = 0;
-    ma_data_source_read_pcm_frames(&m_dataSource,
-                                   outputBuffer,
-                                   frameCount,
-                                   &framesRead);
+
+    // Handle mono-to-stereo upmixing
+    if (m_sourceChannels == 1 && numOutputChannels > 1) {
+        // Ensure temp buffer is large enough
+        if (m_tempBuffer.size() < frameCount) {
+            m_tempBuffer.resize(frameCount);
+        }
+
+        // Read mono frames into temp buffer
+        ma_data_source_read_pcm_frames(&m_dataSource,
+                                       m_tempBuffer.data(),
+                                       frameCount,
+                                       &framesRead);
+
+        // Upmix: copy mono sample to all output channels
+        // TODO: This is just a temporal solution
+        // there must a better way to handle this
+        for (ma_uint32 frame = 0; frame < framesRead; ++frame) {
+            float sample = m_tempBuffer[frame];
+            for (ma_uint32 ch = 0; ch < numOutputChannels; ++ch) {
+                outputBuffer[frame * numOutputChannels + ch] = sample;
+            }
+        }
+
+        // Zero remaining frames if we hit end of file
+        if (framesRead < frameCount) {
+            std::memset(
+                outputBuffer + framesRead * numOutputChannels,
+                0,
+                (frameCount - framesRead) * numOutputChannels * sizeof(float));
+        }
+    } else {
+        // Direct read for matching channel counts
+        ma_data_source_read_pcm_frames(&m_dataSource,
+                                       outputBuffer,
+                                       frameCount,
+                                       &framesRead);
+
+        if (framesRead < frameCount) {
+            std::memset(
+                outputBuffer + framesRead * numOutputChannels,
+                0,
+                (frameCount - framesRead) * numOutputChannels * sizeof(float));
+        }
+    }
 
     if (framesRead < frameCount) {
-        std::memset(outputBuffer + framesRead * numOutputChannels,
-                    0,
-                    (frameCount - framesRead) * numOutputChannels *
-                        sizeof(float));
-
         m_playing.store(false, std::memory_order_release);
         if (m_finishedCallback) { m_finishedCallback(); }
     }
