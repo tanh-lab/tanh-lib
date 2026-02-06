@@ -25,8 +25,8 @@ TEST(AudioDeviceInfo, DefaultConstruction) {
 
 TEST(AudioDeviceInfo, DeviceIDPointer) {
     AudioDeviceInfo info;
-    const ma_device_id* ptr = info.deviceIDPtr();
-    EXPECT_EQ(ptr, &info.deviceID);
+    const void* ptr = info.deviceIDPtr();
+    EXPECT_NE(ptr, nullptr);
 }
 
 // =============================================================================
@@ -93,19 +93,19 @@ public:
 
     void process(float* outputBuffer,
                  const float* inputBuffer,
-                 ma_uint32 frameCount,
-                 ma_uint32 /*numInputChannels*/,
-                 ma_uint32 numOutputChannels) override {
+                 uint32_t frameCount,
+                 uint32_t /*numInputChannels*/,
+                 uint32_t numOutputChannels) override {
         ++processCallCount;
         // Fill output with silence
         if (!outputBuffer || numOutputChannels == 0) { return; }
-        for (ma_uint32 i = 0; i < frameCount * numOutputChannels; ++i) {
+        for (uint32_t i = 0; i < frameCount * numOutputChannels; ++i) {
             outputBuffer[i] = 0.0f;
         }
         (void)inputBuffer;
     }
 
-    void prepareToPlay(ma_uint32 sampleRate, ma_uint32 bufferSize) override {
+    void prepareToPlay(uint32_t sampleRate, uint32_t bufferSize) override {
         ++prepareCallCount;
         (void)sampleRate;
         (void)bufferSize;
@@ -124,8 +124,8 @@ TEST(AudioIODeviceCallback, MockCallbackConstruction) {
 TEST(AudioIODeviceCallback, ProcessFillsSilence) {
     MockCallback callback;
 
-    constexpr ma_uint32 frameCount = 256;
-    constexpr ma_uint32 numChannels = 2;
+    constexpr uint32_t frameCount = 256;
+    constexpr uint32_t numChannels = 2;
     float output[frameCount * numChannels];
     float input[frameCount * numChannels] = {0};
 
@@ -223,26 +223,26 @@ public:
 
     void process(float* outputBuffer,
                  const float* /*inputBuffer*/,
-                 ma_uint32 frameCount,
-                 ma_uint32 /*numInputChannels*/,
-                 ma_uint32 numOutputChannels) override {
+                 uint32_t frameCount,
+                 uint32_t /*numInputChannels*/,
+                 uint32_t numOutputChannels) override {
         ++processCallCount;
         if (!outputBuffer || numOutputChannels == 0) { return; }
 
         double phaseIncrement = (2.0 * M_PI * frequency) / sampleRate;
 
-        for (ma_uint32 frame = 0; frame < frameCount; ++frame) {
+        for (uint32_t frame = 0; frame < frameCount; ++frame) {
             float sample = static_cast<float>(std::sin(phase) * 0.3);
             phase += phaseIncrement;
             if (phase >= 2.0 * M_PI) { phase -= 2.0 * M_PI; }
 
-            for (ma_uint32 ch = 0; ch < numOutputChannels; ++ch) {
+            for (uint32_t ch = 0; ch < numOutputChannels; ++ch) {
                 outputBuffer[frame * numOutputChannels + ch] = sample;
             }
         }
     }
 
-    void prepareToPlay(ma_uint32 rate, ma_uint32 /*bufferSize*/) override {
+    void prepareToPlay(uint32_t rate, uint32_t /*bufferSize*/) override {
         sampleRate = static_cast<double>(rate);
         phase = 0.0;
     }
@@ -410,8 +410,8 @@ TEST(AudioFileSink, StopRecordingWithoutStart) {
 TEST(AudioFileSink, ProcessWithoutOpen) {
     AudioFileSink sink;
 
-    constexpr ma_uint32 frameCount = 256;
-    constexpr ma_uint32 numChannels = 2;
+    constexpr uint32_t frameCount = 256;
+    constexpr uint32_t numChannels = 2;
     float output[frameCount * numChannels] = {0};
     float input[frameCount * numChannels] = {0};
 
@@ -463,12 +463,12 @@ TEST(AudioFileSink, WriteFrames) {
     ASSERT_TRUE(sink.openFile(testFile.string(), 2, 48000));
     sink.startRecording();
 
-    constexpr ma_uint32 frameCount = 256;
-    constexpr ma_uint32 numChannels = 2;
+    constexpr uint32_t frameCount = 256;
+    constexpr uint32_t numChannels = 2;
     float output[frameCount * numChannels] = {0};
     float input[frameCount * numChannels];
 
-    for (ma_uint32 i = 0; i < frameCount * numChannels; ++i) {
+    for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
         input[i] = static_cast<float>(i) /
                    static_cast<float>(frameCount * numChannels);
     }
@@ -481,6 +481,28 @@ TEST(AudioFileSink, WriteFrames) {
 
     sink.closeFile();
     EXPECT_TRUE(std::filesystem::exists(testFile));
+    std::filesystem::remove(testFile);
+}
+
+TEST(AudioFileSink, RejectMismatchedInputChannels) {
+    AudioFileSink sink;
+
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path testFile =
+        tempDir / "test_audio_sink_channel_mismatch.wav";
+
+    ASSERT_TRUE(sink.openFile(testFile.string(), 2, 48000));
+    sink.startRecording();
+
+    constexpr uint32_t frameCount = 256;
+    constexpr uint32_t inputChannels = 1;
+    float output[frameCount * 2] = {0};
+    float input[frameCount * inputChannels] = {0};
+
+    sink.process(output, input, frameCount, inputChannels, 0);
+    EXPECT_EQ(sink.getFramesWritten(), 0);
+
+    sink.closeFile();
     std::filesystem::remove(testFile);
 }
 
@@ -545,8 +567,8 @@ TEST(AudioPlayerSource, SeekWithoutLoad) {
 TEST(AudioPlayerSource, ProcessWithoutLoad) {
     AudioPlayerSource player;
 
-    constexpr ma_uint32 frameCount = 256;
-    constexpr ma_uint32 numChannels = 2;
+    constexpr uint32_t frameCount = 256;
+    constexpr uint32_t numChannels = 2;
     float output[frameCount * numChannels];
     float input[frameCount * numChannels] = {0};
 
@@ -579,17 +601,52 @@ TEST(AudioPlayerSource, ReleaseResources) {
     EXPECT_FALSE(player.isLoaded());
 }
 
+TEST(AudioPlayerSource, ProcessRejectsOutputChannelMismatch) {
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path testFile =
+        tempDir / "test_player_channel_mismatch.wav";
+
+    constexpr uint32_t frameCount = 128;
+    constexpr uint32_t writeChannels = 2;
+    constexpr uint32_t sampleRate = 48000;
+    float sourceData[frameCount * writeChannels] = {0.25f};
+
+    {
+        AudioFileSink sink;
+        ASSERT_TRUE(sink.openFile(testFile.string(), writeChannels, sampleRate));
+        sink.startRecording();
+        float sinkOutput[frameCount * writeChannels] = {0};
+        sink.process(sinkOutput, sourceData, frameCount, writeChannels, 0);
+        sink.closeFile();
+    }
+
+    AudioPlayerSource player;
+    ASSERT_TRUE(player.loadFile(testFile.string(), writeChannels, sampleRate));
+    player.play();
+
+    float output[frameCount] = {};
+    for (auto& sample : output) { sample = 1.0f; }
+    float input[frameCount] = {0};
+
+    player.process(output, input, frameCount, 0, 1);
+
+    for (const auto& sample : output) { EXPECT_FLOAT_EQ(sample, 1.0f); }
+
+    player.unloadFile();
+    std::filesystem::remove(testFile);
+}
+
 // Integration test: record and play back
 TEST(AudioFileIntegration, RecordAndPlayback) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
     std::filesystem::path testFile = tempDir / "test_record_playback.wav";
 
-    constexpr ma_uint32 frameCount = 1024;
-    constexpr ma_uint32 numChannels = 2;
-    constexpr ma_uint32 sampleRate = 48000;
+    constexpr uint32_t frameCount = 1024;
+    constexpr uint32_t numChannels = 2;
+    constexpr uint32_t sampleRate = 48000;
 
     float originalData[frameCount * numChannels];
-    for (ma_uint32 i = 0; i < frameCount * numChannels; ++i) {
+    for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
         originalData[i] = std::sin(static_cast<float>(i) * 0.1f) * 0.5f;
     }
 
@@ -621,7 +678,7 @@ TEST(AudioFileIntegration, RecordAndPlayback) {
 
         player.process(playedData, input, frameCount, 0, numChannels);
 
-        for (ma_uint32 i = 0; i < frameCount * numChannels; ++i) {
+        for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
             EXPECT_FLOAT_EQ(playedData[i], originalData[i])
                 << "Mismatch at sample " << i;
         }

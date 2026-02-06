@@ -1,5 +1,5 @@
 #pragma once
-#include "miniaudio.h"
+#include <cstdint>
 
 namespace thl {
 
@@ -37,12 +37,12 @@ namespace thl {
  * class MyProcessor : public AudioIODeviceCallback {
  * public:
  *     void process(float* output, const float* input,
- *                  ma_uint32 frameCount,
- *                  ma_uint32 numInputChannels,
- *                  ma_uint32 numOutputChannels) override {
+ *                  uint32_t frameCount,
+ *                  uint32_t numInputChannels,
+ *                  uint32_t numOutputChannels) override {
  *         // Process audio here (real-time safe!)
  *         if (!output || !input) return;
- *         for (ma_uint32 i = 0; i < frameCount * numOutputChannels; ++i) {
+ *         for (uint32_t i = 0; i < frameCount * numOutputChannels; ++i) {
  *             output[i] = input[i] * 0.5f;  // Simple gain reduction
  *         }
  *     }
@@ -86,9 +86,9 @@ public:
      */
     virtual void process(float* outputBuffer,
                          const float* inputBuffer,
-                         ma_uint32 frameCount,
-                         ma_uint32 numInputChannels,
-                         ma_uint32 numOutputChannels) = 0;
+                         uint32_t frameCount,
+                         uint32_t numInputChannels,
+                         uint32_t numOutputChannels) = 0;
 
     /**
      * @brief Called before audio processing begins to allow resource
@@ -107,7 +107,7 @@ public:
      * operations.
      * @note Default implementation does nothing.
      */
-    virtual void prepareToPlay(ma_uint32 sampleRate, ma_uint32 bufferSize) {
+    virtual void prepareToPlay(uint32_t sampleRate, uint32_t bufferSize) {
         (void)sampleRate;
         (void)bufferSize;
     }
