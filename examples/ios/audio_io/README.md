@@ -19,7 +19,7 @@ From the project root directory:
 just build-ios
 ```
 
-This builds only the `audio_io_ios` app target, avoiding issues with miniaudio node libraries.
+This builds only the `audio_io` app target, avoiding issues with miniaudio node libraries.
 
 ### Option 2: Xcode
 
@@ -27,18 +27,18 @@ This builds only the `audio_io_ios` app target, avoiding issues with miniaudio n
 just open-ios
 ```
 
-**Important**: In Xcode, you must select the `audio_io_ios` scheme from the scheme selector (next to the Run/Stop buttons) before building. Do NOT build the `ALL_BUILD` scheme as it will fail due to miniaudio node library linking issues.
+**Important**: In Xcode, you must select the `audio_io` scheme from the scheme selector (next to the Run/Stop buttons) before building. Do NOT build the `ALL_BUILD` scheme as it will fail due to miniaudio node library linking issues.
 
 1. Open the project with `just open-ios`
 2. In Xcode, click the scheme selector (shows current scheme name)
-3. Select `audio_io_ios` from the list
+3. Select `audio_io` from the list
 4. Select your target device (simulator or physical device)
 5. Click Run (⌘R)
 
 ## Running
 
 ### From Xcode
-1. Select the `audio_io_ios` scheme
+1. Select the `audio_io` scheme
 2. Choose a simulator or connect a physical iOS device
 3. Click Run (⌘R) or Build (⌘B)
 4. The app will launch on your selected device
