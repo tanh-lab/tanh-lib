@@ -396,7 +396,7 @@ if (TANH_WITH_TESTS)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    add_subdirectory(examples/audio_io_ios)
+    add_subdirectory(examples/ios/audio_io)
 endif()
 
 

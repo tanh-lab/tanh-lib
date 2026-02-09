@@ -228,16 +228,14 @@
 - (void)startAudio {
     [self log:@"Starting audio..."];
 
-    bool captureStarted = false;
     bool playbackStarted = false;
 
     if (_audioManager) {
-        captureStarted = _audioManager->startCapture();
         playbackStarted = _audioManager->startPlayback();
     }
 
-    if (captureStarted && playbackStarted) {
-        [self log:@"Audio started (capture + playback)"];
+    if (playbackStarted) {
+        [self log:@"Audio started (playback only)"];
         _statusLabel.text = @"Audio Running";
         _startAudioButton.enabled = NO;
         _startAudioButton.alpha = 0.5;
@@ -247,10 +245,7 @@
         _recordButton.alpha = 1.0;
         [self updatePlayButtonState];
     } else {
-        [self log:[NSString stringWithFormat:
-                                @"ERROR: capture=%d, playback=%d",
-                                captureStarted,
-                                playbackStarted]];
+        [self log:@"ERROR: Failed to start playback"];
     }
 }
 
@@ -292,7 +287,11 @@
         _fileSink->stopRecording();
         _fileSink->closeFile();
 
-        ma_uint64 framesWritten = _fileSink->getFramesWritten();
+        // Stop capture — only needed while recording
+        _audioManager->stopCapture();
+        [self log:@"Capture stopped"];
+
+        uint64_t framesWritten = _fileSink->getFramesWritten();
         float duration =
             static_cast<float>(framesWritten) / _audioManager->getSampleRate();
 
@@ -313,12 +312,19 @@
             _playerSource->unloadFile();
         }
 
+        // Start capture for the recording
+        if (!_audioManager->startCapture()) {
+            [self log:@"ERROR: Failed to start capture"];
+            return;
+        }
+        [self log:@"Capture started"];
+
         // Open file and start recording
         bool opened = _fileSink->openFile(
             [_recordingPath UTF8String],
             _audioManager->getNumInputChannels(),
             _audioManager->getSampleRate(),
-            ma_encoding_format_wav);
+            thl::AudioEncodingFormat::WAV);
 
         if (opened) {
             _fileSink->startRecording();
@@ -333,6 +339,7 @@
             _playButton.enabled = NO;
             _playButton.alpha = 0.5;
         } else {
+            _audioManager->stopCapture();
             [self log:@"ERROR: Failed to open file for recording"];
         }
     }
@@ -355,7 +362,7 @@
     if (loaded) {
         _playerSource->play();
 
-        ma_uint64 totalFrames = _playerSource->getTotalFrames();
+        uint64_t totalFrames = _playerSource->getTotalFrames();
         float duration =
             static_cast<float>(totalFrames) / _audioManager->getSampleRate();
 
@@ -378,7 +385,7 @@
     }
 
     // Re-enable buttons
-    if (_audioManager && _audioManager->isCaptureRunning()) {
+    if (_audioManager && _audioManager->isPlaybackRunning()) {
         _recordButton.enabled = YES;
         _recordButton.alpha = 1.0;
         [self updatePlayButtonState];
