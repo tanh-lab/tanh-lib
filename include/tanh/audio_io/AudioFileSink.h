@@ -166,7 +166,8 @@ public:
      * @param outputBuffer Ignored - recording does not produce output.
      * @param inputBuffer Audio data to record.
      * @param frameCount Number of frames in the buffer.
-     * @param numChannels Number of channels (unused - uses configured value).
+     * @param numInputChannels Number of input channels.
+     * @param numOutputChannels Number of output channels (unused).
      *
      * @note This method performs file I/O and may block.
      */

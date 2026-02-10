@@ -221,7 +221,8 @@ public:
      * @param outputBuffer Buffer to fill with decoded audio.
      * @param inputBuffer Ignored - playback does not use input.
      * @param frameCount Number of frames to read.
-     * @param numChannels Number of output channels.
+     * @param numInputChannels Number of input channels (unused).
+     * @param numOutputChannels Number of output channels.
      *
      * @note This method reads from pre-decoded buffers and is real-time safe.
      */
