@@ -2,3 +2,4 @@ build/
 build-ios/
 .DS_Store
 .cache/
+cmake-build*

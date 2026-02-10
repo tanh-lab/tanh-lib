@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 #include "tanh/audio_io/AudioDeviceInfo.h"
 #include "tanh/audio_io/AudioDeviceManager.h"
+#include "tanh/audio_io/AudioFileLoader.h"
 #include "tanh/audio_io/AudioFileSink.h"
 #include "tanh/audio_io/AudioIODeviceCallback.h"
 #include "tanh/audio_io/AudioPlayerSource.h"
+#include "tanh/audio_io/DataSource.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -518,6 +520,277 @@ TEST(AudioFileSink, ReleaseResources) {
     sink.releaseResources();
     EXPECT_FALSE(sink.isOpen());
     EXPECT_FALSE(sink.isRecording());
+
+    std::filesystem::remove(testFile);
+}
+
+// =============================================================================
+// AudioPlayerSource Tests
+// =============================================================================
+
+// =============================================================================
+// AudioFileLoader Tests
+// =============================================================================
+
+TEST(AudioFileLoader, LoadFromFileNonExistent) {
+    thl::audio_io::AudioFileLoader loader;
+    auto buffer = loader.load_from_file("/nonexistent/path/audio.wav", 48000, 2);
+    EXPECT_TRUE(buffer.empty());
+}
+
+TEST(AudioFileLoader, LoadFromFileEmptyPath) {
+    thl::audio_io::AudioFileLoader loader;
+    auto buffer = loader.load_from_file("", 48000, 2);
+    EXPECT_TRUE(buffer.empty());
+}
+
+TEST(AudioFileLoader, LoadFromMemoryNullData) {
+    thl::audio_io::AudioFileLoader loader;
+    auto buffer = loader.load_from_memory(nullptr, 0, 48000, 2);
+    EXPECT_TRUE(buffer.empty());
+}
+
+TEST(AudioFileLoader, LoadFromMemoryZeroSize) {
+    thl::audio_io::AudioFileLoader loader;
+    uint8_t data[] = {0};
+    auto buffer = loader.load_from_memory(data, 0, 48000, 2);
+    EXPECT_TRUE(buffer.empty());
+}
+
+TEST(AudioFileLoader, LoadDataSourceFromFileNonExistent) {
+    thl::audio_io::AudioFileLoader loader;
+    auto ds = loader.load_data_source_from_file("/nonexistent/path/audio.wav",
+                                                48000, 2);
+    EXPECT_FALSE(ds.is_valid());
+}
+
+TEST(AudioFileLoader, LoadDataSourceFromFileEmptyPath) {
+    thl::audio_io::AudioFileLoader loader;
+    auto ds = loader.load_data_source_from_file("", 48000, 2);
+    EXPECT_FALSE(ds.is_valid());
+}
+
+TEST(AudioFileLoader, RoundTripRecordAndLoad) {
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path testFile = tempDir / "test_loader_roundtrip.wav";
+
+    constexpr uint32_t frameCount = 512;
+    constexpr uint32_t numChannels = 2;
+    constexpr uint32_t sampleRate = 48000;
+
+    float sourceData[frameCount * numChannels];
+    for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
+        sourceData[i] = std::sin(static_cast<float>(i) * 0.05f) * 0.5f;
+    }
+
+    {
+        AudioFileSink sink;
+        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
+        sink.startRecording();
+        float sinkOutput[frameCount * numChannels] = {0};
+        sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
+        sink.closeFile();
+    }
+
+    thl::audio_io::AudioFileLoader loader;
+    auto buffer =
+        loader.load_from_file(testFile.string(), sampleRate, numChannels);
+    EXPECT_FALSE(buffer.empty());
+    EXPECT_EQ(buffer.get_num_channels(), numChannels);
+    EXPECT_EQ(buffer.get_num_frames(), frameCount);
+    EXPECT_DOUBLE_EQ(buffer.get_sample_rate(),
+                     static_cast<double>(sampleRate));
+
+    for (uint32_t ch = 0; ch < numChannels; ++ch) {
+        const float* ptr = buffer.get_read_pointer(ch);
+        for (uint32_t f = 0; f < frameCount; ++f) {
+            EXPECT_FLOAT_EQ(ptr[f],
+                            sourceData[f * numChannels + ch])
+                << "Mismatch at ch=" << ch << " frame=" << f;
+        }
+    }
+
+    std::filesystem::remove(testFile);
+}
+
+TEST(AudioFileLoader, RoundTripDataSource) {
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path testFile = tempDir / "test_loader_ds_roundtrip.wav";
+
+    constexpr uint32_t frameCount = 256;
+    constexpr uint32_t numChannels = 2;
+    constexpr uint32_t sampleRate = 48000;
+
+    float sourceData[frameCount * numChannels];
+    for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
+        sourceData[i] = static_cast<float>(i) /
+                        static_cast<float>(frameCount * numChannels);
+    }
+
+    {
+        AudioFileSink sink;
+        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
+        sink.startRecording();
+        float sinkOutput[frameCount * numChannels] = {0};
+        sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
+        sink.closeFile();
+    }
+
+    thl::audio_io::AudioFileLoader loader;
+    auto ds =
+        loader.load_data_source_from_file(testFile.string(), sampleRate,
+                                          numChannels);
+    ASSERT_TRUE(ds.is_valid());
+    EXPECT_EQ(ds.get_channel_count(), numChannels);
+    EXPECT_EQ(ds.get_sample_rate(), sampleRate);
+    EXPECT_EQ(ds.get_total_frames(), frameCount);
+    EXPECT_EQ(ds.get_cursor(), 0u);
+
+    float readBuf[frameCount * numChannels] = {0};
+    uint64_t framesRead = ds.read_pcm_frames(readBuf, frameCount);
+    EXPECT_EQ(framesRead, frameCount);
+    EXPECT_EQ(ds.get_cursor(), frameCount);
+
+    for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
+        EXPECT_FLOAT_EQ(readBuf[i], sourceData[i])
+            << "Mismatch at interleaved index " << i;
+    }
+
+    std::filesystem::remove(testFile);
+}
+
+// =============================================================================
+// DataSource Tests
+// =============================================================================
+
+TEST(DataSource, InvalidDataSourceDefaults) {
+    thl::audio_io::AudioFileLoader loader;
+    auto ds = loader.load_data_source_from_file("", 48000, 2);
+    EXPECT_FALSE(ds.is_valid());
+    EXPECT_EQ(ds.get_channel_count(), 0u);
+    EXPECT_EQ(ds.get_sample_rate(), 0u);
+    EXPECT_EQ(ds.get_total_frames(), 0u);
+    EXPECT_EQ(ds.get_cursor(), 0u);
+    EXPECT_EQ(ds.read_pcm_frames(nullptr, 0), 0u);
+    EXPECT_FALSE(ds.seek(0));
+}
+
+TEST(DataSource, MoveConstruction) {
+    thl::audio_io::AudioFileLoader loader;
+    auto ds1 = loader.load_data_source_from_file("", 48000, 2);
+    auto ds2 = std::move(ds1);
+    EXPECT_FALSE(ds2.is_valid());
+}
+
+TEST(DataSource, SequentialRead) {
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path testFile = tempDir / "test_ds_seq.wav";
+
+    constexpr uint32_t frameCount = 512;
+    constexpr uint32_t numChannels = 1;
+    constexpr uint32_t sampleRate = 44100;
+
+    float sourceData[frameCount];
+    for (uint32_t i = 0; i < frameCount; ++i) {
+        sourceData[i] = static_cast<float>(i) / static_cast<float>(frameCount);
+    }
+
+    {
+        AudioFileSink sink;
+        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
+        sink.startRecording();
+        float sinkOutput[frameCount] = {0};
+        sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
+        sink.closeFile();
+    }
+
+    thl::audio_io::AudioFileLoader loader;
+    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate,
+                                                numChannels);
+    ASSERT_TRUE(ds.is_valid());
+    EXPECT_EQ(ds.get_cursor(), 0u);
+
+    constexpr uint64_t chunkSize = 128;
+    float readBuf[chunkSize] = {0};
+    uint64_t totalRead = 0;
+
+    for (int chunk = 0; chunk < 4; ++chunk) {
+        uint64_t framesRead = ds.read_pcm_frames(readBuf, chunkSize);
+        EXPECT_EQ(framesRead, chunkSize);
+
+        for (uint64_t i = 0; i < framesRead; ++i) {
+            EXPECT_FLOAT_EQ(readBuf[i], sourceData[totalRead + i])
+                << "Mismatch at frame " << (totalRead + i);
+        }
+        totalRead += framesRead;
+    }
+
+    EXPECT_EQ(totalRead, frameCount);
+    EXPECT_EQ(ds.get_cursor(), frameCount);
+
+    std::filesystem::remove(testFile);
+}
+
+TEST(DataSource, SeekUpdatesPosition) {
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path testFile = tempDir / "test_ds_seek.wav";
+
+    constexpr uint32_t frameCount = 256;
+    constexpr uint32_t numChannels = 1;
+    constexpr uint32_t sampleRate = 44100;
+
+    float sourceData[frameCount] = {0};
+
+    {
+        AudioFileSink sink;
+        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
+        sink.startRecording();
+        float sinkOutput[frameCount] = {0};
+        sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
+        sink.closeFile();
+    }
+
+    thl::audio_io::AudioFileLoader loader;
+    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate,
+                                                numChannels);
+    ASSERT_TRUE(ds.is_valid());
+
+    EXPECT_TRUE(ds.seek(64));
+    EXPECT_EQ(ds.get_cursor(), 64u);
+
+    EXPECT_TRUE(ds.seek(0));
+    EXPECT_EQ(ds.get_cursor(), 0u);
+
+    std::filesystem::remove(testFile);
+}
+
+TEST(DataSource, ReadBeyondEnd) {
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path testFile = tempDir / "test_ds_eof.wav";
+
+    constexpr uint32_t frameCount = 64;
+    constexpr uint32_t numChannels = 1;
+    constexpr uint32_t sampleRate = 44100;
+
+    float sourceData[frameCount] = {0.5f};
+
+    {
+        AudioFileSink sink;
+        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
+        sink.startRecording();
+        float sinkOutput[frameCount] = {0};
+        sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
+        sink.closeFile();
+    }
+
+    thl::audio_io::AudioFileLoader loader;
+    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate,
+                                                numChannels);
+    ASSERT_TRUE(ds.is_valid());
+
+    float readBuf[frameCount * 2] = {0};
+    uint64_t framesRead = ds.read_pcm_frames(readBuf, frameCount * 2);
+    EXPECT_EQ(framesRead, frameCount);
 
     std::filesystem::remove(testFile);
 }

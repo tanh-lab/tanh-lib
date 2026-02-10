@@ -224,7 +224,8 @@ std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateInputDevices() const {
     return enumerateDevices(DeviceType::Capture);
 }
 
-std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateOutputDevices() const {
+std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateOutputDevices()
+    const {
     return enumerateDevices(DeviceType::Playback);
 }
 
@@ -281,8 +282,7 @@ bool AudioDeviceManager::tryInitialiseDevice(
         std::memcpy(&outputDeviceId,
                     outputDevice->deviceIDPtr(),
                     sizeof(outputDeviceId));
-        devConfig.playback.pDeviceID =
-            &outputDeviceId;
+        devConfig.playback.pDeviceID = &outputDeviceId;
         devConfig.playback.format = ma_format_f32;
         devConfig.playback.channels = numOutputChannels;
     }
@@ -291,8 +291,7 @@ bool AudioDeviceManager::tryInitialiseDevice(
         std::memcpy(&inputDeviceId,
                     inputDevice->deviceIDPtr(),
                     sizeof(inputDeviceId));
-        devConfig.capture.pDeviceID =
-            &inputDeviceId;
+        devConfig.capture.pDeviceID = &inputDeviceId;
         devConfig.capture.format = ma_format_f32;
         devConfig.capture.channels = numInputChannels;
     }

@@ -275,8 +275,10 @@ if(TANH_BUILD_AUDIO_IO)
 
     add_library(${PROJECT_NAME}_audio_io
         src/audio_io/AudioDeviceManager.cpp
+        src/audio_io/AudioFileLoader.cpp
         src/audio_io/AudioFileSink.cpp
         src/audio_io/AudioPlayerSource.cpp
+        src/audio_io/DataSource.cpp
         src/audio_io/miniaudio_impl.cpp
     )
 
@@ -388,7 +390,7 @@ if (TANH_WITH_TESTS)
         add_subdirectory(test/state)
     endif()
     if (TANH_BUILD_DSP)
-        # add_subdirectory(test/dsp) # TODO: add dsp tests
+        add_subdirectory(test/dsp)
     endif()
     if (TANH_BUILD_AUDIO_IO)
         add_subdirectory(test/audio_io)

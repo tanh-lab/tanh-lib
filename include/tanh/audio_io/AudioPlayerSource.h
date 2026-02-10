@@ -1,12 +1,13 @@
 #pragma once
 #include "AudioIODeviceCallback.h"
+#include <tanh/audio_io/AudioFileLoader.h>
+#include <tanh/audio_io/DataSource.h>
 #include <atomic>
 #include <cstdint>
 #include <functional>
 #include <mutex>
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace thl {
 
@@ -241,12 +242,12 @@ public:
     void releaseResources() override;
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl> m_impl;
-
     bool rebuildDataSource(uint32_t decodedChannels,
                            uint32_t decodedSampleRate,
                            uint64_t initialFrame);
+
+    audio_io::AudioFileLoader m_loader;
+    std::shared_ptr<audio_io::DataSource> m_dataSource;
 
     std::atomic<bool> m_loaded{false};
     std::atomic<bool> m_playing{false};
