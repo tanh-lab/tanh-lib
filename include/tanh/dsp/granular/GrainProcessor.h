@@ -81,6 +81,8 @@ private:
      */
     virtual int map_midi_note_to_sample_index(int midi_note) = 0;
 
+    virtual void process_voice_fx(float* buffer, size_t num_samples, size_t num_channels, size_t voice_index, bool note_on) {}
+
     size_t m_grain_index;
 
     // Grain management
