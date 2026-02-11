@@ -48,8 +48,8 @@ public:
         : m_num_channels(other.m_num_channels)
         , m_size(other.m_size)
         , m_sample_rate(other.m_sample_rate)
-        , m_data(std::move(other.m_data))
-        , m_channels(other.m_channels) {
+        , m_channels(other.m_channels)
+        , m_data(std::move(other.m_data)) {
         other.m_num_channels = 0;
         other.m_size = 0;
         other.m_sample_rate = 0.0;
