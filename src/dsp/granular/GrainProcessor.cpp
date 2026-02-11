@@ -53,6 +53,8 @@ void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& sample
 void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
     this->process(m_internal_buffer.data(), static_cast<unsigned int>(num_samples));
 
+    process_voice_fx(m_internal_buffer.data(), num_samples, num_channels, m_grain_index, m_envelope.is_active());
+
     // Mix into main output buffer
     if (num_channels >= 1) {
         float* left_out = buffer[0];
