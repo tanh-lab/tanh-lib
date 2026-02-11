@@ -107,6 +107,10 @@ void GrainProcessorImpl::process(float* output_buffer, unsigned int n_buffer_fra
     }
 }
 
+void GrainProcessorImpl::process_voice_fx(float*, size_t, size_t, size_t, bool) {
+    // Base implementation does not apply any voice FX.
+}
+
 void GrainProcessorImpl::trigger_grain(const size_t note_number) {
     // Find an inactive grain slot
     for (auto& grain : m_grains) {
