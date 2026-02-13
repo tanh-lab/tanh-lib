@@ -89,6 +89,8 @@ void AudioPlayerSource::unloadFile() {
 
 void AudioPlayerSource::play() {
     if (m_loaded.load(std::memory_order_acquire)) {
+        m_fadeInRemaining.store(kFadeSamples, std::memory_order_release);
+        m_stopRequested.store(false, std::memory_order_release);
         m_playing.store(true, std::memory_order_release);
     }
 }
@@ -99,9 +101,17 @@ void AudioPlayerSource::pause() {
 
 void AudioPlayerSource::stop() {
     m_playing.store(false, std::memory_order_release);
+    m_stopRequested.store(false, std::memory_order_release);
+    m_fadeOutCounter = 0;
     auto ds =
         std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
     if (ds) { ds->seek(0); }
+}
+
+void AudioPlayerSource::requestStop() {
+    if (m_playing.load(std::memory_order_acquire)) {
+        m_stopRequested.store(true, std::memory_order_release);
+    }
 }
 
 void AudioPlayerSource::seekToFrame(uint64_t frame) {
@@ -182,6 +192,46 @@ void AudioPlayerSource::process(float* outputBuffer,
             outputBuffer + framesRead * numOutputChannels,
             0,
             (frameCount - framesRead) * numOutputChannels * sizeof(float));
+    }
+
+    // --- Micro fade-in (applied after every play()) ---
+    uint32_t fadeIn = m_fadeInRemaining.load(std::memory_order_acquire);
+    if (fadeIn > 0) {
+        const uint32_t fadeStart = kFadeSamples - fadeIn;
+        const uint32_t toFade = std::min(fadeIn, static_cast<uint32_t>(framesRead));
+        for (uint32_t i = 0; i < toFade; ++i) {
+            const float gain = static_cast<float>(fadeStart + i) /
+                static_cast<float>(kFadeSamples);
+            for (uint32_t ch = 0; ch < numOutputChannels; ++ch) {
+                outputBuffer[i * numOutputChannels + ch] *= gain;
+            }
+        }
+        m_fadeInRemaining.store(fadeIn - toFade, std::memory_order_release);
+    }
+
+    // --- Micro fade-out (requestStop) ---
+    if (m_stopRequested.load(std::memory_order_acquire)) {
+        if (m_fadeOutCounter == 0) {
+            m_fadeOutCounter = kFadeSamples;
+        }
+        for (uint32_t i = 0; i < static_cast<uint32_t>(framesRead); ++i) {
+            float gain;
+            if (m_fadeOutCounter > 0) {
+                --m_fadeOutCounter;
+                gain = static_cast<float>(m_fadeOutCounter) /
+                       static_cast<float>(kFadeSamples);
+            } else {
+                gain = 0.0f;
+            }
+            for (uint32_t ch = 0; ch < numOutputChannels; ++ch) {
+                outputBuffer[i * numOutputChannels + ch] *= gain;
+            }
+        }
+        if (m_fadeOutCounter == 0) {
+            m_playing.store(false, std::memory_order_release);
+            m_stopRequested.store(false, std::memory_order_release);
+        }
+        return;
     }
 
     if (framesRead < frameCount) {

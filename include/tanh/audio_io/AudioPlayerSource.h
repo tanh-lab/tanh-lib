@@ -171,10 +171,24 @@ public:
      * @brief Stops playback and resets to the beginning.
      *
      * Equivalent to pause() followed by seekToFrame(0).
+     * This is a hard stop — audio output stops immediately.
+     * Use requestStop() for a click-free fade-out.
      *
      * @warning NOT real-time safe - seeking may block.
      */
     void stop();
+
+    /**
+     * @brief Requests a click-free stop with a short fade-out (~1 ms).
+     *
+     * Signals the audio thread to ramp the output to zero over kFadeSamples
+     * frames. When the fade completes, playback is stopped and the finished
+     * callback is invoked. Safe to call from any thread.
+     *
+     * @note Thread-safe — uses atomic operations. The actual stop happens
+     *       asynchronously on the audio thread.
+     */
+    void requestStop();
 
     /**
      * @brief Checks if playback is currently active.
@@ -265,6 +279,9 @@ public:
      */
     void releaseResources() override;
 
+    /// Number of frames used for micro fade-in/out (~1.3 ms at 48 kHz).
+    static constexpr uint32_t kFadeSamples = 64;
+
 private:
     bool rebuildDataSource(uint32_t decodedChannels,
                            uint32_t decodedSampleRate,
@@ -284,6 +301,11 @@ private:
     uint32_t m_sampleRate = 0;
 
     std::shared_ptr<FinishedCallback> m_finishedCallback;
+
+    // Fade state — written by control thread, consumed by audio thread
+    std::atomic<uint32_t> m_fadeInRemaining{0};
+    std::atomic<bool> m_stopRequested{false};
+    uint32_t m_fadeOutCounter{0};  // audio-thread only
 };
 
 }  // namespace thl
