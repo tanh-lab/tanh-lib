@@ -116,6 +116,29 @@ public:
                   uint32_t outputSampleRate);
 
     /**
+     * @brief Loads audio from an in-memory buffer for playback.
+     *
+     * Initialises a streaming data source from the provided memory buffer.
+     * The caller must keep the memory alive for the lifetime of this player
+     * (or until unloadFile() / loadFile() / loadFromMemory() is called).
+     *
+     * @param data            Pointer to the binary audio data.
+     * @param size            Size of the data in bytes.
+     * @param outputChannels  Number of output channels (audio will be
+     *                        converted if needed).
+     * @param outputSampleRate Output sample rate in Hz (audio will be
+     *                         resampled if needed).
+     *
+     * @return true if the data was loaded successfully, false otherwise.
+     *
+     * @warning NOT real-time safe - performs allocations.
+     */
+    bool loadFromMemory(const void* data,
+                        size_t size,
+                        uint32_t outputChannels,
+                        uint32_t outputSampleRate);
+
+    /**
      * @brief Unloads the currently loaded file.
      *
      * Stops playback and releases decoder resources. Safe to call even if
@@ -255,6 +278,8 @@ private:
     std::mutex m_stateMutex;
 
     std::string m_filePath;
+    const void* m_memoryData = nullptr;
+    size_t m_memorySize = 0;
     uint32_t m_channels = 0;
     uint32_t m_sampleRate = 0;
 
