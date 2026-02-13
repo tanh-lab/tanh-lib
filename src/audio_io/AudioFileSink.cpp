@@ -1,5 +1,6 @@
 #include <tanh/audio_io/AudioFileSink.h>
 #include "miniaudio.h"
+#include <cmath>
 
 namespace thl {
 
@@ -54,7 +55,10 @@ void AudioFileSink::closeFile() {
 }
 
 void AudioFileSink::startRecording() {
-    if (m_open) { m_recording.store(true, std::memory_order_release); }
+    if (m_open) {
+        m_peakLevel.store(0.0f, std::memory_order_release);
+        m_recording.store(true, std::memory_order_release);
+    }
 }
 
 void AudioFileSink::stopRecording() {
@@ -77,6 +81,15 @@ void AudioFileSink::process(float* /*outputBuffer*/,
                                 frameCount,
                                 &framesWritten);
     m_framesWritten.fetch_add(framesWritten, std::memory_order_relaxed);
+
+    // Compute peak amplitude for this block
+    float peak = 0.0f;
+    const uint32_t totalSamples = frameCount * numInputChannels;
+    for (uint32_t i = 0; i < totalSamples; ++i) {
+        float absVal = std::fabs(inputBuffer[i]);
+        if (absVal > peak) peak = absVal;
+    }
+    m_peakLevel.store(peak, std::memory_order_release);
 }
 
 void AudioFileSink::releaseResources() {

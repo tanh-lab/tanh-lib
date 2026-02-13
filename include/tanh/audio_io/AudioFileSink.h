@@ -158,6 +158,17 @@ public:
     }
 
     /**
+     * @brief Gets the peak amplitude of the most recent audio block.
+     *
+     * @return Peak level (0.0 to 1.0+) from the last processed block.
+     *
+     * @note Thread-safe - uses atomic operations.
+     */
+    float getPeakLevel() const {
+        return m_peakLevel.load(std::memory_order_acquire);
+    }
+
+    /**
      * @brief Processes audio input and writes to file if recording.
      *
      * If recording is active and a file is open, writes the input buffer
@@ -194,6 +205,7 @@ private:
     bool m_open = false;
     std::atomic<bool> m_recording{false};
     std::atomic<uint64_t> m_framesWritten{0};
+    std::atomic<float> m_peakLevel{0.0f};
 };
 
 }  // namespace thl
