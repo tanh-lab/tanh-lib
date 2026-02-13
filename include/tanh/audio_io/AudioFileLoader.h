@@ -67,6 +67,28 @@ public:
                                           double target_sample_rate = 0.0,
                                           uint32_t target_channels = 0);
 
+    /**
+     * Open an in-memory audio buffer and return a streaming DataSource.
+     *
+     * Unlike load_from_memory(), this does not decode the entire buffer
+     * upfront.  The caller reads PCM data incrementally via the returned
+     * DataSource.
+     *
+     * @note The caller must keep the memory pointed to by @p data alive
+     *       for the lifetime of the returned DataSource.
+     *
+     * @param data               Pointer to the binary audio data.
+     * @param size               Size of the data in bytes.
+     * @param target_sample_rate Desired output sample rate (0 = keep native).
+     * @param target_channels    Desired output channel count (0 = keep native).
+     * @return A DataSource wrapping the memory, or an invalid DataSource on
+     *         failure (check DataSource::is_valid()).
+     */
+    DataSource load_data_source_from_memory(const void* data,
+                                            size_t size,
+                                            double target_sample_rate = 0.0,
+                                            uint32_t target_channels = 0);
+
 private:
     static bool init_resource_manager_data_source(DataSource::Impl& impl,
                                                   const std::string& file_path,

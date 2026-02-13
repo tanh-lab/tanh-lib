@@ -224,4 +224,35 @@ DataSource AudioFileLoader::load_data_source_from_file(
     return DataSource(std::move(impl));
 }
 
+DataSource AudioFileLoader::load_data_source_from_memory(
+    const void* data,
+    size_t size,
+    double target_sample_rate,
+    uint32_t target_channels) {
+    auto impl = std::make_unique<DataSource::Impl>();
+
+    if (data == nullptr || size == 0) { return DataSource(std::move(impl)); }
+
+    ma_decoder_config config = ma_decoder_config_init(
+        ma_format_f32,
+        target_channels > 0 ? target_channels : 0,
+        target_sample_rate > 0.0 ? static_cast<ma_uint32>(target_sample_rate)
+                                 : 0);
+
+    ma_result result =
+        ma_decoder_init_memory(data, size, &config, &impl->decoder);
+    if (result != MA_SUCCESS) {
+        std::cerr << "AudioFileLoader: failed to init decoder from memory"
+                     " (error "
+                  << result << ")" << std::endl;
+        return DataSource(std::make_unique<DataSource::Impl>());
+    }
+    impl->decoderInitialised = true;
+
+    impl->channels = impl->decoder.outputChannels;
+    impl->sampleRate = impl->decoder.outputSampleRate;
+
+    return DataSource(std::move(impl));
+}
+
 }  // namespace thl::audio_io

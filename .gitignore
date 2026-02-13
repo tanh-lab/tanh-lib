@@ -1,5 +1,6 @@
 build/
 build-ios/
+build-test/
 .DS_Store
 .cache/
 cmake-build*
