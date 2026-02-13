@@ -13,7 +13,8 @@ namespace thl::audio_io {
  * exposing the underlying audio backend.  The output format is always
  * 32-bit float interleaved.
  *
- * Instances are created via AudioFileLoader::load_data_source_from_file.
+ * Instances are created via AudioFileLoader::load_data_source_from_file
+ * or AudioFileLoader::load_data_source_from_memory.
  * The class is move-only.
  */
 class DataSource {
