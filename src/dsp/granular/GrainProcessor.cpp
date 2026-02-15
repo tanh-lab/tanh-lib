@@ -28,6 +28,16 @@ GrainProcessorImpl::GrainProcessorImpl(size_t grain_index, audio::AudioDataStore
 
 GrainProcessorImpl::~GrainProcessorImpl() = default;
 
+void GrainProcessorImpl::reset_grains() {
+    for (auto& grain : m_grains) {
+        grain.active = false;
+    }
+    m_sequential_position = 0;
+    m_next_grain_time = 0;
+    m_last_playing_state = false;
+    m_envelope.reset();
+}
+
 void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) {
     m_sample_rate = sample_rate;
     m_channels = num_channels;
@@ -47,7 +57,7 @@ void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& sample
     m_envelope.reset();
 
     m_internal_buffer.clear();
-    m_internal_buffer.resize(samples_per_block * 2); // stereo buffer
+    m_internal_buffer.resize(samples_per_block * 2, 0.f); // stereo buffer
 }
 
 void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
@@ -112,6 +122,8 @@ void GrainProcessorImpl::process_voice_fx(float*, size_t, size_t, size_t, bool) 
 }
 
 void GrainProcessorImpl::trigger_grain(const size_t note_number) {
+    const auto& audio_data = m_audio_store.get_buffer();
+
     // Find an inactive grain slot
     for (auto& grain : m_grains) {
         if (!grain.active) {
@@ -121,8 +133,6 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
 
             // Map the MIDI note number to a sample index
             int local_sample_index = map_midi_note_to_sample_index(static_cast<int>(note_number));
-
-            const auto& audio_data = m_audio_store.get_active();
 
             // Abort if this grain can not be played
             if (local_sample_index < 0 ||
@@ -151,7 +161,7 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             }
             grain_size = std::clamp(grain_size, min_size, max_size); // Clamp to valid range
 
-            long max_position = audio_data[local_sample_index].size() / m_channels - grain_size;
+            long max_position = audio_data[local_sample_index].get_num_frames() - grain_size;
 
             // Apply randomness based on temperature parameter
             long start_position = m_sequential_position;
@@ -234,6 +244,7 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
 }
 
 void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buffer_frames) {
+    const auto& audio_data = m_audio_store.get_buffer();
     float density = get_parameter<float>(Density);
     auto mode = static_cast<utils::ScaleMode>(get_parameter<int>(KeyMode));
     int root_note = get_parameter<int>(RootNote);
@@ -255,8 +266,6 @@ void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buff
         m_current_note = static_cast<size_t>(sample_index);
         m_next_grain_time = 0;
     }
-
-    const auto& audio_data = m_audio_store.get_active();
 
     // For each sample in the buffer
     for (unsigned int i = 0; i < n_buffer_frames; i++) {
@@ -323,37 +332,42 @@ void GrainProcessorImpl::get_sample_with_interpolation(float position, float* sa
     samples[0] = 0.0f;
     samples[1] = 0.0f;
 
-    const auto& audio_data = m_audio_store.get_active();
+    const auto& audio_data = m_audio_store.get_buffer();
 
     // Bounds checking
     if (sample_index >= audio_data.size() || audio_data[sample_index].empty()) {
         return;
     }
 
+    const auto& buf = audio_data[sample_index];
+    size_t num_frames = buf.get_num_frames();
+
     // Linear interpolation between samples for fractional positions
     long pos_floor = static_cast<long>(position);
     long pos_ceil = pos_floor + 1;
-    float frac = position - pos_floor;
+    float frac = position - static_cast<float>(pos_floor);
 
-    size_t buflimit = audio_data[sample_index].size() / m_channels;
     // Ensure we don't read beyond the buffer
-    while (pos_ceil >= buflimit) {
-        pos_ceil -= buflimit;
+    while (pos_ceil >= static_cast<long>(num_frames)) {
+        pos_ceil -= static_cast<long>(num_frames);
     }
 
-    while (pos_floor >= buflimit) {
-        pos_floor -= buflimit;
+    while (pos_floor >= static_cast<long>(num_frames)) {
+        pos_floor -= static_cast<long>(num_frames);
     }
 
-    // Linear interpolation for the sample value
-    if (m_channels == 1) {
-        float sample = audio_data[sample_index][pos_floor] * (1.0f - frac) + audio_data[sample_index][pos_ceil] * frac;
+    if (buf.get_num_channels() <= 1) {
+        const float* ch0 = buf.get_read_pointer(0);
+
+        float sample = ch0[pos_floor] * (1.0f - frac) + ch0[pos_ceil] * frac;
         samples[0] = sample;
         samples[1] = sample;
     } else {
-        // For stereo, get the average of left and right channels
-        samples[0] = audio_data[sample_index][pos_floor] * (1.0f - frac) + audio_data[sample_index][pos_ceil] * frac;
-        samples[1] = audio_data[sample_index][pos_floor + buflimit] * (1.0f - frac) + audio_data[sample_index][pos_ceil + buflimit] * frac;
+        const float* ch0 = buf.get_read_pointer(0);
+        const float* ch1 = buf.get_read_pointer(1);
+
+        samples[0] = ch0[pos_floor] * (1.0f - frac) + ch0[pos_ceil] * frac;
+        samples[1] = ch1[pos_floor] * (1.0f - frac) + ch1[pos_ceil] * frac;
     }
 }
 

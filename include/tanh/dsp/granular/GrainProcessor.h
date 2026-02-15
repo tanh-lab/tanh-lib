@@ -30,6 +30,8 @@ public:
 
     void set_grain_index(size_t grain_index) { m_grain_index = grain_index; }
 
+    void reset_grains();
+
     // Process audio data
     void process(float* output_buffer, unsigned int n_buffer_frames);
 

@@ -1,77 +1,86 @@
 #pragma once
 
-#include <array>
+#include <tanh/dsp/audio/AudioBuffer.h>
+
 #include <atomic>
+#include <cstdint>
+#include <thread>
 #include <vector>
 
 namespace thl::dsp::audio {
 
 /**
- * RT-safe double-buffered audio data storage.
+ * RT-safe single-buffered audio data storage with CAS state machine.
  *
- * Provides lock-free access for the RT thread (read from active buffer)
- * and allows a loader thread to write to the inactive buffer, then atomically swap.
+ * Uses a three-state atomic (IDLE, READING, LOADING) to coordinate
+ * between the RT thread and a loader thread with minimal memory overhead.
  *
+ * RT thread:  CAS(IDLE→READING) to read, store(IDLE) when done.
+ *             If CAS fails (loader active), output silence for that block.
+ * Loader:     Spin CAS(IDLE→LOADING), move data in, store(IDLE).
  */
 class AudioDataStore {
 public:
     AudioDataStore() = default;
 
-    // --- RT thread interface (read-only) ---
-
-    /**
-     * Get the currently active audio data buffer.
-     * RT-safe: uses acquire semantics.
-     */
-    const std::vector<std::vector<float>>& get_active() const {
-        auto active_index = static_cast<size_t>(m_active_index.load(std::memory_order_acquire));
-        return m_buffers[active_index];
+    bool begin_read() {
+        int expected = IDLE;
+        return m_state.compare_exchange_strong(expected, READING,
+            std::memory_order_acq_rel, std::memory_order_relaxed);
     }
 
-    /**
-     * Check if audio data has been loaded.
-     */
+    void end_read() {
+        m_state.store(IDLE, std::memory_order_release);
+    }
+
+    const std::vector<AudioBuffer>& get_buffer() const {
+        return m_buffer;
+    }
+
     bool is_loaded() const {
-        auto active_index = static_cast<size_t>(m_active_index.load(std::memory_order_acquire));
-        return !m_buffers[active_index].empty();
+        return m_loaded.load(std::memory_order_acquire);
     }
 
-    /**
-     * Get the root note of the currently loaded sample.
-     */
     int get_root_note() const {
         return m_root_note.load(std::memory_order_acquire);
     }
 
-    // --- Loader thread interface ---
-
-    /**
-     * Get the inactive buffer for writing new data.
-     * Only call from the loader thread.
-     */
-    std::vector<std::vector<float>>& get_inactive() {
-        auto active_index = static_cast<size_t>(m_active_index.load(std::memory_order_acquire));
-        auto index_inactive = 1 - active_index;
-        return m_buffers[index_inactive];
+    uint32_t get_load_generation() const {
+        return m_load_generation.load(std::memory_order_acquire);
     }
 
-    /**
-     * Commit the inactive buffer, making it active.
-     * Call after writing data to get_inactive().
-     * Only call from the loader thread.
-     *
-     * @param root_note The MIDI root note of the loaded sample
-     */
-    void commit(int root_note) {
-        m_root_note.store(root_note, std::memory_order_release);
-        int inactive = 1 - m_active_index.load(std::memory_order_acquire);
-        m_active_index.store(inactive, std::memory_order_release);
+    std::vector<AudioBuffer>& begin_load() {
+        // Spin until we can acquire LOADING state
+        while (true) {
+            int expected = IDLE;
+            if (m_state.compare_exchange_weak(expected, LOADING,
+                    std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                break;
+            }
+            std::this_thread::yield();
+        }
+
+        m_buffer.clear();
+        m_buffer.shrink_to_fit();
+        return m_buffer;
+    }
+
+    void commit_load(int root_note) {
+        m_root_note.store(root_note, std::memory_order_relaxed);
+        m_loaded.store(true, std::memory_order_relaxed);
+        m_load_generation.fetch_add(1, std::memory_order_relaxed);
+
+        m_state.store(IDLE, std::memory_order_release);
     }
 
 private:
-    std::array<std::vector<std::vector<float>>, 2> m_buffers;
-    std::atomic<int> m_active_index{0};
+    enum State { IDLE = 0, READING = 1, LOADING = 2 };
+
+    std::vector<AudioBuffer> m_buffer;
+    std::atomic<int> m_state{IDLE};
     std::atomic<int> m_root_note{60};
+    std::atomic<bool> m_loaded{false};
+    std::atomic<uint32_t> m_load_generation{0};
 };
 
 } // namespace thl::dsp::audio
