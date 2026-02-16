@@ -49,7 +49,7 @@ protected:
         Size = 8,
         Density = 9,
 
-        SampleIndex = 10,
+        Pitch = 10,
         SampleStart = 11,
         SampleEnd = 12,
 
@@ -73,15 +73,6 @@ private:
     virtual float get_parameter_float(Parameter parameter) = 0;
     virtual bool get_parameter_bool(Parameter parameter) = 0;
     virtual int get_parameter_int(Parameter parameter) = 0;
-
-    /**
-     * Map a MIDI note number to a sample index.
-     * Must be implemented by derived classes to define the mapping strategy.
-     *
-     * @param midi_note The MIDI note number
-     * @return The sample index, or -1 if out of range
-     */
-    virtual int map_midi_note_to_sample_index(int midi_note) = 0;
 
     virtual void process_voice_fx(float* buffer, size_t num_samples, size_t num_channels, size_t voice_index, bool note_on);
 
