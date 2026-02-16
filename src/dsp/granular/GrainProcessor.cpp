@@ -1,6 +1,7 @@
 #include <tanh/dsp/granular/GrainProcessor.h>
-#include <cstring>
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <iostream>
 
 namespace thl::dsp::granular {
@@ -131,13 +132,9 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             float velocity = get_parameter<float>(Velocity);
             float grain_size_param = get_parameter<float>(Size);
 
-            // Map the MIDI note number to a sample index
-            int local_sample_index = map_midi_note_to_sample_index(static_cast<int>(note_number));
-
             // Abort if this grain can not be played
-            if (local_sample_index < 0 ||
-                static_cast<size_t>(local_sample_index) >= audio_data.size() ||
-                audio_data[local_sample_index].empty()) {
+            if (note_number >= audio_data.size() ||
+                audio_data[note_number].empty()) {
                 return;
             }
 
@@ -161,7 +158,7 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             }
             grain_size = std::clamp(grain_size, min_size, max_size); // Clamp to valid range
 
-            long max_position = audio_data[local_sample_index].get_num_frames() - grain_size;
+            long max_position = audio_data[note_number].get_num_frames() - grain_size;
 
             // Apply randomness based on temperature parameter
             long start_position = m_sequential_position;
@@ -231,7 +228,7 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             grain.velocity = velocity;
             grain.amplitude = 0.0f; // Start with zero amplitude for fade-in
             grain.active = true;
-            grain.sample_index = local_sample_index;
+            grain.sample_index = note_number;
 
             // Configure the Hann window envelope
             grain.envelope.set_sample_rate(static_cast<float>(m_sample_rate));
@@ -246,8 +243,6 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
 void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buffer_frames) {
     const auto& audio_data = m_audio_store.get_buffer();
     float density = get_parameter<float>(Density);
-    auto mode = static_cast<utils::ScaleMode>(get_parameter<int>(KeyMode));
-    int root_note = get_parameter<int>(RootNote);
 
     // Calculate how frequently we should trigger new grains
     unsigned int min_interval = static_cast<unsigned int>(m_sample_rate * 0.02f); // max is 50 grains per second
@@ -255,15 +250,14 @@ void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buff
     unsigned int interval_range = max_interval - min_interval;
     m_min_grain_interval = max_interval - static_cast<unsigned int>(density * interval_range);
 
-    // Get the sample index parameter and map it to a note in the selected scale
-    float sample_index = get_parameter<float>(SampleIndex);
-    sample_index = (sample_index * 15.3f) - 0.3f;
+    // Pitch parameter is a direct semitone offset in [-24, +24].
+    // AudioDataStore holds 49 pitch-shifted buffers (indices 0–48, root at 24).
+    int pitch = get_parameter<int>(Pitch);
+    int root_index = static_cast<int>(audio_data.size()) / 2;
+    size_t sample_index = static_cast<size_t>(std::clamp(root_index + pitch, 0, static_cast<int>(audio_data.size()) - 1));
 
-    size_t sample_index_quantized = static_cast<size_t>(sample_index);
-    sample_index = root_note + utils::get_note_offset(sample_index_quantized, mode);
-
-    if (m_current_note != static_cast<size_t>(sample_index)) {
-        m_current_note = static_cast<size_t>(sample_index);
+    if (m_current_note != sample_index) {
+        m_current_note = sample_index;
         m_next_grain_time = 0;
     }
 
@@ -272,7 +266,7 @@ void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buff
 
         // Check if it's time to trigger a new grain
         if (m_next_grain_time <= 0) {
-            trigger_grain(static_cast<size_t>(sample_index));
+            trigger_grain(sample_index);
             m_next_grain_time = m_min_grain_interval - 1;
         } else {
             m_next_grain_time--;
