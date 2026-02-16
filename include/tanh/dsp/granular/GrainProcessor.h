@@ -53,10 +53,7 @@ protected:
         SampleStart = 11,
         SampleEnd = 12,
 
-        KeyMode = 13,
-        RootNote = 14,
-
-        NUM_PARAMETERS = 15
+        NUM_PARAMETERS = 13
     };
 
     utils::ADSR m_envelope;
