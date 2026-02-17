@@ -82,6 +82,8 @@ void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, cons
             right_out[i] += right_in[i];
         }
     }
+
+    process_finished();
 }
 
 void GrainProcessorImpl::process(float* output_buffer, unsigned int n_buffer_frames) {
@@ -104,6 +106,7 @@ void GrainProcessorImpl::process(float* output_buffer, unsigned int n_buffer_fra
 
     // If not playing or no audio data, just return (silence)
     if (!m_envelope.is_active() || !m_audio_store.is_loaded()) {
+        m_normalized_position.store(0.0f, std::memory_order_relaxed);
         return;
     }
 
@@ -217,8 +220,13 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
 
             m_sequential_position += grain_size / 2; // Overlap grains
             if (m_sequential_position > static_cast<size_t>(max_position)) {
-                m_sequential_position = static_cast<size_t>(0.4f * max_position);
+                float loop_pos = get_parameter<float>(SampleLoop);
+                m_sequential_position = static_cast<size_t>(loop_pos * max_position);
             }
+
+            m_normalized_position.store(
+                static_cast<float>(region_start + m_sequential_position) / static_cast<float>(num_frames),
+                std::memory_order_relaxed);
 
             // Randomize the velocity
             float velocity_factor = m_uni_dist(m_random_generator); // Random value [0, 1)
@@ -386,6 +394,10 @@ void GrainProcessorImpl::get_sample_with_interpolation(float position, float* sa
         samples[0] = ch0[pos_floor] * (1.0f - frac) + ch0[pos_ceil] * frac;
         samples[1] = ch1[pos_floor] * (1.0f - frac) + ch1[pos_ceil] * frac;
     }
+}
+
+float GrainProcessorImpl::get_normalized_position() const {
+    return m_normalized_position.load(std::memory_order_relaxed);
 }
 
 } // namespace thl::dsp::granular
