@@ -12,6 +12,8 @@ struct Grain {
     size_t start_position;     // Starting position in the sample
     size_t current_position;   // Current position within the grain
     size_t grain_size;         // Size of the grain in samples
+    size_t region_start;       // Start of the playback region
+    size_t region_end;         // End of the playback region
     float velocity;            // Playback speed/velocity
     float amplitude;           // Grain amplitude/volume
     float gain;
