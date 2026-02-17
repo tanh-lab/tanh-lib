@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <tanh/dsp/BaseProcessor.h>
 
 namespace thl::dsp::utils {
