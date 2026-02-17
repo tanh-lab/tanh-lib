@@ -15,9 +15,11 @@ public:
 
 protected:
     enum Parameter {
-        ThresholdGain = 0,
+        Threshold = 0,
+        Attack = 1,
+        Release = 2,
 
-        NUM_PARAMETERS = 1
+        NUM_PARAMETERS = 3
     };
 
     template<typename T>
@@ -31,7 +33,9 @@ private:
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
 
-    static float tanh_limit(float input, float threshold);
+    float m_gain = 1.0f;
+    float m_attack_coeff = 0.0f;
+    float m_release_coeff = 0.0f;
 };
 
 template<> inline float LimiterImpl::get_parameter<float>(Parameter p) { return get_parameter_float(p); }

@@ -33,6 +33,8 @@ void SmoothedValue::reset(double sample_rate, double time_in_seconds, ValueSmoot
 
 void SmoothedValue::set_target_value(float target_value)
 {
+    if (target_value == m_target_value) return;
+
     m_target_value = target_value;
     m_samples_remaining = m_time_in_samples;
 
