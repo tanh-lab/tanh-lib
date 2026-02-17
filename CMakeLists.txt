@@ -214,6 +214,7 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/Scales.cpp
         src/dsp/utils/SmoothedValue.cpp
+        src/dsp/utils/Limiter.cpp
 
         src/dsp/synth/SineProcessor.cpp
         src/dsp/granular/GrainProcessor.cpp

@@ -5,6 +5,7 @@ add_executable(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
 	test_AudioBuffer.cpp
+	test_Limiter.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
