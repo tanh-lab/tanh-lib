@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <random>
 #include <vector>
 #include <tanh/tanh.h>
@@ -13,8 +12,6 @@ struct Grain {
     size_t start_position;     // Starting position in the sample
     size_t current_position;   // Current position within the grain
     size_t grain_size;         // Size of the grain in samples
-    size_t region_start;       // Start of the playback region
-    size_t region_end;         // End of the playback region
     float velocity;            // Playback speed/velocity
     float amplitude;           // Grain amplitude/volume
     float gain;
@@ -32,8 +29,6 @@ public:
     void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
 
     void set_grain_index(size_t grain_index) { m_grain_index = grain_index; }
-
-    float get_normalized_position() const;
 
     void reset_grains();
 
@@ -57,9 +52,8 @@ protected:
         Pitch = 10,
         SampleStart = 11,
         SampleEnd = 12,
-        SampleLoop = 13,
 
-        NUM_PARAMETERS = 14
+        NUM_PARAMETERS = 13
     };
 
     utils::ADSR m_envelope;
@@ -78,7 +72,7 @@ private:
     virtual int get_parameter_int(Parameter parameter) = 0;
 
     virtual void process_voice_fx(float* buffer, size_t num_samples, size_t num_channels, size_t voice_index, bool note_on);
-    virtual void process_finished() {}
+
     size_t m_grain_index;
 
     // Grain management
@@ -87,7 +81,6 @@ private:
     size_t m_next_grain_time;
     size_t m_min_grain_interval;
     size_t m_sequential_position;
-    std::atomic<float> m_normalized_position{0.0f};
 
     // Random number generation for grain parameters
     std::mt19937 m_random_generator;
