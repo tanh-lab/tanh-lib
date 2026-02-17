@@ -158,14 +158,29 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             }
             grain_size = std::clamp(grain_size, min_size, max_size); // Clamp to valid range
 
-            long max_position = audio_data[note_number].get_num_frames() - grain_size;
+            // Playback region from sample_start / sample_end (0–1)
+            float region_start_norm = get_parameter<float>(SampleStart);
+            float region_end_norm = get_parameter<float>(SampleEnd);
+            long num_frames = static_cast<long>(audio_data[note_number].get_num_frames());
+            if (region_end_norm <= region_start_norm) { region_start_norm = 0.0f; region_end_norm = 1.0f; }
+
+            long region_start = std::clamp(static_cast<long>(region_start_norm * num_frames), 0L, num_frames);
+            long region_end   = std::clamp(static_cast<long>(region_end_norm * num_frames), region_start, num_frames);
+            long region_length = region_end - region_start;
+            if (region_length < static_cast<long>(min_size)) return;
+
+            grain_size = std::min(grain_size, static_cast<size_t>(region_length));
+            long max_position = region_length - static_cast<long>(grain_size);
+
+            if (m_sequential_position > static_cast<size_t>(max_position))
+                m_sequential_position = 0;
 
             // Apply randomness based on temperature parameter
             long start_position = m_sequential_position;
             float grain_size_factor = static_cast<float>(grain_size) / static_cast<float>(max_size);
             float gain = 1.f;
 
-            if (m_sequential_position != 0 || grain_size_factor < 0.6f) {
+            if (max_position > 0 && (m_sequential_position != 0 || grain_size_factor < 0.6f)) {
                 rand_value = m_uni_dist(m_random_generator); // Random value [0, 1)
                 rand_value = rand_value - 0.5f; // Scale to [-0.5, 0.5)
                 rand_value *= temperature; // Scale by temperature
@@ -201,8 +216,8 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             }
 
             m_sequential_position += grain_size / 2; // Overlap grains
-            if (m_sequential_position >= max_position) {
-                m_sequential_position -= static_cast<long>(0.6f * max_position); // Loop but do not replay the beginning
+            if (m_sequential_position > static_cast<size_t>(max_position)) {
+                m_sequential_position = static_cast<size_t>(0.4f * max_position);
             }
 
             // Randomize the velocity
@@ -221,9 +236,11 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             float grain_duration_ms = (grain_size / static_cast<float>(m_sample_rate)) * 1000.0f;
 
             // Setup the grain
-            grain.start_position = start_position;
+            grain.start_position = region_start + start_position;
             grain.current_position = 0;
             grain.grain_size = grain_size;
+            grain.region_start = static_cast<size_t>(region_start);
+            grain.region_end = static_cast<size_t>(region_end);
             grain.gain = gain;
             grain.velocity = velocity;
             grain.amplitude = 0.0f; // Start with zero amplitude for fade-in
@@ -295,6 +312,12 @@ void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buff
 
                 // Calculate the current position in the source audio
                 float source_pos = grain.start_position + (grain.current_position * grain.velocity);
+                // Wrap within playback region if velocity pushed past the end
+                if (source_pos >= static_cast<float>(grain.region_end)) {
+                    float rlen = static_cast<float>(grain.region_end - grain.region_start);
+                    if (rlen > 0.0f)
+                        source_pos = grain.region_start + std::fmod(source_pos - grain.region_start, rlen);
+                }
                 // Get the interpolated sample value
                 get_sample_with_interpolation(source_pos, samples, grain.sample_index);
 
