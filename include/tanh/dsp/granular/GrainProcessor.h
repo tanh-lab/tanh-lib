@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <random>
 #include <vector>
 #include <tanh/tanh.h>
@@ -32,6 +33,8 @@ public:
 
     void set_grain_index(size_t grain_index) { m_grain_index = grain_index; }
 
+    float get_normalized_position() const;
+
     void reset_grains();
 
     // Process audio data
@@ -54,8 +57,9 @@ protected:
         Pitch = 10,
         SampleStart = 11,
         SampleEnd = 12,
+        SampleLoop = 13,
 
-        NUM_PARAMETERS = 13
+        NUM_PARAMETERS = 14
     };
 
     utils::ADSR m_envelope;
@@ -74,7 +78,7 @@ private:
     virtual int get_parameter_int(Parameter parameter) = 0;
 
     virtual void process_voice_fx(float* buffer, size_t num_samples, size_t num_channels, size_t voice_index, bool note_on);
-
+    virtual void process_finished() {}
     size_t m_grain_index;
 
     // Grain management
@@ -83,6 +87,7 @@ private:
     size_t m_next_grain_time;
     size_t m_min_grain_interval;
     size_t m_sequential_position;
+    std::atomic<float> m_normalized_position{0.0f};
 
     // Random number generation for grain parameters
     std::mt19937 m_random_generator;
