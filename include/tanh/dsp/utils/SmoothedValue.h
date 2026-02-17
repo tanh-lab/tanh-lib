@@ -24,14 +24,14 @@ public:
 private:
     void recalcStep();
 
-    float m_current_value;
-    float m_target_value;
-    float m_step;
+    float m_current_value = 0.0f;
+    float m_target_value = 0.0f;
+    float m_step = 0.0f;
 
-    size_t m_time_in_samples;
-    size_t m_samples_remaining;
+    size_t m_time_in_samples = 0;
+    size_t m_samples_remaining = 0;
 
-    double m_sample_rate;
+    double m_sample_rate = 48000.0;
 
     ValueSmoothingType m_smoothing_type;
 };
