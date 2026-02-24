@@ -112,6 +112,22 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(FetchContent)
 
+if(TANH_BUILD_CORE)
+    set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "Build spdlog shared library" FORCE)
+    set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "Build spdlog examples" FORCE)
+    set(SPDLOG_BUILD_EXAMPLES OFF CACHE BOOL "Build spdlog examples" FORCE)
+    set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "Build spdlog tests" FORCE)
+    set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "Build spdlog bench" FORCE)
+
+    FetchContent_Declare(
+        spdlog
+        GIT_REPOSITORY https://github.com/gabime/spdlog.git
+        GIT_TAG v1.14.1
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(spdlog)
+endif()
+
 # ==============================================================================
 # Build the library with components
 # ==============================================================================
@@ -124,6 +140,7 @@ if(TANH_BUILD_CORE)
     add_library(${PROJECT_NAME}_core
         src/core.cpp
         src/core/Dispatcher.cpp
+        src/core/Logger.cpp
     )
     
     # enable position independent code because otherwise the static library cannot be linked into a shared library
@@ -146,8 +163,16 @@ if(TANH_BUILD_CORE)
         # Version number
         -DTANH_VERSION="${PROJECT_VERSION_FULL}"
     )
+    target_compile_definitions(${PROJECT_NAME}_core
+        PUBLIC
+        $<$<CONFIG:Release>:THL_LOG_COMPILED_MAX_LEVEL=1>
+        $<$<NOT:$<CONFIG:Release>>:THL_LOG_COMPILED_MAX_LEVEL=4>
+    )
 
-    target_link_libraries(${PROJECT_NAME}_core)
+    target_link_libraries(${PROJECT_NAME}_core
+        PRIVATE
+        spdlog::spdlog_header_only
+    )
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
 endif()

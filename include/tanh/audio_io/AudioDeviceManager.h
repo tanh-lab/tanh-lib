@@ -104,7 +104,8 @@ public:
     /**
      * @brief Callback type for log messages from the audio backend.
      *
-     * @param level Log level (0=debug, 1=info, 2=warning, 3=error)
+     * @param level Miniaudio log level (typically 1=error, 2=warning,
+     *              3=info, 4=debug)
      * @param message The log message
      */
     using LogCallback =

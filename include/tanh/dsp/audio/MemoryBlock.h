@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
+#include <tanh/core/Logger.h>
 #include <type_traits>
 #include <utility>
 
@@ -18,8 +18,7 @@ public:
             if (data != nullptr) {
                 m_data = static_cast<T*>(data);
             } else {
-                std::cerr << "MemoryBlock: failed to allocate memory"
-                          << std::endl;
+                thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to allocate memory");
             }
         }
     }
@@ -33,8 +32,7 @@ public:
                 m_data = static_cast<T*>(data);
                 std::memcpy(m_data, other.m_data, sizeof(T) * m_size);
             } else {
-                std::cerr << "MemoryBlock: failed to allocate memory"
-                          << std::endl;
+                thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to allocate memory");
             }
         }
     }
@@ -50,8 +48,7 @@ public:
                     m_data = static_cast<T*>(data);
                     std::memcpy(m_data, other.m_data, sizeof(T) * m_size);
                 } else {
-                    std::cerr << "MemoryBlock: failed to allocate memory"
-                              << std::endl;
+                    thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to allocate memory");
                 }
             }
         }
@@ -94,8 +91,7 @@ public:
         if (data != nullptr) {
             m_data = static_cast<T*>(data);
         } else {
-            std::cerr << "MemoryBlock: failed to reallocate memory"
-                      << std::endl;
+            thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to reallocate memory");
         }
     }
 
@@ -108,9 +104,9 @@ public:
             if (m_size == other.m_size) {
                 std::swap(m_data, other.m_data);
             } else {
-                std::cerr << "MemoryBlock: cannot swap data with "
-                             "different sizes"
-                          << std::endl;
+                    thl::Logger::error(
+                    "thl.dsp.audio.memory_block",
+                    "MemoryBlock: cannot swap data with different sizes");
             }
         }
     }
@@ -119,9 +115,9 @@ public:
         if (m_size == size) {
             std::swap(m_data, data);
         } else {
-            std::cerr << "MemoryBlock: cannot swap data with "
-                         "different sizes"
-                      << std::endl;
+            thl::Logger::error(
+                "thl.dsp.audio.memory_block",
+                "MemoryBlock: cannot swap data with different sizes");
         }
     }
 

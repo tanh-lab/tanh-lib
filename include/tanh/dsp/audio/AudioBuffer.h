@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <vector>
 
 namespace thl::dsp::audio {
@@ -172,9 +171,9 @@ public:
                 m_channels = other.m_channels;
                 other.m_channels = temp;
             } else {
-                std::cerr << "Buffer: cannot swap data, buffers have "
-                             "different dimensions"
-                          << std::endl;
+                thl::Logger::error(
+                    "thl.dsp.audio.audio_buffer",
+                    "Buffer: cannot swap data, buffers have different dimensions");
             }
         }
     }
@@ -184,9 +183,9 @@ public:
             m_data.swap_data(other);
             reset_channel_ptr();
         } else {
-            std::cerr << "Buffer: cannot swap data, MemoryBlock has "
-                         "different size"
-                      << std::endl;
+            thl::Logger::error(
+                "thl.dsp.audio.audio_buffer",
+                "Buffer: cannot swap data, MemoryBlock has different size");
         }
     }
 
@@ -195,8 +194,8 @@ public:
             m_data.swap_data(raw_data, size);
             reset_channel_ptr();
         } else {
-            std::cerr << "Buffer: cannot swap data, size mismatch"
-                      << std::endl;
+            thl::Logger::error("thl.dsp.audio.audio_buffer",
+                               "Buffer: cannot swap data, size mismatch");
         }
     }
 
@@ -213,8 +212,8 @@ private:
         if (channels != nullptr) {
             m_channels = static_cast<T**>(channels);
         } else {
-            std::cerr << "Buffer: failed to allocate channel pointers"
-                      << std::endl;
+            thl::Logger::error("thl.dsp.audio.audio_buffer",
+                               "Buffer: failed to allocate channel pointers");
             return;
         }
         for (size_t i = 0; i < m_num_channels; ++i) {
