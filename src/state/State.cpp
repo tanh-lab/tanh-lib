@@ -1,4 +1,5 @@
 #include "tanh/state/State.h"
+#include <tanh/core/Logger.h>
 
 namespace thl {
 
@@ -423,7 +424,11 @@ void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies s
                 }
                 else if (it.value().is_null()) {
                     // Simply log a warning for null values
-                    std::cerr << "Warning: Ignoring null value for key '" << path << "'" << std::endl;
+                    thl::Logger::logf(
+                        thl::Logger::LogLevel::Warning,
+                        "thl.state.state",
+                        "Ignoring null value for key '%s'",
+                        path.c_str());
                 }
             }
         }
@@ -439,7 +444,10 @@ void State::update_from_json(const nlohmann::json& json_data, NotifyStrategies s
     }
     catch (const std::exception& e) {
         // Wrap other exceptions
-        std::cerr << "Error updating state from JSON: " << e.what() << std::endl;
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                          "thl.state.state",
+                          "Error updating state from JSON: %s",
+                          e.what());
         throw;
     }
 }

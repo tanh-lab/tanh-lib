@@ -1,8 +1,8 @@
 #include <tanh/audio_io/AudioFileLoader.h>
+#include <tanh/core/Logger.h>
 #include "DataSourceImpl.h"
 
 #include <cstdint>
-#include <iostream>
 #include <vector>
 
 namespace thl::audio_io {
@@ -72,9 +72,10 @@ bool AudioFileLoader::init_resource_manager_data_source(
     ma_result result =
         ma_resource_manager_init(&rm_config, &impl.resourceManager);
     if (result != MA_SUCCESS) {
-        std::cerr << "AudioFileLoader: failed to init resource manager"
-                     " (error "
-                  << result << ")" << std::endl;
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                          "thl.audio_io.audio_file_loader",
+                          "AudioFileLoader: failed to init resource manager (error %d)",
+                          static_cast<int>(result));
         return false;
     }
     impl.resourceManagerInitialised = true;
@@ -85,8 +86,11 @@ bool AudioFileLoader::init_resource_manager_data_source(
                                                   nullptr,
                                                   &impl.dataSource);
     if (result != MA_SUCCESS) {
-        std::cerr << "AudioFileLoader: failed to init data source: "
-                  << file_path << " (error " << result << ")" << std::endl;
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                          "thl.audio_io.audio_file_loader",
+                          "AudioFileLoader: failed to init data source: %s (error %d)",
+                          file_path.c_str(),
+                          static_cast<int>(result));
         return false;
     }
     impl.dataSourceInitialised = true;
@@ -193,9 +197,10 @@ dsp::audio::AudioBuffer AudioFileLoader::load_from_memory(
     ma_result result = ma_decoder_init_memory(data, size, &config, &decoder);
 
     if (result != MA_SUCCESS) {
-        std::cerr << "AudioFileLoader: failed to decode from memory"
-                     " (error "
-                  << result << ")" << std::endl;
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                          "thl.audio_io.audio_file_loader",
+                          "AudioFileLoader: failed to decode from memory (error %d)",
+                          static_cast<int>(result));
         return {};
     }
 
@@ -242,9 +247,11 @@ DataSource AudioFileLoader::load_data_source_from_memory(
     ma_result result =
         ma_decoder_init_memory(data, size, &config, &impl->decoder);
     if (result != MA_SUCCESS) {
-        std::cerr << "AudioFileLoader: failed to init decoder from memory"
-                     " (error "
-                  << result << ")" << std::endl;
+        thl::Logger::logf(
+            thl::Logger::LogLevel::Error,
+            "thl.audio_io.audio_file_loader",
+            "AudioFileLoader: failed to init decoder from memory (error %d)",
+            static_cast<int>(result));
         return DataSource(std::make_unique<DataSource::Impl>());
     }
     impl->decoderInitialised = true;

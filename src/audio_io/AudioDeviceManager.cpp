@@ -1,5 +1,6 @@
 #include <tanh/audio_io/AudioDeviceManager.h>
 #include "miniaudio.h"
+#include "tanh/core/Logger.h"
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -338,6 +339,11 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
                                     uint32_t numInputChannels,
                                     uint32_t numOutputChannels) {
     if (!m_impl->contextInitialised) return false;
+
+    thl::Logger::logf(thl::Logger::LogLevel::Info,
+                    "thl.audio_io.audio_device_manager",
+                    "Initialise from C++"
+    );
 
     shutdown();
 
