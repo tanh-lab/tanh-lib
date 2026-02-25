@@ -20,6 +20,8 @@ option(TANH_BUILD_CORE "Build Core component" ON)
 option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
+option(TANH_BUILD_RESONATOR "Build Resonator component" ON)
+option(TANH_BUILD_RESONATOR_WRAPPER "Build RingsResonator wrapper (requires libsamplerate)" ON)
 
 # ==============================================================================
 # Get project version
@@ -236,10 +238,12 @@ if(TANH_BUILD_DSP)
 
     add_library(${PROJECT_NAME}_dsp
         src/dsp/utils/ADSR.cpp
+        src/dsp/utils/DspMath.cpp
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/Scales.cpp
         src/dsp/utils/SmoothedValue.cpp
         src/dsp/utils/Limiter.cpp
+        src/dsp/utils/Random.cpp
 
         src/dsp/synth/SineProcessor.cpp
         src/dsp/granular/GrainProcessor.cpp
@@ -267,6 +271,94 @@ if(TANH_BUILD_DSP)
     )
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_dsp)
+endif()
+
+# Resonator Core component (depends on DSP)
+if(TANH_BUILD_RESONATOR)
+    if(NOT TARGET ${PROJECT_NAME}_dsp)
+        message(FATAL_ERROR "Resonator component requires DSP component")
+    endif()
+
+    add_library(${PROJECT_NAME}_resonator_core
+        src/dsp/resonator/rings/Part.cpp
+        src/dsp/resonator/rings/Resonator.cpp
+        src/dsp/resonator/rings/String.cpp
+        src/dsp/resonator/rings/FmVoice.cpp
+        src/dsp/resonator/rings/StringSynthPart.cpp
+        src/dsp/resonator/rings/Resources.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_resonator_core PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::ResonatorCore ALIAS ${PROJECT_NAME}_resonator_core)
+
+    target_include_directories(${PROJECT_NAME}_resonator_core
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_resonator_core
+        PUBLIC
+        ${PROJECT_NAME}_dsp
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(${PROJECT_NAME}_resonator_core PRIVATE
+            -Wno-unused-local-typedefs
+            -Wno-unused-parameter
+            -Wno-sign-compare
+            -Wno-unused-variable
+            -Wno-c++11-narrowing
+        )
+    endif()
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator_core)
+endif()
+
+if(TANH_BUILD_RESONATOR AND TANH_BUILD_RESONATOR_WRAPPER)
+    if(NOT TARGET ${PROJECT_NAME}_resonator_core)
+        message(FATAL_ERROR "Resonator wrapper requires Resonator core component")
+    endif()
+
+    find_path(TANH_SAMPLERATE_INCLUDE_DIR samplerate.h)
+    find_library(TANH_SAMPLERATE_LIBRARY NAMES samplerate)
+
+    if(TANH_SAMPLERATE_INCLUDE_DIR AND TANH_SAMPLERATE_LIBRARY)
+        add_library(${PROJECT_NAME}_resonator
+            src/dsp/resonator/RingsResonator.cpp
+            src/dsp/resonator/SampleRateConverter.cpp
+        )
+
+        set_target_properties(${PROJECT_NAME}_resonator PROPERTIES
+            POSITION_INDEPENDENT_CODE ON
+            VERSION ${PROJECT_VERSION}
+            SOVERSION ${PROJECT_VERSION_MAJOR})
+
+        add_library(${PROJECT_NAME}::Resonator ALIAS ${PROJECT_NAME}_resonator)
+
+        target_include_directories(${PROJECT_NAME}_resonator
+            PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+            PRIVATE
+            ${TANH_SAMPLERATE_INCLUDE_DIR}
+        )
+
+        target_link_libraries(${PROJECT_NAME}_resonator
+            PUBLIC
+            ${PROJECT_NAME}_resonator_core
+            PRIVATE
+            ${TANH_SAMPLERATE_LIBRARY}
+        )
+
+        list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
+    else()
+        message(WARNING "libsamplerate not found; skipping tanh_resonator wrapper target")
+    endif()
 endif()
 
 # AudioIO component (depends on Core)
