@@ -89,7 +89,8 @@ void AudioPlayerSource::unloadFile() {
 
 void AudioPlayerSource::play() {
     if (m_loaded.load(std::memory_order_acquire)) {
-        m_fadeInRemaining.store(kFadeSamples, std::memory_order_release);
+        m_fadeInRemaining.store(m_fadeEnabled ? kFadeSamples : 0,
+                                std::memory_order_release);
         m_stopRequested.store(false, std::memory_order_release);
         m_playing.store(true, std::memory_order_release);
     }

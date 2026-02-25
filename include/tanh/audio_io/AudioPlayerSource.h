@@ -282,6 +282,9 @@ public:
     /// Number of frames used for micro fade-in/out (~1.3 ms at 48 kHz).
     static constexpr uint32_t kFadeSamples = 64;
 
+    void setFadeEnabled(bool enabled) { m_fadeEnabled = enabled; }
+    bool isFadeEnabled() const { return m_fadeEnabled; }
+
 private:
     bool rebuildDataSource(uint32_t decodedChannels,
                            uint32_t decodedSampleRate,
@@ -306,6 +309,7 @@ private:
     std::atomic<uint32_t> m_fadeInRemaining{0};
     std::atomic<bool> m_stopRequested{false};
     uint32_t m_fadeOutCounter{0};  // audio-thread only
+    bool m_fadeEnabled{true};
 };
 
 }  // namespace thl
