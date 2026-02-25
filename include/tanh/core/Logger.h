@@ -25,6 +25,18 @@ struct LogRecord {
 
 using Callback = std::function<void(const LogRecord&)>;
 
+// Registers a synchronous log callback.
+//
+// Important constraints:
+// - Logging is not real-time safe. Do not call Logger from the audio thread.
+//   logf() performs formatting and logging may take locks and block in sinks.
+// - The callback runs on the caller thread. Slow sink work will block the
+//   thread that emitted the log.
+// - Callback implementations should avoid logging back into thl::Logger
+//   (re-entrant logging). Nested callback logging is guarded and may be
+//   redirected to the default fallback sink.
+// - If the callback references plugin/host-owned objects, call clear_callback()
+//   before tearing those objects down (for example in plugin unload/teardown).
 void set_callback(Callback cb);
 void clear_callback();
 

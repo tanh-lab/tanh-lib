@@ -6,17 +6,15 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
+#include <cstdlib>
 #include <cstdarg>
 #include <cstdio>
 #include <ctime>
 #include <iomanip>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <utility>
 
 namespace thl::Logger {
@@ -26,8 +24,6 @@ namespace {
 #ifndef THL_LOG_COMPILED_MAX_LEVEL
 #define THL_LOG_COMPILED_MAX_LEVEL 4
 #endif
-
-constexpr size_t kQueueCapacity = 2048;
 
 spdlog::level::level_enum to_spdlog_level(std::uint32_t level) {
     switch (level) {
@@ -67,7 +63,30 @@ std::shared_ptr<spdlog::logger> create_fallback_logger() {
     return logger;
 }
 
+std::atomic<bool>& shutdown_started_flag() {
+    static std::atomic<bool> flag {false};
+    return flag;
+}
+
+void mark_logging_shutdown() {
+    shutdown_started_flag().store(true, std::memory_order_relaxed);
+}
+
+bool logging_shutdown_started() {
+    return shutdown_started_flag().load(std::memory_order_relaxed);
+}
+
+void ensure_shutdown_hook_installed() {
+    static const bool registered = []() {
+        shutdown_started_flag();
+        std::atexit(mark_logging_shutdown);
+        return true;
+    }();
+    (void)registered;
+}
+
 std::shared_ptr<spdlog::logger> fallback_logger() {
+    ensure_shutdown_hook_installed();
     static auto logger = create_fallback_logger();
     return logger;
 }
@@ -80,6 +99,18 @@ const char* level_name(std::uint32_t level) {
         case static_cast<std::uint32_t>(LogLevel::Debug): return "debug";
         default: return "info";
     }
+}
+
+void write_to_stderr_fallback(std::uint32_t level,
+                              const char* source,
+                              const char* group,
+                              const char* message) noexcept {
+    std::fprintf(stderr,
+                 "[%s][%s][%s] %s\n",
+                 level_name(level),
+                 source ? source : "native",
+                 group ? group : "default",
+                 message ? message : "");
 }
 
 std::string escape_logfmt_value(std::string value) {
@@ -149,153 +180,112 @@ void write_to_default_sink(const LogRecord& record) {
         record.source.empty() ? "native" : record.source.c_str();
     const char* safeGroup = record.group.empty() ? "default" : record.group.c_str();
     const char* safeMessage = record.message.c_str();
-    fallback_logger()->log(to_spdlog_level(record.level),
-                           "[{}][{}] {}",
-                           safeSource,
-                           safeGroup,
-                           safeMessage);
+    try {
+        fallback_logger()->log(to_spdlog_level(record.level),
+                               "[{}][{}] {}",
+                               safeSource,
+                               safeGroup,
+                               safeMessage);
+    } catch (...) {
+        write_to_stderr_fallback(record.level, safeSource, safeGroup, safeMessage);
+    }
 }
 
-class AsyncLoggerCore {
-public:
-    AsyncLoggerCore() : m_worker([this]() { run(); }) {}
-
-    ~AsyncLoggerCore() {
-        {
-            std::lock_guard<std::mutex> lock(m_queueMutex);
-            m_stop = true;
-        }
-        m_queueCv.notify_one();
-        if (m_worker.joinable()) { m_worker.join(); }
-    }
-
-    void setCallback(Callback cb) {
-        std::lock_guard<std::mutex> lock(m_callbackMutex);
-        m_callback = std::move(cb);
-    }
-
-    void clearCallback() {
-        std::lock_guard<std::mutex> lock(m_callbackMutex);
-        m_callback = nullptr;
-    }
-
-    void enqueue(LogRecord record) {
-        {
-            std::lock_guard<std::mutex> lock(m_queueMutex);
-            if (m_queueSize == kQueueCapacity) {
-                m_ring[m_head] = std::move(record);
-                m_head = (m_head + 1) % kQueueCapacity;
-                ++m_dropCount;
-            } else {
-                const size_t tail = (m_head + m_queueSize) % kQueueCapacity;
-                m_ring[tail] = std::move(record);
-                ++m_queueSize;
-            }
-        }
-        m_queueCv.notify_one();
-    }
-
-    LogRecord makeRecord(std::uint32_t level,
-                         const char* source,
-                         const char* group,
-                         const char* message) {
-        LogRecord record;
-        record.seq = m_nextSeq.fetch_add(1, std::memory_order_relaxed);
-        const auto wallNow = std::chrono::system_clock::now();
-        const auto monoNow = std::chrono::steady_clock::now();
-        record.timestampMs =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                wallNow.time_since_epoch())
-                .count();
-        record.monotonicNs =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                monoNow.time_since_epoch())
-                .count();
-        record.level = clamp_level(level);
-        record.source = source ? source : "native";
-        record.group = group ? group : "default";
-        record.message = message ? message : "";
-        return record;
-    }
-
-private:
-    void run() {
-        while (true) {
-            std::optional<LogRecord> record;
-            std::uint64_t dropped = 0;
-            {
-                std::unique_lock<std::mutex> lock(m_queueMutex);
-                m_queueCv.wait(lock, [this]() { return m_stop || m_queueSize > 0; });
-                if (m_stop && m_queueSize == 0) { break; }
-
-                dropped = m_dropCount;
-                m_dropCount = 0;
-
-                if (m_queueSize > 0) {
-                    record = std::move(m_ring[m_head]);
-                    m_ring[m_head].reset();
-                    m_head = (m_head + 1) % kQueueCapacity;
-                    --m_queueSize;
-                }
-            }
-
-            if (dropped > 0) {
-                const std::string droppedMessage =
-                    "Dropped " + std::to_string(dropped) + " log message(s)";
-                auto droppedRecord = makeRecord(
-                    static_cast<std::uint32_t>(LogLevel::Warning),
-                    "native",
-                    "logger",
-                    droppedMessage.c_str());
-                dispatch(droppedRecord);
-            }
-
-            if (record.has_value()) { dispatch(*record); }
-        }
-    }
-
-    void dispatch(const LogRecord& record) {
-        Callback callbackCopy;
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            callbackCopy = m_callback;
-        }
-
-        if (callbackCopy) {
-            callbackCopy(record);
-            return;
-        }
-
-        write_to_default_sink(record);
-    }
-
-    std::array<std::optional<LogRecord>, kQueueCapacity> m_ring {};
-    size_t m_head = 0;
-    size_t m_queueSize = 0;
-    std::uint64_t m_dropCount = 0;
-    bool m_stop = false;
-    std::mutex m_queueMutex;
-    std::condition_variable m_queueCv;
-    std::thread m_worker;
-    std::atomic<std::uint64_t> m_nextSeq {1};
-
-    std::mutex m_callbackMutex;
-    Callback m_callback;
+struct LoggerState {
+    std::atomic<std::uint64_t> nextSeq {1};
+    std::mutex callbackMutex;
+    Callback callback;
 };
 
-AsyncLoggerCore& core() {
-    static AsyncLoggerCore instance;
+LoggerState& state() {
+    ensure_shutdown_hook_installed();
+    static LoggerState instance;
     return instance;
+}
+
+int& callback_dispatch_depth() {
+    static thread_local int depth = 0;
+    return depth;
+}
+
+class CallbackDispatchScope {
+public:
+    CallbackDispatchScope() { ++callback_dispatch_depth(); }
+    ~CallbackDispatchScope() { --callback_dispatch_depth(); }
+};
+
+LogRecord make_record(std::uint32_t level,
+                      const char* source,
+                      const char* group,
+                      const char* message) {
+    LogRecord record;
+    record.seq = state().nextSeq.fetch_add(1, std::memory_order_relaxed);
+    const auto wallNow = std::chrono::system_clock::now();
+    const auto monoNow = std::chrono::steady_clock::now();
+    record.timestampMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            wallNow.time_since_epoch())
+            .count();
+    record.monotonicNs =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            monoNow.time_since_epoch())
+            .count();
+    record.level = clamp_level(level);
+    record.source = source ? source : "native";
+    record.group = group ? group : "default";
+    record.message = message ? message : "";
+    return record;
+}
+
+void dispatch_record(const LogRecord& record) {
+    if (logging_shutdown_started()) {
+        write_to_stderr_fallback(record.level,
+                                 record.source.c_str(),
+                                 record.group.c_str(),
+                                 record.message.c_str());
+        return;
+    }
+
+    Callback callbackCopy;
+    {
+        std::lock_guard<std::mutex> lock(state().callbackMutex);
+        callbackCopy = state().callback;
+    }
+
+    if (!callbackCopy) {
+        write_to_default_sink(record);
+        return;
+    }
+
+    // Prevent recursive callback dispatch if a sink logs back into thl::Logger.
+    if (callback_dispatch_depth() > 0) {
+        write_to_default_sink(record);
+        return;
+    }
+
+    try {
+        CallbackDispatchScope scope;
+        callbackCopy(record);
+    } catch (...) {
+        write_to_stderr_fallback(record.level,
+                                 record.source.c_str(),
+                                 record.group.c_str(),
+                                 record.message.c_str());
+    }
 }
 
 }  // namespace
 
 void set_callback(Callback cb) {
-    core().setCallback(std::move(cb));
+    auto& loggerState = state();
+    std::lock_guard<std::mutex> lock(loggerState.callbackMutex);
+    loggerState.callback = std::move(cb);
 }
 
 void clear_callback() {
-    core().clearCallback();
+    auto& loggerState = state();
+    std::lock_guard<std::mutex> lock(loggerState.callbackMutex);
+    loggerState.callback = nullptr;
 }
 
 std::string format_logfmt(const LogRecord& record) {
@@ -326,7 +316,17 @@ void log_with_source(LogLevel level,
     const auto numericLevel = static_cast<std::uint32_t>(level);
     if (!should_log_compiled(numericLevel)) { return; }
 
-    core().enqueue(core().makeRecord(numericLevel, source, group, message));
+    ensure_shutdown_hook_installed();
+    if (logging_shutdown_started()) {
+        write_to_stderr_fallback(numericLevel, source, group, message);
+        return;
+    }
+
+    try {
+        dispatch_record(make_record(numericLevel, source, group, message));
+    } catch (...) {
+        write_to_stderr_fallback(numericLevel, source, group, message);
+    }
 }
 
 void logf(LogLevel level, const char* group, const char* fmt, ...) {
