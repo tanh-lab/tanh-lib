@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,210 +19,209 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Onset detector.
 
-#ifndef RINGS_DSP_ONSET_DETECTOR_H_
-#define RINGS_DSP_ONSET_DETECTOR_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
 #include <algorithm>
 
-#include <tanh/dsp/utils/stmlib/dsp/dsp.h>
-#include <tanh/dsp/utils/stmlib/dsp/filter.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/Svf.h>
 
 namespace thl::dsp::resonator::rings {
 
 using namespace std;
-using namespace stmlib;
+using namespace thl::dsp::utils;
 
 class ZScorer {
  public:
   ZScorer() { }
   ~ZScorer() { }
-  
-  void Init(float cutoff) {
-    coefficient_ = cutoff;
-    mean_ = 0.0f;
-    variance_ = 0.00f;
-  }
-  
-  inline float Normalize(float sample) {
-    return Update(sample) / Sqrt(variance_);
-  }
-  
-  inline bool Test(float sample, float threshold) {
-    float value = Update(sample);
-    return value > Sqrt(variance_) * threshold;
+
+  void init(float cutoff) {
+    m_coefficient = cutoff;
+    m_mean = 0.0f;
+    m_variance = 0.00f;
   }
 
-  inline bool Test(float sample, float threshold, float absolute_threshold) {
-    float value = Update(sample);
-    return value > Sqrt(variance_) * threshold && value > absolute_threshold;
+  inline float normalize(float sample) {
+    return update(sample) / thl::dsp::utils::sqrt(m_variance);
+  }
+
+  inline bool test(float sample, float threshold) {
+    float value = update(sample);
+    return value > thl::dsp::utils::sqrt(m_variance) * threshold;
+  }
+
+  inline bool test(float sample, float threshold, float absolute_threshold) {
+    float value = update(sample);
+    return value > thl::dsp::utils::sqrt(m_variance) * threshold && value > absolute_threshold;
   }
 
  private:
-  inline float Update(float sample) {
-    float centered = sample - mean_;
-    mean_ += coefficient_ * centered;
-    variance_ += coefficient_ * (centered * centered - variance_);
+  inline float update(float sample) {
+    float centered = sample - m_mean;
+    m_mean += m_coefficient * centered;
+    m_variance += m_coefficient * (centered * centered - m_variance);
     return centered;
   }
-  
-  float coefficient_;
-  float mean_;
-  float variance_;
-  
-  DISALLOW_COPY_AND_ASSIGN(ZScorer);
+
+  float m_coefficient;
+  float m_mean;
+  float m_variance;
+
+  ZScorer(const ZScorer&) = delete;
+  ZScorer& operator=(const ZScorer&) = delete;
 };
 
 class Compressor {
- public:  
+ public:
   Compressor() { }
   ~Compressor() { }
-  
-  void Init(float attack, float decay, float max_gain) {
-    attack_ = attack;
-    decay_ = decay;
-    level_ = 0.0f;
-    skew_ = 1.0f / max_gain;
+
+  void init(float attack, float decay, float max_gain) {
+    m_attack = attack;
+    m_decay = decay;
+    m_level = 0.0f;
+    m_skew = 1.0f / max_gain;
   }
-  
-  void Process(const float* in, float* out, size_t size) {
-    float level = level_;
+
+  void process(const float* in, float* out, size_t size) {
+    float level = m_level;
     while (size--) {
-      SLOPE(level, fabs(*in), attack_, decay_);
-      *out++ = *in++ / (skew_ + level);
+      SLOPE(level, fabs(*in), m_attack, m_decay);
+      *out++ = *in++ / (m_skew + level);
     }
-    level_ = level;
+    m_level = level;
   }
- 
+
  private:
-  float attack_; 
-  float decay_;
-  float level_;
-  float skew_;
-  
-  DISALLOW_COPY_AND_ASSIGN(Compressor);
+  float m_attack;
+  float m_decay;
+  float m_level;
+  float m_skew;
+
+  Compressor(const Compressor&) = delete;
+  Compressor& operator=(const Compressor&) = delete;
 };
 
 class OnsetDetector {
- public:  
+ public:
   OnsetDetector() { }
   ~OnsetDetector() { }
-  
-  void Init(
+
+  void init(
       float low,
       float low_mid,
       float mid_high,
       float decimated_sr,
       float ioi_time) {
     float ioi_f = 1.0f / (ioi_time * decimated_sr);
-    compressor_.Init(ioi_f * 10.0f, ioi_f * 0.05f, 40.0f);
-    
-    low_mid_filter_.Init();
-    mid_high_filter_.Init();
-    low_mid_filter_.set_f_q<FREQUENCY_DIRTY>(low_mid, 0.5f);
-    mid_high_filter_.set_f_q<FREQUENCY_DIRTY>(mid_high, 0.5f);
+    m_compressor.init(ioi_f * 10.0f, ioi_f * 0.05f, 40.0f);
 
-    attack_[0] = low_mid;
-    decay_[0] = low * 0.25f;
+    m_low_mid_filter.init();
+    m_mid_high_filter.init();
+    m_low_mid_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(low_mid, 0.5f);
+    m_mid_high_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(mid_high, 0.5f);
 
-    attack_[1] = low_mid;
-    decay_[1] = low * 0.25f;
+    m_attack[0] = low_mid;
+    m_decay[0] = low * 0.25f;
 
-    attack_[2] = low_mid;
-    decay_[2] = low * 0.25f;
+    m_attack[1] = low_mid;
+    m_decay[1] = low * 0.25f;
 
-    fill(&envelope_[0], &envelope_[3], 0.0f);
-    fill(&energy_[0], &energy_[3], 0.0f);
-    
-    z_df_.Init(ioi_f * 0.05f);
-    
-    inhibit_time_ = static_cast<int32_t>(ioi_time * decimated_sr);
-    inhibit_decay_ = 1.0f / (ioi_time * decimated_sr);
-    
-    inhibit_threshold_ = 0.0f;
-    inhibit_counter_ = 0;
-    onset_df_ = 0.0f;
+    m_attack[2] = low_mid;
+    m_decay[2] = low * 0.25f;
+
+    fill(&m_envelope[0], &m_envelope[3], 0.0f);
+    fill(&m_energy[0], &m_energy[3], 0.0f);
+
+    m_z_df.init(ioi_f * 0.05f);
+
+    m_inhibit_time = static_cast<int32_t>(ioi_time * decimated_sr);
+    m_inhibit_decay = 1.0f / (ioi_time * decimated_sr);
+
+    m_inhibit_threshold = 0.0f;
+    m_inhibit_counter = 0;
+    m_onset_df = 0.0f;
   }
-  
-  bool Process(const float* samples, size_t size) {
+
+  bool process(const float* samples, size_t size) {
     // Automatic gain control.
-    compressor_.Process(samples, bands_[0], size);
-    
+    m_compressor.process(samples, m_bands[0], size);
+
     // Quick and dirty filter bank - split the signal in three bands.
-    mid_high_filter_.Split(bands_[0], bands_[1], bands_[2], size);
-    low_mid_filter_.Split(bands_[1], bands_[0], bands_[1], size);
+    m_mid_high_filter.split(m_bands[0], m_bands[1], m_bands[2], size);
+    m_low_mid_filter.split(m_bands[1], m_bands[0], m_bands[1], size);
 
     // Compute low-pass energy and onset detection function
     // (derivative of energy) in each band.
     float onset_df = 0.0f;
     float total_energy = 0.0f;
     for (int32_t i = 0; i < 3; ++i) {
-      float* s = bands_[i];
+      float* s = m_bands[i];
       float energy = 0.0f;
-      float envelope = envelope_[i];
+      float envelope = m_envelope[i];
       size_t increment = 4 >> i;
       for (size_t j = 0; j < size; j += increment) {
-        SLOPE(envelope, s[j] * s[j], attack_[i], decay_[i]);
+        SLOPE(envelope, s[j] * s[j], m_attack[i], m_decay[i]);
         energy += envelope;
       }
-      energy = Sqrt(energy) * float(increment);
-      envelope_[i] = envelope;
+      energy = thl::dsp::utils::sqrt(energy) * float(increment);
+      m_envelope[i] = envelope;
 
-      float derivative = energy - energy_[i];
+      float derivative = energy - m_energy[i];
       onset_df += derivative + fabs(derivative);
-      energy_[i] = energy;
+      m_energy[i] = energy;
       total_energy += energy;
     }
-    
-    onset_df_ += 0.05f * (onset_df - onset_df_);
-    bool outlier_in_df = z_df_.Test(onset_df_, 1.0f, 0.01f);
-    bool exceeds_energy_threshold = total_energy >= inhibit_threshold_;
-    bool not_inhibited = !inhibit_counter_;
+
+    m_onset_df += 0.05f * (onset_df - m_onset_df);
+    bool outlier_in_df = m_z_df.test(m_onset_df, 1.0f, 0.01f);
+    bool exceeds_energy_threshold = total_energy >= m_inhibit_threshold;
+    bool not_inhibited = !m_inhibit_counter;
     bool has_onset = outlier_in_df && exceeds_energy_threshold && not_inhibited;
-    
+
     if (has_onset) {
-      inhibit_threshold_ = total_energy * 1.5f;
-      inhibit_counter_ = inhibit_time_;
+      m_inhibit_threshold = total_energy * 1.5f;
+      m_inhibit_counter = m_inhibit_time;
     } else {
-      inhibit_threshold_ -= inhibit_decay_ * inhibit_threshold_;
-      if (inhibit_counter_) {
-        --inhibit_counter_;
+      m_inhibit_threshold -= m_inhibit_decay * m_inhibit_threshold;
+      if (m_inhibit_counter) {
+        --m_inhibit_counter;
       }
     }
     return has_onset;
   }
-  
+
  private:
-  Compressor compressor_;
-  NaiveSvf low_mid_filter_;
-  NaiveSvf mid_high_filter_;
-  
-  float attack_[3];
-  float decay_[3];
-  float energy_[3];
-  float envelope_[3];
-  float onset_df_;
-  
-  float bands_[3][32];
-  
-  ZScorer z_df_;
-  
-  float inhibit_threshold_;
-  float inhibit_decay_;
-  int32_t inhibit_time_;
-  int32_t inhibit_counter_;
-  
-  DISALLOW_COPY_AND_ASSIGN(OnsetDetector);
+  Compressor m_compressor;
+  NaiveSvf m_low_mid_filter;
+  NaiveSvf m_mid_high_filter;
+
+  float m_attack[3];
+  float m_decay[3];
+  float m_energy[3];
+  float m_envelope[3];
+  float m_onset_df;
+
+  float m_bands[3][32];
+
+  ZScorer m_z_df;
+
+  float m_inhibit_threshold;
+  float m_inhibit_decay;
+  int32_t m_inhibit_time;
+  int32_t m_inhibit_counter;
+
+  OnsetDetector(const OnsetDetector&) = delete;
+  OnsetDetector& operator=(const OnsetDetector&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_ONSET_DETECTOR_H_

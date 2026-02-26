@@ -8,6 +8,7 @@
 #include <tanh/dsp/resonator/rings/Part.h>
 #include <tanh/dsp/resonator/rings/Patch.h>
 #include <tanh/dsp/resonator/rings/PerformanceState.h>
+#include <tanh/dsp/resonator/rings/fx/Reverb.h>
 
 namespace rings = thl::dsp::resonator::rings;
 
@@ -71,8 +72,8 @@ int main() {
     for (const auto& info : kModels) {
         rings::Part part;
         std::memset(&part, 0, sizeof(part));
-        std::array<uint16_t, 32768> reverb_buffer {};
-        part.Init(reverb_buffer.data());
+        std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer {};
+        part.init(reverb_buffer.data());
         part.set_model(info.model);
 
         // Warm up: run silence to settle uninitialised internal state
@@ -80,7 +81,7 @@ int main() {
             std::array<float, kFramesPerBlock> in {};
             std::array<float, kFramesPerBlock> out {};
             std::array<float, kFramesPerBlock> aux {};
-            part.Process(state, patch, in.data(), out.data(), aux.data(),
+            part.process(state, patch, in.data(), out.data(), aux.data(),
                          kFramesPerBlock);
         }
 
@@ -96,7 +97,7 @@ int main() {
             float* out_ptr = out_data.data() + block * kFramesPerBlock;
             float* aux_ptr = aux_data.data() + block * kFramesPerBlock;
 
-            part.Process(state, patch, in.data(), out_ptr, aux_ptr,
+            part.process(state, patch, in.data(), out_ptr, aux_ptr,
                          kFramesPerBlock);
         }
 

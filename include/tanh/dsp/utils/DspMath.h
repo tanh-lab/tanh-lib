@@ -6,7 +6,7 @@
 
 namespace thl::dsp::utils {
 
-inline float Interpolate(const float* table, float index, float size) {
+inline float interpolate(const float* table, float index, float size) {
     index *= size;
     const int32_t index_integral = static_cast<int32_t>(index);
     const float index_fractional = index - static_cast<float>(index_integral);
@@ -15,7 +15,7 @@ inline float Interpolate(const float* table, float index, float size) {
     return a + (b - a) * index_fractional;
 }
 
-inline float InterpolateWrap(const float* table, float index, float size) {
+inline float interpolate_wrap(const float* table, float index, float size) {
     index -= static_cast<float>(static_cast<int32_t>(index));
     index *= size;
     const int32_t index_integral = static_cast<int32_t>(index);
@@ -25,51 +25,51 @@ inline float InterpolateWrap(const float* table, float index, float size) {
     return a + (b - a) * index_fractional;
 }
 
-inline float Crossfade(float a, float b, float fade) {
+inline float crossfade(float a, float b, float fade) {
     return a + (b - a) * fade;
 }
 
-inline float SoftLimit(float x) {
+inline float soft_limit(float x) {
     return x * (27.0f + x * x) / (27.0f + 9.0f * x * x);
 }
 
-inline float SoftClip(float x) {
+inline float soft_clip(float x) {
     if (x < -3.0f) return -1.0f;
     if (x > 3.0f) return 1.0f;
-    return SoftLimit(x);
+    return soft_limit(x);
 }
 
-inline int32_t Clip16(int32_t x) {
+inline int32_t clip16(int32_t x) {
     return std::clamp<int32_t>(x, -32768, 32767);
 }
 
-inline uint16_t ClipU16(int32_t x) {
+inline uint16_t clip_u16(int32_t x) {
     return static_cast<uint16_t>(std::clamp<int32_t>(x, 0, 65535));
 }
 
-inline float Sqrt(float x) {
+inline float sqrt(float x) {
     return std::sqrt(x);
 }
 
-inline int16_t SoftConvert(float x) {
-    return static_cast<int16_t>(Clip16(static_cast<int32_t>(SoftLimit(x * 0.5f) * 32768.0f)));
+inline int16_t soft_convert(float x) {
+    return static_cast<int16_t>(clip16(static_cast<int32_t>(soft_limit(x * 0.5f) * 32768.0f)));
 }
 
-float SemitonesToRatio(float semitones);
+float semitones_to_ratio(float semitones);
 
 template <typename T>
-inline void OnePole(T& out, const T& in, const T& coefficient) {
+inline void one_pole(T& out, const T& in, const T& coefficient) {
     out += coefficient * (in - out);
 }
 
 template <typename T>
-inline void Slope(T& out, const T& in, const T& positive, const T& negative) {
+inline void slope(T& out, const T& in, const T& positive, const T& negative) {
     T error = in - out;
     out += (error > static_cast<T>(0) ? positive : negative) * error;
 }
 
 template <typename T>
-inline void Slew(T& out, const T& in, const T& delta) {
+inline void slew(T& out, const T& in, const T& delta) {
     T error = in - out;
     if (error > delta) {
         error = delta;

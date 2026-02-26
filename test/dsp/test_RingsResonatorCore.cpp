@@ -9,6 +9,7 @@
 #include <tanh/dsp/resonator/rings/Part.h>
 #include <tanh/dsp/resonator/rings/Patch.h>
 #include <tanh/dsp/resonator/rings/PerformanceState.h>
+#include <tanh/dsp/resonator/rings/fx/Reverb.h>
 
 #ifdef RINGS_HAS_REFERENCE_FIXTURES
 #include <RingsTestFixtures.h>
@@ -48,8 +49,8 @@ class RingsResonatorModelTest
 TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     rings::Part part;
     std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, 32768> reverb_buffer {};
-    part.Init(reverb_buffer.data());
+    std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer {};
+    part.init(reverb_buffer.data());
     part.set_model(GetParam());
 
     auto patch = default_patch();
@@ -62,7 +63,7 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     for (int block = 0; block < 8; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        part.Process(state, patch, in.data(), out.data(), aux.data(),
+        part.process(state, patch, in.data(), out.data(), aux.data(),
                      rings::kMaxBlockSize);
     }
 
@@ -75,8 +76,8 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
 TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     rings::Part part;
     std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, 32768> reverb_buffer {};
-    part.Init(reverb_buffer.data());
+    std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer {};
+    part.init(reverb_buffer.data());
     part.set_model(GetParam());
 
     auto patch = default_patch();
@@ -90,13 +91,13 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     for (int block = 0; block < 4; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        part.Process(state, patch, silence.data(), out.data(), aux.data(),
+        part.process(state, patch, silence.data(), out.data(), aux.data(),
                      rings::kMaxBlockSize);
     }
 
     in.fill(0.0f);
     in[0] = 1.0f;
-    part.Process(state, patch, in.data(), out.data(), aux.data(),
+    part.process(state, patch, in.data(), out.data(), aux.data(),
                  rings::kMaxBlockSize);
 
     float max_abs = 0.0f;
@@ -105,7 +106,7 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
         if (block > 0) {
             std::fill(out.begin(), out.end(), 0.0f);
             std::fill(aux.begin(), aux.end(), 0.0f);
-            part.Process(state, patch, silence.data(), out.data(), aux.data(),
+            part.process(state, patch, silence.data(), out.data(), aux.data(),
                          rings::kMaxBlockSize);
         }
         for (size_t i = 0; i < rings::kMaxBlockSize; ++i) {
@@ -189,8 +190,8 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
 
     rings::Part part;
     std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, 32768> reverb_buffer {};
-    part.Init(reverb_buffer.data());
+    std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer {};
+    part.init(reverb_buffer.data());
     part.set_model(info.model);
 
     auto patch = default_patch();
@@ -201,7 +202,7 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
         std::array<float, kFramesPerBlock> in {};
         std::array<float, kFramesPerBlock> out {};
         std::array<float, kFramesPerBlock> aux {};
-        part.Process(state, patch, in.data(), out.data(), aux.data(),
+        part.process(state, patch, in.data(), out.data(), aux.data(),
                      kFramesPerBlock);
     }
 
@@ -214,7 +215,7 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
             in[0] = 1.0f;
         }
 
-        part.Process(state, patch, in.data(), out.data(), aux.data(),
+        part.process(state, patch, in.data(), out.data(), aux.data(),
                      kFramesPerBlock);
 
         for (size_t i = 0; i < kFramesPerBlock; ++i) {

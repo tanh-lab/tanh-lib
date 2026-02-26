@@ -6,8 +6,7 @@
 //
 // Original LUT code: Copyright 2015 Emilie Gillet (MIT licence).
 
-#ifndef TANH_DSP_RESONATOR_RINGS_DSP_FUNCTIONS_H_
-#define TANH_DSP_RESONATOR_RINGS_DSP_FUNCTIONS_H_
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -171,4 +170,3 @@ inline const float* FmFrequencyQuantizerTable() {
 
 }  // namespace thl::dsp::resonator::rings
 
-#endif  // TANH_DSP_RESONATOR_RINGS_DSP_FUNCTIONS_H_
