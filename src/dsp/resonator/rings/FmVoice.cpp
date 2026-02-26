@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,7 +19,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
@@ -30,105 +30,108 @@
 
 #include <cmath>
 
-#include <tanh/dsp/utils/stmlib/dsp/dsp.h>
-#include <tanh/dsp/utils/stmlib/dsp/parameter_interpolator.h>
-#include <tanh/dsp/utils/stmlib/dsp/units.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/ParameterInterpolator.h>
+#include <tanh/dsp/utils/DspMath.h>
 
 #include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
 
-using namespace stmlib;
+using namespace thl::dsp::utils;
+using ::thl::dsp::utils::ParameterInterpolator;
 
-void FMVoice::Init() {
+void FMVoice::init(float sample_rate) {
+  m_sample_rate = sample_rate;
+
   WarmDspFunctions();
-  sine_table_ = SineTable();
-  fm_frequency_quantizer_table_ = FmFrequencyQuantizerTable();
+  m_sine_table = SineTable();
+  m_fm_frequency_quantizer_table = FmFrequencyQuantizerTable();
 
-  set_frequency(220.0f / kSampleRate);
+  set_frequency(220.0f / m_sample_rate);
   set_ratio(0.5f);
   set_brightness(0.5f);
   set_damping(0.5f);
   set_position(0.5f);
   set_feedback_amount(0.0f);
-  
-  previous_carrier_frequency_ = carrier_frequency_;
-  previous_modulator_frequency_ = carrier_frequency_;
-  previous_brightness_ = brightness_;
-  previous_damping_ = damping_;
-  previous_feedback_amount_ = feedback_amount_;
-  
-  amplitude_envelope_ = 0.0f;
-  brightness_envelope_ = 0.0f;
-  
-  carrier_phase_ = 0;
-  modulator_phase_ = 0;
-  gain_ = 0.0f;
-  fm_amount_ = 0.0f;
-  previous_sample_ = 0.0f;
 
-  envelope_amount_ = 0.0f;
-  amplitude_decay_ = 0.0f;
-  brightness_decay_ = 0.0f;
-  modulator_frequency_ = 0.0f;
-  feedback_ = 0.0f;
-  
-  follower_.Init(
-      8.0f / kSampleRate,
-      160.0f / kSampleRate,
-      1600.0f / kSampleRate);
+  m_previous_carrier_frequency = m_carrier_frequency;
+  m_previous_modulator_frequency = m_carrier_frequency;
+  m_previous_brightness = m_brightness;
+  m_previous_damping = m_damping;
+  m_previous_feedback_amount = m_feedback_amount;
+
+  m_amplitude_envelope = 0.0f;
+  m_brightness_envelope = 0.0f;
+
+  m_carrier_phase = 0;
+  m_modulator_phase = 0;
+  m_gain = 0.0f;
+  m_fm_amount = 0.0f;
+  m_previous_sample = 0.0f;
+
+  m_envelope_amount = 0.0f;
+  m_amplitude_decay = 0.0f;
+  m_brightness_decay = 0.0f;
+  m_modulator_frequency = 0.0f;
+  m_feedback = 0.0f;
+
+  m_follower.init(
+      8.0f / m_sample_rate,
+      160.0f / m_sample_rate,
+      1600.0f / m_sample_rate);
 }
 
-void FMVoice::PrepareCoefficients() {
-  envelope_amount_ = damping_ < 0.9f ? 1.0f : (1.0f - damping_) * 10.0f;
+void FMVoice::prepare_coefficients() {
+  m_envelope_amount = m_damping < 0.9f ? 1.0f : (1.0f - m_damping) * 10.0f;
   float amplitude_rt60 =
-      0.1f * SemitonesToRatio(damping_ * 96.0f) * kSampleRate;
-  amplitude_decay_ = 1.0f - powf(0.001f, 1.0f / amplitude_rt60);
+      0.1f * semitones_to_ratio(m_damping * 96.0f) * m_sample_rate;
+  m_amplitude_decay = 1.0f - powf(0.001f, 1.0f / amplitude_rt60);
 
   float brightness_rt60 =
-      0.1f * SemitonesToRatio(damping_ * 84.0f) * kSampleRate;
-  brightness_decay_ = 1.0f - powf(0.001f, 1.0f / brightness_rt60);
+      0.1f * semitones_to_ratio(m_damping * 84.0f) * m_sample_rate;
+  m_brightness_decay = 1.0f - powf(0.001f, 1.0f / brightness_rt60);
 
-  float ratio = Interpolate(fm_frequency_quantizer_table_, ratio_, 128.0f);
-  modulator_frequency_ = carrier_frequency_ * SemitonesToRatio(ratio);
-  if (modulator_frequency_ > 0.5f) {
-    modulator_frequency_ = 0.5f;
+  float ratio = interpolate(m_fm_frequency_quantizer_table, m_ratio, 128.0f);
+  m_modulator_frequency = m_carrier_frequency * semitones_to_ratio(ratio);
+  if (m_modulator_frequency > 0.5f) {
+    m_modulator_frequency = 0.5f;
   }
 
-  feedback_ = (feedback_amount_ - 0.5f) * 2.0f;
+  m_feedback = (m_feedback_amount - 0.5f) * 2.0f;
 }
 
-void FMVoice::Process(const float* in, float* out, float* aux, size_t size) {
-  PrepareCoefficients();
+void FMVoice::process(const float* in, float* out, float* aux, size_t size) {
+  prepare_coefficients();
 
   ParameterInterpolator carrier_increment(
-      &previous_carrier_frequency_, carrier_frequency_, size);
+      m_previous_carrier_frequency, m_carrier_frequency, size);
   ParameterInterpolator modulator_increment(
-      &previous_modulator_frequency_, modulator_frequency_, size);
+      m_previous_modulator_frequency, m_modulator_frequency, size);
   ParameterInterpolator brightness(
-      &previous_brightness_, brightness_, size);
+      m_previous_brightness, m_brightness, size);
   ParameterInterpolator feedback_amount(
-      &previous_feedback_amount_, feedback_, size);
+      m_previous_feedback_amount, m_feedback, size);
 
-  uint32_t carrier_phase = carrier_phase_;
-  uint32_t modulator_phase = modulator_phase_;
-  float previous_sample = previous_sample_;
-  
+  uint32_t carrier_phase = m_carrier_phase;
+  uint32_t modulator_phase = m_modulator_phase;
+  float previous_sample = m_previous_sample;
+
   while (size--) {
     // Envelope follower and internal envelope.
     float amplitude_envelope, brightness_envelope;
-    follower_.Process(
+    m_follower.process(
         *in++,
         &amplitude_envelope,
         &brightness_envelope);
-    
+
     brightness_envelope *= 2.0f * amplitude_envelope * (2.0f - amplitude_envelope);
-    
-    SLOPE(amplitude_envelope_, amplitude_envelope, 0.05f, amplitude_decay_);
-    SLOPE(brightness_envelope_, brightness_envelope, 0.01f, brightness_decay_);
-    
+
+    SLOPE(m_amplitude_envelope, amplitude_envelope, 0.05f, m_amplitude_decay);
+    SLOPE(m_brightness_envelope, brightness_envelope, 0.01f, m_brightness_decay);
+
     // Compute envelopes.
-    float brightness_value = brightness.Next();
+    float brightness_value = brightness.next();
     brightness_value *= brightness_value;
     float fm_amount_min = brightness_value < 0.5f
         ? 0.0f
@@ -136,33 +139,33 @@ void FMVoice::Process(const float* in, float* out, float* aux, size_t size) {
     float fm_amount_max = brightness_value < 0.5f
         ? 2.0f * brightness_value
         : 1.0f;
-    float fm_envelope = 0.5f + envelope_amount_ * (brightness_envelope_ - 0.5f);
+    float fm_envelope = 0.5f + m_envelope_amount * (m_brightness_envelope - 0.5f);
     float fm_amount = (fm_amount_min + fm_amount_max * fm_envelope) * 2.0f;
-    SLEW(fm_amount_, fm_amount, 0.005f + fm_amount_max * 0.015f);
+    SLEW(m_fm_amount, fm_amount, 0.005f + fm_amount_max * 0.015f);
 
     // FM synthesis in itself
-    float phase_feedback = feedback_ < 0.0f ? 0.5f * feedback_ * feedback_ : 0.0f;
+    float phase_feedback = m_feedback < 0.0f ? 0.5f * m_feedback * m_feedback : 0.0f;
     modulator_phase += static_cast<uint32_t>(4294967296.0f * \
-      modulator_increment.Next() * (1.0f + previous_sample * phase_feedback));
+      modulator_increment.next() * (1.0f + previous_sample * phase_feedback));
     carrier_phase += static_cast<uint32_t>(4294967296.0f * \
-        carrier_increment.Next());
+        carrier_increment.next());
 
-    float feedback = feedback_amount.Next();
+    float feedback = feedback_amount.next();
     float modulator_fb = feedback > 0.0f ? 0.25f * feedback * feedback : 0.0f;
-    float modulator = SineFm(modulator_phase, modulator_fb * previous_sample);
-    float carrier = SineFm(carrier_phase, fm_amount_ * modulator);
+    float modulator = sine_fm(modulator_phase, modulator_fb * previous_sample);
+    float carrier = sine_fm(carrier_phase, m_fm_amount * modulator);
     ONE_POLE(previous_sample, carrier, 0.1f);
 
     // Compute amplitude envelope.
-    float gain = 1.0f + envelope_amount_ * (amplitude_envelope_ - 1.0f);
-    ONE_POLE(gain_, gain, 0.005f + 0.045f * fm_amount_);
-    
-    *out++ = (carrier + 0.5f * modulator) * gain_;
-    *aux++ = 0.5f * modulator * gain_;
+    float gain = 1.0f + m_envelope_amount * (m_amplitude_envelope - 1.0f);
+    ONE_POLE(m_gain, gain, 0.005f + 0.045f * m_fm_amount);
+
+    *out++ = (carrier + 0.5f * modulator) * m_gain;
+    *aux++ = 0.5f * modulator * m_gain;
   }
-  carrier_phase_ = carrier_phase;
-  modulator_phase_ = modulator_phase;
-  previous_sample_ = previous_sample;
+  m_carrier_phase = carrier_phase;
+  m_modulator_phase = modulator_phase;
+  m_previous_sample = previous_sample;
 }
 
 }  // namespace thl::dsp::resonator::rings

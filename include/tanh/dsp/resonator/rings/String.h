@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,155 +19,154 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Comb filter / KS string.
 
-#ifndef RINGS_DSP_STRING_H_
-#define RINGS_DSP_STRING_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
 #include <algorithm>
 
-#include <tanh/dsp/utils/stmlib/dsp/delay_line.h>
-#include <tanh/dsp/utils/stmlib/dsp/filter.h>
+#include <tanh/dsp/utils/DelayLine.h>
+#include <tanh/dsp/utils/Svf.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
 
 namespace thl::dsp::resonator::rings {
 
-const size_t kDelayLineSize = 2048;
+const size_t kDelayLineSize = 4096;
 
 class DampingFilter {
  public:
   DampingFilter() { }
   ~DampingFilter() { }
-  
-  void Init() {
-    x_ = 0.0f;
-    x__ = 0.0f;
-    brightness_ = 0.0f;
-    brightness_increment_ = 0.0f;
-    damping_ = 0.0f;
-    damping_increment_ = 0.0f;
+
+  void init() {
+    m_x = 0.0f;
+    m_x_prev = 0.0f;
+    m_brightness = 0.0f;
+    m_brightness_increment = 0.0f;
+    m_damping = 0.0f;
+    m_damping_increment = 0.0f;
   }
-   
-  inline void Configure(float damping, float brightness, size_t size) {
+
+  inline void configure(float damping, float brightness, size_t size) {
     if (!size) {
-      damping_ = damping;
-      brightness_ = brightness;
-      damping_increment_ = 0.0f;
-      brightness_increment_ = 0.0f;
+      m_damping = damping;
+      m_brightness = brightness;
+      m_damping_increment = 0.0f;
+      m_brightness_increment = 0.0f;
     } else {
       float step = 1.0f / static_cast<float>(size);
-      damping_increment_ = (damping - damping_) * step;
-      brightness_increment_ = (brightness - brightness_) * step;
+      m_damping_increment = (damping - m_damping) * step;
+      m_brightness_increment = (brightness - m_brightness) * step;
     }
   }
-   
-  inline float Process(float x) {
-    float h0 = (1.0f + brightness_) * 0.5f;
-    float h1 = (1.0f - brightness_) * 0.25f;
-    float y = damping_ * (h0 * x_ + h1 * (x + x__));
-    x__ = x_;
-    x_ = x;
-    brightness_ += brightness_increment_;
-    damping_ += damping_increment_;
+
+  inline float process(float x) {
+    float h0 = (1.0f + m_brightness) * 0.5f;
+    float h1 = (1.0f - m_brightness) * 0.25f;
+    float y = m_damping * (h0 * m_x + h1 * (x + m_x_prev));
+    m_x_prev = m_x;
+    m_x = x;
+    m_brightness += m_brightness_increment;
+    m_damping += m_damping_increment;
     return y;
   }
  private:
-  float x_;
-  float x__;
-  float brightness_;
-  float brightness_increment_;
-  float damping_;
-  float damping_increment_;
-  
-  DISALLOW_COPY_AND_ASSIGN(DampingFilter);
+  float m_x;
+  float m_x_prev;
+  float m_brightness;
+  float m_brightness_increment;
+  float m_damping;
+  float m_damping_increment;
+
+  DampingFilter(const DampingFilter&) = delete;
+  DampingFilter& operator=(const DampingFilter&) = delete;
 };
 
-typedef stmlib::DelayLine<float, kDelayLineSize> StringDelayLine;
-typedef stmlib::DelayLine<float, kDelayLineSize / 2> StiffnessDelayLine;
+typedef thl::dsp::utils::DelayLine<float, kDelayLineSize> StringDelayLine;
+typedef thl::dsp::utils::DelayLine<float, kDelayLineSize / 2> StiffnessDelayLine;
 
 class String {
  public:
   String() { }
   ~String() { }
-  
-  void Init(bool enable_dispersion);
-  void Process(const float* in, float* out, float* aux, size_t size);
-  
+
+  void init(bool enable_dispersion, float sample_rate = kDefaultSampleRate);
+  void process(const float* in, float* out, float* aux, size_t size);
+
   inline void set_frequency(float frequency) {
-    frequency_ = frequency;
+    m_frequency = frequency;
   }
 
   inline void set_frequency(float frequency, float coefficient) {
-    frequency_ += coefficient * (frequency - frequency_);
+    m_frequency += coefficient * (frequency - m_frequency);
   }
 
   inline void set_dispersion(float dispersion) {
-    dispersion_ = dispersion;
+    m_dispersion = dispersion;
   }
-  
+
   inline void set_brightness(float brightness) {
-    brightness_ = brightness;
+    m_brightness = brightness;
   }
-  
+
   inline void set_damping(float damping) {
-    damping_ = damping;
+    m_damping = damping;
   }
-  
+
   inline void set_position(float position) {
-    position_ = position;
+    m_position = position;
   }
-  
-  inline StringDelayLine* mutable_string() { return &string_; }
-  
+
+  inline StringDelayLine* mutable_string() { return &m_string; }
+
  private:
-  void PrepareCoefficients(float delay, float src_ratio, size_t size);
+  void prepare_coefficients(float delay, float src_ratio, size_t size);
 
   template<bool enable_dispersion>
-  void ProcessInternal(const float* in, float* out, float* aux, size_t size);
-   
-  float frequency_;
-  float dispersion_;
-  float brightness_;
-  float damping_;
-  float position_;
-  
-  float delay_;
-  float clamped_position_;
-  float previous_dispersion_;
-  float previous_damping_compensation_;
-  
-  bool enable_dispersion_;
-  bool enable_iir_damping_;
-  float dispersion_noise_;
-  
+  void process_internal(const float* in, float* out, float* aux, size_t size);
+
+  float m_sample_rate = kDefaultSampleRate;
+  float m_frequency;
+  float m_dispersion;
+  float m_brightness;
+  float m_damping;
+  float m_position;
+
+  float m_delay;
+  float m_clamped_position;
+  float m_previous_dispersion;
+  float m_previous_damping_compensation;
+
+  bool m_enable_dispersion;
+  bool m_enable_iir_damping;
+  float m_dispersion_noise;
+
   // Very crappy linear interpolation upsampler used for low pitches that
   // do not fit the delay line. Rarely used.
-  float src_phase_;
-  float out_sample_[2];
-  float aux_sample_[2];
-  
-  float curved_bridge_;
-  float noise_filter_;
-  float damping_compensation_target_;
+  float m_src_phase;
+  float m_out_sample[2];
+  float m_aux_sample[2];
 
-  StringDelayLine string_;
-  StiffnessDelayLine stretch_;
-  
-  DampingFilter fir_damping_filter_;
-  stmlib::Svf iir_damping_filter_;
-  stmlib::DCBlocker dc_blocker_;
-  
-  DISALLOW_COPY_AND_ASSIGN(String);
+  float m_curved_bridge;
+  float m_noise_filter;
+  float m_damping_compensation_target;
+
+  StringDelayLine m_string;
+  StiffnessDelayLine m_stretch;
+
+  DampingFilter m_fir_damping_filter;
+  thl::dsp::utils::Svf m_iir_damping_filter;
+  thl::dsp::utils::DCBlocker m_dc_blocker;
+
+  String(const String&) = delete;
+  String& operator=(const String&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_STRING_H_

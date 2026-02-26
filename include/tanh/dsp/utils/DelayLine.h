@@ -23,55 +23,55 @@ class DelayLine {
 public:
     DelayLine() = default;
 
-    void Init() {
-        std::fill(&line_[0], &line_[max_delay], T(0));
-        delay_ = 1;
-        write_ptr_ = 0;
+    void init() {
+        std::fill(&m_line[0], &m_line[max_delay], T(0));
+        m_delay = 1;
+        m_write_ptr = 0;
     }
 
     void set_delay(size_t delay) {
-        delay_ = delay;
+        m_delay = delay;
     }
 
-    void Write(T sample) {
-        line_[write_ptr_] = sample;
-        write_ptr_ = (write_ptr_ - 1 + max_delay) % max_delay;
+    void write(T sample) {
+        m_line[m_write_ptr] = sample;
+        m_write_ptr = (m_write_ptr - 1 + max_delay) % max_delay;
     }
 
-    T Allpass(T sample, size_t delay, T coefficient) {
-        const float read = line_[(write_ptr_ + delay) % max_delay];
-        const float write = sample + coefficient * read;
-        Write(static_cast<T>(write));
-        return static_cast<T>(-write * coefficient + read);
+    T allpass(T sample, size_t delay, T coefficient) {
+        const float read = m_line[(m_write_ptr + delay) % max_delay];
+        const float w = sample + coefficient * read;
+        write(static_cast<T>(w));
+        return static_cast<T>(-w * coefficient + read);
     }
 
-    T WriteRead(T sample, float delay) {
-        Write(sample);
-        return Read(delay);
+    T write_read(T sample, float delay) {
+        write(sample);
+        return read(delay);
     }
 
-    T Read() const {
-        return line_[(write_ptr_ + delay_) % max_delay];
+    T read() const {
+        return m_line[(m_write_ptr + m_delay) % max_delay];
     }
 
-    T Read(size_t delay) const {
-        return line_[(write_ptr_ + delay) % max_delay];
+    T read(size_t delay) const {
+        return m_line[(m_write_ptr + delay) % max_delay];
     }
 
-    T Read(float delay) const {
+    T read(float delay) const {
         const auto [delay_integral, delay_fractional] = detail::split_integral_fractional(delay);
-        const T a = line_[(write_ptr_ + static_cast<size_t>(delay_integral)) % max_delay];
-        const T b = line_[(write_ptr_ + static_cast<size_t>(delay_integral + 1)) % max_delay];
+        const T a = m_line[(m_write_ptr + static_cast<size_t>(delay_integral)) % max_delay];
+        const T b = m_line[(m_write_ptr + static_cast<size_t>(delay_integral + 1)) % max_delay];
         return a + (b - a) * delay_fractional;
     }
 
-    T ReadHermite(float delay) const {
+    T read_hermite(float delay) const {
         const auto [delay_integral, delay_fractional] = detail::split_integral_fractional(delay);
-        const int32_t t = static_cast<int32_t>(write_ptr_) + delay_integral + static_cast<int32_t>(max_delay);
-        const T xm1 = line_[static_cast<size_t>(t - 1) % max_delay];
-        const T x0 = line_[static_cast<size_t>(t) % max_delay];
-        const T x1 = line_[static_cast<size_t>(t + 1) % max_delay];
-        const T x2 = line_[static_cast<size_t>(t + 2) % max_delay];
+        const int32_t t = static_cast<int32_t>(m_write_ptr) + delay_integral + static_cast<int32_t>(max_delay);
+        const T xm1 = m_line[static_cast<size_t>(t - 1) % max_delay];
+        const T x0 = m_line[static_cast<size_t>(t) % max_delay];
+        const T x1 = m_line[static_cast<size_t>(t + 1) % max_delay];
+        const T x2 = m_line[static_cast<size_t>(t + 2) % max_delay];
         const float c = (x1 - xm1) * 0.5f;
         const float v = x0 - x1;
         const float w = c + v;
@@ -82,9 +82,9 @@ public:
     }
 
 private:
-    size_t write_ptr_ = 0;
-    size_t delay_ = 1;
-    T line_[max_delay] {};
+    size_t m_write_ptr = 0;
+    size_t m_delay = 1;
+    T m_line[max_delay] {};
 
     DelayLine(const DelayLine&) = delete;
     DelayLine& operator=(const DelayLine&) = delete;

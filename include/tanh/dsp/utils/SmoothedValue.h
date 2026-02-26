@@ -22,7 +22,7 @@ public:
     float get_smoothed_value(std::size_t num_samples = 1);
 
 private:
-    void recalcStep();
+    void recalc_step();
 
     float m_current_value = 0.0f;
     float m_target_value = 0.0f;

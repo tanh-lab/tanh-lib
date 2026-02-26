@@ -1,151 +1,117 @@
 #include <tanh/dsp/resonator/RingsResonator.h>
 #include <tanh/dsp/resonator/RingBuffer.h>
-#include <tanh/dsp/resonator/SampleRateConverter.h>
 #include <tanh/dsp/resonator/ParamSmoother.h>
 
 #include <tanh/dsp/resonator/rings/Part.h>
 #include <tanh/dsp/resonator/rings/Strummer.h>
 #include <tanh/dsp/resonator/rings/StringSynthPart.h>
+#include <tanh/dsp/resonator/rings/fx/Reverb.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <vector>
 
 namespace thl::dsp::resonator {
 
-// Rings native sample rate
-static constexpr double kRingsNativeRate = 48000.0;
 static constexpr size_t kBlockSize = 24;
 
 struct RingsResonator::Impl {
-    rings::Part part;
-    rings::StringSynthPart stringSynth;
-    rings::Strummer strummer;
+    rings::Part m_part;
+    rings::StringSynthPart m_string_synth;
+    rings::Strummer m_strummer;
 
-    uint16_t reverbBuffer[32768] = {};
+    uint16_t m_reverb_buffer[rings::Reverb::kReverbBufferSize] = {};
 
-    rings::Patch patch;
-    rings::PerformanceState performanceState;
+    rings::Patch m_patch;
+    rings::PerformanceState m_performance_state;
 
-    float frequency = 440.0f;
-    float oddEvenMix = 0.5f;
-    float dryWet = 1.0f;
-    ResonatorModel model = ResonatorModel::Modal;
-    PolyphonyMode polyphony = PolyphonyMode::One;
+    float m_frequency = 440.0f;
+    float m_odd_even_mix = 0.5f;
+    float m_dry_wet = 1.0f;
+    ResonatorModel m_model = ResonatorModel::Modal;
+    PolyphonyMode m_polyphony = PolyphonyMode::One;
 
     // Parameter smoothers
-    ParamSmoother frequencySmoother;
-    ParamSmoother structureSmoother;
-    ParamSmoother brightnessSmoother;
-    ParamSmoother dampingSmoother;
-    ParamSmoother positionSmoother;
-    ParamSmoother oddEvenSmoother;
-    ParamSmoother dryWetSmoother;
+    ParamSmoother m_frequency_smoother;
+    ParamSmoother m_structure_smoother;
+    ParamSmoother m_brightness_smoother;
+    ParamSmoother m_damping_smoother;
+    ParamSmoother m_position_smoother;
+    ParamSmoother m_odd_even_smoother;
+    ParamSmoother m_dry_wet_smoother;
 
     // Latency compensation
-    double hostSampleRate = 48000.0;
-    int latency = 0;
-    RingBuffer dryDelayLine;
-
-    // Sample rate conversion
-    bool needsConversion = false;
-    SampleRateConverter inputDownsampler;
-    SampleRateConverter outputUpsamplerOdd;
-    SampleRateConverter outputUpsamplerEven;
-
-    // Buffers for downsampled/upsampled data
-    std::vector<float> downsampledInput;
-    std::vector<float> nativeOutputOdd;
-    std::vector<float> nativeOutputEven;
-    std::vector<float> upsampledOdd;
-    std::vector<float> upsampledEven;
+    double m_host_sample_rate = 48000.0;
+    int m_latency = static_cast<int>(kBlockSize);
+    RingBuffer m_dry_delay_line;
 
     // Input accumulation for fixed block processing
-    RingBuffer inputFifo;
+    RingBuffer m_input_fifo;
 
     // Output FIFOs
-    RingBuffer outputFifoOdd;
-    RingBuffer outputFifoEven;
+    RingBuffer m_output_fifo_odd;
+    RingBuffer m_output_fifo_even;
 
     void init() {
-        strummer.Init(0.01f, kRingsNativeRate / kBlockSize);
-        part.Init(reverbBuffer);
-        stringSynth.Init(reverbBuffer);
+        m_patch.structure = 0.5f;
+        m_patch.brightness = 0.5f;
+        m_patch.damping = 0.5f;
+        m_patch.position = 0.5f;
 
-        patch.structure = 0.5f;
-        patch.brightness = 0.5f;
-        patch.damping = 0.5f;
-        patch.position = 0.5f;
-
-        performanceState.note = 48.0f;
-        performanceState.tonic = 12.0f;
-        performanceState.fm = 0.0f;
-        performanceState.chord = 0;
-        performanceState.internal_exciter = false;
-        performanceState.internal_strum = false;
-        performanceState.internal_note = false;
-        performanceState.strum = false;
+        m_performance_state.note = 48.0f;
+        m_performance_state.tonic = 12.0f;
+        m_performance_state.fm = 0.0f;
+        m_performance_state.chord = 0;
+        m_performance_state.internal_exciter = false;
+        m_performance_state.internal_strum = false;
+        m_performance_state.internal_note = false;
+        m_performance_state.strum = false;
     }
 
     void prepare(double sampleRate, int maxBlockSize) {
-        hostSampleRate = sampleRate;
-        needsConversion = std::abs(sampleRate - kRingsNativeRate) > 100.0;
+        m_host_sample_rate = sampleRate;
+        float sr = static_cast<float>(sampleRate);
 
-        if (needsConversion) {
-            inputDownsampler.prepare(sampleRate, kRingsNativeRate, maxBlockSize);
+        m_part.init(m_reverb_buffer, sr);
+        m_string_synth.init(m_reverb_buffer, sr);
+        m_strummer.init(0.01f, sr / kBlockSize, sr);
 
-            int maxNativeSamples = static_cast<int>(std::ceil(maxBlockSize * kRingsNativeRate / sampleRate)) + 64;
-            outputUpsamplerOdd.prepare(kRingsNativeRate, sampleRate, maxNativeSamples);
-            outputUpsamplerEven.prepare(kRingsNativeRate, sampleRate, maxNativeSamples);
-
-            // Compute latency: downsampler + block accumulation + upsampler
-            int dsLatency = inputDownsampler.getLatency(); // host samples
-            int blockLatency = static_cast<int>(std::ceil(kBlockSize * sampleRate / kRingsNativeRate));
-            int usLatencyNative = outputUpsamplerOdd.getLatency(); // native samples
-            int usLatencyHost = static_cast<int>(std::ceil(usLatencyNative * sampleRate / kRingsNativeRate));
-            latency = dsLatency + blockLatency + usLatencyHost;
-        } else {
-            latency = static_cast<int>(kBlockSize);
-        }
-
-        int maxDownsampled = static_cast<int>(std::ceil(maxBlockSize * kRingsNativeRate / sampleRate)) + 64;
-        int maxUpsampled = maxBlockSize + 64;
-
-        downsampledInput.resize(maxDownsampled);
-        nativeOutputOdd.resize(maxDownsampled);
-        nativeOutputEven.resize(maxDownsampled);
-        upsampledOdd.resize(maxUpsampled);
-        upsampledEven.resize(maxUpsampled);
+        m_latency = static_cast<int>(kBlockSize);
 
         // Pre-allocate ring buffers so process() never allocates
-        dryDelayLine.resize(latency + maxBlockSize + 16);
-        inputFifo.resize(maxDownsampled + maxBlockSize);
-        outputFifoOdd.resize(maxUpsampled + maxBlockSize);
-        outputFifoEven.resize(maxUpsampled + maxBlockSize);
+        m_dry_delay_line.resize(m_latency + maxBlockSize + 16);
+        m_input_fifo.resize(maxBlockSize + kBlockSize);
+        m_output_fifo_odd.resize(maxBlockSize + kBlockSize);
+        m_output_fifo_even.resize(maxBlockSize + kBlockSize);
+
+        // Clear FIFOs on prepare to avoid stale state
+        m_dry_delay_line.clear();
+        m_input_fifo.clear();
+        m_output_fifo_odd.clear();
+        m_output_fifo_even.clear();
 
         constexpr float smoothTime = 0.05f; // 50ms
-        frequencySmoother.prepare(sampleRate, smoothTime);
-        structureSmoother.prepare(sampleRate, smoothTime);
-        brightnessSmoother.prepare(sampleRate, smoothTime);
-        dampingSmoother.prepare(sampleRate, smoothTime);
-        positionSmoother.prepare(sampleRate, smoothTime);
-        oddEvenSmoother.prepare(sampleRate, smoothTime);
-        dryWetSmoother.prepare(sampleRate, smoothTime);
+        m_frequency_smoother.prepare(sampleRate, smoothTime);
+        m_structure_smoother.prepare(sampleRate, smoothTime);
+        m_brightness_smoother.prepare(sampleRate, smoothTime);
+        m_damping_smoother.prepare(sampleRate, smoothTime);
+        m_position_smoother.prepare(sampleRate, smoothTime);
+        m_odd_even_smoother.prepare(sampleRate, smoothTime);
+        m_dry_wet_smoother.prepare(sampleRate, smoothTime);
     }
 
-    void renderBlock(const float* input, float* outOdd, float* outEven) {
-        float midiNote = 12.0f * std::log2(frequency / 27.5f);
-        performanceState.note = midiNote;
+    void render_block(const float* input, float* outOdd, float* outEven) {
+        float midiNote = 12.0f * std::log2(m_frequency / 27.5f);
+        m_performance_state.note = midiNote;
 
         static constexpr int polyVoices[] = { 1, 2, 4 };
-        int poly = polyVoices[static_cast<int>(polyphony)];
-        if (part.polyphony() != poly) {
-            part.set_polyphony(poly);
-            stringSynth.set_polyphony(poly);
+        int poly = polyVoices[static_cast<int>(m_polyphony)];
+        if (m_part.polyphony() != poly) {
+            m_part.set_polyphony(poly);
+            m_string_synth.set_polyphony(poly);
         }
-        part.set_model(static_cast<rings::ResonatorModel>(model));
-        stringSynth.set_fx(static_cast<rings::FxType>(model));
+        m_part.set_model(static_cast<rings::ResonatorModel>(m_model));
+        m_string_synth.set_fx(static_cast<rings::FxType>(m_model));
 
         float in[kBlockSize];
         std::copy(input, input + kBlockSize, in);
@@ -153,12 +119,12 @@ struct RingsResonator::Impl {
         float out[kBlockSize] = {};
         float aux[kBlockSize] = {};
 
-        strummer.Process(in, kBlockSize, &performanceState);
+        m_strummer.process(in, kBlockSize, &m_performance_state);
 
-        if (model == ResonatorModel::StringAndReverb) {
-            stringSynth.Process(performanceState, patch, in, out, aux, kBlockSize);
+        if (m_model == ResonatorModel::StringAndReverb) {
+            m_string_synth.process(m_performance_state, m_patch, in, out, aux, kBlockSize);
         } else {
-            part.Process(performanceState, patch, in, out, aux, kBlockSize);
+            m_part.process(m_performance_state, m_patch, in, out, aux, kBlockSize);
         }
 
         for (size_t i = 0; i < kBlockSize; ++i) {
@@ -169,155 +135,88 @@ struct RingsResonator::Impl {
 
     void process(const float* input, float* output, int numSamples) {
         // Smooth parameters
-        frequencySmoother.setTarget(frequency);
-        structureSmoother.setTarget(patch.structure);
-        brightnessSmoother.setTarget(patch.brightness);
-        dampingSmoother.setTarget(patch.damping);
-        positionSmoother.setTarget(patch.position);
-        oddEvenSmoother.setTarget(oddEvenMix);
-        dryWetSmoother.setTarget(dryWet);
+        m_frequency_smoother.set_target(m_frequency);
+        m_structure_smoother.set_target(m_patch.structure);
+        m_brightness_smoother.set_target(m_patch.brightness);
+        m_damping_smoother.set_target(m_patch.damping);
+        m_position_smoother.set_target(m_patch.position);
+        m_odd_even_smoother.set_target(m_odd_even_mix);
+        m_dry_wet_smoother.set_target(m_dry_wet);
 
-        float smoothedFrequency  = frequencySmoother.skip(numSamples);
-        float smoothedStructure  = structureSmoother.skip(numSamples);
-        float smoothedBrightness = brightnessSmoother.skip(numSamples);
-        float smoothedDamping    = dampingSmoother.skip(numSamples);
-        float smoothedPosition   = positionSmoother.skip(numSamples);
-        float smoothedOddEven    = oddEvenSmoother.skip(numSamples);
-        float smoothedDryWet     = dryWetSmoother.skip(numSamples);
+        float smoothedFrequency  = m_frequency_smoother.skip(numSamples);
+        float smoothedStructure  = m_structure_smoother.skip(numSamples);
+        float smoothedBrightness = m_brightness_smoother.skip(numSamples);
+        float smoothedDamping    = m_damping_smoother.skip(numSamples);
+        float smoothedPosition   = m_position_smoother.skip(numSamples);
+        float smoothedOddEven    = m_odd_even_smoother.skip(numSamples);
+        float smoothedDryWet     = m_dry_wet_smoother.skip(numSamples);
 
         // Apply smoothed values
-        frequency = smoothedFrequency;
-        patch.structure = smoothedStructure;
-        patch.brightness = smoothedBrightness;
-        patch.damping = smoothedDamping;
-        patch.position = smoothedPosition;
-        oddEvenMix = smoothedOddEven;
-        dryWet = smoothedDryWet;
+        m_frequency = smoothedFrequency;
+        m_patch.structure = smoothedStructure;
+        m_patch.brightness = smoothedBrightness;
+        m_patch.damping = smoothedDamping;
+        m_patch.position = smoothedPosition;
+        m_odd_even_mix = smoothedOddEven;
+        m_dry_wet = smoothedDryWet;
 
         // Save dry input before processing (input/output may alias)
         for (int i = 0; i < numSamples; ++i) {
-            dryDelayLine.push(input[i]);
+            m_dry_delay_line.push(input[i]);
         }
 
-        // Process wet signal
-        if (!needsConversion) {
-            processNativeWet(input, output, numSamples);
-        } else {
-            processResampledWet(input, output, numSamples);
-        }
-
-        // Blend wet output with latency-compensated dry signal
-        const float wetGain = dryWet;
-        const float dryGain = 1.0f - dryWet;
-
-        for (int i = 0; i < numSamples; ++i) {
-            float dry = 0.0f;
-            if (dryDelayLine.size() > latency) {
-                dry = dryDelayLine.pop();
-            }
-            output[i] = output[i] * wetGain + dry * dryGain;
-        }
-    }
-
-    void processResampledWet(const float* input, float* output, int numSamples) {
-        // 1. Downsample input to native rate
-        int downsampledCount = inputDownsampler.processMono(
-            input, numSamples,
-            downsampledInput.data(), static_cast<int>(downsampledInput.size())
-        );
-
-        // 2. Accumulate downsampled input
-        for (int i = 0; i < downsampledCount; ++i) {
-            inputFifo.push(downsampledInput[i]);
-        }
-
-        // 3. Process in fixed-size Rings blocks
-        int processedNative = 0;
-        while (static_cast<size_t>(inputFifo.size()) >= kBlockSize) {
-            float blockInput[kBlockSize];
-            for (size_t i = 0; i < kBlockSize; ++i) {
-                blockInput[i] = inputFifo.pop();
-            }
-            renderBlock(blockInput,
-                        nativeOutputOdd.data() + processedNative,
-                        nativeOutputEven.data() + processedNative);
-            processedNative += kBlockSize;
-        }
-
-        // 4. Upsample output to host rate
-        if (processedNative > 0) {
-            int upsampledOddCount = outputUpsamplerOdd.processMono(
-                nativeOutputOdd.data(), processedNative,
-                upsampledOdd.data(), static_cast<int>(upsampledOdd.size())
-            );
-            int upsampledEvenCount = outputUpsamplerEven.processMono(
-                nativeOutputEven.data(), processedNative,
-                upsampledEven.data(), static_cast<int>(upsampledEven.size())
-            );
-
-            for (int i = 0; i < upsampledOddCount; ++i) {
-                outputFifoOdd.push(upsampledOdd[i]);
-            }
-            for (int i = 0; i < upsampledEvenCount; ++i) {
-                outputFifoEven.push(upsampledEven[i]);
-            }
-        }
-
-        // 5. Odd/even blend from FIFOs
-        const float oddGain = 1.0f - oddEvenMix;
-        const float evenGain = oddEvenMix;
-
-        for (int i = 0; i < numSamples; ++i) {
-            float odd = 0.0f, even = 0.0f;
-            if (!outputFifoOdd.empty())
-                odd = outputFifoOdd.pop();
-            if (!outputFifoEven.empty())
-                even = outputFifoEven.pop();
-            output[i] = odd * oddGain + even * evenGain;
-        }
-    }
-
-    void processNativeWet(const float* input, float* output, int numSamples) {
         // Accumulate input
         for (int i = 0; i < numSamples; ++i) {
-            inputFifo.push(input[i]);
+            m_input_fifo.push(input[i]);
         }
 
         // Process complete blocks
-        while (static_cast<size_t>(inputFifo.size()) >= kBlockSize) {
+        while (static_cast<size_t>(m_input_fifo.size()) >= kBlockSize) {
             float blockInput[kBlockSize];
             float blockOdd[kBlockSize];
             float blockEven[kBlockSize];
 
             for (size_t j = 0; j < kBlockSize; ++j) {
-                blockInput[j] = inputFifo.pop();
+                blockInput[j] = m_input_fifo.pop();
             }
 
-            renderBlock(blockInput, blockOdd, blockEven);
+            render_block(blockInput, blockOdd, blockEven);
 
             for (size_t j = 0; j < kBlockSize; ++j) {
-                outputFifoOdd.push(blockOdd[j]);
-                outputFifoEven.push(blockEven[j]);
+                m_output_fifo_odd.push(blockOdd[j]);
+                m_output_fifo_even.push(blockEven[j]);
             }
         }
 
         // Odd/even blend from FIFOs
-        const float oddGain = 1.0f - oddEvenMix;
-        const float evenGain = oddEvenMix;
+        const float oddGain = 1.0f - m_odd_even_mix;
+        const float evenGain = m_odd_even_mix;
 
         for (int i = 0; i < numSamples; ++i) {
             float odd = 0.0f, even = 0.0f;
-            if (!outputFifoOdd.empty())
-                odd = outputFifoOdd.pop();
-            if (!outputFifoEven.empty())
-                even = outputFifoEven.pop();
+            if (!m_output_fifo_odd.empty())
+                odd = m_output_fifo_odd.pop();
+            if (!m_output_fifo_even.empty())
+                even = m_output_fifo_even.pop();
             output[i] = odd * oddGain + even * evenGain;
+        }
+
+        // Blend wet output with latency-compensated dry signal
+        const float wetGain = m_dry_wet;
+        const float dryGain = 1.0f - m_dry_wet;
+
+        for (int i = 0; i < numSamples; ++i) {
+            float dry = 0.0f;
+            if (m_dry_delay_line.size() > m_latency) {
+                dry = m_dry_delay_line.pop();
+            }
+            output[i] = output[i] * wetGain + dry * dryGain;
         }
     }
 };
 
-RingsResonator::RingsResonator() : pImpl(std::make_unique<Impl>()) {
-    pImpl->init();
+RingsResonator::RingsResonator() : m_impl(std::make_unique<Impl>()) {
+    m_impl->init();
 }
 
 RingsResonator::~RingsResonator() = default;
@@ -325,52 +224,52 @@ RingsResonator::RingsResonator(RingsResonator&&) noexcept = default;
 RingsResonator& RingsResonator::operator=(RingsResonator&&) noexcept = default;
 
 void RingsResonator::prepare(double sampleRate, int maxBlockSize) {
-    pImpl->prepare(sampleRate, maxBlockSize);
+    m_impl->prepare(sampleRate, maxBlockSize);
 }
 
 void RingsResonator::process(const float* input, float* output, int numSamples) {
-    pImpl->process(input, output, numSamples);
+    m_impl->process(input, output, numSamples);
 }
 
-void RingsResonator::setFrequency(float frequency) {
-    pImpl->frequency = std::clamp(frequency, 20.0f, 20000.0f);
+void RingsResonator::set_frequency(float frequency) {
+    m_impl->m_frequency = std::clamp(frequency, 20.0f, 20000.0f);
 }
 
-void RingsResonator::setStructure(float structure) {
-    pImpl->patch.structure = std::clamp(structure, 0.0f, 0.9995f);
+void RingsResonator::set_structure(float structure) {
+    m_impl->m_patch.structure = std::clamp(structure, 0.0f, 0.9995f);
 }
 
-void RingsResonator::setBrightness(float brightness) {
-    pImpl->patch.brightness = std::clamp(brightness, 0.0f, 1.0f);
+void RingsResonator::set_brightness(float brightness) {
+    m_impl->m_patch.brightness = std::clamp(brightness, 0.0f, 1.0f);
 }
 
-void RingsResonator::setDamping(float damping) {
-    pImpl->patch.damping = std::clamp(damping, 0.0f, 0.9995f);
+void RingsResonator::set_damping(float damping) {
+    m_impl->m_patch.damping = std::clamp(damping, 0.0f, 0.9995f);
 }
 
-void RingsResonator::setPosition(float position) {
-    pImpl->patch.position = std::clamp(position, 0.0f, 0.9995f);
+void RingsResonator::set_position(float position) {
+    m_impl->m_patch.position = std::clamp(position, 0.0f, 0.9995f);
 }
 
-void RingsResonator::setModel(ResonatorModel model) {
-    pImpl->model = model;
+void RingsResonator::set_model(ResonatorModel model) {
+    m_impl->m_model = model;
 }
 
-void RingsResonator::setPolyphony(PolyphonyMode mode) {
-    pImpl->polyphony = mode;
+void RingsResonator::set_polyphony(PolyphonyMode mode) {
+    m_impl->m_polyphony = mode;
 }
 
-void RingsResonator::setOddEvenMix(float mix) {
+void RingsResonator::set_odd_even_mix(float mix) {
     mix = std::clamp(mix, 0.0f, 1.0f);
-    pImpl->oddEvenMix = 0.05f + mix * 0.9f;
+    m_impl->m_odd_even_mix = 0.05f + mix * 0.9f;
 }
 
-void RingsResonator::setDryWet(float dryWet) {
-    pImpl->dryWet = std::clamp(dryWet, 0.0f, 1.0f);
+void RingsResonator::set_dry_wet(float dryWet) {
+    m_impl->m_dry_wet = std::clamp(dryWet, 0.0f, 1.0f);
 }
 
-int RingsResonator::getLatency() const {
-    return pImpl->latency;
+int RingsResonator::get_latency() const {
+    return m_impl->m_latency;
 }
 
 } // namespace thl::dsp::resonator

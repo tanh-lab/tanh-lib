@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,18 +19,17 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Reverb.
 
-#ifndef RINGS_DSP_FX_REVERB_H_
-#define RINGS_DSP_FX_REVERB_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
+#include <tanh/dsp/resonator/rings/Dsp.h>
 #include <tanh/dsp/resonator/rings/fx/FxEngine.h>
 
 namespace thl::dsp::resonator::rings {
@@ -39,30 +38,37 @@ class Reverb {
  public:
   Reverb() { }
   ~Reverb() { }
-  
-  void Init(uint16_t* buffer) {
-    engine_.Init(buffer);
-    engine_.SetLFOFrequency(LFO_1, 0.5f / 48000.0f);
-    engine_.SetLFOFrequency(LFO_2, 0.3f / 48000.0f);
-    lp_ = 0.7f;
-    diffusion_ = 0.625f;
+
+  void init(uint16_t* buffer, float sample_rate = kDefaultSampleRate) {
+    m_engine.init(buffer);
+    m_engine.set_lfo_frequency(LFO_1, 0.5f / sample_rate);
+    m_engine.set_lfo_frequency(LFO_2, 0.3f / sample_rate);
+    m_rate_ratio = sample_rate / kDefaultSampleRate;
+    m_lp = 0.7f;
+    m_diffusion = 0.625f;
   }
-  
-  void Process(float* left, float* right, size_t size) {
+
+  static constexpr size_t kReverbBufferSize = 65536;
+
+  void process(float* left, float* right, size_t size) {
     // This is the Griesinger topology described in the Dattorro paper
     // (4 AP diffusers on the input, then a loop of 2x 2AP+1Delay).
     // Modulation is applied in the loop of the first diffuser AP for additional
     // smearing; and to the two long delays for a slow shimmer/chorus effect.
-    typedef E::Reserve<150,
-      E::Reserve<214,
-      E::Reserve<319,
-      E::Reserve<527,
-      E::Reserve<2182,
-      E::Reserve<2690,
-      E::Reserve<4501,
-      E::Reserve<2525,
-      E::Reserve<2197,
-      E::Reserve<6312> > > > > > > > > > Memory;
+    //
+    // Reserve sizes are doubled vs original 48kHz values to accommodate up to
+    // 96kHz. Runtime tap offsets are scaled by m_rate_ratio so that the actual
+    // delay times (in seconds) remain constant across sample rates.
+    typedef E::Reserve<300,
+      E::Reserve<428,
+      E::Reserve<638,
+      E::Reserve<1054,
+      E::Reserve<4364,
+      E::Reserve<5380,
+      E::Reserve<9002,
+      E::Reserve<5050,
+      E::Reserve<4394,
+      E::Reserve<12624> > > > > > > > > > Memory;
     E::DelayLine<Memory, 0> ap1;
     E::DelayLine<Memory, 1> ap2;
     E::DelayLine<Memory, 2> ap3;
@@ -75,110 +81,118 @@ class Reverb {
     E::DelayLine<Memory, 9> del2;
     E::Context c;
 
-    const float kap = diffusion_;
-    const float klp = lp_;
-    const float krt = reverb_time_;
-    const float amount = amount_;
-    const float gain = input_gain_;
+    const float kap = m_diffusion;
+    const float klp = m_lp;
+    const float krt = m_reverb_time;
+    const float amount = m_amount;
+    const float gain = m_input_gain;
+    const float r = m_rate_ratio;
 
-    float lp_1 = lp_decay_1_;
-    float lp_2 = lp_decay_2_;
+    // Scaled allpass tap offsets.  Original TAIL reads at length-1; we
+    // preserve those base offsets and scale by rate ratio.
+    const int32_t ap1_tap = static_cast<int32_t>(149.0f * r);
+    const int32_t ap2_tap = static_cast<int32_t>(213.0f * r);
+    const int32_t ap3_tap = static_cast<int32_t>(318.0f * r);
+    const int32_t ap4_tap = static_cast<int32_t>(526.0f * r);
+    const int32_t dap1a_tap = static_cast<int32_t>(2181.0f * r);
+    const int32_t dap1b_tap = static_cast<int32_t>(2689.0f * r);
+    const int32_t dap2a_tap = static_cast<int32_t>(2524.0f * r);
+    const int32_t dap2b_tap = static_cast<int32_t>(2196.0f * r);
+
+    float lp_1 = m_lp_decay_1;
+    float lp_2 = m_lp_decay_2;
 
     while (size--) {
       float wet;
       float apout = 0.0f;
-      engine_.Start(&c);
-      
-      // Smear AP1 inside the loop.
-      //c.Interpolate(ap1, 10.0f, LFO_1, 80.0f, 1.0f);
-      //c.Write(ap1, 100, 0.0f);
-      
-      c.Read(*left + *right, gain);
+      m_engine.start(&c);
 
-      // Diffuse through 4 allpasses.
-      c.Read(ap1 TAIL, kap);
-      c.WriteAllPass(ap1, -kap);
-      c.Read(ap2 TAIL, kap);
-      c.WriteAllPass(ap2, -kap);
-      c.Read(ap3 TAIL, kap);
-      c.WriteAllPass(ap3, -kap);
-      c.Read(ap4 TAIL, kap);
-      c.WriteAllPass(ap4, -kap);
-      c.Write(apout);
-      
+      c.read(*left + *right, gain);
+
+      // Diffuse through 4 allpasses (runtime-scaled tap offsets).
+      c.read(ap1, ap1_tap, kap);
+      c.write_all_pass(ap1, -kap);
+      c.read(ap2, ap2_tap, kap);
+      c.write_all_pass(ap2, -kap);
+      c.read(ap3, ap3_tap, kap);
+      c.write_all_pass(ap3, -kap);
+      c.read(ap4, ap4_tap, kap);
+      c.write_all_pass(ap4, -kap);
+      c.write(apout);
+
       // Main reverb loop.
-      c.Load(apout);
-      c.Interpolate(del2, 6261.0f, LFO_2, 50.0f, krt);
-      c.Lp(lp_1, klp);
-      c.Read(dap1a TAIL, -kap);
-      c.WriteAllPass(dap1a, kap);
-      c.Read(dap1b TAIL, kap);
-      c.WriteAllPass(dap1b, -kap);
-      c.Write(del1, 2.0f);
-      c.Write(wet, 0.0f);
+      c.load(apout);
+      c.interpolate(del2, 6261.0f * r, LFO_2, 50.0f * r, krt);
+      c.lp(lp_1, klp);
+      c.read(dap1a, dap1a_tap, -kap);
+      c.write_all_pass(dap1a, kap);
+      c.read(dap1b, dap1b_tap, kap);
+      c.write_all_pass(dap1b, -kap);
+      c.write(del1, 2.0f);
+      c.write(wet, 0.0f);
 
       *left += (wet - *left) * amount;
 
-      c.Load(apout);
-      c.Interpolate(del1, 4460.0f, LFO_1, 40.0f, krt);
-      c.Lp(lp_2, klp);
-      c.Read(dap2a TAIL, kap);
-      c.WriteAllPass(dap2a, -kap);
-      c.Read(dap2b TAIL, -kap);
-      c.WriteAllPass(dap2b, kap);
-      c.Write(del2, 2.0f);
-      c.Write(wet, 0.0f);
+      c.load(apout);
+      c.interpolate(del1, 4460.0f * r, LFO_1, 40.0f * r, krt);
+      c.lp(lp_2, klp);
+      c.read(dap2a, dap2a_tap, kap);
+      c.write_all_pass(dap2a, -kap);
+      c.read(dap2b, dap2b_tap, -kap);
+      c.write_all_pass(dap2b, kap);
+      c.write(del2, 2.0f);
+      c.write(wet, 0.0f);
 
       *right += (wet - *right) * amount;
-      
+
       ++left;
       ++right;
     }
-    
-    lp_decay_1_ = lp_1;
-    lp_decay_2_ = lp_2;
+
+    m_lp_decay_1 = lp_1;
+    m_lp_decay_2 = lp_2;
   }
-  
+
   inline void set_amount(float amount) {
-    amount_ = amount;
+    m_amount = amount;
   }
-  
+
   inline void set_input_gain(float input_gain) {
-    input_gain_ = input_gain;
+    m_input_gain = input_gain;
   }
 
   inline void set_time(float reverb_time) {
-    reverb_time_ = reverb_time;
+    m_reverb_time = reverb_time;
   }
-  
+
   inline void set_diffusion(float diffusion) {
-    diffusion_ = diffusion;
+    m_diffusion = diffusion;
   }
-  
+
   inline void set_lp(float lp) {
-    lp_ = lp;
+    m_lp = lp;
   }
-  
-  inline void Clear() {
-    engine_.Clear();
+
+  inline void clear() {
+    m_engine.clear();
   }
-  
+
  private:
-  typedef FxEngine<32768, FORMAT_16_BIT> E;
-  E engine_;
-  
-  float amount_;
-  float input_gain_;
-  float reverb_time_;
-  float diffusion_;
-  float lp_;
-  
-  float lp_decay_1_;
-  float lp_decay_2_;
-  
-  DISALLOW_COPY_AND_ASSIGN(Reverb);
+  typedef FxEngine<65536, FORMAT_16_BIT> E;
+  E m_engine;
+
+  float m_amount;
+  float m_input_gain;
+  float m_reverb_time;
+  float m_diffusion;
+  float m_lp;
+  float m_rate_ratio = 1.0f;
+
+  float m_lp_decay_1;
+  float m_lp_decay_2;
+
+  Reverb(const Reverb&) = delete;
+  Reverb& operator=(const Reverb&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_FX_REVERB_H_

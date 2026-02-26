@@ -12,50 +12,51 @@ namespace thl::dsp::resonator {
 // ============================================================================
 
 struct SampleRateConverter::Impl {
-    SRC_STATE* srcL = nullptr;
-    SRC_STATE* srcR = nullptr;
+    SRC_STATE* m_src_l = nullptr;
+    SRC_STATE* m_src_r = nullptr;
 
-    double sourceRate = 48000.0;
-    double targetRate = 48000.0;
-    double ratio = 1.0;
-    bool prepared = false;
+    double m_source_rate = 48000.0;
+    double m_target_rate = 48000.0;
+    double m_ratio = 1.0;
+    bool m_prepared = false;
 
     void prepare(double srcRate, double tgtRate, int /*maxBlockSize*/) {
         cleanup();
 
-        prepared = true;
-        sourceRate = srcRate;
-        targetRate = tgtRate;
-        ratio = tgtRate / srcRate;
+        m_prepared = true;
+        m_source_rate = srcRate;
+        m_target_rate = tgtRate;
+        m_ratio = tgtRate / srcRate;
 
         int error = 0;
-        srcL = src_new(SRC_SINC_FASTEST, 1, &error);
-        srcR = src_new(SRC_SINC_FASTEST, 1, &error);
+        m_src_l = src_new(SRC_SINC_FASTEST, 1, &error);
+        m_src_r = src_new(SRC_SINC_FASTEST, 1, &error);
     }
 
-    int processMono(const float* input, int numInputSamples,
-                    float* output, int maxOutputSamples) {
+    int process_mono(const float* input, int numInputSamples,
+                     float* output, int maxOutputSamples) {
         SRC_DATA data{};
         data.data_in = input;
         data.input_frames = numInputSamples;
         data.data_out = output;
         data.output_frames = maxOutputSamples;
-        data.src_ratio = ratio;
+        data.src_ratio = m_ratio;
         data.end_of_input = 0;
 
-        src_process(srcL, &data);
+        src_process(m_src_l, &data);
 
         return static_cast<int>(data.output_frames_gen);
     }
 
-    int processStereo(const float* inputL, const float* inputR, int numInputSamples,
-                      float* outputL, float* outputR, int maxOutputSamples) {
+    int process_stereo(const float* inputL, const float* inputR,
+                       int numInputSamples, float* outputL,
+                       float* outputR, int maxOutputSamples) {
         SRC_DATA dataL{};
         dataL.data_in = inputL;
         dataL.input_frames = numInputSamples;
         dataL.data_out = outputL;
         dataL.output_frames = maxOutputSamples;
-        dataL.src_ratio = ratio;
+        dataL.src_ratio = m_ratio;
         dataL.end_of_input = 0;
 
         SRC_DATA dataR{};
@@ -63,24 +64,24 @@ struct SampleRateConverter::Impl {
         dataR.input_frames = numInputSamples;
         dataR.data_out = outputR;
         dataR.output_frames = maxOutputSamples;
-        dataR.src_ratio = ratio;
+        dataR.src_ratio = m_ratio;
         dataR.end_of_input = 0;
 
-        src_process(srcL, &dataL);
-        src_process(srcR, &dataR);
+        src_process(m_src_l, &dataL);
+        src_process(m_src_r, &dataR);
 
         return static_cast<int>(std::min(dataL.output_frames_gen, dataR.output_frames_gen));
     }
 
     void reset() {
-        if (srcL) src_reset(srcL);
-        if (srcR) src_reset(srcR);
-        prepared = false;
+        if (m_src_l) src_reset(m_src_l);
+        if (m_src_r) src_reset(m_src_r);
+        m_prepared = false;
     }
 
     void cleanup() {
-        if (srcL) { src_delete(srcL); srcL = nullptr; }
-        if (srcR) { src_delete(srcR); srcR = nullptr; }
+        if (m_src_l) { src_delete(m_src_l); m_src_l = nullptr; }
+        if (m_src_r) { src_delete(m_src_r); m_src_r = nullptr; }
     }
 
     ~Impl() {
@@ -88,35 +89,35 @@ struct SampleRateConverter::Impl {
     }
 };
 
-SampleRateConverter::SampleRateConverter() : pImpl(std::make_unique<Impl>()) {}
+SampleRateConverter::SampleRateConverter() : m_impl(std::make_unique<Impl>()) {}
 SampleRateConverter::~SampleRateConverter() = default;
 SampleRateConverter::SampleRateConverter(SampleRateConverter&&) noexcept = default;
 SampleRateConverter& SampleRateConverter::operator=(SampleRateConverter&&) noexcept = default;
 
 void SampleRateConverter::prepare(double sourceRate, double targetRate, int maxBlockSize) {
-    pImpl->prepare(sourceRate, targetRate, maxBlockSize);
+    m_impl->prepare(sourceRate, targetRate, maxBlockSize);
 }
 
-int SampleRateConverter::processMono(const float* input, int numInputSamples,
+int SampleRateConverter::process_mono(const float* input, int numInputSamples,
                                       float* output, int maxOutputSamples) {
-    return pImpl->processMono(input, numInputSamples, output, maxOutputSamples);
+    return m_impl->process_mono(input, numInputSamples, output, maxOutputSamples);
 }
 
-int SampleRateConverter::processStereo(const float* inputL, const float* inputR, int numInputSamples,
+int SampleRateConverter::process_stereo(const float* inputL, const float* inputR, int numInputSamples,
                                         float* outputL, float* outputR, int maxOutputSamples) {
-    return pImpl->processStereo(inputL, inputR, numInputSamples, outputL, outputR, maxOutputSamples);
+    return m_impl->process_stereo(inputL, inputR, numInputSamples, outputL, outputR, maxOutputSamples);
 }
 
-double SampleRateConverter::getRatio() const {
-    return pImpl->ratio;
+double SampleRateConverter::get_ratio() const {
+    return m_impl->m_ratio;
 }
 
-int SampleRateConverter::getLatency() const {
+int SampleRateConverter::get_latency() const {
     return 0;
 }
 
 void SampleRateConverter::reset() {
-    pImpl->reset();
+    m_impl->reset();
 }
 
 // ============================================================================
@@ -124,92 +125,92 @@ void SampleRateConverter::reset() {
 // ============================================================================
 
 struct DspRateConverter::Impl {
-    SampleRateConverter downsampler;
-    SampleRateConverter upsampler;
+    SampleRateConverter m_downsampler;
+    SampleRateConverter m_upsampler;
 
-    std::vector<float> downsampleBufferL;
-    std::vector<float> downsampleBufferR;
-    std::vector<float> upsampleBufferL;
-    std::vector<float> upsampleBufferR;
+    std::vector<float> m_downsample_buffer_l;
+    std::vector<float> m_downsample_buffer_r;
+    std::vector<float> m_upsample_buffer_l;
+    std::vector<float> m_upsample_buffer_r;
 
-    double hostRate = 48000.0;
-    double dspRate = 32000.0;
-    bool needsConversion = true;
+    double m_host_rate = 48000.0;
+    double m_dsp_rate = 32000.0;
+    bool m_needs_conversion = true;
 
     void prepare(double hRate, double dRate, int maxBlockSize) {
-        hostRate = hRate;
-        dspRate = dRate;
+        m_host_rate = hRate;
+        m_dsp_rate = dRate;
 
         // Check if rates are close enough to skip resampling
-        needsConversion = std::abs(hRate - dRate) > 100.0;
+        m_needs_conversion = std::abs(hRate - dRate) > 100.0;
 
-        if (needsConversion) {
-            downsampler.prepare(hRate, dRate, maxBlockSize);
-            upsampler.prepare(dRate, hRate, maxBlockSize);
+        if (m_needs_conversion) {
+            m_downsampler.prepare(hRate, dRate, maxBlockSize);
+            m_upsampler.prepare(dRate, hRate, maxBlockSize);
         }
 
         // Allocate buffers with headroom
         int maxDownsampled = static_cast<int>(std::ceil(maxBlockSize * dRate / hRate)) + 64;
         int maxUpsampled = static_cast<int>(std::ceil(maxBlockSize * hRate / dRate)) + 64;
 
-        downsampleBufferL.resize(maxDownsampled);
-        downsampleBufferR.resize(maxDownsampled);
-        upsampleBufferL.resize(maxUpsampled);
-        upsampleBufferR.resize(maxUpsampled);
+        m_downsample_buffer_l.resize(maxDownsampled);
+        m_downsample_buffer_r.resize(maxDownsampled);
+        m_upsample_buffer_l.resize(maxUpsampled);
+        m_upsample_buffer_r.resize(maxUpsampled);
     }
 
     int downsample(const float* inputL, const float* inputR, int numInputSamples,
                    float* outputL, float* outputR, int maxOutputSamples) {
-        return downsampler.processStereo(inputL, inputR, numInputSamples,
-                                          outputL, outputR, maxOutputSamples);
+        return m_downsampler.process_stereo(inputL, inputR, numInputSamples,
+                                            outputL, outputR, maxOutputSamples);
     }
 
     int upsample(const float* inputL, const float* inputR, int numInputSamples,
                  float* outputL, float* outputR, int maxOutputSamples) {
-        return upsampler.processStereo(inputL, inputR, numInputSamples,
-                                        outputL, outputR, maxOutputSamples);
+        return m_upsampler.process_stereo(inputL, inputR, numInputSamples,
+                                          outputL, outputR, maxOutputSamples);
     }
 
-    int getTotalLatency() const {
-        if (!needsConversion) return 0;
-        return downsampler.getLatency() + upsampler.getLatency();
+    int get_total_latency() const {
+        if (!m_needs_conversion) return 0;
+        return m_downsampler.get_latency() + m_upsampler.get_latency();
     }
 
     void reset() {
-        downsampler.reset();
-        upsampler.reset();
+        m_downsampler.reset();
+        m_upsampler.reset();
     }
 };
 
-DspRateConverter::DspRateConverter() : pImpl(std::make_unique<Impl>()) {}
+DspRateConverter::DspRateConverter() : m_impl(std::make_unique<Impl>()) {}
 DspRateConverter::~DspRateConverter() = default;
 DspRateConverter::DspRateConverter(DspRateConverter&&) noexcept = default;
 DspRateConverter& DspRateConverter::operator=(DspRateConverter&&) noexcept = default;
 
 void DspRateConverter::prepare(double hostRate, double dspRate, int maxBlockSize) {
-    pImpl->prepare(hostRate, dspRate, maxBlockSize);
+    m_impl->prepare(hostRate, dspRate, maxBlockSize);
 }
 
 int DspRateConverter::downsample(const float* inputL, const float* inputR, int numInputSamples,
                                   float* outputL, float* outputR, int maxOutputSamples) {
-    return pImpl->downsample(inputL, inputR, numInputSamples, outputL, outputR, maxOutputSamples);
+    return m_impl->downsample(inputL, inputR, numInputSamples, outputL, outputR, maxOutputSamples);
 }
 
 int DspRateConverter::upsample(const float* inputL, const float* inputR, int numInputSamples,
                                 float* outputL, float* outputR, int maxOutputSamples) {
-    return pImpl->upsample(inputL, inputR, numInputSamples, outputL, outputR, maxOutputSamples);
+    return m_impl->upsample(inputL, inputR, numInputSamples, outputL, outputR, maxOutputSamples);
 }
 
-int DspRateConverter::getTotalLatency() const {
-    return pImpl->getTotalLatency();
+int DspRateConverter::get_total_latency() const {
+    return m_impl->get_total_latency();
 }
 
-bool DspRateConverter::needsResampling() const {
-    return pImpl->needsConversion;
+bool DspRateConverter::needs_resampling() const {
+    return m_impl->m_needs_conversion;
 }
 
 void DspRateConverter::reset() {
-    pImpl->reset();
+    m_impl->reset();
 }
 
 } // namespace thl::dsp::resonator

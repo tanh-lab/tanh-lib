@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,17 +19,15 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Strumming logic.
 
-#ifndef RINGS_DSP_STRUMMER_H_
-#define RINGS_DSP_STRUMMER_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
 #include <tanh/dsp/resonator/rings/OnsetDetector.h>
 #include <tanh/dsp/resonator/rings/Part.h>
@@ -40,28 +38,28 @@ class Strummer {
  public:
   Strummer() { }
   ~Strummer() { }
-  
-  void Init(float ioi, float sr) {
-    onset_detector_.Init(
-        8.0f / kSampleRate,
-        160.0f / kSampleRate,
-        1600.0f / kSampleRate,
-        sr,
+
+  void init(float ioi, float decimated_sr, float sample_rate) {
+    m_onset_detector.init(
+        8.0f / sample_rate,
+        160.0f / sample_rate,
+        1600.0f / sample_rate,
+        decimated_sr,
         ioi);
-    inhibit_timer_ = static_cast<int32_t>(ioi * sr);
-    inhibit_counter_ = 0;
-    previous_note_ = 69.0f;
+    m_inhibit_timer = static_cast<int32_t>(ioi * decimated_sr);
+    m_inhibit_counter = 0;
+    m_previous_note = 69.0f;
   }
-  
-  void Process(
+
+  void process(
       const float* in,
       size_t size,
       PerformanceState* performance_state) {
-    
-    bool has_onset = in && onset_detector_.Process(in, size);
-    bool note_changed = fabs(performance_state->note - previous_note_) > 0.4f;
 
-    int32_t inhibit_timer = inhibit_timer_;
+    bool has_onset = in && m_onset_detector.process(in, size);
+    bool note_changed = fabs(performance_state->note - m_previous_note) > 0.4f;
+
+    int32_t inhibit_timer = m_inhibit_timer;
     if (performance_state->internal_strum) {
       bool has_external_note_cv = !performance_state->internal_note;
       bool has_external_exciter = !performance_state->internal_exciter;
@@ -77,27 +75,26 @@ class Strummer {
       }
     }
 
-    if (inhibit_counter_) {
-      --inhibit_counter_;
+    if (m_inhibit_counter) {
+      --m_inhibit_counter;
       performance_state->strum = false;
     } else {
       if (performance_state->strum) {
-        inhibit_counter_ = inhibit_timer;
+        m_inhibit_counter = inhibit_timer;
       }
     }
-    previous_note_ = performance_state->note;
+    m_previous_note = performance_state->note;
   }
 
  private:
-  float previous_note_;
-  int32_t inhibit_counter_;
-  int32_t inhibit_timer_;
-  
-  OnsetDetector onset_detector_;
-  
-  DISALLOW_COPY_AND_ASSIGN(Strummer);
+  float m_previous_note;
+  int32_t m_inhibit_counter;
+  int32_t m_inhibit_timer;
+
+  OnsetDetector m_onset_detector;
+
+  Strummer(const Strummer&) = delete;
+  Strummer& operator=(const Strummer&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_STRUMMER_H_

@@ -28,7 +28,7 @@ void SmoothedValue::reset(double sample_rate, double time_in_seconds, ValueSmoot
     m_samples_remaining = 0;
     m_step = 0.0f;
 
-    recalcStep();
+    recalc_step();
 }
 
 void SmoothedValue::set_target_value(float target_value)
@@ -38,7 +38,7 @@ void SmoothedValue::set_target_value(float target_value)
     m_target_value = target_value;
     m_samples_remaining = m_time_in_samples;
 
-    recalcStep();
+    recalc_step();
 }
 
 void SmoothedValue::set_current_and_target_value(float target_value)
@@ -73,7 +73,7 @@ float SmoothedValue::get_smoothed_value(std::size_t num_samples)
     return m_current_value;
 }
 
-void SmoothedValue::recalcStep()
+void SmoothedValue::recalc_step()
 {
     if (m_time_in_samples == 0 || m_samples_remaining == 0)
     {

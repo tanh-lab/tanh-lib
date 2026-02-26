@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,17 +19,15 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // AD envelope for the string synth.
 
-#ifndef ELEMENTS_DSP_STRING_SYNTH_ENVELOPE_H_
-#define ELEMENTS_DSP_STRING_SYNTH_ENVELOPE_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -48,97 +46,96 @@ class StringSynthEnvelope {
  public:
   StringSynthEnvelope() { }
   ~StringSynthEnvelope() { }
-  
-  void Init() {
+
+  void init() {
     set_ad(0.1f, 0.001f);
-    segment_ = num_segments_;
-    phase_ = 0.0f;
-    start_value_ = 0.0f;
-    value_ = 0.0f;
+    m_segment = m_num_segments;
+    m_phase = 0.0f;
+    m_start_value = 0.0f;
+    m_value = 0.0f;
   }
 
-  inline float Process(uint8_t flags) {
+  inline float process(uint8_t flags) {
     if (flags & ENVELOPE_FLAG_RISING_EDGE) {
-      start_value_ = segment_ == num_segments_ ? level_[0] : value_;
-      segment_ = 0;
-      phase_ = 0.0f;
-    } else if (flags & ENVELOPE_FLAG_FALLING_EDGE && sustain_point_) {
-      start_value_ = value_;
-      segment_ = sustain_point_;
-      phase_ = 0.0f;
-    } else if (phase_ >= 1.0f) {
-      start_value_ = level_[segment_ + 1];
-      ++segment_;
-      phase_ = 0.0f;
+      m_start_value = m_segment == m_num_segments ? m_level[0] : m_value;
+      m_segment = 0;
+      m_phase = 0.0f;
+    } else if (flags & ENVELOPE_FLAG_FALLING_EDGE && m_sustain_point) {
+      m_start_value = m_value;
+      m_segment = m_sustain_point;
+      m_phase = 0.0f;
+    } else if (m_phase >= 1.0f) {
+      m_start_value = m_level[m_segment + 1];
+      ++m_segment;
+      m_phase = 0.0f;
     }
-  
-    bool done = segment_ == num_segments_;
-    bool sustained = sustain_point_ && segment_ == sustain_point_ &&
+
+    bool done = m_segment == m_num_segments;
+    bool sustained = m_sustain_point && m_segment == m_sustain_point &&
         flags & ENVELOPE_FLAG_GATE;
-  
+
     float phase_increment = 0.0f;
     if (!sustained && !done) {
-      phase_increment = rate_[segment_];
+      phase_increment = m_rate[m_segment];
     }
-    float t = phase_;
-    if (shape_[segment_] == ENVELOPE_SHAPE_QUARTIC) {
+    float t = m_phase;
+    if (m_shape[m_segment] == ENVELOPE_SHAPE_QUARTIC) {
       t = 1.0f - t;
       t *= t;
       t *= t;
       t = 1.0f - t;
     }
-    
-    phase_ += phase_increment;
-    value_ = start_value_ + (level_[segment_ + 1] - start_value_) * t;
-    return value_;
+
+    m_phase += phase_increment;
+    m_value = m_start_value + (m_level[m_segment + 1] - m_start_value) * t;
+    return m_value;
   }
 
   inline void set_ad(float attack, float decay) {
-    num_segments_ = 2;
-    sustain_point_ = 0;
+    m_num_segments = 2;
+    m_sustain_point = 0;
 
-    level_[0] = 0.0f;
-    level_[1] = 1.0f;
-    level_[2] = 0.0f;
+    m_level[0] = 0.0f;
+    m_level[1] = 1.0f;
+    m_level[2] = 0.0f;
 
-    rate_[0] = attack;
-    rate_[1] = decay;
-    
-    shape_[0] = ENVELOPE_SHAPE_LINEAR;
-    shape_[1] = ENVELOPE_SHAPE_QUARTIC;
+    m_rate[0] = attack;
+    m_rate[1] = decay;
+
+    m_shape[0] = ENVELOPE_SHAPE_LINEAR;
+    m_shape[1] = ENVELOPE_SHAPE_QUARTIC;
   }
 
   inline void set_ar(float attack, float decay) {
-    num_segments_ = 2;
-    sustain_point_ = 1;
+    m_num_segments = 2;
+    m_sustain_point = 1;
 
-    level_[0] = 0.0f;
-    level_[1] = 1.0f;
-    level_[2] = 0.0f;
+    m_level[0] = 0.0f;
+    m_level[1] = 1.0f;
+    m_level[2] = 0.0f;
 
-    rate_[0] = attack;
-    rate_[1] = decay;
-    
-    shape_[0] = ENVELOPE_SHAPE_LINEAR;
-    shape_[1] = ENVELOPE_SHAPE_LINEAR;
+    m_rate[0] = attack;
+    m_rate[1] = decay;
+
+    m_shape[0] = ENVELOPE_SHAPE_LINEAR;
+    m_shape[1] = ENVELOPE_SHAPE_LINEAR;
   }
-  
- private:
-  float level_[4];
-  float rate_[4];
-  EnvelopeShape shape_[4];
-  
-  int16_t segment_;
-  float start_value_;
-  float value_;
-  float phase_;
-  
-  uint16_t num_segments_;
-  uint16_t sustain_point_;
 
-  DISALLOW_COPY_AND_ASSIGN(StringSynthEnvelope);
+ private:
+  float m_level[4];
+  float m_rate[4];
+  EnvelopeShape m_shape[4];
+
+  int16_t m_segment;
+  float m_start_value;
+  float m_value;
+  float m_phase;
+
+  uint16_t m_num_segments;
+  uint16_t m_sustain_point;
+
+  StringSynthEnvelope(const StringSynthEnvelope&) = delete;
+  StringSynthEnvelope& operator=(const StringSynthEnvelope&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // ELEMENTS_DSP_STRING_SYNTH_ENVELOPE_H_

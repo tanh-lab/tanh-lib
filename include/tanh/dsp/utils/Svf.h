@@ -32,40 +32,40 @@ constexpr float kPiPow11 = kPiPow9 * kPiPow2;
 
 class DCBlocker {
 public:
-    void Init(float pole) {
-        x_ = 0.0f;
-        y_ = 0.0f;
-        pole_ = pole;
+    void init(float pole) {
+        m_x = 0.0f;
+        m_y = 0.0f;
+        m_pole = pole;
     }
 
-    void Process(float* in_out, size_t size) {
-        float x = x_;
-        float y = y_;
-        const float pole = pole_;
+    void process(float* in_out, size_t size) {
+        float x = m_x;
+        float y = m_y;
+        const float pole = m_pole;
         while (size--) {
             const float old_x = x;
             x = *in_out;
             *in_out++ = y = y * pole + x - old_x;
         }
-        x_ = x;
-        y_ = y;
+        m_x = x;
+        m_y = y;
     }
 
 private:
-    float pole_ = 0.0f;
-    float x_ = 0.0f;
-    float y_ = 0.0f;
+    float m_pole = 0.0f;
+    float m_x = 0.0f;
+    float m_y = 0.0f;
 };
 
 class OnePole {
 public:
-    void Init() {
+    void init() {
         set_f<FrequencyApproximation::Dirty>(0.01f);
-        Reset();
+        reset();
     }
 
-    void Reset() {
-        state_ = 0.0f;
+    void reset() {
+        m_state = 0.0f;
     }
 
     template <FrequencyApproximation approximation>
@@ -94,14 +94,14 @@ public:
 
     template <FrequencyApproximation approximation>
     void set_f(float f) {
-        g_ = tan<approximation>(f);
-        gi_ = 1.0f / (1.0f + g_);
+        m_g = tan<approximation>(f);
+        m_gi = 1.0f / (1.0f + m_g);
     }
 
     template <FilterMode mode>
-    float Process(float in) {
-        const float lp = (g_ * in + state_) * gi_;
-        state_ = g_ * (in - lp) + lp;
+    float process(float in) {
+        const float lp = (m_g * in + m_state) * m_gi;
+        m_state = m_g * (in - lp) + lp;
 
         if constexpr (mode == FilterMode::LowPass) {
             return lp;
@@ -113,102 +113,102 @@ public:
     }
 
 private:
-    float g_ = 0.0f;
-    float gi_ = 1.0f;
-    float state_ = 0.0f;
+    float m_g = 0.0f;
+    float m_gi = 1.0f;
+    float m_state = 0.0f;
 };
 
 class Svf {
 public:
-    void Init() {
+    void init() {
         set_f_q<FrequencyApproximation::Dirty>(0.01f, 100.0f);
-        Reset();
+        reset();
     }
 
-    void Reset() {
-        state_1_ = 0.0f;
-        state_2_ = 0.0f;
+    void reset() {
+        m_state_1 = 0.0f;
+        m_state_2 = 0.0f;
     }
 
     void set(const Svf& f) {
-        g_ = f.g();
-        r_ = f.r();
-        h_ = f.h();
+        m_g = f.g();
+        m_r = f.r();
+        m_h = f.h();
     }
 
     void set_g_r_h(float g, float r, float h) {
-        g_ = g;
-        r_ = r;
-        h_ = h;
+        m_g = g;
+        m_r = r;
+        m_h = h;
     }
 
     void set_g_r(float g, float r) {
-        g_ = g;
-        r_ = r;
-        h_ = 1.0f / (1.0f + r_ * g_ + g_ * g_);
+        m_g = g;
+        m_r = r;
+        m_h = 1.0f / (1.0f + m_r * m_g + m_g * m_g);
     }
 
     void set_g_q(float g, float resonance) {
-        g_ = g;
-        r_ = 1.0f / resonance;
-        h_ = 1.0f / (1.0f + r_ * g_ + g_ * g_);
+        m_g = g;
+        m_r = 1.0f / resonance;
+        m_h = 1.0f / (1.0f + m_r * m_g + m_g * m_g);
     }
 
     template <FrequencyApproximation approximation>
     void set_f_q(float f, float resonance) {
-        g_ = OnePole::tan<approximation>(f);
-        r_ = 1.0f / resonance;
-        h_ = 1.0f / (1.0f + r_ * g_ + g_ * g_);
+        m_g = OnePole::tan<approximation>(f);
+        m_r = 1.0f / resonance;
+        m_h = 1.0f / (1.0f + m_r * m_g + m_g * m_g);
     }
 
     template <FilterMode mode>
-    float Process(float in) {
-        float hp = (in - r_ * state_1_ - g_ * state_1_ - state_2_) * h_;
-        float bp = g_ * hp + state_1_;
-        state_1_ = g_ * hp + bp;
-        float lp = g_ * bp + state_2_;
-        state_2_ = g_ * bp + lp;
+    float process(float in) {
+        float hp = (in - m_r * m_state_1 - m_g * m_state_1 - m_state_2) * m_h;
+        float bp = m_g * hp + m_state_1;
+        m_state_1 = m_g * hp + bp;
+        float lp = m_g * bp + m_state_2;
+        m_state_2 = m_g * bp + lp;
         return select<mode>(hp, bp, lp);
     }
 
     template <FilterMode mode>
-    void Process(const float* in, float* out, size_t size) {
-        float state_1 = state_1_;
-        float state_2 = state_2_;
+    void process(const float* in, float* out, size_t size) {
+        float state_1 = m_state_1;
+        float state_2 = m_state_2;
         while (size--) {
-            float hp = (*in - r_ * state_1 - g_ * state_1 - state_2) * h_;
-            float bp = g_ * hp + state_1;
-            state_1 = g_ * hp + bp;
-            float lp = g_ * bp + state_2;
-            state_2 = g_ * bp + lp;
+            float hp = (*in - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            float bp = m_g * hp + state_1;
+            state_1 = m_g * hp + bp;
+            float lp = m_g * bp + state_2;
+            state_2 = m_g * bp + lp;
             *out++ = select<mode>(hp, bp, lp);
             ++in;
         }
-        state_1_ = state_1;
-        state_2_ = state_2;
+        m_state_1 = state_1;
+        m_state_2 = state_2;
     }
 
     template <FilterMode mode>
-    void Process(const float* in, float* out, size_t size, size_t stride) {
-        float state_1 = state_1_;
-        float state_2 = state_2_;
+    void process(const float* in, float* out, size_t size, size_t stride) {
+        float state_1 = m_state_1;
+        float state_2 = m_state_2;
         while (size--) {
-            float hp = (*in - r_ * state_1 - g_ * state_1 - state_2) * h_;
-            float bp = g_ * hp + state_1;
-            state_1 = g_ * hp + bp;
-            float lp = g_ * bp + state_2;
-            state_2 = g_ * bp + lp;
+            float hp = (*in - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            float bp = m_g * hp + state_1;
+            state_1 = m_g * hp + bp;
+            float lp = m_g * bp + state_2;
+            state_2 = m_g * bp + lp;
             *out = select<mode>(hp, bp, lp);
             out += stride;
             in += stride;
         }
-        state_1_ = state_1;
-        state_2_ = state_2;
+        m_state_1 = state_1;
+        m_state_2 = state_2;
     }
 
-    void ProcessMultimode(const float* in, float* out, size_t size, float mode) {
-        float state_1 = state_1_;
-        float state_2 = state_2_;
+    void process_multimode(const float* in, float* out, size_t size, float mode) {
+        float state_1 = m_state_1;
+        float state_2 = m_state_2;
 
         mode *= mode;
         const float hp_gain = mode < 0.5f ? mode * 2.0f : 2.0f - mode * 2.0f;
@@ -216,40 +216,40 @@ public:
         const float bp_gain = mode < 0.5f ? 0.0f : mode * 2.0f - 1.0f;
 
         while (size--) {
-            float hp = (*in - r_ * state_1 - g_ * state_1 - state_2) * h_;
-            float bp = g_ * hp + state_1;
-            state_1 = g_ * hp + bp;
-            float lp = g_ * bp + state_2;
-            state_2 = g_ * bp + lp;
+            float hp = (*in - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            float bp = m_g * hp + state_1;
+            state_1 = m_g * hp + bp;
+            float lp = m_g * bp + state_2;
+            state_2 = m_g * bp + lp;
             *out++ = hp_gain * hp + bp_gain * bp + lp_gain * lp;
             ++in;
         }
-        state_1_ = state_1;
-        state_2_ = state_2;
+        m_state_1 = state_1;
+        m_state_2 = state_2;
     }
 
     template <FilterMode mode>
-    void Process(const float* in, float* out_1, float* out_2, size_t size, float gain_1, float gain_2) {
-        float state_1 = state_1_;
-        float state_2 = state_2_;
+    void process(const float* in, float* out_1, float* out_2, size_t size, float gain_1, float gain_2) {
+        float state_1 = m_state_1;
+        float state_2 = m_state_2;
         while (size--) {
-            float hp = (*in - r_ * state_1 - g_ * state_1 - state_2) * h_;
-            float bp = g_ * hp + state_1;
-            state_1 = g_ * hp + bp;
-            float lp = g_ * bp + state_2;
-            state_2 = g_ * bp + lp;
+            float hp = (*in - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            float bp = m_g * hp + state_1;
+            state_1 = m_g * hp + bp;
+            float lp = m_g * bp + state_2;
+            state_2 = m_g * bp + lp;
             const float value = select<mode>(hp, bp, lp);
             *out_1++ += value * gain_1;
             *out_2++ += value * gain_2;
             ++in;
         }
-        state_1_ = state_1;
-        state_2_ = state_2;
+        m_state_1 = state_1;
+        m_state_2 = state_2;
     }
 
-    float g() const { return g_; }
-    float r() const { return r_; }
-    float h() const { return h_; }
+    float g() const { return m_g; }
+    float r() const { return m_r; }
+    float h() const { return m_h; }
 
 private:
     template <FilterMode mode>
@@ -259,98 +259,98 @@ private:
         } else if constexpr (mode == FilterMode::BandPass) {
             return bp;
         } else if constexpr (mode == FilterMode::BandPassNormalized) {
-            return bp * r_;
+            return bp * m_r;
         } else {
             return hp;
         }
     }
 
-    float g_ = 0.0f;
-    float r_ = 0.0f;
-    float h_ = 0.0f;
-    float state_1_ = 0.0f;
-    float state_2_ = 0.0f;
+    float m_g = 0.0f;
+    float m_r = 0.0f;
+    float m_h = 0.0f;
+    float m_state_1 = 0.0f;
+    float m_state_2 = 0.0f;
 };
 
 class NaiveSvf {
 public:
-    void Init() {
+    void init() {
         set_f_q<FrequencyApproximation::Dirty>(0.01f, 100.0f);
-        Reset();
+        reset();
     }
 
-    void Reset() {
-        lp_ = 0.0f;
-        bp_ = 0.0f;
+    void reset() {
+        m_lp = 0.0f;
+        m_bp = 0.0f;
     }
 
     template <FrequencyApproximation approximation>
     void set_f_q(float f, float resonance) {
         f = f < 0.497f ? f : 0.497f;
         if constexpr (approximation == FrequencyApproximation::Exact) {
-            f_ = 2.0f * std::sin(detail::kPiF * f);
+            m_f = 2.0f * std::sin(detail::kPiF * f);
         } else {
-            f_ = 2.0f * detail::kPiF * f;
+            m_f = 2.0f * detail::kPiF * f;
         }
-        damp_ = 1.0f / resonance;
+        m_damp = 1.0f / resonance;
     }
 
     template <FilterMode mode>
-    float Process(float in) {
-        const float bp_normalized = bp_ * damp_;
+    float process(float in) {
+        const float bp_normalized = m_bp * m_damp;
         const float notch = in - bp_normalized;
-        lp_ += f_ * bp_;
-        const float hp = notch - lp_;
-        bp_ += f_ * hp;
-        return select<mode>(hp, bp_, bp_normalized, lp_);
+        m_lp += m_f * m_bp;
+        const float hp = notch - m_lp;
+        m_bp += m_f * hp;
+        return select<mode>(hp, m_bp, bp_normalized, m_lp);
     }
 
-    float lp() const { return lp_; }
-    float bp() const { return bp_; }
+    float lp() const { return m_lp; }
+    float bp() const { return m_bp; }
 
     template <FilterMode mode>
-    void Process(const float* in, float* out, size_t size) {
-        float lp = lp_;
-        float bp = bp_;
+    void process(const float* in, float* out, size_t size) {
+        float lp = m_lp;
+        float bp = m_bp;
         while (size--) {
-            const float bp_normalized = bp * damp_;
+            const float bp_normalized = bp * m_damp;
             const float notch = *in++ - bp_normalized;
-            lp += f_ * bp;
+            lp += m_f * bp;
             const float hp = notch - lp;
-            bp += f_ * hp;
+            bp += m_f * hp;
             *out++ = select<mode>(hp, bp, bp_normalized, lp);
         }
-        lp_ = lp;
-        bp_ = bp;
+        m_lp = lp;
+        m_bp = bp;
     }
 
-    void Split(const float* in, float* low, float* high, size_t size) {
-        float lp = lp_;
-        float bp = bp_;
+    void split(const float* in, float* low, float* high, size_t size) {
+        float lp = m_lp;
+        float bp = m_bp;
         while (size--) {
-            const float bp_normalized = bp * damp_;
+            const float bp_normalized = bp * m_damp;
             const float notch = *in++ - bp_normalized;
-            lp += f_ * bp;
+            lp += m_f * bp;
             const float hp = notch - lp;
-            bp += f_ * hp;
+            bp += m_f * hp;
             *low++ = lp;
             *high++ = hp;
         }
-        lp_ = lp;
-        bp_ = bp;
+        m_lp = lp;
+        m_bp = bp;
     }
 
     template <FilterMode mode>
-    void Process(const float* in, float* out, size_t size, size_t decimate) {
-        float lp = lp_;
-        float bp = bp_;
+    void process(const float* in, float* out, size_t size, size_t decimate) {
+        float lp = m_lp;
+        float bp = m_bp;
         size_t n = decimate - 1;
         while (size--) {
-            const float bp_normalized = bp * damp_;
+            const float bp_normalized = bp * m_damp;
             const float notch = *in++ - bp_normalized;
-            lp += f_ * bp;
+            lp += m_f * bp;
             const float hp = notch - lp;
-            bp += f_ * hp;
+            bp += m_f * hp;
 
             ++n;
             if (n == decimate) {
@@ -358,8 +358,8 @@ public:
                 n = 0;
             }
         }
-        lp_ = lp;
-        bp_ = bp;
+        m_lp = lp;
+        m_bp = bp;
     }
 
 private:
@@ -376,10 +376,10 @@ private:
         }
     }
 
-    float f_ = 0.0f;
-    float damp_ = 0.0f;
-    float lp_ = 0.0f;
-    float bp_ = 0.0f;
+    float m_f = 0.0f;
+    float m_damp = 0.0f;
+    float m_lp = 0.0f;
+    float m_bp = 0.0f;
 };
 
 } // namespace thl::dsp::utils

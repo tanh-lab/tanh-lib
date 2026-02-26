@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,22 +19,20 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Base class for building reverb.
 
-#ifndef RINGS_DSP_FX_FX_ENGINE_H_
-#define RINGS_DSP_FX_FX_ENGINE_H_
+#pragma once
 
 #include <algorithm>
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
-#include <tanh/dsp/utils/stmlib/dsp/dsp.h>
-#include <tanh/dsp/utils/stmlib/dsp/cosine_oscillator.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/CosineOscillator.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -57,39 +55,39 @@ struct DataType { };
 template<>
 struct DataType<FORMAT_12_BIT> {
   typedef uint16_t T;
-  
+
   static inline float Decompress(T value) {
     return static_cast<float>(static_cast<int16_t>(value)) / 4096.0f;
   }
-  
+
   static inline T Compress(float value) {
     return static_cast<uint16_t>(
-        stmlib::Clip16(static_cast<int32_t>(value * 4096.0f)));
+        thl::dsp::utils::clip16(static_cast<int32_t>(value * 4096.0f)));
   }
 };
 
 template<>
 struct DataType<FORMAT_16_BIT> {
   typedef uint16_t T;
-  
+
   static inline float Decompress(T value) {
     return static_cast<float>(static_cast<int16_t>(value)) / 32768.0f;
   }
-  
+
   static inline T Compress(float value) {
     return static_cast<uint16_t>(
-        stmlib::Clip16(static_cast<int32_t>(value * 32768.0f)));
+        thl::dsp::utils::clip16(static_cast<int32_t>(value * 32768.0f)));
   }
 };
 
 template<>
 struct DataType<FORMAT_32_BIT> {
   typedef float T;
-  
+
   static inline float Decompress(T value) {
     return value;;
   }
-  
+
   static inline T Compress(float value) {
     return value;
   }
@@ -104,18 +102,18 @@ class FxEngine {
   FxEngine() { }
   ~FxEngine() { }
 
-  void Init(T* buffer) {
-    buffer_ = buffer;
-    Clear();
+  void init(T* buffer) {
+    m_buffer = buffer;
+    clear();
   }
-  
-  void Clear() {
-    std::fill(&buffer_[0], &buffer_[size], 0);
-    write_ptr_ = 0;
+
+  void clear() {
+    std::fill(&m_buffer[0], &m_buffer[size], 0);
+    m_write_ptr = 0;
   }
 
   struct Empty { };
-  
+
   template<int32_t l, typename T = Empty>
   struct Reserve {
     typedef T Tail;
@@ -123,7 +121,7 @@ class FxEngine {
       length = l
     };
   };
-  
+
   template<typename Memory, int32_t index>
   struct DelayLine {
     enum {
@@ -145,157 +143,157 @@ class FxEngine {
    public:
     Context() { }
     ~Context() { }
-    
-    inline void Load(float value) {
-      accumulator_ = value;
+
+    inline void load(float value) {
+      m_accumulator = value;
     }
 
-    inline void Read(float value, float scale) {
-      accumulator_ += value * scale;
+    inline void read(float value, float scale) {
+      m_accumulator += value * scale;
     }
 
-    inline void Read(float value) {
-      accumulator_ += value;
+    inline void read(float value) {
+      m_accumulator += value;
     }
 
-    inline void Write(float& value) {
-      value = accumulator_;
+    inline void write(float& value) {
+      value = m_accumulator;
     }
 
-    inline void Write(float& value, float scale) {
-      value = accumulator_;
-      accumulator_ *= scale;
+    inline void write(float& value, float scale) {
+      value = m_accumulator;
+      m_accumulator *= scale;
     }
-    
+
     template<typename D>
-    inline void Write(D& d, int32_t offset, float scale) {
-      STATIC_ASSERT(D::base + D::length <= size, delay_memory_full);
-      T w = DataType<format>::Compress(accumulator_);
+    inline void write(D& d, int32_t offset, float scale) {
+      static_assert((D::base + D::length <= size), "delay_memory_full");
+      T w = DataType<format>::Compress(m_accumulator);
       if (offset == -1) {
-        buffer_[(write_ptr_ + D::base + D::length - 1) & MASK] = w;
+        m_buffer[(m_write_ptr + D::base + D::length - 1) & MASK] = w;
       } else {
-        buffer_[(write_ptr_ + D::base + offset) & MASK] = w;
+        m_buffer[(m_write_ptr + D::base + offset) & MASK] = w;
       }
-      accumulator_ *= scale;
-    }
-    
-    template<typename D>
-    inline void Write(D& d, float scale) {
-      Write(d, 0, scale);
+      m_accumulator *= scale;
     }
 
     template<typename D>
-    inline void WriteAllPass(D& d, int32_t offset, float scale) {
-      Write(d, offset, scale);
-      accumulator_ += previous_read_;
+    inline void write(D& d, float scale) {
+      write(d, 0, scale);
     }
-    
+
     template<typename D>
-    inline void WriteAllPass(D& d, float scale) {
-      WriteAllPass(d, 0, scale);
+    inline void write_all_pass(D& d, int32_t offset, float scale) {
+      write(d, offset, scale);
+      m_accumulator += m_previous_read;
     }
-    
+
     template<typename D>
-    inline void Read(D& d, int32_t offset, float scale) {
-      STATIC_ASSERT(D::base + D::length <= size, delay_memory_full);
+    inline void write_all_pass(D& d, float scale) {
+      write_all_pass(d, 0, scale);
+    }
+
+    template<typename D>
+    inline void read(D& d, int32_t offset, float scale) {
+      static_assert((D::base + D::length <= size), "delay_memory_full");
       T r;
       if (offset == -1) {
-        r = buffer_[(write_ptr_ + D::base + D::length - 1) & MASK];
+        r = m_buffer[(m_write_ptr + D::base + D::length - 1) & MASK];
       } else {
-        r = buffer_[(write_ptr_ + D::base + offset) & MASK];
+        r = m_buffer[(m_write_ptr + D::base + offset) & MASK];
       }
       float r_f = DataType<format>::Decompress(r);
-      previous_read_ = r_f;
-      accumulator_ += r_f * scale;
-    }
-    
-    template<typename D>
-    inline void Read(D& d, float scale) {
-      Read(d, 0, scale);
-    }
-    
-    inline void Lp(float& state, float coefficient) {
-      state += coefficient * (accumulator_ - state);
-      accumulator_ = state;
+      m_previous_read = r_f;
+      m_accumulator += r_f * scale;
     }
 
-    inline void Hp(float& state, float coefficient) {
-      state += coefficient * (accumulator_ - state);
-      accumulator_ -= state;
-    }
-    
     template<typename D>
-    inline void Interpolate(D& d, float offset, float scale) {
-      STATIC_ASSERT(D::base + D::length <= size, delay_memory_full);
+    inline void read(D& d, float scale) {
+      read(d, 0, scale);
+    }
+
+    inline void lp(float& state, float coefficient) {
+      state += coefficient * (m_accumulator - state);
+      m_accumulator = state;
+    }
+
+    inline void hp(float& state, float coefficient) {
+      state += coefficient * (m_accumulator - state);
+      m_accumulator -= state;
+    }
+
+    template<typename D>
+    inline void interpolate(D& d, float offset, float scale) {
+      static_assert((D::base + D::length <= size), "delay_memory_full");
       MAKE_INTEGRAL_FRACTIONAL(offset);
       float a = DataType<format>::Decompress(
-          buffer_[(write_ptr_ + offset_integral + D::base) & MASK]);
+          m_buffer[(m_write_ptr + offset_integral + D::base) & MASK]);
       float b = DataType<format>::Decompress(
-          buffer_[(write_ptr_ + offset_integral + D::base + 1) & MASK]);
+          m_buffer[(m_write_ptr + offset_integral + D::base + 1) & MASK]);
       float x = a + (b - a) * offset_fractional;
-      previous_read_ = x;
-      accumulator_ += x * scale;
+      m_previous_read = x;
+      m_accumulator += x * scale;
     }
-    
+
     template<typename D>
-    inline void Interpolate(
+    inline void interpolate(
         D& d, float offset, LFOIndex index, float amplitude, float scale) {
-      STATIC_ASSERT(D::base + D::length <= size, delay_memory_full);
-      offset += amplitude * lfo_value_[index];
+      static_assert((D::base + D::length <= size), "delay_memory_full");
+      offset += amplitude * m_lfo_value[index];
       MAKE_INTEGRAL_FRACTIONAL(offset);
       float a = DataType<format>::Decompress(
-          buffer_[(write_ptr_ + offset_integral + D::base) & MASK]);
+          m_buffer[(m_write_ptr + offset_integral + D::base) & MASK]);
       float b = DataType<format>::Decompress(
-          buffer_[(write_ptr_ + offset_integral + D::base + 1) & MASK]);
+          m_buffer[(m_write_ptr + offset_integral + D::base + 1) & MASK]);
       float x = a + (b - a) * offset_fractional;
-      previous_read_ = x;
-      accumulator_ += x * scale;
+      m_previous_read = x;
+      m_accumulator += x * scale;
     }
-    
-   private:
-    float accumulator_;
-    float previous_read_;
-    float lfo_value_[2];
-    T* buffer_;
-    int32_t write_ptr_;
 
-    DISALLOW_COPY_AND_ASSIGN(Context);
+   private:
+    float m_accumulator;
+    float m_previous_read;
+    float m_lfo_value[2];
+    T* m_buffer;
+    int32_t m_write_ptr;
+
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
   };
-  
-  inline void SetLFOFrequency(LFOIndex index, float frequency) {
-    lfo_[index].template Init<stmlib::COSINE_OSCILLATOR_APPROXIMATE>(frequency * 32.0f);
+
+  inline void set_lfo_frequency(LFOIndex index, float frequency) {
+    m_lfo[index].template init<thl::dsp::utils::CosineOscillatorMode::Approximate>(frequency * 32.0f);
   }
-  
-  inline void Start(Context* c) {
-    --write_ptr_;
-    if (write_ptr_ < 0) {
-      write_ptr_ += size;
+
+  inline void start(Context* c) {
+    --m_write_ptr;
+    if (m_write_ptr < 0) {
+      m_write_ptr += size;
     }
-    c->accumulator_ = 0.0f;
-    c->previous_read_ = 0.0f;
-    c->buffer_ = buffer_;
-    c->write_ptr_ = write_ptr_;
-    if ((write_ptr_ & 31) == 0) {
-      c->lfo_value_[0] = lfo_[0].Next();
-      c->lfo_value_[1] = lfo_[1].Next();
+    c->m_accumulator = 0.0f;
+    c->m_previous_read = 0.0f;
+    c->m_buffer = m_buffer;
+    c->m_write_ptr = m_write_ptr;
+    if ((m_write_ptr & 31) == 0) {
+      c->m_lfo_value[0] = m_lfo[0].next();
+      c->m_lfo_value[1] = m_lfo[1].next();
     } else {
-      c->lfo_value_[0] = lfo_[0].value();
-      c->lfo_value_[1] = lfo_[1].value();
+      c->m_lfo_value[0] = m_lfo[0].value();
+      c->m_lfo_value[1] = m_lfo[1].value();
     }
   }
-  
+
  private:
   enum {
     MASK = size - 1
   };
-  
-  int32_t write_ptr_;
-  T* buffer_;
-  stmlib::CosineOscillator lfo_[2];
-  
-  DISALLOW_COPY_AND_ASSIGN(FxEngine);
+
+  int32_t m_write_ptr;
+  T* m_buffer;
+  thl::dsp::utils::CosineOscillator m_lfo[2];
+
+  FxEngine(const FxEngine&) = delete;
+  FxEngine& operator=(const FxEngine&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_FX_FX_ENGINE_H_

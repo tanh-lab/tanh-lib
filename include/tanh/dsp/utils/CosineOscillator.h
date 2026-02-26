@@ -12,17 +12,17 @@ enum class CosineOscillatorMode {
 class CosineOscillator {
 public:
     template <CosineOscillatorMode mode>
-    void Init(float frequency) {
+    void init(float frequency) {
         if constexpr (mode == CosineOscillatorMode::Approximate) {
-            InitApproximate(frequency);
+            init_approximate(frequency);
         } else {
-            iir_coefficient_ = 2.0f * std::cos(2.0f * static_cast<float>(M_PI) * frequency);
-            initial_amplitude_ = iir_coefficient_ * 0.25f;
+            m_iir_coefficient = 2.0f * std::cos(2.0f * static_cast<float>(M_PI) * frequency);
+            m_initial_amplitude = m_iir_coefficient * 0.25f;
         }
-        Start();
+        start();
     }
 
-    void InitApproximate(float frequency) {
+    void init_approximate(float frequency) {
         float sign = 16.0f;
         frequency -= 0.25f;
         if (frequency < 0.0f) {
@@ -34,32 +34,31 @@ public:
                 sign = -16.0f;
             }
         }
-        iir_coefficient_ = sign * frequency * (1.0f - 2.0f * frequency);
-        initial_amplitude_ = iir_coefficient_ * 0.25f;
+        m_iir_coefficient = sign * frequency * (1.0f - 2.0f * frequency);
+        m_initial_amplitude = m_iir_coefficient * 0.25f;
     }
 
-    void Start() {
-        y1_ = initial_amplitude_;
-        y0_ = 0.5f;
+    void start() {
+        m_y1 = m_initial_amplitude;
+        m_y0 = 0.5f;
     }
 
     float value() const {
-        return y1_ + 0.5f;
+        return m_y1 + 0.5f;
     }
 
-    float Next() {
-        const float temp = y0_;
-        y0_ = iir_coefficient_ * y0_ - y1_;
-        y1_ = temp;
+    float next() {
+        const float temp = m_y0;
+        m_y0 = m_iir_coefficient * m_y0 - m_y1;
+        m_y1 = temp;
         return temp + 0.5f;
     }
 
 private:
-    float y1_ = 0.0f;
-    float y0_ = 0.5f;
-    float iir_coefficient_ = 0.0f;
-    float initial_amplitude_ = 0.0f;
+    float m_y1 = 0.0f;
+    float m_y0 = 0.5f;
+    float m_iir_coefficient = 0.0f;
+    float m_initial_amplitude = 0.0f;
 };
 
 } // namespace thl::dsp::utils
-

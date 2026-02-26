@@ -7,22 +7,22 @@ namespace thl::dsp::resonator {
 class ParamSmoother {
 public:
     void prepare(double sampleRate, float timeInSeconds) {
-        coeff_ = std::exp(-1.0f / (static_cast<float>(sampleRate) * timeInSeconds));
+        m_coeff = std::exp(-1.0f / (static_cast<float>(sampleRate) * timeInSeconds));
     }
 
-    void setTarget(float target) { target_ = target; }
+    void set_target(float target) { m_target = target; }
 
     float skip(int numSamples) {
-        current_ = target_ + (current_ - target_) * std::pow(coeff_, static_cast<float>(numSamples));
-        return current_;
+        m_current = m_target + (m_current - m_target) * std::pow(m_coeff, static_cast<float>(numSamples));
+        return m_current;
     }
 
-    float getCurrentValue() const { return current_; }
+    float get_current_value() const { return m_current; }
 
 private:
-    float current_ = 0.0f;
-    float target_ = 0.0f;
-    float coeff_ = 0.0f;
+    float m_current = 0.0f;
+    float m_target = 0.0f;
+    float m_coeff = 0.0f;
 };
 
 } // namespace thl::dsp::resonator

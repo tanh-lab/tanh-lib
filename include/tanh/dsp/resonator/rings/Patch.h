@@ -26,8 +26,7 @@
 //
 // Patch parameters.
 
-#ifndef RINGS_DSP_PATCH_H_
-#define RINGS_DSP_PATCH_H_
+#pragma once
 
 namespace thl::dsp::resonator::rings {
 
@@ -40,4 +39,3 @@ struct Patch {
 
 }  // namespace thl::dsp::resonator::rings
 
-#endif  // RINGS_DSP_PATCH_H_
