@@ -11,6 +11,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 if(TARGET tanh_resonator_core)
 	target_sources(${PROJECT_NAME} PRIVATE
 		test_RingsResonatorCore.cpp
+		test_RingsDspFunctions.cpp
 	)
 
 	# Generator tool for producing reference fixture data

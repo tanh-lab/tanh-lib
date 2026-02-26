@@ -30,7 +30,7 @@
 
 #include <tanh/dsp/utils/stmlib/dsp/units.h>
 
-#include <tanh/dsp/resonator/rings/Resources.h>
+#include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -38,6 +38,8 @@ using namespace std;
 using namespace stmlib;
 
 void Part::Init(uint16_t* reverb_buffer) {
+  WarmDspFunctions();
+
   active_voice_ = 0;
   
   fill(&note_[0], &note_[kMaxPolyphony], 0.0f);
@@ -460,6 +462,29 @@ const int32_t kPingPattern[] = {
   1, 0, 2, 1, 0, 2, 1, 0
 };
 
+void Part::PrepareVoiceParams(
+    const PerformanceState& performance_state,
+    const Patch& patch) {
+  float cutoff = patch.brightness * (2.0f - patch.brightness);
+  float filter_q = performance_state.internal_exciter ? 1.5f : 0.8f;
+
+  for (int32_t voice = 0; voice < polyphony_; ++voice) {
+    float note =
+        note_[voice] + performance_state.tonic + performance_state.fm;
+    float frequency = SemitonesToRatio(note - 69.0f) * a3;
+    float filter_cutoff_range = performance_state.internal_exciter
+        ? frequency * SemitonesToRatio((cutoff - 0.5f) * 96.0f)
+        : 0.4f * SemitonesToRatio((cutoff - 1.0f) * 108.0f);
+    float filter_cutoff = min(voice == active_voice_
+        ? filter_cutoff_range
+        : (10.0f / kSampleRate), 0.499f);
+
+    prepared_[voice].frequency = frequency;
+    prepared_[voice].filter_cutoff = filter_cutoff;
+    prepared_[voice].filter_q = filter_q;
+  }
+}
+
 void Part::Process(
     const PerformanceState& performance_state,
     const Patch& patch,
@@ -493,21 +518,14 @@ void Part::Process(
   
   note_[active_voice_] = note_filter_.note();
   
+  PrepareVoiceParams(performance_state, patch);
+
   fill(&out[0], &out[size], 0.0f);
   fill(&aux[0], &aux[size], 0.0f);
   for (int32_t voice = 0; voice < polyphony_; ++voice) {
-    // Compute MIDI note value, frequency, and cutoff frequency for excitation
-    // filter.
-    float cutoff = patch.brightness * (2.0f - patch.brightness);
-    float note = note_[voice] + performance_state.tonic + performance_state.fm;
-    float frequency = SemitonesToRatio(note - 69.0f) * a3;
-    float filter_cutoff_range = performance_state.internal_exciter
-      ? frequency * SemitonesToRatio((cutoff - 0.5f) * 96.0f)
-      : 0.4f * SemitonesToRatio((cutoff - 1.0f) * 108.0f);
-    float filter_cutoff = min(voice == active_voice_
-      ? filter_cutoff_range
-      : (10.0f / kSampleRate), 0.499f);
-    float filter_q = performance_state.internal_exciter ? 1.5f : 0.8f;
+    float frequency = prepared_[voice].frequency;
+    float filter_cutoff = prepared_[voice].filter_cutoff;
+    float filter_q = prepared_[voice].filter_q;
 
     // Process input with excitation filter. Inactive voices receive silence.
     excitation_filter_[voice].set_f_q<FREQUENCY_DIRTY>(filter_cutoff, filter_q);

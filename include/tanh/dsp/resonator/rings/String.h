@@ -128,6 +128,8 @@ class String {
   inline StringDelayLine* mutable_string() { return &string_; }
   
  private:
+  void PrepareCoefficients(float delay, float src_ratio, size_t size);
+
   template<bool enable_dispersion>
   void ProcessInternal(const float* in, float* out, float* aux, size_t size);
    
@@ -153,7 +155,9 @@ class String {
   float aux_sample_[2];
   
   float curved_bridge_;
-  
+  float noise_filter_;
+  float damping_compensation_target_;
+
   StringDelayLine string_;
   StiffnessDelayLine stretch_;
   

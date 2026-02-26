@@ -32,7 +32,7 @@
 #include <tanh/dsp/utils/stmlib/dsp/cosine_oscillator.h>
 #include <tanh/dsp/utils/stmlib/dsp/parameter_interpolator.h>
 
-#include <tanh/dsp/resonator/rings/Resources.h>
+#include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -53,13 +53,10 @@ void Resonator::Init() {
 }
 
 int32_t Resonator::ComputeFilters() {
-  float stiffness = Interpolate(lut_stiffness, structure_, 256.0f);
+  float stiffness = Stiffness(structure_);
   float harmonic = frequency_;
-  float stretch_factor = 1.0f; 
-  float q = 500.0f * Interpolate(
-      lut_4_decades,
-      damping_,
-      256.0f);
+  float stretch_factor = 1.0f;
+  float q = 500.0f * FourDecades(damping_);
   float brightness_attenuation = 1.0f - structure_;
   // Reduces the range of brightness when structure is very low, to prevent
   // clipping.
@@ -98,7 +95,11 @@ int32_t Resonator::ComputeFilters() {
 }
 
 void Resonator::Process(const float* in, float* out, float* aux, size_t size) {
-  int32_t num_modes = ComputeFilters();
+  if (dirty_) {
+    num_modes_ = ComputeFilters();
+    dirty_ = false;
+  }
+  int32_t num_modes = num_modes_;
   
   ParameterInterpolator position(&previous_position_, position_, size);
   while (size--) {

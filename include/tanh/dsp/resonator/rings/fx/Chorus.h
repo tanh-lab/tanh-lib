@@ -34,7 +34,7 @@
 #include <tanh/dsp/utils/stmlib/dsp/dsp.h>
 
 #include <tanh/dsp/resonator/rings/fx/FxEngine.h>
-#include <tanh/dsp/resonator/rings/Resources.h>
+#include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -44,6 +44,8 @@ class Chorus {
   ~Chorus() { }
   
   void Init(uint16_t* buffer) {
+    WarmDspFunctions();
+    sine_table_ = SineTable();
     engine_.Init(buffer);
     phase_1_ = 0;
     phase_2_ = 0;
@@ -67,10 +69,10 @@ class Chorus {
       if (phase_2_ >= 1.0f) {
         phase_2_ -= 1.0f;
       }
-      float sin_1 = stmlib::Interpolate(lut_sine, phase_1_, 4096.0f);
-      float cos_1 = stmlib::Interpolate(lut_sine, phase_1_ + 0.25f, 4096.0f);
-      float sin_2 = stmlib::Interpolate(lut_sine, phase_2_, 4096.0f);
-      float cos_2 = stmlib::Interpolate(lut_sine, phase_2_ + 0.25f, 4096.0f);
+      float sin_1 = stmlib::Interpolate(sine_table_, phase_1_, 4096.0f);
+      float cos_1 = stmlib::Interpolate(sine_table_, phase_1_ + 0.25f, 4096.0f);
+      float sin_2 = stmlib::Interpolate(sine_table_, phase_2_, 4096.0f);
+      float cos_2 = stmlib::Interpolate(sine_table_, phase_2_ + 0.25f, 4096.0f);
     
       float wet;
     
@@ -107,6 +109,7 @@ class Chorus {
   
   float amount_;
   float depth_;
+  const float* sine_table_ = nullptr;
   
   float phase_1_;
   float phase_2_;
