@@ -285,7 +285,6 @@ if(TANH_BUILD_RESONATOR)
         src/dsp/resonator/rings/String.cpp
         src/dsp/resonator/rings/FmVoice.cpp
         src/dsp/resonator/rings/StringSynthPart.cpp
-        src/dsp/resonator/rings/Resources.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_resonator_core PROPERTIES

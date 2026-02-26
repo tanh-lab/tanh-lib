@@ -63,6 +63,12 @@ enum ResonatorModel {
 const int32_t kMaxPolyphony = 4;
 const int32_t kNumStrings = kMaxPolyphony * 2;
 
+struct PreparedVoiceParams {
+  float frequency;
+  float filter_cutoff;
+  float filter_q;
+};
+
 class Part {
  public:
   Part() { }
@@ -101,6 +107,9 @@ class Part {
 
  private:
   void ConfigureResonators();
+  void PrepareVoiceParams(
+      const PerformanceState& performance_state,
+      const Patch& patch);
   void RenderModalVoice(
       int32_t voice,
       const PerformanceState& performance_state,
@@ -170,6 +179,7 @@ class Part {
   Plucker plucker_[kMaxPolyphony];
 
   float note_[kMaxPolyphony];
+  PreparedVoiceParams prepared_[kMaxPolyphony];
   NoteFilter note_filter_;
   
   float resonator_input_[kMaxBlockSize];

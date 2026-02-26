@@ -35,7 +35,7 @@
 #include <tanh/dsp/utils/stmlib/dsp/units.h>
 #include <tanh/dsp/utils/stmlib/utils/random.h>
 
-#include <tanh/dsp/resonator/rings/Resources.h>
+#include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
   
@@ -43,8 +43,10 @@ using namespace std;
 using namespace stmlib;
 
 void String::Init(bool enable_dispersion) {
+  WarmDspFunctions();
+
   enable_dispersion_ = enable_dispersion;
-  
+
   string_.Init();
   stretch_.Init();
   fir_damping_filter_.Init();
@@ -62,11 +64,39 @@ void String::Init(bool enable_dispersion) {
   dispersion_noise_ = 0.0f;
   curved_bridge_ = 0.0f;
   previous_damping_compensation_ = 0.0f;
+  noise_filter_ = 0.0f;
+  damping_compensation_target_ = 0.0f;
   
   out_sample_[0] = out_sample_[1] = 0.0f;
   aux_sample_[0] = aux_sample_[1] = 0.0f;
   
   dc_blocker_.Init(1.0f - 20.0f / kSampleRate);
+}
+
+void String::PrepareCoefficients(
+    float delay, float src_ratio, size_t size) {
+  float lf_damping = damping_ * (2.0f - damping_);
+  float rt60 = 0.07f * SemitonesToRatio(lf_damping * 96.0f) * kSampleRate;
+  float rt60_base_2_12 = max(-120.0f * delay / src_ratio / rt60, -127.0f);
+  float damping_coefficient = SemitonesToRatio(rt60_base_2_12);
+  float brightness = brightness_ * brightness_;
+  noise_filter_ = SemitonesToRatio((brightness_ - 1.0f) * 48.0f);
+  float damping_cutoff = min(
+      24.0f + damping_ * damping_ * 48.0f + brightness_ * brightness_ * 24.0f,
+      84.0f);
+  float damping_f = min(frequency_ * SemitonesToRatio(damping_cutoff), 0.499f);
+
+  if (damping_ >= 0.95f) {
+    float to_infinite = 20.0f * (damping_ - 0.95f);
+    damping_coefficient += to_infinite * (1.0f - damping_coefficient);
+    brightness += to_infinite * (1.0f - brightness);
+    damping_f += to_infinite * (0.4999f - damping_f);
+    damping_cutoff += to_infinite * (128.0f - damping_cutoff);
+  }
+
+  fir_damping_filter_.Configure(damping_coefficient, brightness, size);
+  iir_damping_filter_.set_f_q<FREQUENCY_ACCURATE>(damping_f, 0.5f);
+  damping_compensation_target_ = 1.0f - SvfShift(damping_cutoff);
 }
 
 template<bool enable_dispersion>
@@ -77,54 +107,27 @@ void String::ProcessInternal(
     size_t size) {
   float delay = 1.0f / frequency_;
   CONSTRAIN(delay, 4.0f, kDelayLineSize - 4.0f);
-  
-  // If there is not enough delay time in the delay line, we play at the
-  // lowest possible note and we upsample on the fly with a shitty linear
-  // interpolator. We don't care because it's a corner case (f0 < 11.7Hz)
+
   float src_ratio = delay * frequency_;
   if (src_ratio >= 0.9999f) {
-    // When we are above 11.7 Hz, we make sure that the linear interpolator
-    // does not get in the way.
     src_phase_ = 1.0f;
     src_ratio = 1.0f;
   }
 
   float clamped_position = 0.5f - 0.98f * fabs(position_ - 0.5f);
-  
-  // Linearly interpolate all comb-related CV parameters for each sample.
+
   ParameterInterpolator delay_modulation(
       &delay_, delay, size);
   ParameterInterpolator position_modulation(
       &clamped_position_, clamped_position, size);
   ParameterInterpolator dispersion_modulation(
       &previous_dispersion_, dispersion_, size);
-  
-  // For damping/absorption, the interpolation is done in the filter code.
-  float lf_damping = damping_ * (2.0f - damping_);
-  float rt60 = 0.07f * SemitonesToRatio(lf_damping * 96.0f) * kSampleRate;
-  float rt60_base_2_12 = max(-120.0f * delay / src_ratio / rt60, -127.0f);
-  float damping_coefficient = SemitonesToRatio(rt60_base_2_12);
-  float brightness = brightness_ * brightness_;
-  float noise_filter = SemitonesToRatio((brightness_ - 1.0f) * 48.0f);
-  float damping_cutoff = min(
-      24.0f + damping_ * damping_ * 48.0f + brightness_ * brightness_ * 24.0f,
-      84.0f);
-  float damping_f = min(frequency_ * SemitonesToRatio(damping_cutoff), 0.499f);
-  
-  // Crossfade to infinite decay.
-  if (damping_ >= 0.95f) {
-    float to_infinite = 20.0f * (damping_ - 0.95f);
-    damping_coefficient += to_infinite * (1.0f - damping_coefficient);
-    brightness += to_infinite * (1.0f - brightness);
-    damping_f += to_infinite * (0.4999f - damping_f);
-    damping_cutoff += to_infinite * (128.0f - damping_cutoff);
-  }
-  
-  fir_damping_filter_.Configure(damping_coefficient, brightness, size);
-  iir_damping_filter_.set_f_q<FREQUENCY_ACCURATE>(damping_f, 0.5f);
+
+  PrepareCoefficients(delay, src_ratio, size);
+  float noise_filter = noise_filter_;
   ParameterInterpolator damping_compensation_modulation(
       &previous_damping_compensation_,
-      1.0f - Interpolate(lut_svf_shift, damping_cutoff, 1.0f),
+      damping_compensation_target_,
       size);
   
   while (size--) {

@@ -34,7 +34,7 @@
 #include <tanh/dsp/utils/stmlib/dsp/dsp.h>
 
 #include <tanh/dsp/resonator/rings/fx/FxEngine.h>
-#include <tanh/dsp/resonator/rings/Resources.h>
+#include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -44,6 +44,8 @@ class Ensemble {
   ~Ensemble() { }
   
   void Init(uint16_t* buffer) {
+    WarmDspFunctions();
+    sine_table_ = SineTable();
     engine_.Init(buffer);
     phase_1_ = 0;
     phase_2_ = 0;
@@ -69,13 +71,13 @@ class Ensemble {
         phase_2_ -= 1.0f;
       }
       int32_t phi_1 = (phase_1_ * 4096.0f);
-      float slow_0 = lut_sine[phi_1 & 4095];
-      float slow_120 = lut_sine[(phi_1 + 1365) & 4095];
-      float slow_240 = lut_sine[(phi_1 + 2730) & 4095];
+      float slow_0 = sine_table_[phi_1 & 4095];
+      float slow_120 = sine_table_[(phi_1 + 1365) & 4095];
+      float slow_240 = sine_table_[(phi_1 + 2730) & 4095];
       int32_t phi_2 = (phase_2_ * 4096.0f);
-      float fast_0 = lut_sine[phi_2 & 4095];
-      float fast_120 = lut_sine[(phi_2 + 1365) & 4095];
-      float fast_240 = lut_sine[(phi_2 + 2730) & 4095];
+      float fast_0 = sine_table_[phi_2 & 4095];
+      float fast_120 = sine_table_[(phi_2 + 1365) & 4095];
+      float fast_240 = sine_table_[(phi_2 + 2730) & 4095];
       
       float a = depth_ * 1.0f;
       float b = depth_ * 0.1f;
@@ -122,6 +124,7 @@ class Ensemble {
   
   float amount_;
   float depth_;
+  const float* sine_table_ = nullptr;
   
   float phase_1_;
   float phase_2_;

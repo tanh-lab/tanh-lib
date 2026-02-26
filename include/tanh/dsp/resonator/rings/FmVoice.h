@@ -38,7 +38,7 @@
 #include <tanh/dsp/resonator/rings/Dsp.h>
 #include <tanh/dsp/resonator/rings/Follower.h>
 
-#include <tanh/dsp/resonator/rings/Resources.h>
+#include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -89,12 +89,14 @@ class FMVoice {
     phase += (static_cast<uint32_t>((fm + 4.0f) * 536870912.0f)) << 3;
     uint32_t integral = phase >> 20;
     float fractional = static_cast<float>(phase << 12) / 4294967296.0f;
-    float a = lut_sine[integral];
-    float b = lut_sine[integral + 1];
+    float a = sine_table_[integral];
+    float b = sine_table_[integral + 1];
     return a + (b - a) * fractional;
   }
   
  private:
+  void PrepareCoefficients();
+
   float carrier_frequency_;
   float ratio_;
   float brightness_;
@@ -115,7 +117,15 @@ class FMVoice {
   uint32_t carrier_phase_;
   uint32_t modulator_phase_;
   float previous_sample_;
-  
+
+  float envelope_amount_;
+  float amplitude_decay_;
+  float brightness_decay_;
+  float modulator_frequency_;
+  float feedback_;
+  const float* sine_table_ = nullptr;
+  const float* fm_frequency_quantizer_table_ = nullptr;
+
   Follower follower_;
   
   DISALLOW_COPY_AND_ASSIGN(FMVoice);
