@@ -55,27 +55,32 @@ class Resonator {
   
   inline void set_frequency(float frequency) {
     frequency_ = frequency;
+    dirty_ = true;
   }
-  
+
   inline void set_structure(float structure) {
     structure_ = structure;
+    dirty_ = true;
   }
-  
+
   inline void set_brightness(float brightness) {
     brightness_ = brightness;
+    dirty_ = true;
   }
-  
+
   inline void set_damping(float damping) {
     damping_ = damping;
+    dirty_ = true;
   }
-  
+
   inline void set_position(float position) {
     position_ = position;
   }
-  
+
   inline void set_resolution(int32_t resolution) {
     resolution -= resolution & 1; // Must be even!
     resolution_ = std::min(resolution, kMaxModes);
+    dirty_ = true;
   }
   
  private:
@@ -88,7 +93,9 @@ class Resonator {
   float damping_;
   
   int32_t resolution_;
-  
+  int32_t num_modes_ = 0;
+  bool dirty_ = true;
+
   stmlib::Svf f_[kMaxModes];
   
   DISALLOW_COPY_AND_ASSIGN(Resonator);
