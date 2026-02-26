@@ -40,8 +40,8 @@ public:
      * @param maxOutputSamples Maximum output buffer size
      * @return Number of output samples produced
      */
-    int processMono(const float* input, int numInputSamples,
-                    float* output, int maxOutputSamples);
+    int process_mono(const float* input, int numInputSamples,
+                     float* output, int maxOutputSamples);
 
     /**
      * @brief Process stereo audio
@@ -54,18 +54,19 @@ public:
      * @param maxOutputSamples Maximum output buffer size
      * @return Number of output samples produced (same for L and R)
      */
-    int processStereo(const float* inputL, const float* inputR, int numInputSamples,
-                      float* outputL, float* outputR, int maxOutputSamples);
+    int process_stereo(const float* inputL, const float* inputR,
+                       int numInputSamples, float* outputL,
+                       float* outputR, int maxOutputSamples);
 
     /**
      * @brief Get the conversion ratio (target/source)
      */
-    double getRatio() const;
+    double get_ratio() const;
 
     /**
      * @brief Get the latency in output samples
      */
-    int getLatency() const;
+    int get_latency() const;
 
     /**
      * @brief Reset the converter state
@@ -74,7 +75,7 @@ public:
 
 private:
     struct Impl;
-    std::unique_ptr<Impl> pImpl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 /**
@@ -114,8 +115,9 @@ public:
      * @param maxOutputSamples Maximum output buffer size
      * @return Number of output samples at DSP rate
      */
-    int downsample(const float* inputL, const float* inputR, int numInputSamples,
-                   float* outputL, float* outputR, int maxOutputSamples);
+    int downsample(const float* inputL, const float* inputR,
+                   int numInputSamples, float* outputL, float* outputR,
+                   int maxOutputSamples);
 
     /**
      * @brief Upsample from DSP rate back to host rate (stereo)
@@ -128,18 +130,19 @@ public:
      * @param maxOutputSamples Maximum output buffer size
      * @return Number of output samples at host rate
      */
-    int upsample(const float* inputL, const float* inputR, int numInputSamples,
-                 float* outputL, float* outputR, int maxOutputSamples);
+    int upsample(const float* inputL, const float* inputR,
+                 int numInputSamples, float* outputL, float* outputR,
+                 int maxOutputSamples);
 
     /**
      * @brief Get the total round-trip latency in host samples
      */
-    int getTotalLatency() const;
+    int get_total_latency() const;
 
     /**
      * @brief Check if resampling is needed (rates differ significantly)
      */
-    bool needsResampling() const;
+    bool needs_resampling() const;
 
     /**
      * @brief Reset converter state
@@ -148,7 +151,7 @@ public:
 
 private:
     struct Impl;
-    std::unique_ptr<Impl> pImpl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace thl::dsp::resonator

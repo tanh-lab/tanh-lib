@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,25 +19,24 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Polyblep oscillator used for string synth synthesis.
 
-#ifndef RINGS_DSP_STRING_SYNTH_OSCILLATOR_H_
-#define RINGS_DSP_STRING_SYNTH_OSCILLATOR_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
-#include <tanh/dsp/utils/stmlib/dsp/dsp.h>
-#include <tanh/dsp/utils/stmlib/dsp/parameter_interpolator.h>
-#include <tanh/dsp/utils/stmlib/dsp/units.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/ParameterInterpolator.h>
+#include <tanh/dsp/utils/DspMath.h>
 
 namespace thl::dsp::resonator::rings {
 
-using namespace stmlib;
+using namespace thl::dsp::utils;
+using ::thl::dsp::utils::ParameterInterpolator;
 
 enum OscillatorShape {
   OSCILLATOR_SHAPE_BRIGHT_SQUARE,
@@ -51,21 +50,21 @@ class StringSynthOscillator {
   StringSynthOscillator() { }
   ~StringSynthOscillator() { }
 
-  inline void Init() {
-    phase_ = 0.0f;
-    phase_increment_ = 0.01f;
-    filter_state_ = 0.0f;
-    high_ = false;
+  inline void init() {
+    m_phase = 0.0f;
+    m_phase_increment = 0.01f;
+    m_filter_state = 0.0f;
+    m_high = false;
 
-    next_sample_ = 0.0f;
-    next_sample_saw_ = 0.0f;
+    m_next_sample = 0.0f;
+    m_next_sample_saw = 0.0f;
 
-    gain_ = 0.0f;
-    gain_saw_ = 0.0f;
+    m_gain = 0.0f;
+    m_gain_saw = 0.0f;
   }
-  
+
   template<OscillatorShape shape, bool interpolate_pitch>
-  inline void Render(
+  inline void render(
       float target_increment,
       float target_gain,
       float target_gain_saw,
@@ -79,18 +78,18 @@ class StringSynthOscillator {
         return;
       }
     }
-    float phase = phase_;
+    float phase = m_phase;
     ParameterInterpolator phase_increment(
-        &phase_increment_,
+        m_phase_increment,
         target_increment,
         size);
-    ParameterInterpolator gain(&gain_, target_gain, size);
-    ParameterInterpolator gain_saw(&gain_saw_, target_gain_saw, size);
+    ParameterInterpolator gain(m_gain, target_gain, size);
+    ParameterInterpolator gain_saw(m_gain_saw, target_gain_saw, size);
 
-    float next_sample = next_sample_;
-    float next_sample_saw = next_sample_saw_;
-    float filter_state = filter_state_;
-    bool high = high_;
+    float next_sample = m_next_sample;
+    float next_sample_saw = m_next_sample_saw;
+    float filter_state = m_filter_state;
+    bool high = m_high;
 
     while (size--) {
       float this_sample = next_sample;
@@ -99,34 +98,34 @@ class StringSynthOscillator {
       next_sample_saw = 0.0f;
 
       float increment = interpolate_pitch
-          ? phase_increment.Next()
+          ? phase_increment.next()
           : target_increment;
       phase += increment;
-    
+
       float sample = 0.0f;
       const float pw = 0.5f;
 
       if (!high && phase >= pw) {
         float t = (phase - pw) / increment;
-        this_sample += ThisBlepSample(t);
-        next_sample += NextBlepSample(t);
+        this_sample += this_blep_sample(t);
+        next_sample += next_blep_sample(t);
         high = true;
       }
       if (phase >= 1.0f) {
         phase -= 1.0f;
         float t = phase / increment;
-        float a = ThisBlepSample(t);
-        float b = NextBlepSample(t);
+        float a = this_blep_sample(t);
+        float b = next_blep_sample(t);
         this_sample -= a;
         next_sample -= b;
         this_sample_saw -= a;
         next_sample_saw -= b;
         high = false;
       }
-      
+
       next_sample += phase < pw ? 0.0f : 1.0f;
       next_sample_saw += phase;
-      
+
       if (shape == OSCILLATOR_SHAPE_TRIANGLE) {
         const float integrator_coefficient = increment * 0.125f;
         this_sample = 64.0f * (this_sample - 0.5f);
@@ -147,37 +146,36 @@ class StringSynthOscillator {
         sample = this_sample;
       }
       this_sample_saw = 2.0f * this_sample_saw - 1.0f;
-      
-      *out++ += sample * gain.Next() + this_sample_saw * gain_saw.Next();
+
+      *out++ += sample * gain.next() + this_sample_saw * gain_saw.next();
     }
-    high_ = high;
-    phase_ = phase;
-    next_sample_ = next_sample;
-    next_sample_saw_ = next_sample_saw;
-    filter_state_ = filter_state;
+    m_high = high;
+    m_phase = phase;
+    m_next_sample = next_sample;
+    m_next_sample_saw = next_sample_saw;
+    m_filter_state = filter_state;
   }
 
  private:
-  static inline float ThisBlepSample(float t) {
+  static inline float this_blep_sample(float t) {
     return 0.5f * t * t;
   }
-  static inline float NextBlepSample(float t) {
+  static inline float next_blep_sample(float t) {
     t = 1.0f - t;
     return -0.5f * t * t;
   }
 
-  bool high_;
-  float phase_;
-  float phase_increment_;
-  float next_sample_;
-  float next_sample_saw_;
-  float filter_state_;
-  float gain_;
-  float gain_saw_;
+  bool m_high;
+  float m_phase;
+  float m_phase_increment;
+  float m_next_sample;
+  float m_next_sample_saw;
+  float m_filter_state;
+  float m_gain;
+  float m_gain_saw;
 
-  DISALLOW_COPY_AND_ASSIGN(StringSynthOscillator);
+  StringSynthOscillator(const StringSynthOscillator&) = delete;
+  StringSynthOscillator& operator=(const StringSynthOscillator&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_STRING_SYNTH_OSCILLATOR_H_

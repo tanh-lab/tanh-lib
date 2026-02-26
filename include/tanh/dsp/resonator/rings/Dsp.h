@@ -26,20 +26,17 @@
 //
 // Utility DSP routines.
 
-#ifndef RINGS_DSP_DSP_H_
-#define RINGS_DSP_DSP_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
+#include <cstddef>
 
 // #define MIC_W
 #define BRYAN_CHORDS
 
 namespace thl::dsp::resonator::rings {
-  
-static const float kSampleRate = 48000.0f;
-const float a3 = 440.0f / kSampleRate;
+
+static constexpr float kDefaultSampleRate = 48000.0f;
 const size_t kMaxBlockSize = 24;
 
 }  // namespace thl::dsp::resonator::rings
 
-#endif  // RINGS_DSP_DSP_H_

@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,7 +19,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
@@ -28,23 +28,26 @@
 
 #include <tanh/dsp/resonator/rings/Resonator.h>
 
-#include <tanh/dsp/utils/stmlib/dsp/dsp.h>
-#include <tanh/dsp/utils/stmlib/dsp/cosine_oscillator.h>
-#include <tanh/dsp/utils/stmlib/dsp/parameter_interpolator.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/CosineOscillator.h>
+#include <tanh/dsp/utils/ParameterInterpolator.h>
 
 #include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
 
 using namespace std;
-using namespace stmlib;
+using namespace thl::dsp::utils;
+using ::thl::dsp::utils::ParameterInterpolator;
 
-void Resonator::Init() {
+void Resonator::init(float sample_rate) {
+  m_sample_rate = sample_rate;
+
   for (int32_t i = 0; i < kMaxModes; ++i) {
-    f_[i].Init();
+    m_f[i].init();
   }
 
-  set_frequency(220.0f / kSampleRate);
+  set_frequency(220.0f / m_sample_rate);
   set_structure(0.25f);
   set_brightness(0.5f);
   set_damping(0.3f);
@@ -52,29 +55,29 @@ void Resonator::Init() {
   set_resolution(kMaxModes);
 }
 
-int32_t Resonator::ComputeFilters() {
-  float stiffness = Stiffness(structure_);
-  float harmonic = frequency_;
+int32_t Resonator::compute_filters() {
+  float stiffness = Stiffness(m_structure);
+  float harmonic = m_frequency;
   float stretch_factor = 1.0f;
-  float q = 500.0f * FourDecades(damping_);
-  float brightness_attenuation = 1.0f - structure_;
+  float q = 500.0f * FourDecades(m_damping);
+  float brightness_attenuation = 1.0f - m_structure;
   // Reduces the range of brightness when structure is very low, to prevent
   // clipping.
   brightness_attenuation *= brightness_attenuation;
   brightness_attenuation *= brightness_attenuation;
   brightness_attenuation *= brightness_attenuation;
-  float brightness = brightness_ * (1.0f - 0.2f * brightness_attenuation);
+  float brightness = m_brightness * (1.0f - 0.2f * brightness_attenuation);
   float q_loss = brightness * (2.0f - brightness) * 0.85f + 0.15f;
-  float q_loss_damping_rate = structure_ * (2.0f - structure_) * 0.1f;
+  float q_loss_damping_rate = m_structure * (2.0f - m_structure) * 0.1f;
   int32_t num_modes = 0;
-  for (int32_t i = 0; i < min(kMaxModes, resolution_); ++i) {
+  for (int32_t i = 0; i < min(kMaxModes, m_resolution); ++i) {
     float partial_frequency = harmonic * stretch_factor;
     if (partial_frequency >= 0.49f) {
       partial_frequency = 0.49f;
     } else {
       num_modes = i + 1;
     }
-    f_[i].set_f_q<FREQUENCY_FAST>(
+    m_f[i].set_f_q<thl::dsp::utils::FrequencyApproximation::Fast>(
         partial_frequency,
         1.0f + partial_frequency * q);
     stretch_factor += stiffness;
@@ -87,32 +90,32 @@ int32_t Resonator::ComputeFilters() {
     }
     // This prevents the highest partials from decaying too fast.
     q_loss += q_loss_damping_rate * (1.0f - q_loss);
-    harmonic += frequency_;
+    harmonic += m_frequency;
     q *= q_loss;
   }
-  
+
   return num_modes;
 }
 
-void Resonator::Process(const float* in, float* out, float* aux, size_t size) {
-  if (dirty_) {
-    num_modes_ = ComputeFilters();
-    dirty_ = false;
+void Resonator::process(const float* in, float* out, float* aux, size_t size) {
+  if (m_dirty) {
+    m_num_modes = compute_filters();
+    m_dirty = false;
   }
-  int32_t num_modes = num_modes_;
-  
-  ParameterInterpolator position(&previous_position_, position_, size);
+  int32_t num_modes = m_num_modes;
+
+  ParameterInterpolator position(m_previous_position, m_position, size);
   while (size--) {
     CosineOscillator amplitudes;
-    amplitudes.Init<COSINE_OSCILLATOR_APPROXIMATE>(position.Next());
-    
+    amplitudes.init<thl::dsp::utils::CosineOscillatorMode::Approximate>(position.next());
+
     float input = *in++ * 0.125f;
     float odd = 0.0f;
     float even = 0.0f;
-    amplitudes.Start();
+    amplitudes.start();
     for (int32_t i = 0; i < num_modes;) {
-      odd += amplitudes.Next() * f_[i++].Process<FILTER_MODE_BAND_PASS>(input);
-      even += amplitudes.Next() * f_[i++].Process<FILTER_MODE_BAND_PASS>(input);
+      odd += amplitudes.next() * m_f[i++].process<thl::dsp::utils::FilterMode::BandPass>(input);
+      even += amplitudes.next() * m_f[i++].process<thl::dsp::utils::FilterMode::BandPass>(input);
     }
     *out++ = odd;
     *aux++ = even;

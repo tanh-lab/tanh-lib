@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,7 +19,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
@@ -30,127 +30,129 @@
 
 #include <cmath>
 
-#include <tanh/dsp/utils/stmlib/dsp/dsp.h>
-#include <tanh/dsp/utils/stmlib/dsp/parameter_interpolator.h>
-#include <tanh/dsp/utils/stmlib/dsp/units.h>
-#include <tanh/dsp/utils/stmlib/utils/random.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/ParameterInterpolator.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/Random.h>
 
 #include <tanh/dsp/resonator/rings/DspFunctions.h>
 
 namespace thl::dsp::resonator::rings {
-  
-using namespace std;
-using namespace stmlib;
 
-void String::Init(bool enable_dispersion) {
+using namespace std;
+using namespace thl::dsp::utils;
+using ::thl::dsp::utils::ParameterInterpolator;
+
+void String::init(bool enable_dispersion, float sample_rate) {
   WarmDspFunctions();
 
-  enable_dispersion_ = enable_dispersion;
+  m_sample_rate = sample_rate;
+  m_enable_dispersion = enable_dispersion;
 
-  string_.Init();
-  stretch_.Init();
-  fir_damping_filter_.Init();
-  iir_damping_filter_.Init();
-  
-  set_frequency(220.0f / kSampleRate);
+  m_string.init();
+  m_stretch.init();
+  m_fir_damping_filter.init();
+  m_iir_damping_filter.init();
+
+  set_frequency(220.0f / m_sample_rate);
   set_dispersion(0.25f);
   set_brightness(0.5f);
   set_damping(0.3f);
   set_position(0.8f);
-  
-  delay_ = 1.0f / frequency_;
-  clamped_position_ = 0.0f;
-  previous_dispersion_ = 0.0f;
-  dispersion_noise_ = 0.0f;
-  curved_bridge_ = 0.0f;
-  previous_damping_compensation_ = 0.0f;
-  noise_filter_ = 0.0f;
-  damping_compensation_target_ = 0.0f;
-  
-  out_sample_[0] = out_sample_[1] = 0.0f;
-  aux_sample_[0] = aux_sample_[1] = 0.0f;
-  
-  dc_blocker_.Init(1.0f - 20.0f / kSampleRate);
+
+  m_delay = 1.0f / m_frequency;
+  m_clamped_position = 0.0f;
+  m_previous_dispersion = 0.0f;
+  m_dispersion_noise = 0.0f;
+  m_curved_bridge = 0.0f;
+  m_previous_damping_compensation = 0.0f;
+  m_noise_filter = 0.0f;
+  m_damping_compensation_target = 0.0f;
+
+  m_out_sample[0] = m_out_sample[1] = 0.0f;
+  m_aux_sample[0] = m_aux_sample[1] = 0.0f;
+
+  m_dc_blocker.init(1.0f - 20.0f / m_sample_rate);
 }
 
-void String::PrepareCoefficients(
+void String::prepare_coefficients(
     float delay, float src_ratio, size_t size) {
-  float lf_damping = damping_ * (2.0f - damping_);
-  float rt60 = 0.07f * SemitonesToRatio(lf_damping * 96.0f) * kSampleRate;
+  float lf_damping = m_damping * (2.0f - m_damping);
+  float rt60 = 0.07f * semitones_to_ratio(lf_damping * 96.0f) * m_sample_rate;
   float rt60_base_2_12 = max(-120.0f * delay / src_ratio / rt60, -127.0f);
-  float damping_coefficient = SemitonesToRatio(rt60_base_2_12);
-  float brightness = brightness_ * brightness_;
-  noise_filter_ = SemitonesToRatio((brightness_ - 1.0f) * 48.0f);
+  float damping_coefficient = semitones_to_ratio(rt60_base_2_12);
+  float brightness = m_brightness * m_brightness;
+  m_noise_filter = semitones_to_ratio((m_brightness - 1.0f) * 48.0f);
   float damping_cutoff = min(
-      24.0f + damping_ * damping_ * 48.0f + brightness_ * brightness_ * 24.0f,
+      24.0f + m_damping * m_damping * 48.0f + m_brightness * m_brightness * 24.0f,
       84.0f);
-  float damping_f = min(frequency_ * SemitonesToRatio(damping_cutoff), 0.499f);
+  float damping_f = min(m_frequency * semitones_to_ratio(damping_cutoff), 0.499f);
 
-  if (damping_ >= 0.95f) {
-    float to_infinite = 20.0f * (damping_ - 0.95f);
+  if (m_damping >= 0.95f) {
+    float to_infinite = 20.0f * (m_damping - 0.95f);
     damping_coefficient += to_infinite * (1.0f - damping_coefficient);
     brightness += to_infinite * (1.0f - brightness);
     damping_f += to_infinite * (0.4999f - damping_f);
     damping_cutoff += to_infinite * (128.0f - damping_cutoff);
   }
 
-  fir_damping_filter_.Configure(damping_coefficient, brightness, size);
-  iir_damping_filter_.set_f_q<FREQUENCY_ACCURATE>(damping_f, 0.5f);
-  damping_compensation_target_ = 1.0f - SvfShift(damping_cutoff);
+  m_fir_damping_filter.configure(damping_coefficient, brightness, size);
+  m_iir_damping_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Accurate>(damping_f, 0.5f);
+  m_damping_compensation_target = 1.0f - SvfShift(damping_cutoff);
 }
 
 template<bool enable_dispersion>
-void String::ProcessInternal(
+void String::process_internal(
     const float* in,
     float* out,
     float* aux,
     size_t size) {
-  float delay = 1.0f / frequency_;
+  float delay = 1.0f / m_frequency;
   CONSTRAIN(delay, 4.0f, kDelayLineSize - 4.0f);
 
-  float src_ratio = delay * frequency_;
+  float src_ratio = delay * m_frequency;
   if (src_ratio >= 0.9999f) {
-    src_phase_ = 1.0f;
+    m_src_phase = 1.0f;
     src_ratio = 1.0f;
   }
 
-  float clamped_position = 0.5f - 0.98f * fabs(position_ - 0.5f);
+  float clamped_position = 0.5f - 0.98f * fabs(m_position - 0.5f);
 
   ParameterInterpolator delay_modulation(
-      &delay_, delay, size);
+      m_delay, delay, size);
   ParameterInterpolator position_modulation(
-      &clamped_position_, clamped_position, size);
+      m_clamped_position, clamped_position, size);
   ParameterInterpolator dispersion_modulation(
-      &previous_dispersion_, dispersion_, size);
+      m_previous_dispersion, m_dispersion, size);
 
-  PrepareCoefficients(delay, src_ratio, size);
-  float noise_filter = noise_filter_;
+  prepare_coefficients(delay, src_ratio, size);
+  float noise_filter = m_noise_filter;
   ParameterInterpolator damping_compensation_modulation(
-      &previous_damping_compensation_,
-      damping_compensation_target_,
+      m_previous_damping_compensation,
+      m_damping_compensation_target,
       size);
-  
+
   while (size--) {
-    src_phase_ += src_ratio;
-    if (src_phase_ > 1.0f) {
-      src_phase_ -= 1.0f;
-      
-      float delay = delay_modulation.Next();
-      float comb_delay = delay * position_modulation.Next();
-    
+    m_src_phase += src_ratio;
+    if (m_src_phase > 1.0f) {
+      m_src_phase -= 1.0f;
+
+      float delay = delay_modulation.next();
+      float comb_delay = delay * position_modulation.next();
+
 #ifndef MIC_W
-      delay *= damping_compensation_modulation.Next();  // IIR delay.
+      delay *= damping_compensation_modulation.next();  // IIR delay.
 #endif  // MIC_W
       delay -= 1.0f; // FIR delay.
-    
+
       float s = 0.0f;
 
       if (enable_dispersion) {
-        float noise = 2.0f * Random::GetFloat() - 1.0f;
+        float noise = 2.0f * Random::get_float() - 1.0f;
         noise *= 1.0f / (0.2f + noise_filter);
-        dispersion_noise_ += noise_filter * (noise - dispersion_noise_);
+        m_dispersion_noise += noise_filter * (noise - m_dispersion_noise);
 
-        float dispersion = dispersion_modulation.Next();
+        float dispersion = dispersion_modulation.next();
         float stretch_point = dispersion <= 0.0f
             ? 0.0f
             : dispersion * (2.0f - dispersion) * 0.475f;
@@ -160,61 +162,61 @@ void String::ProcessInternal(
         float bridge_curving = dispersion < 0.0f
             ? -dispersion
             : 0.0f;
-        
+
         noise_amount = noise_amount * noise_amount * 0.025f;
         float ac_blocking_amount = bridge_curving;
 
         bridge_curving = bridge_curving * bridge_curving * 0.01f;
         float ap_gain = -0.618f * dispersion / (0.15f + fabs(dispersion));
-        
+
         float delay_fm = 1.0f;
-        delay_fm += dispersion_noise_ * noise_amount;
-        delay_fm -= curved_bridge_ * bridge_curving;
+        delay_fm += m_dispersion_noise * noise_amount;
+        delay_fm -= m_curved_bridge * bridge_curving;
         delay *= delay_fm;
-        
+
         float ap_delay = delay * stretch_point;
         float main_delay = delay - ap_delay;
         if (ap_delay >= 4.0f && main_delay >= 4.0f) {
-          s = string_.ReadHermite(main_delay);
-          s = stretch_.Allpass(s, ap_delay, ap_gain);
+          s = m_string.read_hermite(main_delay);
+          s = m_stretch.allpass(s, ap_delay, ap_gain);
         } else {
-          s = string_.ReadHermite(delay);
+          s = m_string.read_hermite(delay);
         }
         float s_ac = s;
-        dc_blocker_.Process(&s_ac, 1);
+        m_dc_blocker.process(&s_ac, 1);
         s += ac_blocking_amount * (s_ac - s);
-        
+
         float value = fabs(s) - 0.025f;
         float sign = s > 0.0f ? 1.0f : -1.5f;
-        curved_bridge_ = (fabs(value) + value) * sign;
+        m_curved_bridge = (fabs(value) + value) * sign;
       } else {
-        s = string_.ReadHermite(delay);
+        s = m_string.read_hermite(delay);
       }
-    
+
       s += *in;  // When f0 < 11.7 Hz, causes ugly bitcrushing on the input!
-      s = fir_damping_filter_.Process(s);
+      s = m_fir_damping_filter.process(s);
 #ifndef MIC_W
-      s = iir_damping_filter_.Process<FILTER_MODE_LOW_PASS>(s);
+      s = m_iir_damping_filter.process<thl::dsp::utils::FilterMode::LowPass>(s);
 #endif  // MIC_W
-      string_.Write(s);
+      m_string.write(s);
 
-      out_sample_[1] = out_sample_[0];
-      aux_sample_[1] = aux_sample_[0];
+      m_out_sample[1] = m_out_sample[0];
+      m_aux_sample[1] = m_aux_sample[0];
 
-      out_sample_[0] = s;
-      aux_sample_[0] = string_.Read(comb_delay);
+      m_out_sample[0] = s;
+      m_aux_sample[0] = m_string.read(comb_delay);
     }
-    *out++ += Crossfade(out_sample_[1], out_sample_[0], src_phase_);
-    *aux++ += Crossfade(aux_sample_[1], aux_sample_[0], src_phase_);
+    *out++ += crossfade(m_out_sample[1], m_out_sample[0], m_src_phase);
+    *aux++ += crossfade(m_aux_sample[1], m_aux_sample[0], m_src_phase);
     in++;
   }
 }
 
-void String::Process(const float* in, float* out, float* aux, size_t size) {
-  if (enable_dispersion_) {
-    ProcessInternal<true>(in, out, aux, size);
+void String::process(const float* in, float* out, float* aux, size_t size) {
+  if (m_enable_dispersion) {
+    process_internal<true>(in, out, aux, size);
   } else {
-    ProcessInternal<false>(in, out, aux, size);
+    process_internal<false>(in, out, aux, size);
   }
 }
 

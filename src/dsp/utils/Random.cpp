@@ -2,7 +2,7 @@
 
 namespace thl::dsp::utils {
 
-uint32_t Random::rng_state_ = 0x21u;
+uint32_t Random::m_rng_state = 0x21u;
 
 uint32_t Random::nlog2_16(uint16_t x) {
     uint32_t r = 0;

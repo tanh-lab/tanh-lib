@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,21 +19,19 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Group of voices.
 
-#ifndef RINGS_DSP_PART_H_
-#define RINGS_DSP_PART_H_
+#pragma once
 
 #include <algorithm>
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
-#include <tanh/dsp/utils/stmlib/dsp/cosine_oscillator.h>
-#include <tanh/dsp/utils/stmlib/dsp/delay_line.h>
+#include <tanh/dsp/utils/CosineOscillator.h>
+#include <tanh/dsp/utils/DelayLine.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
 #include <tanh/dsp/resonator/rings/FmVoice.h>
@@ -52,7 +50,7 @@ enum ResonatorModel {
   RESONATOR_MODEL_MODAL,
   RESONATOR_MODEL_SYMPATHETIC_STRING,
   RESONATOR_MODEL_STRING,
-  
+
   // Bonus!
   RESONATOR_MODEL_FM_VOICE,
   RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED,
@@ -73,10 +71,10 @@ class Part {
  public:
   Part() { }
   ~Part() { }
-  
-  void Init(uint16_t* reverb_buffer);
-  
-  void Process(
+
+  void init(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
+
+  void process(
       const PerformanceState& performance_state,
       const Patch& patch,
       const float* in,
@@ -84,56 +82,56 @@ class Part {
       float* aux,
       size_t size);
 
-  inline bool bypass() const { return bypass_; }
-  inline void set_bypass(bool bypass) { bypass_ = bypass; }
+  inline bool bypass() const { return m_bypass; }
+  inline void set_bypass(bool bypass) { m_bypass = bypass; }
 
-  inline int32_t polyphony() const { return polyphony_; }
+  inline int32_t polyphony() const { return m_polyphony; }
   inline void set_polyphony(int32_t polyphony) {
-    int32_t old_polyphony = polyphony_;
-    polyphony_ = std::min(polyphony, kMaxPolyphony);
-    for (int32_t i = old_polyphony; i < polyphony_; ++i) {
-      note_[i] = note_[0] + i * 0.05f;
+    int32_t old_polyphony = m_polyphony;
+    m_polyphony = std::min(polyphony, kMaxPolyphony);
+    for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
+      m_note[i] = m_note[0] + i * 0.05f;
     }
-    dirty_ = true;
+    m_dirty = true;
   }
-  
-  inline ResonatorModel model() const { return model_; }
+
+  inline ResonatorModel model() const { return m_model; }
   inline void set_model(ResonatorModel model) {
-    if (model != model_) {
-      model_ = model;
-      dirty_ = true;
+    if (model != m_model) {
+      m_model = model;
+      m_dirty = true;
     }
   }
 
  private:
-  void ConfigureResonators();
-  void PrepareVoiceParams(
+  void configure_resonators();
+  void prepare_voice_params(
       const PerformanceState& performance_state,
       const Patch& patch);
-  void RenderModalVoice(
+  void render_modal_voice(
       int32_t voice,
       const PerformanceState& performance_state,
       const Patch& patch,
       float frequency,
       float filter_cutoff,
       size_t size);
-  void RenderStringVoice(
+  void render_string_voice(
       int32_t voice,
       const PerformanceState& performance_state,
       const Patch& patch,
       float frequency,
       float filter_cutoff,
       size_t size);
-  void RenderFMVoice(
+  void render_fm_voice(
       int32_t voice,
       const PerformanceState& performance_state,
       const Patch& patch,
       float frequency,
       float filter_cutoff,
       size_t size);
-  
 
-  inline float Squash(float x) const {
+
+  inline float squash(float x) const {
     if (x < 0.5f) {
       x *= 2.0f;
       x *= x;
@@ -152,51 +150,53 @@ class Part {
     return x;
   }
 
-  void ComputeSympatheticStringsNotes(
+  void compute_sympathetic_strings_notes(
       float tonic,
       float note,
       float parameter,
       float* destination,
       size_t num_strings);
-  
-  bool bypass_;
-  bool dirty_;
 
-  ResonatorModel model_;
+  float m_sample_rate = kDefaultSampleRate;
+  float m_a3 = 440.0f / kDefaultSampleRate;
 
-  int32_t num_voices_;
-  int32_t active_voice_;
-  uint32_t step_counter_;
-  int32_t polyphony_;
-  
-  Resonator resonator_[kMaxPolyphony];
-  String string_[kNumStrings];
-  stmlib::CosineOscillator lfo_[kNumStrings];
-  FMVoice fm_voice_[kMaxPolyphony];
-  
-  stmlib::Svf excitation_filter_[kMaxPolyphony];
-  stmlib::DCBlocker dc_blocker_[kMaxPolyphony];
-  Plucker plucker_[kMaxPolyphony];
+  bool m_bypass;
+  bool m_dirty;
 
-  float note_[kMaxPolyphony];
-  PreparedVoiceParams prepared_[kMaxPolyphony];
-  NoteFilter note_filter_;
-  
-  float resonator_input_[kMaxBlockSize];
-  float sympathetic_resonator_input_[kMaxBlockSize];
-  float noise_burst_buffer_[kMaxBlockSize];
-  
-  float out_buffer_[kMaxBlockSize];
-  float aux_buffer_[kMaxBlockSize];
-  
-  Reverb reverb_;
-  Limiter limiter_;
-  
-  static float model_gains_[RESONATOR_MODEL_LAST];
-  
-  DISALLOW_COPY_AND_ASSIGN(Part);
+  ResonatorModel m_model;
+
+  int32_t m_num_voices;
+  int32_t m_active_voice;
+  uint32_t m_step_counter;
+  int32_t m_polyphony;
+
+  Resonator m_resonator[kMaxPolyphony];
+  String m_string[kNumStrings];
+  thl::dsp::utils::CosineOscillator m_lfo[kNumStrings];
+  FMVoice m_fm_voice[kMaxPolyphony];
+
+  thl::dsp::utils::Svf m_excitation_filter[kMaxPolyphony];
+  thl::dsp::utils::DCBlocker m_dc_blocker[kMaxPolyphony];
+  Plucker m_plucker[kMaxPolyphony];
+
+  float m_note[kMaxPolyphony];
+  PreparedVoiceParams m_prepared[kMaxPolyphony];
+  NoteFilter m_note_filter;
+
+  float m_resonator_input[kMaxBlockSize];
+  float m_sympathetic_resonator_input[kMaxBlockSize];
+  float m_noise_burst_buffer[kMaxBlockSize];
+
+  float m_out_buffer[kMaxBlockSize];
+  float m_aux_buffer[kMaxBlockSize];
+
+  Reverb m_reverb;
+  Limiter m_limiter;
+
+  static float m_model_gains[RESONATOR_MODEL_LAST];
+
+  Part(const Part&) = delete;
+  Part& operator=(const Part&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_PART_H_

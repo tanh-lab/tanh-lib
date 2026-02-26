@@ -21,7 +21,7 @@ option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 option(TANH_BUILD_RESONATOR "Build Resonator component" ON)
-option(TANH_BUILD_RESONATOR_WRAPPER "Build RingsResonator wrapper (requires libsamplerate)" ON)
+option(TANH_BUILD_RESONATOR_WRAPPER "Build RingsResonator wrapper" ON)
 
 # ==============================================================================
 # Get project version
@@ -323,41 +323,29 @@ if(TANH_BUILD_RESONATOR AND TANH_BUILD_RESONATOR_WRAPPER)
         message(FATAL_ERROR "Resonator wrapper requires Resonator core component")
     endif()
 
-    find_path(TANH_SAMPLERATE_INCLUDE_DIR samplerate.h)
-    find_library(TANH_SAMPLERATE_LIBRARY NAMES samplerate)
+    add_library(${PROJECT_NAME}_resonator
+        src/dsp/resonator/RingsResonator.cpp
+    )
 
-    if(TANH_SAMPLERATE_INCLUDE_DIR AND TANH_SAMPLERATE_LIBRARY)
-        add_library(${PROJECT_NAME}_resonator
-            src/dsp/resonator/RingsResonator.cpp
-            src/dsp/resonator/SampleRateConverter.cpp
-        )
+    set_target_properties(${PROJECT_NAME}_resonator PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
 
-        set_target_properties(${PROJECT_NAME}_resonator PROPERTIES
-            POSITION_INDEPENDENT_CODE ON
-            VERSION ${PROJECT_VERSION}
-            SOVERSION ${PROJECT_VERSION_MAJOR})
+    add_library(${PROJECT_NAME}::Resonator ALIAS ${PROJECT_NAME}_resonator)
 
-        add_library(${PROJECT_NAME}::Resonator ALIAS ${PROJECT_NAME}_resonator)
+    target_include_directories(${PROJECT_NAME}_resonator
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
 
-        target_include_directories(${PROJECT_NAME}_resonator
-            PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-            PRIVATE
-            ${TANH_SAMPLERATE_INCLUDE_DIR}
-        )
+    target_link_libraries(${PROJECT_NAME}_resonator
+        PUBLIC
+        ${PROJECT_NAME}_resonator_core
+    )
 
-        target_link_libraries(${PROJECT_NAME}_resonator
-            PUBLIC
-            ${PROJECT_NAME}_resonator_core
-            PRIVATE
-            ${TANH_SAMPLERATE_LIBRARY}
-        )
-
-        list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
-    else()
-        message(WARNING "libsamplerate not found; skipping tanh_resonator wrapper target")
-    endif()
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
 endif()
 
 # AudioIO component (depends on Core)

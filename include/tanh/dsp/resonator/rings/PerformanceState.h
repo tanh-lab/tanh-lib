@@ -26,8 +26,7 @@
 //
 // Note triggering state.
 
-#ifndef RINGS_DSP_PERFORMANCE_STATE_H_
-#define RINGS_DSP_PERFORMANCE_STATE_H_
+#pragma once
 
 namespace thl::dsp::resonator::rings {
 
@@ -47,4 +46,3 @@ struct PerformanceState {
 
 }  // namespace thl::dsp::resonator::rings
 
-#endif  // RINGS_DSP_PERFORMANCE_STATE_H_

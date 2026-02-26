@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,23 +19,21 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Resonator.
 
-#ifndef RINGS_DSP_RESONATOR_H_
-#define RINGS_DSP_RESONATOR_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
 #include <algorithm>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
-#include <tanh/dsp/utils/stmlib/dsp/filter.h>
-#include <tanh/dsp/utils/stmlib/dsp/delay_line.h>
+#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/utils/DelayLine.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -45,62 +43,62 @@ class Resonator {
  public:
   Resonator() { }
   ~Resonator() { }
-  
-  void Init();
-  void Process(
+
+  void init(float sample_rate = kDefaultSampleRate);
+  void process(
       const float* in,
       float* out,
       float* aux,
       size_t size);
-  
+
   inline void set_frequency(float frequency) {
-    frequency_ = frequency;
-    dirty_ = true;
+    m_frequency = frequency;
+    m_dirty = true;
   }
 
   inline void set_structure(float structure) {
-    structure_ = structure;
-    dirty_ = true;
+    m_structure = structure;
+    m_dirty = true;
   }
 
   inline void set_brightness(float brightness) {
-    brightness_ = brightness;
-    dirty_ = true;
+    m_brightness = brightness;
+    m_dirty = true;
   }
 
   inline void set_damping(float damping) {
-    damping_ = damping;
-    dirty_ = true;
+    m_damping = damping;
+    m_dirty = true;
   }
 
   inline void set_position(float position) {
-    position_ = position;
+    m_position = position;
   }
 
   inline void set_resolution(int32_t resolution) {
     resolution -= resolution & 1; // Must be even!
-    resolution_ = std::min(resolution, kMaxModes);
-    dirty_ = true;
+    m_resolution = std::min(resolution, kMaxModes);
+    m_dirty = true;
   }
-  
- private:
-  int32_t ComputeFilters();
-  float frequency_;
-  float structure_;
-  float brightness_;
-  float position_;
-  float previous_position_;
-  float damping_;
-  
-  int32_t resolution_;
-  int32_t num_modes_ = 0;
-  bool dirty_ = true;
 
-  stmlib::Svf f_[kMaxModes];
-  
-  DISALLOW_COPY_AND_ASSIGN(Resonator);
+ private:
+  int32_t compute_filters();
+  float m_sample_rate = kDefaultSampleRate;
+  float m_frequency;
+  float m_structure;
+  float m_brightness;
+  float m_position;
+  float m_previous_position;
+  float m_damping;
+
+  int32_t m_resolution;
+  int32_t m_num_modes = 0;
+  bool m_dirty = true;
+
+  thl::dsp::utils::Svf m_f[kMaxModes];
+
+  Resonator(const Resonator&) = delete;
+  Resonator& operator=(const Resonator&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_RESONATOR_H_

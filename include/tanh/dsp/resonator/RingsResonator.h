@@ -54,7 +54,7 @@ public:
     /**
      * @brief Process audio block
      *
-     * Output is a blend of odd and even harmonics controlled by setOddEvenMix().
+     * Output is a blend of odd and even harmonics controlled by set_odd_even_mix().
      *
      * @param input Input buffer (excitation signal)
      * @param output Output buffer (blended odd/even)
@@ -68,7 +68,7 @@ public:
      * @brief Set the fundamental frequency
      * @param frequency Frequency in Hz (20 - 20000)
      */
-    void setFrequency(float frequency);
+    void set_frequency(float frequency);
 
     /**
      * @brief Set the structure parameter
@@ -79,7 +79,7 @@ public:
      *
      * @param structure 0.0 - 1.0
      */
-    void setStructure(float structure);
+    void set_structure(float structure);
 
     /**
      * @brief Set the brightness parameter
@@ -90,7 +90,7 @@ public:
      *
      * @param brightness 0.0 - 1.0
      */
-    void setBrightness(float brightness);
+    void set_brightness(float brightness);
 
     /**
      * @brief Set the damping parameter
@@ -101,7 +101,7 @@ public:
      *
      * @param damping 0.0 - 1.0
      */
-    void setDamping(float damping);
+    void set_damping(float damping);
 
     /**
      * @brief Set the position parameter
@@ -113,19 +113,19 @@ public:
      *
      * @param position 0.0 - 1.0
      */
-    void setPosition(float position);
+    void set_position(float position);
 
     /**
      * @brief Set the resonator model
      * @param model The resonator model to use
      */
-    void setModel(ResonatorModel model);
+    void set_model(ResonatorModel model);
 
     /**
      * @brief Set the polyphony mode
      * @param mode Number of voices (1, 2, or 4)
      */
-    void setPolyphony(PolyphonyMode mode);
+    void set_polyphony(PolyphonyMode mode);
 
     /**
      * @brief Set the odd/even output blend
@@ -136,29 +136,28 @@ public:
      *
      * @param mix 0.0 - 1.0
      */
-    void setOddEvenMix(float mix);
+    void set_odd_even_mix(float mix);
 
     /**
      * @brief Set the dry/wet mix
      *
-     * Global mix between raw (unresampled) input and processed output.
+     * Global mix between input and processed output.
      * The dry signal is delayed to match the wet signal's latency.
      *
      * @param dryWet 0.0 = fully dry, 1.0 = fully wet
      */
-    void setDryWet(float dryWet);
+    void set_dry_wet(float dryWet);
 
     /**
      * @brief Get the processing latency in host samples
      *
-     * Returns the total pipeline latency including resampling and
-     * block accumulation. Useful for latency compensation in DAWs.
+     * Returns the block accumulation latency (kBlockSize = 24 samples).
      */
-    int getLatency() const;
+    int get_latency() const;
 
 private:
     struct Impl;
-    std::unique_ptr<Impl> pImpl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace thl::dsp::resonator

@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -19,19 +19,17 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 // See http://creativecommons.org/licenses/MIT/ for more information.
 //
 // -----------------------------------------------------------------------------
 //
 // Part for the string synth easter egg.
 
-#ifndef RINGS_DSP_STRING_SYNTH_PART_H_
-#define RINGS_DSP_STRING_SYNTH_PART_H_
+#pragma once
 
-#include <tanh/dsp/utils/stmlib/stmlib.h>
 
-#include <tanh/dsp/utils/stmlib/dsp/filter.h>
+#include <tanh/dsp/utils/Svf.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
 #include <tanh/dsp/resonator/rings/fx/Chorus.h>
@@ -73,10 +71,10 @@ class StringSynthPart {
  public:
   StringSynthPart() { }
   ~StringSynthPart() { }
-  
-  void Init(uint16_t* reverb_buffer);
-  
-  void Process(
+
+  void init(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
+
+  void process(
       const PerformanceState& performance_state,
       const Patch& patch,
       const float* in,
@@ -85,57 +83,59 @@ class StringSynthPart {
       size_t size);
 
   inline void set_polyphony(int32_t polyphony) {
-    int32_t old_polyphony = polyphony_;
-    polyphony_ = std::min(polyphony, kMaxStringSynthPolyphony);
-    for (int32_t i = old_polyphony; i < polyphony_; ++i) {
-      group_[i].tonic = group_[0].tonic + i * 0.01f;
+    int32_t old_polyphony = m_polyphony;
+    m_polyphony = std::min(polyphony, kMaxStringSynthPolyphony);
+    for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
+      m_group[i].tonic = m_group[0].tonic + i * 0.01f;
     }
-    if (active_group_ >= polyphony_) {
-      active_group_ = 0;
+    if (m_active_group >= m_polyphony) {
+      m_active_group = 0;
     }
   }
-  
+
   inline void set_fx(FxType fx_type) {
-    if ((fx_type % 3) != (fx_type_ % 3)) {
-      clear_fx_ = true;
+    if ((fx_type % 3) != (m_fx_type % 3)) {
+      m_clear_fx = true;
     }
-    fx_type_ = fx_type;
+    m_fx_type = fx_type;
   }
-  
+
  private:
-  void ProcessEnvelopes(float shape, uint8_t* flags, float* values);
-  void ComputeRegistration(float gain, float registration, float* amplitudes);
+  void process_envelopes(float shape, uint8_t* flags, float* values);
+  void compute_registration(float gain, float registration, float* amplitudes);
 
-  void ProcessFormantFilter(float vowel, float shift, float resonance,
-                            float* out, float* aux, size_t size);
-  
-  StringSynthVoice<kNumHarmonics> voice_[kStringSynthVoices];
-  VoiceGroup group_[kMaxStringSynthPolyphony];
-  
-  stmlib::Svf formant_filter_[kNumFormants];
-  Ensemble ensemble_;
-  Reverb reverb_;
-  Chorus chorus_;
-  Limiter limiter_;
+  void process_formant_filter(float vowel, float shift, float resonance,
+                              float* out, float* aux, size_t size);
 
-  int32_t num_voices_;
-  int32_t active_group_;
-  uint32_t step_counter_;
-  int32_t polyphony_;
-  int32_t acquisition_delay_;
-  
-  FxType fx_type_;
-  
-  NoteFilter note_filter_;
-  
-  float filter_in_buffer_[kMaxBlockSize];
-  float filter_out_buffer_[kMaxBlockSize];
-  
-  bool clear_fx_;
-  
-  DISALLOW_COPY_AND_ASSIGN(StringSynthPart);
+  StringSynthVoice<kNumHarmonics> m_voice[kStringSynthVoices];
+  VoiceGroup m_group[kMaxStringSynthPolyphony];
+
+  thl::dsp::utils::Svf m_formant_filter[kNumFormants];
+  Ensemble m_ensemble;
+  Reverb m_reverb;
+  Chorus m_chorus;
+  Limiter m_limiter;
+
+  float m_sample_rate = kDefaultSampleRate;
+  float m_a3 = 440.0f / kDefaultSampleRate;
+
+  int32_t m_num_voices;
+  int32_t m_active_group;
+  uint32_t m_step_counter;
+  int32_t m_polyphony;
+  int32_t m_acquisition_delay;
+
+  FxType m_fx_type;
+
+  NoteFilter m_note_filter;
+
+  float m_filter_in_buffer[kMaxBlockSize];
+  float m_filter_out_buffer[kMaxBlockSize];
+
+  bool m_clear_fx;
+
+  StringSynthPart(const StringSynthPart&) = delete;
+  StringSynthPart& operator=(const StringSynthPart&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings
-
-#endif  // RINGS_DSP_STRING_SYNTH_VOICE_H_
