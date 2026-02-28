@@ -16,13 +16,13 @@ struct Grain {
     float amplitude;           // Grain amplitude/volume
     float gain;
     bool active;               // Whether the grain is currently active
-    utils::HannWindow envelope;       // Hann window envelope for amplitude modulation
+    thl::dsp::utils::HannWindow envelope;       // Hann window envelope for amplitude modulation
     size_t sample_index;       // Index of the sample in the audio data
 };
 
 class GrainProcessorImpl : public thl::dsp::BaseProcessor {
 public:
-    explicit GrainProcessorImpl(size_t grain_index, audio::AudioDataStore& audio_store);
+    explicit GrainProcessorImpl(size_t grain_index, thl::dsp::audio::AudioDataStore& audio_store);
     ~GrainProcessorImpl() override;
 
     void prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) override;
@@ -56,13 +56,10 @@ protected:
         NUM_PARAMETERS = 13
     };
 
-    utils::ADSR m_envelope;
-    audio::AudioDataStore& m_audio_store;
+    thl::dsp::utils::ADSR m_envelope;
+    thl::dsp::audio::AudioDataStore& m_audio_store;
 
 private:
-    double m_sample_rate = 48000.0;
-    size_t m_channels = 2;
-
     // Template wrapper for get_parameter
     template<typename T>
     T get_parameter(Parameter parameter);
@@ -73,6 +70,9 @@ private:
 
     virtual void process_voice_fx(float* buffer, size_t num_samples, size_t num_channels, size_t voice_index, bool note_on);
 
+    double m_sample_rate = 48000.0;
+    size_t m_channels = 2;
+    
     size_t m_grain_index;
 
     // Grain management
