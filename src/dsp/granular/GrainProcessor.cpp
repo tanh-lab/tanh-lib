@@ -199,7 +199,7 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
                     channel_accum[1] += mono_sample * position_spread;
                     break;
                 }
-                case ChannelMode::Stereo: {
+                case ChannelMode::TrueStereo: {
                     float s0 = 0.0f, s1 = 0.0f;
                     read_sample(source_pos, grain.sample_index, 0, s0);
                     if (source_channels > 1) {
