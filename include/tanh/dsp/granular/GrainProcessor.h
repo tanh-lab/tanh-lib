@@ -7,6 +7,15 @@
 
 namespace thl::dsp::granular {
 
+// Maximum number of output channels supported by the GrainProcessor
+constexpr size_t MAX_CHANNEL_SUPPORT = 16;
+
+enum class ChannelMode : int {
+    MonoToStereo = 0,      // Read ch0 from source, spread across L/R
+    Stereo = 1,            // Read ch0+ch1 from source (mono duplicated if source is mono)
+    TrueMultichannel = 2   // Read all source channels, write to matching output channels
+};
+
 // Structure to represent a single grain
 struct Grain {
     size_t start_position;     // Starting position in the sample
@@ -15,6 +24,7 @@ struct Grain {
     float velocity;            // Playback speed/velocity
     float amplitude;           // Grain amplitude/volume
     float gain;
+    float position_spread;                 // Pan position [0, 1] for MonoToStereo spread
     bool active;               // Whether the grain is currently active
     thl::dsp::utils::HannWindow envelope;       // Hann window envelope for amplitude modulation
     size_t sample_index;       // Index of the sample in the audio data
@@ -31,9 +41,6 @@ public:
     void reset_grains();
 
     bool is_active() const { return m_envelope.is_active(); }
-
-    // Process audio data
-    void process(float* output_buffer, unsigned int n_buffer_frames);
 
 protected:
     enum Parameter {
@@ -53,7 +60,10 @@ protected:
         SampleStart = 11,
         SampleEnd = 12,
 
-        NUM_PARAMETERS = 13
+        ChannelModeParam = 13,
+        Spread = 14,
+
+        NUM_PARAMETERS = 15
     };
 
     thl::dsp::utils::ADSR m_envelope;
@@ -95,8 +105,8 @@ private:
 
     // Grain generation and management
     void trigger_grain(const size_t sample_index);
-    void update_grains(float* output_buffer, unsigned int n_buffer_frames);
-    void get_sample_with_interpolation(float position, float* samples, size_t sample_index);
+    void update_grains(float** buffer, size_t n_buffer_frames);
+    void read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample);
 };
 
 // Template specializations for get_parameter
