@@ -60,11 +60,12 @@ protected:
         SampleIndex = 10,
         SampleStart = 11,
         SampleEnd = 12,
+        SampleLoopPoint = 13,
 
-        ChannelModeParam = 13,
-        Spread = 14,
+        ChannelModeParam = 14,
+        Spread = 15,
 
-        NUM_PARAMETERS = 15
+        NUM_PARAMETERS = 16
     };
 
     thl::dsp::utils::ADSR m_envelope;

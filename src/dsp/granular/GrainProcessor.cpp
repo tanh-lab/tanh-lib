@@ -278,16 +278,31 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             }
             grain_size = std::clamp(grain_size, min_size, max_size); // Clamp to valid range
 
+            // Apply sample start/end/loop region
+            size_t total_frames = audio_data[sample_index].get_num_frames();
+            float sample_start_norm = get_parameter<float>(SampleStart);
+            float sample_end_norm = get_parameter<float>(SampleEnd);
+            float sample_loop_norm = get_parameter<float>(SampleLoopPoint);
+
+            auto region_start = static_cast<size_t>(sample_start_norm * total_frames);
+            auto region_end = static_cast<size_t>(sample_end_norm * total_frames);
+            auto loop_point = static_cast<size_t>(sample_loop_norm * total_frames);
+            region_start = std::clamp(region_start, size_t(0), total_frames);
+            region_end = std::clamp(region_end, region_start, total_frames);
+            loop_point = std::clamp(loop_point, region_start, region_end);
+            size_t region_size = region_end - region_start;
+            if (region_size == 0) return;
+
             // Account for velocity so grains don't overshoot the source audio
             auto effective_grain_size = static_cast<size_t>(std::ceil(grain_size * velocity));
-            long max_position = static_cast<long>(audio_data[sample_index].get_num_frames()) - static_cast<long>(effective_grain_size);
+            long max_position = static_cast<long>(region_size) - static_cast<long>(effective_grain_size);
             if (max_position <= 0) {
-                // Sample too short for this grain size at this velocity
+                // Region too short for this grain size at this velocity
                 return;
             }
 
             // Apply randomness based on temperature parameter
-            long start_position = m_sequential_position;
+            long start_position = static_cast<long>(m_sequential_position);
             float grain_size_factor = static_cast<float>(grain_size) / static_cast<float>(max_size);
             float gain = 1.f;
 
@@ -318,9 +333,12 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
                 m_is_first_grain = false;
             }
 
+            start_position += region_start; // Offset to region start
+
             m_sequential_position += static_cast<long>(m_min_grain_interval); // Advance at real-time playback rate
+            long loop_offset = static_cast<long>(loop_point - region_start);
             if (m_sequential_position >= max_position) {
-                m_sequential_position -= static_cast<long>(0.6f * max_position); // Loop but do not replay the beginning
+                m_sequential_position = loop_offset; // Loop back to the loop point
             }
 
             // Randomize the velocity
