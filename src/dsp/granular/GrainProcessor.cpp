@@ -6,9 +6,8 @@
 
 namespace thl::dsp::granular {
 
-GrainProcessorImpl::GrainProcessorImpl(size_t grain_index, audio::AudioDataStore& audio_store)
+GrainProcessorImpl::GrainProcessorImpl(audio::AudioDataStore& audio_store)
     : m_audio_store(audio_store),
-      m_grain_index(grain_index),
       m_max_grains(32),
       m_next_grain_time(0),
       m_min_grain_interval(100),
@@ -56,32 +55,10 @@ void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& sample
         get_parameter<float>(EnvelopeRelease)
     );
     m_envelope.reset();
-
-    m_internal_buffer.clear();
-    m_internal_buffer.resize(samples_per_block * 2, 0.f); // stereo buffer
 }
 
 void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
-    this->process(m_internal_buffer.data(), static_cast<unsigned int>(num_samples));
-
-    process_voice_fx(m_internal_buffer.data(), num_samples, num_channels, m_grain_index, m_envelope.is_active());
-
-    // Mix into main output buffer
-    if (num_channels >= 1) {
-        float* left_out = buffer[0];
-        const float* left_in = m_internal_buffer.data();
-        for (size_t i = 0; i < num_samples; ++i) {
-            left_out[i] += left_in[i];
-        }
-    }
-
-    if (num_channels >= 2) {
-        float* right_out = buffer[1];
-        const float* right_in = m_internal_buffer.data() + num_samples;
-        for (size_t i = 0; i < num_samples; ++i) {
-            right_out[i] += right_in[i];
-        }
-    }
+    this->process(buffer[0], static_cast<unsigned int>(num_samples));
 }
 
 void GrainProcessorImpl::process(float* output_buffer, unsigned int n_buffer_frames) {
@@ -116,10 +93,6 @@ void GrainProcessorImpl::process(float* output_buffer, unsigned int n_buffer_fra
         output_buffer[i] *= grain_volume;
         output_buffer[i + n_buffer_frames] *= grain_volume;
     }
-}
-
-void GrainProcessorImpl::process_voice_fx(float*, size_t, size_t, size_t, bool) {
-    // Base implementation does not apply any voice FX.
 }
 
 void GrainProcessorImpl::trigger_grain(const size_t note_number) {
