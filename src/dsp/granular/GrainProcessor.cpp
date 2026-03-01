@@ -222,6 +222,8 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
                     }
                     break;
                 }
+                default:
+                    break;
             }
 
             // Update grain position
@@ -273,8 +275,7 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             if (static_cast<long>(region.size()) - static_cast<long>(effective_grain_size) <= 0) return;
 
             float position_temperature = apply_temperature_ramp(get_parameter<float>(TemperaturePosition));
-            long start_position = calculate_start_position(
-                region, position_temperature, grain_size, velocity);
+            long start_position = calculate_start_position(region, position_temperature, grain_size, velocity);
 
             // Setup the grain
             grain.start_position = start_position;
@@ -358,8 +359,8 @@ long GrainProcessorImpl::calculate_start_position(
 
     // Advance sequential position and handle looping
     m_sequential_position += static_cast<long>(m_min_grain_interval);
-    long loop_offset = static_cast<long>(region.loop_point - region.start);
     if (m_sequential_position >= max_position) {
+        long loop_offset = static_cast<long>(region.loop_point - region.start) < max_position ? static_cast<long>(region.loop_point - region.start) : 0;
         m_sequential_position = loop_offset + (m_sequential_position - max_position);
     }
 
