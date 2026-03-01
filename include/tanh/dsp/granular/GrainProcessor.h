@@ -21,6 +21,9 @@ constexpr float MAX_GRAIN_INTERVAL = 0.2f;  // 200 ms (5 grains/sec)
 // Maximum number of grains that can be active simultaneously
 constexpr size_t MAX_GRAINS = 32;
 
+// Duration in seconds over which temperature ramps up from 0 to full at playback start
+constexpr float TEMPERATURE_RAMP_DURATION = 1.0f;
+
 enum class ChannelMode : int {
     MonoToStereo,      // Read ch0 from source, spread across L/R
     TrueStereo,           // Read ch0+ch1 from source (mono duplicated if source is mono)
@@ -87,6 +90,13 @@ protected:
     thl::dsp::audio::AudioDataStore& m_audio_store;
 
 private:
+    struct SampleRegion {
+        size_t start;
+        size_t end;
+        size_t loop_point;
+        size_t size() const { return end - start; }
+    };
+
     // Template wrapper for get_parameter
     template<typename T>
     T get_parameter(Parameter parameter);
@@ -111,7 +121,7 @@ private:
 
     // Envelope
     bool m_last_playing_state;
-    bool m_is_first_grain{true};
+    size_t m_playback_elapsed_samples{0};
     float m_last_envelope_attack{-1.0f};
     float m_last_envelope_decay{-1.0f};
     float m_last_envelope_sustain{-1.0f};
@@ -126,8 +136,10 @@ private:
     void update_grains(float** buffer, size_t n_buffer_frames);
     void read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample);
     size_t calculate_grain_size(float grain_size_param, float temperature);
-    long calculate_start_position(size_t grain_size, long max_position, float temperature, size_t region_start, size_t loop_point);
     float calculate_velocity(float velocity, float temperature);
+    long calculate_start_position(const SampleRegion& region, float temperature, size_t grain_size, float velocity);
+    float apply_temperature_ramp(float temperature) const;
+    SampleRegion compute_sample_region(size_t total_frames);
 };
 
 // Template specializations for get_parameter
