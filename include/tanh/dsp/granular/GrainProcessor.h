@@ -22,15 +22,15 @@ struct Grain {
 
 class GrainProcessorImpl : public thl::dsp::BaseProcessor {
 public:
-    explicit GrainProcessorImpl(size_t grain_index, thl::dsp::audio::AudioDataStore& audio_store);
+    explicit GrainProcessorImpl(thl::dsp::audio::AudioDataStore& audio_store);
     ~GrainProcessorImpl() override;
 
     void prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) override;
     void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
 
-    void set_grain_index(size_t grain_index) { m_grain_index = grain_index; }
-
     void reset_grains();
+
+    bool is_envelope_active() const { return m_envelope.is_active(); }
 
     // Process audio data
     void process(float* output_buffer, unsigned int n_buffer_frames);
@@ -68,12 +68,8 @@ private:
     virtual bool get_parameter_bool(Parameter parameter) = 0;
     virtual int get_parameter_int(Parameter parameter) = 0;
 
-    virtual void process_voice_fx(float* buffer, size_t num_samples, size_t num_channels, size_t voice_index, bool note_on);
-
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
-    
-    size_t m_grain_index;
 
     // Grain management
     std::vector<Grain> m_grains;
@@ -96,8 +92,6 @@ private:
     void trigger_grain(const size_t sample_index);
     void update_grains(float* output_buffer, unsigned int n_buffer_frames);
     void get_sample_with_interpolation(float position, float* samples, size_t sample_index);
-
-    std::vector<float> m_internal_buffer;
 };
 
 // Template specializations for get_parameter
