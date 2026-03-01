@@ -58,7 +58,42 @@ void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& sample
 }
 
 void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
-    this->process(buffer[0], static_cast<unsigned int>(num_samples));
+    update_envelope_if_needed();
+
+    bool playing = get_parameter<bool>(Playing);
+
+    bool envelope_active = m_envelope.is_active();
+    if (playing && !envelope_active || playing && !m_last_playing_state) {
+        m_envelope.note_on();
+        m_next_grain_time = 0; // Reset grain time when starting playback
+        m_sequential_position = 0; // Reset sequential position when starting playback
+    } else if (!playing && m_envelope.get_state() != utils::ADSR::State::IDLE && m_envelope.get_state() != utils::ADSR::State::RELEASE) {
+        m_envelope.note_off();
+    }
+    m_last_playing_state = playing;
+
+    float volume = get_parameter<float>(Volume);
+
+    // Clear the buffer
+    for (size_t ch = 0; ch < num_channels; ++ch) {
+        std::memset(buffer[ch], 0, num_samples * sizeof(float));
+    }
+
+    // If not playing or no audio data, just return (silence)
+    if (!m_envelope.is_active() || !m_audio_store.is_loaded()) {
+        return;
+    }
+
+    // Process existing grains and generate new ones
+    update_grains(buffer, num_samples);
+
+    // Apply master volume
+    for (size_t i = 0; i < num_samples; i++) {
+        float grain_volume = volume * m_envelope.process();
+        for (size_t ch = 0; ch < num_channels; ++ch) {
+            buffer[ch][i] *= grain_volume;
+        }
+    }
 }
 
 void GrainProcessorImpl::update_envelope_if_needed() {
@@ -85,39 +120,124 @@ void GrainProcessorImpl::update_envelope_if_needed() {
     }
 }
 
-void GrainProcessorImpl::process(float* output_buffer, unsigned int n_buffer_frames) {
-    update_envelope_if_needed();
-    
-    bool playing = get_parameter<bool>(Playing);
+void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
+    const auto& audio_data = m_audio_store.get_buffer();
+    float density = get_parameter<float>(Density);
 
-    bool envelope_active = m_envelope.is_active();
-    if (playing && !envelope_active || playing && !m_last_playing_state) {
-        m_envelope.note_on();
-        m_next_grain_time = 0; // Reset grain time when starting playback
-        m_sequential_position = 0; // Reset sequential position when starting playback
-    } else if (!playing && m_envelope.get_state() != utils::ADSR::State::IDLE && m_envelope.get_state() != utils::ADSR::State::RELEASE) {
-        m_envelope.note_off();
-    }
-    m_last_playing_state = playing;
+    // Calculate how frequently we should trigger new grains
+    unsigned int min_interval = static_cast<unsigned int>(m_sample_rate * 0.02f); // max is 50 grains per second
+    unsigned int max_interval = static_cast<unsigned int>(m_sample_rate * 0.2f);  // min is 5 grains per second
+    unsigned int interval_range = max_interval - min_interval;
+    m_min_grain_interval = max_interval - static_cast<unsigned int>(density * interval_range);
 
-    float volume = get_parameter<float>(Volume);
+    size_t sample_index = static_cast<size_t>(std::clamp(get_parameter<int>(SampleIndex), 0, static_cast<int>(audio_data.size()) - 1));
 
-    // Clear the buffer
-    std::memset(output_buffer, 0, n_buffer_frames * 2 * sizeof(float));
-
-    // If not playing or no audio data, just return (silence)
-    if (!m_envelope.is_active() || !m_audio_store.is_loaded()) {
-        return;
+    if (m_current_note != sample_index) {
+        m_current_note = sample_index;
+        m_next_grain_time = 0;
     }
 
-    // Process existing grains and generate new ones
-    update_grains(output_buffer, n_buffer_frames);
+    auto mode = static_cast<ChannelMode>(std::clamp(get_parameter<int>(ChannelModeParam), 0, 2));
+    float spread = get_parameter<float>(Spread);
 
-    // Apply master volume
+    // Determine source channel count for the current sample
+    size_t source_channels = 1;
+    if (sample_index < audio_data.size() && !audio_data[sample_index].empty()) {
+        source_channels = audio_data[sample_index].get_num_channels();
+    }
+
+    // For each sample in the buffer
     for (unsigned int i = 0; i < n_buffer_frames; i++) {
-        float grain_volume = volume * m_envelope.process();
-        output_buffer[i] *= grain_volume;
-        output_buffer[i + n_buffer_frames] *= grain_volume;
+
+        // Check if it's time to trigger a new grain
+        if (m_next_grain_time <= 0) {
+            trigger_grain(sample_index);
+            m_next_grain_time = m_min_grain_interval - 1;
+        } else {
+            m_next_grain_time--;
+        }
+
+        // Accumulate per-channel samples
+        float channel_accum[MAX_CHANNEL_SUPPORT] = {}; // Support up to 16 output channels
+
+        // Process all active grains
+        for (auto& grain : m_grains) {
+            if (!grain.active) continue;
+
+            // Calculate the normalized position in grain (0.0-1.0)
+            float normalized_position = static_cast<float>(grain.current_position) / static_cast<float>(grain.grain_size);
+
+            // Hann window envelope for amplitude control
+            float envelope = grain.envelope.process_at_position(normalized_position);
+
+            // Check if the grain should be deactivated
+            if (!grain.envelope.is_active() || normalized_position >= 1.0f) {
+                grain.active = false;
+                continue;
+            }
+
+            // Calculate the current position in the source audio
+            float source_pos = grain.start_position + (grain.current_position * grain.velocity);
+            float env_gain = envelope * grain.gain;
+
+            float position_spread = 0.5f + (grain.position_spread - 0.5f) * spread;
+
+            switch (mode) {
+                case ChannelMode::MonoToStereo: {
+                    // Mono sum of all source channels
+                    float mono_sample = 0.0f;
+                    for (size_t ch = 0; ch < source_channels; ++ch) {
+                        float s = 0.0f;
+                        read_sample(source_pos, grain.sample_index, ch, s);
+                        mono_sample += s;
+                    }
+                    if (source_channels > 1) {
+                        mono_sample /= static_cast<float>(source_channels);
+                    }
+                    mono_sample *= env_gain;
+                    channel_accum[0] += mono_sample * (1.0f - position_spread);
+                    channel_accum[1] += mono_sample * position_spread;
+                    break;
+                }
+                case ChannelMode::Stereo: {
+                    float s0 = 0.0f, s1 = 0.0f;
+                    read_sample(source_pos, grain.sample_index, 0, s0);
+                    if (source_channels > 1) {
+                        read_sample(source_pos, grain.sample_index, 1, s1);
+                    } else {
+                        s1 = s0;
+                    }
+                    // Spread redistributes per-grain energy across L/R
+                    channel_accum[0] += s0 * env_gain * (1.0f - position_spread) * 2.0f;
+                    channel_accum[1] += s1 * env_gain * position_spread * 2.0f;
+                    break;
+                }
+                case ChannelMode::TrueMultichannel: {
+                    size_t out_channels = std::min(m_channels, source_channels);
+                    for (size_t ch = 0; ch < out_channels; ++ch) {
+                        float s = 0.0f;
+                        read_sample(source_pos, grain.sample_index, ch, s);
+                        // Even channels (0,2,...) get left energy, odd channels (1,3,...) get right energy
+                        float energy = (ch % 2 == 0) ? (1.0f - position_spread) * 2.0f : position_spread * 2.0f;
+                        channel_accum[ch] += s * env_gain * energy;
+                    }
+                    break;
+                }
+            }
+
+            // Update grain position
+            grain.current_position++;
+
+            // Deactivate if grain is finished
+            if (grain.current_position >= grain.grain_size) {
+                grain.active = false;
+            }
+        }
+
+        // Write to output buffer (planar layout)
+        for (size_t ch = 0; ch < m_channels; ++ch) {
+            buffer[ch][i] = channel_accum[ch];
+        }
     }
 }
 
@@ -228,6 +348,7 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
             grain.amplitude = 0.0f; // Start with zero amplitude for fade-in
             grain.active = true;
             grain.sample_index = note_number;
+            grain.position_spread = m_uni_dist(m_random_generator); // Random position_spread [0, 1] for spread
 
             // Configure the Hann window envelope
             grain.envelope.set_sample_rate(static_cast<float>(m_sample_rate));
@@ -239,87 +360,8 @@ void GrainProcessorImpl::trigger_grain(const size_t note_number) {
     }
 }
 
-void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buffer_frames) {
-    const auto& audio_data = m_audio_store.get_buffer();
-    float density = get_parameter<float>(Density);
-
-    // Calculate how frequently we should trigger new grains
-    unsigned int min_interval = static_cast<unsigned int>(m_sample_rate * 0.02f); // max is 50 grains per second
-    unsigned int max_interval = static_cast<unsigned int>(m_sample_rate * 0.2f);  // min is 5 grains per second
-    unsigned int interval_range = max_interval - min_interval;
-    m_min_grain_interval = max_interval - static_cast<unsigned int>(density * interval_range);
-
-    size_t sample_index = static_cast<size_t>(std::clamp(get_parameter<int>(SampleIndex), 0, static_cast<int>(audio_data.size()) - 1));
-
-    if (m_current_note != sample_index) {
-        m_current_note = sample_index;
-        m_next_grain_time = 0;
-    }
-
-    // For each sample in the buffer
-    for (unsigned int i = 0; i < n_buffer_frames; i++) {
-
-        // Check if it's time to trigger a new grain
-        if (m_next_grain_time <= 0) {
-            trigger_grain(sample_index);
-            m_next_grain_time = m_min_grain_interval - 1;
-        } else {
-            m_next_grain_time--;
-        }
-
-        float left_sample = 0.0f;
-        float right_sample = 0.0f;
-
-        // Process all active grains
-        for (auto& grain : m_grains) {
-            if (grain.active) {
-
-                float samples[2] = {0.0f, 0.0f}; // Temporary buffer for sample values
-
-                // Calculate the normalized position in grain (0.0-1.0)
-                float normalized_position = static_cast<float>(grain.current_position) / static_cast<float>(grain.grain_size);
-
-                // Hann window envelope for amplitude control
-                float envelope = grain.envelope.process_at_position(normalized_position);
-
-                // Check if the grain should be deactivated
-                if (!grain.envelope.is_active() || normalized_position >= 1.0f) {
-                    grain.active = false;
-                    continue;
-                }
-
-                // Calculate the current position in the source audio
-                float source_pos = grain.start_position + (grain.current_position * grain.velocity);
-                // Get the interpolated sample value
-                get_sample_with_interpolation(source_pos, samples, grain.sample_index);
-
-                // Apply envelope
-                samples[0] *= envelope * grain.gain;
-                samples[1] *= envelope * grain.gain;
-
-                // Mix into output buffer
-                left_sample += samples[0];
-                right_sample += samples[1];
-
-                // Update grain position
-                grain.current_position++;
-
-                // Deactivate if grain is finished
-                if (grain.current_position >= grain.grain_size) {
-                    grain.active = false;
-                }
-            }
-        }
-
-        // Write to output buffer
-        output_buffer[i] = left_sample;
-        output_buffer[i + n_buffer_frames] = right_sample;
-    }
-}
-
-void GrainProcessorImpl::get_sample_with_interpolation(float position, float* samples, size_t sample_index) {
-    samples[0] = 0.0f;
-    samples[1] = 0.0f;
+void GrainProcessorImpl::read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample) {
+    out_sample = 0.0f;
 
     const auto& audio_data = m_audio_store.get_buffer();
 
@@ -329,6 +371,10 @@ void GrainProcessorImpl::get_sample_with_interpolation(float position, float* sa
     }
 
     const auto& buf = audio_data[sample_index];
+    if (source_channel >= buf.get_num_channels()) {
+        return;
+    }
+
     size_t num_frames = buf.get_num_frames();
 
     // Linear interpolation between samples for fractional positions
@@ -345,19 +391,8 @@ void GrainProcessorImpl::get_sample_with_interpolation(float position, float* sa
         pos_floor -= static_cast<long>(num_frames);
     }
 
-    if (buf.get_num_channels() <= 1) {
-        const float* ch0 = buf.get_read_pointer(0);
-
-        float sample = ch0[pos_floor] * (1.0f - frac) + ch0[pos_ceil] * frac;
-        samples[0] = sample;
-        samples[1] = sample;
-    } else {
-        const float* ch0 = buf.get_read_pointer(0);
-        const float* ch1 = buf.get_read_pointer(1);
-
-        samples[0] = ch0[pos_floor] * (1.0f - frac) + ch0[pos_ceil] * frac;
-        samples[1] = ch1[pos_floor] * (1.0f - frac) + ch1[pos_ceil] * frac;
-    }
+    const float* ch_data = buf.get_read_pointer(source_channel);
+    out_sample = ch_data[pos_floor] * (1.0f - frac) + ch_data[pos_ceil] * frac;
 }
 
 } // namespace thl::dsp::granular
