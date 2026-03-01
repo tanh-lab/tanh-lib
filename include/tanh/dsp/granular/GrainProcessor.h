@@ -10,6 +10,17 @@ namespace thl::dsp::granular {
 // Maximum number of output channels supported by the GrainProcessor
 constexpr size_t MAX_CHANNEL_SUPPORT = 16;
 
+// Grain size limits in seconds (will be converted to samples based on sample rate)
+constexpr float MIN_GRAIN_SIZE = 0.02f; // 20 ms
+constexpr float MAX_GRAIN_SIZE = 0.4f;  // 400 ms
+
+// Minium and maximum grain interval in seconds (for density control)
+constexpr float MIN_GRAIN_INTERVAL = 0.02f; // 20 ms (50 grains/sec)
+constexpr float MAX_GRAIN_INTERVAL = 0.2f;  // 200 ms (5 grains/sec)
+
+// Maximum number of grains that can be active simultaneously
+constexpr size_t MAX_GRAINS = 32;
+
 enum class ChannelMode : int {
     MonoToStereo = 0,      // Read ch0 from source, spread across L/R
     TrueStereo = 1,            // Read ch0+ch1 from source (mono duplicated if source is mono)
@@ -45,27 +56,31 @@ public:
 
 protected:
     enum Parameter {
-        EnvelopeAttack = 0,
-        EnvelopeDecay = 1,
-        EnvelopeSustain = 2,
-        EnvelopeRelease = 3,
+        Playing = 0,
+        Volume = 1,
 
-        Playing = 4,
-        Volume = 5,
-        Temperature = 6,
-        Velocity = 7,
-        Size = 8,
-        Density = 9,
+        Size = 2,
+        Density = 3,
+        Velocity = 4,
 
-        SampleIndex = 10,
-        SampleStart = 11,
-        SampleEnd = 12,
-        SampleLoopPoint = 13,
+        TemperatureSize = 5,
+        TemperaturePosition = 6,
+        TemperatureVelocity = 7,
 
-        ChannelModeParam = 14,
-        Spread = 15,
+        SampleIndex = 8,
+        SampleStart = 9,
+        SampleEnd = 10,
+        SampleLoopPoint = 11,
 
-        NUM_PARAMETERS = 16
+        ChannelModeParam = 12,
+        Spread = 13,
+
+        EnvelopeAttack = 14,
+        EnvelopeDecay = 15,
+        EnvelopeSustain = 16,
+        EnvelopeRelease = 17,
+
+        NUM_PARAMETERS = 18
     };
 
     thl::dsp::utils::ADSR m_envelope;
@@ -110,6 +125,9 @@ private:
     void trigger_grain(const size_t sample_index);
     void update_grains(float** buffer, size_t n_buffer_frames);
     void read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample);
+    size_t calculate_grain_size(float grain_size_param, float temperature);
+    long calculate_start_position(size_t grain_size, long max_position, float temperature, size_t region_start, size_t loop_point);
+    float calculate_velocity(float velocity, float temperature);
 };
 
 // Template specializations for get_parameter
