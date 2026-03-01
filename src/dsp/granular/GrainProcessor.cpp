@@ -35,6 +35,7 @@ void GrainProcessorImpl::reset_grains() {
     m_sequential_position = 0;
     m_next_grain_time = 0;
     m_last_playing_state = false;
+    m_playback_elapsed_samples = 0;
     m_envelope.reset();
 }
 
@@ -67,7 +68,7 @@ void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, cons
         m_envelope.note_on();
         m_next_grain_time = 0; // Reset grain time when starting playback
         m_sequential_position = 0; // Reset sequential position when starting playback
-        m_is_first_grain = true;
+        m_playback_elapsed_samples = 0;
     } else if (!playing && m_envelope.get_state() != utils::ADSR::State::IDLE && m_envelope.get_state() != utils::ADSR::State::RELEASE) {
         m_envelope.note_off();
     }
@@ -165,10 +166,8 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
         for (auto& grain : m_grains) {
             if (!grain.active) continue;
 
-            // Calculate the normalized position in grain (0.0-1.0)
-            float normalized_position = static_cast<float>(grain.current_position) / static_cast<float>(grain.grain_size);
-
             // Hann window envelope for amplitude control
+            float normalized_position = static_cast<float>(grain.current_position) / static_cast<float>(grain.grain_size);
             float envelope = grain.envelope.process_at_position(normalized_position);
 
             // Check if the grain should be deactivated
@@ -238,6 +237,8 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
         for (size_t ch = 0; ch < m_channels; ++ch) {
             buffer[ch][i] = channel_accum[ch];
         }
+
+        m_playback_elapsed_samples++;
     }
 }
 
@@ -251,40 +252,29 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             audio_data[sample_index].empty()) {
                 return;
             }
-            
+
             // Get parameters needed for grain_size setup
             float grain_size_param = get_parameter<float>(Size);
             float size_temperature = get_parameter<float>(TemperatureSize);
 
             size_t grain_size = calculate_grain_size(grain_size_param, size_temperature);
             
-            // Apply sample start/end/loop region
-            size_t total_frames = audio_data[sample_index].get_num_frames();
-            float sample_start_norm = get_parameter<float>(SampleStart);
-            float sample_end_norm = get_parameter<float>(SampleEnd);
-            float sample_loop_norm = get_parameter<float>(SampleLoopPoint);
-            
-            auto region_start = static_cast<size_t>(sample_start_norm * total_frames);
-            auto region_end = static_cast<size_t>(sample_end_norm * total_frames);
-            auto loop_point = static_cast<size_t>(sample_loop_norm * total_frames);
-            region_start = std::clamp(region_start, size_t(0), total_frames);
-            region_end = std::clamp(region_end, region_start, total_frames);
-            loop_point = std::clamp(loop_point, region_start, region_end);
-            size_t region_size = region_end - region_start;
-            if (region_size == 0) return;
-            
-            // Account for velocity so grains don't overshoot the source audio
             float velocity = get_parameter<float>(Velocity);
-            auto effective_grain_size = static_cast<size_t>(std::ceil(grain_size * velocity));
-            long max_position = static_cast<long>(region_size) - static_cast<long>(effective_grain_size);
-            if (max_position <= 0) return;
-
-            float position_temperature = get_parameter<float>(TemperaturePosition);
-            long start_position = calculate_start_position(
-                grain_size, max_position, position_temperature, region_start, loop_point);
-
             float velocity_temperature = get_parameter<float>(TemperatureVelocity);
             velocity = calculate_velocity(velocity, velocity_temperature);
+
+            // Apply sample start/end/loop region
+            size_t total_frames = audio_data[sample_index].get_num_frames();
+            auto region = compute_sample_region(total_frames);
+            if (region.size() == 0) return;
+            
+
+            auto effective_grain_size = static_cast<size_t>(std::ceil(grain_size * velocity));
+            if (static_cast<long>(region.size()) - static_cast<long>(effective_grain_size) <= 0) return;
+
+            float position_temperature = apply_temperature_ramp(get_parameter<float>(TemperaturePosition));
+            long start_position = calculate_start_position(
+                region, position_temperature, grain_size, velocity);
 
             // Setup the grain
             grain.start_position = start_position;
@@ -330,44 +320,45 @@ size_t GrainProcessorImpl::calculate_grain_size(float grain_size_param, float te
 }
 
 long GrainProcessorImpl::calculate_start_position(
-    size_t grain_size, long max_position, float temperature, size_t region_start, size_t loop_point) {
-
-    auto max_size = static_cast<size_t>(MAX_GRAIN_SIZE * m_sample_rate);
-    float grain_size_factor = static_cast<float>(grain_size) / static_cast<float>(max_size);
+    const SampleRegion& region, float temperature, size_t grain_size, float velocity) {
 
     long start_position = static_cast<long>(m_sequential_position);
 
-    if (!m_is_first_grain) {
-        float rand_value = m_uni_dist(m_random_generator); // [0, 1)
-        rand_value = rand_value - 0.5f;                    // [-0.5, 0.5)
-        rand_value *= temperature;
-        start_position += static_cast<long>(rand_value * max_position);
-        if (start_position >= max_position) {
-            start_position -= max_position;
-        } else if (start_position < 0) {
-            start_position += max_position;
-        }
+    // Apply temperature-based randomization to grain start position
+    auto effective_grain_size = static_cast<size_t>(std::ceil(grain_size * velocity));
+    long max_position = static_cast<long>(region.size()) - static_cast<long>(effective_grain_size);
+    if (max_position <= 0) return static_cast<long>(region.start);
 
-        // Push small grains away from the edges
-        float start_position_factor = static_cast<float>(start_position) / static_cast<float>(max_position);
-        if (start_position_factor > 0.5f) {
-            start_position_factor -= 0.5f;
-            start_position_factor *= std::pow(1.f - grain_size_factor, 2.f);
-            start_position -= static_cast<long>(start_position_factor * max_position);
-        } else {
-            start_position_factor = 0.5f - start_position_factor;
-            start_position_factor *= std::pow(1.f - grain_size_factor, 2.f);
-            start_position += static_cast<long>(start_position_factor * max_position);
-        }
-    } else {
-        m_is_first_grain = false;
+    float rand_value = m_uni_dist(m_random_generator); // [0, 1)
+    rand_value = rand_value - 0.5f;                    // [-0.5, 0.5)
+    rand_value *= temperature;
+    start_position += static_cast<long>(rand_value * max_position);
+    if (start_position >= max_position) {
+        start_position -= max_position;
+    } else if (start_position < 0) {
+        start_position += max_position;
     }
 
-    start_position += region_start;
+    // Push small grains away from the edges
+    auto max_size = static_cast<size_t>(MAX_GRAIN_SIZE * m_sample_rate);
+    float grain_size_factor = static_cast<float>(grain_size) / static_cast<float>(max_size);
+
+    float start_position_factor = static_cast<float>(start_position) / static_cast<float>(max_position);
+    if (start_position_factor > 0.5f) {
+        start_position_factor -= 0.5f;
+        start_position_factor *= std::pow(1.f - grain_size_factor, 2.f);
+        start_position -= static_cast<long>(start_position_factor * max_position);
+    } else {
+        start_position_factor = 0.5f - start_position_factor;
+        start_position_factor *= std::pow(1.f - grain_size_factor, 2.f);
+        start_position += static_cast<long>(start_position_factor * max_position);
+    }
+
+    start_position += region.start;
 
     // Advance sequential position and handle looping
     m_sequential_position += static_cast<long>(m_min_grain_interval);
-    long loop_offset = static_cast<long>(loop_point - region_start);
+    long loop_offset = static_cast<long>(region.loop_point - region.start);
     if (m_sequential_position >= max_position) {
         m_sequential_position = loop_offset + (m_sequential_position - max_position);
     }
@@ -386,6 +377,27 @@ float GrainProcessorImpl::calculate_velocity(float velocity, float temperature) 
         velocity *= (1.f + velocity_factor * (semitone_factor - 1.f));
     }
     return velocity;
+}
+
+float GrainProcessorImpl::apply_temperature_ramp(float temperature) const {
+    float ramp_samples = static_cast<float>(TEMPERATURE_RAMP_DURATION * m_sample_rate);
+    float ramp_factor = 1.0f;
+    if (static_cast<float>(m_playback_elapsed_samples) < ramp_samples) {
+        ramp_factor = std::sin((static_cast<float>(m_playback_elapsed_samples) / ramp_samples) * static_cast<float>(M_PI / 2.0));
+    }
+    // Blend between ramped and unramped: low temperature → ramp active, high → ramp bypassed
+    float ramped = temperature * ramp_factor;
+    return ramped + (temperature - ramped) * temperature;
+}
+
+GrainProcessorImpl::SampleRegion GrainProcessorImpl::compute_sample_region(size_t total_frames) {
+    auto start = static_cast<size_t>(get_parameter_float(SampleStart) * total_frames);
+    auto end = static_cast<size_t>(get_parameter_float(SampleEnd) * total_frames);
+    auto loop = static_cast<size_t>(get_parameter_float(SampleLoopPoint) * total_frames);
+    start = std::clamp(start, size_t(0), total_frames);
+    end = std::clamp(end, start, total_frames);
+    loop = std::clamp(loop, start, end);
+    return {start, end, loop};
 }
 
 void GrainProcessorImpl::read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample) {
