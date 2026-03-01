@@ -9,32 +9,31 @@ namespace thl {
 namespace dsp {
 namespace synth {
 
-class SineProcessor : public BaseProcessor {
+class SineProcessorImpl : public BaseProcessor {
 public:
-    enum Parameters {
-        FREQUENCY = 0,
-        AMPLITUDE = 1
-    };
-
-    SineProcessor();
-    ~SineProcessor() override;
+    SineProcessorImpl();
+    ~SineProcessorImpl() override;
 
     // BaseProcessor overrides
     void prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) override;
     void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
 
-    void set_parameter(Parameters param, float value);
+protected:
+    enum Parameter {
+        Frequency = 0,
+        Amplitude = 1,
 
-    float get_parameter(Parameters param) const;
-
+        NUM_PARAMETERS = 2
+    };
+    
 private:
-    void set_parameter(int param_id, float value);
-    float get_parameter(int param_id) const;
+    // Template wrapper for get_parameter
+    template<typename T>
+    T get_parameter(Parameter parameter);
+
+    virtual float get_parameter_float(Parameter parameter) = 0;
 
     std::vector<float> m_phase;
-
-    float m_frequency = 100.f;
-    float m_amplitude = 0.5f;
 
     utils::SmoothedValue smoothed_frequency;
     utils::SmoothedValue smoothed_amplitude;
@@ -42,6 +41,9 @@ private:
     double m_sample_rate = 44100.f;
     size_t m_samples_per_block = 512;
 };
+
+// Template specializations for get_parameter
+template<> inline float SineProcessorImpl::get_parameter<float>(Parameter p) { return get_parameter_float(p); }
 
 } // namespace synth
 } // namespace dsp
