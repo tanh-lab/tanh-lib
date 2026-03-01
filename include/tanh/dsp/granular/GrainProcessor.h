@@ -30,7 +30,7 @@ public:
 
     void reset_grains();
 
-    bool is_envelope_active() const { return m_envelope.is_active(); }
+    bool is_active() const { return m_envelope.is_active(); }
 
     // Process audio data
     void process(float* output_buffer, unsigned int n_buffer_frames);
@@ -49,7 +49,7 @@ protected:
         Size = 8,
         Density = 9,
 
-        Pitch = 10,
+        SampleIndex = 10,
         SampleStart = 11,
         SampleEnd = 12,
 
@@ -84,6 +84,11 @@ private:
 
     // Envelope
     bool m_last_playing_state;
+    float m_last_envelope_attack{-1.0f};
+    float m_last_envelope_decay{-1.0f};
+    float m_last_envelope_sustain{-1.0f};
+    float m_last_envelope_release{-1.0f};
+    void update_envelope_if_needed();
 
     // Note management
     size_t m_current_note;
