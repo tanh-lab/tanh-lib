@@ -13,7 +13,8 @@ constexpr size_t MAX_CHANNEL_SUPPORT = 16;
 enum class ChannelMode : int {
     MonoToStereo = 0,      // Read ch0 from source, spread across L/R
     TrueStereo = 1,            // Read ch0+ch1 from source (mono duplicated if source is mono)
-    TrueMultichannel = 2   // Read all source channels, write to matching output channels
+    TrueMultichannel = 2,   // Read all source channels, write to matching output channels
+    NUM_CHANNEL_MODES = 3
 };
 
 // Structure to represent a single grain
@@ -94,14 +95,15 @@ private:
 
     // Envelope
     bool m_last_playing_state;
+    bool m_is_first_grain{true};
     float m_last_envelope_attack{-1.0f};
     float m_last_envelope_decay{-1.0f};
     float m_last_envelope_sustain{-1.0f};
     float m_last_envelope_release{-1.0f};
     void update_envelope_if_needed();
 
-    // Note management
-    size_t m_current_note;
+    // Sample index management
+    size_t m_current_sample_index;
 
     // Grain generation and management
     void trigger_grain(const size_t sample_index);
