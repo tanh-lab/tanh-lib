@@ -22,10 +22,10 @@ constexpr float MAX_GRAIN_INTERVAL = 0.2f;  // 200 ms (5 grains/sec)
 constexpr size_t MAX_GRAINS = 32;
 
 enum class ChannelMode : int {
-    MonoToStereo = 0,      // Read ch0 from source, spread across L/R
-    TrueStereo = 1,            // Read ch0+ch1 from source (mono duplicated if source is mono)
-    TrueMultichannel = 2,   // Read all source channels, write to matching output channels
-    NUM_CHANNEL_MODES = 3
+    MonoToStereo,      // Read ch0 from source, spread across L/R
+    TrueStereo,           // Read ch0+ch1 from source (mono duplicated if source is mono)
+    TrueMultichannel,   // Read all source channels, write to matching output channels
+    NUM_CHANNEL_MODES
 };
 
 // Structure to represent a single grain
@@ -56,31 +56,31 @@ public:
 
 protected:
     enum Parameter {
-        Playing = 0,
-        Volume = 1,
+        Playing,
+        Volume,
 
-        Size = 2,
-        Density = 3,
-        Velocity = 4,
+        Size,
+        Density,
+        Velocity,
 
-        TemperatureSize = 5,
-        TemperaturePosition = 6,
-        TemperatureVelocity = 7,
+        TemperatureSize,
+        TemperaturePosition,
+        TemperatureVelocity,
 
-        SampleIndex = 8,
-        SampleStart = 9,
-        SampleEnd = 10,
-        SampleLoopPoint = 11,
+        SampleIndex,
+        SampleStart,
+        SampleEnd,
+        SampleLoopPoint,
 
-        ChannelModeParam = 12,
-        Spread = 13,
+        ChannelModeParam,
+        Spread,
 
-        EnvelopeAttack = 14,
-        EnvelopeDecay = 15,
-        EnvelopeSustain = 16,
-        EnvelopeRelease = 17,
+        EnvelopeAttack,
+        EnvelopeDecay,
+        EnvelopeSustain,
+        EnvelopeRelease,
 
-        NUM_PARAMETERS = 18
+        NUM_PARAMETERS
     };
 
     thl::dsp::utils::ADSR m_envelope;
