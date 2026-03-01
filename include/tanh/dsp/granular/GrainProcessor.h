@@ -12,7 +12,7 @@ constexpr size_t MAX_CHANNEL_SUPPORT = 16;
 
 enum class ChannelMode : int {
     MonoToStereo = 0,      // Read ch0 from source, spread across L/R
-    Stereo = 1,            // Read ch0+ch1 from source (mono duplicated if source is mono)
+    TrueStereo = 1,            // Read ch0+ch1 from source (mono duplicated if source is mono)
     TrueMultichannel = 2   // Read all source channels, write to matching output channels
 };
 
