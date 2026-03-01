@@ -61,7 +61,33 @@ void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, cons
     this->process(buffer[0], static_cast<unsigned int>(num_samples));
 }
 
+void GrainProcessorImpl::update_envelope_if_needed() {
+    float attack = get_parameter<float>(EnvelopeAttack);
+    float decay = get_parameter<float>(EnvelopeDecay);
+    float sustain = get_parameter<float>(EnvelopeSustain);
+    float release = get_parameter<float>(EnvelopeRelease);
+
+    if (attack != m_last_envelope_attack) {
+        m_envelope.set_attack(attack);
+        m_last_envelope_attack = attack;
+    }
+    if (decay != m_last_envelope_decay) {
+        m_envelope.set_decay(decay);
+        m_last_envelope_decay = decay;
+    }
+    if (sustain != m_last_envelope_sustain) {
+        m_envelope.set_sustain(sustain);
+        m_last_envelope_sustain = sustain;
+    }
+    if (release != m_last_envelope_release) {
+        m_envelope.set_release(release);
+        m_last_envelope_release = release;
+    }
+}
+
 void GrainProcessorImpl::process(float* output_buffer, unsigned int n_buffer_frames) {
+    update_envelope_if_needed();
+    
     bool playing = get_parameter<bool>(Playing);
 
     bool envelope_active = m_envelope.is_active();
@@ -223,11 +249,7 @@ void GrainProcessorImpl::update_grains(float* output_buffer, unsigned int n_buff
     unsigned int interval_range = max_interval - min_interval;
     m_min_grain_interval = max_interval - static_cast<unsigned int>(density * interval_range);
 
-    // Pitch parameter is a direct semitone offset in [-24, +24].
-    // AudioDataStore holds 49 pitch-shifted buffers (indices 0–48, root at 24).
-    int pitch = get_parameter<int>(Pitch);
-    int root_index = static_cast<int>(audio_data.size()) / 2;
-    size_t sample_index = static_cast<size_t>(std::clamp(root_index + pitch, 0, static_cast<int>(audio_data.size()) - 1));
+    size_t sample_index = static_cast<size_t>(std::clamp(get_parameter<int>(SampleIndex), 0, static_cast<int>(audio_data.size()) - 1));
 
     if (m_current_note != sample_index) {
         m_current_note = sample_index;
