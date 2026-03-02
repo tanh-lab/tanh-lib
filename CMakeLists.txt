@@ -65,20 +65,21 @@ set (PROJECT_NAME tanh)
 
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_SHORT})
 
-if(APPLE)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        set(TANH_OPERATING_SYSTEM "macOS")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        set(TANH_OPERATING_SYSTEM "iOS")
-    else()
-        set(TANH_OPERATING_SYSTEM "Unknown Apple OS")
-    endif()
-elseif(UNIX)
-    set(TANH_OPERATING_SYSTEM "Linux")
-elseif(WIN32)
-    set(TANH_OPERATING_SYSTEM "Windows")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(TANH_OPERATING_SYSTEM "iOS")
+    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_IOS")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(TANH_OPERATING_SYSTEM "Android")
+    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_ANDROID")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(TANH_OPERATING_SYSTEM "macOS")
+    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_MACOS")
+elseif(UNIX)
+    set(TANH_OPERATING_SYSTEM "Linux")
+    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_LINUX")
+elseif(WIN32)
+    set(TANH_OPERATING_SYSTEM "Windows")
+    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_WINDOWS")
 else()
     set(TANH_OPERATING_SYSTEM "Unknown")
 endif()
@@ -112,21 +113,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(FetchContent)
 
-if(TANH_BUILD_CORE)
-    set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "Build spdlog shared library" FORCE)
-    set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "Build spdlog examples" FORCE)
-    set(SPDLOG_BUILD_EXAMPLES OFF CACHE BOOL "Build spdlog examples" FORCE)
-    set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "Build spdlog tests" FORCE)
-    set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "Build spdlog bench" FORCE)
-
-    FetchContent_Declare(
-        spdlog
-        GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG v1.17.0
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(spdlog)
-endif()
 
 # ==============================================================================
 # Build the library with components
@@ -169,10 +155,22 @@ if(TANH_BUILD_CORE)
         $<$<NOT:$<CONFIG:Release>>:THL_LOG_COMPILED_MAX_LEVEL=4>
     )
 
-    target_link_libraries(${PROJECT_NAME}_core
-        PRIVATE
-        spdlog::spdlog_header_only
+    # Platform compile definitions
+    if(TANH_PLATFORM_DEFINE)
+        target_compile_definitions(${PROJECT_NAME}_core PUBLIC ${TANH_PLATFORM_DEFINE}=1)
+    endif()
+
+    # Build type definitions
+    target_compile_definitions(${PROJECT_NAME}_core
+        PUBLIC
+        $<$<CONFIG:Debug>:THL_BUILD_DEBUG=1>
+        $<$<CONFIG:Release>:THL_BUILD_RELEASE=1>
+        $<$<CONFIG:RelWithDebInfo>:THL_BUILD_RELWITHDEBINFO=1>
     )
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+        target_link_libraries(${PROJECT_NAME}_core PRIVATE log)
+    endif()
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
 endif()
