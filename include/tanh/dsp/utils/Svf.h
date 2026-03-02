@@ -1,130 +1,28 @@
 #pragma once
 
-#include <cmath>
 #include <cstddef>
-#include <numbers>
+
+#include <tanh/dsp/utils/OnePole.h>
 
 namespace thl::dsp::utils {
 
-enum class FilterMode {
-    LowPass,
-    BandPass,
-    BandPassNormalized,
-    HighPass,
-};
-
-enum class FrequencyApproximation {
-    Exact,
-    Accurate,
-    Fast,
-    Dirty,
-};
-
-namespace detail {
-constexpr float kPiF = std::numbers::pi_v<float>;
-constexpr float kPiPow2 = kPiF * kPiF;
-constexpr float kPiPow3 = kPiPow2 * kPiF;
-constexpr float kPiPow5 = kPiPow3 * kPiPow2;
-constexpr float kPiPow7 = kPiPow5 * kPiPow2;
-constexpr float kPiPow9 = kPiPow7 * kPiPow2;
-constexpr float kPiPow11 = kPiPow9 * kPiPow2;
-} // namespace detail
-
-class DCBlocker {
-public:
-    void init(float pole) {
-        m_x = 0.0f;
-        m_y = 0.0f;
-        m_pole = pole;
-    }
-
-    void process(float* in_out, size_t size) {
-        float x = m_x;
-        float y = m_y;
-        const float pole = m_pole;
-        while (size--) {
-            const float old_x = x;
-            x = *in_out;
-            *in_out++ = y = y * pole + x - old_x;
-        }
-        m_x = x;
-        m_y = y;
-    }
-
-private:
-    float m_pole = 0.0f;
-    float m_x = 0.0f;
-    float m_y = 0.0f;
-};
-
-class OnePole {
-public:
-    void init() {
-        set_f<FrequencyApproximation::Dirty>(0.01f);
-        reset();
-    }
-
-    void reset() {
-        m_state = 0.0f;
-    }
-
-    template <FrequencyApproximation approximation>
-    static float tan(float f) {
-        if constexpr (approximation == FrequencyApproximation::Exact) {
-            f = f < 0.497f ? f : 0.497f;
-            return std::tan(detail::kPiF * f);
-        } else if constexpr (approximation == FrequencyApproximation::Dirty) {
-            const float a = 3.736e-01f * detail::kPiPow3;
-            return f * (detail::kPiF + a * f * f);
-        } else if constexpr (approximation == FrequencyApproximation::Fast) {
-            const float a = 3.260e-01f * detail::kPiPow3;
-            const float b = 1.823e-01f * detail::kPiPow5;
-            const float f2 = f * f;
-            return f * (detail::kPiF + f2 * (a + b * f2));
-        } else {
-            const float a = 3.333314036e-01f * detail::kPiPow3;
-            const float b = 1.333923995e-01f * detail::kPiPow5;
-            const float c = 5.33740603e-02f * detail::kPiPow7;
-            const float d = 2.900525e-03f * detail::kPiPow9;
-            const float e = 9.5168091e-03f * detail::kPiPow11;
-            const float f2 = f * f;
-            return f * (detail::kPiF + f2 * (a + f2 * (b + f2 * (c + f2 * (d + f2 * e)))));
-        }
-    }
-
-    template <FrequencyApproximation approximation>
-    void set_f(float f) {
-        m_g = tan<approximation>(f);
-        m_gi = 1.0f / (1.0f + m_g);
-    }
-
-    template <FilterMode mode>
-    float process(float in) {
-        const float lp = (m_g * in + m_state) * m_gi;
-        m_state = m_g * (in - lp) + lp;
-
-        if constexpr (mode == FilterMode::LowPass) {
-            return lp;
-        } else if constexpr (mode == FilterMode::HighPass) {
-            return in - lp;
-        } else {
-            return 0.0f;
-        }
-    }
-
-private:
-    float m_g = 0.0f;
-    float m_gi = 1.0f;
-    float m_state = 0.0f;
-};
-
+// TPT (Topology-Preserving Transform) state-variable filter.
+//
+// Two-pole/two-zero SVF derived by applying the bilinear transform to the
+// analogue state-variable prototype and prewarping the cutoff so the digital
+// response matches the analogue one at the target frequency. The trapezoidal
+// integration scheme makes it unconditionally stable regardless of modulation
+// rate.
+//
+// Simultaneously produces low-pass, band-pass, and high-pass outputs; the
+// FilterMode template parameter selects which is returned.
+//
+// Coefficients:
+//   g = tan(pi * f / f_s)   -- prewarped integrator gain (via OnePole::tan)
+//   r = 1 / Q               -- damping
+//   h = 1 / (1 + r*g + g*g) -- normalisation factor
 class Svf {
 public:
-    void init() {
-        set_f_q<FrequencyApproximation::Dirty>(0.01f, 100.0f);
-        reset();
-    }
-
     void reset() {
         m_state_1 = 0.0f;
         m_state_2 = 0.0f;
@@ -272,13 +170,15 @@ private:
     float m_state_2 = 0.0f;
 };
 
+// Naive (Chamberlin) state-variable filter.
+//
+// Uses the classic two-integrator topology with forward Euler integration.
+// Simpler and cheaper than the TPT form above, but only conditionally stable.
+// The cutoff must stay well below Nyquist/2 to avoid blowing up. Suitable
+// for low-frequency filtering or quick-and-dirty spectral splitting where the
+// frequency never approaches Nyquist.
 class NaiveSvf {
 public:
-    void init() {
-        set_f_q<FrequencyApproximation::Dirty>(0.01f, 100.0f);
-        reset();
-    }
-
     void reset() {
         m_lp = 0.0f;
         m_bp = 0.0f;
@@ -383,4 +283,3 @@ private:
 };
 
 } // namespace thl::dsp::utils
-

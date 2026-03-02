@@ -41,7 +41,7 @@ namespace thl::dsp::resonator::rings {
 using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
 
-void FMVoice::init(float sample_rate) {
+void FMVoice::prepare(float sample_rate) {
   m_sample_rate = sample_rate;
 
   WarmDspFunctions();
@@ -76,7 +76,7 @@ void FMVoice::init(float sample_rate) {
   m_modulator_frequency = 0.0f;
   m_feedback = 0.0f;
 
-  m_follower.init(
+  m_follower.prepare(
       8.0f / m_sample_rate,
       160.0f / m_sample_rate,
       1600.0f / m_sample_rate);

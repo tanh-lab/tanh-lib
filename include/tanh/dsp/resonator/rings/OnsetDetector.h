@@ -44,10 +44,10 @@ class ZScorer {
   ZScorer() { }
   ~ZScorer() { }
 
-  void init(float cutoff) {
+  void prepare(float cutoff) {
     m_coefficient = cutoff;
     m_mean = 0.0f;
-    m_variance = 0.00f;
+    m_variance = 0.0f;
   }
 
   inline float normalize(float sample) {
@@ -72,9 +72,9 @@ class ZScorer {
     return centered;
   }
 
-  float m_coefficient;
-  float m_mean;
-  float m_variance;
+  float m_coefficient = 0.0f;
+  float m_mean = 0.0f;
+  float m_variance = 0.0f;
 
   ZScorer(const ZScorer&) = delete;
   ZScorer& operator=(const ZScorer&) = delete;
@@ -85,7 +85,7 @@ class Compressor {
   Compressor() { }
   ~Compressor() { }
 
-  void init(float attack, float decay, float max_gain) {
+  void prepare(float attack, float decay, float max_gain) {
     m_attack = attack;
     m_decay = decay;
     m_level = 0.0f;
@@ -102,10 +102,10 @@ class Compressor {
   }
 
  private:
-  float m_attack;
-  float m_decay;
-  float m_level;
-  float m_skew;
+  float m_attack = 0.0f;
+  float m_decay = 0.0f;
+  float m_level = 0.0f;
+  float m_skew = 0.0f;
 
   Compressor(const Compressor&) = delete;
   Compressor& operator=(const Compressor&) = delete;
@@ -116,17 +116,17 @@ class OnsetDetector {
   OnsetDetector() { }
   ~OnsetDetector() { }
 
-  void init(
+  void prepare(
       float low,
       float low_mid,
       float mid_high,
       float decimated_sr,
       float ioi_time) {
     float ioi_f = 1.0f / (ioi_time * decimated_sr);
-    m_compressor.init(ioi_f * 10.0f, ioi_f * 0.05f, 40.0f);
+    m_compressor.prepare(ioi_f * 10.0f, ioi_f * 0.05f, 40.0f);
 
-    m_low_mid_filter.init();
-    m_mid_high_filter.init();
+    m_low_mid_filter.reset();
+    m_mid_high_filter.reset();
     m_low_mid_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(low_mid, 0.5f);
     m_mid_high_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(mid_high, 0.5f);
 
@@ -142,7 +142,7 @@ class OnsetDetector {
     fill(&m_envelope[0], &m_envelope[3], 0.0f);
     fill(&m_energy[0], &m_energy[3], 0.0f);
 
-    m_z_df.init(ioi_f * 0.05f);
+    m_z_df.prepare(ioi_f * 0.05f);
 
     m_inhibit_time = static_cast<int32_t>(ioi_time * decimated_sr);
     m_inhibit_decay = 1.0f / (ioi_time * decimated_sr);
@@ -205,20 +205,20 @@ class OnsetDetector {
   NaiveSvf m_low_mid_filter;
   NaiveSvf m_mid_high_filter;
 
-  float m_attack[3];
-  float m_decay[3];
-  float m_energy[3];
-  float m_envelope[3];
-  float m_onset_df;
+  float m_attack[3] = {};
+  float m_decay[3] = {};
+  float m_energy[3] = {};
+  float m_envelope[3] = {};
+  float m_onset_df = 0.0f;
 
-  float m_bands[3][32];
+  float m_bands[3][32] = {};
 
   ZScorer m_z_df;
 
-  float m_inhibit_threshold;
-  float m_inhibit_decay;
-  int32_t m_inhibit_time;
-  int32_t m_inhibit_counter;
+  float m_inhibit_threshold = 0.0f;
+  float m_inhibit_decay = 0.0f;
+  int32_t m_inhibit_time = 0;
+  int32_t m_inhibit_counter = 0;
 
   OnsetDetector(const OnsetDetector&) = delete;
   OnsetDetector& operator=(const OnsetDetector&) = delete;

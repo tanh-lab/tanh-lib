@@ -44,7 +44,7 @@ class Resonator {
   Resonator() { }
   ~Resonator() { }
 
-  void init(float sample_rate = kDefaultSampleRate);
+  void prepare(float sample_rate = kDefaultSampleRate);
   void process(
       const float* in,
       float* out,
@@ -84,14 +84,14 @@ class Resonator {
  private:
   int32_t compute_filters();
   float m_sample_rate = kDefaultSampleRate;
-  float m_frequency;
-  float m_structure;
-  float m_brightness;
-  float m_position;
-  float m_previous_position;
-  float m_damping;
+  float m_frequency = 0.0f;
+  float m_structure = 0.0f;
+  float m_brightness = 0.0f;
+  float m_position = 0.0f;
+  float m_previous_position = 0.0f;
+  float m_damping = 0.0f;
 
-  int32_t m_resolution;
+  int32_t m_resolution = kMaxModes;
   int32_t m_num_modes = 0;
   bool m_dirty = true;
 

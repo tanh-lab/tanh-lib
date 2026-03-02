@@ -47,7 +47,7 @@ class StringSynthEnvelope {
   StringSynthEnvelope() { }
   ~StringSynthEnvelope() { }
 
-  void init() {
+  void prepare() {
     set_ad(0.1f, 0.001f);
     m_segment = m_num_segments;
     m_phase = 0.0f;
@@ -122,17 +122,17 @@ class StringSynthEnvelope {
   }
 
  private:
-  float m_level[4];
-  float m_rate[4];
-  EnvelopeShape m_shape[4];
+  float m_level[4] = {};
+  float m_rate[4] = {};
+  EnvelopeShape m_shape[4] = {};
 
-  int16_t m_segment;
-  float m_start_value;
-  float m_value;
-  float m_phase;
+  int16_t m_segment = 0;
+  float m_start_value = 0.0f;
+  float m_value = 0.0f;
+  float m_phase = 0.0f;
 
-  uint16_t m_num_segments;
-  uint16_t m_sustain_point;
+  uint16_t m_num_segments = 0;
+  uint16_t m_sustain_point = 0;
 
   StringSynthEnvelope(const StringSynthEnvelope&) = delete;
   StringSynthEnvelope& operator=(const StringSynthEnvelope&) = delete;

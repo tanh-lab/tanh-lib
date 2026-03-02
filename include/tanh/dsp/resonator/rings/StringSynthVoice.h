@@ -39,9 +39,9 @@ class StringSynthVoice {
   StringSynthVoice() { }
   ~StringSynthVoice() { }
 
-  void init() {
+  void prepare() {
     for (size_t i = 0; i < num_harmonics; ++i) {
-      m_oscillator[i].init();
+      m_oscillator[i].prepare();
     }
   }
 

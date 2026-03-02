@@ -35,7 +35,7 @@ namespace thl::dsp::resonator::rings {
 using namespace std;
 using namespace thl::dsp::utils;
 
-void StringSynthPart::init(uint16_t* reverb_buffer, float sample_rate) {
+void StringSynthPart::prepare(uint16_t* reverb_buffer, float sample_rate) {
   m_sample_rate = sample_rate;
   m_a3 = 440.0f / m_sample_rate;
   m_active_group = 0;
@@ -45,25 +45,25 @@ void StringSynthPart::init(uint16_t* reverb_buffer, float sample_rate) {
   m_fx_type = FX_ENSEMBLE;
 
   for (int32_t i = 0; i < kStringSynthVoices; ++i) {
-    m_voice[i].init();
+    m_voice[i].prepare();
   }
 
   for (int32_t i = 0; i < kMaxStringSynthPolyphony; ++i) {
     m_group[i].tonic = 0.0f;
-    m_group[i].envelope.init();
+    m_group[i].envelope.prepare();
   }
 
   for (int32_t i = 0; i < kNumFormants; ++i) {
-    m_formant_filter[i].init();
+    m_formant_filter[i].reset();
   }
 
-  m_limiter.init();
+  m_limiter.prepare();
 
-  m_reverb.init(reverb_buffer, m_sample_rate);
-  m_chorus.init(reverb_buffer, m_sample_rate);
-  m_ensemble.init(reverb_buffer, m_sample_rate);
+  m_reverb.prepare(reverb_buffer, m_sample_rate);
+  m_chorus.prepare(reverb_buffer, m_sample_rate);
+  m_ensemble.prepare(reverb_buffer, m_sample_rate);
 
-  m_note_filter.init(
+  m_note_filter.prepare(
       m_sample_rate / kMaxBlockSize,
       0.001f,  // Lag time with a sharp edge on the V/Oct input or trigger.
       0.005f,  // Lag time after the trigger has been received.

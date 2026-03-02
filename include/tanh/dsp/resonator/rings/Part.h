@@ -31,6 +31,7 @@
 #include <algorithm>
 
 #include <tanh/dsp/utils/CosineOscillator.h>
+#include <tanh/dsp/utils/DCBlocker.h>
 #include <tanh/dsp/utils/DelayLine.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
@@ -72,7 +73,7 @@ class Part {
   Part() { }
   ~Part() { }
 
-  void init(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
+  void prepare(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
 
   void process(
       const PerformanceState& performance_state,
@@ -160,15 +161,15 @@ class Part {
   float m_sample_rate = kDefaultSampleRate;
   float m_a3 = 440.0f / kDefaultSampleRate;
 
-  bool m_bypass;
-  bool m_dirty;
+  bool m_bypass = false;
+  bool m_dirty = true;
 
-  ResonatorModel m_model;
+  ResonatorModel m_model = RESONATOR_MODEL_MODAL;
 
-  int32_t m_num_voices;
-  int32_t m_active_voice;
-  uint32_t m_step_counter;
-  int32_t m_polyphony;
+  int32_t m_num_voices = 0;
+  int32_t m_active_voice = 0;
+  uint32_t m_step_counter = 0;
+  int32_t m_polyphony = 1;
 
   Resonator m_resonator[kMaxPolyphony];
   String m_string[kNumStrings];

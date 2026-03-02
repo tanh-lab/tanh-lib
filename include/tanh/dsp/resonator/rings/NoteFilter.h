@@ -41,7 +41,7 @@ class NoteFilter {
   NoteFilter() { }
   ~NoteFilter() { }
 
-  void init(
+  void prepare(
       float sample_rate,
       float time_constant_fast_edge,
       float time_constant_steady_part,
@@ -51,7 +51,7 @@ class NoteFilter {
     m_slow_coefficient = 1.0f / (time_constant_steady_part * sample_rate);
     m_lag_coefficient = 1.0f / (edge_recovery_time * sample_rate);
 
-    m_delayed_stable_note.init();
+    m_delayed_stable_note.prepare();
     m_delayed_stable_note.set_delay(
         std::min(size_t(15), size_t(edge_avoidance_delay * sample_rate)));
 
@@ -102,17 +102,17 @@ class NoteFilter {
   }
 
  private:
-  float m_previous_values[N];
-  float m_note;
-  float m_stable_note;
+  float m_previous_values[N] = {};
+  float m_note = 69.0f;
+  float m_stable_note = 69.0f;
   thl::dsp::utils::DelayLine<float, 16> m_delayed_stable_note;
 
-  float m_coefficient;
-  float m_stable_coefficient;
+  float m_coefficient = 0.0f;
+  float m_stable_coefficient = 0.0f;
 
-  float m_fast_coefficient;
-  float m_slow_coefficient;
-  float m_lag_coefficient;
+  float m_fast_coefficient = 0.0f;
+  float m_slow_coefficient = 0.0f;
+  float m_lag_coefficient = 0.0f;
 };
 
 }  // namespace thl::dsp::resonator::rings
