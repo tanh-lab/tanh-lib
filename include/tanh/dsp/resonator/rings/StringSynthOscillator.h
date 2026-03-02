@@ -38,6 +38,12 @@ namespace thl::dsp::resonator::rings {
 using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
 
+// Waveshape selection for the PolyBLEP oscillator.  Each shape applies a
+// different post-processing stage to the raw band-limited square:
+//   BRIGHT_SQUARE -- high-pass filtered square (emphasises edges)
+//   SQUARE        -- plain band-limited square (no post-filter)
+//   DARK_SQUARE   -- low-pass filtered square (leaky integrator)
+//   TRIANGLE      -- integrated square (leaky integrator with tighter coeff)
 enum OscillatorShape {
   OSCILLATOR_SHAPE_BRIGHT_SQUARE,
   OSCILLATOR_SHAPE_SQUARE,
@@ -45,12 +51,31 @@ enum OscillatorShape {
   OSCILLATOR_SHAPE_TRIANGLE,
 };
 
+// Band-limited oscillator using the PolyBLEP (Polynomial Band-Limited stEP)
+// anti-aliasing technique.
+//
+// A naive phase-ramp oscillator produces hard discontinuities at transition
+// points, which alias badly.  PolyBLEP corrects this by subtracting a
+// polynomial residual (quadratic here) from the two samples straddling each
+// discontinuity, analytically cancelling the first-order aliasing.
+//
+// The oscillator generates two parallel signals per sample:
+//   - a shaped waveform (square / triangle / bright / dark, selected by the
+//     OscillatorShape template parameter), and
+//   - a raw sawtooth.
+// Both are mixed together with independently interpolated gains and
+// accumulated into the output buffer, so multiple instances can be summed
+// for the string synth's chord voicing.
+//
+// Frequencies above f_s * 0.17 (~8 kHz at 48 kHz) are progressively
+// attenuated, and the oscillator is silenced entirely above f_s * 0.25
+// (~12 kHz) to avoid audible aliasing at the top of the range.
 class StringSynthOscillator {
  public:
   StringSynthOscillator() { }
   ~StringSynthOscillator() { }
 
-  inline void init() {
+  inline void prepare() {
     m_phase = 0.0f;
     m_phase_increment = 0.01f;
     m_filter_state = 0.0f;
@@ -63,6 +88,12 @@ class StringSynthOscillator {
     m_gain_saw = 0.0f;
   }
 
+  // Render `size` samples, accumulating into `out`.  `target_increment` is
+  // the normalised frequency (f / f_s).  The shaped waveform is scaled by
+  // `target_gain` and the raw sawtooth by `target_gain_saw`; both are
+  // smoothly interpolated from the previous block's values.  When
+  // `interpolate_pitch` is true, the phase increment is also interpolated
+  // per sample for glide effects.
   template<OscillatorShape shape, bool interpolate_pitch>
   inline void render(
       float target_increment,
@@ -157,6 +188,9 @@ class StringSynthOscillator {
   }
 
  private:
+  // Quadratic PolyBLEP residuals.  `t` is the fractional distance past the
+  // discontinuity (0..1).  this_blep_sample corrects the current sample;
+  // next_blep_sample corrects the following sample.
   static inline float this_blep_sample(float t) {
     return 0.5f * t * t;
   }
@@ -165,14 +199,14 @@ class StringSynthOscillator {
     return -0.5f * t * t;
   }
 
-  bool m_high;
-  float m_phase;
-  float m_phase_increment;
-  float m_next_sample;
-  float m_next_sample_saw;
-  float m_filter_state;
-  float m_gain;
-  float m_gain_saw;
+  bool m_high = false;
+  float m_phase = 0.0f;
+  float m_phase_increment = 0.01f;
+  float m_next_sample = 0.0f;
+  float m_next_sample_saw = 0.0f;
+  float m_filter_state = 0.0f;
+  float m_gain = 0.0f;
+  float m_gain_saw = 0.0f;
 
   StringSynthOscillator(const StringSynthOscillator&) = delete;
   StringSynthOscillator& operator=(const StringSynthOscillator&) = delete;

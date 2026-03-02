@@ -32,7 +32,6 @@
 #include <algorithm>
 
 #include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/utils/Svf.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -41,7 +40,7 @@ class Limiter {
   Limiter() { }
   ~Limiter() { }
 
-  void init() {
+  void prepare() {
     m_peak = 0.5f;
   }
 
@@ -69,7 +68,7 @@ class Limiter {
   }
 
  private:
-  float m_peak;
+  float m_peak = 0.5f;
 
   Limiter(const Limiter&) = delete;
   Limiter& operator=(const Limiter&) = delete;

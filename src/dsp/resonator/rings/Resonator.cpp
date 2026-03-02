@@ -40,11 +40,11 @@ using namespace std;
 using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
 
-void Resonator::init(float sample_rate) {
+void Resonator::prepare(float sample_rate) {
   m_sample_rate = sample_rate;
 
   for (int32_t i = 0; i < kMaxModes; ++i) {
-    m_f[i].init();
+    m_f[i].reset();
   }
 
   set_frequency(220.0f / m_sample_rate);
@@ -107,7 +107,7 @@ void Resonator::process(const float* in, float* out, float* aux, size_t size) {
   ParameterInterpolator position(m_previous_position, m_position, size);
   while (size--) {
     CosineOscillator amplitudes;
-    amplitudes.init<thl::dsp::utils::CosineOscillatorMode::Approximate>(position.next());
+    amplitudes.prepare<thl::dsp::utils::CosineOscillatorMode::Approximate>(position.next());
 
     float input = *in++ * 0.125f;
     float odd = 0.0f;

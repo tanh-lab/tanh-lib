@@ -43,16 +43,16 @@ using namespace std;
 using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
 
-void String::init(bool enable_dispersion, float sample_rate) {
+void String::prepare(bool enable_dispersion, float sample_rate) {
   WarmDspFunctions();
 
   m_sample_rate = sample_rate;
   m_enable_dispersion = enable_dispersion;
 
-  m_string.init();
-  m_stretch.init();
-  m_fir_damping_filter.init();
-  m_iir_damping_filter.init();
+  m_string.prepare();
+  m_stretch.prepare();
+  m_fir_damping_filter.prepare();
+  m_iir_damping_filter.reset();
 
   set_frequency(220.0f / m_sample_rate);
   set_dispersion(0.25f);
@@ -72,11 +72,14 @@ void String::init(bool enable_dispersion, float sample_rate) {
   m_out_sample[0] = m_out_sample[1] = 0.0f;
   m_aux_sample[0] = m_aux_sample[1] = 0.0f;
 
-  m_dc_blocker.init(1.0f - 20.0f / m_sample_rate);
+  m_dc_blocker.prepare(1.0f - 20.0f / m_sample_rate);
 }
 
-void String::prepare_coefficients(
-    float delay, float src_ratio, size_t size) {
+
+void String::prepare_coefficients(float delay, float src_ratio, size_t size) {
+  // RT60-based decay: convert the damping knob (0..1) into a per-sample
+  // energy loss coefficient so that the string rings for a musically useful
+  // duration. The mapping is: damping -> RT60 in samples -> per-sample gain.
   float lf_damping = m_damping * (2.0f - m_damping);
   float rt60 = 0.07f * semitones_to_ratio(lf_damping * 96.0f) * m_sample_rate;
   float rt60_base_2_12 = max(-120.0f * delay / src_ratio / rt60, -127.0f);
@@ -88,6 +91,9 @@ void String::prepare_coefficients(
       84.0f);
   float damping_f = min(m_frequency * semitones_to_ratio(damping_cutoff), 0.499f);
 
+  // Crossfade towards infinite sustain when damping > 0.95.  All loss
+  // parameters are interpolated towards unity / Nyquist so the string
+  // rings indefinitely at damping = 1.0.
   if (m_damping >= 0.95f) {
     float to_infinite = 20.0f * (m_damping - 0.95f);
     damping_coefficient += to_infinite * (1.0f - damping_coefficient);
@@ -110,6 +116,11 @@ void String::process_internal(
   float delay = 1.0f / m_frequency;
   CONSTRAIN(delay, 4.0f, kDelayLineSize - 4.0f);
 
+  // Sample-rate conversion ratio.  When the required delay fits in the
+  // buffer, src_ratio = 1 and we run at full rate.  For very low pitches
+  // the delay would exceed the buffer, so src_ratio < 1 and the inner
+  // loop runs at half rate (the outer loop still advances at full rate,
+  // crossfading between successive output samples).
   float src_ratio = delay * m_frequency;
   if (src_ratio >= 0.9999f) {
     m_src_phase = 1.0f;
@@ -132,6 +143,9 @@ void String::process_internal(
       m_damping_compensation_target,
       size);
 
+  // Main sample loop.  The outer loop runs at the host sample rate; the
+  // inner body (guarded by src_phase) executes at most once per output
+  // sample at full rate, or once every two samples at half rate.
   while (size--) {
     m_src_phase += src_ratio;
     if (m_src_phase > 1.0f) {
@@ -147,6 +161,7 @@ void String::process_internal(
 
       float s = 0.0f;
 
+      // -- Dispersion path: allpass stiffness, noise modulation, curved bridge
       if (enable_dispersion) {
         float noise = 2.0f * Random::get_float() - 1.0f;
         noise *= 1.0f / (0.2f + noise_filter);
@@ -193,19 +208,27 @@ void String::process_internal(
         s = m_string.read_hermite(delay);
       }
 
-      s += *in;  // When f0 < 11.7 Hz, causes ugly bitcrushing on the input!
+      // Inject excitation, then run the feedback damping chain:
+      //   FIR averaging -> IIR low-pass (TPT SVF) -> write back into delay.
+      s += *in;
       s = m_fir_damping_filter.process(s);
 #ifndef MIC_W
       s = m_iir_damping_filter.process<thl::dsp::utils::FilterMode::LowPass>(s);
 #endif  // MIC_W
       m_string.write(s);
 
+      // Store two most recent output/aux samples for crossfade interpolation
+      // when running at half rate.
       m_out_sample[1] = m_out_sample[0];
       m_aux_sample[1] = m_aux_sample[0];
 
       m_out_sample[0] = s;
       m_aux_sample[0] = m_string.read(comb_delay);
     }
+    // Linear crossfade between the two most recent inner-loop outputs,
+    // weighted by the fractional SRC phase.  At full rate (src_ratio = 1)
+    // this always picks m_out_sample[0]; at half rate it blends successive
+    // samples to hide the decimation.
     *out++ += crossfade(m_out_sample[1], m_out_sample[0], m_src_phase);
     *aux++ += crossfade(m_aux_sample[1], m_aux_sample[0], m_src_phase);
     in++;

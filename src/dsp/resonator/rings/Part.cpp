@@ -37,7 +37,7 @@ namespace thl::dsp::resonator::rings {
 using namespace std;
 using namespace thl::dsp::utils;
 
-void Part::init(uint16_t* reverb_buffer, float sample_rate) {
+void Part::prepare(uint16_t* reverb_buffer, float sample_rate) {
   WarmDspFunctions();
 
   m_sample_rate = sample_rate;
@@ -52,15 +52,15 @@ void Part::init(uint16_t* reverb_buffer, float sample_rate) {
   m_dirty = true;
 
   for (int32_t i = 0; i < kMaxPolyphony; ++i) {
-    m_excitation_filter[i].init();
-    m_plucker[i].init();
-    m_dc_blocker[i].init(1.0f - 10.0f / m_sample_rate);
+    m_excitation_filter[i].reset();
+    m_plucker[i].prepare();
+    m_dc_blocker[i].prepare(1.0f - 10.0f / m_sample_rate);
   }
 
-  m_reverb.init(reverb_buffer, m_sample_rate);
-  m_limiter.init();
+  m_reverb.prepare(reverb_buffer, m_sample_rate);
+  m_limiter.prepare();
 
-  m_note_filter.init(
+  m_note_filter.prepare(
       m_sample_rate / kMaxBlockSize,
       0.001f,  // Lag time with a sharp edge on the V/Oct input or trigger.
       0.010f,  // Lag time after the trigger has been received.
@@ -78,7 +78,7 @@ void Part::configure_resonators() {
       {
         int32_t resolution = 64 / m_polyphony - 4;
         for (int32_t i = 0; i < m_polyphony; ++i) {
-          m_resonator[i].init(m_sample_rate);
+          m_resonator[i].prepare(m_sample_rate);
           m_resonator[i].set_resolution(resolution);
         }
       }
@@ -95,14 +95,14 @@ void Part::configure_resonators() {
         for (int32_t i = 0; i < kNumStrings; ++i) {
           bool has_dispersion = m_model == RESONATOR_MODEL_STRING || \
               m_model == RESONATOR_MODEL_STRING_AND_REVERB;
-          m_string[i].init(has_dispersion, m_sample_rate);
+          m_string[i].prepare(has_dispersion, m_sample_rate);
 
           float f_lfo = float(kMaxBlockSize) / m_sample_rate;
           f_lfo *= lfo_frequencies[i];
-          m_lfo[i].init<thl::dsp::utils::CosineOscillatorMode::Approximate>(f_lfo);
+          m_lfo[i].prepare<thl::dsp::utils::CosineOscillatorMode::Approximate>(f_lfo);
         }
         for (int32_t i = 0; i < m_polyphony; ++i) {
-          m_plucker[i].init();
+          m_plucker[i].prepare();
         }
       }
       break;
@@ -110,7 +110,7 @@ void Part::configure_resonators() {
     case RESONATOR_MODEL_FM_VOICE:
       {
         for (int32_t i = 0; i < m_polyphony; ++i) {
-          m_fm_voice[i].init(m_sample_rate);
+          m_fm_voice[i].prepare(m_sample_rate);
         }
       }
       break;

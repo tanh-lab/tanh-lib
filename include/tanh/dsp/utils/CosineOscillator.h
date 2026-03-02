@@ -12,7 +12,7 @@ enum class CosineOscillatorMode {
 class CosineOscillator {
 public:
     template <CosineOscillatorMode mode>
-    void init(float frequency) {
+    void prepare(float frequency) {
         if constexpr (mode == CosineOscillatorMode::Approximate) {
             init_approximate(frequency);
         } else {

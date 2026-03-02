@@ -22,8 +22,8 @@ struct RingsResonator::Impl {
 
     uint16_t m_reverb_buffer[rings::Reverb::kReverbBufferSize] = {};
 
-    rings::Patch m_patch;
-    rings::PerformanceState m_performance_state;
+    rings::Patch m_patch {0.5f, 0.5f, 0.5f, 0.5f};
+    rings::PerformanceState m_performance_state {false, false, false, false, 12.0f, 48.0f, 0.0f, 0};
 
     float m_frequency = 440.0f;
     float m_odd_even_mix = 0.5f;
@@ -52,29 +52,13 @@ struct RingsResonator::Impl {
     RingBuffer m_output_fifo_odd;
     RingBuffer m_output_fifo_even;
 
-    void init() {
-        m_patch.structure = 0.5f;
-        m_patch.brightness = 0.5f;
-        m_patch.damping = 0.5f;
-        m_patch.position = 0.5f;
-
-        m_performance_state.note = 48.0f;
-        m_performance_state.tonic = 12.0f;
-        m_performance_state.fm = 0.0f;
-        m_performance_state.chord = 0;
-        m_performance_state.internal_exciter = false;
-        m_performance_state.internal_strum = false;
-        m_performance_state.internal_note = false;
-        m_performance_state.strum = false;
-    }
-
     void prepare(double sampleRate, int maxBlockSize) {
         m_host_sample_rate = sampleRate;
         float sr = static_cast<float>(sampleRate);
 
-        m_part.init(m_reverb_buffer, sr);
-        m_string_synth.init(m_reverb_buffer, sr);
-        m_strummer.init(0.01f, sr / kBlockSize, sr);
+        m_part.prepare(m_reverb_buffer, sr);
+        m_string_synth.prepare(m_reverb_buffer, sr);
+        m_strummer.prepare(0.01f, sr / kBlockSize, sr);
 
         m_latency = static_cast<int>(kBlockSize);
 
@@ -215,9 +199,7 @@ struct RingsResonator::Impl {
     }
 };
 
-RingsResonator::RingsResonator() : m_impl(std::make_unique<Impl>()) {
-    m_impl->init();
-}
+RingsResonator::RingsResonator() : m_impl(std::make_unique<Impl>()) {}
 
 RingsResonator::~RingsResonator() = default;
 RingsResonator::RingsResonator(RingsResonator&&) noexcept = default;

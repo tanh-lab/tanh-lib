@@ -102,7 +102,7 @@ class FxEngine {
   FxEngine() { }
   ~FxEngine() { }
 
-  void init(T* buffer) {
+  void prepare(T* buffer) {
     m_buffer = buffer;
     clear();
   }
@@ -262,7 +262,7 @@ class FxEngine {
   };
 
   inline void set_lfo_frequency(LFOIndex index, float frequency) {
-    m_lfo[index].template init<thl::dsp::utils::CosineOscillatorMode::Approximate>(frequency * 32.0f);
+    m_lfo[index].template prepare<thl::dsp::utils::CosineOscillatorMode::Approximate>(frequency * 32.0f);
   }
 
   inline void start(Context* c) {
@@ -288,8 +288,8 @@ class FxEngine {
     MASK = size - 1
   };
 
-  int32_t m_write_ptr;
-  T* m_buffer;
+  int32_t m_write_ptr = 0;
+  T* m_buffer = nullptr;
   thl::dsp::utils::CosineOscillator m_lfo[2];
 
   FxEngine(const FxEngine&) = delete;

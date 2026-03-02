@@ -47,7 +47,7 @@ class FMVoice {
   FMVoice() { }
   ~FMVoice() { }
 
-  void init(float sample_rate = kDefaultSampleRate);
+  void prepare(float sample_rate = kDefaultSampleRate);
   void process(
       const float* in,
       float* out,
@@ -96,32 +96,32 @@ class FMVoice {
   void prepare_coefficients();
 
   float m_sample_rate = kDefaultSampleRate;
-  float m_carrier_frequency;
-  float m_ratio;
-  float m_brightness;
-  float m_damping;
-  float m_position;
-  float m_feedback_amount;
+  float m_carrier_frequency = 0.0f;
+  float m_ratio = 0.0f;
+  float m_brightness = 0.0f;
+  float m_damping = 0.0f;
+  float m_position = 0.0f;
+  float m_feedback_amount = 0.0f;
 
-  float m_previous_carrier_frequency;
-  float m_previous_modulator_frequency;
-  float m_previous_brightness;
-  float m_previous_damping;
-  float m_previous_feedback_amount;
+  float m_previous_carrier_frequency = 0.0f;
+  float m_previous_modulator_frequency = 0.0f;
+  float m_previous_brightness = 0.0f;
+  float m_previous_damping = 0.0f;
+  float m_previous_feedback_amount = 0.0f;
 
-  float m_amplitude_envelope;
-  float m_brightness_envelope;
-  float m_gain;
-  float m_fm_amount;
-  uint32_t m_carrier_phase;
-  uint32_t m_modulator_phase;
-  float m_previous_sample;
+  float m_amplitude_envelope = 0.0f;
+  float m_brightness_envelope = 0.0f;
+  float m_gain = 0.0f;
+  float m_fm_amount = 0.0f;
+  uint32_t m_carrier_phase = 0;
+  uint32_t m_modulator_phase = 0;
+  float m_previous_sample = 0.0f;
 
-  float m_envelope_amount;
-  float m_amplitude_decay;
-  float m_brightness_decay;
-  float m_modulator_frequency;
-  float m_feedback;
+  float m_envelope_amount = 0.0f;
+  float m_amplitude_decay = 0.0f;
+  float m_brightness_decay = 0.0f;
+  float m_modulator_frequency = 0.0f;
+  float m_feedback = 0.0f;
   const float* m_sine_table = nullptr;
   const float* m_fm_frequency_quantizer_table = nullptr;
 

@@ -42,9 +42,9 @@ class Plucker {
   Plucker() { }
   ~Plucker() { }
 
-  void init() {
-    m_svf.init();
-    m_comb_filter.init();
+  void prepare() {
+    m_svf.reset();
+    m_comb_filter.prepare();
     m_remaining_samples = 0;
     m_comb_filter_period = 0.0f;
   }
@@ -79,9 +79,9 @@ class Plucker {
  private:
   thl::dsp::utils::Svf m_svf;
   thl::dsp::utils::DelayLine<float, 256> m_comb_filter;
-  size_t m_remaining_samples;
-  float m_comb_filter_period;
-  float m_comb_filter_gain;
+  size_t m_remaining_samples = 0;
+  float m_comb_filter_period = 0.0f;
+  float m_comb_filter_gain = 0.0f;
 
   Plucker(const Plucker&) = delete;
   Plucker& operator=(const Plucker&) = delete;

@@ -43,9 +43,9 @@ class Follower {
   Follower() { }
   ~Follower() { }
 
-  void init(float low, float low_mid, float mid_high) {
-    m_low_mid_filter.init();
-    m_mid_high_filter.init();
+  void prepare(float low, float low_mid, float mid_high) {
+    m_low_mid_filter.reset();
+    m_mid_high_filter.reset();
 
     m_low_mid_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(low_mid, 0.5f);
     m_mid_high_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(mid_high, 0.5f);
@@ -96,11 +96,11 @@ class Follower {
   NaiveSvf m_low_mid_filter;
   NaiveSvf m_mid_high_filter;
 
-  float m_attack[3];
-  float m_decay[3];
-  float m_detector[3];
+  float m_attack[3] = {};
+  float m_decay[3] = {};
+  float m_detector[3] = {};
 
-  float m_centroid;
+  float m_centroid = 0.0f;
 
   Follower(const Follower&) = delete;
   Follower& operator=(const Follower&) = delete;

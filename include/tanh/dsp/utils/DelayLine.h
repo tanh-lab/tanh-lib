@@ -23,7 +23,7 @@ class DelayLine {
 public:
     DelayLine() = default;
 
-    void init() {
+    void prepare() {
         std::fill(&m_line[0], &m_line[max_delay], T(0));
         m_delay = 1;
         m_write_ptr = 0;

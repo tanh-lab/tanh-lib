@@ -39,8 +39,8 @@ class Strummer {
   Strummer() { }
   ~Strummer() { }
 
-  void init(float ioi, float decimated_sr, float sample_rate) {
-    m_onset_detector.init(
+  void prepare(float ioi, float decimated_sr, float sample_rate) {
+    m_onset_detector.prepare(
         8.0f / sample_rate,
         160.0f / sample_rate,
         1600.0f / sample_rate,
@@ -87,9 +87,9 @@ class Strummer {
   }
 
  private:
-  float m_previous_note;
-  int32_t m_inhibit_counter;
-  int32_t m_inhibit_timer;
+  float m_previous_note = 69.0f;
+  int32_t m_inhibit_counter = 0;
+  int32_t m_inhibit_timer = 0;
 
   OnsetDetector m_onset_detector;
 

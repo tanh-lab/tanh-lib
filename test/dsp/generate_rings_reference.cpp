@@ -73,7 +73,7 @@ int main() {
         rings::Part part;
         std::memset(&part, 0, sizeof(part));
         std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer {};
-        part.init(reverb_buffer.data());
+        part.prepare(reverb_buffer.data());
         part.set_model(info.model);
 
         // Warm up: run silence to settle uninitialised internal state

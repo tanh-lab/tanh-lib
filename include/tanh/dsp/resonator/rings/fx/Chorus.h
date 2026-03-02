@@ -41,10 +41,10 @@ class Chorus {
   Chorus() { }
   ~Chorus() { }
 
-  void init(uint16_t* buffer, float sample_rate = kDefaultSampleRate) {
+  void prepare(uint16_t* buffer, float sample_rate = kDefaultSampleRate) {
     WarmDspFunctions();
     m_sine_table = SineTable();
-    m_engine.init(buffer);
+    m_engine.prepare(buffer);
     m_rate_ratio = sample_rate / kDefaultSampleRate;
     m_phase_1 = 0;
     m_phase_2 = 0;
@@ -108,13 +108,13 @@ class Chorus {
   typedef FxEngine<4096, FORMAT_16_BIT> E;
   E m_engine;
 
-  float m_amount;
-  float m_depth;
+  float m_amount = 0.0f;
+  float m_depth = 0.0f;
   float m_rate_ratio = 1.0f;
   const float* m_sine_table = nullptr;
 
-  float m_phase_1;
-  float m_phase_2;
+  float m_phase_1 = 0.0f;
+  float m_phase_2 = 0.0f;
 
   Chorus(const Chorus&) = delete;
   Chorus& operator=(const Chorus&) = delete;

@@ -39,8 +39,8 @@ class Reverb {
   Reverb() { }
   ~Reverb() { }
 
-  void init(uint16_t* buffer, float sample_rate = kDefaultSampleRate) {
-    m_engine.init(buffer);
+  void prepare(uint16_t* buffer, float sample_rate = kDefaultSampleRate) {
+    m_engine.prepare(buffer);
     m_engine.set_lfo_frequency(LFO_1, 0.5f / sample_rate);
     m_engine.set_lfo_frequency(LFO_2, 0.3f / sample_rate);
     m_rate_ratio = sample_rate / kDefaultSampleRate;
@@ -181,15 +181,15 @@ class Reverb {
   typedef FxEngine<65536, FORMAT_16_BIT> E;
   E m_engine;
 
-  float m_amount;
-  float m_input_gain;
-  float m_reverb_time;
-  float m_diffusion;
+  float m_amount = 0.0f;
+  float m_input_gain = 0.0f;
+  float m_reverb_time = 0.0f;
+  float m_diffusion = 0.625f;
   float m_lp;
   float m_rate_ratio = 1.0f;
 
-  float m_lp_decay_1;
-  float m_lp_decay_2;
+  float m_lp_decay_1 = 0.0f;
+  float m_lp_decay_2 = 0.0f;
 
   Reverb(const Reverb&) = delete;
   Reverb& operator=(const Reverb&) = delete;
