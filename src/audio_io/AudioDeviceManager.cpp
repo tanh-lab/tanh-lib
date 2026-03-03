@@ -750,7 +750,18 @@ void AudioDeviceManager::staticLogCallback(void* pUserData,
                                            uint32_t level,
                                            const char* pMessage) {
     auto* impl = static_cast<Impl*>(pUserData);
-    if (impl && impl->logCallback) { impl->logCallback(level, pMessage); }
+    if (!impl || !impl->logCallback) { return; }
+
+    // Miniaudio levels: 1=error, 2=warning, 3=info, 4=debug.
+    Logger::LogLevel normalised;
+    switch (level) {
+        case 1:  normalised = Logger::LogLevel::Error;   break;
+        case 2:  normalised = Logger::LogLevel::Warning; break;
+        case 3:  normalised = Logger::LogLevel::Info;    break;
+        case 4:  normalised = Logger::LogLevel::Debug;   break;
+        default: normalised = Logger::LogLevel::Info;    break;
+    }
+    impl->logCallback(normalised, pMessage);
 }
 
 }  // namespace thl
