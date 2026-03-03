@@ -31,7 +31,7 @@
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/DelayLine.h>
 
-namespace thl::dsp::resonator::rings {
+namespace thl::dsp::analysis {
 
 class NoteFilter {
  public:
@@ -115,4 +115,4 @@ class NoteFilter {
   float m_lag_coefficient = 0.0f;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::analysis

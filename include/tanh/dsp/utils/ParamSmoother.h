@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-namespace thl::dsp::resonator {
+namespace thl::dsp::utils {
 
 class ParamSmoother {
 public:
@@ -25,4 +25,4 @@ private:
     float m_coeff = 0.0f;
 };
 
-} // namespace thl::dsp::resonator
+} // namespace thl::dsp::utils

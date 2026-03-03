@@ -31,10 +31,10 @@
 
 #include <algorithm>
 
-#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/filter/Svf.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
-#include <tanh/dsp/resonator/rings/Follower.h>
+#include <tanh/dsp/analysis/Follower.h>
 
 #include <tanh/dsp/resonator/rings/DspFunctions.h>
 
@@ -125,7 +125,7 @@ class FMVoice {
   const float* m_sine_table = nullptr;
   const float* m_fm_frequency_quantizer_table = nullptr;
 
-  Follower m_follower;
+  thl::dsp::analysis::Follower m_follower;
 
   FMVoice(const FMVoice&) = delete;
   FMVoice& operator=(const FMVoice&) = delete;

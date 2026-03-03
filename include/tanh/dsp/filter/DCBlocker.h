@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::dsp::filter {
 
 class DCBlocker {
 public:
@@ -36,4 +36,4 @@ private:
     float m_y = 0.0f;
 };
 
-} // namespace thl::dsp::utils
+} // namespace thl::dsp::filter

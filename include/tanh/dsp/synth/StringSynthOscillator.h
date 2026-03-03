@@ -33,7 +33,7 @@
 #include <tanh/dsp/utils/ParameterInterpolator.h>
 #include <tanh/dsp/utils/DspMath.h>
 
-namespace thl::dsp::resonator::rings {
+namespace thl::dsp::synth {
 
 using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
@@ -212,4 +212,4 @@ class StringSynthOscillator {
   StringSynthOscillator& operator=(const StringSynthOscillator&) = delete;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::synth

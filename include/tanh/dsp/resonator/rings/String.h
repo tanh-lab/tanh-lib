@@ -31,9 +31,9 @@
 
 #include <algorithm>
 
-#include <tanh/dsp/utils/DCBlocker.h>
+#include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/utils/DelayLine.h>
-#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/filter/Svf.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
 
@@ -227,8 +227,8 @@ class String {
   StiffnessDelayLine m_stretch;
 
   DampingFilter m_fir_damping_filter;
-  thl::dsp::utils::Svf m_iir_damping_filter;
-  thl::dsp::utils::DCBlocker m_dc_blocker;
+  thl::dsp::filter::Svf m_iir_damping_filter;
+  thl::dsp::filter::DCBlocker m_dc_blocker;
 
   String(const String&) = delete;
   String& operator=(const String&) = delete;

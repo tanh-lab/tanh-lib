@@ -103,7 +103,7 @@ void String::prepare_coefficients(float delay, float src_ratio, size_t size) {
   }
 
   m_fir_damping_filter.configure(damping_coefficient, brightness, size);
-  m_iir_damping_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Accurate>(damping_f, 0.5f);
+  m_iir_damping_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Accurate>(damping_f, 0.5f);
   m_damping_compensation_target = 1.0f - SvfShift(damping_cutoff);
 }
 
@@ -213,7 +213,7 @@ void String::process_internal(
       s += *in;
       s = m_fir_damping_filter.process(s);
 #ifndef MIC_W
-      s = m_iir_damping_filter.process<thl::dsp::utils::FilterMode::LowPass>(s);
+      s = m_iir_damping_filter.process<thl::dsp::filter::FilterMode::LowPass>(s);
 #endif  // MIC_W
       m_string.write(s);
 

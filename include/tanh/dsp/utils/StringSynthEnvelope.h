@@ -29,7 +29,7 @@
 #pragma once
 
 
-namespace thl::dsp::resonator::rings {
+namespace thl::dsp::utils {
 
 enum EnvelopeShape {
   ENVELOPE_SHAPE_LINEAR,
@@ -138,4 +138,4 @@ class StringSynthEnvelope {
   StringSynthEnvelope& operator=(const StringSynthEnvelope&) = delete;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::utils

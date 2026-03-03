@@ -31,11 +31,11 @@
 
 #include <algorithm>
 
-#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
 #include <tanh/dsp/utils/Random.h>
 
-namespace thl::dsp::resonator::rings {
+namespace thl::dsp::synth {
 
 class Plucker {
  public:
@@ -58,7 +58,7 @@ class Plucker {
     }
     m_comb_filter_period = comb_period;
     m_comb_filter_gain = (1.0f - position) * 0.8f;
-    m_svf.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(std::min(cutoff, 0.499f), 1.0f);
+    m_svf.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(std::min(cutoff, 0.499f), 1.0f);
   }
 
   void process(float* out, size_t size) {
@@ -67,17 +67,17 @@ class Plucker {
     for (size_t i = 0; i < size; ++i) {
       float in = 0.0f;
       if (m_remaining_samples) {
-        in = 2.0f * Random::get_float() - 1.0f;
+        in = 2.0f * thl::dsp::utils::Random::get_float() - 1.0f;
         --m_remaining_samples;
       }
       out[i] = in + comb_gain * m_comb_filter.read(comb_delay);
       m_comb_filter.write(out[i]);
     }
-    m_svf.process<thl::dsp::utils::FilterMode::LowPass>(out, out, size);
+    m_svf.process<thl::dsp::filter::FilterMode::LowPass>(out, out, size);
   }
 
  private:
-  thl::dsp::utils::Svf m_svf;
+  thl::dsp::filter::Svf m_svf;
   thl::dsp::utils::DelayLine<float, 256> m_comb_filter;
   size_t m_remaining_samples = 0;
   float m_comb_filter_period = 0.0f;
@@ -87,4 +87,4 @@ class Plucker {
   Plucker& operator=(const Plucker&) = delete;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::synth

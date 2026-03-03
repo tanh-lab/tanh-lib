@@ -32,12 +32,13 @@
 #include <algorithm>
 
 #include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/filter/Svf.h>
 
-namespace thl::dsp::resonator::rings {
+namespace thl::dsp::analysis {
 
 using namespace std;
 using namespace thl::dsp::utils;
+using namespace thl::dsp::filter;
 
 class ZScorer {
  public:
@@ -127,8 +128,8 @@ class OnsetDetector {
 
     m_low_mid_filter.reset();
     m_mid_high_filter.reset();
-    m_low_mid_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(low_mid, 0.5f);
-    m_mid_high_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(mid_high, 0.5f);
+    m_low_mid_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(low_mid, 0.5f);
+    m_mid_high_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(mid_high, 0.5f);
 
     m_attack[0] = low_mid;
     m_decay[0] = low * 0.25f;
@@ -224,4 +225,4 @@ class OnsetDetector {
   OnsetDetector& operator=(const OnsetDetector&) = delete;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::analysis
