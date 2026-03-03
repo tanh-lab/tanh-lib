@@ -36,7 +36,7 @@
 namespace thl::dsp::resonator::rings {
 
 static constexpr float kDefaultSampleRate = 48000.0f;
-const size_t kMaxBlockSize = 24;
+static constexpr size_t kMaxBlockSize = 24;
 
 }  // namespace thl::dsp::resonator::rings
 
