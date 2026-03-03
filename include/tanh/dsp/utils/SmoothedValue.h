@@ -5,17 +5,17 @@
 
 namespace thl::dsp::utils {
 
-class SmoothedValue
-{
+class SmoothedValue {
 public:
     SmoothedValue();
 
-    enum ValueSmoothingType
-    {
+    enum ValueSmoothingType {
         Linear = 0,
     };
 
-    void reset(double sample_rate, double time_in_seconds, ValueSmoothingType smoothing_type = Linear);
+    void reset(double sample_rate,
+               double time_in_seconds,
+               ValueSmoothingType smoothing_type = Linear);
 
     void set_target_value(float target_value);
     void set_current_and_target_value(float target_value);
@@ -36,6 +36,4 @@ private:
     ValueSmoothingType m_smoothing_type;
 };
 
-} // namespace thl::dsp::utils
-
-
+}  // namespace thl::dsp::utils

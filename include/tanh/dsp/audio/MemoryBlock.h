@@ -18,7 +18,8 @@ public:
             if (data != nullptr) {
                 m_data = static_cast<T*>(data);
             } else {
-                thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to allocate memory");
+                thl::Logger::error("thl.dsp.audio.memory_block",
+                                   "MemoryBlock: failed to allocate memory");
             }
         }
     }
@@ -32,7 +33,8 @@ public:
                 m_data = static_cast<T*>(data);
                 std::memcpy(m_data, other.m_data, sizeof(T) * m_size);
             } else {
-                thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to allocate memory");
+                thl::Logger::error("thl.dsp.audio.memory_block",
+                                   "MemoryBlock: failed to allocate memory");
             }
         }
     }
@@ -48,15 +50,15 @@ public:
                     m_data = static_cast<T*>(data);
                     std::memcpy(m_data, other.m_data, sizeof(T) * m_size);
                 } else {
-                    thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to allocate memory");
+                    thl::Logger::error("thl.dsp.audio.memory_block",
+                                       "MemoryBlock: failed to allocate memory");
                 }
             }
         }
         return *this;
     }
 
-    MemoryBlock(MemoryBlock&& other) noexcept
-        : m_data(other.m_data), m_size(other.m_size) {
+    MemoryBlock(MemoryBlock&& other) noexcept : m_data(other.m_data), m_size(other.m_size) {
         other.m_size = 0;
         other.m_data = nullptr;
     }
@@ -91,22 +93,21 @@ public:
         if (data != nullptr) {
             m_data = static_cast<T*>(data);
         } else {
-            thl::Logger::error("thl.dsp.audio.memory_block", "MemoryBlock: failed to reallocate memory");
+            thl::Logger::error("thl.dsp.audio.memory_block",
+                               "MemoryBlock: failed to reallocate memory");
         }
     }
 
     void clear() { std::memset(m_data, 0, sizeof(T) * m_size); }
 
-    template <typename U = T,
-              std::enable_if_t<std::is_trivially_copyable_v<U>, bool> = true>
+    template <typename U = T, std::enable_if_t<std::is_trivially_copyable_v<U>, bool> = true>
     void swap_data(MemoryBlock& other) {
         if (this != &other) {
             if (m_size == other.m_size) {
                 std::swap(m_data, other.m_data);
             } else {
-                    thl::Logger::error(
-                    "thl.dsp.audio.memory_block",
-                    "MemoryBlock: cannot swap data with different sizes");
+                thl::Logger::error("thl.dsp.audio.memory_block",
+                                   "MemoryBlock: cannot swap data with different sizes");
             }
         }
     }
@@ -115,9 +116,8 @@ public:
         if (m_size == size) {
             std::swap(m_data, data);
         } else {
-            thl::Logger::error(
-                "thl.dsp.audio.memory_block",
-                "MemoryBlock: cannot swap data with different sizes");
+            thl::Logger::error("thl.dsp.audio.memory_block",
+                               "MemoryBlock: cannot swap data with different sizes");
         }
     }
 

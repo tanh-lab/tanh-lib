@@ -9,7 +9,7 @@ AllowShortIfStatementsOnASingleLine: true
 AllowShortLoopsOnASingleLine: true
 AllowAllParametersOfDeclarationOnNextLine: false
 AllowAllArgumentsOnNextLine: false
-ColumnLimit: 80
+ColumnLimit: 100
 IndentWidth: 4
 SpacesInAngles: false
 SpaceInEmptyParentheses: false

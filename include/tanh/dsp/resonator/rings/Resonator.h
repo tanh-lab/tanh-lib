@@ -28,7 +28,6 @@
 
 #pragma once
 
-
 #include <algorithm>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
@@ -40,65 +39,59 @@ namespace thl::dsp::resonator::rings {
 const int32_t kMaxModes = 64;
 
 class Resonator {
- public:
-  Resonator() { }
-  ~Resonator() { }
+public:
+    Resonator() {}
+    ~Resonator() {}
 
-  void prepare(float sample_rate = kDefaultSampleRate);
-  void process(
-      const float* in,
-      float* out,
-      float* aux,
-      size_t size);
+    void prepare(float sample_rate = kDefaultSampleRate);
+    void process(const float* in, float* out, float* aux, size_t size);
 
-  inline void set_frequency(float frequency) {
-    m_frequency = frequency;
-    m_dirty = true;
-  }
+    inline void set_frequency(float frequency) {
+        m_frequency = frequency;
+        m_dirty = true;
+    }
 
-  inline void set_structure(float structure) {
-    m_structure = structure;
-    m_dirty = true;
-  }
+    inline void set_structure(float structure) {
+        m_structure = structure;
+        m_dirty = true;
+    }
 
-  inline void set_brightness(float brightness) {
-    m_brightness = brightness;
-    m_dirty = true;
-  }
+    inline void set_brightness(float brightness) {
+        m_brightness = brightness;
+        m_dirty = true;
+    }
 
-  inline void set_damping(float damping) {
-    m_damping = damping;
-    m_dirty = true;
-  }
+    inline void set_damping(float damping) {
+        m_damping = damping;
+        m_dirty = true;
+    }
 
-  inline void set_position(float position) {
-    m_position = position;
-  }
+    inline void set_position(float position) { m_position = position; }
 
-  inline void set_resolution(int32_t resolution) {
-    resolution -= resolution & 1; // Must be even!
-    m_resolution = std::min(resolution, kMaxModes);
-    m_dirty = true;
-  }
+    inline void set_resolution(int32_t resolution) {
+        resolution -= resolution & 1;  // Must be even!
+        m_resolution = std::min(resolution, kMaxModes);
+        m_dirty = true;
+    }
 
- private:
-  int32_t compute_filters();
-  float m_sample_rate = kDefaultSampleRate;
-  float m_frequency = 0.0f;
-  float m_structure = 0.0f;
-  float m_brightness = 0.0f;
-  float m_position = 0.0f;
-  float m_previous_position = 0.0f;
-  float m_damping = 0.0f;
+private:
+    int32_t compute_filters();
+    float m_sample_rate = kDefaultSampleRate;
+    float m_frequency = 0.0f;
+    float m_structure = 0.0f;
+    float m_brightness = 0.0f;
+    float m_position = 0.0f;
+    float m_previous_position = 0.0f;
+    float m_damping = 0.0f;
 
-  int32_t m_resolution = kMaxModes;
-  int32_t m_num_modes = 0;
-  bool m_dirty = true;
+    int32_t m_resolution = kMaxModes;
+    int32_t m_num_modes = 0;
+    bool m_dirty = true;
 
-  thl::dsp::filter::Svf m_f[kMaxModes];
+    thl::dsp::filter::Svf m_f[kMaxModes];
 
-  Resonator(const Resonator&) = delete;
-  Resonator& operator=(const Resonator&) = delete;
+    Resonator(const Resonator&) = delete;
+    Resonator& operator=(const Resonator&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings

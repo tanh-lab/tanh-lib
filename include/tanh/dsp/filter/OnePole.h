@@ -27,7 +27,7 @@ constexpr float kPiPow5 = kPiPow3 * kPiPow2;
 constexpr float kPiPow7 = kPiPow5 * kPiPow2;
 constexpr float kPiPow9 = kPiPow7 * kPiPow2;
 constexpr float kPiPow11 = kPiPow9 * kPiPow2;
-} // namespace detail
+}  // namespace detail
 
 // Topology-Preserving Transform (TPT) one-pole filter.
 //
@@ -46,9 +46,7 @@ constexpr float kPiPow11 = kPiPow9 * kPiPow2;
 // with Svf.
 class OnePole {
 public:
-    void reset() {
-        m_state = 0.0f;
-    }
+    void reset() { m_state = 0.0f; }
 
     template <FrequencyApproximation approximation>
     static float tan(float f) {
@@ -103,4 +101,4 @@ private:
     float m_state = 0.0f;
 };
 
-} // namespace thl::dsp::filter
+}  // namespace thl::dsp::filter

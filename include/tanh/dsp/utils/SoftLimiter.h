@@ -28,7 +28,6 @@
 
 #pragma once
 
-
 #include <algorithm>
 
 #include <tanh/dsp/utils/DspMath.h>
@@ -36,42 +35,36 @@
 namespace thl::dsp::utils {
 
 class SoftLimiter {
- public:
-  SoftLimiter() { }
-  ~SoftLimiter() { }
+public:
+    SoftLimiter() {}
+    ~SoftLimiter() {}
 
-  void prepare() {
-    m_peak = 0.5f;
-  }
+    void prepare() { m_peak = 0.5f; }
 
-  void process(
-      float* l,
-      float* r,
-      size_t size,
-      float pre_gain) {
-    while (size--) {
-      float l_pre = *l * pre_gain;
-      float r_pre = *r * pre_gain;
+    void process(float* l, float* r, size_t size, float pre_gain) {
+        while (size--) {
+            float l_pre = *l * pre_gain;
+            float r_pre = *r * pre_gain;
 
-      float l_peak = fabs(l_pre);
-      float r_peak = fabs(r_pre);
-      float s_peak = fabs(r_pre - l_pre);
+            float l_peak = fabs(l_pre);
+            float r_peak = fabs(r_pre);
+            float s_peak = fabs(r_pre - l_pre);
 
-      float peak = std::max(std::max(l_peak, r_peak), s_peak);
-      SLOPE(m_peak, peak, 0.05f, 0.00002f);
+            float peak = std::max(std::max(l_peak, r_peak), s_peak);
+            SLOPE(m_peak, peak, 0.05f, 0.00002f);
 
-      // Clamp to 8Vpp, clipping softly towards 10Vpp
-      float gain = (m_peak <= 1.0f ? 1.0f : 1.0f / m_peak);
-      *l++ = soft_limit(l_pre * gain * 0.8f);
-      *r++ = soft_limit(r_pre * gain * 0.8f);
+            // Clamp to 8Vpp, clipping softly towards 10Vpp
+            float gain = (m_peak <= 1.0f ? 1.0f : 1.0f / m_peak);
+            *l++ = soft_limit(l_pre * gain * 0.8f);
+            *r++ = soft_limit(r_pre * gain * 0.8f);
+        }
     }
-  }
 
- private:
-  float m_peak = 0.5f;
+private:
+    float m_peak = 0.5f;
 
-  SoftLimiter(const SoftLimiter&) = delete;
-  SoftLimiter& operator=(const SoftLimiter&) = delete;
+    SoftLimiter(const SoftLimiter&) = delete;
+    SoftLimiter& operator=(const SoftLimiter&) = delete;
 };
 
 }  // namespace thl::dsp::utils

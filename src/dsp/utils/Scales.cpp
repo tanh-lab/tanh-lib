@@ -6,7 +6,7 @@
 
 namespace thl::dsp::utils {
 
-std::string note_number_to_note_name(int note_number){
+std::string note_number_to_note_name(int note_number) {
     std::string note_name;
     switch (note_number % 12) {
         case 0: note_name = "C"; break;
@@ -25,28 +25,26 @@ std::string note_number_to_note_name(int note_number){
     return note_name;
 }
 
-std::unordered_map<ScaleMode, std::vector<int>> scale_halfsteps = {
-    {ScaleMode::MINOR, {2, 5}},
-    {ScaleMode::MAJOR, {3, 7}},
-    {ScaleMode::PHRYGIAN, {1,5}}
-};
+std::unordered_map<ScaleMode, std::vector<int>> scale_halfsteps = {{ScaleMode::MINOR, {2, 5}},
+                                                                   {ScaleMode::MAJOR, {3, 7}},
+                                                                   {ScaleMode::PHRYGIAN, {1, 5}}};
 
-int get_note_offset(int scale_note_index, ScaleMode mode){
-
+int get_note_offset(int scale_note_index, ScaleMode mode) {
     int note_offset = 2 * scale_note_index;
     std::vector<int>& halfsteps = scale_halfsteps[mode];
 
-    while (scale_note_index >= 0){
-        // subtract one halfstep for each halfstep that was passed by this scale note index
-        for (int halfstep: halfsteps){
+    while (scale_note_index >= 0) {
+        // subtract one halfstep for each halfstep that was passed by this scale
+        // note index
+        for (int halfstep : halfsteps) {
             if (scale_note_index < halfstep) break;
             note_offset--;
         }
 
         // For now assume that note 7 is the octave, loop afterwards
-        scale_note_index -= 7; 
+        scale_note_index -= 7;
     }
-    return note_offset; 
+    return note_offset;
 }
 
-} // namespace thl::dsp
+}  // namespace thl::dsp::utils

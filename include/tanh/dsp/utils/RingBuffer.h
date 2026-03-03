@@ -33,4 +33,4 @@ private:
     int m_count = 0;
 };
 
-} // namespace thl::dsp::utils
+}  // namespace thl::dsp::utils

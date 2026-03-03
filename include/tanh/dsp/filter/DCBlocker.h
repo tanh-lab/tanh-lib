@@ -36,4 +36,4 @@ private:
     float m_y = 0.0f;
 };
 
-} // namespace thl::dsp::filter
+}  // namespace thl::dsp::filter

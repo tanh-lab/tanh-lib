@@ -8,5 +8,4 @@ float semitones_to_ratio(float semitones) {
     return std::exp2(semitones / 12.0f);
 }
 
-} // namespace thl::dsp::utils
-
+}  // namespace thl::dsp::utils

@@ -127,7 +127,12 @@ public:
     }
 
     template <FilterMode mode>
-    void process(const float* in, float* out_1, float* out_2, size_t size, float gain_1, float gain_2) {
+    void process(const float* in,
+                 float* out_1,
+                 float* out_2,
+                 size_t size,
+                 float gain_1,
+                 float gain_2) {
         float state_1 = m_state_1;
         float state_2 = m_state_2;
         while (size--) {
@@ -282,4 +287,4 @@ private:
     float m_bp = 0.0f;
 };
 
-} // namespace thl::dsp::filter
+}  // namespace thl::dsp::filter

@@ -23,7 +23,7 @@ inline float interpolate_ref(const std::array<float, 257>& table, float index, f
 }
 
 std::array<float, 257> make_ref_4_decades() {
-    std::array<float, 257> table {};
+    std::array<float, 257> table{};
     for (size_t i = 0; i < table.size(); ++i) {
         const float x = static_cast<float>(i) / 256.0f;
         table[i] = std::pow(10.0f, 4.0f * x);
@@ -32,7 +32,7 @@ std::array<float, 257> make_ref_4_decades() {
 }
 
 std::array<float, 257> make_ref_svf_shift() {
-    std::array<float, 257> table {};
+    std::array<float, 257> table{};
     for (size_t i = 0; i < table.size(); ++i) {
         const float semitones = static_cast<float>(i);
         const float ratio = std::exp2(semitones / 12.0f);
@@ -42,7 +42,7 @@ std::array<float, 257> make_ref_svf_shift() {
 }
 
 std::array<float, 257> make_ref_stiffness() {
-    std::array<float, 257> table {};
+    std::array<float, 257> table{};
     for (size_t i = 0; i < table.size(); ++i) {
         float g = static_cast<float>(i) / 256.0f;
         if (g < 0.25f) {
@@ -67,11 +67,10 @@ std::array<float, 257> make_ref_stiffness() {
 }
 
 std::array<float, 5121> make_ref_sine_table() {
-    std::array<float, 5121> table {};
+    std::array<float, 5121> table{};
     constexpr double kTwoPi = 2.0 * std::numbers::pi;
     for (size_t i = 0; i < table.size(); ++i) {
-        table[i] = static_cast<float>(std::sin(
-            kTwoPi * static_cast<double>(i) / 4096.0));
+        table[i] = static_cast<float>(std::sin(kTwoPi * static_cast<double>(i) / 4096.0));
     }
     return table;
 }
@@ -112,9 +111,7 @@ std::array<float, 129> make_ref_fm_quantizer() {
     }
 
     size_t target_size = 1;
-    while (target_size < scale.size()) {
-        target_size <<= 1;
-    }
+    while (target_size < scale.size()) { target_size <<= 1; }
     while (scale.size() < target_size) {
         size_t gap = 0;
         double max_gap = -1.0;
@@ -130,10 +127,8 @@ std::array<float, 129> make_ref_fm_quantizer() {
     }
     scale.push_back(scale.back());
 
-    std::array<float, 129> table {};
-    for (size_t i = 0; i < table.size(); ++i) {
-        table[i] = static_cast<float>(scale[i]);
-    }
+    std::array<float, 129> table{};
+    for (size_t i = 0; i < table.size(); ++i) { table[i] = static_cast<float>(scale[i]); }
     return table;
 }
 
@@ -165,7 +160,8 @@ TEST(RingsDspFunctions, StiffnessMatchesOriginalLutExceptClampedTail) {
     const auto ref = make_ref_stiffness();
 
     // The original LUT clamps the last two entries to exactly 2.0; the analytic
-    // replacement preserves the underlying formula and differs slightly near 1.0.
+    // replacement preserves the underlying formula and differs slightly
+    // near 1.0.
     for (size_t i = 0; i <= 254; ++i) {
         const float x = static_cast<float>(i) / 256.0f;
         EXPECT_NEAR(rings::Stiffness(x), ref[i], 1e-6f) << "index " << i;
@@ -185,12 +181,11 @@ TEST(RingsDspFunctions, AnalyticFunctionsTrackInterpolatedLuts) {
         const float x = static_cast<float>(i) / 4096.0f;
         const float four_ref = interpolate_ref(four_decades, x, 256.0f);
         const float four_exact = rings::FourDecades(x);
-        max_stiffness_diff = std::max(
-            max_stiffness_diff,
-            std::abs(rings::Stiffness(x) - interpolate_ref(stiffness, x, 256.0f)));
-        max_four_decades_rel_err = std::max(
-            max_four_decades_rel_err,
-            std::abs(four_exact - four_ref) / four_exact);
+        max_stiffness_diff =
+            std::max(max_stiffness_diff,
+                     std::abs(rings::Stiffness(x) - interpolate_ref(stiffness, x, 256.0f)));
+        max_four_decades_rel_err =
+            std::max(max_four_decades_rel_err, std::abs(four_exact - four_ref) / four_exact);
     }
 
     float max_svf_shift_diff = 0.0f;
@@ -201,7 +196,8 @@ TEST(RingsDspFunctions, AnalyticFunctionsTrackInterpolatedLuts) {
             std::abs(rings::SvfShift(semitones) - interpolate_ref(svf_shift, semitones, 1.0f)));
     }
 
-    // The clamped tail creates the only notable mismatch; observed max is ~1.46e-2.
+    // The clamped tail creates the only notable mismatch; observed max is
+    // ~1.46e-2.
     EXPECT_LT(max_stiffness_diff, 2e-2f);
     EXPECT_LT(max_four_decades_rel_err, 4e-4f);
     EXPECT_LT(max_svf_shift_diff, 1e-6f);
@@ -228,8 +224,6 @@ TEST(RingsDspFunctions, FmQuantizerTableMatchesReferenceDefinition) {
 TEST(RingsDspFunctions, FmQuantizerTableIsMonotonicAndHasSentinel) {
     rings::WarmDspFunctions();
     const float* t = rings::FmFrequencyQuantizerTable();
-    for (int i = 0; i < 128; ++i) {
-        EXPECT_LE(t[i], t[i + 1]) << "Non-monotonic at index " << i;
-    }
+    for (int i = 0; i < 128; ++i) { EXPECT_LE(t[i], t[i + 1]) << "Non-monotonic at index " << i; }
     EXPECT_FLOAT_EQ(t[128], t[127]);
 }

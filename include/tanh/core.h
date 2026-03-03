@@ -10,10 +10,10 @@ namespace thl {
 
 // Core utility functions available to all components
 namespace core {
-    /**
-     * @brief Get the library version
-     */
-    std::string getVersion();
-}
+/**
+ * @brief Get the library version
+ */
+std::string getVersion();
+}  // namespace core
 
-} // namespace thl
+}  // namespace thl

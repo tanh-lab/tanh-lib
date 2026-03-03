@@ -13,18 +13,14 @@ uint64_t DataSource::read_pcm_frames(float* output, uint64_t frame_count) {
     if (!m_impl || !m_impl->is_valid()) return 0;
 
     ma_uint64 frames_read = 0;
-    ma_data_source_read_pcm_frames(m_impl->get_data_source(),
-                                   output,
-                                   frame_count,
-                                   &frames_read);
+    ma_data_source_read_pcm_frames(m_impl->get_data_source(), output, frame_count, &frames_read);
     return frames_read;
 }
 
 bool DataSource::seek(uint64_t frame_index) {
     if (!m_impl || !m_impl->is_valid()) return false;
 
-    return ma_data_source_seek_to_pcm_frame(m_impl->get_data_source(),
-                                            frame_index) == MA_SUCCESS;
+    return ma_data_source_seek_to_pcm_frame(m_impl->get_data_source(), frame_index) == MA_SUCCESS;
 }
 
 uint32_t DataSource::get_channel_count() const {

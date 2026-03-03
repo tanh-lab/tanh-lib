@@ -135,9 +135,7 @@ public:
      *
      * @note Thread-safe - uses atomic operations.
      */
-    bool isRecording() const {
-        return m_recording.load(std::memory_order_acquire);
-    }
+    bool isRecording() const { return m_recording.load(std::memory_order_acquire); }
 
     /**
      * @brief Checks if a file is currently open.
@@ -153,9 +151,7 @@ public:
      *
      * @note Thread-safe - uses atomic operations.
      */
-    uint64_t getFramesWritten() const {
-        return m_framesWritten.load(std::memory_order_acquire);
-    }
+    uint64_t getFramesWritten() const { return m_framesWritten.load(std::memory_order_acquire); }
 
     /**
      * @brief Gets the peak amplitude of the most recent audio block.
@@ -164,9 +160,7 @@ public:
      *
      * @note Thread-safe - uses atomic operations.
      */
-    float getPeakLevel() const {
-        return m_peakLevel.load(std::memory_order_acquire);
-    }
+    float getPeakLevel() const { return m_peakLevel.load(std::memory_order_acquire); }
 
     /**
      * @brief Processes audio input and writes to file if recording.

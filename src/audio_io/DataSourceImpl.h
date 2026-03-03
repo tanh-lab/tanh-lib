@@ -21,20 +21,12 @@ struct DataSource::Impl {
         return nullptr;
     }
 
-    bool is_valid() const {
-        return dataSourceInitialised || decoderInitialised;
-    }
+    bool is_valid() const { return dataSourceInitialised || decoderInitialised; }
 
     ~Impl() {
-        if (decoderInitialised) {
-            ma_decoder_uninit(&decoder);
-        }
-        if (dataSourceInitialised) {
-            ma_resource_manager_data_source_uninit(&dataSource);
-        }
-        if (resourceManagerInitialised) {
-            ma_resource_manager_uninit(&resourceManager);
-        }
+        if (decoderInitialised) { ma_decoder_uninit(&decoder); }
+        if (dataSourceInitialised) { ma_resource_manager_data_source_uninit(&dataSource); }
+        if (resourceManagerInitialised) { ma_resource_manager_uninit(&resourceManager); }
     }
 
     Impl() = default;

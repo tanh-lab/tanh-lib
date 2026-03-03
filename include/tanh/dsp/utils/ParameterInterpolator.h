@@ -18,9 +18,9 @@ public:
      * When `size` is 0, the increment is 0 and the ramp remains at `start`.
      */
     LinearRamp(float start, float target, size_t size) noexcept
-        : m_current(start),
-          m_increment(size == 0 ? 0.0f : (target - start) / static_cast<float>(size)),
-          m_target(target) {}
+        : m_current(start)
+        , m_increment(size == 0 ? 0.0f : (target - start) / static_cast<float>(size))
+        , m_target(target) {}
 
     /**
      * Advance by one step and return the new value.
@@ -38,30 +38,22 @@ public:
      *
      * @param t Fractional sample offset relative to the current position.
      */
-    float at_offset(float t) const noexcept {
-        return m_current + m_increment * t;
-    }
+    float at_offset(float t) const noexcept { return m_current + m_increment * t; }
 
     /**
      * Get the current internal ramp position.
      */
-    float current_value() const noexcept {
-        return m_current;
-    }
+    float current_value() const noexcept { return m_current; }
 
     /**
      * Get the target value provided at construction time.
      */
-    float final_value() const noexcept {
-        return m_target;
-    }
+    float final_value() const noexcept { return m_target; }
 
     /**
      * Get the per-step increment.
      */
-    float increment() const noexcept {
-        return m_increment;
-    }
+    float increment() const noexcept { return m_increment; }
 
 private:
     float m_current;
@@ -70,7 +62,8 @@ private:
 };
 
 /**
- * RAII wrapper around `LinearRamp` that commits the final ramp state on scope exit.
+ * RAII wrapper around `LinearRamp` that commits the final ramp state on scope
+ * exit.
  *
  * This preserves the classic Mutable Instruments `ParameterInterpolator`
  * convenience pattern while exposing a reusable `LinearRamp` implementation.
@@ -87,15 +80,12 @@ public:
      * @param size Number of samples in the block.
      */
     ParameterInterpolator(float& state, float new_value, size_t size) noexcept
-        : m_state(state),
-          m_ramp(state, new_value, size) {}
+        : m_state(state), m_ramp(state, new_value, size) {}
 
     /**
      * Commit the ramp position back to the referenced state.
      */
-    ~ParameterInterpolator() noexcept {
-        m_state = m_ramp.current_value();
-    }
+    ~ParameterInterpolator() noexcept { m_state = m_ramp.current_value(); }
 
     ParameterInterpolator(const ParameterInterpolator&) = delete;
     ParameterInterpolator& operator=(const ParameterInterpolator&) = delete;
@@ -105,20 +95,17 @@ public:
     /**
      * Advance one step and return the interpolated value.
      */
-    float next() noexcept {
-        return m_ramp.next();
-    }
+    float next() noexcept { return m_ramp.next(); }
 
     /**
-     * Return a value at a fractional offset from the current interpolator position.
+     * Return a value at a fractional offset from the current interpolator
+     * position.
      */
-    float at_offset(float t) const noexcept {
-        return m_ramp.at_offset(t);
-    }
+    float at_offset(float t) const noexcept { return m_ramp.at_offset(t); }
 
 private:
     float& m_state;
     LinearRamp m_ramp;
 };
 
-} // namespace thl::dsp::utils
+}  // namespace thl::dsp::utils
