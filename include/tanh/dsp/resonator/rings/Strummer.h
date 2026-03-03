@@ -29,7 +29,7 @@
 #pragma once
 
 
-#include <tanh/dsp/resonator/rings/OnsetDetector.h>
+#include <tanh/dsp/analysis/OnsetDetector.h>
 #include <tanh/dsp/resonator/rings/Part.h>
 
 namespace thl::dsp::resonator::rings {
@@ -91,7 +91,7 @@ class Strummer {
   int32_t m_inhibit_counter = 0;
   int32_t m_inhibit_timer = 0;
 
-  OnsetDetector m_onset_detector;
+  thl::dsp::analysis::OnsetDetector m_onset_detector;
 
   Strummer(const Strummer&) = delete;
   Strummer& operator=(const Strummer&) = delete;

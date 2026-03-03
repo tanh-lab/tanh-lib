@@ -32,7 +32,7 @@
 #include <algorithm>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
-#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
 
 namespace thl::dsp::resonator::rings {
@@ -95,7 +95,7 @@ class Resonator {
   int32_t m_num_modes = 0;
   bool m_dirty = true;
 
-  thl::dsp::utils::Svf m_f[kMaxModes];
+  thl::dsp::filter::Svf m_f[kMaxModes];
 
   Resonator(const Resonator&) = delete;
   Resonator& operator=(const Resonator&) = delete;

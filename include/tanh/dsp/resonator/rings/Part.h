@@ -31,17 +31,17 @@
 #include <algorithm>
 
 #include <tanh/dsp/utils/CosineOscillator.h>
-#include <tanh/dsp/utils/DCBlocker.h>
+#include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/utils/DelayLine.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
 #include <tanh/dsp/resonator/rings/FmVoice.h>
 #include <tanh/dsp/resonator/rings/fx/Reverb.h>
-#include <tanh/dsp/resonator/rings/Limiter.h>
-#include <tanh/dsp/resonator/rings/NoteFilter.h>
+#include <tanh/dsp/utils/SoftLimiter.h>
+#include <tanh/dsp/analysis/NoteFilter.h>
 #include <tanh/dsp/resonator/rings/Patch.h>
 #include <tanh/dsp/resonator/rings/PerformanceState.h>
-#include <tanh/dsp/resonator/rings/Plucker.h>
+#include <tanh/dsp/synth/Plucker.h>
 #include <tanh/dsp/resonator/rings/Resonator.h>
 #include <tanh/dsp/resonator/rings/String.h>
 
@@ -176,13 +176,13 @@ class Part {
   thl::dsp::utils::CosineOscillator m_lfo[kNumStrings];
   FMVoice m_fm_voice[kMaxPolyphony];
 
-  thl::dsp::utils::Svf m_excitation_filter[kMaxPolyphony];
-  thl::dsp::utils::DCBlocker m_dc_blocker[kMaxPolyphony];
-  Plucker m_plucker[kMaxPolyphony];
+  thl::dsp::filter::Svf m_excitation_filter[kMaxPolyphony];
+  thl::dsp::filter::DCBlocker m_dc_blocker[kMaxPolyphony];
+  thl::dsp::synth::Plucker m_plucker[kMaxPolyphony];
 
   float m_note[kMaxPolyphony];
   PreparedVoiceParams m_prepared[kMaxPolyphony];
-  NoteFilter m_note_filter;
+  thl::dsp::analysis::NoteFilter m_note_filter;
 
   float m_resonator_input[kMaxBlockSize];
   float m_sympathetic_resonator_input[kMaxBlockSize];
@@ -192,7 +192,7 @@ class Part {
   float m_aux_buffer[kMaxBlockSize];
 
   Reverb m_reverb;
-  Limiter m_limiter;
+  thl::dsp::utils::SoftLimiter m_limiter;
 
   static float m_model_gains[RESONATOR_MODEL_LAST];
 

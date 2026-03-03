@@ -23,12 +23,14 @@ public:
           m_target(target) {}
 
     /**
-     * Return the current value and advance by one step.
+     * Advance by one step and return the new value.
+     *
+     * The first call returns `start + increment`, the n-th call returns
+     * `target`. This matches the original stmlib pre-increment convention.
      */
     float next() noexcept {
-        float out = m_current;
         m_current += m_increment;
-        return out;
+        return m_current;
     }
 
     /**
@@ -101,7 +103,7 @@ public:
     ParameterInterpolator& operator=(ParameterInterpolator&&) = delete;
 
     /**
-     * Return the current interpolated value and advance one step.
+     * Advance one step and return the interpolated value.
      */
     float next() noexcept {
         return m_ramp.next();

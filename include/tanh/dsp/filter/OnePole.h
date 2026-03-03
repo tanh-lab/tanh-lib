@@ -3,7 +3,7 @@
 #include <cmath>
 #include <numbers>
 
-namespace thl::dsp::utils {
+namespace thl::dsp::filter {
 
 enum class FilterMode {
     LowPass,
@@ -103,4 +103,4 @@ private:
     float m_state = 0.0f;
 };
 
-} // namespace thl::dsp::utils
+} // namespace thl::dsp::filter

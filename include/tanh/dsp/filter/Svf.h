@@ -2,9 +2,9 @@
 
 #include <cstddef>
 
-#include <tanh/dsp/utils/OnePole.h>
+#include <tanh/dsp/filter/OnePole.h>
 
-namespace thl::dsp::utils {
+namespace thl::dsp::filter {
 
 // TPT (Topology-Preserving Transform) state-variable filter.
 //
@@ -282,4 +282,4 @@ private:
     float m_bp = 0.0f;
 };
 
-} // namespace thl::dsp::utils
+} // namespace thl::dsp::filter

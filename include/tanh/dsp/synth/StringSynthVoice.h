@@ -24,54 +24,49 @@
 //
 // -----------------------------------------------------------------------------
 //
-// Limiter.
+// Voice for the string synth easter egg.
 
 #pragma once
 
 
-#include <algorithm>
+#include <tanh/dsp/synth/StringSynthOscillator.h>
 
-#include <tanh/dsp/utils/DspMath.h>
+namespace thl::dsp::synth {
 
-namespace thl::dsp::resonator::rings {
-
-class Limiter {
+template<size_t num_harmonics>
+class StringSynthVoice {
  public:
-  Limiter() { }
-  ~Limiter() { }
+  StringSynthVoice() { }
+  ~StringSynthVoice() { }
 
   void prepare() {
-    m_peak = 0.5f;
+    for (size_t i = 0; i < num_harmonics; ++i) {
+      m_oscillator[i].prepare();
+    }
   }
 
-  void process(
-      float* l,
-      float* r,
-      size_t size,
-      float pre_gain) {
-    while (size--) {
-      float l_pre = *l * pre_gain;
-      float r_pre = *r * pre_gain;
+  void render(
+      float frequency,
+      const float* amplitudes,
+      size_t summed_harmonics,
+      float* out,
+      size_t size) {
+    m_oscillator[0].template render<OSCILLATOR_SHAPE_DARK_SQUARE, true>(
+        frequency, amplitudes[0], amplitudes[1], out, size);
+    amplitudes += 2;
 
-      float l_peak = fabs(l_pre);
-      float r_peak = fabs(r_pre);
-      float s_peak = fabs(r_pre - l_pre);
-
-      float peak = std::max(std::max(l_peak, r_peak), s_peak);
-      SLOPE(m_peak, peak, 0.05f, 0.00002f);
-
-      // Clamp to 8Vpp, clipping softly towards 10Vpp
-      float gain = (m_peak <= 1.0f ? 1.0f : 1.0f / m_peak);
-      *l++ = thl::dsp::utils::soft_limit(l_pre * gain * 0.8f);
-      *r++ = thl::dsp::utils::soft_limit(r_pre * gain * 0.8f);
+    for (size_t i = 1; i < summed_harmonics; ++i) {
+      frequency *= 2.0f;
+      m_oscillator[i].template render<OSCILLATOR_SHAPE_BRIGHT_SQUARE, false>(
+          frequency, amplitudes[0], amplitudes[1], out, size);
+      amplitudes += 2;
     }
   }
 
  private:
-  float m_peak = 0.5f;
-
-  Limiter(const Limiter&) = delete;
-  Limiter& operator=(const Limiter&) = delete;
+  StringSynthOscillator m_oscillator[num_harmonics];
+  StringSynthVoice(const StringSynthVoice&) = delete;
+  StringSynthVoice& operator=(const StringSynthVoice&) = delete;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::synth

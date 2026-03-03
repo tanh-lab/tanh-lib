@@ -24,49 +24,54 @@
 //
 // -----------------------------------------------------------------------------
 //
-// Voice for the string synth easter egg.
+// Limiter.
 
 #pragma once
 
 
-#include <tanh/dsp/resonator/rings/StringSynthOscillator.h>
+#include <algorithm>
 
-namespace thl::dsp::resonator::rings {
+#include <tanh/dsp/utils/DspMath.h>
 
-template<size_t num_harmonics>
-class StringSynthVoice {
+namespace thl::dsp::utils {
+
+class SoftLimiter {
  public:
-  StringSynthVoice() { }
-  ~StringSynthVoice() { }
+  SoftLimiter() { }
+  ~SoftLimiter() { }
 
   void prepare() {
-    for (size_t i = 0; i < num_harmonics; ++i) {
-      m_oscillator[i].prepare();
-    }
+    m_peak = 0.5f;
   }
 
-  void render(
-      float frequency,
-      const float* amplitudes,
-      size_t summed_harmonics,
-      float* out,
-      size_t size) {
-    m_oscillator[0].template render<OSCILLATOR_SHAPE_DARK_SQUARE, true>(
-        frequency, amplitudes[0], amplitudes[1], out, size);
-    amplitudes += 2;
+  void process(
+      float* l,
+      float* r,
+      size_t size,
+      float pre_gain) {
+    while (size--) {
+      float l_pre = *l * pre_gain;
+      float r_pre = *r * pre_gain;
 
-    for (size_t i = 1; i < summed_harmonics; ++i) {
-      frequency *= 2.0f;
-      m_oscillator[i].template render<OSCILLATOR_SHAPE_BRIGHT_SQUARE, false>(
-          frequency, amplitudes[0], amplitudes[1], out, size);
-      amplitudes += 2;
+      float l_peak = fabs(l_pre);
+      float r_peak = fabs(r_pre);
+      float s_peak = fabs(r_pre - l_pre);
+
+      float peak = std::max(std::max(l_peak, r_peak), s_peak);
+      SLOPE(m_peak, peak, 0.05f, 0.00002f);
+
+      // Clamp to 8Vpp, clipping softly towards 10Vpp
+      float gain = (m_peak <= 1.0f ? 1.0f : 1.0f / m_peak);
+      *l++ = soft_limit(l_pre * gain * 0.8f);
+      *r++ = soft_limit(r_pre * gain * 0.8f);
     }
   }
 
  private:
-  StringSynthOscillator m_oscillator[num_harmonics];
-  StringSynthVoice(const StringSynthVoice&) = delete;
-  StringSynthVoice& operator=(const StringSynthVoice&) = delete;
+  float m_peak = 0.5f;
+
+  SoftLimiter(const SoftLimiter&) = delete;
+  SoftLimiter& operator=(const SoftLimiter&) = delete;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::utils

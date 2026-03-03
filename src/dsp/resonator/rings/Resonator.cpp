@@ -77,7 +77,7 @@ int32_t Resonator::compute_filters() {
     } else {
       num_modes = i + 1;
     }
-    m_f[i].set_f_q<thl::dsp::utils::FrequencyApproximation::Fast>(
+    m_f[i].set_f_q<thl::dsp::filter::FrequencyApproximation::Fast>(
         partial_frequency,
         1.0f + partial_frequency * q);
     stretch_factor += stiffness;
@@ -114,8 +114,8 @@ void Resonator::process(const float* in, float* out, float* aux, size_t size) {
     float even = 0.0f;
     amplitudes.start();
     for (int32_t i = 0; i < num_modes;) {
-      odd += amplitudes.next() * m_f[i++].process<thl::dsp::utils::FilterMode::BandPass>(input);
-      even += amplitudes.next() * m_f[i++].process<thl::dsp::utils::FilterMode::BandPass>(input);
+      odd += amplitudes.next() * m_f[i++].process<thl::dsp::filter::FilterMode::BandPass>(input);
+      even += amplitudes.next() * m_f[i++].process<thl::dsp::filter::FilterMode::BandPass>(input);
     }
     *out++ = odd;
     *aux++ = even;

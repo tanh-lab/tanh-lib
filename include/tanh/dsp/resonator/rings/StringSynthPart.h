@@ -29,18 +29,18 @@
 #pragma once
 
 
-#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/filter/Svf.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
 #include <tanh/dsp/resonator/rings/fx/Chorus.h>
 #include <tanh/dsp/resonator/rings/fx/Ensemble.h>
 #include <tanh/dsp/resonator/rings/fx/Reverb.h>
-#include <tanh/dsp/resonator/rings/Limiter.h>
-#include <tanh/dsp/resonator/rings/NoteFilter.h>
+#include <tanh/dsp/utils/SoftLimiter.h>
+#include <tanh/dsp/analysis/NoteFilter.h>
 #include <tanh/dsp/resonator/rings/Patch.h>
 #include <tanh/dsp/resonator/rings/PerformanceState.h>
-#include <tanh/dsp/resonator/rings/StringSynthEnvelope.h>
-#include <tanh/dsp/resonator/rings/StringSynthVoice.h>
+#include <tanh/dsp/utils/StringSynthEnvelope.h>
+#include <tanh/dsp/synth/StringSynthVoice.h>
 
 namespace thl::dsp::resonator::rings {
 
@@ -64,7 +64,7 @@ enum FxType {
 // and structure snapshot captured at note-on time.
 struct VoiceGroup {
   float tonic;
-  StringSynthEnvelope envelope;
+  thl::dsp::utils::StringSynthEnvelope envelope;
   int32_t chord;
   float structure;
 };
@@ -142,14 +142,14 @@ class StringSynthPart {
   void process_formant_filter(float vowel, float shift, float resonance,
                               float* out, float* aux, size_t size);
 
-  StringSynthVoice<kNumHarmonics> m_voice[kStringSynthVoices];
+  thl::dsp::synth::StringSynthVoice<kNumHarmonics> m_voice[kStringSynthVoices];
   VoiceGroup m_group[kMaxStringSynthPolyphony];
 
-  thl::dsp::utils::Svf m_formant_filter[kNumFormants];
+  thl::dsp::filter::Svf m_formant_filter[kNumFormants];
   Ensemble m_ensemble;
   Reverb m_reverb;
   Chorus m_chorus;
-  Limiter m_limiter;
+  thl::dsp::utils::SoftLimiter m_limiter;
 
   float m_sample_rate = kDefaultSampleRate;
   float m_a3 = 440.0f / kDefaultSampleRate;
@@ -162,7 +162,7 @@ class StringSynthPart {
 
   FxType m_fx_type = FX_ENSEMBLE;
 
-  NoteFilter m_note_filter;
+  thl::dsp::analysis::NoteFilter m_note_filter;
 
   float m_filter_in_buffer[kMaxBlockSize];
   float m_filter_out_buffer[kMaxBlockSize];

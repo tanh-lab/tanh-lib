@@ -316,7 +316,7 @@ void Part::render_modal_voice(
   }
 
   // Process through filter.
-  m_excitation_filter[voice].process<thl::dsp::utils::FilterMode::LowPass>(
+  m_excitation_filter[voice].process<thl::dsp::filter::FilterMode::LowPass>(
       m_resonator_input, m_resonator_input, size);
 
   Resonator& r = m_resonator[voice];
@@ -389,7 +389,7 @@ void Part::render_string_voice(
   }
 
   // Process external input.
-  m_excitation_filter[voice].process<thl::dsp::utils::FilterMode::LowPass>(
+  m_excitation_filter[voice].process<thl::dsp::filter::FilterMode::LowPass>(
       m_resonator_input, m_resonator_input, size);
 
   // Add noise burst.
@@ -530,7 +530,7 @@ void Part::process(
     float filter_q = m_prepared[voice].filter_q;
 
     // Process input with excitation filter. Inactive voices receive silence.
-    m_excitation_filter[voice].set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(filter_cutoff, filter_q);
+    m_excitation_filter[voice].set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(filter_cutoff, filter_q);
     if (voice == m_active_voice) {
       copy(&in[0], &in[size], &m_resonator_input[0]);
     } else {

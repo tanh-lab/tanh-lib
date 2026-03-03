@@ -1,6 +1,6 @@
 #include <tanh/dsp/resonator/RingsResonator.h>
-#include <tanh/dsp/resonator/RingBuffer.h>
-#include <tanh/dsp/resonator/ParamSmoother.h>
+#include <tanh/dsp/utils/RingBuffer.h>
+#include <tanh/dsp/utils/ParamSmoother.h>
 
 #include <tanh/dsp/resonator/rings/Part.h>
 #include <tanh/dsp/resonator/rings/Strummer.h>
@@ -12,6 +12,9 @@
 #include <cstring>
 
 namespace thl::dsp::resonator {
+
+using utils::ParamSmoother;
+using utils::RingBuffer;
 
 static constexpr size_t kBlockSize = 24;
 

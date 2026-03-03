@@ -32,11 +32,12 @@
 #include <algorithm>
 
 #include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/utils/Svf.h>
+#include <tanh/dsp/filter/Svf.h>
 
-namespace thl::dsp::resonator::rings {
+namespace thl::dsp::analysis {
 
 using namespace thl::dsp::utils;
+using namespace thl::dsp::filter;
 
 class Follower {
  public:
@@ -47,8 +48,8 @@ class Follower {
     m_low_mid_filter.reset();
     m_mid_high_filter.reset();
 
-    m_low_mid_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(low_mid, 0.5f);
-    m_mid_high_filter.set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(mid_high, 0.5f);
+    m_low_mid_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(low_mid, 0.5f);
+    m_mid_high_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(mid_high, 0.5f);
     m_attack[0] = low_mid;
     m_decay[0] = sqrt(low_mid * low);
 
@@ -69,8 +70,8 @@ class Follower {
       float* centroid) {
     float bands[3] = { 0.0f, 0.0f, 0.0f };
 
-    bands[2] = m_mid_high_filter.process<thl::dsp::utils::FilterMode::HighPass>(sample);
-    bands[1] = m_low_mid_filter.process<thl::dsp::utils::FilterMode::HighPass>(
+    bands[2] = m_mid_high_filter.process<thl::dsp::filter::FilterMode::HighPass>(sample);
+    bands[1] = m_low_mid_filter.process<thl::dsp::filter::FilterMode::HighPass>(
         m_mid_high_filter.lp());
     bands[0] = m_low_mid_filter.lp();
 
@@ -106,4 +107,4 @@ class Follower {
   Follower& operator=(const Follower&) = delete;
 };
 
-}  // namespace thl::dsp::resonator::rings
+}  // namespace thl::dsp::analysis

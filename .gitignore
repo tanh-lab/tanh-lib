@@ -4,3 +4,4 @@ build-test/
 .DS_Store
 .cache/
 cmake-build*
+/build*

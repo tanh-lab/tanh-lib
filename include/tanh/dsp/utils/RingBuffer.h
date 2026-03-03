@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace thl::dsp::resonator {
+namespace thl::dsp::utils {
 
 // Pre-allocated ring buffer for RT-safe FIFO operations.
 // Call resize() during prepare/setup, then push/pop never allocate.
@@ -33,4 +33,4 @@ private:
     int m_count = 0;
 };
 
-} // namespace thl::dsp::resonator
+} // namespace thl::dsp::utils

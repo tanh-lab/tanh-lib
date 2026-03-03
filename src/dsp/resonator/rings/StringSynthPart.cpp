@@ -288,8 +288,8 @@ void StringSynthPart::process_formant_filter(
     float b = formants[vowel_integral + 1][i];
     float f = a + (b - a) * vowel_fractional;
     f *= shift;
-    m_formant_filter[i].set_f_q<thl::dsp::utils::FrequencyApproximation::Dirty>(f / m_sample_rate, resonance);
-    m_formant_filter[i].process<thl::dsp::utils::FilterMode::BandPass>(
+    m_formant_filter[i].set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(f / m_sample_rate, resonance);
+    m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(
         m_filter_in_buffer,
         m_filter_out_buffer,
         size);
