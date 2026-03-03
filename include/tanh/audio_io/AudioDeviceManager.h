@@ -1,6 +1,7 @@
 #pragma once
 #include "AudioDeviceInfo.h"
 #include "AudioIODeviceCallback.h"
+#include <tanh/core/Logger.h>
 #include <tanh/core/threading/RCU.h>
 #include <atomic>
 #include <cstdint>
@@ -104,12 +105,11 @@ public:
     /**
      * @brief Callback type for log messages from the audio backend.
      *
-     * @param level Miniaudio log level (typically 1=error, 2=warning,
-     *              3=info, 4=debug)
-     * @param message The log message
+     * @param level Normalised log level.
+     * @param message The log message.
      */
     using LogCallback =
-        std::function<void(uint32_t level, const char* message)>;
+        std::function<void(Logger::LogLevel level, const char* message)>;
 
     /**
      * @brief Constructs an AudioDeviceManager and initialises the audio
