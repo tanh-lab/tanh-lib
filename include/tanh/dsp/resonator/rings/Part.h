@@ -48,156 +48,146 @@
 namespace thl::dsp::resonator::rings {
 
 enum ResonatorModel {
-  RESONATOR_MODEL_MODAL,
-  RESONATOR_MODEL_SYMPATHETIC_STRING,
-  RESONATOR_MODEL_STRING,
+    RESONATOR_MODEL_MODAL,
+    RESONATOR_MODEL_SYMPATHETIC_STRING,
+    RESONATOR_MODEL_STRING,
 
-  // Bonus!
-  RESONATOR_MODEL_FM_VOICE,
-  RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED,
-  RESONATOR_MODEL_STRING_AND_REVERB,
-  RESONATOR_MODEL_LAST
+    // Bonus!
+    RESONATOR_MODEL_FM_VOICE,
+    RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED,
+    RESONATOR_MODEL_STRING_AND_REVERB,
+    RESONATOR_MODEL_LAST
 };
 
 const int32_t kMaxPolyphony = 4;
 const int32_t kNumStrings = kMaxPolyphony * 2;
 
 struct PreparedVoiceParams {
-  float frequency;
-  float filter_cutoff;
-  float filter_q;
+    float frequency;
+    float filter_cutoff;
+    float filter_q;
 };
 
 class Part {
- public:
-  Part() { }
-  ~Part() { }
+public:
+    Part() {}
+    ~Part() {}
 
-  void prepare(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
+    void prepare(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
 
-  void process(
-      const PerformanceState& performance_state,
-      const Patch& patch,
-      const float* in,
-      float* out,
-      float* aux,
-      size_t size);
+    void process(const PerformanceState& performance_state,
+                 const Patch& patch,
+                 const float* in,
+                 float* out,
+                 float* aux,
+                 size_t size);
 
-  inline bool bypass() const { return m_bypass; }
-  inline void set_bypass(bool bypass) { m_bypass = bypass; }
+    inline bool bypass() const { return m_bypass; }
+    inline void set_bypass(bool bypass) { m_bypass = bypass; }
 
-  inline int32_t polyphony() const { return m_polyphony; }
-  inline void set_polyphony(int32_t polyphony) {
-    int32_t old_polyphony = m_polyphony;
-    m_polyphony = std::min(polyphony, kMaxPolyphony);
-    for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
-      m_note[i] = m_note[0] + i * 0.05f;
+    inline int32_t polyphony() const { return m_polyphony; }
+    inline void set_polyphony(int32_t polyphony) {
+        int32_t old_polyphony = m_polyphony;
+        m_polyphony = std::min(polyphony, kMaxPolyphony);
+        for (int32_t i = old_polyphony; i < m_polyphony; ++i) { m_note[i] = m_note[0] + i * 0.05f; }
+        m_dirty = true;
     }
-    m_dirty = true;
-  }
 
-  inline ResonatorModel model() const { return m_model; }
-  inline void set_model(ResonatorModel model) {
-    if (model != m_model) {
-      m_model = model;
-      m_dirty = true;
+    inline ResonatorModel model() const { return m_model; }
+    inline void set_model(ResonatorModel model) {
+        if (model != m_model) {
+            m_model = model;
+            m_dirty = true;
+        }
     }
-  }
 
- private:
-  void configure_resonators();
-  void prepare_voice_params(
-      const PerformanceState& performance_state,
-      const Patch& patch);
-  void render_modal_voice(
-      int32_t voice,
-      const PerformanceState& performance_state,
-      const Patch& patch,
-      float frequency,
-      float filter_cutoff,
-      size_t size);
-  void render_string_voice(
-      int32_t voice,
-      const PerformanceState& performance_state,
-      const Patch& patch,
-      float frequency,
-      float filter_cutoff,
-      size_t size);
-  void render_fm_voice(
-      int32_t voice,
-      const PerformanceState& performance_state,
-      const Patch& patch,
-      float frequency,
-      float filter_cutoff,
-      size_t size);
+private:
+    void configure_resonators();
+    void prepare_voice_params(const PerformanceState& performance_state, const Patch& patch);
+    void render_modal_voice(int32_t voice,
+                            const PerformanceState& performance_state,
+                            const Patch& patch,
+                            float frequency,
+                            float filter_cutoff,
+                            size_t size);
+    void render_string_voice(int32_t voice,
+                             const PerformanceState& performance_state,
+                             const Patch& patch,
+                             float frequency,
+                             float filter_cutoff,
+                             size_t size);
+    void render_fm_voice(int32_t voice,
+                         const PerformanceState& performance_state,
+                         const Patch& patch,
+                         float frequency,
+                         float filter_cutoff,
+                         size_t size);
 
-
-  inline float squash(float x) const {
-    if (x < 0.5f) {
-      x *= 2.0f;
-      x *= x;
-      x *= x;
-      x *= x;
-      x *= x;
-      x *= 0.5f;
-    } else {
-      x = 2.0f - 2.0f * x;
-      x *= x;
-      x *= x;
-      x *= x;
-      x *= x;
-      x = 1.0f - 0.5f * x;
+    inline float squash(float x) const {
+        if (x < 0.5f) {
+            x *= 2.0f;
+            x *= x;
+            x *= x;
+            x *= x;
+            x *= x;
+            x *= 0.5f;
+        } else {
+            x = 2.0f - 2.0f * x;
+            x *= x;
+            x *= x;
+            x *= x;
+            x *= x;
+            x = 1.0f - 0.5f * x;
+        }
+        return x;
     }
-    return x;
-  }
 
-  void compute_sympathetic_strings_notes(
-      float tonic,
-      float note,
-      float parameter,
-      float* destination,
-      size_t num_strings);
+    void compute_sympathetic_strings_notes(float tonic,
+                                           float note,
+                                           float parameter,
+                                           float* destination,
+                                           size_t num_strings);
 
-  float m_sample_rate = kDefaultSampleRate;
-  float m_a3 = 440.0f / kDefaultSampleRate;
+    float m_sample_rate = kDefaultSampleRate;
+    float m_a3 = 440.0f / kDefaultSampleRate;
 
-  bool m_bypass = false;
-  bool m_dirty = true;
+    bool m_bypass = false;
+    bool m_dirty = true;
 
-  ResonatorModel m_model = RESONATOR_MODEL_MODAL;
+    ResonatorModel m_model = RESONATOR_MODEL_MODAL;
 
-  int32_t m_num_voices = 0;
-  int32_t m_active_voice = 0;
-  uint32_t m_step_counter = 0;
-  int32_t m_polyphony = 1;
+    int32_t m_num_voices = 0;
+    int32_t m_active_voice = 0;
+    uint32_t m_step_counter = 0;
+    int32_t m_polyphony = 1;
 
-  Resonator m_resonator[kMaxPolyphony];
-  String m_string[kNumStrings];
-  thl::dsp::utils::CosineOscillator m_lfo[kNumStrings];
-  FMVoice m_fm_voice[kMaxPolyphony];
+    Resonator m_resonator[kMaxPolyphony];
+    String m_string[kNumStrings];
+    thl::dsp::utils::CosineOscillator m_lfo[kNumStrings];
+    FMVoice m_fm_voice[kMaxPolyphony];
 
-  thl::dsp::filter::Svf m_excitation_filter[kMaxPolyphony];
-  thl::dsp::filter::DCBlocker m_dc_blocker[kMaxPolyphony];
-  thl::dsp::synth::Plucker m_plucker[kMaxPolyphony];
+    thl::dsp::filter::Svf m_excitation_filter[kMaxPolyphony];
+    thl::dsp::filter::DCBlocker m_dc_blocker[kMaxPolyphony];
+    thl::dsp::synth::Plucker m_plucker[kMaxPolyphony];
 
-  float m_note[kMaxPolyphony];
-  PreparedVoiceParams m_prepared[kMaxPolyphony];
-  thl::dsp::analysis::NoteFilter m_note_filter;
+    float m_note[kMaxPolyphony];
+    PreparedVoiceParams m_prepared[kMaxPolyphony];
+    thl::dsp::analysis::NoteFilter m_note_filter;
 
-  float m_resonator_input[kMaxBlockSize];
-  float m_sympathetic_resonator_input[kMaxBlockSize];
-  float m_noise_burst_buffer[kMaxBlockSize];
+    float m_resonator_input[kMaxBlockSize];
+    float m_sympathetic_resonator_input[kMaxBlockSize];
+    float m_noise_burst_buffer[kMaxBlockSize];
 
-  float m_out_buffer[kMaxBlockSize];
-  float m_aux_buffer[kMaxBlockSize];
+    float m_out_buffer[kMaxBlockSize];
+    float m_aux_buffer[kMaxBlockSize];
 
-  Reverb m_reverb;
-  thl::dsp::utils::SoftLimiter m_limiter;
+    Reverb m_reverb;
+    thl::dsp::utils::SoftLimiter m_limiter;
 
-  static float m_model_gains[RESONATOR_MODEL_LAST];
+    static float m_model_gains[RESONATOR_MODEL_LAST];
 
-  Part(const Part&) = delete;
-  Part& operator=(const Part&) = delete;
+    Part(const Part&) = delete;
+    Part& operator=(const Part&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings

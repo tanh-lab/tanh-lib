@@ -25,8 +25,8 @@ struct RingsResonator::Impl {
 
     uint16_t m_reverb_buffer[rings::Reverb::kReverbBufferSize] = {};
 
-    rings::Patch m_patch {0.5f, 0.5f, 0.5f, 0.5f};
-    rings::PerformanceState m_performance_state {false, false, false, false, 12.0f, 48.0f, 0.0f, 0};
+    rings::Patch m_patch{0.5f, 0.5f, 0.5f, 0.5f};
+    rings::PerformanceState m_performance_state{false, false, false, false, 12.0f, 48.0f, 0.0f, 0};
 
     float m_frequency = 440.0f;
     float m_odd_even_mix = 0.5f;
@@ -77,7 +77,7 @@ struct RingsResonator::Impl {
         m_output_fifo_odd.clear();
         m_output_fifo_even.clear();
 
-        constexpr float smoothTime = 0.05f; // 50ms
+        constexpr float smoothTime = 0.05f;  // 50ms
         m_frequency_smoother.prepare(sampleRate, smoothTime);
         m_structure_smoother.prepare(sampleRate, smoothTime);
         m_brightness_smoother.prepare(sampleRate, smoothTime);
@@ -91,7 +91,7 @@ struct RingsResonator::Impl {
         float midiNote = 12.0f * std::log2(m_frequency / 27.5f);
         m_performance_state.note = midiNote;
 
-        static constexpr int polyVoices[] = { 1, 2, 4 };
+        static constexpr int polyVoices[] = {1, 2, 4};
         int poly = polyVoices[static_cast<int>(m_polyphony)];
         if (m_part.polyphony() != poly) {
             m_part.set_polyphony(poly);
@@ -130,13 +130,13 @@ struct RingsResonator::Impl {
         m_odd_even_smoother.set_target(m_odd_even_mix);
         m_dry_wet_smoother.set_target(m_dry_wet);
 
-        float smoothedFrequency  = m_frequency_smoother.skip(numSamples);
-        float smoothedStructure  = m_structure_smoother.skip(numSamples);
+        float smoothedFrequency = m_frequency_smoother.skip(numSamples);
+        float smoothedStructure = m_structure_smoother.skip(numSamples);
         float smoothedBrightness = m_brightness_smoother.skip(numSamples);
-        float smoothedDamping    = m_damping_smoother.skip(numSamples);
-        float smoothedPosition   = m_position_smoother.skip(numSamples);
-        float smoothedOddEven    = m_odd_even_smoother.skip(numSamples);
-        float smoothedDryWet     = m_dry_wet_smoother.skip(numSamples);
+        float smoothedDamping = m_damping_smoother.skip(numSamples);
+        float smoothedPosition = m_position_smoother.skip(numSamples);
+        float smoothedOddEven = m_odd_even_smoother.skip(numSamples);
+        float smoothedDryWet = m_dry_wet_smoother.skip(numSamples);
 
         // Apply smoothed values
         m_frequency = smoothedFrequency;
@@ -148,14 +148,10 @@ struct RingsResonator::Impl {
         m_dry_wet = smoothedDryWet;
 
         // Save dry input before processing (input/output may alias)
-        for (int i = 0; i < numSamples; ++i) {
-            m_dry_delay_line.push(input[i]);
-        }
+        for (int i = 0; i < numSamples; ++i) { m_dry_delay_line.push(input[i]); }
 
         // Accumulate input
-        for (int i = 0; i < numSamples; ++i) {
-            m_input_fifo.push(input[i]);
-        }
+        for (int i = 0; i < numSamples; ++i) { m_input_fifo.push(input[i]); }
 
         // Process complete blocks
         while (static_cast<size_t>(m_input_fifo.size()) >= kBlockSize) {
@@ -163,9 +159,7 @@ struct RingsResonator::Impl {
             float blockOdd[kBlockSize];
             float blockEven[kBlockSize];
 
-            for (size_t j = 0; j < kBlockSize; ++j) {
-                blockInput[j] = m_input_fifo.pop();
-            }
+            for (size_t j = 0; j < kBlockSize; ++j) { blockInput[j] = m_input_fifo.pop(); }
 
             render_block(blockInput, blockOdd, blockEven);
 
@@ -181,10 +175,8 @@ struct RingsResonator::Impl {
 
         for (int i = 0; i < numSamples; ++i) {
             float odd = 0.0f, even = 0.0f;
-            if (!m_output_fifo_odd.empty())
-                odd = m_output_fifo_odd.pop();
-            if (!m_output_fifo_even.empty())
-                even = m_output_fifo_even.pop();
+            if (!m_output_fifo_odd.empty()) odd = m_output_fifo_odd.pop();
+            if (!m_output_fifo_even.empty()) even = m_output_fifo_even.pop();
             output[i] = odd * oddGain + even * evenGain;
         }
 
@@ -194,9 +186,7 @@ struct RingsResonator::Impl {
 
         for (int i = 0; i < numSamples; ++i) {
             float dry = 0.0f;
-            if (m_dry_delay_line.size() > m_latency) {
-                dry = m_dry_delay_line.pop();
-            }
+            if (m_dry_delay_line.size() > m_latency) { dry = m_dry_delay_line.pop(); }
             output[i] = output[i] * wetGain + dry * dryGain;
         }
     }
@@ -257,4 +247,4 @@ int RingsResonator::get_latency() const {
     return m_impl->m_latency;
 }
 
-} // namespace thl::dsp::resonator
+}  // namespace thl::dsp::resonator

@@ -18,22 +18,18 @@ public:
      * @brief Resonator model types
      */
     enum class ResonatorModel {
-        Modal,                      // Modal resonator (default)
-        SympatheticString,         // Sympathetic strings
-        ModulatedString,           // Inharmonic string
-        FMVoice,                   // 2-op FM voice
-        SympatheticStringQuantized, // Sympathetic strings with quantized pitch
-        StringAndReverb            // String with reverb (Disastrous Peace)
+        Modal,                       // Modal resonator (default)
+        SympatheticString,           // Sympathetic strings
+        ModulatedString,             // Inharmonic string
+        FMVoice,                     // 2-op FM voice
+        SympatheticStringQuantized,  // Sympathetic strings with quantized pitch
+        StringAndReverb              // String with reverb (Disastrous Peace)
     };
 
     /**
      * @brief Polyphony modes
      */
-    enum class PolyphonyMode {
-        One,
-        Two,
-        Four
-    };
+    enum class PolyphonyMode { One, Two, Four };
 
     RingsResonator();
     ~RingsResonator();
@@ -54,7 +50,8 @@ public:
     /**
      * @brief Process audio block
      *
-     * Output is a blend of odd and even harmonics controlled by set_odd_even_mix().
+     * Output is a blend of odd and even harmonics controlled by
+     * set_odd_even_mix().
      *
      * @param input Input buffer (excitation signal)
      * @param output Output buffer (blended odd/even)
@@ -160,4 +157,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace thl::dsp::resonator
+}  // namespace thl::dsp::resonator

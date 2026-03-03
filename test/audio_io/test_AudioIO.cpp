@@ -103,9 +103,7 @@ public:
         ++processCallCount;
         // Fill output with silence
         if (!outputBuffer || numOutputChannels == 0) { return; }
-        for (uint32_t i = 0; i < frameCount * numOutputChannels; ++i) {
-            outputBuffer[i] = 0.0f;
-        }
+        for (uint32_t i = 0; i < frameCount * numOutputChannels; ++i) { outputBuffer[i] = 0.0f; }
         (void)inputBuffer;
     }
 
@@ -255,9 +253,7 @@ public:
 TEST(HardwareTests, DISABLED_DeviceEnumeration) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) {
-        GTEST_SKIP() << "Audio context not available";
-    }
+    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
 
     auto inputs = manager.enumerateInputDevices();
     auto outputs = manager.enumerateOutputDevices();
@@ -288,9 +284,7 @@ TEST(HardwareTests, DISABLED_DeviceEnumeration) {
 TEST(HardwareTests, DISABLED_PlaySineWave) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) {
-        GTEST_SKIP() << "Audio context not available";
-    }
+    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
 
     auto outputs = manager.enumerateOutputDevices();
     if (outputs.empty()) { GTEST_SKIP() << "No output devices available"; }
@@ -299,8 +293,7 @@ TEST(HardwareTests, DISABLED_PlaySineWave) {
 
     SineCallback sineCallback(440.0);
 
-    bool initialised =
-        manager.initialise(nullptr, &outputs[0], 48000, 256, 0, 2);
+    bool initialised = manager.initialise(nullptr, &outputs[0], 48000, 256, 0, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise audio device";
 
     manager.addPlaybackCallback(&sineCallback);
@@ -314,19 +307,15 @@ TEST(HardwareTests, DISABLED_PlaySineWave) {
     manager.stopPlayback();
     EXPECT_FALSE(manager.isPlaybackRunning());
 
-    std::cout << "Process callback was called " << sineCallback.processCallCount
-              << " times\n";
+    std::cout << "Process callback was called " << sineCallback.processCallCount << " times\n";
 
-    EXPECT_GT(sineCallback.processCallCount.load(), 0)
-        << "Process callback was never called";
+    EXPECT_GT(sineCallback.processCallCount.load(), 0) << "Process callback was never called";
 }
 
 TEST(HardwareTests, DISABLED_StartStopCycles) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) {
-        GTEST_SKIP() << "Audio context not available";
-    }
+    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
 
     auto outputs = manager.enumerateOutputDevices();
     if (outputs.empty()) { GTEST_SKIP() << "No output devices available"; }
@@ -352,9 +341,7 @@ TEST(HardwareTests, DISABLED_StartStopCycles) {
 TEST(HardwareTests, DISABLED_FullDuplex) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) {
-        GTEST_SKIP() << "Audio context not available";
-    }
+    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
 
     auto inputs = manager.enumerateInputDevices();
     auto outputs = manager.enumerateOutputDevices();
@@ -368,8 +355,7 @@ TEST(HardwareTests, DISABLED_FullDuplex) {
 
     MockCallback callback;
 
-    bool initialised =
-        manager.initialise(&inputs[0], &outputs[0], 48000, 512, 2, 2);
+    bool initialised = manager.initialise(&inputs[0], &outputs[0], 48000, 512, 2, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise duplex device";
 
     manager.addPlaybackCallback(&callback);
@@ -473,8 +459,7 @@ TEST(AudioFileSink, WriteFrames) {
     float input[frameCount * numChannels];
 
     for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-        input[i] = static_cast<float>(i) /
-                   static_cast<float>(frameCount * numChannels);
+        input[i] = static_cast<float>(i) / static_cast<float>(frameCount * numChannels);
     }
 
     sink.process(output, input, frameCount, numChannels, 0);
@@ -492,8 +477,7 @@ TEST(AudioFileSink, RejectMismatchedInputChannels) {
     AudioFileSink sink;
 
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path testFile =
-        tempDir / "test_audio_sink_channel_mismatch.wav";
+    std::filesystem::path testFile = tempDir / "test_audio_sink_channel_mismatch.wav";
 
     ASSERT_TRUE(sink.openFile(testFile.string(), 2, 48000));
     sink.startRecording();
@@ -563,8 +547,7 @@ TEST(AudioFileLoader, LoadFromMemoryZeroSize) {
 
 TEST(AudioFileLoader, LoadDataSourceFromFileNonExistent) {
     thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file("/nonexistent/path/audio.wav",
-                                                48000, 2);
+    auto ds = loader.load_data_source_from_file("/nonexistent/path/audio.wav", 48000, 2);
     EXPECT_FALSE(ds.is_valid());
 }
 
@@ -597,19 +580,16 @@ TEST(AudioFileLoader, RoundTripRecordAndLoad) {
     }
 
     thl::audio_io::AudioFileLoader loader;
-    auto buffer =
-        loader.load_from_file(testFile.string(), sampleRate, numChannels);
+    auto buffer = loader.load_from_file(testFile.string(), sampleRate, numChannels);
     EXPECT_FALSE(buffer.empty());
     EXPECT_EQ(buffer.get_num_channels(), numChannels);
     EXPECT_EQ(buffer.get_num_frames(), frameCount);
-    EXPECT_DOUBLE_EQ(buffer.get_sample_rate(),
-                     static_cast<double>(sampleRate));
+    EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), static_cast<double>(sampleRate));
 
     for (uint32_t ch = 0; ch < numChannels; ++ch) {
         const float* ptr = buffer.get_read_pointer(ch);
         for (uint32_t f = 0; f < frameCount; ++f) {
-            EXPECT_FLOAT_EQ(ptr[f],
-                            sourceData[f * numChannels + ch])
+            EXPECT_FLOAT_EQ(ptr[f], sourceData[f * numChannels + ch])
                 << "Mismatch at ch=" << ch << " frame=" << f;
         }
     }
@@ -627,8 +607,7 @@ TEST(AudioFileLoader, RoundTripDataSource) {
 
     float sourceData[frameCount * numChannels];
     for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-        sourceData[i] = static_cast<float>(i) /
-                        static_cast<float>(frameCount * numChannels);
+        sourceData[i] = static_cast<float>(i) / static_cast<float>(frameCount * numChannels);
     }
 
     {
@@ -641,9 +620,7 @@ TEST(AudioFileLoader, RoundTripDataSource) {
     }
 
     thl::audio_io::AudioFileLoader loader;
-    auto ds =
-        loader.load_data_source_from_file(testFile.string(), sampleRate,
-                                          numChannels);
+    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate, numChannels);
     ASSERT_TRUE(ds.is_valid());
     EXPECT_EQ(ds.get_channel_count(), numChannels);
     EXPECT_EQ(ds.get_sample_rate(), sampleRate);
@@ -656,8 +633,7 @@ TEST(AudioFileLoader, RoundTripDataSource) {
     EXPECT_EQ(ds.get_cursor(), frameCount);
 
     for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-        EXPECT_FLOAT_EQ(readBuf[i], sourceData[i])
-            << "Mismatch at interleaved index " << i;
+        EXPECT_FLOAT_EQ(readBuf[i], sourceData[i]) << "Mismatch at interleaved index " << i;
     }
 
     std::filesystem::remove(testFile);
@@ -709,8 +685,7 @@ TEST(DataSource, SequentialRead) {
     }
 
     thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate,
-                                                numChannels);
+    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate, numChannels);
     ASSERT_TRUE(ds.is_valid());
     EXPECT_EQ(ds.get_cursor(), 0u);
 
@@ -755,8 +730,7 @@ TEST(DataSource, SeekUpdatesPosition) {
     }
 
     thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate,
-                                                numChannels);
+    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate, numChannels);
     ASSERT_TRUE(ds.is_valid());
 
     EXPECT_TRUE(ds.seek(64));
@@ -788,8 +762,7 @@ TEST(DataSource, ReadBeyondEnd) {
     }
 
     thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate,
-                                                numChannels);
+    auto ds = loader.load_data_source_from_file(testFile.string(), sampleRate, numChannels);
     ASSERT_TRUE(ds.is_valid());
 
     float readBuf[frameCount * 2] = {0};
@@ -880,8 +853,7 @@ TEST(AudioPlayerSource, ReleaseResources) {
 
 TEST(AudioPlayerSource, ProcessRejectsOutputChannelMismatch) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path testFile =
-        tempDir / "test_player_channel_mismatch.wav";
+    std::filesystem::path testFile = tempDir / "test_player_channel_mismatch.wav";
 
     constexpr uint32_t frameCount = 128;
     constexpr uint32_t writeChannels = 2;
@@ -941,8 +913,7 @@ TEST(AudioFileIntegration, RecordAndPlayback) {
 
     {
         AudioPlayerSource player;
-        ASSERT_TRUE(
-            player.loadFile(testFile.string(), numChannels, sampleRate));
+        ASSERT_TRUE(player.loadFile(testFile.string(), numChannels, sampleRate));
         EXPECT_TRUE(player.isLoaded());
         EXPECT_EQ(player.getTotalFrames(), frameCount);
         EXPECT_EQ(player.getCurrentFrame(), 0);
@@ -957,8 +928,7 @@ TEST(AudioFileIntegration, RecordAndPlayback) {
         player.process(playedData, input, frameCount, 0, numChannels);
 
         for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-            EXPECT_FLOAT_EQ(playedData[i], originalData[i])
-                << "Mismatch at sample " << i;
+            EXPECT_FLOAT_EQ(playedData[i], originalData[i]) << "Mismatch at sample " << i;
         }
 
         player.unloadFile();
@@ -999,20 +969,18 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryZeroSize) {
     EXPECT_FALSE(ds.is_valid());
 }
 
-// Disabled: currently passes assertions but intermittently aborts during teardown
-// in the underlying audio/memory backend on this platform.
+// Disabled: currently passes assertions but intermittently aborts during
+// teardown in the underlying audio/memory backend on this platform.
 TEST(AudioFileLoader, LoadDataSourceFromMemoryInvalidData) {
     thl::audio_io::AudioFileLoader loader;
     uint8_t garbage[] = {0xDE, 0xAD, 0xBE, 0xEF};
-    auto ds = loader.load_data_source_from_memory(garbage, sizeof(garbage),
-                                                   48000, 2);
+    auto ds = loader.load_data_source_from_memory(garbage, sizeof(garbage), 48000, 2);
     EXPECT_FALSE(ds.is_valid());
 }
 
 TEST(AudioFileLoader, LoadDataSourceFromMemoryRoundTrip) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path testFile =
-        tempDir / "test_ds_from_memory_roundtrip.wav";
+    std::filesystem::path testFile = tempDir / "test_ds_from_memory_roundtrip.wav";
 
     constexpr uint32_t frameCount = 256;
     constexpr uint32_t numChannels = 2;
@@ -1020,8 +988,7 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryRoundTrip) {
 
     float sourceData[frameCount * numChannels];
     for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-        sourceData[i] = static_cast<float>(i) /
-                        static_cast<float>(frameCount * numChannels);
+        sourceData[i] = static_cast<float>(i) / static_cast<float>(frameCount * numChannels);
     }
 
     {
@@ -1039,8 +1006,9 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryRoundTrip) {
 
     thl::audio_io::AudioFileLoader loader;
     auto ds = loader.load_data_source_from_memory(wavBytes.data(),
-                                                   wavBytes.size(),
-                                                   sampleRate, numChannels);
+                                                  wavBytes.size(),
+                                                  sampleRate,
+                                                  numChannels);
     ASSERT_TRUE(ds.is_valid());
     EXPECT_EQ(ds.get_channel_count(), numChannels);
     EXPECT_EQ(ds.get_sample_rate(), sampleRate);
@@ -1053,8 +1021,7 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryRoundTrip) {
     EXPECT_EQ(ds.get_cursor(), frameCount);
 
     for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-        EXPECT_FLOAT_EQ(readBuf[i], sourceData[i])
-            << "Mismatch at interleaved index " << i;
+        EXPECT_FLOAT_EQ(readBuf[i], sourceData[i]) << "Mismatch at interleaved index " << i;
     }
 }
 
@@ -1086,8 +1053,9 @@ TEST(AudioFileLoader, LoadDataSourceFromMemorySeek) {
 
     thl::audio_io::AudioFileLoader loader;
     auto ds = loader.load_data_source_from_memory(wavBytes.data(),
-                                                   wavBytes.size(),
-                                                   sampleRate, numChannels);
+                                                  wavBytes.size(),
+                                                  sampleRate,
+                                                  numChannels);
     ASSERT_TRUE(ds.is_valid());
 
     EXPECT_TRUE(ds.seek(128));
@@ -1098,8 +1066,7 @@ TEST(AudioFileLoader, LoadDataSourceFromMemorySeek) {
     EXPECT_EQ(framesRead, 128u);
 
     for (uint32_t i = 0; i < 128; ++i) {
-        EXPECT_FLOAT_EQ(readBuf[i], sourceData[128 + i])
-            << "Mismatch at frame " << (128 + i);
+        EXPECT_FLOAT_EQ(readBuf[i], sourceData[128 + i]) << "Mismatch at frame " << (128 + i);
     }
 
     EXPECT_TRUE(ds.seek(0));
@@ -1134,8 +1101,9 @@ TEST(AudioFileLoader, LoadDataSourceFromMemorySequentialRead) {
 
     thl::audio_io::AudioFileLoader loader;
     auto ds = loader.load_data_source_from_memory(wavBytes.data(),
-                                                   wavBytes.size(),
-                                                   sampleRate, numChannels);
+                                                  wavBytes.size(),
+                                                  sampleRate,
+                                                  numChannels);
     ASSERT_TRUE(ds.is_valid());
 
     constexpr uint64_t chunkSize = 128;
@@ -1165,9 +1133,7 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryNativeFormat) {
     constexpr uint32_t sampleRate = 44100;
 
     float sourceData[frameCount * numChannels] = {};
-    for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-        sourceData[i] = 0.25f;
-    }
+    for (uint32_t i = 0; i < frameCount * numChannels; ++i) { sourceData[i] = 0.25f; }
 
     {
         AudioFileSink sink;
@@ -1183,8 +1149,7 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryNativeFormat) {
     std::filesystem::remove(testFile);
 
     thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_memory(wavBytes.data(),
-                                                   wavBytes.size());
+    auto ds = loader.load_data_source_from_memory(wavBytes.data(), wavBytes.size());
     ASSERT_TRUE(ds.is_valid());
     EXPECT_EQ(ds.get_channel_count(), numChannels);
     EXPECT_EQ(ds.get_sample_rate(), sampleRate);
@@ -1226,8 +1191,8 @@ TEST(AudioPlayerSource, LoadFromMemoryZeroSampleRate) {
     EXPECT_FALSE(player.isLoaded());
 }
 
-// Disabled: currently passes assertions but intermittently aborts during teardown
-// in the underlying audio/memory backend on this platform.
+// Disabled: currently passes assertions but intermittently aborts during
+// teardown in the underlying audio/memory backend on this platform.
 TEST(AudioPlayerSource, LoadFromMemoryInvalidData) {
     AudioPlayerSource player;
     uint8_t garbage[] = {0xDE, 0xAD, 0xBE, 0xEF};
@@ -1263,8 +1228,7 @@ TEST(AudioPlayerSource, LoadFromMemoryAndPlayback) {
     std::filesystem::remove(testFile);
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(),
-                                       numChannels, sampleRate));
+    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
     EXPECT_TRUE(player.isLoaded());
     EXPECT_EQ(player.getTotalFrames(), frameCount);
     EXPECT_EQ(player.getCurrentFrame(), 0u);
@@ -1278,8 +1242,7 @@ TEST(AudioPlayerSource, LoadFromMemoryAndPlayback) {
     player.process(playedData, input, frameCount, 0, numChannels);
 
     for (uint32_t i = 0; i < frameCount * numChannels; ++i) {
-        EXPECT_FLOAT_EQ(playedData[i], originalData[i])
-            << "Mismatch at sample " << i;
+        EXPECT_FLOAT_EQ(playedData[i], originalData[i]) << "Mismatch at sample " << i;
     }
 
     player.unloadFile();
@@ -1288,8 +1251,7 @@ TEST(AudioPlayerSource, LoadFromMemoryAndPlayback) {
 
 TEST(AudioPlayerSource, LoadFromMemorySeek) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path testFile =
-        tempDir / "test_player_from_memory_seek.wav";
+    std::filesystem::path testFile = tempDir / "test_player_from_memory_seek.wav";
 
     constexpr uint32_t frameCount = 256;
     constexpr uint32_t numChannels = 1;
@@ -1314,8 +1276,7 @@ TEST(AudioPlayerSource, LoadFromMemorySeek) {
     std::filesystem::remove(testFile);
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(),
-                                       numChannels, sampleRate));
+    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
 
     player.seekToFrame(128);
     EXPECT_EQ(player.getCurrentFrame(), 128u);
@@ -1328,8 +1289,7 @@ TEST(AudioPlayerSource, LoadFromMemorySeek) {
     player.process(readBuf, input, 128, 0, numChannels);
 
     for (uint32_t i = 0; i < 128u; ++i) {
-        EXPECT_FLOAT_EQ(readBuf[i], sourceData[128 + i])
-            << "Mismatch at sample " << i;
+        EXPECT_FLOAT_EQ(readBuf[i], sourceData[128 + i]) << "Mismatch at sample " << i;
     }
 
     player.unloadFile();
@@ -1337,8 +1297,7 @@ TEST(AudioPlayerSource, LoadFromMemorySeek) {
 
 TEST(AudioPlayerSource, LoadFromMemoryStopResetsPosition) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path testFile =
-        tempDir / "test_player_from_memory_stop.wav";
+    std::filesystem::path testFile = tempDir / "test_player_from_memory_stop.wav";
 
     constexpr uint32_t frameCount = 128;
     constexpr uint32_t numChannels = 1;
@@ -1360,8 +1319,7 @@ TEST(AudioPlayerSource, LoadFromMemoryStopResetsPosition) {
     std::filesystem::remove(testFile);
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(),
-                                       numChannels, sampleRate));
+    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
     player.play();
 
     float readBuf[64] = {0};
@@ -1378,8 +1336,7 @@ TEST(AudioPlayerSource, LoadFromMemoryStopResetsPosition) {
 
 TEST(AudioPlayerSource, LoadFromMemoryReplacesFile) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path testFile =
-        tempDir / "test_player_mem_replaces_file.wav";
+    std::filesystem::path testFile = tempDir / "test_player_mem_replaces_file.wav";
 
     constexpr uint32_t frameCount = 128;
     constexpr uint32_t numChannels = 1;
@@ -1401,12 +1358,10 @@ TEST(AudioPlayerSource, LoadFromMemoryReplacesFile) {
     ASSERT_FALSE(wavBytes.empty());
 
     AudioPlayerSource player;
-    ASSERT_TRUE(
-        player.loadFile(testFile.string(), numChannels, sampleRate));
+    ASSERT_TRUE(player.loadFile(testFile.string(), numChannels, sampleRate));
     EXPECT_TRUE(player.isLoaded());
 
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(),
-                                       numChannels, sampleRate));
+    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
     EXPECT_TRUE(player.isLoaded());
     EXPECT_EQ(player.getTotalFrames(), frameCount);
 

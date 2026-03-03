@@ -7,23 +7,17 @@ namespace thl {
 void StateGroup::clear_groups() {
     // First, collect all groups to clear (to avoid recursive RCU updates)
     std::vector<std::shared_ptr<StateGroup>> groups_to_clear;
-    
+
     m_groups_rcu.read([&](const GroupMap& groups) {
         groups_to_clear.reserve(groups.size());
-        for (const auto& [name, group] : groups) {
-            groups_to_clear.push_back(group);
-        }
+        for (const auto& [name, group] : groups) { groups_to_clear.push_back(group); }
     });
-    
+
     // Clear all subgroups outside of RCU context
-    for (auto& group : groups_to_clear) {
-        group->clear();
-    }
-    
+    for (auto& group : groups_to_clear) { group->clear(); }
+
     // Now clear the groups map
-    m_groups_rcu.update([&](GroupMap& groups) {
-        groups.clear();
-    });
+    m_groups_rcu.update([&](GroupMap& groups) { groups.clear(); });
 }
 
 void StateGroup::clear() {
@@ -34,59 +28,56 @@ void StateGroup::clear() {
     } else {
         // Get the full path once to avoid repeated calls
         std::string_view fullPath = get_full_path();
-        
+
         // Use RCU to update parameters map
         m_rootState->m_parameters_rcu.update([&](auto& parameters) {
             // First pass: collect parameters to delete
             std::vector<std::string> keys_to_delete;
-            keys_to_delete.reserve(parameters.size()); // Prevent reallocation
-            
+            keys_to_delete.reserve(parameters.size());  // Prevent reallocation
+
             for (const auto& [key, param] : parameters) {
-                // String operations like find() aren't real-time safe, but we're doing this under RCU update
-                // and with keys_to_delete pre-allocated to avoid allocation during iteration
+                // String operations like find() aren't real-time safe, but
+                // we're doing this under RCU update and with keys_to_delete
+                // pre-allocated to avoid allocation during iteration
                 if (key.find(fullPath) == 0) {
-                    // If the parameter belongs to this group, mark it for deletion
+                    // If the parameter belongs to this group, mark it for
+                    // deletion
                     keys_to_delete.push_back(key);
                 }
             }
-            
+
             // Second pass: delete the parameters
-            for (const auto& key : keys_to_delete) {
-                parameters.erase(key);
-            }
+            for (const auto& key : keys_to_delete) { parameters.erase(key); }
         });
-    } 
+    }
     clear_groups();
 }
 
 bool StateGroup::is_empty() const TANH_NONBLOCKING_FUNCTION {
     // Check if we have any subgroups using RCU (lock-free read)
     bool has_groups = false;
-    m_groups_rcu.read([&](const GroupMap& groups) {
-        has_groups = !groups.empty();
-    });
-    
-    if (has_groups) {
-        return false;
-    }
+    m_groups_rcu.read([&](const GroupMap& groups) { has_groups = !groups.empty(); });
+
+    if (has_groups) { return false; }
 
     // Get the full path once to avoid repeated calls - real-time safe
     std::string_view fullPath = get_full_path();
-    
+
     // Use RCU to check if this group has any parameters (lock-free read)
     bool has_parameters = false;
     m_rootState->m_parameters_rcu.read([&](const auto& parameters) {
         for (const auto& [key, param] : parameters) {
-            // std::string::find() isn't formally guaranteed RT-safe by the standard,
-            // but in practice doesn't allocate - we're only searching pre-existing strings
+            // std::string::find() isn't formally guaranteed RT-safe by the
+            // standard, but in practice doesn't allocate - we're only searching
+            // pre-existing strings
             if (key.find(fullPath) == 0) {
                 // If the parameter belongs to this group, we're not empty
                 has_parameters = true;
-                return; // Early exit from lambda
+                return;  // Early exit from lambda
             }
         }
     });
-    
+
     return !has_parameters;
 }
 
@@ -95,18 +86,14 @@ void StateGroup::add_listener(ParameterListener* listener) {
     m_listeners_rcu.update([&](ListenerData& data) {
         // Check if listener already exists
         auto it = std::find(data.object_listeners.begin(), data.object_listeners.end(), listener);
-        if (it == data.object_listeners.end()) {
-            data.object_listeners.push_back(listener);
-        }
+        if (it == data.object_listeners.end()) { data.object_listeners.push_back(listener); }
     });
 }
 
 void StateGroup::remove_listener(ParameterListener* listener) {
     m_listeners_rcu.update([&](ListenerData& data) {
         auto it = std::find(data.object_listeners.begin(), data.object_listeners.end(), listener);
-        if (it != data.object_listeners.end()) {
-            data.object_listeners.erase(it);
-        }
+        if (it != data.object_listeners.end()) { data.object_listeners.erase(it); }
     });
 }
 
@@ -120,28 +107,26 @@ size_t StateGroup::add_callback_listener(ParameterChangeCallback callback) {
 }
 
 void StateGroup::remove_callback_listener(size_t listener_id) {
-    m_listeners_rcu.update([&](ListenerData& data) {
-        data.callback_listeners.erase(listener_id);
-    });
+    m_listeners_rcu.update([&](ListenerData& data) { data.callback_listeners.erase(listener_id); });
 }
 
 void StateGroup::notify_parameter_change(std::string_view path) {
     // Resolve the path to get the parameter
     auto [group, param_name] = resolve_path(path);
     if (!group || !group->m_rootState) return;
-    
+
     // Ensure thread is registered for RCU and buffers
     m_rootState->ensure_thread_registered();
-    
+
     try {
         // Get the parameter
         // Use State's pre-allocated buffer
         m_rootState->m_temp_buffer_1.clear();
-        
+
         std::string_view group_path = group->get_full_path();
         detail::join_path(group_path, param_name, m_rootState->m_temp_buffer_1);
         Parameter param = group->m_rootState->get_from_root(m_rootState->m_temp_buffer_1);
-        
+
         // Notify all listeners
         notify_listeners(path, param);
     } catch (const StateKeyNotFoundException&) {
@@ -149,38 +134,35 @@ void StateGroup::notify_parameter_change(std::string_view path) {
     }
 }
 
-void StateGroup::notify_listeners(std::string_view path, const Parameter& param, NotifyStrategies strategy, ParameterListener* source ) const {
-    if (strategy == NotifyStrategies::none){
-        return;
-    }
+void StateGroup::notify_listeners(std::string_view path,
+                                  const Parameter& param,
+                                  NotifyStrategies strategy,
+                                  ParameterListener* source) const {
+    if (strategy == NotifyStrategies::none) { return; }
     // Notify listeners at this level using RCU (lock-free read)
     m_listeners_rcu.read([&](const ListenerData& data) {
         // Notify object-based listeners
         for (auto listener : data.object_listeners) {
-            if ((strategy == NotifyStrategies::others && listener == source) || (strategy == NotifyStrategies::self && listener != source)) {
+            if ((strategy == NotifyStrategies::others && listener == source) ||
+                (strategy == NotifyStrategies::self && listener != source)) {
                 continue;
             }
             listener->on_parameter_changed(path, param);
         }
-        
+
         // Notify callback-based listeners
         if (strategy != NotifyStrategies::self) {
-            for (const auto& [id, callback] : data.callback_listeners) {
-                callback(path, param);
-            }
+            for (const auto& [id, callback] : data.callback_listeners) { callback(path, param); }
         }
     });
-    
+
     // Then, notify parent groups to propagate up the hierarchy
-    if (m_parent) {
-        m_parent->notify_listeners(path, param, strategy, source);
-    }
+    if (m_parent) { m_parent->notify_listeners(path, param, strategy, source); }
 }
 
 // StateGroup implementation
 StateGroup::StateGroup(State* rootState, StateGroup* parent, std::string_view name)
-    : m_rootState(rootState), m_parent(parent), m_name(name) {
-}
+    : m_rootState(rootState), m_parent(parent), m_name(name) {}
 
 StateGroup::~StateGroup() {
     t_registered_states.erase(this);
@@ -189,94 +171,83 @@ StateGroup::~StateGroup() {
 // Group management
 StateGroup* StateGroup::create_group(std::string_view name) {
     std::string name_str(name);
-    
+
     // First, check if group already exists
     StateGroup* existing_group = nullptr;
     m_groups_rcu.read([&](const GroupMap& groups) {
         auto it = groups.find(name_str);
-        if (it != groups.end()) {
-            existing_group = it->second.get();
-        }
+        if (it != groups.end()) { existing_group = it->second.get(); }
     });
-    
-    if (existing_group) {
-        return existing_group;
-    }
-    
+
+    if (existing_group) { return existing_group; }
+
     // Create new group and add it to the map
     auto new_group = std::make_shared<StateGroup>(m_rootState, this, name);
     auto* group_ptr = new_group.get();
     group_ptr->ensure_thread_registered();
-    
-    m_groups_rcu.update([&](GroupMap& groups) {
-        groups[name_str] = new_group;
-    });
-    
+
+    m_groups_rcu.update([&](GroupMap& groups) { groups[name_str] = new_group; });
+
     return group_ptr;
 }
 
 StateGroup* StateGroup::get_group(std::string_view name) const TANH_NONBLOCKING_FUNCTION {
     std::string name_str(name);
     StateGroup* found_group = nullptr;
-    
+
     m_groups_rcu.read([&](const GroupMap& groups) {
         auto it = groups.find(name_str);
-        if (it != groups.end()) {
-            found_group = it->second.get();
-        }
+        if (it != groups.end()) { found_group = it->second.get(); }
     });
-    
+
     return found_group;
 }
 
 bool StateGroup::has_group(std::string_view name) const TANH_NONBLOCKING_FUNCTION {
     std::string name_str(name);
     bool found = false;
-    
-    m_groups_rcu.read([&](const GroupMap& groups) {
-        found = groups.find(name_str) != groups.end();
-    });
-    
+
+    m_groups_rcu.read(
+        [&](const GroupMap& groups) { found = groups.find(name_str) != groups.end(); });
+
     return found;
 }
 
 // Get the full path of this group
 std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
-    if (!m_parent || m_parent == m_rootState) {
-        return m_name;
-    }
-    
+    if (!m_parent || m_parent == m_rootState) { return m_name; }
+
     // Ensure thread is registered for RCU and buffers
     m_rootState->ensure_thread_registered();
-    
+
     // Use State's pre-allocated buffer
     m_rootState->m_temp_buffer_1.clear();
-    
-    // Build path iteratively by calculating depth first, then building from root
-    // Count the depth to avoid recursion
+
+    // Build path iteratively by calculating depth first, then building from
+    // root Count the depth to avoid recursion
     int depth = 0;
     const StateGroup* current = this;
     while (current && current->m_parent && current->m_parent != current->m_rootState) {
         depth++;
         current = current->m_parent;
     }
-    if (current && current->m_parent == current->m_rootState) {
-        depth++;
-    }
-    
-    // Use a fixed-size array with a reasonable maximum depth (compliant with MSVC)
-    constexpr int MAX_DEPTH = 32; // Compile-time constant
+    if (current && current->m_parent == current->m_rootState) { depth++; }
+
+    // Use a fixed-size array with a reasonable maximum depth (compliant with
+    // MSVC)
+    constexpr int MAX_DEPTH = 32;  // Compile-time constant
     std::string_view components[MAX_DEPTH];
 
     if (depth > MAX_DEPTH) {
         // Fallback for extremely deep hierarchies - just return the name
         return m_name;
     }
-    
+
     // Fill the components array from leaf to root
     current = this;
     int index = depth - 1;
-    while (current && current->m_parent && current->m_parent != current->m_rootState && index >= 0) {
+    while (current && current->m_parent && current->m_parent != current->m_rootState &&
+           index >= 0) {
         components[index] = current->m_name;
         current = current->m_parent;
         index--;
@@ -284,15 +255,13 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
     if (current && current->m_parent == current->m_rootState && index >= 0) {
         components[index] = current->m_name;
     }
-    
+
     // Build the path from root to leaf
     for (int i = 0; i < depth; i++) {
-        if (i > 0) {
-            m_rootState->m_temp_buffer_1 += '.';
-        }
+        if (i > 0) { m_rootState->m_temp_buffer_1 += '.'; }
         m_rootState->m_temp_buffer_1.append(components[i].data(), components[i].size());
     }
-    
+
     return m_rootState->m_temp_buffer_1;
 }
 
@@ -302,22 +271,18 @@ std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_vi
     if (path.empty() || path.find('.') == std::string::npos) {
         return {const_cast<StateGroup*>(this), path};
     }
-    
+
     // Split the path into first component and the rest
     auto [group_name, rest] = detail::split_path(path);
-    
+
     // Look for the group using RCU
     StateGroup* found_group = nullptr;
     m_groups_rcu.read([&](const GroupMap& groups) {
         auto group_it = groups.find(std::string(group_name));
-        if (group_it != groups.end()) {
-            found_group = group_it->second.get();
-        }
+        if (group_it != groups.end()) { found_group = group_it->second.get(); }
     });
-    
-    if (found_group) {
-        return found_group->resolve_path(rest);
-    }
+
+    if (found_group) { return found_group->resolve_path(rest); }
 
     // If not found, throw exception
     throw StateGroupNotFoundException(group_name);
@@ -326,51 +291,45 @@ std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_vi
 // Helper for parameter resolution with paths that creates missing groups
 std::pair<StateGroup*, std::string_view> StateGroup::resolve_path_create(std::string_view path) {
     // If path is empty or has no dots, it refers to a parameter in this group
-    if (path.empty() || path.find('.') == std::string::npos) {
-        return {this, path};
-    }
-    
+    if (path.empty() || path.find('.') == std::string::npos) { return {this, path}; }
+
     // Split the path into first component and the rest
     auto [group_name, rest] = detail::split_path(path);
-    
+
     // Look for the group or create it if it doesn't exist using RCU
     StateGroup* child_group = nullptr;
     m_groups_rcu.read([&](const GroupMap& groups) {
         auto group_it = groups.find(std::string(group_name));
-        if (group_it != groups.end()) {
-            child_group = group_it->second.get();
-        }
+        if (group_it != groups.end()) { child_group = group_it->second.get(); }
     });
-    
+
     if (!child_group) {
         // Create the missing group
         child_group = create_group(group_name);
     }
-    
+
     // Continue resolving the rest of the path, creating groups as needed
     return child_group->resolve_path_create(rest);
 }
 
 // Parameter access methods
-template<typename T>
+template <typename T>
 T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
     // String access requires allow_blocking=true as it may allocate memory
     if constexpr (std::is_same_v<T, std::string>) {
-        if (!allow_blocking) {
-            throw BlockingException(path);
-        }
+        if (!allow_blocking) { throw BlockingException(path); }
     }
-    
+
     // Ensure thread is registered for RCU and buffers
     m_rootState->ensure_thread_registered();
-    
+
     auto getter_fn = [&]() -> T {
         auto [group, param_name] = resolve_path(path);
         if (group == this) {
             // Parameter in this group, delegate to root state
             // Use State's pre-allocated buffer
             m_rootState->m_temp_buffer_2.clear();
-            
+
             std::string_view group_path = get_full_path();
             detail::join_path(group_path, param_name, m_rootState->m_temp_buffer_2);
             return m_rootState->get_from_root<T>(m_rootState->m_temp_buffer_2, allow_blocking);
@@ -378,7 +337,7 @@ T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOC
         // Parameter in a child group
         return group->get<T>(param_name, allow_blocking);
     };
-    
+
     if (!allow_blocking) {
         return getter_fn();
     } else {
@@ -387,16 +346,17 @@ T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOC
     }
 }
 
-ParameterType StateGroup::get_parameter_type(std::string_view path) const TANH_NONBLOCKING_FUNCTION {
+ParameterType StateGroup::get_parameter_type(std::string_view path) const
+    TANH_NONBLOCKING_FUNCTION {
     // Ensure thread is registered for RCU and buffers
     m_rootState->ensure_thread_registered();
-    
+
     auto [group, param_name] = resolve_path(path);
     if (group == this) {
         // Parameter in this group, delegate to root state
         // Use State's pre-allocated buffer
         m_rootState->m_temp_buffer_3.clear();
-        
+
         std::string_view group_path = get_full_path();
         detail::join_path(group_path, param_name, m_rootState->m_temp_buffer_3);
         return m_rootState->get_type_from_root(m_rootState->m_temp_buffer_3);
@@ -419,7 +379,7 @@ Parameter StateGroup::get_parameter(std::string_view path) const {
 std::map<std::string, Parameter> StateGroup::get_parameters() const {
     std::map<std::string, Parameter> params = {};
     std::string_view fullPath = get_full_path();
-    
+
     // Use RCU to read parameters (lock-free)
     m_rootState->m_parameters_rcu.read([&](const auto& parameters) {
         // Special case for root StateGroup (empty path)
@@ -429,30 +389,38 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
             }
             return;
         }
-        
-        // For non-root groups, we need to check if the parameter belongs to this group or its subgroups
+
+        // For non-root groups, we need to check if the parameter belongs to
+        // this group or its subgroups
         for (const auto& [key, param] : parameters) {
             // Check if key starts with the full path and is either:
-            // 1. Exactly equal to the full path (shouldn't happen with proper hierarchical paths)
-            // 2. Followed by a dot (meaning it's part of this group or a subgroup)
-            if (key.find(fullPath) == 0 && 
+            // 1. Exactly equal to the full path (shouldn't happen with proper
+            // hierarchical paths)
+            // 2. Followed by a dot (meaning it's part of this group or a
+            // subgroup)
+            if (key.find(fullPath) == 0 &&
                 (key.length() == fullPath.length() || key[fullPath.length()] == '.')) {
                 // Parameter belongs to this group
                 params.emplace(key, Parameter(m_rootState, key));
             }
         }
     });
-    
+
     return params;
 }
 
 // Parameter setters with path support
-template<typename T>
-void StateGroup::set(std::string_view path, T value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+template <typename T>
+void StateGroup::set(std::string_view path,
+                     T value,
+                     NotifyStrategies strategy,
+                     ParameterListener* source,
+                     bool create) {
     // Ensure thread is registered for RCU and buffers
     m_rootState->ensure_thread_registered();
-    
-    // Use different path resolution based on whether we want to create missing elements
+
+    // Use different path resolution based on whether we want to create missing
+    // elements
     std::pair<StateGroup*, std::string> resolution;
     if (create) {
         // Create groups as needed while resolving the path
@@ -461,29 +429,33 @@ void StateGroup::set(std::string_view path, T value, NotifyStrategies strategy, 
         // Don't create new groups, just try to find existing ones
         resolution = resolve_path(path);
     }
-    
+
     auto [group, param_name] = resolution;
     if (group == this) {
         // Parameter in this group, delegate to root state
         // Use State's pre-allocated buffer
         m_rootState->m_temp_buffer_2.clear();
-        
+
         std::string_view group_path = get_full_path();
         detail::join_path(group_path, param_name, m_rootState->m_temp_buffer_2);
-        
+
         // If not creating and the parameter doesn't exist, check using RCU
         if (!create) {
             bool parameter_exists = false;
             m_rootState->m_parameters_rcu.read([&](const auto& parameters) {
-                parameter_exists = parameters.find(m_rootState->m_temp_buffer_2) != parameters.end();
+                parameter_exists =
+                    parameters.find(m_rootState->m_temp_buffer_2) != parameters.end();
             });
-            
+
             if (!parameter_exists) {
                 throw StateKeyNotFoundException(m_rootState->m_temp_buffer_2);
             }
         }
-        
-        m_rootState->set_in_root(m_rootState->m_temp_buffer_2, value, strategy, source); // Pass the notify parameter
+
+        m_rootState->set_in_root(m_rootState->m_temp_buffer_2,
+                                 value,
+                                 strategy,
+                                 source);  // Pass the notify parameter
     } else {
         // Parameter in a child group
         group->set(param_name, value, strategy, source, create);
@@ -491,31 +463,33 @@ void StateGroup::set(std::string_view path, T value, NotifyStrategies strategy, 
 }
 
 // After all the StateGroup::set implementations, add the const char* overload
-void StateGroup::set(std::string_view path, const char* value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+void StateGroup::set(std::string_view path,
+                     const char* value,
+                     NotifyStrategies strategy,
+                     ParameterListener* source,
+                     bool create) {
     set(path, std::string(value), strategy, source, create);
 }
 
 // Set with parameter definition (registers definition and sets default value)
 // Private parameter definition setter implementation
-void StateGroup::set(std::string_view path, const ParameterDefinition& def, NotifyStrategies strategy, ParameterListener* source, bool create) {
+void StateGroup::set(std::string_view path,
+                     const ParameterDefinition& def,
+                     NotifyStrategies strategy,
+                     ParameterListener* source,
+                     bool create) {
     // Ensure thread is registered for RCU and buffers
     m_rootState->ensure_thread_registered();
-    
+
     switch (def.m_type) {
         case PluginParamType::ParamFloat:
             set(path, def.as_float(), strategy, source, create);
             break;
-        case PluginParamType::ParamInt:
-            set(path, def.as_int(), strategy, source, create);
-            break;
-        case PluginParamType::ParamBool:
-            set(path, def.as_bool(), strategy, source, create);
-            break;
-        case PluginParamType::ParamChoice:
-            set(path, def.as_int(), strategy, source, create);
-            break;
+        case PluginParamType::ParamInt: set(path, def.as_int(), strategy, source, create); break;
+        case PluginParamType::ParamBool: set(path, def.as_bool(), strategy, source, create); break;
+        case PluginParamType::ParamChoice: set(path, def.as_int(), strategy, source, create); break;
     }
-    
+
     // Then store the definition (need to construct the full path)
     m_rootState->m_temp_buffer_3.clear();
     std::string_view group_path = get_full_path();
@@ -524,8 +498,8 @@ void StateGroup::set(std::string_view path, const ParameterDefinition& def, Noti
 }
 
 void StateGroup::ensure_thread_registered() {
-    if (t_registered_states.find(this) != t_registered_states.end()) [[ likely ]] {
-        return; // Already registered
+    if (t_registered_states.find(this) != t_registered_states.end()) [[likely]] {
+        return;  // Already registered
     }
     // Register this thread with all RCU structures for this StateGroup
     m_groups_rcu.register_reader_thread();
@@ -537,43 +511,82 @@ void StateGroup::ensure_thread_registered() {
 
 void StateGroup::ensure_child_groups_registered() {
     m_groups_rcu.read([](const GroupMap& groups) {
-        for (const auto& [name, group] : groups) {
-            group->ensure_thread_registered();
-        }
+        for (const auto& [name, group] : groups) { group->ensure_thread_registered(); }
     });
 }
 
-// Template specializations for parameter definition types - forward to private base implementation
-template<>
-void StateGroup::set<ParameterFloat>(std::string_view path, ParameterFloat value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+// Template specializations for parameter definition types - forward to private
+// base implementation
+template <>
+void StateGroup::set<ParameterFloat>(std::string_view path,
+                                     ParameterFloat value,
+                                     NotifyStrategies strategy,
+                                     ParameterListener* source,
+                                     bool create) {
     set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
 }
 
-template<>
-void StateGroup::set<ParameterInt>(std::string_view path, ParameterInt value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+template <>
+void StateGroup::set<ParameterInt>(std::string_view path,
+                                   ParameterInt value,
+                                   NotifyStrategies strategy,
+                                   ParameterListener* source,
+                                   bool create) {
     set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
 }
 
-template<>
-void StateGroup::set<ParameterBool>(std::string_view path, ParameterBool value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+template <>
+void StateGroup::set<ParameterBool>(std::string_view path,
+                                    ParameterBool value,
+                                    NotifyStrategies strategy,
+                                    ParameterListener* source,
+                                    bool create) {
     set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
 }
 
-template<>
-void StateGroup::set<ParameterChoice>(std::string_view path, ParameterChoice value, NotifyStrategies strategy, ParameterListener* source, bool create) {
+template <>
+void StateGroup::set<ParameterChoice>(std::string_view path,
+                                      ParameterChoice value,
+                                      NotifyStrategies strategy,
+                                      ParameterListener* source,
+                                      bool create) {
     set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
 }
 
-template void StateGroup::set(std::string_view path, const double value, NotifyStrategies strategy, ParameterListener* source, bool create);
-template void StateGroup::set(std::string_view path, const float value, NotifyStrategies strategy, ParameterListener* source, bool create);
-template void StateGroup::set(std::string_view path, const int value, NotifyStrategies strategy, ParameterListener* source, bool create);
-template void StateGroup::set(std::string_view path, const bool value, NotifyStrategies strategy, ParameterListener* source, bool create);
-template void StateGroup::set(std::string_view path, const std::string value, NotifyStrategies strategy, ParameterListener* source, bool create);
+template void StateGroup::set(std::string_view path,
+                              const double value,
+                              NotifyStrategies strategy,
+                              ParameterListener* source,
+                              bool create);
+template void StateGroup::set(std::string_view path,
+                              const float value,
+                              NotifyStrategies strategy,
+                              ParameterListener* source,
+                              bool create);
+template void StateGroup::set(std::string_view path,
+                              const int value,
+                              NotifyStrategies strategy,
+                              ParameterListener* source,
+                              bool create);
+template void StateGroup::set(std::string_view path,
+                              const bool value,
+                              NotifyStrategies strategy,
+                              ParameterListener* source,
+                              bool create);
+template void StateGroup::set(std::string_view path,
+                              const std::string value,
+                              NotifyStrategies strategy,
+                              ParameterListener* source,
+                              bool create);
 
-
-template double StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template float StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template int StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template bool StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template std::string StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-} // namespace thl
+template double StateGroup::get(std::string_view path,
+                                bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template float StateGroup::get(std::string_view path,
+                               bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template int StateGroup::get(std::string_view path,
+                             bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template bool StateGroup::get(std::string_view path,
+                              bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template std::string StateGroup::get(std::string_view path,
+                                     bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+}  // namespace thl

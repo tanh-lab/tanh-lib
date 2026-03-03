@@ -28,7 +28,6 @@
 
 #pragma once
 
-
 #include <tanh/dsp/filter/Svf.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
@@ -50,23 +49,15 @@ const int32_t kMaxChordSize = 8;
 const int32_t kNumHarmonics = 3;
 const int32_t kNumFormants = 3;
 
-enum FxType {
-  FX_FORMANT,
-  FX_CHORUS,
-  FX_REVERB,
-  FX_FORMANT_2,
-  FX_ENSEMBLE,
-  FX_REVERB_2,
-  FX_LAST
-};
+enum FxType { FX_FORMANT, FX_CHORUS, FX_REVERB, FX_FORMANT_2, FX_ENSEMBLE, FX_REVERB_2, FX_LAST };
 
 // Per-polyphony-group state: the base pitch, chord selection, AD envelope,
 // and structure snapshot captured at note-on time.
 struct VoiceGroup {
-  float tonic;
-  thl::dsp::utils::StringSynthEnvelope envelope;
-  int32_t chord;
-  float structure;
+    float tonic;
+    thl::dsp::utils::StringSynthEnvelope envelope;
+    int32_t chord;
+    float structure;
 };
 
 // Additive string synthesiser with chord voicing and effects routing.
@@ -95,82 +86,81 @@ struct VoiceGroup {
 //   6. Output -- a limiter normalises the stereo pair; aux is inverted to
 //      prevent cancellation when summed externally.
 class StringSynthPart {
- public:
-  StringSynthPart() { }
-  ~StringSynthPart() { }
+public:
+    StringSynthPart() {}
+    ~StringSynthPart() {}
 
-  void prepare(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
+    void prepare(uint16_t* reverb_buffer, float sample_rate = kDefaultSampleRate);
 
-  void process(
-      const PerformanceState& performance_state,
-      const Patch& patch,
-      const float* in,
-      float* out,
-      float* aux,
-      size_t size);
+    void process(const PerformanceState& performance_state,
+                 const Patch& patch,
+                 const float* in,
+                 float* out,
+                 float* aux,
+                 size_t size);
 
-  inline void set_polyphony(int32_t polyphony) {
-    int32_t old_polyphony = m_polyphony;
-    m_polyphony = std::min(polyphony, kMaxStringSynthPolyphony);
-    for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
-      m_group[i].tonic = m_group[0].tonic + i * 0.01f;
+    inline void set_polyphony(int32_t polyphony) {
+        int32_t old_polyphony = m_polyphony;
+        m_polyphony = std::min(polyphony, kMaxStringSynthPolyphony);
+        for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
+            m_group[i].tonic = m_group[0].tonic + i * 0.01f;
+        }
+        if (m_active_group >= m_polyphony) { m_active_group = 0; }
     }
-    if (m_active_group >= m_polyphony) {
-      m_active_group = 0;
+
+    inline void set_fx(FxType fx_type) {
+        if ((fx_type % 3) != (m_fx_type % 3)) { m_clear_fx = true; }
+        m_fx_type = fx_type;
     }
-  }
 
-  inline void set_fx(FxType fx_type) {
-    if ((fx_type % 3) != (m_fx_type % 3)) {
-      m_clear_fx = true;
-    }
-    m_fx_type = fx_type;
-  }
+private:
+    // Run AD envelopes for each polyphonic group.  `shape` controls attack/
+    // decay times and drone crossfade; results are written to `values`.
+    void process_envelopes(float shape, uint8_t* flags, float* values);
 
- private:
-  // Run AD envelopes for each polyphonic group.  `shape` controls attack/
-  // decay times and drone crossfade; results are written to `values`.
-  void process_envelopes(float shape, uint8_t* flags, float* values);
+    // Interpolate between organ-stop registration presets and scale by `gain`.
+    // Writes kNumHarmonics * 2 amplitudes (sine + cosine pairs).
+    void compute_registration(float gain, float registration, float* amplitudes);
 
-  // Interpolate between organ-stop registration presets and scale by `gain`.
-  // Writes kNumHarmonics * 2 amplitudes (sine + cosine pairs).
-  void compute_registration(float gain, float registration, float* amplitudes);
+    // Three-band formant filter (vowel selection + frequency shift).  Mixes
+    // out + aux into a mono buffer, runs three SVF band-passes, and writes
+    // the panned result back to out/aux.
+    void process_formant_filter(float vowel,
+                                float shift,
+                                float resonance,
+                                float* out,
+                                float* aux,
+                                size_t size);
 
-  // Three-band formant filter (vowel selection + frequency shift).  Mixes
-  // out + aux into a mono buffer, runs three SVF band-passes, and writes
-  // the panned result back to out/aux.
-  void process_formant_filter(float vowel, float shift, float resonance,
-                              float* out, float* aux, size_t size);
+    thl::dsp::synth::StringSynthVoice<kNumHarmonics> m_voice[kStringSynthVoices];
+    VoiceGroup m_group[kMaxStringSynthPolyphony];
 
-  thl::dsp::synth::StringSynthVoice<kNumHarmonics> m_voice[kStringSynthVoices];
-  VoiceGroup m_group[kMaxStringSynthPolyphony];
+    thl::dsp::filter::Svf m_formant_filter[kNumFormants];
+    Ensemble m_ensemble;
+    Reverb m_reverb;
+    Chorus m_chorus;
+    thl::dsp::utils::SoftLimiter m_limiter;
 
-  thl::dsp::filter::Svf m_formant_filter[kNumFormants];
-  Ensemble m_ensemble;
-  Reverb m_reverb;
-  Chorus m_chorus;
-  thl::dsp::utils::SoftLimiter m_limiter;
+    float m_sample_rate = kDefaultSampleRate;
+    float m_a3 = 440.0f / kDefaultSampleRate;
 
-  float m_sample_rate = kDefaultSampleRate;
-  float m_a3 = 440.0f / kDefaultSampleRate;
+    int32_t m_num_voices = 0;
+    int32_t m_active_group = 0;
+    uint32_t m_step_counter = 0;
+    int32_t m_polyphony = 1;
+    int32_t m_acquisition_delay = 0;
 
-  int32_t m_num_voices = 0;
-  int32_t m_active_group = 0;
-  uint32_t m_step_counter = 0;
-  int32_t m_polyphony = 1;
-  int32_t m_acquisition_delay = 0;
+    FxType m_fx_type = FX_ENSEMBLE;
 
-  FxType m_fx_type = FX_ENSEMBLE;
+    thl::dsp::analysis::NoteFilter m_note_filter;
 
-  thl::dsp::analysis::NoteFilter m_note_filter;
+    float m_filter_in_buffer[kMaxBlockSize];
+    float m_filter_out_buffer[kMaxBlockSize];
 
-  float m_filter_in_buffer[kMaxBlockSize];
-  float m_filter_out_buffer[kMaxBlockSize];
+    bool m_clear_fx = false;
 
-  bool m_clear_fx = false;
-
-  StringSynthPart(const StringSynthPart&) = delete;
-  StringSynthPart& operator=(const StringSynthPart&) = delete;
+    StringSynthPart(const StringSynthPart&) = delete;
+    StringSynthPart& operator=(const StringSynthPart&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings

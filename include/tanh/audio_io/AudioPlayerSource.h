@@ -111,9 +111,7 @@ public:
      *
      * @warning NOT real-time safe - performs file I/O and allocations.
      */
-    bool loadFile(const std::string& filePath,
-                  uint32_t outputChannels,
-                  uint32_t outputSampleRate);
+    bool loadFile(const std::string& filePath, uint32_t outputChannels, uint32_t outputSampleRate);
 
     /**
      * @brief Loads audio from an in-memory buffer for playback.

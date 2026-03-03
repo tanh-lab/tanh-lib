@@ -10,7 +10,9 @@ public:
     LimiterImpl();
     ~LimiterImpl() override;
 
-    void prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) override;
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override;
     void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
 
 protected:
@@ -22,7 +24,7 @@ protected:
         NUM_PARAMETERS = 3
     };
 
-    template<typename T>
+    template <typename T>
     T get_parameter(Parameter parameter);
 
     virtual float get_parameter_float(Parameter parameter) = 0;
@@ -38,8 +40,17 @@ private:
     float m_release_coeff = 0.0f;
 };
 
-template<> inline float LimiterImpl::get_parameter<float>(Parameter p) { return get_parameter_float(p); }
-template<> inline bool LimiterImpl::get_parameter<bool>(Parameter p) { return get_parameter_bool(p); }
-template<> inline int LimiterImpl::get_parameter<int>(Parameter p) { return get_parameter_int(p); }
+template <>
+inline float LimiterImpl::get_parameter<float>(Parameter p) {
+    return get_parameter_float(p);
+}
+template <>
+inline bool LimiterImpl::get_parameter<bool>(Parameter p) {
+    return get_parameter_bool(p);
+}
+template <>
+inline int LimiterImpl::get_parameter<int>(Parameter p) {
+    return get_parameter_int(p);
+}
 
-} // namespace thl::dsp::utils
+}  // namespace thl::dsp::utils

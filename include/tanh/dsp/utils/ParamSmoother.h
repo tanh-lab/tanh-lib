@@ -13,7 +13,8 @@ public:
     void set_target(float target) { m_target = target; }
 
     float skip(int numSamples) {
-        m_current = m_target + (m_current - m_target) * std::pow(m_coeff, static_cast<float>(numSamples));
+        m_current =
+            m_target + (m_current - m_target) * std::pow(m_coeff, static_cast<float>(numSamples));
         return m_current;
     }
 
@@ -25,4 +26,4 @@ private:
     float m_coeff = 0.0f;
 };
 
-} // namespace thl::dsp::utils
+}  // namespace thl::dsp::utils

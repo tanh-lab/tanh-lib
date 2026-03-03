@@ -13,8 +13,7 @@ namespace thl {
 
 struct AudioDeviceManager::DeviceUserData {
     AudioDeviceManager* manager = nullptr;
-    AudioDeviceManager::DeviceRole role =
-        AudioDeviceManager::DeviceRole::Playback;
+    AudioDeviceManager::DeviceRole role = AudioDeviceManager::DeviceRole::Playback;
 };
 
 struct AudioDeviceManager::Impl {
@@ -43,18 +42,14 @@ namespace {
 
 DeviceNotificationType toNotificationType(ma_device_notification_type type) {
     switch (type) {
-        case ma_device_notification_type_started:
-            return DeviceNotificationType::Started;
-        case ma_device_notification_type_stopped:
-            return DeviceNotificationType::Stopped;
-        case ma_device_notification_type_rerouted:
-            return DeviceNotificationType::Rerouted;
+        case ma_device_notification_type_started: return DeviceNotificationType::Started;
+        case ma_device_notification_type_stopped: return DeviceNotificationType::Stopped;
+        case ma_device_notification_type_rerouted: return DeviceNotificationType::Rerouted;
         case ma_device_notification_type_interruption_began:
             return DeviceNotificationType::InterruptionBegan;
         case ma_device_notification_type_interruption_ended:
             return DeviceNotificationType::InterruptionEnded;
-        case ma_device_notification_type_unlocked:
-            return DeviceNotificationType::Unlocked;
+        case ma_device_notification_type_unlocked: return DeviceNotificationType::Unlocked;
     }
     return DeviceNotificationType::Stopped;
 }
@@ -100,9 +95,7 @@ ma_bool32 enumCallback(ma_context* /*pContext*/,
     return MA_TRUE;
 }
 
-uint32_t resolveBufferSize(ma_device& device,
-                           uint32_t requested,
-                           const char* label) {
+uint32_t resolveBufferSize(ma_device& device, uint32_t requested, const char* label) {
     uint32_t actualBufferSize = 0;
     if (device.playback.internalPeriodSizeInFrames > 0) {
         actualBufferSize = device.playback.internalPeriodSizeInFrames;
@@ -112,16 +105,15 @@ uint32_t resolveBufferSize(ma_device& device,
     if (actualBufferSize == 0) {
         ma_log* log = ma_device_get_log(&device);
         if (log) {
-            ma_log_postf(
-                log,
-                MA_LOG_LEVEL_ERROR,
-                "AudioDeviceManager (%s): internalPeriodSizeInFrames is 0 "
-                "(playback=%u, capture=%u). Falling back to requested "
-                "bufferSizeInFrames=%u.",
-                label,
-                device.playback.internalPeriodSizeInFrames,
-                device.capture.internalPeriodSizeInFrames,
-                requested);
+            ma_log_postf(log,
+                         MA_LOG_LEVEL_ERROR,
+                         "AudioDeviceManager (%s): internalPeriodSizeInFrames is 0 "
+                         "(playback=%u, capture=%u). Falling back to requested "
+                         "bufferSizeInFrames=%u.",
+                         label,
+                         device.playback.internalPeriodSizeInFrames,
+                         device.capture.internalPeriodSizeInFrames,
+                         requested);
         }
         return requested;
     }
@@ -141,15 +133,12 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     ma_context_config ctxConfig = ma_context_config_init();
 
 #if defined(THL_PLATFORM_IOS)
-    ctxConfig.coreaudio.sessionCategory =
-        ma_ios_session_category_play_and_record;
-    ctxConfig.coreaudio.sessionCategoryOptions =
-        ma_ios_session_category_option_default_to_speaker |
-        ma_ios_session_category_option_allow_bluetooth;
+    ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_play_and_record;
+    ctxConfig.coreaudio.sessionCategoryOptions = ma_ios_session_category_option_default_to_speaker |
+                                                 ma_ios_session_category_option_allow_bluetooth;
 #endif
 
-    ma_result result =
-        ma_context_init(nullptr, 0, &ctxConfig, &m_impl->context);
+    ma_result result = ma_context_init(nullptr, 0, &ctxConfig, &m_impl->context);
     m_impl->contextInitialised = (result == MA_SUCCESS);
 }
 
@@ -165,25 +154,22 @@ bool AudioDeviceManager::isContextInitialised() const {
     return m_impl->contextInitialised;
 }
 
-void AudioDeviceManager::populateSampleRates(
-    std::vector<AudioDeviceInfo>& devices) const {
+void AudioDeviceManager::populateSampleRates(std::vector<AudioDeviceInfo>& devices) const {
     for (auto& info : devices) {
         ma_device_info deviceInfo;
         ma_device_id deviceId{};
         std::memcpy(&deviceId, info.deviceIDPtr(), sizeof(deviceId));
-        ma_result result = ma_context_get_device_info(
-            const_cast<ma_context*>(&m_impl->context),
-            toMaDeviceType(info.deviceType),
-            &deviceId,
-            &deviceInfo);
+        ma_result result = ma_context_get_device_info(const_cast<ma_context*>(&m_impl->context),
+                                                      toMaDeviceType(info.deviceType),
+                                                      &deviceId,
+                                                      &deviceInfo);
 
         std::vector<uint32_t> rates;
         if (result == MA_SUCCESS) {
             for (ma_uint32 i = 0; i < deviceInfo.nativeDataFormatCount; i++) {
                 uint32_t rate = deviceInfo.nativeDataFormats[i].sampleRate;
                 if (rate > 0) {
-                    if (std::find(rates.begin(), rates.end(), rate) ==
-                        rates.end()) {
+                    if (std::find(rates.begin(), rates.end(), rate) == rates.end()) {
                         rates.push_back(rate);
                     }
                 }
@@ -191,8 +177,7 @@ void AudioDeviceManager::populateSampleRates(
         }
 
         if (rates.empty()) {
-            ma_log* log =
-                ma_context_get_log(const_cast<ma_context*>(&m_impl->context));
+            ma_log* log = ma_context_get_log(const_cast<ma_context*>(&m_impl->context));
             if (log) {
                 ma_log_postf(log,
                              MA_LOG_LEVEL_WARNING,
@@ -208,8 +193,7 @@ void AudioDeviceManager::populateSampleRates(
     }
 }
 
-std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateDevices(
-    DeviceType type) const {
+std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateDevices(DeviceType type) const {
     if (!m_impl->contextInitialised) return {};
 
     std::vector<AudioDeviceInfo> devices;
@@ -225,19 +209,17 @@ std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateInputDevices() const {
     return enumerateDevices(DeviceType::Capture);
 }
 
-std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateOutputDevices()
-    const {
+std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateOutputDevices() const {
     return enumerateDevices(DeviceType::Playback);
 }
 
-bool AudioDeviceManager::tryInitialiseDevice(
-    DeviceRole role,
-    const AudioDeviceInfo* inputDevice,
-    const AudioDeviceInfo* outputDevice,
-    uint32_t sampleRate,
-    uint32_t bufferSizeInFrames,
-    uint32_t numInputChannels,
-    uint32_t numOutputChannels) {
+bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
+                                             const AudioDeviceInfo* inputDevice,
+                                             const AudioDeviceInfo* outputDevice,
+                                             uint32_t sampleRate,
+                                             uint32_t bufferSizeInFrames,
+                                             uint32_t numInputChannels,
+                                             uint32_t numOutputChannels) {
     ma_device* device = nullptr;
     DeviceUserData* userData = nullptr;
     ma_device_type deviceType = ma_device_type_playback;
@@ -270,62 +252,49 @@ bool AudioDeviceManager::tryInitialiseDevice(
     ma_device_config devConfig = ma_device_config_init(deviceType);
     devConfig.sampleRate = sampleRate;
     devConfig.periodSizeInFrames = bufferSizeInFrames;
-    devConfig.dataCallback = reinterpret_cast<ma_device_data_proc>(
-        &AudioDeviceManager::dataCallback);
+    devConfig.dataCallback =
+        reinterpret_cast<ma_device_data_proc>(&AudioDeviceManager::dataCallback);
     devConfig.notificationCallback =
-        reinterpret_cast<ma_device_notification_proc>(
-            &AudioDeviceManager::notificationCallback);
+        reinterpret_cast<ma_device_notification_proc>(&AudioDeviceManager::notificationCallback);
     devConfig.pUserData = userData;
 
     ma_device_id outputDeviceId{};
     ma_device_id inputDeviceId{};
     if (role == DeviceRole::Playback || role == DeviceRole::Duplex) {
-        std::memcpy(&outputDeviceId,
-                    outputDevice->deviceIDPtr(),
-                    sizeof(outputDeviceId));
+        std::memcpy(&outputDeviceId, outputDevice->deviceIDPtr(), sizeof(outputDeviceId));
         devConfig.playback.pDeviceID = &outputDeviceId;
         devConfig.playback.format = ma_format_f32;
         devConfig.playback.channels = numOutputChannels;
     }
 
     if (role == DeviceRole::Capture || role == DeviceRole::Duplex) {
-        std::memcpy(&inputDeviceId,
-                    inputDevice->deviceIDPtr(),
-                    sizeof(inputDeviceId));
+        std::memcpy(&inputDeviceId, inputDevice->deviceIDPtr(), sizeof(inputDeviceId));
         devConfig.capture.pDeviceID = &inputDeviceId;
         devConfig.capture.format = ma_format_f32;
         devConfig.capture.channels = numInputChannels;
     }
 
-    if (ma_device_init(&m_impl->context, &devConfig, device) != MA_SUCCESS) {
-        return false;
-    }
+    if (ma_device_init(&m_impl->context, &devConfig, device) != MA_SUCCESS) { return false; }
 
     switch (role) {
         case DeviceRole::Playback:
             m_impl->playbackDeviceInitialised = true;
             m_numOutputChannels = device->playback.channels;
             m_sampleRate = device->sampleRate;
-            m_impl->playbackBufferSize =
-                resolveBufferSize(*device, bufferSizeInFrames, label);
+            m_impl->playbackBufferSize = resolveBufferSize(*device, bufferSizeInFrames, label);
             break;
         case DeviceRole::Capture:
             m_impl->captureDeviceInitialised = true;
             m_numInputChannels = device->capture.channels;
-            if (!m_impl->playbackDeviceInitialised) {
-                m_sampleRate = device->sampleRate;
-            }
-            m_impl->captureBufferSize =
-                resolveBufferSize(*device, bufferSizeInFrames, label);
+            if (!m_impl->playbackDeviceInitialised) { m_sampleRate = device->sampleRate; }
+            m_impl->captureBufferSize = resolveBufferSize(*device, bufferSizeInFrames, label);
             break;
         case DeviceRole::Duplex:
             m_impl->duplexDeviceInitialised = true;
-            if (!m_impl->playbackDeviceInitialised &&
-                !m_impl->captureDeviceInitialised) {
+            if (!m_impl->playbackDeviceInitialised && !m_impl->captureDeviceInitialised) {
                 m_sampleRate = device->sampleRate;
             }
-            m_impl->duplexBufferSize =
-                resolveBufferSize(*device, bufferSizeInFrames, label);
+            m_impl->duplexBufferSize = resolveBufferSize(*device, bufferSizeInFrames, label);
             break;
     }
 
@@ -341,9 +310,8 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     if (!m_impl->contextInitialised) return false;
 
     thl::Logger::logf(thl::Logger::LogLevel::Info,
-                    "thl.audio_io.audio_device_manager",
-                    "Initialise from C++"
-    );
+                      "thl.audio_io.audio_device_manager",
+                      "Initialise from C++");
 
     shutdown();
 
@@ -388,30 +356,23 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
         m_bufferSize = m_impl->captureBufferSize;
     }
 
-    auto prepareCallbacks = [](RCU<std::vector<AudioIODeviceCallback*>>& list,
-                               ma_device& device,
-                               uint32_t bufferSize) {
-        list.read([&](const auto& callbacks) {
-            for (auto* callback : callbacks) {
-                callback->prepareToPlay(device.sampleRate, bufferSize);
-            }
-        });
-    };
+    auto prepareCallbacks =
+        [](RCU<std::vector<AudioIODeviceCallback*>>& list, ma_device& device, uint32_t bufferSize) {
+            list.read([&](const auto& callbacks) {
+                for (auto* callback : callbacks) {
+                    callback->prepareToPlay(device.sampleRate, bufferSize);
+                }
+            });
+        };
 
     if (m_impl->playbackDeviceInitialised) {
-        prepareCallbacks(m_playbackCallbacks,
-                         m_impl->playbackDevice,
-                         m_impl->playbackBufferSize);
+        prepareCallbacks(m_playbackCallbacks, m_impl->playbackDevice, m_impl->playbackBufferSize);
     }
     if (m_impl->captureDeviceInitialised) {
-        prepareCallbacks(m_captureCallbacks,
-                         m_impl->captureDevice,
-                         m_impl->captureBufferSize);
+        prepareCallbacks(m_captureCallbacks, m_impl->captureDevice, m_impl->captureBufferSize);
     }
     if (m_impl->duplexDeviceInitialised) {
-        prepareCallbacks(m_duplexCallbacks,
-                         m_impl->duplexDevice,
-                         m_impl->duplexBufferSize);
+        prepareCallbacks(m_duplexCallbacks, m_impl->duplexDevice, m_impl->duplexBufferSize);
     }
 
     return true;
@@ -507,16 +468,14 @@ void AudioDeviceManager::addPlaybackCallback(AudioIODeviceCallback* callback) {
 
     bool added = false;
     m_playbackCallbacks.update([&](auto& callbacks) {
-        if (std::find(callbacks.begin(), callbacks.end(), callback) ==
-            callbacks.end()) {
+        if (std::find(callbacks.begin(), callbacks.end(), callback) == callbacks.end()) {
             callbacks.push_back(callback);
             added = true;
         }
     });
 
     if (added && m_impl->playbackDeviceInitialised) {
-        callback->prepareToPlay(m_impl->playbackDevice.sampleRate,
-                                m_impl->playbackBufferSize);
+        callback->prepareToPlay(m_impl->playbackDevice.sampleRate, m_impl->playbackBufferSize);
     }
 }
 
@@ -525,16 +484,14 @@ void AudioDeviceManager::addCaptureCallback(AudioIODeviceCallback* callback) {
 
     bool added = false;
     m_captureCallbacks.update([&](auto& callbacks) {
-        if (std::find(callbacks.begin(), callbacks.end(), callback) ==
-            callbacks.end()) {
+        if (std::find(callbacks.begin(), callbacks.end(), callback) == callbacks.end()) {
             callbacks.push_back(callback);
             added = true;
         }
     });
 
     if (added && m_impl->captureDeviceInitialised) {
-        callback->prepareToPlay(m_impl->captureDevice.sampleRate,
-                                m_impl->captureBufferSize);
+        callback->prepareToPlay(m_impl->captureDevice.sampleRate, m_impl->captureBufferSize);
     }
 }
 
@@ -543,21 +500,18 @@ void AudioDeviceManager::addDuplexCallback(AudioIODeviceCallback* callback) {
 
     bool added = false;
     m_duplexCallbacks.update([&](auto& callbacks) {
-        if (std::find(callbacks.begin(), callbacks.end(), callback) ==
-            callbacks.end()) {
+        if (std::find(callbacks.begin(), callbacks.end(), callback) == callbacks.end()) {
             callbacks.push_back(callback);
             added = true;
         }
     });
 
     if (added && m_impl->duplexDeviceInitialised) {
-        callback->prepareToPlay(m_impl->duplexDevice.sampleRate,
-                                m_impl->duplexBufferSize);
+        callback->prepareToPlay(m_impl->duplexDevice.sampleRate, m_impl->duplexBufferSize);
     }
 }
 
-void AudioDeviceManager::removePlaybackCallback(
-    AudioIODeviceCallback* callback) {
+void AudioDeviceManager::removePlaybackCallback(AudioIODeviceCallback* callback) {
     AudioIODeviceCallback* removed = nullptr;
     m_playbackCallbacks.update([&](auto& callbacks) {
         auto it = std::find(callbacks.begin(), callbacks.end(), callback);
@@ -570,8 +524,7 @@ void AudioDeviceManager::removePlaybackCallback(
     if (removed) { removed->releaseResources(); }
 }
 
-void AudioDeviceManager::removeCaptureCallback(
-    AudioIODeviceCallback* callback) {
+void AudioDeviceManager::removeCaptureCallback(AudioIODeviceCallback* callback) {
     AudioIODeviceCallback* removed = nullptr;
     m_captureCallbacks.update([&](auto& callbacks) {
         auto it = std::find(callbacks.begin(), callbacks.end(), callback);
@@ -597,15 +550,10 @@ void AudioDeviceManager::removeDuplexCallback(AudioIODeviceCallback* callback) {
     if (removed) { removed->releaseResources(); }
 }
 
-void AudioDeviceManager::setDeviceNotificationCallback(
-    DeviceNotificationCallback callback) {
+void AudioDeviceManager::setDeviceNotificationCallback(DeviceNotificationCallback callback) {
     auto ptr =
-        callback
-            ? std::make_shared<DeviceNotificationCallback>(std::move(callback))
-            : nullptr;
-    std::atomic_store_explicit(&m_notificationCallback,
-                               std::move(ptr),
-                               std::memory_order_release);
+        callback ? std::make_shared<DeviceNotificationCallback>(std::move(callback)) : nullptr;
+    std::atomic_store_explicit(&m_notificationCallback, std::move(ptr), std::memory_order_release);
 }
 
 void AudioDeviceManager::setLogCallback(LogCallback callback) {
@@ -617,26 +565,16 @@ void AudioDeviceManager::setLogCallback(LogCallback callback) {
     if (!log) return;
 
     if (m_impl->logCallback) {
-        ma_log_register_callback(
-            log,
-            ma_log_callback_init(staticLogCallback, m_impl.get()));
+        ma_log_register_callback(log, ma_log_callback_init(staticLogCallback, m_impl.get()));
     } else {
-        ma_log_unregister_callback(
-            log,
-            ma_log_callback_init(staticLogCallback, m_impl.get()));
+        ma_log_unregister_callback(log, ma_log_callback_init(staticLogCallback, m_impl.get()));
     }
 }
 
 uint32_t AudioDeviceManager::getSampleRate() const {
-    if (m_impl->playbackDeviceInitialised) {
-        return m_impl->playbackDevice.sampleRate;
-    }
-    if (m_impl->duplexDeviceInitialised) {
-        return m_impl->duplexDevice.sampleRate;
-    }
-    if (m_impl->captureDeviceInitialised) {
-        return m_impl->captureDevice.sampleRate;
-    }
+    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.sampleRate; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.sampleRate; }
+    if (m_impl->captureDeviceInitialised) { return m_impl->captureDevice.sampleRate; }
     return m_sampleRate;
 }
 
@@ -645,22 +583,14 @@ uint32_t AudioDeviceManager::getBufferSize() const {
 }
 
 uint32_t AudioDeviceManager::getNumInputChannels() const {
-    if (m_impl->captureDeviceInitialised) {
-        return m_impl->captureDevice.capture.channels;
-    }
-    if (m_impl->duplexDeviceInitialised) {
-        return m_impl->duplexDevice.capture.channels;
-    }
+    if (m_impl->captureDeviceInitialised) { return m_impl->captureDevice.capture.channels; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.capture.channels; }
     return m_numInputChannels;
 }
 
 uint32_t AudioDeviceManager::getNumOutputChannels() const {
-    if (m_impl->playbackDeviceInitialised) {
-        return m_impl->playbackDevice.playback.channels;
-    }
-    if (m_impl->duplexDeviceInitialised) {
-        return m_impl->duplexDevice.playback.channels;
-    }
+    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.playback.channels; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.playback.channels; }
     return m_numOutputChannels;
 }
 
@@ -709,11 +639,7 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
 
     callbacks->read([&](const auto& list) {
         for (auto* callback : list) {
-            callback->process(safeOutput,
-                              safeInput,
-                              frameCount,
-                              inputChannels,
-                              outputChannels);
+            callback->process(safeOutput, safeInput, frameCount, inputChannels, outputChannels);
         }
     });
 }
@@ -734,32 +660,27 @@ void AudioDeviceManager::dataCallback(void* pDeviceVoid,
 }
 
 void AudioDeviceManager::notificationCallback(const void* pNotificationVoid) {
-    auto* pNotification =
-        static_cast<const ma_device_notification*>(pNotificationVoid);
-    auto* userData =
-        static_cast<DeviceUserData*>(pNotification->pDevice->pUserData);
+    auto* pNotification = static_cast<const ma_device_notification*>(pNotificationVoid);
+    auto* userData = static_cast<DeviceUserData*>(pNotification->pDevice->pUserData);
     if (!userData || !userData->manager) { return; }
 
-    auto cb =
-        std::atomic_load_explicit(&userData->manager->m_notificationCallback,
-                                  std::memory_order_acquire);
+    auto cb = std::atomic_load_explicit(&userData->manager->m_notificationCallback,
+                                        std::memory_order_acquire);
     if (cb) { (*cb)(toNotificationType(pNotification->type)); }
 }
 
-void AudioDeviceManager::staticLogCallback(void* pUserData,
-                                           uint32_t level,
-                                           const char* pMessage) {
+void AudioDeviceManager::staticLogCallback(void* pUserData, uint32_t level, const char* pMessage) {
     auto* impl = static_cast<Impl*>(pUserData);
     if (!impl || !impl->logCallback) { return; }
 
     // Miniaudio levels: 1=error, 2=warning, 3=info, 4=debug.
     Logger::LogLevel normalised;
     switch (level) {
-        case 1:  normalised = Logger::LogLevel::Error;   break;
-        case 2:  normalised = Logger::LogLevel::Warning; break;
-        case 3:  normalised = Logger::LogLevel::Info;    break;
-        case 4:  normalised = Logger::LogLevel::Debug;   break;
-        default: normalised = Logger::LogLevel::Info;    break;
+        case 1: normalised = Logger::LogLevel::Error; break;
+        case 2: normalised = Logger::LogLevel::Warning; break;
+        case 3: normalised = Logger::LogLevel::Info; break;
+        case 4: normalised = Logger::LogLevel::Debug; break;
+        default: normalised = Logger::LogLevel::Info; break;
     }
     impl->logCallback(normalised, pMessage);
 }

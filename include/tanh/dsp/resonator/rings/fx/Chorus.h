@@ -28,7 +28,6 @@
 
 #pragma once
 
-
 #include <tanh/dsp/utils/DspMath.h>
 
 #include <tanh/dsp/resonator/rings/Dsp.h>
@@ -38,87 +37,79 @@
 namespace thl::dsp::resonator::rings {
 
 class Chorus {
- public:
-  Chorus() { }
-  ~Chorus() { }
+public:
+    Chorus() {}
+    ~Chorus() {}
 
-  void prepare(uint16_t* buffer, float sample_rate = kDefaultSampleRate) {
-    WarmDspFunctions();
-    m_sine_table = SineTable();
-    m_engine.prepare(buffer);
-    m_rate_ratio = sample_rate / kDefaultSampleRate;
-    m_phase_1 = 0;
-    m_phase_2 = 0;
-  }
-
-  void process(float* left, float* right, size_t size) {
-    typedef E::Reserve<4095> Memory;
-    E::DelayLine<Memory, 0> line;
-    E::Context c;
-
-    const float r = m_rate_ratio;
-
-    while (size--) {
-      m_engine.start(&c);
-      float dry_amount = 1.0f - m_amount * 0.5f;
-
-      // Update LFO (scale phase increments inversely with sample rate).
-      m_phase_1 += 4.17e-06f / r;
-      if (m_phase_1 >= 1.0f) {
-        m_phase_1 -= 1.0f;
-      }
-      m_phase_2 += 5.417e-06f / r;
-      if (m_phase_2 >= 1.0f) {
-        m_phase_2 -= 1.0f;
-      }
-      float sin_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1, 4096.0f);
-      float cos_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1 + 0.25f, 4096.0f);
-      float sin_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2, 4096.0f);
-      float cos_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2 + 0.25f, 4096.0f);
-
-      float wet;
-
-      // Sum L & R channel to send to chorus line.
-      c.read(*left, 0.5f);
-      c.read(*right, 0.5f);
-      c.write(line, 0.0f);
-
-      c.interpolate(line, sin_1 * m_depth + 1200.0f * r, 0.5f);
-      c.interpolate(line, sin_2 * m_depth + 800.0f * r, 0.5f);
-      c.write(wet, 0.0f);
-      *left = wet * m_amount + *left * dry_amount;
-
-      c.interpolate(line, cos_1 * m_depth + 800.0f * r + cos_2 * 0, 0.5f);
-      c.interpolate(line, cos_2 * m_depth + 1200.0f * r, 0.5f);
-      c.write(wet, 0.0f);
-      *right = wet * m_amount + *right * dry_amount;
-      left++;
-      right++;
+    void prepare(uint16_t* buffer, float sample_rate = kDefaultSampleRate) {
+        WarmDspFunctions();
+        m_sine_table = SineTable();
+        m_engine.prepare(buffer);
+        m_rate_ratio = sample_rate / kDefaultSampleRate;
+        m_phase_1 = 0;
+        m_phase_2 = 0;
     }
-  }
 
-  inline void set_amount(float amount) {
-    m_amount = amount;
-  }
+    void process(float* left, float* right, size_t size) {
+        typedef E::Reserve<4095> Memory;
+        E::DelayLine<Memory, 0> line;
+        E::Context c;
 
-  inline void set_depth(float depth) {
-    m_depth = depth * 384.0f * m_rate_ratio;
-  }
+        const float r = m_rate_ratio;
 
- private:
-  typedef FxEngine<4096, FORMAT_16_BIT> E;
-  E m_engine;
+        while (size--) {
+            m_engine.start(&c);
+            float dry_amount = 1.0f - m_amount * 0.5f;
 
-  float m_amount = 0.0f;
-  float m_depth = 0.0f;
-  float m_rate_ratio = 1.0f;
-  const float* m_sine_table = nullptr;
+            // Update LFO (scale phase increments inversely with sample rate).
+            m_phase_1 += 4.17e-06f / r;
+            if (m_phase_1 >= 1.0f) { m_phase_1 -= 1.0f; }
+            m_phase_2 += 5.417e-06f / r;
+            if (m_phase_2 >= 1.0f) { m_phase_2 -= 1.0f; }
+            float sin_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1, 4096.0f);
+            float cos_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1 + 0.25f, 4096.0f);
+            float sin_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2, 4096.0f);
+            float cos_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2 + 0.25f, 4096.0f);
 
-  float m_phase_1 = 0.0f;
-  float m_phase_2 = 0.0f;
+            float wet;
 
-  Chorus(const Chorus&) = delete;
-  Chorus& operator=(const Chorus&) = delete;
+            // Sum L & R channel to send to chorus line.
+            c.read(*left, 0.5f);
+            c.read(*right, 0.5f);
+            c.write(line, 0.0f);
+
+            c.interpolate(line, sin_1 * m_depth + 1200.0f * r, 0.5f);
+            c.interpolate(line, sin_2 * m_depth + 800.0f * r, 0.5f);
+            c.write(wet, 0.0f);
+            *left = wet * m_amount + *left * dry_amount;
+
+            c.interpolate(line, cos_1 * m_depth + 800.0f * r + cos_2 * 0, 0.5f);
+            c.interpolate(line, cos_2 * m_depth + 1200.0f * r, 0.5f);
+            c.write(wet, 0.0f);
+            *right = wet * m_amount + *right * dry_amount;
+            left++;
+            right++;
+        }
+    }
+
+    inline void set_amount(float amount) { m_amount = amount; }
+
+    inline void set_depth(float depth) { m_depth = depth * 384.0f * m_rate_ratio; }
+
+private:
+    typedef FxEngine<4096, FORMAT_16_BIT> E;
+    E m_engine;
+
+    float m_amount = 0.0f;
+    float m_depth = 0.0f;
+    float m_rate_ratio = 1.0f;
+    const float* m_sine_table = nullptr;
+
+    float m_phase_1 = 0.0f;
+    float m_phase_2 = 0.0f;
+
+    Chorus(const Chorus&) = delete;
+    Chorus& operator=(const Chorus&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings

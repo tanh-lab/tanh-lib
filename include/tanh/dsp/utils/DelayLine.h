@@ -16,7 +16,7 @@ inline IntegralFractional split_integral_fractional(float x) {
     const int32_t integral = static_cast<int32_t>(x);
     return {integral, x - static_cast<float>(integral)};
 }
-} // namespace detail
+}  // namespace detail
 
 template <typename T, size_t max_delay>
 class DelayLine {
@@ -29,9 +29,7 @@ public:
         m_write_ptr = 0;
     }
 
-    void set_delay(size_t delay) {
-        m_delay = delay;
-    }
+    void set_delay(size_t delay) { m_delay = delay; }
 
     void write(T sample) {
         m_line[m_write_ptr] = sample;
@@ -50,13 +48,9 @@ public:
         return read(delay);
     }
 
-    T read() const {
-        return m_line[(m_write_ptr + m_delay) % max_delay];
-    }
+    T read() const { return m_line[(m_write_ptr + m_delay) % max_delay]; }
 
-    T read(size_t delay) const {
-        return m_line[(m_write_ptr + delay) % max_delay];
-    }
+    T read(size_t delay) const { return m_line[(m_write_ptr + delay) % max_delay]; }
 
     T read(float delay) const {
         const auto [delay_integral, delay_fractional] = detail::split_integral_fractional(delay);
@@ -67,7 +61,8 @@ public:
 
     T read_hermite(float delay) const {
         const auto [delay_integral, delay_fractional] = detail::split_integral_fractional(delay);
-        const int32_t t = static_cast<int32_t>(m_write_ptr) + delay_integral + static_cast<int32_t>(max_delay);
+        const int32_t t =
+            static_cast<int32_t>(m_write_ptr) + delay_integral + static_cast<int32_t>(max_delay);
         const T xm1 = m_line[static_cast<size_t>(t - 1) % max_delay];
         const T x0 = m_line[static_cast<size_t>(t) % max_delay];
         const T x1 = m_line[static_cast<size_t>(t + 1) % max_delay];
@@ -84,10 +79,10 @@ public:
 private:
     size_t m_write_ptr = 0;
     size_t m_delay = 1;
-    T m_line[max_delay] {};
+    T m_line[max_delay]{};
 
     DelayLine(const DelayLine&) = delete;
     DelayLine& operator=(const DelayLine&) = delete;
 };
 
-} // namespace thl::dsp::utils
+}  // namespace thl::dsp::utils

@@ -28,7 +28,6 @@
 
 #pragma once
 
-
 #include <algorithm>
 
 #include <tanh/dsp/filter/DCBlocker.h>
@@ -53,57 +52,58 @@ const size_t kDelayLineSize = 4096;
 // brightness decreases the high-frequency content is increasingly attenuated,
 // producing a warmer, darker decay.
 class DampingFilter {
- public:
-  DampingFilter() { }
-  ~DampingFilter() { }
+public:
+    DampingFilter() {}
+    ~DampingFilter() {}
 
-  void prepare() {
-    m_x = 0.0f;
-    m_x_prev = 0.0f;
-    m_brightness = 0.0f;
-    m_brightness_increment = 0.0f;
-    m_damping = 0.0f;
-    m_damping_increment = 0.0f;
-  }
-
-  void reset() {
-    m_x = 0.0f;
-    m_x_prev = 0.0f;
-  }
-
-  inline void configure(float damping, float brightness, size_t size) {
-    if (!size) {
-      m_damping = damping;
-      m_brightness = brightness;
-      m_damping_increment = 0.0f;
-      m_brightness_increment = 0.0f;
-    } else {
-      float step = 1.0f / static_cast<float>(size);
-      m_damping_increment = (damping - m_damping) * step;
-      m_brightness_increment = (brightness - m_brightness) * step;
+    void prepare() {
+        m_x = 0.0f;
+        m_x_prev = 0.0f;
+        m_brightness = 0.0f;
+        m_brightness_increment = 0.0f;
+        m_damping = 0.0f;
+        m_damping_increment = 0.0f;
     }
-  }
 
-  inline float process(float x) {
-    float h0 = (1.0f + m_brightness) * 0.5f;
-    float h1 = (1.0f - m_brightness) * 0.25f;
-    float y = m_damping * (h0 * m_x + h1 * (x + m_x_prev));
-    m_x_prev = m_x;
-    m_x = x;
-    m_brightness += m_brightness_increment;
-    m_damping += m_damping_increment;
-    return y;
-  }
- private:
-  float m_x = 0.0f;
-  float m_x_prev = 0.0f;
-  float m_brightness = 0.0f;
-  float m_brightness_increment = 0.0f;
-  float m_damping = 0.0f;
-  float m_damping_increment = 0.0f;
+    void reset() {
+        m_x = 0.0f;
+        m_x_prev = 0.0f;
+    }
 
-  DampingFilter(const DampingFilter&) = delete;
-  DampingFilter& operator=(const DampingFilter&) = delete;
+    inline void configure(float damping, float brightness, size_t size) {
+        if (!size) {
+            m_damping = damping;
+            m_brightness = brightness;
+            m_damping_increment = 0.0f;
+            m_brightness_increment = 0.0f;
+        } else {
+            float step = 1.0f / static_cast<float>(size);
+            m_damping_increment = (damping - m_damping) * step;
+            m_brightness_increment = (brightness - m_brightness) * step;
+        }
+    }
+
+    inline float process(float x) {
+        float h0 = (1.0f + m_brightness) * 0.5f;
+        float h1 = (1.0f - m_brightness) * 0.25f;
+        float y = m_damping * (h0 * m_x + h1 * (x + m_x_prev));
+        m_x_prev = m_x;
+        m_x = x;
+        m_brightness += m_brightness_increment;
+        m_damping += m_damping_increment;
+        return y;
+    }
+
+private:
+    float m_x = 0.0f;
+    float m_x_prev = 0.0f;
+    float m_brightness = 0.0f;
+    float m_brightness_increment = 0.0f;
+    float m_damping = 0.0f;
+    float m_damping_increment = 0.0f;
+
+    DampingFilter(const DampingFilter&) = delete;
+    DampingFilter& operator=(const DampingFilter&) = delete;
 };
 
 typedef thl::dsp::utils::DelayLine<float, kDelayLineSize> StringDelayLine;
@@ -146,92 +146,82 @@ typedef thl::dsp::utils::DelayLine<float, kDelayLineSize / 2> StiffnessDelayLine
 //     Fractional-sample delay reads use four-point Hermite interpolation for
 //     clean pitch accuracy across the full frequency range.
 class String {
- public:
-  String() { }
-  ~String() { }
+public:
+    String() {}
+    ~String() {}
 
-  // Initialise the string model.  `enable_dispersion` gates the allpass
-  // stiffness path (and curved-bridge nonlinearity), when false, the
-  // compiler eliminates that code entirely.
-  void prepare(bool enable_dispersion, float sample_rate = kDefaultSampleRate);
+    // Initialise the string model.  `enable_dispersion` gates the allpass
+    // stiffness path (and curved-bridge nonlinearity), when false, the
+    // compiler eliminates that code entirely.
+    void prepare(bool enable_dispersion, float sample_rate = kDefaultSampleRate);
 
-  // Process a block of `size` samples.  Excitation is read from `in`;
-  // the primary string output is accumulated into `out` and a comb-
-  // filtered pickup signal (position-dependent tap) into `aux`.
-  void process(const float* in, float* out, float* aux, size_t size);
+    // Process a block of `size` samples.  Excitation is read from `in`;
+    // the primary string output is accumulated into `out` and a comb-
+    // filtered pickup signal (position-dependent tap) into `aux`.
+    void process(const float* in, float* out, float* aux, size_t size);
 
-  inline void set_frequency(float frequency) {
-    m_frequency = frequency;
-  }
+    inline void set_frequency(float frequency) { m_frequency = frequency; }
 
-  inline void set_frequency(float frequency, float coefficient) {
-    m_frequency += coefficient * (frequency - m_frequency);
-  }
+    inline void set_frequency(float frequency, float coefficient) {
+        m_frequency += coefficient * (frequency - m_frequency);
+    }
 
-  inline void set_dispersion(float dispersion) {
-    m_dispersion = dispersion;
-  }
+    inline void set_dispersion(float dispersion) { m_dispersion = dispersion; }
 
-  inline void set_brightness(float brightness) {
-    m_brightness = brightness;
-  }
+    inline void set_brightness(float brightness) { m_brightness = brightness; }
 
-  inline void set_damping(float damping) {
-    m_damping = damping;
-  }
+    inline void set_damping(float damping) { m_damping = damping; }
 
-  inline void set_position(float position) {
-    m_position = position;
-  }
+    inline void set_position(float position) { m_position = position; }
 
-  inline StringDelayLine* mutable_string() { return &m_string; }
+    inline StringDelayLine* mutable_string() { return &m_string; }
 
- private:
-  // Compute per-block filter coefficients from the current parameter
-  // snapshot.  `delay` is the fractional delay in samples, `src_ratio`
-  // is the SRC ratio (1.0 at native rate, <1.0 at half rate), and `size`
-  // is the block length for parameter interpolation.
-  void prepare_coefficients(float delay, float src_ratio, size_t size);
+private:
+    // Compute per-block filter coefficients from the current parameter
+    // snapshot.  `delay` is the fractional delay in samples, `src_ratio`
+    // is the SRC ratio (1.0 at native rate, <1.0 at half rate), and `size`
+    // is the block length for parameter interpolation.
+    void prepare_coefficients(float delay, float src_ratio, size_t size);
 
-  // Core per-block loop.  The template parameter gates the dispersion
-  // path so the compiler can eliminate allpass / curved-bridge logic
-  // when it is not needed.
-  template<bool enable_dispersion>
-  void process_internal(const float* in, float* out, float* aux, size_t size);
+    // Core per-block loop.  The template parameter gates the dispersion
+    // path so the compiler can eliminate allpass / curved-bridge logic
+    // when it is not needed.
+    template <bool enable_dispersion>
+    void process_internal(const float* in, float* out, float* aux, size_t size);
 
-  float m_sample_rate = kDefaultSampleRate;
-  float m_frequency = 0.0f;
-  float m_dispersion = 0.0f;
-  float m_brightness = 0.0f;
-  float m_damping = 0.0f;
-  float m_position = 0.0f;
+    float m_sample_rate = kDefaultSampleRate;
+    float m_frequency = 0.0f;
+    float m_dispersion = 0.0f;
+    float m_brightness = 0.0f;
+    float m_damping = 0.0f;
+    float m_position = 0.0f;
 
-  float m_delay = 0.0f;
-  float m_clamped_position = 0.0f;
-  float m_previous_dispersion = 0.0f;
-  float m_previous_damping_compensation = 0.0f;
+    float m_delay = 0.0f;
+    float m_clamped_position = 0.0f;
+    float m_previous_dispersion = 0.0f;
+    float m_previous_damping_compensation = 0.0f;
 
-  bool m_enable_dispersion = false;
-  bool m_enable_iir_damping = false;
-  float m_dispersion_noise = 0.0f;
+    bool m_enable_dispersion = false;
+    bool m_enable_iir_damping = false;
+    float m_dispersion_noise = 0.0f;
 
-  float m_src_phase = 0.0f;
-  float m_out_sample[2] = {};
-  float m_aux_sample[2] = {};
+    float m_src_phase = 0.0f;
+    float m_out_sample[2] = {};
+    float m_aux_sample[2] = {};
 
-  float m_curved_bridge = 0.0f;
-  float m_noise_filter = 0.0f;
-  float m_damping_compensation_target = 0.0f;
+    float m_curved_bridge = 0.0f;
+    float m_noise_filter = 0.0f;
+    float m_damping_compensation_target = 0.0f;
 
-  StringDelayLine m_string;
-  StiffnessDelayLine m_stretch;
+    StringDelayLine m_string;
+    StiffnessDelayLine m_stretch;
 
-  DampingFilter m_fir_damping_filter;
-  thl::dsp::filter::Svf m_iir_damping_filter;
-  thl::dsp::filter::DCBlocker m_dc_blocker;
+    DampingFilter m_fir_damping_filter;
+    thl::dsp::filter::Svf m_iir_damping_filter;
+    thl::dsp::filter::DCBlocker m_dc_blocker;
 
-  String(const String&) = delete;
-  String& operator=(const String&) = delete;
+    String(const String&) = delete;
+    String& operator=(const String&) = delete;
 };
 
 }  // namespace thl::dsp::resonator::rings

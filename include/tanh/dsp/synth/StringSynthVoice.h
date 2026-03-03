@@ -28,45 +28,47 @@
 
 #pragma once
 
-
 #include <tanh/dsp/synth/StringSynthOscillator.h>
 
 namespace thl::dsp::synth {
 
-template<size_t num_harmonics>
+template <size_t num_harmonics>
 class StringSynthVoice {
- public:
-  StringSynthVoice() { }
-  ~StringSynthVoice() { }
+public:
+    StringSynthVoice() {}
+    ~StringSynthVoice() {}
 
-  void prepare() {
-    for (size_t i = 0; i < num_harmonics; ++i) {
-      m_oscillator[i].prepare();
+    void prepare() {
+        for (size_t i = 0; i < num_harmonics; ++i) { m_oscillator[i].prepare(); }
     }
-  }
 
-  void render(
-      float frequency,
-      const float* amplitudes,
-      size_t summed_harmonics,
-      float* out,
-      size_t size) {
-    m_oscillator[0].template render<OSCILLATOR_SHAPE_DARK_SQUARE, true>(
-        frequency, amplitudes[0], amplitudes[1], out, size);
-    amplitudes += 2;
+    void render(float frequency,
+                const float* amplitudes,
+                size_t summed_harmonics,
+                float* out,
+                size_t size) {
+        m_oscillator[0].template render<OSCILLATOR_SHAPE_DARK_SQUARE, true>(frequency,
+                                                                            amplitudes[0],
+                                                                            amplitudes[1],
+                                                                            out,
+                                                                            size);
+        amplitudes += 2;
 
-    for (size_t i = 1; i < summed_harmonics; ++i) {
-      frequency *= 2.0f;
-      m_oscillator[i].template render<OSCILLATOR_SHAPE_BRIGHT_SQUARE, false>(
-          frequency, amplitudes[0], amplitudes[1], out, size);
-      amplitudes += 2;
+        for (size_t i = 1; i < summed_harmonics; ++i) {
+            frequency *= 2.0f;
+            m_oscillator[i].template render<OSCILLATOR_SHAPE_BRIGHT_SQUARE, false>(frequency,
+                                                                                   amplitudes[0],
+                                                                                   amplitudes[1],
+                                                                                   out,
+                                                                                   size);
+            amplitudes += 2;
+        }
     }
-  }
 
- private:
-  StringSynthOscillator m_oscillator[num_harmonics];
-  StringSynthVoice(const StringSynthVoice&) = delete;
-  StringSynthVoice& operator=(const StringSynthVoice&) = delete;
+private:
+    StringSynthOscillator m_oscillator[num_harmonics];
+    StringSynthVoice(const StringSynthVoice&) = delete;
+    StringSynthVoice& operator=(const StringSynthVoice&) = delete;
 };
 
 }  // namespace thl::dsp::synth

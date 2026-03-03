@@ -99,8 +99,7 @@ public:
      *
      * @see setDeviceNotificationCallback()
      */
-    using DeviceNotificationCallback =
-        std::function<void(DeviceNotificationType)>;
+    using DeviceNotificationCallback = std::function<void(DeviceNotificationType)>;
 
     /**
      * @brief Callback type for log messages from the audio backend.
@@ -108,8 +107,7 @@ public:
      * @param level Normalised log level.
      * @param message The log message.
      */
-    using LogCallback =
-        std::function<void(Logger::LogLevel level, const char* message)>;
+    using LogCallback = std::function<void(Logger::LogLevel level, const char* message)>;
 
     /**
      * @brief Constructs an AudioDeviceManager and initialises the audio
@@ -508,16 +506,11 @@ private:
                           const float* input,
                           uint32_t frameCount);
 
-    static void dataCallback(void* pDevice,
-                             void* pOutput,
-                             const void* pInput,
-                             uint32_t frameCount);
+    static void dataCallback(void* pDevice, void* pOutput, const void* pInput, uint32_t frameCount);
 
     static void notificationCallback(const void* pNotification);
 
-    static void staticLogCallback(void* pUserData,
-                                  uint32_t level,
-                                  const char* pMessage);
+    static void staticLogCallback(void* pUserData, uint32_t level, const char* pMessage);
 
     bool m_playbackRunning = false;
     bool m_captureRunning = false;

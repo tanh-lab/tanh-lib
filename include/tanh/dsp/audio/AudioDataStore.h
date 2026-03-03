@@ -25,25 +25,19 @@ public:
 
     bool begin_read() {
         int expected = IDLE;
-        return m_state.compare_exchange_strong(expected, READING,
-            std::memory_order_acq_rel, std::memory_order_relaxed);
+        return m_state.compare_exchange_strong(expected,
+                                               READING,
+                                               std::memory_order_acq_rel,
+                                               std::memory_order_relaxed);
     }
 
-    void end_read() {
-        m_state.store(IDLE, std::memory_order_release);
-    }
+    void end_read() { m_state.store(IDLE, std::memory_order_release); }
 
-    const std::vector<AudioBuffer>& get_buffer() const {
-        return m_buffer;
-    }
+    const std::vector<AudioBuffer>& get_buffer() const { return m_buffer; }
 
-    bool is_loaded() const {
-        return m_loaded.load(std::memory_order_acquire);
-    }
+    bool is_loaded() const { return m_loaded.load(std::memory_order_acquire); }
 
-    int get_root_note() const {
-        return m_root_note.load(std::memory_order_acquire);
-    }
+    int get_root_note() const { return m_root_note.load(std::memory_order_acquire); }
 
     uint32_t get_load_generation() const {
         return m_load_generation.load(std::memory_order_acquire);
@@ -53,8 +47,10 @@ public:
         // Spin until we can acquire LOADING state
         while (true) {
             int expected = IDLE;
-            if (m_state.compare_exchange_weak(expected, LOADING,
-                    std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            if (m_state.compare_exchange_weak(expected,
+                                              LOADING,
+                                              std::memory_order_acq_rel,
+                                              std::memory_order_relaxed)) {
                 break;
             }
             std::this_thread::yield();
@@ -83,4 +79,4 @@ private:
     std::atomic<uint32_t> m_load_generation{0};
 };
 
-} // namespace thl::dsp::audio
+}  // namespace thl::dsp::audio

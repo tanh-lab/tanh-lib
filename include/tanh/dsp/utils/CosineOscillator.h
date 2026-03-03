@@ -43,9 +43,7 @@ public:
         m_y0 = 0.5f;
     }
 
-    float value() const {
-        return m_y1 + 0.5f;
-    }
+    float value() const { return m_y1 + 0.5f; }
 
     float next() {
         const float temp = m_y0;
@@ -61,4 +59,4 @@ private:
     float m_initial_amplitude = 0.0f;
 };
 
-} // namespace thl::dsp::utils
+}  // namespace thl::dsp::utils

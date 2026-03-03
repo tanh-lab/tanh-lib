@@ -38,9 +38,7 @@ public:
         , m_size(other.m_size)
         , m_sample_rate(other.m_sample_rate)
         , m_data(other.m_data) {
-        if (m_num_channels > 0 && m_size > 0) {
-            malloc_channels();
-        }
+        if (m_num_channels > 0 && m_size > 0) { malloc_channels(); }
     }
 
     Buffer(Buffer&& other) noexcept
@@ -65,9 +63,7 @@ public:
             m_size = other.m_size;
             m_sample_rate = other.m_sample_rate;
             m_data = other.m_data;
-            if (m_num_channels > 0 && m_size > 0) {
-                malloc_channels();
-            }
+            if (m_num_channels > 0 && m_size > 0) { malloc_channels(); }
         }
         return *this;
     }
@@ -97,25 +93,19 @@ public:
 
     // -- Channel pointer access -------------------------------------------
 
-    const T* get_read_pointer(size_t channel) const {
-        return m_channels[channel];
-    }
+    const T* get_read_pointer(size_t channel) const { return m_channels[channel]; }
 
     const T* get_read_pointer(size_t channel, size_t sample_index) const {
         return m_channels[channel] + sample_index;
     }
 
-    T* get_write_pointer(size_t channel) {
-        return m_channels[channel];
-    }
+    T* get_write_pointer(size_t channel) { return m_channels[channel]; }
 
     T* get_write_pointer(size_t channel, size_t sample_index) {
         return m_channels[channel] + sample_index;
     }
 
-    const T* const* get_array_of_read_pointers() const {
-        return const_cast<const T**>(m_channels);
-    }
+    const T* const* get_array_of_read_pointers() const { return const_cast<const T**>(m_channels); }
 
     T* const* get_array_of_write_pointers() { return m_channels; }
 
@@ -138,8 +128,7 @@ public:
 
     // -- Resize / clear ---------------------------------------------------
 
-    void set_size(size_t num_channels, size_t num_frames,
-                  double sample_rate) {
+    void set_size(size_t num_channels, size_t num_frames, double sample_rate) {
         m_num_channels = num_channels;
         m_size = num_frames;
         m_sample_rate = sample_rate;
@@ -164,16 +153,15 @@ public:
 
     void swap_data(Buffer& other) {
         if (this != &other) {
-            if (m_num_channels == other.m_num_channels &&
-                m_size == other.m_size) {
+            if (m_num_channels == other.m_num_channels && m_size == other.m_size) {
                 m_data.swap_data(other.m_data);
                 T** temp = m_channels;
                 m_channels = other.m_channels;
                 other.m_channels = temp;
             } else {
-                thl::Logger::error(
-                    "thl.dsp.audio.audio_buffer",
-                    "Buffer: cannot swap data, buffers have different dimensions");
+                thl::Logger::error("thl.dsp.audio.audio_buffer",
+                                   "Buffer: cannot swap data, buffers have "
+                                   "different dimensions");
             }
         }
     }
@@ -183,9 +171,8 @@ public:
             m_data.swap_data(other);
             reset_channel_ptr();
         } else {
-            thl::Logger::error(
-                "thl.dsp.audio.audio_buffer",
-                "Buffer: cannot swap data, MemoryBlock has different size");
+            thl::Logger::error("thl.dsp.audio.audio_buffer",
+                               "Buffer: cannot swap data, MemoryBlock has different size");
         }
     }
 
@@ -200,9 +187,7 @@ public:
     }
 
     void reset_channel_ptr() {
-        for (size_t i = 0; i < m_num_channels; ++i) {
-            m_channels[i] = m_data.data() + i * m_size;
-        }
+        for (size_t i = 0; i < m_num_channels; ++i) { m_channels[i] = m_data.data() + i * m_size; }
     }
 
 private:
@@ -216,9 +201,7 @@ private:
                                "Buffer: failed to allocate channel pointers");
             return;
         }
-        for (size_t i = 0; i < m_num_channels; ++i) {
-            m_channels[i] = m_data.data() + i * m_size;
-        }
+        for (size_t i = 0; i < m_num_channels; ++i) { m_channels[i] = m_data.data() + i * m_size; }
     }
 
     size_t m_num_channels = 0;
@@ -237,9 +220,7 @@ inline std::vector<float> to_interleaved(const AudioBuffer& buffer) {
     std::vector<float> interleaved(num_frames * num_channels);
     for (size_t ch = 0; ch < num_channels; ++ch) {
         const float* src = buffer.get_read_pointer(ch);
-        for (size_t f = 0; f < num_frames; ++f) {
-            interleaved[f * num_channels + ch] = src[f];
-        }
+        for (size_t f = 0; f < num_frames; ++f) { interleaved[f * num_channels + ch] = src[f]; }
     }
     return interleaved;
 }
@@ -252,9 +233,7 @@ inline AudioBuffer from_interleaved(const float* data,
     AudioBuffer buffer(num_channels, num_frames, sample_rate);
     for (size_t ch = 0; ch < num_channels; ++ch) {
         float* dst = buffer.get_write_pointer(ch);
-        for (size_t f = 0; f < num_frames; ++f) {
-            dst[f] = data[f * num_channels + ch];
-        }
+        for (size_t f = 0; f < num_frames; ++f) { dst[f] = data[f * num_channels + ch]; }
     }
     return buffer;
 }

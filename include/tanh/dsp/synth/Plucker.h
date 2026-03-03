@@ -28,7 +28,6 @@
 
 #pragma once
 
-
 #include <algorithm>
 
 #include <tanh/dsp/filter/Svf.h>
@@ -38,53 +37,52 @@
 namespace thl::dsp::synth {
 
 class Plucker {
- public:
-  Plucker() { }
-  ~Plucker() { }
+public:
+    Plucker() {}
+    ~Plucker() {}
 
-  void prepare() {
-    m_svf.reset();
-    m_comb_filter.prepare();
-    m_remaining_samples = 0;
-    m_comb_filter_period = 0.0f;
-  }
-
-  void trigger(float frequency, float cutoff, float position) {
-    float ratio = position * 0.9f + 0.05f;
-    float comb_period = 1.0f / frequency * ratio;
-    m_remaining_samples = static_cast<size_t>(comb_period);
-    while (comb_period >= 255.0f) {
-      comb_period *= 0.5f;
+    void prepare() {
+        m_svf.reset();
+        m_comb_filter.prepare();
+        m_remaining_samples = 0;
+        m_comb_filter_period = 0.0f;
     }
-    m_comb_filter_period = comb_period;
-    m_comb_filter_gain = (1.0f - position) * 0.8f;
-    m_svf.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(std::min(cutoff, 0.499f), 1.0f);
-  }
 
-  void process(float* out, size_t size) {
-    const float comb_gain = m_comb_filter_gain;
-    const float comb_delay = m_comb_filter_period;
-    for (size_t i = 0; i < size; ++i) {
-      float in = 0.0f;
-      if (m_remaining_samples) {
-        in = 2.0f * thl::dsp::utils::Random::get_float() - 1.0f;
-        --m_remaining_samples;
-      }
-      out[i] = in + comb_gain * m_comb_filter.read(comb_delay);
-      m_comb_filter.write(out[i]);
+    void trigger(float frequency, float cutoff, float position) {
+        float ratio = position * 0.9f + 0.05f;
+        float comb_period = 1.0f / frequency * ratio;
+        m_remaining_samples = static_cast<size_t>(comb_period);
+        while (comb_period >= 255.0f) { comb_period *= 0.5f; }
+        m_comb_filter_period = comb_period;
+        m_comb_filter_gain = (1.0f - position) * 0.8f;
+        m_svf.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(std::min(cutoff, 0.499f),
+                                                                       1.0f);
     }
-    m_svf.process<thl::dsp::filter::FilterMode::LowPass>(out, out, size);
-  }
 
- private:
-  thl::dsp::filter::Svf m_svf;
-  thl::dsp::utils::DelayLine<float, 256> m_comb_filter;
-  size_t m_remaining_samples = 0;
-  float m_comb_filter_period = 0.0f;
-  float m_comb_filter_gain = 0.0f;
+    void process(float* out, size_t size) {
+        const float comb_gain = m_comb_filter_gain;
+        const float comb_delay = m_comb_filter_period;
+        for (size_t i = 0; i < size; ++i) {
+            float in = 0.0f;
+            if (m_remaining_samples) {
+                in = 2.0f * thl::dsp::utils::Random::get_float() - 1.0f;
+                --m_remaining_samples;
+            }
+            out[i] = in + comb_gain * m_comb_filter.read(comb_delay);
+            m_comb_filter.write(out[i]);
+        }
+        m_svf.process<thl::dsp::filter::FilterMode::LowPass>(out, out, size);
+    }
 
-  Plucker(const Plucker&) = delete;
-  Plucker& operator=(const Plucker&) = delete;
+private:
+    thl::dsp::filter::Svf m_svf;
+    thl::dsp::utils::DelayLine<float, 256> m_comb_filter;
+    size_t m_remaining_samples = 0;
+    float m_comb_filter_period = 0.0f;
+    float m_comb_filter_gain = 0.0f;
+
+    Plucker(const Plucker&) = delete;
+    Plucker& operator=(const Plucker&) = delete;
 };
 
 }  // namespace thl::dsp::synth
