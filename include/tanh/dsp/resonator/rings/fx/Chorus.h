@@ -31,6 +31,7 @@
 
 #include <tanh/dsp/utils/DspMath.h>
 
+#include <tanh/dsp/resonator/rings/Dsp.h>
 #include <tanh/dsp/resonator/rings/fx/FxEngine.h>
 #include <tanh/dsp/resonator/rings/DspFunctions.h>
 
