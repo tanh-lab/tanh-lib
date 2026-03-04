@@ -5,7 +5,7 @@
 #include <cstring>
 #include <vector>
 
-#if defined(__APPLE__)
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
 #include <TargetConditionals.h>
 #endif
 
@@ -140,7 +140,7 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
 
     ma_context_config ctxConfig = ma_context_config_init();
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
+#if defined(THL_PLATFORM_IOS)
     ctxConfig.coreaudio.sessionCategory =
         ma_ios_session_category_play_and_record;
     ctxConfig.coreaudio.sessionCategoryOptions =

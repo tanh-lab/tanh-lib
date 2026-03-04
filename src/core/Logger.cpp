@@ -14,9 +14,9 @@
 #include <string>
 #include <utility>
 
-#if defined(__ANDROID__)
+#if defined(THL_PLATFORM_ANDROID)
 #include <android/log.h>
-#elif defined(__APPLE__)
+#elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
 #include <os/log.h>
 #endif
 
@@ -145,7 +145,7 @@ std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
     }
 
     std::tm tm_value {};
-#if defined(_WIN32)
+#if defined(THL_PLATFORM_WINDOWS)
     gmtime_s(&tm_value, &seconds);
 #else
     gmtime_r(&seconds, &tm_value);
@@ -178,7 +178,7 @@ void write_to_default_sink(const LogRecord& record) {
 // Platform sink
 // ---------------------------------------------------------------------------
 
-#if defined(__APPLE__)
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
 os_log_t platform_log_handle() {
     static os_log_t handle = os_log_create("thl", "logger");
     return handle;
@@ -190,7 +190,7 @@ bool emit_platform(const LogRecord& record) {
         record.group.empty() ? "default" : record.group.c_str();
     const char* message = record.message.c_str();
 
-#if defined(__ANDROID__)
+#if defined(THL_PLATFORM_ANDROID)
     int android_level = ANDROID_LOG_INFO;
     switch (clamp_level(record.level)) {
         case static_cast<std::uint32_t>(LogLevel::Error):
@@ -206,7 +206,7 @@ bool emit_platform(const LogRecord& record) {
     __android_log_print(android_level, "thl", "[%s] %s", group, message);
     return true;
 
-#elif defined(__APPLE__)
+#elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
     os_log_type_t type = OS_LOG_TYPE_INFO;
     switch (clamp_level(record.level)) {
         case static_cast<std::uint32_t>(LogLevel::Error):
@@ -224,8 +224,10 @@ bool emit_platform(const LogRecord& record) {
                      "[%{public}s] %{public}s",
                      group,
                      message);
+#if defined(THL_PLATFORM_MACOS)
+    write_to_default_sink(record);
+#endif
     return true;
-
 #else
     write_to_default_sink(record);
     return true;
