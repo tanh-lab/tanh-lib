@@ -8,17 +8,18 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_Limiter.cpp
 )
 
-if(TARGET tanh_resonator_core)
+if(TARGET tanh_resonator)
 	target_sources(${PROJECT_NAME} PRIVATE
 		test_RingsResonatorCore.cpp
 		test_RingsDspFunctions.cpp
+		test_RingsResonatorSynthProcessor.cpp
 	)
 
 	# Generator tool for producing reference fixture data
 	add_executable(generate_rings_reference generate_rings_reference.cpp)
 	target_link_libraries(generate_rings_reference
 		PRIVATE
-			tanh::ResonatorCore
+			tanh::Resonator
 			tanh::DSP
 			tanh::Core
 	)
@@ -55,10 +56,10 @@ target_link_libraries(${PROJECT_NAME}
 			gtest
 	)
 
-if(TARGET tanh_resonator_core)
+if(TARGET tanh_resonator)
 	target_link_libraries(${PROJECT_NAME}
 		PRIVATE
-			tanh::ResonatorCore
+			tanh::Resonator
 	)
 endif()
 

@@ -4,17 +4,17 @@
 #include <cstring>
 #include <filesystem>
 
-#include <tanh/dsp/resonator/rings/Dsp.h>
-#include <tanh/dsp/resonator/rings/Part.h>
-#include <tanh/dsp/resonator/rings/Patch.h>
-#include <tanh/dsp/resonator/rings/PerformanceState.h>
-#include <tanh/dsp/resonator/rings/fx/Reverb.h>
+#include <tanh/dsp/resonator/RingsDsp.h>
+#include <tanh/dsp/synth/RingsVoiceManager.h>
+#include <tanh/dsp/resonator/RingsPatch.h>
+#include <tanh/dsp/resonator/RingsPerformanceState.h>
+#include <tanh/dsp/fx/RingsReverb.h>
 
-namespace rings = thl::dsp::resonator::rings;
+namespace rings = thl::dsp::synth;
 
 static constexpr int kWarmUpBlocks = 4;
 static constexpr int kNumBlocks = 16;
-static constexpr size_t kFramesPerBlock = rings::kMaxBlockSize;
+static constexpr size_t kFramesPerBlock = thl::dsp::resonator::kMaxBlockSize;
 static constexpr size_t kTotalFrames = kNumBlocks * kFramesPerBlock;
 
 struct ModelInfo {
@@ -31,8 +31,8 @@ static constexpr ModelInfo kModels[] = {
     {rings::RESONATOR_MODEL_STRING_AND_REVERB, "string_and_reverb.bin"},
 };
 
-static rings::Patch default_patch() {
-    rings::Patch patch{};
+static thl::dsp::resonator::RingsPatch default_patch() {
+    thl::dsp::resonator::RingsPatch patch{};
     patch.structure = 0.5f;
     patch.brightness = 0.5f;
     patch.damping = 0.3f;
@@ -40,8 +40,8 @@ static rings::Patch default_patch() {
     return patch;
 }
 
-static rings::PerformanceState default_state() {
-    rings::PerformanceState state{};
+static thl::dsp::resonator::RingsPerformanceState default_state() {
+    thl::dsp::resonator::RingsPerformanceState state{};
     state.strum = false;
     state.internal_exciter = false;
     state.internal_strum = false;
@@ -69,9 +69,9 @@ int main() {
     auto state = default_state();
 
     for (const auto& info : kModels) {
-        rings::Part part;
+        rings::RingsVoiceManager part;
         std::memset(&part, 0, sizeof(part));
-        std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer{};
+        std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
         part.prepare(reverb_buffer.data());
         part.set_model(info.model);
 

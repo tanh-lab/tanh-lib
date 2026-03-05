@@ -5,22 +5,22 @@
 #include <cmath>
 #include <cstring>
 
-#include <tanh/dsp/resonator/rings/Dsp.h>
-#include <tanh/dsp/resonator/rings/Part.h>
-#include <tanh/dsp/resonator/rings/Patch.h>
-#include <tanh/dsp/resonator/rings/PerformanceState.h>
-#include <tanh/dsp/resonator/rings/fx/Reverb.h>
+#include <tanh/dsp/resonator/RingsDsp.h>
+#include <tanh/dsp/synth/RingsVoiceManager.h>
+#include <tanh/dsp/resonator/RingsPatch.h>
+#include <tanh/dsp/resonator/RingsPerformanceState.h>
+#include <tanh/dsp/fx/RingsReverb.h>
 
 #ifdef RINGS_HAS_REFERENCE_FIXTURES
 #include <RingsTestFixtures.h>
 #endif
 
-namespace rings = thl::dsp::resonator::rings;
+namespace rings = thl::dsp::synth;
 
 namespace {
 
-rings::Patch default_patch() {
-    rings::Patch patch{};
+thl::dsp::resonator::RingsPatch default_patch() {
+    thl::dsp::resonator::RingsPatch patch{};
     patch.structure = 0.5f;
     patch.brightness = 0.5f;
     patch.damping = 0.3f;
@@ -28,8 +28,8 @@ rings::Patch default_patch() {
     return patch;
 }
 
-rings::PerformanceState default_state() {
-    rings::PerformanceState state{};
+thl::dsp::resonator::RingsPerformanceState default_state() {
+    thl::dsp::resonator::RingsPerformanceState state{};
     state.strum = false;
     state.internal_exciter = false;
     state.internal_strum = false;
@@ -46,55 +46,55 @@ rings::PerformanceState default_state() {
 class RingsResonatorModelTest : public ::testing::TestWithParam<rings::ResonatorModel> {};
 
 TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
-    rings::Part part;
+    rings::RingsVoiceManager part;
     std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer{};
+    std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(GetParam());
 
     auto patch = default_patch();
     auto state = default_state();
 
-    std::array<float, rings::kMaxBlockSize> in{};
-    std::array<float, rings::kMaxBlockSize> out{};
-    std::array<float, rings::kMaxBlockSize> aux{};
+    std::array<float, thl::dsp::resonator::kMaxBlockSize> in{};
+    std::array<float, thl::dsp::resonator::kMaxBlockSize> out{};
+    std::array<float, thl::dsp::resonator::kMaxBlockSize> aux{};
 
     for (int block = 0; block < 8; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        part.process(state, patch, in.data(), out.data(), aux.data(), rings::kMaxBlockSize);
+        part.process(state, patch, in.data(), out.data(), aux.data(), thl::dsp::resonator::kMaxBlockSize);
     }
 
-    for (size_t i = 0; i < rings::kMaxBlockSize; ++i) {
+    for (size_t i = 0; i < thl::dsp::resonator::kMaxBlockSize; ++i) {
         EXPECT_TRUE(std::isfinite(out[i]));
         EXPECT_TRUE(std::isfinite(aux[i]));
     }
 }
 
 TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
-    rings::Part part;
+    rings::RingsVoiceManager part;
     std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer{};
+    std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(GetParam());
 
     auto patch = default_patch();
     auto state = default_state();
 
-    std::array<float, rings::kMaxBlockSize> silence{};
-    std::array<float, rings::kMaxBlockSize> in{};
-    std::array<float, rings::kMaxBlockSize> out{};
-    std::array<float, rings::kMaxBlockSize> aux{};
+    std::array<float, thl::dsp::resonator::kMaxBlockSize> silence{};
+    std::array<float, thl::dsp::resonator::kMaxBlockSize> in{};
+    std::array<float, thl::dsp::resonator::kMaxBlockSize> out{};
+    std::array<float, thl::dsp::resonator::kMaxBlockSize> aux{};
 
     for (int block = 0; block < 4; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        part.process(state, patch, silence.data(), out.data(), aux.data(), rings::kMaxBlockSize);
+        part.process(state, patch, silence.data(), out.data(), aux.data(), thl::dsp::resonator::kMaxBlockSize);
     }
 
     in.fill(0.0f);
     in[0] = 1.0f;
-    part.process(state, patch, in.data(), out.data(), aux.data(), rings::kMaxBlockSize);
+    part.process(state, patch, in.data(), out.data(), aux.data(), thl::dsp::resonator::kMaxBlockSize);
 
     float max_abs = 0.0f;
     float energy = 0.0f;
@@ -107,9 +107,9 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
                          silence.data(),
                          out.data(),
                          aux.data(),
-                         rings::kMaxBlockSize);
+                         thl::dsp::resonator::kMaxBlockSize);
         }
-        for (size_t i = 0; i < rings::kMaxBlockSize; ++i) {
+        for (size_t i = 0; i < thl::dsp::resonator::kMaxBlockSize; ++i) {
             max_abs = std::max(max_abs, std::max(std::abs(out[i]), std::abs(aux[i])));
             energy += out[i] * out[i] + aux[i] * aux[i];
             ASSERT_TRUE(std::isfinite(out[i]));
@@ -148,7 +148,7 @@ INSTANTIATE_TEST_SUITE_P(AllModels,
 
 static constexpr int kWarmUpBlocks = 4;
 static constexpr int kNumBlocks = 16;
-static constexpr size_t kFramesPerBlock = rings::kMaxBlockSize;
+static constexpr size_t kFramesPerBlock = thl::dsp::resonator::kMaxBlockSize;
 static constexpr size_t kTotalFrames = kNumBlocks * kFramesPerBlock;
 
 struct ReferenceModelInfo {
@@ -180,9 +180,9 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
     const float* ref_out = reinterpret_cast<const float*>(raw);
     const float* ref_aux = ref_out + kTotalFrames;
 
-    rings::Part part;
+    rings::RingsVoiceManager part;
     std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, rings::Reverb::kReverbBufferSize> reverb_buffer{};
+    std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(info.model);
 
