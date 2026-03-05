@@ -55,7 +55,9 @@ inline int16_t soft_convert(float x) {
     return static_cast<int16_t>(clip16(static_cast<int32_t>(soft_limit(x * 0.5f) * 32768.0f)));
 }
 
-float semitones_to_ratio(float semitones);
+inline float semitones_to_ratio(float semitones) {
+    return std::exp2(semitones / 12.0f);
+}
 
 template <typename T>
 inline void one_pole(T& out, const T& in, const T& coefficient) {

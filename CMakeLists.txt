@@ -234,7 +234,6 @@ if(TANH_BUILD_DSP)
 
     add_library(${PROJECT_NAME}_dsp
         src/dsp/utils/ADSR.cpp
-        src/dsp/utils/DspMath.cpp
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/Scales.cpp
         src/dsp/utils/SmoothedValue.cpp
@@ -269,6 +268,49 @@ if(TANH_BUILD_DSP)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_dsp)
 endif()
 
+# Resonator is part of DSP.
+if(TANH_BUILD_DSP)
+    add_library(${PROJECT_NAME}_resonator
+        src/dsp/resonator/RingsModalResonator.cpp
+        src/dsp/resonator/RingsString.cpp
+        src/dsp/synth/RingsVoiceManager.cpp
+        src/dsp/synth/RingsFmVoice.cpp
+        src/dsp/synth/RingsStringSynthPart.cpp
+        src/dsp/synth/RingsResonatorSynthProcessor.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_resonator PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Resonator ALIAS ${PROJECT_NAME}_resonator)
+    # Compatibility alias: ResonatorCore now maps to the unified Resonator target.
+    add_library(${PROJECT_NAME}::ResonatorCore ALIAS ${PROJECT_NAME}_resonator)
+
+    target_include_directories(${PROJECT_NAME}_resonator
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_resonator
+        PUBLIC
+        ${PROJECT_NAME}_dsp
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(${PROJECT_NAME}_resonator PRIVATE
+            -Wno-unused-local-typedefs
+            -Wno-unused-parameter
+            -Wno-sign-compare
+            -Wno-unused-variable
+            -Wno-c++11-narrowing
+        )
+    endif()
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
+endif()
 
 # AudioIO component (depends on Core)
 if(TANH_BUILD_AUDIO_IO)

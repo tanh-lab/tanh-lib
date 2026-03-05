@@ -1,4 +1,4 @@
-#include <tanh/dsp/resonator/rings/DspFunctions.h>
+#include <tanh/dsp/resonator/RingsDspFunctions.h>
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 #include <numbers>
 #include <vector>
 
-namespace rings = thl::dsp::resonator::rings;
+namespace rings = thl::dsp::resonator;
 
 namespace {
 
