@@ -232,16 +232,23 @@ bool emit_platform(const LogRecord& record) {
             type = OS_LOG_TYPE_DEBUG; break;
         default: type = OS_LOG_TYPE_INFO; break;
     }
+#if defined(THL_PLATFORM_MACOS)
     if (!is_debugger_attached()) {
         os_log_with_type(platform_log_handle(),
-                         type,
-                         "[%{public}s][%{public}s] %{public}s",
-                         source,
-                         group,
-                         message);
+                        type,
+                        "[%{public}s][%{public}s] %{public}s",
+                        source,
+                        group,
+                        message);
     }
-#if defined(THL_PLATFORM_MACOS)
     write_to_default_sink(record);
+#else
+    os_log_with_type(platform_log_handle(),
+                    type,
+                    "[%{public}s][%{public}s] %{public}s",
+                    source,
+                    group,
+                    message);
 #endif
     return true;
 #else
