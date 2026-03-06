@@ -289,7 +289,7 @@ bool emit_file(const LogRecord& record) {
 
     if (!s.file_stream.is_open()) {
         s.file_stream.open(
-            s.file_path, std::ios::out | std::ios::app);
+            s.file_path, std::ios::out | std::ios::trunc);
         if (!s.file_stream.is_open()) { return false; }
     }
 
