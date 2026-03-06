@@ -19,6 +19,8 @@
 #include <android/log.h>
 #elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
 #include <os/log.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
 #endif
 
 namespace thl::Logger {
@@ -184,6 +186,14 @@ os_log_t platform_log_handle() {
     static os_log_t handle = os_log_create("thl", "logger");
     return handle;
 }
+
+bool is_debugger_attached() {
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
+    struct kinfo_proc info {};
+    size_t size = sizeof(info);
+    sysctl(mib, 4, &info, &size, nullptr, 0);
+    return (info.kp_proc.p_flag & P_TRACED) != 0;
+}
 #endif
 
 bool emit_platform(const LogRecord& record) {
@@ -220,11 +230,13 @@ bool emit_platform(const LogRecord& record) {
             type = OS_LOG_TYPE_DEBUG; break;
         default: type = OS_LOG_TYPE_INFO; break;
     }
-    os_log_with_type(platform_log_handle(),
-                     type,
-                     "[%{public}s] %{public}s",
-                     group,
-                     message);
+    if (!is_debugger_attached()) {
+        os_log_with_type(platform_log_handle(),
+                         type,
+                         "[%{public}s] %{public}s",
+                         group,
+                         message);
+    }
 #if defined(THL_PLATFORM_MACOS)
     write_to_default_sink(record);
 #endif
