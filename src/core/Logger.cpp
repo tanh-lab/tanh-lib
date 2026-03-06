@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)
 #include <android/log.h>
@@ -161,7 +162,7 @@ std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
 
 void write_to_default_sink(const LogRecord& record) {
     try {
-        const std::string line = format_logfmt(record);
+        const std::string line = format_plain(record);
         FILE* out = stream_for_level(record.level);
         std::fprintf(out, "%s\n", line.c_str());
         std::fflush(out);
@@ -241,12 +242,15 @@ bool emit_platform(const LogRecord& record) {
 struct LoggerState {
     std::atomic<std::uint64_t> next_seq {1};
 
-    // Protects config booleans + callback.
+    // Protects config booleans + callback + early buffer.
     std::mutex config_mutex;
     bool platform_enabled = true;
     bool file_enabled = false;
     bool callback_enabled = true;
     Callback callback;
+
+    std::size_t early_buffer_capacity = 0;
+    std::vector<LogRecord> early_buffer;
 
     // Protects file_path + file_stream.  Lock ordering: config_mutex
     // before file_mutex.
@@ -342,12 +346,14 @@ void dispatch_record(const LogRecord& record) {
     bool platform_on = false;
     bool file_on = false;
     bool callback_on = false;
+    std::size_t early_cap = 0;
     Callback callback_copy;
     {
         std::lock_guard<std::mutex> lock(state().config_mutex);
         platform_on = state().platform_enabled;
         file_on = state().file_enabled;
         callback_on = state().callback_enabled;
+        early_cap = state().early_buffer_capacity;
         callback_copy = state().callback;
     }
 
@@ -377,6 +383,12 @@ void dispatch_record(const LogRecord& record) {
                 record.message.c_str());
             any_sink_ran = true;
         }
+    } else if (callback_on && early_cap > 0) {
+        std::lock_guard<std::mutex> lock(state().config_mutex);
+        if (!state().callback && state().early_buffer.size() < state().early_buffer_capacity) {
+            state().early_buffer.push_back(record);
+            any_sink_ran = true;
+        }
     }
 
     // 4. Last-resort fallback if every sink was disabled or failed.
@@ -399,6 +411,7 @@ void set_config(const LoggerConfig& config) {
         s.platform_enabled = config.platform_enabled;
         s.file_enabled = config.file_enabled;
         s.callback_enabled = config.callback_enabled;
+        s.early_buffer_capacity = config.early_buffer_capacity;
     }
 
     {
@@ -419,6 +432,7 @@ LoggerConfig get_config() {
         config.platform_enabled = s.platform_enabled;
         config.file_enabled = s.file_enabled;
         config.callback_enabled = s.callback_enabled;
+        config.early_buffer_capacity = s.early_buffer_capacity;
     }
     {
         std::lock_guard<std::mutex> lock(s.file_mutex);
@@ -432,9 +446,20 @@ LoggerConfig get_config() {
 // ---------------------------------------------------------------------------
 
 void set_callback(Callback cb) {
-    auto& s = state();
-    std::lock_guard<std::mutex> lock(s.config_mutex);
-    s.callback = std::move(cb);
+    std::vector<LogRecord> buffered;
+    {
+        auto& s = state();
+        std::lock_guard<std::mutex> lock(s.config_mutex);
+        s.callback = cb;
+        buffered.swap(s.early_buffer);
+    }
+
+    if (cb && !buffered.empty()) {
+        CallbackDispatchScope scope;
+        for (const auto& record : buffered) {
+            try { cb(record); } catch (...) {}
+        }
+    }
 }
 
 void clear_callback() {
@@ -446,6 +471,15 @@ void clear_callback() {
 // ---------------------------------------------------------------------------
 // Public API -- formatting
 // ---------------------------------------------------------------------------
+
+std::string format_plain(const LogRecord& record) {
+    std::ostringstream out;
+    out << '[' << level_name(record.level) << "]["
+        << (record.source.empty() ? "native" : record.source) << "]["
+        << (record.group.empty() ? "default" : record.group) << "] "
+        << record.message;
+    return out.str();
+}
 
 std::string format_logfmt(const LogRecord& record) {
     std::ostringstream out;
