@@ -197,6 +197,8 @@ bool is_debugger_attached() {
 #endif
 
 bool emit_platform(const LogRecord& record) {
+    const char* source =
+    record.source.empty() ? "native" : record.source.c_str();
     const char* group =
         record.group.empty() ? "default" : record.group.c_str();
     const char* message = record.message.c_str();
@@ -214,7 +216,7 @@ bool emit_platform(const LogRecord& record) {
             android_level = ANDROID_LOG_DEBUG; break;
         default: android_level = ANDROID_LOG_INFO; break;
     }
-    __android_log_print(android_level, "thl", "[%s] %s", group, message);
+    __android_log_print(android_level, "thl", "[%s][%s] %s", source, group, message);
     return true;
 
 #elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
@@ -233,7 +235,8 @@ bool emit_platform(const LogRecord& record) {
     if (!is_debugger_attached()) {
         os_log_with_type(platform_log_handle(),
                          type,
-                         "[%{public}s] %{public}s",
+                         "[%{public}s][%{public}s] %{public}s",
+                         source,
                          group,
                          message);
     }
