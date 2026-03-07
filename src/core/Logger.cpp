@@ -21,6 +21,8 @@
 #include <os/log.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
+#elif defined(THL_PLATFORM_LINUX)
+#include <systemd/sd-journal.h>
 #endif
 
 namespace thl::Logger {
@@ -217,6 +219,30 @@ bool emit_platform(const LogRecord& record) {
         default: android_level = ANDROID_LOG_INFO; break;
     }
     __android_log_print(android_level, "thl", "[%s][%s] %s", source, group, message);
+    return true;
+
+#elif defined(THL_PLATFORM_LINUX)
+    int priority = LOG_INFO;
+    switch (clamp_level(record.level)) {
+        case static_cast<std::uint32_t>(LogLevel::Error):
+            priority = LOG_ERR; break;
+        case static_cast<std::uint32_t>(LogLevel::Warning):
+            priority = LOG_WARNING; break;
+        case static_cast<std::uint32_t>(LogLevel::Info):
+            priority = LOG_INFO; break;
+        case static_cast<std::uint32_t>(LogLevel::Debug):
+            priority = LOG_DEBUG; break;
+        default: priority = LOG_INFO; break;
+    }
+    sd_journal_send(
+        "MESSAGE=[%s][%s] %s", source, group, message,
+        "PRIORITY=%i", priority,
+        "SYSLOG_IDENTIFIER=%s", "thl",
+        "THL_SOURCE=%s", source,
+        "THL_GROUP=%s", group,
+        NULL);
+
+    // In the choc webkit on linux the console logs are automatically forwarded to the stdout/stderr of the process
     return true;
 
 #elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
