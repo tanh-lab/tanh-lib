@@ -264,15 +264,16 @@ bool emit_platform(const LogRecord& record) {
 struct LoggerState {
     std::atomic<std::uint64_t> next_seq {1};
 
-    // Protects config booleans + callback + early buffer.
+    // Protects config booleans + callback + early buffers.
     std::mutex config_mutex;
     bool platform_enabled = true;
-    bool file_enabled = false;
+    bool file_enabled = true;
     bool callback_enabled = true;
     Callback callback;
 
-    std::size_t early_buffer_capacity = 0;
-    std::vector<LogRecord> early_buffer;
+    std::size_t early_buffer_capacity = 64;
+    std::vector<LogRecord> early_callback_buffer;
+    std::vector<LogRecord> early_file_buffer;
 
     // Protects file_path + file_stream.  Lock ordering: config_mutex
     // before file_mutex.
@@ -388,7 +389,16 @@ void dispatch_record(const LogRecord& record) {
 
     // 2. File sink (acquires file_mutex internally).
     if (file_on) {
-        if (emit_file(record)) { any_sink_ran = true; }
+        if (emit_file(record)) {
+            any_sink_ran = true;
+        } else if (early_cap > 0) {
+            // File enabled but path not yet configured — buffer for later.
+            std::lock_guard<std::mutex> lock(state().config_mutex);
+            if (state().early_file_buffer.size() < state().early_buffer_capacity) {
+                state().early_file_buffer.push_back(record);
+                any_sink_ran = true;
+            }
+        }
     }
 
     // 3. Callback sink (gated by callback_enabled + re-entrancy guard).
@@ -407,8 +417,8 @@ void dispatch_record(const LogRecord& record) {
         }
     } else if (callback_on && early_cap > 0) {
         std::lock_guard<std::mutex> lock(state().config_mutex);
-        if (!state().callback && state().early_buffer.size() < state().early_buffer_capacity) {
-            state().early_buffer.push_back(record);
+        if (!state().callback && state().early_callback_buffer.size() < state().early_buffer_capacity) {
+            state().early_callback_buffer.push_back(record);
             any_sink_ran = true;
         }
     }
@@ -428,12 +438,18 @@ void dispatch_record(const LogRecord& record) {
 void set_config(const LoggerConfig& config) {
     auto& s = state();
 
+    std::vector<LogRecord> file_buffered;
     {
         std::lock_guard<std::mutex> lock(s.config_mutex);
         s.platform_enabled = config.platform_enabled;
         s.file_enabled = config.file_enabled;
         s.callback_enabled = config.callback_enabled;
         s.early_buffer_capacity = config.early_buffer_capacity;
+
+        // Drain the file early buffer when a path becomes available.
+        if (config.file_enabled && !config.file_path.empty()) {
+            file_buffered.swap(s.early_file_buffer);
+        }
     }
 
     {
@@ -443,6 +459,11 @@ void set_config(const LoggerConfig& config) {
             if (s.file_stream.is_open()) { s.file_stream.close(); }
         }
         s.file_path = config.file_path;
+    }
+
+    // Replay buffered records into the file sink now that the path is set.
+    for (const auto& record : file_buffered) {
+        emit_file(record);
     }
 }
 
@@ -473,7 +494,7 @@ void set_callback(Callback cb) {
         auto& s = state();
         std::lock_guard<std::mutex> lock(s.config_mutex);
         s.callback = cb;
-        buffered.swap(s.early_buffer);
+        buffered.swap(s.early_callback_buffer);
     }
 
     if (cb && !buffered.empty()) {
