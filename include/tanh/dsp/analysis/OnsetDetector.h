@@ -122,8 +122,8 @@ public:
 
         m_low_mid_filter.reset();
         m_mid_high_filter.reset();
-        m_low_mid_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(low_mid, 0.5f);
-        m_mid_high_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(mid_high, 0.5f);
+        m_low_mid_filter.set_f_q<Approximation::Dirty>(low_mid, 0.5f);
+        m_mid_high_filter.set_f_q<Approximation::Dirty>(mid_high, 0.5f);
 
         m_attack[0] = low_mid;
         m_decay[0] = low * 0.25f;
