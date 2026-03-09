@@ -15,7 +15,7 @@ namespace {
 
 inline float interpolate_ref(const std::array<float, 257>& table, float index, float size) {
     const float scaled = index * size;
-    const int32_t i = static_cast<int32_t>(scaled);
+    const int32_t i = std::min(static_cast<int32_t>(scaled), static_cast<int32_t>(table.size()) - 2);
     const float frac = scaled - static_cast<float>(i);
     const float a = table[static_cast<size_t>(i)];
     const float b = table[static_cast<size_t>(i + 1)];
