@@ -3,6 +3,8 @@
 #include <cmath>
 #include <numbers>
 
+#include <tanh/dsp/DspTypes.h>
+
 namespace thl::dsp::filter {
 
 enum class FilterMode {
@@ -10,13 +12,6 @@ enum class FilterMode {
     BandPass,
     BandPassNormalized,
     HighPass,
-};
-
-enum class FrequencyApproximation {
-    Exact,
-    Accurate,
-    Fast,
-    Dirty,
 };
 
 namespace detail {
@@ -48,15 +43,15 @@ class OnePole {
 public:
     void reset() { m_state = 0.0f; }
 
-    template <FrequencyApproximation approximation>
+    template <Approximation approximation>
     static float tan(float f) {
-        if constexpr (approximation == FrequencyApproximation::Exact) {
+        if constexpr (approximation == Approximation::Exact) {
             f = f < 0.497f ? f : 0.497f;
             return std::tan(detail::kPiF * f);
-        } else if constexpr (approximation == FrequencyApproximation::Dirty) {
+        } else if constexpr (approximation == Approximation::Dirty) {
             const float a = 3.736e-01f * detail::kPiPow3;
             return f * (detail::kPiF + a * f * f);
-        } else if constexpr (approximation == FrequencyApproximation::Fast) {
+        } else if constexpr (approximation == Approximation::Fast) {
             const float a = 3.260e-01f * detail::kPiPow3;
             const float b = 1.823e-01f * detail::kPiPow5;
             const float f2 = f * f;
@@ -75,7 +70,7 @@ public:
     // Set the cutoff frequency as a normalised value f = f_hz / f_s (range
     // 0..0.5). Computes the prewarped integrator gain g = tan(pi * f / f_s)
     // and caches 1/(1+g) for use in process().
-    template <FrequencyApproximation approximation>
+    template <Approximation approximation>
     void set_f(float f) {
         m_g = tan<approximation>(f);
         m_gi = 1.0f / (1.0f + m_g);

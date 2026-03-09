@@ -101,7 +101,7 @@ void RingsString::prepare_coefficients(float delay, float src_ratio, size_t size
     }
 
     m_fir_damping_filter.configure(damping_coefficient, brightness, size);
-    m_iir_damping_filter.set_f_q<thl::dsp::filter::FrequencyApproximation::Accurate>(damping_f,
+    m_iir_damping_filter.set_f_q<Approximation::Accurate>(damping_f,
                                                                                      0.5f);
     m_damping_compensation_target = 1.0f - SvfShift(damping_cutoff);
 }

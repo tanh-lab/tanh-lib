@@ -55,7 +55,7 @@ public:
         while (comb_period >= 255.0f) { comb_period *= 0.5f; }
         m_comb_filter_period = comb_period;
         m_comb_filter_gain = (1.0f - position) * 0.8f;
-        m_svf.set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(std::min(cutoff, 0.499f),
+        m_svf.set_f_q<Approximation::Dirty>(std::min(cutoff, 0.499f),
                                                                        1.0f);
     }
 

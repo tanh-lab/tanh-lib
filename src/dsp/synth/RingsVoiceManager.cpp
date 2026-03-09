@@ -474,7 +474,7 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
 
         // Process input with excitation filter. Inactive voices receive
         // silence.
-        m_excitation_filter[voice].set_f_q<thl::dsp::filter::FrequencyApproximation::Dirty>(
+        m_excitation_filter[voice].set_f_q<thl::dsp::Approximation::Dirty>(
             filter_cutoff,
             filter_q);
         if (voice == m_active_voice) {

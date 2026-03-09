@@ -52,7 +52,7 @@ public:
         m_h = 1.0f / (1.0f + m_r * m_g + m_g * m_g);
     }
 
-    template <FrequencyApproximation approximation>
+    template <Approximation approximation>
     void set_f_q(float f, float resonance) {
         m_g = OnePole::tan<approximation>(f);
         m_r = 1.0f / resonance;
@@ -189,10 +189,10 @@ public:
         m_bp = 0.0f;
     }
 
-    template <FrequencyApproximation approximation>
+    template <Approximation approximation>
     void set_f_q(float f, float resonance) {
         f = f < 0.497f ? f : 0.497f;
-        if constexpr (approximation == FrequencyApproximation::Exact) {
+        if constexpr (approximation == Approximation::Exact) {
             m_f = 2.0f * std::sin(detail::kPiF * f);
         } else {
             m_f = 2.0f * detail::kPiF * f;
