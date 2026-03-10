@@ -26,7 +26,7 @@
 //
 // Comb filter / KS string.
 
-#include <tanh/dsp/resonator/RingsString.h>
+#include <tanh/dsp/rings-resonator/RingsString.h>
 
 #include <cmath>
 
@@ -35,7 +35,7 @@
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/Random.h>
 
-#include <tanh/dsp/resonator/RingsDspFunctions.h>
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 namespace thl::dsp::resonator {
 

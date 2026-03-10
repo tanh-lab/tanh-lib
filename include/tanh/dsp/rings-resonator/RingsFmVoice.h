@@ -32,10 +32,10 @@
 
 #include <tanh/dsp/filter/Svf.h>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/analysis/Follower.h>
 
-#include <tanh/dsp/resonator/RingsDspFunctions.h>
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 namespace thl::dsp::synth {
 

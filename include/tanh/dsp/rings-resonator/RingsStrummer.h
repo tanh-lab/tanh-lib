@@ -29,7 +29,7 @@
 #pragma once
 
 #include <tanh/dsp/analysis/OnsetDetector.h>
-#include <tanh/dsp/resonator/RingsPerformanceState.h>
+#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
 
 namespace thl::dsp::resonator {
 

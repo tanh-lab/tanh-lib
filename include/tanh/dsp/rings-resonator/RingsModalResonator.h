@@ -30,7 +30,7 @@
 
 #include <algorithm>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
 

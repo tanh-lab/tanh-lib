@@ -28,8 +28,8 @@
 
 #pragma once
 
-#include <tanh/dsp/resonator/RingsDsp.h>
-#include <tanh/dsp/fx/RingsFxEngine.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/fx/RingsFxEngine.h>
 
 namespace thl::dsp::fx {
 

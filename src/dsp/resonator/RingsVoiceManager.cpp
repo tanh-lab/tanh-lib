@@ -26,11 +26,11 @@
 //
 // Group of voices.
 
-#include <tanh/dsp/synth/RingsVoiceManager.h>
+#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
 
 #include <tanh/dsp/utils/DspMath.h>
 
-#include <tanh/dsp/resonator/RingsDspFunctions.h>
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 namespace thl::dsp::synth {
 

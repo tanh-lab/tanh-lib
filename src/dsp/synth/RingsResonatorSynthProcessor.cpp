@@ -3,10 +3,10 @@
 #include <tanh/dsp/utils/RingBuffer.h>
 #include <tanh/dsp/utils/ParamSmoother.h>
 
-#include <tanh/dsp/synth/RingsVoiceManager.h>
-#include <tanh/dsp/resonator/RingsStrummer.h>
-#include <tanh/dsp/synth/RingsStringSynthPart.h>
-#include <tanh/dsp/fx/RingsReverb.h>
+#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
+#include <tanh/dsp/rings-resonator/RingsStrummer.h>
+#include <tanh/dsp/rings-resonator/RingsStringSynthPart.h>
+#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 
 #include <algorithm>
 #include <cmath>

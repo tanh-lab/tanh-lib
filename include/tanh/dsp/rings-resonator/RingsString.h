@@ -34,7 +34,7 @@
 #include <tanh/dsp/utils/DelayLine.h>
 #include <tanh/dsp/filter/Svf.h>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
 
 namespace thl::dsp::resonator {
 

@@ -26,13 +26,13 @@
 //
 // Resonator.
 
-#include <tanh/dsp/resonator/RingsModalResonator.h>
+#include <tanh/dsp/rings-resonator/RingsModalResonator.h>
 
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
 #include <tanh/dsp/utils/ParameterInterpolator.h>
 
-#include <tanh/dsp/resonator/RingsDspFunctions.h>
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 namespace thl::dsp::resonator {
 

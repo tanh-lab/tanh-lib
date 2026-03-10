@@ -42,6 +42,12 @@ if(TARGET tanh_resonator)
 				${_fixtures_dir}/fm_voice.bin
 				${_fixtures_dir}/sympathetic_string_quantized.bin
 				${_fixtures_dir}/string_and_reverb.bin
+				${_fixtures_dir}/wrapper_modal.bin
+				${_fixtures_dir}/wrapper_sympathetic_string.bin
+				${_fixtures_dir}/wrapper_modulated_string.bin
+				${_fixtures_dir}/wrapper_fm_voice.bin
+				${_fixtures_dir}/wrapper_sympathetic_string_quantized.bin
+				${_fixtures_dir}/wrapper_string_and_reverb.bin
 		)
 		target_link_libraries(${PROJECT_NAME} PRIVATE rings_test_fixtures)
 		target_compile_definitions(${PROJECT_NAME} PRIVATE RINGS_HAS_REFERENCE_FIXTURES)

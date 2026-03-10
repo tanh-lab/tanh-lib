@@ -24,22 +24,22 @@
 //
 // -----------------------------------------------------------------------------
 //
-// Chorus.
+// Ensemble FX.
 
 #pragma once
 
 #include <tanh/dsp/utils/DspMath.h>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
-#include <tanh/dsp/fx/RingsFxEngine.h>
-#include <tanh/dsp/resonator/RingsDspFunctions.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/fx/RingsFxEngine.h>
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 namespace thl::dsp::fx {
 
-class RingsChorus {
+class RingsEnsemble {
 public:
-    RingsChorus() {}
-    ~RingsChorus() {}
+    RingsEnsemble() {}
+    ~RingsEnsemble() {}
 
     void prepare(uint16_t* buffer, float sample_rate = thl::dsp::resonator::kDefaultSampleRate) {
         thl::dsp::resonator::WarmDspFunctions();
@@ -51,8 +51,9 @@ public:
     }
 
     void process(float* left, float* right, size_t size) {
-        typedef E::Reserve<4095> Memory;
-        E::DelayLine<Memory, 0> line;
+        typedef E::Reserve<4095, E::Reserve<4095> > Memory;
+        E::DelayLine<Memory, 0> line_l;
+        E::DelayLine<Memory, 1> line_r;
         E::Context c;
 
         const float r = m_rate_ratio;
@@ -62,29 +63,43 @@ public:
             float dry_amount = 1.0f - m_amount * 0.5f;
 
             // Update LFO (scale phase increments inversely with sample rate).
-            m_phase_1 += 4.17e-06f / r;
+            m_phase_1 += 1.57e-05f / r;
             if (m_phase_1 >= 1.0f) { m_phase_1 -= 1.0f; }
-            m_phase_2 += 5.417e-06f / r;
+            m_phase_2 += 1.37e-04f / r;
             if (m_phase_2 >= 1.0f) { m_phase_2 -= 1.0f; }
-            float sin_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1, 4096.0f);
-            float cos_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1 + 0.25f, 4096.0f);
-            float sin_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2, 4096.0f);
-            float cos_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2 + 0.25f, 4096.0f);
+            int32_t phi_1 = (m_phase_1 * 4096.0f);
+            float slow_0 = m_sine_table[phi_1 & 4095];
+            float slow_120 = m_sine_table[(phi_1 + 1365) & 4095];
+            float slow_240 = m_sine_table[(phi_1 + 2730) & 4095];
+            int32_t phi_2 = (m_phase_2 * 4096.0f);
+            float fast_0 = m_sine_table[phi_2 & 4095];
+            float fast_120 = m_sine_table[(phi_2 + 1365) & 4095];
+            float fast_240 = m_sine_table[(phi_2 + 2730) & 4095];
 
-            float wet;
+            float a = m_depth * 1.0f;
+            float b = m_depth * 0.1f;
+
+            float mod_1 = slow_0 * a + fast_0 * b;
+            float mod_2 = slow_120 * a + fast_120 * b;
+            float mod_3 = slow_240 * a + fast_240 * b;
+
+            float wet = 0.0f;
 
             // Sum L & R channel to send to chorus line.
-            c.read(*left, 0.5f);
-            c.read(*right, 0.5f);
-            c.write(line, 0.0f);
+            c.read(*left, 1.0f);
+            c.write(line_l, 0.0f);
+            c.read(*right, 1.0f);
+            c.write(line_r, 0.0f);
 
-            c.interpolate(line, sin_1 * m_depth + 1200.0f * r, 0.5f);
-            c.interpolate(line, sin_2 * m_depth + 800.0f * r, 0.5f);
+            c.interpolate(line_l, mod_1 + 1024.0f * r, 0.33f);
+            c.interpolate(line_l, mod_2 + 1024.0f * r, 0.33f);
+            c.interpolate(line_r, mod_3 + 1024.0f * r, 0.33f);
             c.write(wet, 0.0f);
             *left = wet * m_amount + *left * dry_amount;
 
-            c.interpolate(line, cos_1 * m_depth + 800.0f * r + cos_2 * 0, 0.5f);
-            c.interpolate(line, cos_2 * m_depth + 1200.0f * r, 0.5f);
+            c.interpolate(line_r, mod_1 + 1024.0f * r, 0.33f);
+            c.interpolate(line_r, mod_2 + 1024.0f * r, 0.33f);
+            c.interpolate(line_l, mod_3 + 1024.0f * r, 0.33f);
             c.write(wet, 0.0f);
             *right = wet * m_amount + *right * dry_amount;
             left++;
@@ -94,10 +109,10 @@ public:
 
     inline void set_amount(float amount) { m_amount = amount; }
 
-    inline void set_depth(float depth) { m_depth = depth * 384.0f * m_rate_ratio; }
+    inline void set_depth(float depth) { m_depth = depth * 128.0f * m_rate_ratio; }
 
 private:
-    typedef RingsFxEngine<4096, FORMAT_16_BIT> E;
+    typedef RingsFxEngine<8192, FORMAT_16_BIT> E;
     E m_engine;
 
     float m_amount = 0.0f;
@@ -108,8 +123,8 @@ private:
     float m_phase_1 = 0.0f;
     float m_phase_2 = 0.0f;
 
-    RingsChorus(const RingsChorus&) = delete;
-    RingsChorus& operator=(const RingsChorus&) = delete;
+    RingsEnsemble(const RingsEnsemble&) = delete;
+    RingsEnsemble& operator=(const RingsEnsemble&) = delete;
 };
 
 }  // namespace thl::dsp::fx

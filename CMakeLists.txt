@@ -273,9 +273,9 @@ if(TANH_BUILD_DSP)
     add_library(${PROJECT_NAME}_resonator
         src/dsp/resonator/RingsModalResonator.cpp
         src/dsp/resonator/RingsString.cpp
-        src/dsp/synth/RingsVoiceManager.cpp
-        src/dsp/synth/RingsFmVoice.cpp
-        src/dsp/synth/RingsStringSynthPart.cpp
+        src/dsp/resonator/RingsVoiceManager.cpp
+        src/dsp/resonator/RingsFmVoice.cpp
+        src/dsp/resonator/RingsStringSynthPart.cpp
         src/dsp/synth/RingsResonatorSynthProcessor.cpp
     )
 
