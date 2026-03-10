@@ -1,4 +1,4 @@
-#include <tanh/dsp/resonator/RingsDspFunctions.h>
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 #include <gtest/gtest.h>
 

@@ -5,6 +5,11 @@
 #include <array>
 #include <cmath>
 
+#ifdef RINGS_HAS_REFERENCE_FIXTURES
+#include <RingsTestFixtures.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#endif
+
 namespace {
 
 using Parameter = thl::dsp::synth::RingsParameter;
@@ -222,5 +227,113 @@ TEST_F(RingsResonatorSynthProcessorTest, WrapperOutputMatchesManualBlend) {
 
     EXPECT_GT(energy, 1e-4f);
 }
+
+#ifdef RINGS_HAS_REFERENCE_FIXTURES
+
+static constexpr int kWrapperWarmUpBlocks = 20;
+static constexpr int kWrapperNumBlocks = 16;
+static constexpr int kWrapperProcessBlockSize = 256;
+static constexpr size_t kWrapperTotalFrames =
+    kWrapperNumBlocks * kWrapperProcessBlockSize;
+
+struct WrapperModelInfo {
+    int model_index;
+    const char* fixture_filename;
+};
+
+float wrapper_reference_tolerance(int model) {
+    switch (model) {
+        case 3:  // FM Voice
+            return 2e-2f;
+        case 1:  // SympatheticString
+        case 4:  // SympatheticStringQuantized
+            return 2e-3f;
+        default:
+            // Wrapper processing (smoother, odd/even blend) amplifies the
+            // SemitonesToRatio LUT-vs-exp2 precision differences slightly
+            // beyond the raw DSP tolerance of 1e-4.
+            return 3e-4f;
+    }
+}
+
+class RingsWrapperReferenceTest
+    : public ::testing::TestWithParam<WrapperModelInfo> {};
+
+TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
+    const auto& info = GetParam();
+    const float tolerance = wrapper_reference_tolerance(info.model_index);
+
+    int size_bytes = 0;
+    const char* raw =
+        RingsTestFixtures::getNamedResource(info.fixture_filename, size_bytes);
+    ASSERT_NE(raw, nullptr) << "Missing fixture: " << info.fixture_filename;
+    ASSERT_EQ(size_bytes,
+              static_cast<int>(kWrapperTotalFrames * 2 * sizeof(float)))
+        << "Fixture size mismatch for " << info.fixture_filename;
+
+    const float* ref_input =
+        reinterpret_cast<const float*>(raw);
+    const float* ref_output = ref_input + kWrapperTotalFrames;
+
+    TestResonator synth;
+    synth.prepare(48000.0, kWrapperProcessBlockSize);
+    synth.set(Parameter::Frequency, 440.0f);
+    synth.set(Parameter::Structure, 0.5f);
+    synth.set(Parameter::Brightness, 0.5f);
+    synth.set(Parameter::Damping, 0.5f);
+    synth.set(Parameter::Position, 0.5f);
+    synth.set(Parameter::OddEvenMix, 0.5f);
+    synth.set(Parameter::DryWet, 1.0f);
+    synth.set(Parameter::Model, static_cast<float>(info.model_index));
+    synth.set(Parameter::Polyphony, 0.0f);
+
+    // Warm up
+    for (int b = 0; b < kWrapperWarmUpBlocks; ++b) {
+        float in[kWrapperProcessBlockSize] = {};
+        float out[kWrapperProcessBlockSize] = {};
+        synth.process(in, out, kWrapperProcessBlockSize);
+    }
+
+    for (int b = 0; b < kWrapperNumBlocks; ++b) {
+        float out[kWrapperProcessBlockSize] = {};
+        const float* in_ptr = ref_input + b * kWrapperProcessBlockSize;
+
+        // Copy input since process() may read from output buffer
+        float in[kWrapperProcessBlockSize];
+        std::copy(in_ptr, in_ptr + kWrapperProcessBlockSize, in);
+
+        synth.process(in, out, kWrapperProcessBlockSize);
+
+        for (int i = 0; i < kWrapperProcessBlockSize; ++i) {
+            size_t idx = b * kWrapperProcessBlockSize + i;
+            EXPECT_NEAR(out[i], ref_output[idx], tolerance)
+                << "mismatch at block " << b << " sample " << i;
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllModels,
+    RingsWrapperReferenceTest,
+    ::testing::Values(
+        WrapperModelInfo{0, "wrapper_modal.bin"},
+        WrapperModelInfo{1, "wrapper_sympathetic_string.bin"},
+        WrapperModelInfo{2, "wrapper_modulated_string.bin"},
+        WrapperModelInfo{3, "wrapper_fm_voice.bin"},
+        WrapperModelInfo{4, "wrapper_sympathetic_string_quantized.bin"},
+        WrapperModelInfo{5, "wrapper_string_and_reverb.bin"}),
+    [](const ::testing::TestParamInfo<WrapperModelInfo>& info) {
+        switch (info.param.model_index) {
+            case 0: return std::string("Modal");
+            case 1: return std::string("SympatheticString");
+            case 2: return std::string("ModulatedString");
+            case 3: return std::string("FMVoice");
+            case 4: return std::string("SympatheticStringQuantized");
+            case 5: return std::string("StringAndReverb");
+            default: return std::string("Unknown");
+        }
+    });
+
+#endif  // RINGS_HAS_REFERENCE_FIXTURES
 
 }  // namespace

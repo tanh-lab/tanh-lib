@@ -26,9 +26,9 @@
 //
 // String synth part.
 
-#include <tanh/dsp/synth/RingsStringSynthPart.h>
+#include <tanh/dsp/rings-resonator/RingsStringSynthPart.h>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
 
 namespace thl::dsp::synth {
 

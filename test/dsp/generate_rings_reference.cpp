@@ -4,16 +4,16 @@
 #include <cstring>
 #include <filesystem>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
-#include <tanh/dsp/synth/RingsVoiceManager.h>
-#include <tanh/dsp/resonator/RingsPatch.h>
-#include <tanh/dsp/resonator/RingsPerformanceState.h>
-#include <tanh/dsp/fx/RingsReverb.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
+#include <tanh/dsp/rings-resonator/RingsPatch.h>
+#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
+#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 
 namespace rings = thl::dsp::synth;
 
 static constexpr int kWarmUpBlocks = 4;
-static constexpr int kNumBlocks = 16;
+static constexpr int kNumBlocks = 171;
 static constexpr size_t kFramesPerBlock = thl::dsp::resonator::kMaxBlockSize;
 static constexpr size_t kTotalFrames = kNumBlocks * kFramesPerBlock;
 
@@ -83,19 +83,22 @@ int main() {
             part.process(state, patch, in.data(), out.data(), aux.data(), kFramesPerBlock);
         }
 
+        // Build input: impulse at sample 0 of first block
+        std::array<float, kTotalFrames> input_data{};
+        input_data[0] = 1.0f;
+
         std::array<float, kTotalFrames> out_data{};
         std::array<float, kTotalFrames> aux_data{};
 
         for (int block = 0; block < kNumBlocks; ++block) {
-            std::array<float, kFramesPerBlock> in{};
-            if (block == 0) { in[0] = 1.0f; }
-
+            float* in_ptr = input_data.data() + block * kFramesPerBlock;
             float* out_ptr = out_data.data() + block * kFramesPerBlock;
             float* aux_ptr = aux_data.data() + block * kFramesPerBlock;
 
-            part.process(state, patch, in.data(), out_ptr, aux_ptr, kFramesPerBlock);
+            part.process(state, patch, in_ptr, out_ptr, aux_ptr, kFramesPerBlock);
         }
 
+        // Write [input][out][aux] to binary file
         fs::path filepath = output_dir / info.filename;
         FILE* f = fopen(filepath.c_str(), "wb");
         if (!f) {
@@ -103,11 +106,12 @@ int main() {
             return 1;
         }
 
+        fwrite(input_data.data(), sizeof(float), kTotalFrames, f);
         fwrite(out_data.data(), sizeof(float), kTotalFrames, f);
         fwrite(aux_data.data(), sizeof(float), kTotalFrames, f);
         fclose(f);
 
-        printf("  %s (%zu bytes)\n", info.filename, kTotalFrames * 2 * sizeof(float));
+        printf("  %s (%zu bytes)\n", info.filename, kTotalFrames * 3 * sizeof(float));
     }
 
     printf("Done.\n");

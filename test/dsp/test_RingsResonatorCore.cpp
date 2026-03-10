@@ -5,11 +5,11 @@
 #include <cmath>
 #include <cstring>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
-#include <tanh/dsp/synth/RingsVoiceManager.h>
-#include <tanh/dsp/resonator/RingsPatch.h>
-#include <tanh/dsp/resonator/RingsPerformanceState.h>
-#include <tanh/dsp/fx/RingsReverb.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
+#include <tanh/dsp/rings-resonator/RingsPatch.h>
+#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
+#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 
 #ifdef RINGS_HAS_REFERENCE_FIXTURES
 #include <RingsTestFixtures.h>
@@ -147,7 +147,7 @@ INSTANTIATE_TEST_SUITE_P(AllModels,
 #ifdef RINGS_HAS_REFERENCE_FIXTURES
 
 static constexpr int kWarmUpBlocks = 4;
-static constexpr int kNumBlocks = 16;
+static constexpr int kNumBlocks = 171;
 static constexpr size_t kFramesPerBlock = thl::dsp::resonator::kMaxBlockSize;
 static constexpr size_t kTotalFrames = kNumBlocks * kFramesPerBlock;
 
@@ -161,6 +161,12 @@ float reference_tolerance(rings::ResonatorModel model) {
         case rings::RESONATOR_MODEL_FM_VOICE:
             // Empirically observed max deviation ~1.4e-2 after LUT replacement.
             return 2e-2f;
+        case rings::RESONATOR_MODEL_SYMPATHETIC_STRING:
+        case rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED:
+            // Sympathetic strings: 8 coupled delay lines amplify the
+            // SemitonesToRatio LUT-vs-exp2 precision difference.
+            // With 171 blocks the error accumulates to ~2.2e-3.
+            return 3e-3f;
         default: return 1e-4f;
     }
 }
@@ -174,10 +180,10 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
     int size_bytes = 0;
     const char* raw = RingsTestFixtures::getNamedResource(info.fixture_filename, size_bytes);
     ASSERT_NE(raw, nullptr) << "Missing fixture: " << info.fixture_filename;
-    ASSERT_EQ(size_bytes, static_cast<int>(kTotalFrames * 2 * sizeof(float)))
+    ASSERT_EQ(size_bytes, static_cast<int>(kTotalFrames * 3 * sizeof(float)))
         << "Fixture size mismatch for " << info.fixture_filename;
 
-    const float* ref_out = reinterpret_cast<const float*>(raw);
+    const float* ref_out = reinterpret_cast<const float*>(raw) + kTotalFrames;
     const float* ref_aux = ref_out + kTotalFrames;
 
     rings::RingsVoiceManager part;

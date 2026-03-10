@@ -34,16 +34,16 @@
 #include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/utils/DelayLine.h>
 
-#include <tanh/dsp/resonator/RingsDsp.h>
-#include <tanh/dsp/synth/RingsFmVoice.h>
-#include <tanh/dsp/fx/RingsReverb.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsFmVoice.h>
+#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 #include <tanh/dsp/utils/SoftLimiter.h>
 #include <tanh/dsp/analysis/NoteFilter.h>
-#include <tanh/dsp/resonator/RingsPatch.h>
-#include <tanh/dsp/resonator/RingsPerformanceState.h>
-#include <tanh/dsp/synth/Plucker.h>
-#include <tanh/dsp/resonator/RingsModalResonator.h>
-#include <tanh/dsp/resonator/RingsString.h>
+#include <tanh/dsp/rings-resonator/RingsPatch.h>
+#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
+#include <tanh/dsp/rings-resonator/RingsPlucker.h>
+#include <tanh/dsp/rings-resonator/RingsModalResonator.h>
+#include <tanh/dsp/rings-resonator/RingsString.h>
 
 namespace thl::dsp::synth {
 
