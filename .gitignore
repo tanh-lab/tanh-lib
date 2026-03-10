@@ -5,3 +5,6 @@ build-test/
 .cache/
 cmake-build*
 /build*
+
+# Generated test fixtures
+test/dsp/fixtures/*.bin
