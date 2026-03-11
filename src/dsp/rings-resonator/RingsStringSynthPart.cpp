@@ -261,12 +261,15 @@ const float formants[kFormantTableSize][kNumFormants] = {
 void RingsStringSynthPart::process_formant_filter(float vowel,
                                              float shift,
                                              float resonance,
-                                             float* out,
-                                             float* aux,
-                                             size_t size) {
-    for (size_t i = 0; i < size; ++i) { m_filter_in_buffer[i] = out[i] + aux[i]; }
-    fill(&out[0], &out[size], 0.0f);
-    fill(&aux[0], &aux[size], 0.0f);
+                                             thl::dsp::audio::AudioBufferView out,
+                                             thl::dsp::audio::AudioBufferView aux) {
+    float* out_ptr = out.get_write_pointer(0);
+    float* aux_ptr = aux.get_write_pointer(0);
+    size_t size = out.get_num_frames();
+
+    for (size_t i = 0; i < size; ++i) { m_filter_in_buffer[i] = out_ptr[i] + aux_ptr[i]; }
+    fill(&out_ptr[0], &out_ptr[size], 0.0f);
+    fill(&aux_ptr[0], &aux_ptr[size], 0.0f);
 
     vowel *= (kFormantTableSize - 1.001f);
     MAKE_INTEGRAL_FRACTIONAL(vowel);
@@ -279,13 +282,14 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
         m_formant_filter[i].set_f_q<Approximation::Dirty>(
             f / m_sample_rate,
             resonance);
-        m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(m_filter_in_buffer,
-                                                                            m_filter_out_buffer,
-                                                                            size);
+        thl::dsp::audio::ConstAudioBufferView filter_in(m_filter_in_buffer, size);
+        thl::dsp::audio::AudioBufferView filter_out(m_filter_out_buffer, size);
+        m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(filter_in,
+                                                                            filter_out);
         const float pan = i * 0.3f + 0.2f;
         for (size_t j = 0; j < size; ++j) {
-            out[j] += m_filter_out_buffer[j] * pan * 0.5f;
-            aux[j] += m_filter_out_buffer[j] * (1.0f - pan) * 0.5f;
+            out_ptr[j] += m_filter_out_buffer[j] * pan * 0.5f;
+            aux_ptr[j] += m_filter_out_buffer[j] * (1.0f - pan) * 0.5f;
         }
     }
 }
@@ -297,10 +301,14 @@ struct ChordNote {
 
 void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                               const thl::dsp::resonator::RingsPatch& patch,
-                              const float* in,
-                              float* out,
-                              float* aux,
-                              size_t size) {
+                              thl::dsp::audio::ConstAudioBufferView in,
+                              thl::dsp::audio::AudioBufferView out,
+                              thl::dsp::audio::AudioBufferView aux) {
+    const float* in_ptr = in.get_read_pointer(0);
+    float* out_ptr = out.get_write_pointer(0);
+    float* aux_ptr = aux.get_write_pointer(0);
+    size_t size = in.get_num_frames();
+
     // Assign note to a voice.
     uint8_t envelope_flags[kMaxStringSynthPolyphony];
 
@@ -326,8 +334,8 @@ void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceSt
     float envelope_values[kMaxStringSynthPolyphony];
     process_envelopes(patch.damping, envelope_flags, envelope_values);
 
-    copy(&in[0], &in[size], &aux[0]);
-    copy(&in[0], &in[size], &out[0]);
+    copy(&in_ptr[0], &in_ptr[size], &aux_ptr[0]);
+    copy(&in_ptr[0], &in_ptr[size], &out_ptr[0]);
     int32_t chord_size = min(kStringSynthVoices / m_polyphony, kMaxChordSize);
     for (int32_t group = 0; group < m_polyphony; ++group) {
         ChordNote notes[kMaxChordSize];
@@ -366,7 +374,7 @@ void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceSt
             m_voice[group * chord_size + chord_note].render(frequency,
                                                             amplitudes,
                                                             num_harmonics,
-                                                            (group + chord_note) & 1 ? out : aux,
+                                                            (group + chord_note) & 1 ? out_ptr : aux_ptr,
                                                             size);
         }
     }
@@ -376,6 +384,9 @@ void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceSt
         m_clear_fx = false;
     }
 
+    float* stereo_ptrs[] = {out_ptr, aux_ptr};
+    thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs, 2, size);
+
     switch (m_fx_type) {
         case FX_FORMANT:
         case FX_FORMANT_2:
@@ -383,20 +394,19 @@ void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceSt
                                    m_fx_type == FX_FORMANT ? 1.0f : 1.1f,
                                    m_fx_type == FX_FORMANT ? 25.0f : 10.0f,
                                    out,
-                                   aux,
-                                   size);
+                                   aux);
             break;
 
         case FX_CHORUS:
             m_chorus.set_amount(patch.position);
             m_chorus.set_depth(0.15f + 0.5f * patch.position);
-            m_chorus.process(out, aux, size);
+            m_chorus.process(stereo_view);
             break;
 
         case FX_ENSEMBLE:
             m_ensemble.set_amount(patch.position * (2.0f - patch.position));
             m_ensemble.set_depth(0.2f + 0.8f * patch.position * patch.position);
-            m_ensemble.process(out, aux, size);
+            m_ensemble.process(stereo_view);
             break;
 
         case FX_REVERB:
@@ -407,7 +417,7 @@ void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceSt
                                                      : (0.3f + 0.6f * patch.position));
             m_reverb.set_input_gain(0.2f);
             m_reverb.set_lp(m_fx_type == FX_REVERB ? 0.3f : 0.6f);
-            m_reverb.process(out, aux, size);
+            m_reverb.process(stereo_view);
             break;
 
         default: break;
@@ -415,8 +425,8 @@ void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceSt
 
     // Prevent main signal cancellation when EVEN gets summed with ODD through
     // normalization.
-    for (size_t i = 0; i < size; ++i) { aux[i] = -aux[i]; }
-    m_limiter.process(out, aux, size, 1.0f);
+    for (size_t i = 0; i < size; ++i) { aux_ptr[i] = -aux_ptr[i]; }
+    m_limiter.process(stereo_view, 1.0f);
 }
 
 }  // namespace thl::dsp::synth

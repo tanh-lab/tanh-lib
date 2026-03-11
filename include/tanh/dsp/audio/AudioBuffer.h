@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/audio/MemoryBlock.h>
 
 #include <cstddef>
@@ -189,6 +190,9 @@ public:
     void reset_channel_ptr() {
         for (size_t i = 0; i < m_num_channels; ++i) { m_channels[i] = m_data.data() + i * m_size; }
     }
+
+    BasicAudioBufferView<T> view() { return BasicAudioBufferView<T>(*this); }
+    BasicAudioBufferView<const T> view() const { return BasicAudioBufferView<const T>(*this); }
 
 private:
     void malloc_channels() {

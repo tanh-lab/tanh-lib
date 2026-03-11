@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/DspMath.h>
 
 namespace thl::dsp::utils {
@@ -41,7 +42,10 @@ public:
 
     void prepare() { m_peak = 0.5f; }
 
-    void process(float* l, float* r, size_t size, float pre_gain) {
+    void process(thl::dsp::audio::AudioBufferView stereo, float pre_gain) {
+        float* l = stereo.get_write_pointer(0);
+        float* r = stereo.get_write_pointer(1);
+        size_t size = stereo.get_num_frames();
         while (size--) {
             float l_pre = *l * pre_gain;
             float r_pre = *r * pre_gain;

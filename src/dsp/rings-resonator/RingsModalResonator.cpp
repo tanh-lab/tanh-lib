@@ -97,7 +97,14 @@ int32_t RingsModalResonator::compute_filters() {
     return num_modes;
 }
 
-void RingsModalResonator::process(const float* in, float* out, float* aux, size_t size) {
+void RingsModalResonator::process(thl::dsp::audio::ConstAudioBufferView in,
+                                  thl::dsp::audio::AudioBufferView out,
+                                  thl::dsp::audio::AudioBufferView aux) {
+    const float* in_ptr = in.get_read_pointer(0);
+    float* out_ptr = out.get_write_pointer(0);
+    float* aux_ptr = aux.get_write_pointer(0);
+    size_t size = in.get_num_frames();
+
     if (m_dirty) {
         m_num_modes = compute_filters();
         m_dirty = false;
@@ -109,7 +116,7 @@ void RingsModalResonator::process(const float* in, float* out, float* aux, size_
         CosineOscillator amplitudes;
         amplitudes.prepare<thl::dsp::utils::CosineOscillatorMode::Approximate>(position.next());
 
-        float input = *in++ * 0.125f;
+        float input = *in_ptr++ * 0.125f;
         float odd = 0.0f;
         float even = 0.0f;
         amplitudes.start();
@@ -119,8 +126,8 @@ void RingsModalResonator::process(const float* in, float* out, float* aux, size_
             even +=
                 amplitudes.next() * m_f[i++].process<thl::dsp::filter::FilterMode::BandPass>(input);
         }
-        *out++ = odd;
-        *aux++ = even;
+        *out_ptr++ = odd;
+        *aux_ptr++ = even;
     }
 }
 

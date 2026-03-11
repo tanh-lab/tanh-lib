@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/DspMath.h>
 
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
@@ -50,7 +51,10 @@ public:
         m_phase_2 = 0;
     }
 
-    void process(float* left, float* right, size_t size) {
+    void process(thl::dsp::audio::AudioBufferView stereo) {
+        float* left = stereo.get_write_pointer(0);
+        float* right = stereo.get_write_pointer(1);
+        size_t size = stereo.get_num_frames();
         typedef E::Reserve<4095> Memory;
         E::DelayLine<Memory, 0> line;
         E::Context c;

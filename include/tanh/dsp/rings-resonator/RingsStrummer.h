@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/analysis/OnsetDetector.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
 
@@ -49,8 +50,9 @@ public:
         m_previous_note = 69.0f;
     }
 
-    void process(const float* in, size_t size, RingsPerformanceState* performance_state) {
-        bool has_onset = in && m_onset_detector.process(in, size);
+    void process(thl::dsp::audio::ConstAudioBufferView in,
+                 RingsPerformanceState* performance_state) {
+        bool has_onset = in.get_num_frames() > 0 && m_onset_detector.process(in);
         bool note_changed = fabs(performance_state->note - m_previous_note) > 0.4f;
 
         int32_t inhibit_timer = m_inhibit_timer;
