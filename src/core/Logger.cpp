@@ -50,13 +50,15 @@ bool should_log_compiled(std::uint32_t level) {
 FILE* stream_for_level(std::uint32_t level) {
     switch (clamp_level(level)) {
         case static_cast<std::uint32_t>(LogLevel::Error):
-        case static_cast<std::uint32_t>(LogLevel::Warning): return stderr;
-        default: return stdout;
+        case static_cast<std::uint32_t>(LogLevel::Warning):
+            return stderr;
+        default:
+            return stdout;
     }
 }
 
 std::atomic<bool>& shutdown_started_flag() {
-    static std::atomic<bool> flag{false};
+    static std::atomic<bool> flag {false};
     return flag;
 }
 
@@ -76,6 +78,7 @@ void ensure_shutdown_hook_installed() {
     }();
     (void)registered;
 }
+
 
 const char* level_name(std::uint32_t level) {
     switch (clamp_level(level)) {
@@ -123,7 +126,9 @@ bool needs_logfmt_quotes(const std::string& value) {
     return false;
 }
 
-void append_logfmt_field(std::ostringstream& out, const char* key, const std::string& rawValue) {
+void append_logfmt_field(std::ostringstream& out,
+                         const char* key,
+                         const std::string& rawValue) {
     const std::string value = escape_logfmt_value(rawValue);
     out << key << '=';
     if (!needs_logfmt_quotes(value)) {
@@ -144,7 +149,7 @@ std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
         --seconds;
     }
 
-    std::tm tm_value{};
+    std::tm tm_value {};
 #if defined(THL_PLATFORM_WINDOWS)
     gmtime_s(&tm_value, &seconds);
 #else
@@ -152,8 +157,10 @@ std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
 #endif
 
     std::ostringstream out;
-    out << std::put_time(&tm_value, "%Y-%m-%dT%H:%M:%S") << '.' << std::setw(3) << std::setfill('0')
-        << millis << 'Z';
+    out << std::put_time(&tm_value, "%Y-%m-%dT%H:%M:%S")
+        << '.'
+        << std::setw(3) << std::setfill('0') << millis
+        << 'Z';
     return out.str();
 }
 
@@ -164,10 +171,11 @@ void write_to_default_sink(const LogRecord& record) {
         std::fprintf(out, "%s\n", line.c_str());
         std::fflush(out);
     } catch (...) {
-        write_to_stderr_fallback(record.level,
-                                 record.source.empty() ? "native" : record.source.c_str(),
-                                 record.group.empty() ? "default" : record.group.c_str(),
-                                 record.message.c_str());
+        write_to_stderr_fallback(
+            record.level,
+            record.source.empty() ? "native" : record.source.c_str(),
+            record.group.empty() ? "default" : record.group.c_str(),
+            record.message.c_str());
     }
 }
 
@@ -200,10 +208,14 @@ bool emit_platform(const LogRecord& record) {
 #if defined(THL_PLATFORM_ANDROID)
     int android_level = ANDROID_LOG_INFO;
     switch (clamp_level(record.level)) {
-        case static_cast<std::uint32_t>(LogLevel::Error): android_level = ANDROID_LOG_ERROR; break;
-        case static_cast<std::uint32_t>(LogLevel::Warning): android_level = ANDROID_LOG_WARN; break;
-        case static_cast<std::uint32_t>(LogLevel::Info): android_level = ANDROID_LOG_INFO; break;
-        case static_cast<std::uint32_t>(LogLevel::Debug): android_level = ANDROID_LOG_DEBUG; break;
+        case static_cast<std::uint32_t>(LogLevel::Error):
+            android_level = ANDROID_LOG_ERROR; break;
+        case static_cast<std::uint32_t>(LogLevel::Warning):
+            android_level = ANDROID_LOG_WARN; break;
+        case static_cast<std::uint32_t>(LogLevel::Info):
+            android_level = ANDROID_LOG_INFO; break;
+        case static_cast<std::uint32_t>(LogLevel::Debug):
+            android_level = ANDROID_LOG_DEBUG; break;
         default: android_level = ANDROID_LOG_INFO; break;
     }
     __android_log_print(android_level, "thl", "[%s][%s] %s", source, group, message);
@@ -236,10 +248,14 @@ bool emit_platform(const LogRecord& record) {
 #elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
     os_log_type_t type = OS_LOG_TYPE_INFO;
     switch (clamp_level(record.level)) {
-        case static_cast<std::uint32_t>(LogLevel::Error): type = OS_LOG_TYPE_ERROR; break;
-        case static_cast<std::uint32_t>(LogLevel::Warning): type = OS_LOG_TYPE_DEFAULT; break;
-        case static_cast<std::uint32_t>(LogLevel::Info): type = OS_LOG_TYPE_INFO; break;
-        case static_cast<std::uint32_t>(LogLevel::Debug): type = OS_LOG_TYPE_DEBUG; break;
+        case static_cast<std::uint32_t>(LogLevel::Error):
+            type = OS_LOG_TYPE_ERROR; break;
+        case static_cast<std::uint32_t>(LogLevel::Warning):
+            type = OS_LOG_TYPE_DEFAULT; break;
+        case static_cast<std::uint32_t>(LogLevel::Info):
+            type = OS_LOG_TYPE_INFO; break;
+        case static_cast<std::uint32_t>(LogLevel::Debug):
+            type = OS_LOG_TYPE_DEBUG; break;
         default: type = OS_LOG_TYPE_INFO; break;
     }
 #if defined(THL_PLATFORM_MACOS)
@@ -272,7 +288,7 @@ bool emit_platform(const LogRecord& record) {
 // ---------------------------------------------------------------------------
 
 struct LoggerState {
-    std::atomic<std::uint64_t> next_seq{1};
+    std::atomic<std::uint64_t> next_seq {1};
 
     // Protects config booleans + callback + early buffers.
     std::mutex config_mutex;
@@ -339,13 +355,18 @@ LogRecord make_record(std::uint32_t level,
                       const char* group,
                       const char* message) {
     LogRecord record;
-    record.seq = state().next_seq.fetch_add(1, std::memory_order_relaxed);
+    record.seq =
+        state().next_seq.fetch_add(1, std::memory_order_relaxed);
     const auto wall_now = std::chrono::system_clock::now();
     const auto mono_now = std::chrono::steady_clock::now();
     record.timestamp_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(wall_now.time_since_epoch()).count();
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            wall_now.time_since_epoch())
+            .count();
     record.monotonic_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(mono_now.time_since_epoch()).count();
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            mono_now.time_since_epoch())
+            .count();
     record.level = clamp_level(level);
     record.source = source ? source : "native";
     record.group = group ? group : "default";
@@ -413,10 +434,11 @@ void dispatch_record(const LogRecord& record) {
             callback_copy(record);
             any_sink_ran = true;
         } catch (...) {
-            write_to_stderr_fallback(record.level,
-                                     record.source.c_str(),
-                                     record.group.c_str(),
-                                     record.message.c_str());
+            write_to_stderr_fallback(
+                record.level,
+                record.source.c_str(),
+                record.group.c_str(),
+                record.message.c_str());
             any_sink_ran = true;
         }
     } else if (callback_on && early_cap > 0) {
@@ -428,7 +450,9 @@ void dispatch_record(const LogRecord& record) {
     }
 
     // 4. Last-resort fallback if every sink was disabled or failed.
-    if (!any_sink_ran) { write_to_default_sink(record); }
+    if (!any_sink_ran) {
+        write_to_default_sink(record);
+    }
 }
 
 }  // namespace
@@ -528,13 +552,21 @@ std::string format_plain(const LogRecord& record) {
 
 std::string format_logfmt(const LogRecord& record) {
     std::ostringstream out;
-    append_logfmt_field(out, "time", format_iso8601_utc_ms(record.timestamp_ms));
+    append_logfmt_field(
+        out, "time", format_iso8601_utc_ms(record.timestamp_ms));
     out << ' ';
-    out << "level=" << level_name(record.level) << " seq=" << record.seq
-        << " ts_ms=" << record.timestamp_ms << " mono_ns=" << record.monotonic_ns << ' ';
-    append_logfmt_field(out, "source", record.source.empty() ? "native" : record.source);
+    out << "level=" << level_name(record.level)
+        << " seq=" << record.seq
+        << " ts_ms=" << record.timestamp_ms
+        << " mono_ns=" << record.monotonic_ns
+        << ' ';
+    append_logfmt_field(
+        out, "source",
+        record.source.empty() ? "native" : record.source);
     out << ' ';
-    append_logfmt_field(out, "group", record.group.empty() ? "default" : record.group);
+    append_logfmt_field(
+        out, "group",
+        record.group.empty() ? "default" : record.group);
     out << ' ';
     append_logfmt_field(out, "message", record.message);
     return out.str();
@@ -548,7 +580,10 @@ void log(LogLevel level, const char* group, const char* message) {
     log_with_source(level, "native", group, message);
 }
 
-void log_with_source(LogLevel level, const char* source, const char* group, const char* message) {
+void log_with_source(LogLevel level,
+                     const char* source,
+                     const char* group,
+                     const char* message) {
     const auto numeric_level = static_cast<std::uint32_t>(level);
     if (!should_log_compiled(numeric_level)) { return; }
 
@@ -559,22 +594,30 @@ void log_with_source(LogLevel level, const char* source, const char* group, cons
     }
 
     try {
-        dispatch_record(make_record(numeric_level, source, group, message));
-    } catch (...) { write_to_stderr_fallback(numeric_level, source, group, message); }
+        dispatch_record(
+            make_record(numeric_level, source, group, message));
+    } catch (...) {
+        write_to_stderr_fallback(
+            numeric_level, source, group, message);
+    }
 }
 
 void logf(LogLevel level, const char* group, const char* fmt, ...) {
-    if (!should_log_compiled(static_cast<std::uint32_t>(level))) { return; }
+    if (!should_log_compiled(static_cast<std::uint32_t>(level))) {
+        return;
+    }
 
     if (!fmt) {
         log(level, group, "");
         return;
     }
 
-    std::array<char, 1024> stack_buffer{};
+    std::array<char, 1024> stack_buffer {};
     va_list args;
     va_start(args, fmt);
-    const int written = std::vsnprintf(stack_buffer.data(), stack_buffer.size(), fmt, args);
+    const int written =
+        std::vsnprintf(
+            stack_buffer.data(), stack_buffer.size(), fmt, args);
     va_end(args);
 
     if (written < 0) {
