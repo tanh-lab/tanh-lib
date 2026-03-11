@@ -274,11 +274,11 @@ endif()
 # Resonator is part of DSP.
 if(TANH_BUILD_DSP)
     add_library(${PROJECT_NAME}_resonator
-        src/dsp/resonator/RingsModalResonator.cpp
-        src/dsp/resonator/RingsString.cpp
-        src/dsp/resonator/RingsVoiceManager.cpp
-        src/dsp/resonator/RingsFmVoice.cpp
-        src/dsp/resonator/RingsStringSynthPart.cpp
+        src/dsp/rings-resonator/RingsModalResonator.cpp
+        src/dsp/rings-resonator/RingsString.cpp
+        src/dsp/rings-resonator/RingsVoiceManager.cpp
+        src/dsp/rings-resonator/RingsFmVoice.cpp
+        src/dsp/rings-resonator/RingsStringSynthPart.cpp
         src/dsp/synth/RingsResonatorSynthProcessor.cpp
     )
 
