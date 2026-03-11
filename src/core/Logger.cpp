@@ -13,11 +13,16 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)
 #include <android/log.h>
 #elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
 #include <os/log.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
+#elif defined(THL_PLATFORM_LINUX)
+#include <systemd/sd-journal.h>
 #endif
 
 namespace thl::Logger {
@@ -154,7 +159,7 @@ std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
 
 void write_to_default_sink(const LogRecord& record) {
     try {
-        const std::string line = format_logfmt(record);
+        const std::string line = format_plain(record);
         FILE* out = stream_for_level(record.level);
         std::fprintf(out, "%s\n", line.c_str());
         std::fflush(out);
@@ -175,10 +180,21 @@ os_log_t platform_log_handle() {
     static os_log_t handle = os_log_create("thl", "logger");
     return handle;
 }
+
+bool is_debugger_attached() {
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
+    struct kinfo_proc info {};
+    size_t size = sizeof(info);
+    sysctl(mib, 4, &info, &size, nullptr, 0);
+    return (info.kp_proc.p_flag & P_TRACED) != 0;
+}
 #endif
 
 bool emit_platform(const LogRecord& record) {
-    const char* group = record.group.empty() ? "default" : record.group.c_str();
+    const char* source =
+    record.source.empty() ? "native" : record.source.c_str();
+    const char* group =
+        record.group.empty() ? "default" : record.group.c_str();
     const char* message = record.message.c_str();
 
 #if defined(THL_PLATFORM_ANDROID)
@@ -190,7 +206,31 @@ bool emit_platform(const LogRecord& record) {
         case static_cast<std::uint32_t>(LogLevel::Debug): android_level = ANDROID_LOG_DEBUG; break;
         default: android_level = ANDROID_LOG_INFO; break;
     }
-    __android_log_print(android_level, "thl", "[%s] %s", group, message);
+    __android_log_print(android_level, "thl", "[%s][%s] %s", source, group, message);
+    return true;
+
+#elif defined(THL_PLATFORM_LINUX)
+    int priority = LOG_INFO;
+    switch (clamp_level(record.level)) {
+        case static_cast<std::uint32_t>(LogLevel::Error):
+            priority = LOG_ERR; break;
+        case static_cast<std::uint32_t>(LogLevel::Warning):
+            priority = LOG_WARNING; break;
+        case static_cast<std::uint32_t>(LogLevel::Info):
+            priority = LOG_INFO; break;
+        case static_cast<std::uint32_t>(LogLevel::Debug):
+            priority = LOG_DEBUG; break;
+        default: priority = LOG_INFO; break;
+    }
+    sd_journal_send(
+        "MESSAGE=[%s][%s] %s", source, group, message,
+        "PRIORITY=%i", priority,
+        "SYSLOG_IDENTIFIER=%s", "thl",
+        "THL_SOURCE=%s", source,
+        "THL_GROUP=%s", group,
+        NULL);
+
+    // In the choc webkit on linux the console logs are automatically forwarded to the stdout/stderr of the process
     return true;
 
 #elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
@@ -202,9 +242,23 @@ bool emit_platform(const LogRecord& record) {
         case static_cast<std::uint32_t>(LogLevel::Debug): type = OS_LOG_TYPE_DEBUG; break;
         default: type = OS_LOG_TYPE_INFO; break;
     }
-    os_log_with_type(platform_log_handle(), type, "[%{public}s] %{public}s", group, message);
 #if defined(THL_PLATFORM_MACOS)
+    if (!is_debugger_attached()) {
+        os_log_with_type(platform_log_handle(),
+                        type,
+                        "[%{public}s][%{public}s] %{public}s",
+                        source,
+                        group,
+                        message);
+    }
     write_to_default_sink(record);
+#else
+    os_log_with_type(platform_log_handle(),
+                    type,
+                    "[%{public}s][%{public}s] %{public}s",
+                    source,
+                    group,
+                    message);
 #endif
     return true;
 #else
@@ -220,12 +274,16 @@ bool emit_platform(const LogRecord& record) {
 struct LoggerState {
     std::atomic<std::uint64_t> next_seq{1};
 
-    // Protects config booleans + callback.
+    // Protects config booleans + callback + early buffers.
     std::mutex config_mutex;
     bool platform_enabled = true;
-    bool file_enabled = false;
+    bool file_enabled = true;
     bool callback_enabled = true;
     Callback callback;
+
+    std::size_t early_buffer_capacity = 64;
+    std::vector<LogRecord> early_callback_buffer;
+    std::vector<LogRecord> early_file_buffer;
 
     // Protects file_path + file_stream.  Lock ordering: config_mutex
     // before file_mutex.
@@ -251,7 +309,8 @@ bool emit_file(const LogRecord& record) {
     if (s.file_path.empty()) { return false; }
 
     if (!s.file_stream.is_open()) {
-        s.file_stream.open(s.file_path, std::ios::out | std::ios::app);
+        s.file_stream.open(
+            s.file_path, std::ios::out | std::ios::trunc);
         if (!s.file_stream.is_open()) { return false; }
     }
 
@@ -315,12 +374,14 @@ void dispatch_record(const LogRecord& record) {
     bool platform_on = false;
     bool file_on = false;
     bool callback_on = false;
+    std::size_t early_cap = 0;
     Callback callback_copy;
     {
         std::lock_guard<std::mutex> lock(state().config_mutex);
         platform_on = state().platform_enabled;
         file_on = state().file_enabled;
         callback_on = state().callback_enabled;
+        early_cap = state().early_buffer_capacity;
         callback_copy = state().callback;
     }
 
@@ -333,7 +394,16 @@ void dispatch_record(const LogRecord& record) {
 
     // 2. File sink (acquires file_mutex internally).
     if (file_on) {
-        if (emit_file(record)) { any_sink_ran = true; }
+        if (emit_file(record)) {
+            any_sink_ran = true;
+        } else if (early_cap > 0) {
+            // File enabled but path not yet configured — buffer for later.
+            std::lock_guard<std::mutex> lock(state().config_mutex);
+            if (state().early_file_buffer.size() < state().early_buffer_capacity) {
+                state().early_file_buffer.push_back(record);
+                any_sink_ran = true;
+            }
+        }
     }
 
     // 3. Callback sink (gated by callback_enabled + re-entrancy guard).
@@ -347,6 +417,12 @@ void dispatch_record(const LogRecord& record) {
                                      record.source.c_str(),
                                      record.group.c_str(),
                                      record.message.c_str());
+            any_sink_ran = true;
+        }
+    } else if (callback_on && early_cap > 0) {
+        std::lock_guard<std::mutex> lock(state().config_mutex);
+        if (!state().callback && state().early_callback_buffer.size() < state().early_buffer_capacity) {
+            state().early_callback_buffer.push_back(record);
             any_sink_ran = true;
         }
     }
@@ -364,11 +440,18 @@ void dispatch_record(const LogRecord& record) {
 void set_config(const LoggerConfig& config) {
     auto& s = state();
 
+    std::vector<LogRecord> file_buffered;
     {
         std::lock_guard<std::mutex> lock(s.config_mutex);
         s.platform_enabled = config.platform_enabled;
         s.file_enabled = config.file_enabled;
         s.callback_enabled = config.callback_enabled;
+        s.early_buffer_capacity = config.early_buffer_capacity;
+
+        // Drain the file early buffer when a path becomes available.
+        if (config.file_enabled && !config.file_path.empty()) {
+            file_buffered.swap(s.early_file_buffer);
+        }
     }
 
     {
@@ -378,6 +461,11 @@ void set_config(const LoggerConfig& config) {
             if (s.file_stream.is_open()) { s.file_stream.close(); }
         }
         s.file_path = config.file_path;
+    }
+
+    // Replay buffered records into the file sink now that the path is set.
+    for (const auto& record : file_buffered) {
+        emit_file(record);
     }
 }
 
@@ -389,6 +477,7 @@ LoggerConfig get_config() {
         config.platform_enabled = s.platform_enabled;
         config.file_enabled = s.file_enabled;
         config.callback_enabled = s.callback_enabled;
+        config.early_buffer_capacity = s.early_buffer_capacity;
     }
     {
         std::lock_guard<std::mutex> lock(s.file_mutex);
@@ -402,9 +491,20 @@ LoggerConfig get_config() {
 // ---------------------------------------------------------------------------
 
 void set_callback(Callback cb) {
-    auto& s = state();
-    std::lock_guard<std::mutex> lock(s.config_mutex);
-    s.callback = std::move(cb);
+    std::vector<LogRecord> buffered;
+    {
+        auto& s = state();
+        std::lock_guard<std::mutex> lock(s.config_mutex);
+        s.callback = cb;
+        buffered.swap(s.early_callback_buffer);
+    }
+
+    if (cb && !buffered.empty()) {
+        CallbackDispatchScope scope;
+        for (const auto& record : buffered) {
+            try { cb(record); } catch (...) {}
+        }
+    }
 }
 
 void clear_callback() {
@@ -416,6 +516,15 @@ void clear_callback() {
 // ---------------------------------------------------------------------------
 // Public API -- formatting
 // ---------------------------------------------------------------------------
+
+std::string format_plain(const LogRecord& record) {
+    std::ostringstream out;
+    out << '[' << level_name(record.level) << "]["
+        << (record.source.empty() ? "native" : record.source) << "]["
+        << (record.group.empty() ? "default" : record.group) << "] "
+        << record.message;
+    return out.str();
+}
 
 std::string format_logfmt(const LogRecord& record) {
     std::ostringstream out;
