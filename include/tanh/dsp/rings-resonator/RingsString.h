@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/utils/DelayLine.h>
 #include <tanh/dsp/filter/Svf.h>
@@ -158,7 +159,9 @@ public:
     // Process a block of `size` samples.  Excitation is read from `in`;
     // the primary string output is accumulated into `out` and a comb-
     // filtered pickup signal (position-dependent tap) into `aux`.
-    void process(const float* in, float* out, float* aux, size_t size);
+    void process(thl::dsp::audio::ConstAudioBufferView in,
+                 thl::dsp::audio::AudioBufferView out,
+                 thl::dsp::audio::AudioBufferView aux);
 
     inline void set_frequency(float frequency) { m_frequency = frequency; }
 
@@ -187,7 +190,9 @@ private:
     // path so the compiler can eliminate allpass / curved-bridge logic
     // when it is not needed.
     template <bool enable_dispersion>
-    void process_internal(const float* in, float* out, float* aux, size_t size);
+    void process_internal(thl::dsp::audio::ConstAudioBufferView in,
+                          thl::dsp::audio::AudioBufferView out,
+                          thl::dsp::audio::AudioBufferView aux);
 
     float m_sample_rate = kDefaultSampleRate;
     float m_frequency = 0.0f;

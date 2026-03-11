@@ -24,9 +24,15 @@ void SineProcessorImpl::prepare(const double& sample_rate,
     smoothed_amplitude.set_current_and_target_value(get_parameter<float>(Amplitude));
 }
 
-void SineProcessorImpl::process(float** buffer,
-                                const size_t& num_samples,
-                                const size_t& num_channels) {
+void SineProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer) {
+    constexpr size_t kMaxChannels = 16;
+    const size_t num_samples = buffer.get_num_frames();
+    const size_t num_channels = std::min(buffer.get_num_channels(), kMaxChannels);
+    float* channel_ptrs[kMaxChannels];
+    for (size_t ch = 0; ch < num_channels; ++ch) {
+        channel_ptrs[ch] = buffer.get_write_pointer(ch);
+    }
+
     constexpr float two_pi = 2.0f * static_cast<float>(M_PI);
     const auto sample_rate_f = static_cast<float>(m_sample_rate);
 
@@ -42,7 +48,7 @@ void SineProcessorImpl::process(float** buffer,
         for (size_t ch = 0; ch < num_channels; ++ch) {
             float& phase = m_phase[ch];
 
-            buffer[ch][i] = current_amp * std::sin(phase);
+            channel_ptrs[ch][i] = current_amp * std::sin(phase);
             phase += phase_increment;
 
             if (phase >= two_pi)

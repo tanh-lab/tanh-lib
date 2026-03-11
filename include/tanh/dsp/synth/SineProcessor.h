@@ -18,7 +18,7 @@ public:
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
-    void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
+    void process(thl::dsp::audio::AudioBufferView buffer) override;
 
 protected:
     enum Parameter {

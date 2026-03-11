@@ -32,6 +32,7 @@
 
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/filter/Svf.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl::dsp::analysis {
 
@@ -147,13 +148,21 @@ public:
         m_onset_df = 0.0f;
     }
 
-    bool process(const float* samples, size_t size) {
+    bool process(thl::dsp::audio::ConstAudioBufferView samples) {
+        const float* samples_ptr = samples.get_read_pointer(0);
+        size_t size = samples.get_num_frames();
         // Automatic gain control.
-        m_compressor.process(samples, m_bands[0], size);
+        m_compressor.process(samples_ptr, m_bands[0], size);
 
         // Quick and dirty filter bank - split the signal in three bands.
-        m_mid_high_filter.split(m_bands[0], m_bands[1], m_bands[2], size);
-        m_low_mid_filter.split(m_bands[1], m_bands[0], m_bands[1], size);
+        m_mid_high_filter.split(
+            thl::dsp::audio::ConstAudioBufferView(m_bands[0], size),
+            thl::dsp::audio::AudioBufferView(m_bands[1], size),
+            thl::dsp::audio::AudioBufferView(m_bands[2], size));
+        m_low_mid_filter.split(
+            thl::dsp::audio::ConstAudioBufferView(m_bands[1], size),
+            thl::dsp::audio::AudioBufferView(m_bands[0], size),
+            thl::dsp::audio::AudioBufferView(m_bands[1], size));
 
         // Compute low-pass energy and onset detection function
         // (derivative of energy) in each band.

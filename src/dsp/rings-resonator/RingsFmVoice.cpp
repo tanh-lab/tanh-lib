@@ -94,7 +94,14 @@ void RingsFmVoice::prepare_coefficients() {
     m_feedback = (m_feedback_amount - 0.5f) * 2.0f;
 }
 
-void RingsFmVoice::process(const float* in, float* out, float* aux, size_t size) {
+void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
+                           thl::dsp::audio::AudioBufferView out,
+                           thl::dsp::audio::AudioBufferView aux) {
+    const float* in_ptr = in.get_read_pointer(0);
+    float* out_ptr = out.get_write_pointer(0);
+    float* aux_ptr = aux.get_write_pointer(0);
+    size_t size = in.get_num_frames();
+
     prepare_coefficients();
 
     ParameterInterpolator carrier_increment(m_previous_carrier_frequency,
@@ -113,7 +120,7 @@ void RingsFmVoice::process(const float* in, float* out, float* aux, size_t size)
     while (size--) {
         // Envelope follower and internal envelope.
         float amplitude_envelope, brightness_envelope;
-        m_follower.process(*in++, &amplitude_envelope, &brightness_envelope);
+        m_follower.process(*in_ptr++, &amplitude_envelope, &brightness_envelope);
 
         brightness_envelope *= 2.0f * amplitude_envelope * (2.0f - amplitude_envelope);
 
@@ -145,8 +152,8 @@ void RingsFmVoice::process(const float* in, float* out, float* aux, size_t size)
         float gain = 1.0f + m_envelope_amount * (m_amplitude_envelope - 1.0f);
         ONE_POLE(m_gain, gain, 0.005f + 0.045f * m_fm_amount);
 
-        *out++ = (carrier + 0.5f * modulator) * m_gain;
-        *aux++ = 0.5f * modulator * m_gain;
+        *out_ptr++ = (carrier + 0.5f * modulator) * m_gain;
+        *aux_ptr++ = 0.5f * modulator * m_gain;
     }
     m_carrier_phase = carrier_phase;
     m_modulator_phase = modulator_phase;
