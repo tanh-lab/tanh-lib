@@ -39,12 +39,15 @@ using Callback = std::function<void(const LogRecord&)>;
 /// Controls which sinks are active.  Apply with set_config(); read back
 /// with get_config().  Defaults: platform on, file off, callback on.
 struct LoggerConfig {
-    bool platform_enabled = true;  ///< Platform sink (os_log / android_log /
-                                   ///< stdout+stderr).
-    bool file_enabled = false;     ///< Logfmt file sink.
-    bool callback_enabled = true;  ///< Gate for the registered callback.
-    std::string file_path;         ///< Output path for the file sink (empty = no
-                                   ///< writes).
+    bool platform_enabled = true;   ///< Platform sink (os_log / android_log / stdout+stderr).
+    bool file_enabled = true;      ///< Logfmt file sink.
+    bool callback_enabled = true;   ///< Gate for the registered callback.
+    std::string file_path;          ///< Output path for the file sink (empty = no writes).
+
+    /// Maximum number of records to buffer while no callback is registered.
+    /// When a callback is set via set_callback(), buffered records are
+    /// replayed synchronously.  Set to 0 to disable buffering.
+    std::size_t early_buffer_capacity = 64;
 };
 
 /// @brief Apply a new sink configuration.
@@ -62,6 +65,9 @@ LoggerConfig get_config();
 /// @param cb  Callable invoked for every log record that passes the
 ///            compile-time level filter and the @c callback_enabled gate.
 ///
+/// Any records buffered while no callback was registered are replayed
+/// synchronously (oldest first) before the function returns.
+///
 /// @note The callback runs on the caller's thread.  Slow work in the
 ///       callback will block the logging thread.
 /// @note Re-entrant logging from inside the callback is guarded and
@@ -72,6 +78,10 @@ void set_callback(Callback cb);
 
 /// Remove a previously registered callback.
 void clear_callback();
+
+/// Format a log record as a plain human-readable string:
+/// @c [level][source][group] message
+std::string format_plain(const LogRecord& record);
 
 /// Format a log record as a
 /// [logfmt](https://brandur.org/logfmt)-style string.

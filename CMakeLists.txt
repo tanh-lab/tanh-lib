@@ -163,13 +163,16 @@ if(TANH_BUILD_CORE)
     # Build type definitions
     target_compile_definitions(${PROJECT_NAME}_core
         PUBLIC
-        $<$<CONFIG:Debug>:THL_BUILD_DEBUG=1>
-        $<$<CONFIG:Release>:THL_BUILD_RELEASE=1>
-        $<$<CONFIG:RelWithDebInfo>:THL_BUILD_RELWITHDEBINFO=1>
+        $<$<CONFIG:Debug>:THL_DEBUG=1>
+        $<$<CONFIG:Release>:THL_RELEASE=1>
+        $<$<CONFIG:RelWithDebInfo>:THL_RELWITHDEBINFO=1>
+        $<$<CONFIG:MinSizeRel>:THL_MINSIZEREL=1>
     )
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Android")
         target_link_libraries(${PROJECT_NAME}_core PRIVATE log)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(${PROJECT_NAME}_core PRIVATE systemd)
     endif()
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
