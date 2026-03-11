@@ -1,5 +1,6 @@
 #include <tanh/dsp/audio/RingBuffer.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace thl::dsp::audio {

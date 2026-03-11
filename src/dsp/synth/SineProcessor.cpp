@@ -1,5 +1,7 @@
 #include "tanh/dsp/synth/SineProcessor.h"
 
+#include <algorithm>
+
 using namespace thl::dsp::synth;
 
 #ifndef M_PI
