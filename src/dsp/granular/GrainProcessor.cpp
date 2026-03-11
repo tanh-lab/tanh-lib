@@ -7,31 +7,26 @@
 namespace thl::dsp::granular {
 
 GrainProcessorImpl::GrainProcessorImpl(audio::AudioDataStore& audio_store)
-    : m_audio_store(audio_store),
-      m_max_grains(MAX_GRAINS),
-      m_next_grain_time(0),
-      m_min_grain_interval(100),
-      m_sequential_position(0),
-      m_random_generator(std::random_device{}()),
-      m_uni_dist(0.0f, 1.0f),
-      m_last_playing_state(false),
-      m_current_sample_index(0) {
-
+    : m_audio_store(audio_store)
+    , m_max_grains(MAX_GRAINS)
+    , m_next_grain_time(0)
+    , m_min_grain_interval(100)
+    , m_sequential_position(0)
+    , m_random_generator(std::random_device{}())
+    , m_uni_dist(0.0f, 1.0f)
+    , m_last_playing_state(false)
+    , m_current_sample_index(0) {
     // Prepare grain container
     m_grains.resize(m_max_grains);
 
     // Initialize all grains as inactive
-    for (auto& grain : m_grains) {
-        grain.active = false;
-    }
+    for (auto& grain : m_grains) { grain.active = false; }
 }
 
 GrainProcessorImpl::~GrainProcessorImpl() = default;
 
 void GrainProcessorImpl::reset_grains() {
-    for (auto& grain : m_grains) {
-        grain.active = false;
-    }
+    for (auto& grain : m_grains) { grain.active = false; }
     m_sequential_position = 0;
     m_next_grain_time = 0;
     m_last_playing_state = false;
@@ -39,7 +34,9 @@ void GrainProcessorImpl::reset_grains() {
     m_envelope.reset();
 }
 
-void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) {
+void GrainProcessorImpl::prepare(const double& sample_rate,
+                                 const size_t& samples_per_block,
+                                 const size_t& num_channels) {
     m_sample_rate = sample_rate;
     m_channels = num_channels;
 
@@ -49,16 +46,16 @@ void GrainProcessorImpl::prepare(const double& sample_rate, const size_t& sample
     m_next_grain_time = 0;
 
     m_envelope.set_sample_rate(static_cast<float>(m_sample_rate));
-    m_envelope.set_parameters(
-        get_parameter<float>(EnvelopeAttack),
-        get_parameter<float>(EnvelopeDecay),
-        get_parameter<float>(EnvelopeSustain),
-        get_parameter<float>(EnvelopeRelease)
-    );
+    m_envelope.set_parameters(get_parameter<float>(EnvelopeAttack),
+                              get_parameter<float>(EnvelopeDecay),
+                              get_parameter<float>(EnvelopeSustain),
+                              get_parameter<float>(EnvelopeRelease));
     m_envelope.reset();
 }
 
-void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
+void GrainProcessorImpl::process(float** buffer,
+                                 const size_t& num_samples,
+                                 const size_t& num_channels) {
     update_envelope_if_needed();
 
     bool playing = get_parameter<bool>(Playing);
@@ -66,10 +63,12 @@ void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, cons
     bool envelope_active = m_envelope.is_active();
     if (playing && !envelope_active || playing && !m_last_playing_state) {
         m_envelope.note_on();
-        m_next_grain_time = 0; // Reset grain time when starting playback
-        m_sequential_position = 0; // Reset sequential position when starting playback
+        m_next_grain_time = 0;      // Reset grain time when starting playback
+        m_sequential_position = 0;  // Reset sequential position when starting
+                                    // playback
         m_playback_elapsed_samples = 0;
-    } else if (!playing && m_envelope.get_state() != utils::ADSR::State::IDLE && m_envelope.get_state() != utils::ADSR::State::RELEASE) {
+    } else if (!playing && m_envelope.get_state() != utils::ADSR::State::IDLE &&
+               m_envelope.get_state() != utils::ADSR::State::RELEASE) {
         m_envelope.note_off();
     }
     m_last_playing_state = playing;
@@ -82,9 +81,7 @@ void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, cons
     }
 
     // If not playing or no audio data, just return (silence)
-    if (!m_envelope.is_active() || !m_audio_store.is_loaded()) {
-        return;
-    }
+    if (!m_envelope.is_active() || !m_audio_store.is_loaded()) { return; }
 
     // Process existing grains and generate new ones
     update_grains(buffer, num_samples);
@@ -92,9 +89,7 @@ void GrainProcessorImpl::process(float** buffer, const size_t& num_samples, cons
     // Apply master volume
     for (size_t i = 0; i < num_samples; i++) {
         float grain_volume = volume * m_envelope.process();
-        for (size_t ch = 0; ch < num_channels; ++ch) {
-            buffer[ch][i] *= grain_volume;
-        }
+        for (size_t ch = 0; ch < num_channels; ++ch) { buffer[ch][i] *= grain_volume; }
     }
 }
 
@@ -127,12 +122,17 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
     float density = get_parameter<float>(Density);
 
     // Calculate how frequently we should trigger new grains
-    unsigned int min_interval = static_cast<unsigned int>(m_sample_rate * MIN_GRAIN_INTERVAL); // max is 50 grains per second
-    unsigned int max_interval = static_cast<unsigned int>(m_sample_rate * MAX_GRAIN_INTERVAL);  // min is 5 grains per second
+    unsigned int min_interval =
+        static_cast<unsigned int>(m_sample_rate * MIN_GRAIN_INTERVAL);  // max is 50 grains per
+                                                                        // second
+    unsigned int max_interval =
+        static_cast<unsigned int>(m_sample_rate * MAX_GRAIN_INTERVAL);  // min is 5 grains per
+                                                                        // second
     unsigned int interval_range = max_interval - min_interval;
     m_min_grain_interval = max_interval - static_cast<unsigned int>(density * interval_range);
 
-    size_t sample_index = static_cast<size_t>(std::clamp(get_parameter<int>(SampleIndex), 0, static_cast<int>(audio_data.size()) - 1));
+    size_t sample_index = static_cast<size_t>(
+        std::clamp(get_parameter<int>(SampleIndex), 0, static_cast<int>(audio_data.size()) - 1));
 
     if (m_current_sample_index != sample_index) {
         m_current_sample_index = sample_index;
@@ -145,12 +145,14 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
         source_channels = audio_data[sample_index].get_num_channels();
     }
 
-    auto mode = static_cast<ChannelMode>(std::clamp(get_parameter<int>(ChannelModeParam), 0, static_cast<int>(ChannelMode::NUM_CHANNEL_MODES) - 1));
+    auto mode =
+        static_cast<ChannelMode>(std::clamp(get_parameter<int>(ChannelModeParam),
+                                            0,
+                                            static_cast<int>(ChannelMode::NUM_CHANNEL_MODES) - 1));
     float spread = get_parameter<float>(Spread);
 
     // For each sample in the buffer
     for (unsigned int i = 0; i < n_buffer_frames; i++) {
-
         // Check if it's time to trigger a new grain
         if (m_next_grain_time <= 0) {
             trigger_grain(sample_index);
@@ -167,7 +169,8 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
             if (!grain.active) continue;
 
             // Hann window envelope for amplitude control
-            float normalized_position = static_cast<float>(grain.current_position) / static_cast<float>(grain.grain_size);
+            float normalized_position =
+                static_cast<float>(grain.current_position) / static_cast<float>(grain.grain_size);
             float envelope = grain.envelope.process_at_position(normalized_position);
 
             // Check if the grain should be deactivated
@@ -190,9 +193,7 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
                         read_sample(source_pos, grain.sample_index, ch, s);
                         mono_sample += s;
                     }
-                    if (source_channels > 1) {
-                        mono_sample /= static_cast<float>(source_channels);
-                    }
+                    if (source_channels > 1) { mono_sample /= static_cast<float>(source_channels); }
                     mono_sample *= envelope;
                     channel_accum[0] += mono_sample * (1.0f - position_spread);
                     channel_accum[1] += mono_sample * position_spread;
@@ -216,29 +217,26 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
                     for (size_t ch = 0; ch < out_channels; ++ch) {
                         float s = 0.0f;
                         read_sample(source_pos, grain.sample_index, ch, s);
-                        // Even channels (0,2,...) get left energy, odd channels (1,3,...) get right energy
-                        float energy = (ch % 2 == 0) ? (1.0f - position_spread) * 2.0f : position_spread * 2.0f;
+                        // Even channels (0,2,...) get left energy, odd channels
+                        // (1,3,...) get right energy
+                        float energy = (ch % 2 == 0) ? (1.0f - position_spread) * 2.0f
+                                                     : position_spread * 2.0f;
                         channel_accum[ch] += s * envelope * energy;
                     }
                     break;
                 }
-                default:
-                    break;
+                default: break;
             }
 
             // Update grain position
             grain.current_position++;
 
             // Deactivate if grain is finished
-            if (grain.current_position >= grain.grain_size) {
-                grain.active = false;
-            }
+            if (grain.current_position >= grain.grain_size) { grain.active = false; }
         }
 
         // Write to output buffer (planar layout)
-        for (size_t ch = 0; ch < m_channels; ++ch) {
-            buffer[ch][i] = channel_accum[ch];
-        }
+        for (size_t ch = 0; ch < m_channels; ++ch) { buffer[ch][i] = channel_accum[ch]; }
 
         m_playback_elapsed_samples++;
     }
@@ -250,17 +248,14 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
     // Find an inactive grain slot
     for (auto& grain : m_grains) {
         if (!grain.active) {
-            if (sample_index >= audio_data.size() ||
-            audio_data[sample_index].empty()) {
-                return;
-            }
+            if (sample_index >= audio_data.size() || audio_data[sample_index].empty()) { return; }
 
             // Get parameters needed for grain_size setup
             float grain_size_param = get_parameter<float>(Size);
             float size_temperature = get_parameter<float>(TemperatureSize);
 
             size_t grain_size = calculate_grain_size(grain_size_param, size_temperature);
-            
+
             float velocity = get_parameter<float>(Velocity);
             float velocity_temperature = get_parameter<float>(TemperatureVelocity);
             velocity = calculate_velocity(velocity, velocity_temperature);
@@ -269,13 +264,15 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             size_t total_frames = audio_data[sample_index].get_num_frames();
             auto region = compute_sample_region(total_frames);
             if (region.size() == 0) return;
-            
 
             auto effective_grain_size = static_cast<size_t>(std::ceil(grain_size * velocity));
-            if (static_cast<long>(region.size()) - static_cast<long>(effective_grain_size) <= 0) return;
+            if (static_cast<long>(region.size()) - static_cast<long>(effective_grain_size) <= 0)
+                return;
 
-            float position_temperature = apply_temperature_ramp(get_parameter<float>(TemperaturePosition));
-            long start_position = calculate_start_position(region, position_temperature, grain_size, velocity);
+            float position_temperature =
+                apply_temperature_ramp(get_parameter<float>(TemperaturePosition));
+            long start_position =
+                calculate_start_position(region, position_temperature, grain_size, velocity);
 
             // Setup the grain
             grain.start_position = start_position;
@@ -306,8 +303,8 @@ size_t GrainProcessorImpl::calculate_grain_size(float grain_size_param, float te
     size_t grain_size = min_size + static_cast<size_t>(grain_size_param * range);
 
     // Randomize grain size based on temperature
-    float rand_value = m_uni_dist(m_random_generator); // [0, 1)
-    rand_value = (rand_value * 2.f - 1.f) / 2.f;      // [-0.5, 0.5)
+    float rand_value = m_uni_dist(m_random_generator);  // [0, 1)
+    rand_value = (rand_value * 2.f - 1.f) / 2.f;        // [-0.5, 0.5)
     rand_value *= std::pow(temperature, 3.f);
     auto lower_interval = static_cast<float>(grain_size - min_size);
     auto upper_interval = static_cast<float>(max_size - grain_size);
@@ -315,14 +312,16 @@ size_t GrainProcessorImpl::calculate_grain_size(float grain_size_param, float te
         grain_size = static_cast<size_t>(grain_size + lower_interval * rand_value);
     } else {
         // Do not make the grain size much larger for small values
-        grain_size = static_cast<size_t>(grain_size + upper_interval * rand_value * 0.3f + grain_size * rand_value);
+        grain_size = static_cast<size_t>(grain_size + upper_interval * rand_value * 0.3f +
+                                         grain_size * rand_value);
     }
     return std::clamp(grain_size, min_size, max_size);
 }
 
-long GrainProcessorImpl::calculate_start_position(
-    const SampleRegion& region, float temperature, size_t grain_size, float velocity) {
-
+long GrainProcessorImpl::calculate_start_position(const SampleRegion& region,
+                                                  float temperature,
+                                                  size_t grain_size,
+                                                  float velocity) {
     long start_position = static_cast<long>(m_sequential_position);
 
     // Apply temperature-based randomization to grain start position
@@ -330,8 +329,8 @@ long GrainProcessorImpl::calculate_start_position(
     long max_position = static_cast<long>(region.size()) - static_cast<long>(effective_grain_size);
     if (max_position <= 0) return static_cast<long>(region.start);
 
-    float rand_value = m_uni_dist(m_random_generator); // [0, 1)
-    rand_value = rand_value - 0.5f;                    // [-0.5, 0.5)
+    float rand_value = m_uni_dist(m_random_generator);  // [0, 1)
+    rand_value = rand_value - 0.5f;                     // [-0.5, 0.5)
     rand_value *= temperature;
     start_position += static_cast<long>(rand_value * max_position);
     if (start_position >= max_position) {
@@ -344,7 +343,8 @@ long GrainProcessorImpl::calculate_start_position(
     auto max_size = static_cast<size_t>(MAX_GRAIN_SIZE * m_sample_rate);
     float grain_size_factor = static_cast<float>(grain_size) / static_cast<float>(max_size);
 
-    float start_position_factor = static_cast<float>(start_position) / static_cast<float>(max_position);
+    float start_position_factor =
+        static_cast<float>(start_position) / static_cast<float>(max_position);
     if (start_position_factor > 0.5f) {
         start_position_factor -= 0.5f;
         start_position_factor *= std::pow(1.f - grain_size_factor, 2.f);
@@ -360,7 +360,9 @@ long GrainProcessorImpl::calculate_start_position(
     // Advance sequential position and handle looping
     m_sequential_position += static_cast<long>(m_min_grain_interval);
     if (m_sequential_position >= max_position) {
-        long loop_offset = static_cast<long>(region.loop_point - region.start) < max_position ? static_cast<long>(region.loop_point - region.start) : 0;
+        long loop_offset = static_cast<long>(region.loop_point - region.start) < max_position
+                               ? static_cast<long>(region.loop_point - region.start)
+                               : 0;
         m_sequential_position = loop_offset + (m_sequential_position - max_position);
     }
 
@@ -368,8 +370,8 @@ long GrainProcessorImpl::calculate_start_position(
 }
 
 float GrainProcessorImpl::calculate_velocity(float velocity, float temperature) {
-    float velocity_factor = m_uni_dist(m_random_generator); // [0, 1)
-    velocity_factor = (velocity_factor * 2.f - 1.f);        // [-1, 1)
+    float velocity_factor = m_uni_dist(m_random_generator);  // [0, 1)
+    velocity_factor = (velocity_factor * 2.f - 1.f);         // [-1, 1)
     velocity_factor *= std::pow(temperature, 15.f);
     float semitone_factor = std::pow(2.f, 7.f / 12.f);
     if (velocity_factor < 0.f) {
@@ -384,9 +386,11 @@ float GrainProcessorImpl::apply_temperature_ramp(float temperature) const {
     float ramp_samples = static_cast<float>(TEMPERATURE_RAMP_DURATION * m_sample_rate);
     float ramp_factor = 1.0f;
     if (static_cast<float>(m_playback_elapsed_samples) < ramp_samples) {
-        ramp_factor = std::sin((static_cast<float>(m_playback_elapsed_samples) / ramp_samples) * static_cast<float>(M_PI / 2.0));
+        ramp_factor = std::sin((static_cast<float>(m_playback_elapsed_samples) / ramp_samples) *
+                               static_cast<float>(M_PI / 2.0));
     }
-    // Blend between ramped and unramped: low temperature → ramp active, high → ramp bypassed
+    // Blend between ramped and unramped: low temperature → ramp active, high →
+    // ramp bypassed
     float ramped = temperature * ramp_factor;
     return ramped + (temperature - ramped) * temperature;
 }
@@ -401,20 +405,19 @@ GrainProcessorImpl::SampleRegion GrainProcessorImpl::compute_sample_region(size_
     return {start, end, loop};
 }
 
-void GrainProcessorImpl::read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample) {
+void GrainProcessorImpl::read_sample(float position,
+                                     size_t sample_index,
+                                     size_t source_channel,
+                                     float& out_sample) {
     out_sample = 0.0f;
 
     const auto& audio_data = m_audio_store.get_buffer();
 
     // Bounds checking
-    if (sample_index >= audio_data.size() || audio_data[sample_index].empty()) {
-        return;
-    }
+    if (sample_index >= audio_data.size() || audio_data[sample_index].empty()) { return; }
 
     const auto& buf = audio_data[sample_index];
-    if (source_channel >= buf.get_num_channels()) {
-        return;
-    }
+    if (source_channel >= buf.get_num_channels()) { return; }
 
     size_t num_frames = buf.get_num_frames();
 
@@ -424,9 +427,7 @@ void GrainProcessorImpl::read_sample(float position, size_t sample_index, size_t
     float frac = position - static_cast<float>(pos_floor);
 
     // Ensure we don't read beyond the buffer
-    while (pos_ceil >= static_cast<long>(num_frames)) {
-        pos_ceil -= static_cast<long>(num_frames);
-    }
+    while (pos_ceil >= static_cast<long>(num_frames)) { pos_ceil -= static_cast<long>(num_frames); }
 
     while (pos_floor >= static_cast<long>(num_frames)) {
         pos_floor -= static_cast<long>(num_frames);
@@ -436,4 +437,4 @@ void GrainProcessorImpl::read_sample(float position, size_t sample_index, size_t
     out_sample = ch_data[pos_floor] * (1.0f - frac) + ch_data[pos_ceil] * frac;
 }
 
-} // namespace thl::dsp::granular
+}  // namespace thl::dsp::granular

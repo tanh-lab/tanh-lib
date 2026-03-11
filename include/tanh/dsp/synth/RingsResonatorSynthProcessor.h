@@ -1,0 +1,49 @@
+#pragma once
+
+#include <memory>
+
+namespace thl::dsp::synth {
+
+enum class RingsParameter {
+    Frequency,
+    Structure,
+    Brightness,
+    Damping,
+    Position,
+    OddEvenMix,
+    DryWet,
+    Model,
+    Polyphony,
+    NUM_PARAMETERS
+};
+
+enum class RingsPolyphonyMode { One, Two, Four };
+
+class RingsResonatorSynthProcessor {
+public:
+    using Parameter = RingsParameter;
+    using PolyphonyMode = RingsPolyphonyMode;
+
+    RingsResonatorSynthProcessor();
+    virtual ~RingsResonatorSynthProcessor();
+
+    RingsResonatorSynthProcessor(const RingsResonatorSynthProcessor&) = delete;
+    RingsResonatorSynthProcessor& operator=(const RingsResonatorSynthProcessor&) = delete;
+    RingsResonatorSynthProcessor(RingsResonatorSynthProcessor&&) noexcept;
+    RingsResonatorSynthProcessor& operator=(RingsResonatorSynthProcessor&&) noexcept;
+
+    void prepare(double sampleRate, int maxBlockSize);
+    void process(const float* input, float* output, int numSamples);
+    int get_latency() const;
+
+protected:
+    virtual float get_parameter_value(RingsParameter parameter) = 0;
+
+private:
+    static constexpr size_t kBlockSize = 24;
+
+    struct EngineState;
+    std::unique_ptr<EngineState> m_engine;
+};
+
+}  // namespace thl::dsp::synth

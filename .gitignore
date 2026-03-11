@@ -4,3 +4,7 @@ build-test/
 .DS_Store
 .cache/
 cmake-build*
+/build*
+
+# Generated test fixtures
+test/dsp/fixtures/*.bin

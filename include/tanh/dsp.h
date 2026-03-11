@@ -1,4 +1,4 @@
-# pragma once
+#pragma once
 
 #include "dsp/utils/ADSR.h"
 #include "dsp/utils/HannWindow.h"

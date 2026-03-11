@@ -9,13 +9,11 @@ using namespace thl::dsp::utils;
 // Concrete test subclass providing parameter values directly
 class TestLimiter : public LimiterImpl {
 public:
-    float threshold_db = -3.0f;   // ~0.7079 linear
+    float threshold_db = -3.0f;  // ~0.7079 linear
     float attack_ms = 0.5f;
     float release_ms = 100.0f;
 
-    float threshold_linear() const {
-        return std::pow(10.0f, threshold_db / 20.0f);
-    }
+    float threshold_linear() const { return std::pow(10.0f, threshold_db / 20.0f); }
 
 private:
     float get_parameter_float(Parameter p) override {
@@ -36,7 +34,7 @@ static constexpr size_t kBlockSize = 512;
 // Helper: process a mono buffer of N identical samples, return the last output
 static float process_sustained(TestLimiter& limiter, float value, size_t num_samples) {
     std::vector<float> buf(num_samples, value);
-    float* ptrs[1] = { buf.data() };
+    float* ptrs[1] = {buf.data()};
     limiter.process(ptrs, num_samples, 1);
     return buf[num_samples - 1];
 }
@@ -144,7 +142,8 @@ TEST(Limiter, GainRecoversAfterRelease) {
     process_sustained(limiter, 2.0f, 4800);
 
     // Now feed quiet signal for longer than release time
-    float output = process_sustained(limiter, 0.3f, 24000);  // 500ms (10x release)
+    float output = process_sustained(limiter, 0.3f, 24000);  // 500ms (10x
+                                                             // release)
 
     // Gain should have recovered — quiet signal passes through
     EXPECT_NEAR(output, 0.3f, 0.01f);
@@ -163,7 +162,7 @@ TEST(Limiter, StereoLinking) {
     constexpr size_t N = 4800;
     std::vector<float> left(N, 0.1f);   // quiet
     std::vector<float> right(N, 2.0f);  // loud
-    float* ptrs[2] = { left.data(), right.data() };
+    float* ptrs[2] = {left.data(), right.data()};
     limiter.process(ptrs, N, 2);
 
     // Right channel peaks trigger gain reduction on BOTH channels

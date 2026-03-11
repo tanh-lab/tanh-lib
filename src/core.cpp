@@ -14,6 +14,6 @@ std::string getVersion() {
 #endif
 }
 
-} // namespace core
+}  // namespace core
 
-} // namespace thl
+}  // namespace thl

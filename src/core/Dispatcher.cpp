@@ -12,9 +12,7 @@ void Dispatcher::remove_listener(DispatcherListener* listener) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     for (auto& [event, listeners] : m_listeners) {
-        listeners.erase(
-            std::remove(listeners.begin(), listeners.end(), listener),
-            listeners.end());
+        listeners.erase(std::remove(listeners.begin(), listeners.end(), listener), listeners.end());
     }
 }
 
@@ -23,10 +21,8 @@ void Dispatcher::dispatch(const std::string& event, const std::string& data) {
 
     auto it = m_listeners.find(event);
     if (it != m_listeners.end()) {
-        for (auto* listener : it->second) {
-            listener->on_dispatch(event, data);
-        }
+        for (auto* listener : it->second) { listener->on_dispatch(event, data); }
     }
 }
 
-} // namespace thl
+}  // namespace thl
