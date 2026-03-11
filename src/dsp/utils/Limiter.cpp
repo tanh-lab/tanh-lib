@@ -7,7 +7,9 @@ namespace thl::dsp::utils {
 LimiterImpl::LimiterImpl() = default;
 LimiterImpl::~LimiterImpl() = default;
 
-void LimiterImpl::prepare(const double& sample_rate, const size_t& /*samples_per_block*/, const size_t& num_channels) {
+void LimiterImpl::prepare(const double& sample_rate,
+                          const size_t& /*samples_per_block*/,
+                          const size_t& num_channels) {
     m_sample_rate = sample_rate;
     m_channels = num_channels;
     m_gain = 1.0f;
@@ -36,10 +38,8 @@ void LimiterImpl::process(float** buffer, const size_t& num_samples, const size_
             m_gain = release_coeff * m_gain + (1.0f - release_coeff) * target_gain;
         }
 
-        for (size_t ch = 0; ch < num_channels; ++ch) {
-            buffer[ch][i] *= m_gain;
-        }
+        for (size_t ch = 0; ch < num_channels; ++ch) { buffer[ch][i] *= m_gain; }
     }
 }
 
-} // namespace thl::dsp::utils
+}  // namespace thl::dsp::utils

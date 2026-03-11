@@ -31,13 +31,10 @@ bool AudioFileSink::openFile(const std::string& filePath,
                              AudioEncodingFormat format) {
     closeFile();
 
-    ma_encoder_config config = ma_encoder_config_init(toMiniaudioFormat(format),
-                                                      ma_format_f32,
-                                                      channels,
-                                                      sampleRate);
+    ma_encoder_config config =
+        ma_encoder_config_init(toMiniaudioFormat(format), ma_format_f32, channels, sampleRate);
 
-    ma_result result =
-        ma_encoder_init_file(filePath.c_str(), &config, &m_impl->encoder);
+    ma_result result = ma_encoder_init_file(filePath.c_str(), &config, &m_impl->encoder);
 
     m_open = (result == MA_SUCCESS);
     m_impl->encoderChannels = m_open ? channels : 0;
@@ -76,10 +73,7 @@ void AudioFileSink::process(float* /*outputBuffer*/,
     if (numInputChannels != m_impl->encoderChannels) { return; }
 
     ma_uint64 framesWritten = 0;
-    ma_encoder_write_pcm_frames(&m_impl->encoder,
-                                inputBuffer,
-                                frameCount,
-                                &framesWritten);
+    ma_encoder_write_pcm_frames(&m_impl->encoder, inputBuffer, frameCount, &framesWritten);
     m_framesWritten.fetch_add(framesWritten, std::memory_order_relaxed);
 
     // Compute peak amplitude for this block

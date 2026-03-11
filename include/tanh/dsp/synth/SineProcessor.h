@@ -15,7 +15,9 @@ public:
     ~SineProcessorImpl() override;
 
     // BaseProcessor overrides
-    void prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) override;
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override;
     void process(float** buffer, const size_t& num_samples, const size_t& num_channels) override;
 
 protected:
@@ -25,10 +27,10 @@ protected:
 
         NUM_PARAMETERS = 2
     };
-    
+
 private:
     // Template wrapper for get_parameter
-    template<typename T>
+    template <typename T>
     T get_parameter(Parameter parameter);
 
     virtual float get_parameter_float(Parameter parameter) = 0;
@@ -43,8 +45,11 @@ private:
 };
 
 // Template specializations for get_parameter
-template<> inline float SineProcessorImpl::get_parameter<float>(Parameter p) { return get_parameter_float(p); }
+template <>
+inline float SineProcessorImpl::get_parameter<float>(Parameter p) {
+    return get_parameter_float(p);
+}
 
-} // namespace synth
-} // namespace dsp
-} // namespace thl
+}  // namespace synth
+}  // namespace dsp
+}  // namespace thl

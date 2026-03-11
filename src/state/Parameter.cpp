@@ -5,9 +5,7 @@
 namespace thl {
 
 // Parameter class implementation
-Parameter::Parameter(const State* state, std::string_view key)
-    : m_state(state), m_key(key) {
-}
+Parameter::Parameter(const State* state, std::string_view key) : m_state(state), m_key(key) {}
 
 Parameter::Parameter(const StateGroup* group, std::string_view key, const State* rootState)
     : m_state(rootState) {
@@ -18,7 +16,7 @@ Parameter::Parameter(const StateGroup* group, std::string_view key, const State*
 }
 
 // Parameter conversion methods
-template<typename T>
+template <typename T>
 T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
     if constexpr (std::is_same_v<T, double>) {
         return m_state->get_from_root<double>(m_key, allow_blocking);
@@ -32,7 +30,8 @@ T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
         return m_state->get_from_root<std::string>(m_key, allow_blocking);
     } else {
         static_assert(std::is_same_v<T, void>, "Unsupported type for Parameter::to()");
-        // This line will never be reached, but needed to avoid compiler warnings
+        // This line will never be reached, but needed to avoid compiler
+        // warnings
         return T{};
     }
 }
@@ -71,32 +70,33 @@ Parameter State::get_from_root(std::string_view key) const {
 void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) const {
     // Create a temporary parameter object for notification
     Parameter param_obj(m_state, m_key);
-    
-    // Check if this parameter belongs to a group by looking for dots in the path
+
+    // Check if this parameter belongs to a group by looking for dots in the
+    // path
     std::string path = m_key;
     std::string root_segment = path;
     size_t first_dot = path.find('.');
     if (first_dot != std::string::npos) {
         root_segment = path.substr(0, first_dot);
-        
-        // If this parameter belongs to a StateGroup, notify through that group using RCU
+
+        // If this parameter belongs to a StateGroup, notify through that group
+        // using RCU
         auto* state = const_cast<State*>(m_state);
         StateGroup* found_group = nullptr;
-        
+
         state->m_groups_rcu.read([&](const auto& groups) {
             auto group_it = groups.find(root_segment);
-            if (group_it != groups.end()) {
-                found_group = group_it->second.get();
-            }
+            if (group_it != groups.end()) { found_group = group_it->second.get(); }
         });
-        
+
         if (found_group) {
-            // This will notify both the group listener and propagate up to the root
+            // This will notify both the group listener and propagate up to the
+            // root
             found_group->notify_listeners(path, param_obj, strategy, source);
             return;
         }
     }
-    
+
     // Otherwise notify directly from State
     const_cast<State*>(m_state)->notify_listeners(path, param_obj, strategy, source);
 }
@@ -114,5 +114,6 @@ template double Parameter::to<double>(bool allow_blocking) const TANH_NONBLOCKIN
 template float Parameter::to<float>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template int Parameter::to<int>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template bool Parameter::to<bool>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template std::string Parameter::to<std::string>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-} // namespace thl
+template std::string Parameter::to<std::string>(bool allow_blocking) const
+    TANH_NONBLOCKING_FUNCTION;
+}  // namespace thl

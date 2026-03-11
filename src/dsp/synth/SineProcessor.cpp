@@ -3,13 +3,15 @@
 using namespace thl::dsp::synth;
 
 #ifndef M_PI
-    #define M_PI 3.14159265358979323846
+#define M_PI 3.14159265358979323846
 #endif
 
 SineProcessorImpl::SineProcessorImpl() = default;
 SineProcessorImpl::~SineProcessorImpl() = default;
 
-void SineProcessorImpl::prepare(const double& sample_rate, const size_t& samples_per_block, const size_t& num_channels) {
+void SineProcessorImpl::prepare(const double& sample_rate,
+                                const size_t& samples_per_block,
+                                const size_t& num_channels) {
     m_phase.resize(num_channels, 0.f);
 
     m_sample_rate = sample_rate;
@@ -22,29 +24,31 @@ void SineProcessorImpl::prepare(const double& sample_rate, const size_t& samples
     smoothed_amplitude.set_current_and_target_value(get_parameter<float>(Amplitude));
 }
 
-void SineProcessorImpl::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
-        constexpr float two_pi = 2.0f * static_cast<float>(M_PI);
-        const auto sample_rate_f = static_cast<float>(m_sample_rate);
+void SineProcessorImpl::process(float** buffer,
+                                const size_t& num_samples,
+                                const size_t& num_channels) {
+    constexpr float two_pi = 2.0f * static_cast<float>(M_PI);
+    const auto sample_rate_f = static_cast<float>(m_sample_rate);
 
-        smoothed_frequency.set_target_value(get_parameter<float>(Frequency));
-        smoothed_amplitude.set_target_value(get_parameter<float>(Amplitude));
+    smoothed_frequency.set_target_value(get_parameter<float>(Frequency));
+    smoothed_amplitude.set_target_value(get_parameter<float>(Amplitude));
 
-        for (size_t i = 0; i < num_samples; ++i) {
-            const float current_freq = smoothed_frequency.get_smoothed_value(1);
-            const float current_amp  = smoothed_amplitude.get_smoothed_value(1);
+    for (size_t i = 0; i < num_samples; ++i) {
+        const float current_freq = smoothed_frequency.get_smoothed_value(1);
+        const float current_amp = smoothed_amplitude.get_smoothed_value(1);
 
-            const float phase_increment = two_pi * current_freq / sample_rate_f;
+        const float phase_increment = two_pi * current_freq / sample_rate_f;
 
-            for (size_t ch = 0; ch < num_channels; ++ch) {
-                float& phase = m_phase[ch];
+        for (size_t ch = 0; ch < num_channels; ++ch) {
+            float& phase = m_phase[ch];
 
-                buffer[ch][i] = current_amp * std::sin(phase);
-                phase += phase_increment;
+            buffer[ch][i] = current_amp * std::sin(phase);
+            phase += phase_increment;
 
-                if (phase >= two_pi)
-                    phase -= two_pi;
-                else if (phase < 0.0f)
-                    phase += two_pi;
-            }
+            if (phase >= two_pi)
+                phase -= two_pi;
+            else if (phase < 0.0f)
+                phase += two_pi;
         }
     }
+}

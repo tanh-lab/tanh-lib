@@ -12,9 +12,7 @@ AudioPlayerSource::~AudioPlayerSource() {
 bool AudioPlayerSource::loadFile(const std::string& filePath,
                                  uint32_t outputChannels,
                                  uint32_t outputSampleRate) {
-    if (filePath.empty() || outputChannels == 0 || outputSampleRate == 0) {
-        return false;
-    }
+    if (filePath.empty() || outputChannels == 0 || outputSampleRate == 0) { return false; }
 
     std::scoped_lock lock(m_stateMutex);
     m_playing.store(false, std::memory_order_release);
@@ -40,11 +38,10 @@ bool AudioPlayerSource::loadFile(const std::string& filePath,
 }
 
 bool AudioPlayerSource::loadFromMemory(const void* data,
-                                        size_t size,
-                                        uint32_t outputChannels,
-                                        uint32_t outputSampleRate) {
-    if (data == nullptr || size == 0 || outputChannels == 0 ||
-        outputSampleRate == 0) {
+                                       size_t size,
+                                       uint32_t outputChannels,
+                                       uint32_t outputSampleRate) {
+    if (data == nullptr || size == 0 || outputChannels == 0 || outputSampleRate == 0) {
         return false;
     }
 
@@ -89,8 +86,7 @@ void AudioPlayerSource::unloadFile() {
 
 void AudioPlayerSource::play() {
     if (m_loaded.load(std::memory_order_acquire)) {
-        m_fadeInRemaining.store(m_fadeEnabled ? kFadeSamples : 0,
-                                std::memory_order_release);
+        m_fadeInRemaining.store(m_fadeEnabled ? kFadeSamples : 0, std::memory_order_release);
         m_stopRequested.store(false, std::memory_order_release);
         m_playing.store(true, std::memory_order_release);
     }
@@ -104,8 +100,7 @@ void AudioPlayerSource::stop() {
     m_playing.store(false, std::memory_order_release);
     m_stopRequested.store(false, std::memory_order_release);
     m_fadeOutCounter = 0;
-    auto ds =
-        std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
     if (ds) { ds->seek(0); }
 }
 
@@ -116,36 +111,28 @@ void AudioPlayerSource::requestStop() {
 }
 
 void AudioPlayerSource::seekToFrame(uint64_t frame) {
-    auto ds =
-        std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
     if (ds) { ds->seek(frame); }
 }
 
 uint64_t AudioPlayerSource::getCurrentFrame() const {
-    auto ds =
-        std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
     if (!ds) return 0;
     return ds->get_cursor();
 }
 
 uint64_t AudioPlayerSource::getTotalFrames() const {
-    auto ds =
-        std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
     if (!ds) return 0;
     return ds->get_total_frames();
 }
 
 void AudioPlayerSource::setFinishedCallback(FinishedCallback callback) {
-    auto ptr = callback
-                   ? std::make_shared<FinishedCallback>(std::move(callback))
-                   : nullptr;
-    std::atomic_store_explicit(&m_finishedCallback,
-                               std::move(ptr),
-                               std::memory_order_release);
+    auto ptr = callback ? std::make_shared<FinishedCallback>(std::move(callback)) : nullptr;
+    std::atomic_store_explicit(&m_finishedCallback, std::move(ptr), std::memory_order_release);
 }
 
-void AudioPlayerSource::prepareToPlay(uint32_t sampleRate,
-                                      uint32_t /*bufferSize*/) {
+void AudioPlayerSource::prepareToPlay(uint32_t sampleRate, uint32_t /*bufferSize*/) {
     if (sampleRate == 0) return;
 
     std::scoped_lock lock(m_stateMutex);
@@ -153,10 +140,8 @@ void AudioPlayerSource::prepareToPlay(uint32_t sampleRate,
     if (m_filePath.empty() && m_memoryData == nullptr) return;
 
     uint64_t initialFrame = 0;
-    auto ds =
-        std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
-    if (ds && ds->get_sample_rate() == sampleRate &&
-        ds->get_channel_count() == m_channels) {
+    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    if (ds && ds->get_sample_rate() == sampleRate && ds->get_channel_count() == m_channels) {
         initialFrame = ds->get_cursor();
     }
 
@@ -175,13 +160,11 @@ void AudioPlayerSource::process(float* outputBuffer,
                                 uint32_t /*numInputChannels*/,
                                 uint32_t numOutputChannels) {
     if (!outputBuffer || numOutputChannels == 0) { return; }
-    if (!m_loaded.load(std::memory_order_acquire) ||
-        !m_playing.load(std::memory_order_acquire)) {
+    if (!m_loaded.load(std::memory_order_acquire) || !m_playing.load(std::memory_order_acquire)) {
         return;
     }
 
-    auto ds =
-        std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
     if (!ds) return;
 
     if (numOutputChannels != ds->get_channel_count()) { return; }
@@ -189,10 +172,9 @@ void AudioPlayerSource::process(float* outputBuffer,
     uint64_t framesRead = ds->read_pcm_frames(outputBuffer, frameCount);
 
     if (framesRead < frameCount) {
-        std::memset(
-            outputBuffer + framesRead * numOutputChannels,
-            0,
-            (frameCount - framesRead) * numOutputChannels * sizeof(float));
+        std::memset(outputBuffer + framesRead * numOutputChannels,
+                    0,
+                    (frameCount - framesRead) * numOutputChannels * sizeof(float));
     }
 
     // --- Micro fade-in (applied after every play()) ---
@@ -201,8 +183,7 @@ void AudioPlayerSource::process(float* outputBuffer,
         const uint32_t fadeStart = kFadeSamples - fadeIn;
         const uint32_t toFade = std::min(fadeIn, static_cast<uint32_t>(framesRead));
         for (uint32_t i = 0; i < toFade; ++i) {
-            const float gain = static_cast<float>(fadeStart + i) /
-                static_cast<float>(kFadeSamples);
+            const float gain = static_cast<float>(fadeStart + i) / static_cast<float>(kFadeSamples);
             for (uint32_t ch = 0; ch < numOutputChannels; ++ch) {
                 outputBuffer[i * numOutputChannels + ch] *= gain;
             }
@@ -212,15 +193,12 @@ void AudioPlayerSource::process(float* outputBuffer,
 
     // --- Micro fade-out (requestStop) ---
     if (m_stopRequested.load(std::memory_order_acquire)) {
-        if (m_fadeOutCounter == 0) {
-            m_fadeOutCounter = kFadeSamples;
-        }
+        if (m_fadeOutCounter == 0) { m_fadeOutCounter = kFadeSamples; }
         for (uint32_t i = 0; i < static_cast<uint32_t>(framesRead); ++i) {
             float gain;
             if (m_fadeOutCounter > 0) {
                 --m_fadeOutCounter;
-                gain = static_cast<float>(m_fadeOutCounter) /
-                       static_cast<float>(kFadeSamples);
+                gain = static_cast<float>(m_fadeOutCounter) / static_cast<float>(kFadeSamples);
             } else {
                 gain = 0.0f;
             }
@@ -237,8 +215,7 @@ void AudioPlayerSource::process(float* outputBuffer,
 
     if (framesRead < frameCount) {
         m_playing.store(false, std::memory_order_release);
-        auto callback = std::atomic_load_explicit(&m_finishedCallback,
-                                                  std::memory_order_acquire);
+        auto callback = std::atomic_load_explicit(&m_finishedCallback, std::memory_order_acquire);
         if (callback) { (*callback)(); }
     }
 }
@@ -256,17 +233,15 @@ bool AudioPlayerSource::rebuildDataSource(uint32_t decodedChannels,
 
     if (m_memoryData != nullptr && m_memorySize > 0) {
         ds = std::make_shared<audio_io::DataSource>(
-            m_loader.load_data_source_from_memory(
-                m_memoryData,
-                m_memorySize,
-                static_cast<double>(decodedSampleRate),
-                decodedChannels));
+            m_loader.load_data_source_from_memory(m_memoryData,
+                                                  m_memorySize,
+                                                  static_cast<double>(decodedSampleRate),
+                                                  decodedChannels));
     } else if (!m_filePath.empty()) {
         ds = std::make_shared<audio_io::DataSource>(
-            m_loader.load_data_source_from_file(
-                m_filePath,
-                static_cast<double>(decodedSampleRate),
-                decodedChannels));
+            m_loader.load_data_source_from_file(m_filePath,
+                                                static_cast<double>(decodedSampleRate),
+                                                decodedChannels));
     } else {
         return false;
     }
@@ -275,9 +250,7 @@ bool AudioPlayerSource::rebuildDataSource(uint32_t decodedChannels,
 
     if (initialFrame > 0) { ds->seek(initialFrame); }
 
-    std::atomic_store_explicit(&m_dataSource,
-                               std::move(ds),
-                               std::memory_order_release);
+    std::atomic_store_explicit(&m_dataSource, std::move(ds), std::memory_order_release);
     return true;
 }
 

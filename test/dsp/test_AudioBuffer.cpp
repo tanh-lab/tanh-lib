@@ -31,45 +31,33 @@ TEST(MemoryBlock, ZeroSizedConstruction) {
 
 TEST(MemoryBlock, ClearZeroesData) {
     MemoryBlock<float> block(64);
-    for (size_t i = 0; i < 64; ++i) {
-        block[i] = static_cast<float>(i);
-    }
+    for (size_t i = 0; i < 64; ++i) { block[i] = static_cast<float>(i); }
 
     block.clear();
 
-    for (size_t i = 0; i < 64; ++i) {
-        EXPECT_FLOAT_EQ(block[i], 0.0f);
-    }
+    for (size_t i = 0; i < 64; ++i) { EXPECT_FLOAT_EQ(block[i], 0.0f); }
 }
 
 TEST(MemoryBlock, CopyConstruction) {
     MemoryBlock<float> original(32);
-    for (size_t i = 0; i < 32; ++i) {
-        original[i] = static_cast<float>(i) * 0.1f;
-    }
+    for (size_t i = 0; i < 32; ++i) { original[i] = static_cast<float>(i) * 0.1f; }
 
     MemoryBlock<float> copy(original);
     EXPECT_EQ(copy.size(), 32u);
     EXPECT_NE(copy.data(), original.data());
 
-    for (size_t i = 0; i < 32; ++i) {
-        EXPECT_FLOAT_EQ(copy[i], original[i]);
-    }
+    for (size_t i = 0; i < 32; ++i) { EXPECT_FLOAT_EQ(copy[i], original[i]); }
 }
 
 TEST(MemoryBlock, CopyAssignment) {
     MemoryBlock<float> original(32);
-    for (size_t i = 0; i < 32; ++i) {
-        original[i] = static_cast<float>(i);
-    }
+    for (size_t i = 0; i < 32; ++i) { original[i] = static_cast<float>(i); }
 
     MemoryBlock<float> copy(16);
     copy = original;
     EXPECT_EQ(copy.size(), 32u);
 
-    for (size_t i = 0; i < 32; ++i) {
-        EXPECT_FLOAT_EQ(copy[i], original[i]);
-    }
+    for (size_t i = 0; i < 32; ++i) { EXPECT_FLOAT_EQ(copy[i], original[i]); }
 }
 
 TEST(MemoryBlock, MoveConstruction) {
@@ -97,9 +85,7 @@ TEST(MemoryBlock, MoveAssignment) {
 
 TEST(MemoryBlock, Resize) {
     MemoryBlock<float> block(32);
-    for (size_t i = 0; i < 32; ++i) {
-        block[i] = static_cast<float>(i);
-    }
+    for (size_t i = 0; i < 32; ++i) { block[i] = static_cast<float>(i); }
 
     block.resize(64);
     EXPECT_EQ(block.size(), 64u);
@@ -136,14 +122,10 @@ TEST(MemoryBlock, SwapData) {
 
 TEST(MemoryBlock, SwapDataRawPointer) {
     MemoryBlock<float> block(4);
-    for (size_t i = 0; i < 4; ++i) {
-        block[i] = 1.0f;
-    }
+    for (size_t i = 0; i < 4; ++i) { block[i] = 1.0f; }
 
     auto* raw = static_cast<float*>(std::malloc(4 * sizeof(float)));
-    for (size_t i = 0; i < 4; ++i) {
-        raw[i] = 3.0f;
-    }
+    for (size_t i = 0; i < 4; ++i) { raw[i] = 3.0f; }
 
     block.swap_data(raw, 4);
 
@@ -157,13 +139,9 @@ TEST(MemoryBlock, SwapDataRawPointer) {
 
 TEST(MemoryBlock, SubscriptOperator) {
     MemoryBlock<float> block(8);
-    for (size_t i = 0; i < 8; ++i) {
-        block[i] = static_cast<float>(i * 10);
-    }
+    for (size_t i = 0; i < 8; ++i) { block[i] = static_cast<float>(i * 10); }
 
-    for (size_t i = 0; i < 8; ++i) {
-        EXPECT_FLOAT_EQ(block[i], static_cast<float>(i * 10));
-    }
+    for (size_t i = 0; i < 8; ++i) { EXPECT_FLOAT_EQ(block[i], static_cast<float>(i * 10)); }
 
     const MemoryBlock<float>& cref = block;
     EXPECT_FLOAT_EQ(cref[3], 30.0f);
@@ -193,9 +171,7 @@ TEST(AudioBuffer, ConstructionInitialisesZero) {
     AudioBuffer buffer(2, 64, 48000.0);
     for (size_t ch = 0; ch < 2; ++ch) {
         const float* ptr = buffer.get_read_pointer(ch);
-        for (size_t f = 0; f < 64; ++f) {
-            EXPECT_FLOAT_EQ(ptr[f], 0.0f);
-        }
+        for (size_t f = 0; f < 64; ++f) { EXPECT_FLOAT_EQ(ptr[f], 0.0f); }
     }
 }
 
@@ -222,9 +198,7 @@ TEST(AudioBuffer, WriteAndReadPointers) {
 TEST(AudioBuffer, ReadWritePointerWithOffset) {
     AudioBuffer buffer(1, 128, 48000.0);
     float* ptr = buffer.get_write_pointer(0);
-    for (size_t f = 0; f < 128; ++f) {
-        ptr[f] = static_cast<float>(f);
-    }
+    for (size_t f = 0; f < 128; ++f) { ptr[f] = static_cast<float>(f); }
 
     const float* offset = buffer.get_read_pointer(0, 64);
     EXPECT_FLOAT_EQ(*offset, 64.0f);
@@ -246,15 +220,11 @@ TEST(AudioBuffer, GetSetSample) {
 TEST(AudioBuffer, Clear) {
     AudioBuffer buffer(2, 64, 48000.0);
     float* ch0 = buffer.get_write_pointer(0);
-    for (size_t f = 0; f < 64; ++f) {
-        ch0[f] = 1.0f;
-    }
+    for (size_t f = 0; f < 64; ++f) { ch0[f] = 1.0f; }
 
     buffer.clear();
 
-    for (size_t f = 0; f < 64; ++f) {
-        EXPECT_FLOAT_EQ(buffer.get_sample(0, f), 0.0f);
-    }
+    for (size_t f = 0; f < 64; ++f) { EXPECT_FLOAT_EQ(buffer.get_sample(0, f), 0.0f); }
 }
 
 TEST(AudioBuffer, SetSize) {
@@ -280,9 +250,7 @@ TEST(AudioBuffer, CopyConstruction) {
     AudioBuffer original(2, 64, 44100.0);
     for (size_t ch = 0; ch < 2; ++ch) {
         float* ptr = original.get_write_pointer(ch);
-        for (size_t f = 0; f < 64; ++f) {
-            ptr[f] = static_cast<float>(ch * 64 + f);
-        }
+        for (size_t f = 0; f < 64; ++f) { ptr[f] = static_cast<float>(ch * 64 + f); }
     }
 
     AudioBuffer copy(original);
@@ -294,8 +262,7 @@ TEST(AudioBuffer, CopyConstruction) {
 
     for (size_t ch = 0; ch < 2; ++ch) {
         for (size_t f = 0; f < 64; ++f) {
-            EXPECT_FLOAT_EQ(copy.get_sample(ch, f),
-                            original.get_sample(ch, f));
+            EXPECT_FLOAT_EQ(copy.get_sample(ch, f), original.get_sample(ch, f));
         }
     }
 }
@@ -366,9 +333,7 @@ TEST(AudioBuffer, SelfMoveAssignment) {
 
 TEST(AudioBuffer, ArrayOfPointers) {
     AudioBuffer buffer(3, 64, 48000.0);
-    for (size_t ch = 0; ch < 3; ++ch) {
-        buffer.set_sample(ch, 0, static_cast<float>(ch + 1));
-    }
+    for (size_t ch = 0; ch < 3; ++ch) { buffer.set_sample(ch, 0, static_cast<float>(ch + 1)); }
 
     const float* const* readPtrs = buffer.get_array_of_read_pointers();
     EXPECT_FLOAT_EQ(readPtrs[0][0], 1.0f);
@@ -405,14 +370,10 @@ TEST(AudioBuffer, SwapDataBuffers) {
 
 TEST(AudioBuffer, SwapDataMemoryBlock) {
     AudioBuffer buffer(1, 4, 48000.0);
-    for (size_t f = 0; f < 4; ++f) {
-        buffer.set_sample(0, f, 1.0f);
-    }
+    for (size_t f = 0; f < 4; ++f) { buffer.set_sample(0, f, 1.0f); }
 
     MemoryBlock<float> block(4);
-    for (size_t i = 0; i < 4; ++i) {
-        block[i] = 5.0f;
-    }
+    for (size_t i = 0; i < 4; ++i) { block[i] = 5.0f; }
 
     buffer.swap_data(block);
 
@@ -424,14 +385,10 @@ TEST(AudioBuffer, SwapDataMemoryBlock) {
 
 TEST(AudioBuffer, SwapDataRawPointer) {
     AudioBuffer buffer(1, 4, 48000.0);
-    for (size_t f = 0; f < 4; ++f) {
-        buffer.set_sample(0, f, 1.0f);
-    }
+    for (size_t f = 0; f < 4; ++f) { buffer.set_sample(0, f, 1.0f); }
 
     auto* raw = static_cast<float*>(std::malloc(4 * sizeof(float)));
-    for (size_t i = 0; i < 4; ++i) {
-        raw[i] = 9.0f;
-    }
+    for (size_t i = 0; i < 4; ++i) { raw[i] = 9.0f; }
 
     buffer.swap_data(raw, 4);
 
@@ -512,20 +469,16 @@ TEST(AudioBuffer, InterleavedRoundTrip) {
     AudioBuffer original(2, 64, 48000.0);
     for (size_t ch = 0; ch < 2; ++ch) {
         for (size_t f = 0; f < 64; ++f) {
-            original.set_sample(
-                ch, f,
-                std::sin(static_cast<float>(ch * 64 + f) * 0.1f));
+            original.set_sample(ch, f, std::sin(static_cast<float>(ch * 64 + f) * 0.1f));
         }
     }
 
     std::vector<float> interleaved = to_interleaved(original);
-    AudioBuffer reconstructed =
-        from_interleaved(interleaved.data(), 2, 64, 48000.0);
+    AudioBuffer reconstructed = from_interleaved(interleaved.data(), 2, 64, 48000.0);
 
     for (size_t ch = 0; ch < 2; ++ch) {
         for (size_t f = 0; f < 64; ++f) {
-            EXPECT_FLOAT_EQ(reconstructed.get_sample(ch, f),
-                            original.get_sample(ch, f))
+            EXPECT_FLOAT_EQ(reconstructed.get_sample(ch, f), original.get_sample(ch, f))
                 << "Mismatch at ch=" << ch << " frame=" << f;
         }
     }

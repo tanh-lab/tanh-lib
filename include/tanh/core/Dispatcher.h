@@ -29,4 +29,4 @@ private:
     std::unordered_map<std::string, std::vector<DispatcherListener*>> m_listeners;
 };
 
-} // namespace thl
+}  // namespace thl
