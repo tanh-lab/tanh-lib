@@ -242,11 +242,20 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/SmoothedValue.cpp
         src/dsp/utils/Limiter.cpp
         src/dsp/utils/Random.cpp
+        src/dsp/utils/DynamicDelayLine.cpp
+        src/dsp/utils/DynamicAllpass.cpp
+        src/dsp/utils/SineOscillator.cpp
+        src/dsp/utils/BrownianNoise.cpp
+        src/dsp/utils/FrequencyShifter.cpp
+        src/dsp/utils/PitchShifter.cpp
 
         src/dsp/audio/RingBuffer.cpp
 
         src/dsp/synth/SineProcessor.cpp
         src/dsp/granular/GrainProcessor.cpp
+
+        src/dsp/fx/IntellijelWavefolder.cpp
+        src/dsp/fx/ConstellationReverb.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_dsp PROPERTIES 
