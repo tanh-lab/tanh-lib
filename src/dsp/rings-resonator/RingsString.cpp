@@ -107,7 +107,14 @@ void RingsString::prepare_coefficients(float delay, float src_ratio, size_t size
 }
 
 template <bool enable_dispersion>
-void RingsString::process_internal(const float* in, float* out, float* aux, size_t size) {
+void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
+                                   thl::dsp::audio::AudioBufferView out,
+                                   thl::dsp::audio::AudioBufferView aux) {
+    const float* in_ptr = in.get_read_pointer(0);
+    float* out_ptr = out.get_write_pointer(0);
+    float* aux_ptr = aux.get_write_pointer(0);
+    size_t size = in.get_num_frames();
+
     float delay = 1.0f / m_frequency;
     CONSTRAIN(delay, 4.0f, kDelayLineSize - 4.0f);
 
@@ -185,7 +192,8 @@ void RingsString::process_internal(const float* in, float* out, float* aux, size
                     s = m_string.read_hermite(delay);
                 }
                 float s_ac = s;
-                m_dc_blocker.process(&s_ac, 1);
+                thl::dsp::audio::AudioBufferView dc_view(&s_ac, 1);
+                m_dc_blocker.process(dc_view);
                 s += ac_blocking_amount * (s_ac - s);
 
                 float value = fabs(s) - 0.025f;
@@ -198,7 +206,7 @@ void RingsString::process_internal(const float* in, float* out, float* aux, size
             // Inject excitation, then run the feedback damping chain:
             //   FIR averaging -> IIR low-pass (TPT SVF) -> write back into
             //   delay.
-            s += *in;
+            s += *in_ptr;
             s = m_fir_damping_filter.process(s);
 #ifndef MIC_W
             s = m_iir_damping_filter.process<thl::dsp::filter::FilterMode::LowPass>(s);
@@ -217,17 +225,19 @@ void RingsString::process_internal(const float* in, float* out, float* aux, size
         // weighted by the fractional SRC phase.  At full rate (src_ratio = 1)
         // this always picks m_out_sample[0]; at half rate it blends successive
         // samples to hide the decimation.
-        *out++ += crossfade(m_out_sample[1], m_out_sample[0], m_src_phase);
-        *aux++ += crossfade(m_aux_sample[1], m_aux_sample[0], m_src_phase);
-        in++;
+        *out_ptr++ += crossfade(m_out_sample[1], m_out_sample[0], m_src_phase);
+        *aux_ptr++ += crossfade(m_aux_sample[1], m_aux_sample[0], m_src_phase);
+        in_ptr++;
     }
 }
 
-void RingsString::process(const float* in, float* out, float* aux, size_t size) {
+void RingsString::process(thl::dsp::audio::ConstAudioBufferView in,
+                          thl::dsp::audio::AudioBufferView out,
+                          thl::dsp::audio::AudioBufferView aux) {
     if (m_enable_dispersion) {
-        process_internal<true>(in, out, aux, size);
+        process_internal<true>(in, out, aux);
     } else {
-        process_internal<false>(in, out, aux, size);
+        process_internal<false>(in, out, aux);
     }
 }
 

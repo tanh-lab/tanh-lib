@@ -15,7 +15,15 @@ void LimiterImpl::prepare(const double& sample_rate,
     m_gain = 1.0f;
 }
 
-void LimiterImpl::process(float** buffer, const size_t& num_samples, const size_t& num_channels) {
+void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer) {
+    constexpr size_t kMaxChannels = 16;
+    const size_t num_samples = buffer.get_num_frames();
+    const size_t num_channels = std::min(buffer.get_num_channels(), kMaxChannels);
+    float* channel_ptrs[kMaxChannels];
+    for (size_t ch = 0; ch < num_channels; ++ch) {
+        channel_ptrs[ch] = buffer.get_write_pointer(ch);
+    }
+
     float threshold_db = get_parameter<float>(Threshold);
     float threshold = std::pow(10.0f, threshold_db / 20.0f);
     float attack_ms = std::max(get_parameter<float>(Attack), 0.01f);
@@ -27,7 +35,7 @@ void LimiterImpl::process(float** buffer, const size_t& num_samples, const size_
     for (size_t i = 0; i < num_samples; ++i) {
         float peak = 0.0f;
         for (size_t ch = 0; ch < num_channels; ++ch) {
-            peak = std::max(peak, std::fabs(buffer[ch][i]));
+            peak = std::max(peak, std::fabs(channel_ptrs[ch][i]));
         }
 
         float target_gain = (peak > threshold) ? threshold / peak : 1.0f;
@@ -38,7 +46,7 @@ void LimiterImpl::process(float** buffer, const size_t& num_samples, const size_
             m_gain = release_coeff * m_gain + (1.0f - release_coeff) * target_gain;
         }
 
-        for (size_t ch = 0; ch < num_channels; ++ch) { buffer[ch][i] *= m_gain; }
+        for (size_t ch = 0; ch < num_channels; ++ch) { channel_ptrs[ch][i] *= m_gain; }
     }
 }
 

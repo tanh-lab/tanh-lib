@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
@@ -44,7 +45,9 @@ public:
     ~RingsModalResonator() {}
 
     void prepare(float sample_rate = kDefaultSampleRate);
-    void process(const float* in, float* out, float* aux, size_t size);
+    void process(thl::dsp::audio::ConstAudioBufferView in,
+                 thl::dsp::audio::AudioBufferView out,
+                 thl::dsp::audio::AudioBufferView aux);
 
     inline void set_frequency(float frequency) {
         m_frequency = frequency;

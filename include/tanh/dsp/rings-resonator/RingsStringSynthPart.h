@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
@@ -94,10 +95,9 @@ public:
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
-                 const float* in,
-                 float* out,
-                 float* aux,
-                 size_t size);
+                 thl::dsp::audio::ConstAudioBufferView in,
+                 thl::dsp::audio::AudioBufferView out,
+                 thl::dsp::audio::AudioBufferView aux);
 
     inline void set_polyphony(int32_t polyphony) {
         int32_t old_polyphony = m_polyphony;
@@ -128,9 +128,8 @@ private:
     void process_formant_filter(float vowel,
                                 float shift,
                                 float resonance,
-                                float* out,
-                                float* aux,
-                                size_t size);
+                                thl::dsp::audio::AudioBufferView out,
+                                thl::dsp::audio::AudioBufferView aux);
 
     thl::dsp::synth::StringSynthVoice<kNumHarmonics> m_voice[kStringSynthVoices];
     VoiceGroup m_group[kMaxStringSynthPolyphony];
