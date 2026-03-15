@@ -26,13 +26,6 @@ public:
         m_write_ptr = (m_write_ptr - 1 + max_delay) % max_delay;
     }
 
-    T allpass(T sample, size_t delay, T coefficient) {
-        const float read = m_line[(m_write_ptr + delay) % max_delay];
-        const float w = sample + coefficient * read;
-        write(static_cast<T>(w));
-        return static_cast<T>(-w * coefficient + read);
-    }
-
     T write_read(T sample, float delay) {
         write(sample);
         return read(delay);
