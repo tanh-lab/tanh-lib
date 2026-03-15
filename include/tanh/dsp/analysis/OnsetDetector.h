@@ -96,7 +96,7 @@ public:
     void process(const float* in, float* out, size_t size) {
         float level = m_level;
         while (size--) {
-            SLOPE(level, fabs(*in), m_attack, m_decay);
+            thl::dsp::utils::slope<float>(level, fabs(*in), m_attack, m_decay);
             *out++ = *in++ / (m_skew + level);
         }
         m_level = level;
@@ -174,7 +174,7 @@ public:
             float envelope = m_envelope[i];
             size_t increment = 4 >> i;
             for (size_t j = 0; j < size; j += increment) {
-                SLOPE(envelope, s[j] * s[j], m_attack[i], m_decay[i]);
+                thl::dsp::utils::slope<float>(envelope, s[j] * s[j], m_attack[i], m_decay[i]);
                 energy += envelope;
             }
             energy = thl::dsp::utils::sqrt(energy) * float(increment);

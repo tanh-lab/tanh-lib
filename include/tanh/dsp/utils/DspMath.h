@@ -81,49 +81,23 @@ inline void slew(T& out, const T& in, const T& delta) {
     out += error;
 }
 
+template <typename T>
+inline void constrain(T& value, const T& min, const T& max) {
+    if (value < min) {
+        value = min;
+    } else if (value > max) {
+        value = max;
+    }
+}
+
+struct IntegralFractional {
+    int32_t integral;
+    float fractional;
+};
+
+inline IntegralFractional split_integral_fractional(float x) {
+    int32_t i = static_cast<int32_t>(x);
+    return {i, x - static_cast<float>(i)};
+}
+
 }  // namespace thl::dsp::utils
-
-// Temporary compatibility macros to keep the Rings vendoring changes
-// mechanical.
-#ifndef MAKE_INTEGRAL_FRACTIONAL
-#define MAKE_INTEGRAL_FRACTIONAL(x)                 \
-    int32_t x##_integral = static_cast<int32_t>(x); \
-    float x##_fractional = (x) - static_cast<float>(x##_integral);
-#endif
-
-#ifndef ONE_POLE
-#define ONE_POLE(out, in, coefficient) (out) += (coefficient) * ((in) - (out))
-#endif
-
-#ifndef SLOPE
-#define SLOPE(out, in, positive, negative)                         \
-    {                                                              \
-        float error = (in) - (out);                                \
-        (out) += (error > 0.0f ? (positive) : (negative)) * error; \
-    }
-#endif
-
-#ifndef SLEW
-#define SLEW(out, in, delta)        \
-    {                               \
-        float error = (in) - (out); \
-        float d = (delta);          \
-        if (error > d) {            \
-            error = d;              \
-        } else if (error < -d) {    \
-            error = -d;             \
-        }                           \
-        (out) += error;             \
-    }
-#endif
-
-#ifndef CONSTRAIN
-#define CONSTRAIN(var, min, max)    \
-    {                               \
-        if ((var) < (min)) {        \
-            (var) = (min);          \
-        } else if ((var) > (max)) { \
-            (var) = (max);          \
-        }                           \
-    }
-#endif

@@ -124,8 +124,8 @@ void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
 
         brightness_envelope *= 2.0f * amplitude_envelope * (2.0f - amplitude_envelope);
 
-        SLOPE(m_amplitude_envelope, amplitude_envelope, 0.05f, m_amplitude_decay);
-        SLOPE(m_brightness_envelope, brightness_envelope, 0.01f, m_brightness_decay);
+        thl::dsp::utils::slope<float>(m_amplitude_envelope, amplitude_envelope, 0.05f, m_amplitude_decay);
+        thl::dsp::utils::slope<float>(m_brightness_envelope, brightness_envelope, 0.01f, m_brightness_decay);
 
         // Compute envelopes.
         float brightness_value = brightness.next();
@@ -134,7 +134,7 @@ void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
         float fm_amount_max = brightness_value < 0.5f ? 2.0f * brightness_value : 1.0f;
         float fm_envelope = 0.5f + m_envelope_amount * (m_brightness_envelope - 0.5f);
         float fm_amount = (fm_amount_min + fm_amount_max * fm_envelope) * 2.0f;
-        SLEW(m_fm_amount, fm_amount, 0.005f + fm_amount_max * 0.015f);
+        thl::dsp::utils::slew(m_fm_amount, fm_amount, 0.005f + fm_amount_max * 0.015f);
 
         // FM synthesis in itself
         float phase_feedback = m_feedback < 0.0f ? 0.5f * m_feedback * m_feedback : 0.0f;
@@ -146,11 +146,11 @@ void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
         float modulator_fb = feedback > 0.0f ? 0.25f * feedback * feedback : 0.0f;
         float modulator = sine_fm(modulator_phase, modulator_fb * previous_sample);
         float carrier = sine_fm(carrier_phase, m_fm_amount * modulator);
-        ONE_POLE(previous_sample, carrier, 0.1f);
+        thl::dsp::utils::one_pole(previous_sample, carrier, 0.1f);
 
         // Compute amplitude envelope.
         float gain = 1.0f + m_envelope_amount * (m_amplitude_envelope - 1.0f);
-        ONE_POLE(m_gain, gain, 0.005f + 0.045f * m_fm_amount);
+        thl::dsp::utils::one_pole(m_gain, gain, 0.005f + 0.045f * m_fm_amount);
 
         *out_ptr++ = (carrier + 0.5f * modulator) * m_gain;
         *aux_ptr++ = 0.5f * modulator * m_gain;

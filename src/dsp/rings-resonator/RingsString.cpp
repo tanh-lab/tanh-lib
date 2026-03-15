@@ -116,7 +116,7 @@ void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
     size_t size = in.get_num_frames();
 
     float delay = 1.0f / m_frequency;
-    CONSTRAIN(delay, 4.0f, kDelayLineSize - 4.0f);
+    thl::dsp::utils::constrain<float>(delay, 4.0f, kDelayLineSize - 4.0f);
 
     // Sample-rate conversion ratio.  When the required delay fits in the
     // buffer, src_ratio = 1 and we run at full rate.  For very low pitches

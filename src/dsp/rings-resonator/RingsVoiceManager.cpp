@@ -250,7 +250,7 @@ void RingsVoiceManager::compute_sympathetic_strings_notes(float tonic,
             parameter += (1.0f - parameter) * 0.2f;
         }
 
-        MAKE_INTEGRAL_FRACTIONAL(note);
+        auto [note_integral, note_fractional] = split_integral_fractional(note);
         note_fractional = squash(note_fractional);
 
         float a = notes[note_integral];
