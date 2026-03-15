@@ -4,19 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <tanh/dsp/utils/DspMath.h>
+
 namespace thl::dsp::utils {
-
-namespace detail {
-struct IntegralFractional {
-    int32_t integral;
-    float fractional;
-};
-
-inline IntegralFractional split_integral_fractional(float x) {
-    const int32_t integral = static_cast<int32_t>(x);
-    return {integral, x - static_cast<float>(integral)};
-}
-}  // namespace detail
 
 template <typename T, size_t max_delay>
 class DelayLine {
@@ -53,14 +43,14 @@ public:
     T read(size_t delay) const { return m_line[(m_write_ptr + delay) % max_delay]; }
 
     T read(float delay) const {
-        const auto [delay_integral, delay_fractional] = detail::split_integral_fractional(delay);
+        const auto [delay_integral, delay_fractional] = split_integral_fractional(delay);
         const T a = m_line[(m_write_ptr + static_cast<size_t>(delay_integral)) % max_delay];
         const T b = m_line[(m_write_ptr + static_cast<size_t>(delay_integral + 1)) % max_delay];
         return a + (b - a) * delay_fractional;
     }
 
     T read_hermite(float delay) const {
-        const auto [delay_integral, delay_fractional] = detail::split_integral_fractional(delay);
+        const auto [delay_integral, delay_fractional] = split_integral_fractional(delay);
         const int32_t t =
             static_cast<int32_t>(m_write_ptr) + delay_integral + static_cast<int32_t>(max_delay);
         const T xm1 = m_line[static_cast<size_t>(t - 1) % max_delay];

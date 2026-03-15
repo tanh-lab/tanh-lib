@@ -55,7 +55,7 @@ public:
             float s_peak = fabs(r_pre - l_pre);
 
             float peak = std::max(std::max(l_peak, r_peak), s_peak);
-            SLOPE(m_peak, peak, 0.05f, 0.00002f);
+            thl::dsp::utils::slope<float>(m_peak, peak, 0.05f, 0.00002f);
 
             // Clamp to 8Vpp, clipping softly towards 10Vpp
             float gain = (m_peak <= 1.0f ? 1.0f : 1.0f / m_peak);

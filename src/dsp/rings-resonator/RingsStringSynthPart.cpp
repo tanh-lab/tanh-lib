@@ -87,7 +87,7 @@ const float registrations[kRegistrationTableSize][kNumHarmonics * 2] = {
 
 void RingsStringSynthPart::compute_registration(float gain, float registration, float* amplitudes) {
     registration *= (kRegistrationTableSize - 1.001f);
-    MAKE_INTEGRAL_FRACTIONAL(registration);
+    auto [registration_integral, registration_fractional] = split_integral_fractional(registration);
     float total = 0.0f;
     for (int32_t i = 0; i < kNumHarmonics * 2; ++i) {
         float a = registrations[registration_integral][i];
@@ -272,7 +272,7 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
     fill(&aux_ptr[0], &aux_ptr[size], 0.0f);
 
     vowel *= (kFormantTableSize - 1.001f);
-    MAKE_INTEGRAL_FRACTIONAL(vowel);
+    auto [vowel_integral, vowel_fractional] = split_integral_fractional(vowel);
 
     for (int32_t i = 0; i < kNumFormants; ++i) {
         float a = formants[vowel_integral][i];

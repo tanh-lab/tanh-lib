@@ -75,7 +75,7 @@ public:
         float total = 0.0f;
         float frequency = 0.0f;
         for (int32_t i = 0; i < 3; ++i) {
-            SLOPE(m_detector[i], fabs(bands[i]), m_attack[i], m_decay[i]);
+            thl::dsp::utils::slope<float>(m_detector[i], fabs(bands[i]), m_attack[i], m_decay[i]);
             weighted += m_detector[i] * frequency;
             total += m_detector[i];
             frequency += 0.5f;

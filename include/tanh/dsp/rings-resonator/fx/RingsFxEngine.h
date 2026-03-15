@@ -202,7 +202,7 @@ public:
         template <typename D>
         inline void interpolate(D& d, float offset, float scale) {
             static_assert((D::base + D::length <= size), "delay_memory_full");
-            MAKE_INTEGRAL_FRACTIONAL(offset);
+            auto [offset_integral, offset_fractional] = thl::dsp::utils::split_integral_fractional(offset);
             float a = DataType<format>::Decompress(
                 m_buffer[(m_write_ptr + offset_integral + D::base) & MASK]);
             float b = DataType<format>::Decompress(
@@ -216,7 +216,7 @@ public:
         inline void interpolate(D& d, float offset, LFOIndex index, float amplitude, float scale) {
             static_assert((D::base + D::length <= size), "delay_memory_full");
             offset += amplitude * m_lfo_value[index];
-            MAKE_INTEGRAL_FRACTIONAL(offset);
+            auto [offset_integral, offset_fractional] = thl::dsp::utils::split_integral_fractional(offset);
             float a = DataType<format>::Decompress(
                 m_buffer[(m_write_ptr + offset_integral + D::base) & MASK]);
             float b = DataType<format>::Decompress(
