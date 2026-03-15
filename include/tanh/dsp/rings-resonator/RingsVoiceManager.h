@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
 #include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/utils/DelayLine.h>
@@ -74,10 +75,9 @@ public:
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
-                 const float* in,
-                 float* out,
-                 float* aux,
-                 size_t size);
+                 thl::dsp::audio::ConstAudioBufferView in,
+                 thl::dsp::audio::AudioBufferView out,
+                 thl::dsp::audio::AudioBufferView aux);
 
     inline bool bypass() const { return m_bypass; }
     inline void set_bypass(bool bypass) { m_bypass = bypass; }

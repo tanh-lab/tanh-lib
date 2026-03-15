@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
 #include <tanh/dsp/utils/Random.h>
@@ -59,7 +60,9 @@ public:
                                                                        1.0f);
     }
 
-    void process(float* out, size_t size) {
+    void process(thl::dsp::audio::AudioBufferView out) {
+        float* out_ptr = out.get_write_pointer(0);
+        size_t size = out.get_num_frames();
         const float comb_gain = m_comb_filter_gain;
         const float comb_delay = m_comb_filter_period;
         for (size_t i = 0; i < size; ++i) {
@@ -68,10 +71,12 @@ public:
                 in = 2.0f * thl::dsp::utils::Random::get_float() - 1.0f;
                 --m_remaining_samples;
             }
-            out[i] = in + comb_gain * m_comb_filter.read(comb_delay);
-            m_comb_filter.write(out[i]);
+            out_ptr[i] = in + comb_gain * m_comb_filter.read(comb_delay);
+            m_comb_filter.write(out_ptr[i]);
         }
-        m_svf.process<thl::dsp::filter::FilterMode::LowPass>(out, out, size);
+        thl::dsp::audio::AudioBufferView out_view(out_ptr, size);
+        m_svf.process<thl::dsp::filter::FilterMode::LowPass>(
+            thl::dsp::audio::ConstAudioBufferView(out_ptr, size), out_view);
     }
 
 private:

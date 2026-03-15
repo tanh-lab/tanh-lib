@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/Limiter.h>
 
 #include <cmath>
@@ -34,8 +35,8 @@ static constexpr size_t kBlockSize = 512;
 // Helper: process a mono buffer of N identical samples, return the last output
 static float process_sustained(TestLimiter& limiter, float value, size_t num_samples) {
     std::vector<float> buf(num_samples, value);
-    float* ptrs[1] = {buf.data()};
-    limiter.process(ptrs, num_samples, 1);
+    thl::dsp::audio::AudioBufferView view(buf.data(), num_samples);
+    limiter.process(view);
     return buf[num_samples - 1];
 }
 
@@ -163,7 +164,8 @@ TEST(Limiter, StereoLinking) {
     std::vector<float> left(N, 0.1f);   // quiet
     std::vector<float> right(N, 2.0f);  // loud
     float* ptrs[2] = {left.data(), right.data()};
-    limiter.process(ptrs, N, 2);
+    thl::dsp::audio::AudioBufferView stereo_view(ptrs, 2, N);
+    limiter.process(stereo_view);
 
     // Right channel peaks trigger gain reduction on BOTH channels
     float thresh = limiter.threshold_linear();

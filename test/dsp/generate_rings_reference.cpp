@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
 #include <tanh/dsp/rings-resonator/RingsPatch.h>
@@ -80,7 +81,10 @@ int main() {
             std::array<float, kFramesPerBlock> in{};
             std::array<float, kFramesPerBlock> out{};
             std::array<float, kFramesPerBlock> aux{};
-            part.process(state, patch, in.data(), out.data(), aux.data(), kFramesPerBlock);
+            thl::dsp::audio::ConstAudioBufferView in_view(in.data(), kFramesPerBlock);
+            thl::dsp::audio::AudioBufferView out_view(out.data(), kFramesPerBlock);
+            thl::dsp::audio::AudioBufferView aux_view(aux.data(), kFramesPerBlock);
+            part.process(state, patch, in_view, out_view, aux_view);
         }
 
         // Build input: impulse at sample 0 of first block
@@ -95,7 +99,10 @@ int main() {
             float* out_ptr = out_data.data() + block * kFramesPerBlock;
             float* aux_ptr = aux_data.data() + block * kFramesPerBlock;
 
-            part.process(state, patch, in_ptr, out_ptr, aux_ptr, kFramesPerBlock);
+            thl::dsp::audio::ConstAudioBufferView in_view(in_ptr, kFramesPerBlock);
+            thl::dsp::audio::AudioBufferView out_view(out_ptr, kFramesPerBlock);
+            thl::dsp::audio::AudioBufferView aux_view(aux_ptr, kFramesPerBlock);
+            part.process(state, patch, in_view, out_view, aux_view);
         }
 
         // Write [input][out][aux] to binary file

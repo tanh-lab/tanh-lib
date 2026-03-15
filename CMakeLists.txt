@@ -243,6 +243,8 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/Limiter.cpp
         src/dsp/utils/Random.cpp
 
+        src/dsp/audio/RingBuffer.cpp
+
         src/dsp/synth/SineProcessor.cpp
         src/dsp/granular/GrainProcessor.cpp
     )

@@ -1,6 +1,7 @@
 #include <tanh/dsp/synth/RingsResonatorSynthProcessor.h>
 
-#include <tanh/dsp/utils/RingBuffer.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/dsp/audio/RingBuffer.h>
 #include <tanh/dsp/utils/ParamSmoother.h>
 
 #include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
@@ -42,11 +43,11 @@ struct RingsResonatorSynthProcessor::EngineState {
 
     double m_host_sample_rate = 48000.0;
     int m_latency = static_cast<int>(kBlockSize);
-    utils::RingBuffer m_dry_delay_line;
+    thl::dsp::audio::RingBuffer m_dry_delay_line;
 
-    utils::RingBuffer m_input_fifo;
-    utils::RingBuffer m_output_fifo_odd;
-    utils::RingBuffer m_output_fifo_even;
+    thl::dsp::audio::RingBuffer m_input_fifo;
+    thl::dsp::audio::RingBuffer m_output_fifo_odd;
+    thl::dsp::audio::RingBuffer m_output_fifo_even;
 
     void prepare(double sampleRate, int maxBlockSize) {
         m_host_sample_rate = sampleRate;
@@ -58,15 +59,10 @@ struct RingsResonatorSynthProcessor::EngineState {
 
         m_latency = static_cast<int>(kBlockSize);
 
-        m_dry_delay_line.resize(m_latency + maxBlockSize + 16);
-        m_input_fifo.resize(maxBlockSize + kBlockSize);
-        m_output_fifo_odd.resize(maxBlockSize + kBlockSize);
-        m_output_fifo_even.resize(maxBlockSize + kBlockSize);
-
-        m_dry_delay_line.clear();
-        m_input_fifo.clear();
-        m_output_fifo_odd.clear();
-        m_output_fifo_even.clear();
+        m_dry_delay_line.initialise_with_positions(1, m_latency + maxBlockSize + 16);
+        m_input_fifo.initialise_with_positions(1, maxBlockSize + kBlockSize);
+        m_output_fifo_odd.initialise_with_positions(1, maxBlockSize + kBlockSize);
+        m_output_fifo_even.initialise_with_positions(1, maxBlockSize + kBlockSize);
 
         constexpr float smoothTime = 0.05f;
         m_frequency_smoother.prepare(sampleRate, smoothTime);
@@ -95,14 +91,18 @@ struct RingsResonatorSynthProcessor::EngineState {
         float out[kBlockSize] = {};
         float aux[kBlockSize] = {};
 
-        m_strummer.process(in, kBlockSize, &m_performance_state);
+        thl::dsp::audio::ConstAudioBufferView in_view(in, kBlockSize);
+        thl::dsp::audio::AudioBufferView out_view(out, kBlockSize);
+        thl::dsp::audio::AudioBufferView aux_view(aux, kBlockSize);
+
+        m_strummer.process(in_view, &m_performance_state);
 
         if (m_model == resonator::RESONATOR_MODEL_STRING_AND_REVERB) {
             m_string_synth.process(
-                m_performance_state, m_patch, in, out, aux, kBlockSize);
+                m_performance_state, m_patch, in_view, out_view, aux_view);
         } else {
             m_part.process(
-                m_performance_state, m_patch, in, out, aux, kBlockSize);
+                m_performance_state, m_patch, in_view, out_view, aux_view);
         }
 
         for (size_t i = 0; i < kBlockSize; ++i) {
@@ -128,7 +128,12 @@ void RingsResonatorSynthProcessor::prepare(double sampleRate, int maxBlockSize) 
 }
 
 void RingsResonatorSynthProcessor::process(
-    const float* input, float* output, int numSamples) {
+    thl::dsp::audio::ConstAudioBufferView input,
+    thl::dsp::audio::AudioBufferView output) {
+    const float* input_ptr = input.get_read_pointer(0);
+    float* output_ptr = output.get_write_pointer(0);
+    int numSamples = static_cast<int>(input.get_num_frames());
+
     auto& e = *m_engine;
 
     float frequency = get_parameter_value(RingsParameter::Frequency);
@@ -170,23 +175,23 @@ void RingsResonatorSynthProcessor::process(
     e.m_odd_even_mix = e.m_odd_even_smoother.skip(numSamples);
     e.m_dry_wet = e.m_dry_wet_smoother.skip(numSamples);
 
-    for (int i = 0; i < numSamples; ++i) { e.m_dry_delay_line.push(input[i]); }
-    for (int i = 0; i < numSamples; ++i) { e.m_input_fifo.push(input[i]); }
+    for (int i = 0; i < numSamples; ++i) { e.m_dry_delay_line.push_sample(0, input_ptr[i]); }
+    for (int i = 0; i < numSamples; ++i) { e.m_input_fifo.push_sample(0, input_ptr[i]); }
 
-    while (static_cast<size_t>(e.m_input_fifo.size()) >= kBlockSize) {
+    while (e.m_input_fifo.get_available_samples(0) >= kBlockSize) {
         float blockInput[kBlockSize];
         float blockOdd[kBlockSize];
         float blockEven[kBlockSize];
 
         for (size_t j = 0; j < kBlockSize; ++j) {
-            blockInput[j] = e.m_input_fifo.pop();
+            blockInput[j] = e.m_input_fifo.pop_sample(0);
         }
 
         e.render_block(blockInput, blockOdd, blockEven);
 
         for (size_t j = 0; j < kBlockSize; ++j) {
-            e.m_output_fifo_odd.push(blockOdd[j]);
-            e.m_output_fifo_even.push(blockEven[j]);
+            e.m_output_fifo_odd.push_sample(0, blockOdd[j]);
+            e.m_output_fifo_even.push_sample(0, blockEven[j]);
         }
     }
 
@@ -195,9 +200,9 @@ void RingsResonatorSynthProcessor::process(
 
     for (int i = 0; i < numSamples; ++i) {
         float odd = 0.0f, even = 0.0f;
-        if (!e.m_output_fifo_odd.empty()) odd = e.m_output_fifo_odd.pop();
-        if (!e.m_output_fifo_even.empty()) even = e.m_output_fifo_even.pop();
-        output[i] = odd * oddGain + even * evenGain;
+        if (e.m_output_fifo_odd.get_available_samples(0) > 0) odd = e.m_output_fifo_odd.pop_sample(0);
+        if (e.m_output_fifo_even.get_available_samples(0) > 0) even = e.m_output_fifo_even.pop_sample(0);
+        output_ptr[i] = odd * oddGain + even * evenGain;
     }
 
     const float wetGain = e.m_dry_wet;
@@ -205,10 +210,10 @@ void RingsResonatorSynthProcessor::process(
 
     for (int i = 0; i < numSamples; ++i) {
         float dry = 0.0f;
-        if (e.m_dry_delay_line.size() > e.m_latency) {
-            dry = e.m_dry_delay_line.pop();
+        if (static_cast<int>(e.m_dry_delay_line.get_available_samples(0)) > e.m_latency) {
+            dry = e.m_dry_delay_line.pop_sample(0);
         }
-        output[i] = output[i] * wetGain + dry * dryGain;
+        output_ptr[i] = output_ptr[i] * wetGain + dry * dryGain;
     }
 }
 

@@ -53,9 +53,14 @@ void GrainProcessorImpl::prepare(const double& sample_rate,
     m_envelope.reset();
 }
 
-void GrainProcessorImpl::process(float** buffer,
-                                 const size_t& num_samples,
-                                 const size_t& num_channels) {
+void GrainProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer) {
+    const size_t num_samples = buffer.get_num_frames();
+    const size_t num_channels = std::min(buffer.get_num_channels(), static_cast<size_t>(MAX_CHANNEL_SUPPORT));
+    float* channel_ptrs[MAX_CHANNEL_SUPPORT];
+    for (size_t ch = 0; ch < num_channels; ++ch) {
+        channel_ptrs[ch] = buffer.get_write_pointer(ch);
+    }
+
     update_envelope_if_needed();
 
     bool playing = get_parameter<bool>(Playing);
@@ -77,19 +82,19 @@ void GrainProcessorImpl::process(float** buffer,
 
     // Clear the buffer
     for (size_t ch = 0; ch < num_channels; ++ch) {
-        std::memset(buffer[ch], 0, num_samples * sizeof(float));
+        std::memset(channel_ptrs[ch], 0, num_samples * sizeof(float));
     }
 
     // If not playing or no audio data, just return (silence)
     if (!m_envelope.is_active() || !m_audio_store.is_loaded()) { return; }
 
     // Process existing grains and generate new ones
-    update_grains(buffer, num_samples);
+    update_grains(channel_ptrs, num_samples);
 
     // Apply master volume
     for (size_t i = 0; i < num_samples; i++) {
         float grain_volume = volume * m_envelope.process();
-        for (size_t ch = 0; ch < num_channels; ++ch) { buffer[ch][i] *= grain_volume; }
+        for (size_t ch = 0; ch < num_channels; ++ch) { channel_ptrs[ch][i] *= grain_volume; }
     }
 }
 
