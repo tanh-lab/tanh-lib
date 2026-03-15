@@ -32,6 +32,7 @@
 
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/DCBlocker.h>
+#include <tanh/dsp/utils/Allpass.h>
 #include <tanh/dsp/utils/DelayLine.h>
 #include <tanh/dsp/filter/Svf.h>
 
@@ -108,7 +109,7 @@ private:
 };
 
 typedef thl::dsp::utils::DelayLine<float, kDelayLineSize> StringDelayLine;
-typedef thl::dsp::utils::DelayLine<float, kDelayLineSize / 2> StiffnessDelayLine;
+typedef thl::dsp::utils::Allpass<float, kDelayLineSize / 2> StiffnessAllpass;
 
 // Extended Karplus-Strong string model.
 //
@@ -219,7 +220,7 @@ private:
     float m_damping_compensation_target = 0.0f;
 
     StringDelayLine m_string;
-    StiffnessDelayLine m_stretch;
+    StiffnessAllpass m_stretch;
 
     RingsDampingFilter m_fir_damping_filter;
     thl::dsp::filter::Svf m_iir_damping_filter;

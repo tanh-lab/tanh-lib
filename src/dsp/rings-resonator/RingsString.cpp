@@ -187,7 +187,7 @@ void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
                 float main_delay = delay - ap_delay;
                 if (ap_delay >= 4.0f && main_delay >= 4.0f) {
                     s = m_string.read_hermite(main_delay);
-                    s = m_stretch.allpass(s, ap_delay, ap_gain);
+                    s = m_stretch.process(s, ap_delay, ap_gain);
                 } else {
                     s = m_string.read_hermite(delay);
                 }
