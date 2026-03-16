@@ -144,9 +144,7 @@ private:
     size_t calculate_grain_size(float grain_size_param, float temperature);
     float calculate_velocity(float velocity, float temperature);
     long calculate_start_position(const SampleRegion& region,
-                                  float temperature,
-                                  size_t grain_size,
-                                  float velocity);
+                                  float temperature);
     float apply_temperature_ramp(float temperature) const;
     SampleRegion compute_sample_region(size_t total_frames);
 };

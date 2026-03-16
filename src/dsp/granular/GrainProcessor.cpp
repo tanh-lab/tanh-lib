@@ -275,7 +275,7 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             float position_temperature =
                 apply_temperature_ramp(get_parameter<float>(TemperaturePosition));
             long start_position =
-                calculate_start_position(region, position_temperature, grain_size, velocity);
+                calculate_start_position(region, position_temperature);
 
             // Truncate grain if it would overshoot past region end
             long end_frame = static_cast<long>(region.end);
@@ -331,39 +331,24 @@ size_t GrainProcessorImpl::calculate_grain_size(float grain_size_param, float te
 }
 
 long GrainProcessorImpl::calculate_start_position(const SampleRegion& region,
-                                                  float temperature,
-                                                  size_t grain_size,
-                                                  float velocity) {
+                                                  float temperature) {
     long start_position = static_cast<long>(m_sequential_position);
 
     // Apply temperature-based randomization to grain start position
     long max_position = static_cast<long>(region.size());
-    if (max_position <= 0) return static_cast<long>(region.start);
+    if (max_position <= 0) { return static_cast<long>(region.start); }
+    if (temperature == 0.f && start_position >= max_position) {
+        return static_cast<long>(region.loop_point);
+    }
 
     float rand_value = m_uni_dist(m_random_generator);  // [0, 1)
-    rand_value = rand_value - 0.5f;                     // [-0.5, 0.5)
+    rand_value = (rand_value - 0.5f) * 2.f;                     // [-1, 1)
     rand_value *= temperature;
     start_position += static_cast<long>(rand_value * max_position);
     if (start_position >= max_position) {
         start_position -= max_position;
     } else if (start_position < 0) {
         start_position += max_position;
-    }
-
-    // Push small grains away from the edges
-    auto max_size = static_cast<size_t>(MAX_GRAIN_SIZE * m_sample_rate);
-    float grain_size_factor = static_cast<float>(grain_size) / static_cast<float>(max_size);
-
-    float start_position_factor =
-        static_cast<float>(start_position) / static_cast<float>(max_position);
-    if (start_position_factor > 0.5f) {
-        start_position_factor -= 0.5f;
-        start_position_factor *= std::pow(1.f - grain_size_factor, 2.f);
-        start_position -= static_cast<long>(start_position_factor * max_position);
-    } else {
-        start_position_factor = 0.5f - start_position_factor;
-        start_position_factor *= std::pow(1.f - grain_size_factor, 2.f);
-        start_position += static_cast<long>(start_position_factor * max_position);
     }
 
     start_position += region.start;
