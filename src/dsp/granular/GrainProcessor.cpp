@@ -25,6 +25,28 @@ GrainProcessorImpl::GrainProcessorImpl(audio::AudioDataStore& audio_store)
 
 GrainProcessorImpl::~GrainProcessorImpl() = default;
 
+void GrainProcessorImpl::set_visualization_listener(GrainVisualizationListener* listener) {
+    m_viz_listeners.clear();
+    if (listener) m_viz_listeners.push_back(listener);
+}
+
+void GrainProcessorImpl::add_visualization_listener(GrainVisualizationListener* listener) {
+    if (listener) m_viz_listeners.push_back(listener);
+}
+
+void GrainProcessorImpl::remove_visualization_listener(GrainVisualizationListener* listener) {
+    m_viz_listeners.erase(
+        std::remove(m_viz_listeners.begin(), m_viz_listeners.end(), listener),
+        m_viz_listeners.end());
+}
+
+void GrainProcessorImpl::set_visualization_update_rate(float fps) {
+    if (fps > 0.f && m_sample_rate > 0)
+        m_viz_update_interval = static_cast<size_t>(m_sample_rate / fps);
+    else
+        m_viz_update_interval = 0;
+}
+
 void GrainProcessorImpl::reset_grains() {
     for (auto& grain : m_grains) { grain.active = false; }
     m_sequential_position = 0;
@@ -86,7 +108,20 @@ void GrainProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer) {
     }
 
     // If not playing or no audio data, just return (silence)
-    if (!m_envelope.is_active() || !m_audio_store.is_loaded()) { return; }
+    if (!m_envelope.is_active() || !m_audio_store.is_loaded()) {
+        // Deactivate any lingering grains and notify visualization
+        if (!m_viz_listeners.empty()) {
+            for (size_t gi = 0; gi < m_grains.size(); ++gi) {
+                if (m_grains[gi].active) {
+                    m_grains[gi].active = false;
+                    for (auto* l : m_viz_listeners) {
+                        l->on_grain_finished(static_cast<int>(gi));
+                    }
+                }
+            }
+        }
+        return;
+    }
 
     // Process existing grains and generate new ones
     update_grains(channel_ptrs, num_samples);
@@ -156,6 +191,12 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
                                             static_cast<int>(ChannelMode::NUM_CHANNEL_MODES) - 1));
     float spread = get_parameter<float>(Spread);
 
+    // Get total frames for visualization position normalization
+    size_t total_frames = 0;
+    if (sample_index < audio_data.size() && !audio_data[sample_index].empty()) {
+        total_frames = audio_data[sample_index].get_num_frames();
+    }
+
     // For each sample in the buffer
     for (unsigned int i = 0; i < n_buffer_frames; i++) {
         // Check if it's time to trigger a new grain
@@ -170,7 +211,8 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
         float channel_accum[MAX_CHANNEL_SUPPORT] = {};
 
         // Process all active grains
-        for (auto& grain : m_grains) {
+        for (size_t gi = 0; gi < m_grains.size(); ++gi) {
+            auto& grain = m_grains[gi];
             if (!grain.active) continue;
 
             // Hann window envelope for amplitude control
@@ -181,6 +223,9 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
             // Check if the grain should be deactivated
             if (!grain.envelope.is_active() || normalized_position >= 1.0f) {
                 grain.active = false;
+                for (auto* l : m_viz_listeners) {
+                    l->on_grain_finished(static_cast<int>(gi));
+                }
                 continue;
             }
 
@@ -237,7 +282,12 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
             grain.current_position++;
 
             // Deactivate if grain is finished
-            if (grain.current_position >= grain.grain_size) { grain.active = false; }
+            if (grain.current_position >= grain.grain_size) {
+                grain.active = false;
+                for (auto* l : m_viz_listeners) {
+                    l->on_grain_finished(static_cast<int>(gi));
+                }
+            }
         }
 
         // Write to output buffer (planar layout)
@@ -245,13 +295,37 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
 
         m_playback_elapsed_samples++;
     }
+
+    // Rate-limited visualization update
+    if (!m_viz_listeners.empty() && m_viz_update_interval > 0 && total_frames > 0) {
+        m_viz_update_counter += n_buffer_frames;
+        if (m_viz_update_counter >= m_viz_update_interval) {
+            m_viz_update_counter = 0;
+            float total_f = static_cast<float>(total_frames);
+            for (size_t gi = 0; gi < m_grains.size(); ++gi) {
+                auto& grain = m_grains[gi];
+                if (!grain.active) continue;
+                float current_pos =
+                    static_cast<float>(grain.start_position +
+                                       grain.current_position * grain.velocity) / total_f;
+                float normalized_position =
+                    static_cast<float>(grain.current_position) /
+                    static_cast<float>(grain.grain_size);
+                float envelope = grain.envelope.process_at_position(normalized_position);
+                for (auto* l : m_viz_listeners) {
+                    l->on_grain_updated(static_cast<int>(gi), current_pos, envelope);
+                }
+            }
+        }
+    }
 }
 
 void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
     const auto& audio_data = m_audio_store.get_buffer();
 
     // Find an inactive grain slot
-    for (auto& grain : m_grains) {
+    for (size_t gi = 0; gi < m_grains.size(); ++gi) {
+        auto& grain = m_grains[gi];
         if (!grain.active) {
             if (sample_index >= audio_data.size() || audio_data[sample_index].empty()) { return; }
 
@@ -302,6 +376,17 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             grain.envelope.set_sample_rate(static_cast<float>(m_sample_rate));
             grain.envelope.set_duration(grain_duration_ms);
             grain.envelope.start();
+
+            // Notify visualization listeners
+            for (auto* l : m_viz_listeners) {
+                float total = static_cast<float>(total_frames);
+                l->on_grain_triggered(
+                    static_cast<int>(gi),
+                    static_cast<float>(start_position) / total,
+                    static_cast<float>(effective_grain_size) / total,
+                    velocity,
+                    grain_duration_ms);
+            }
 
             return;
         }

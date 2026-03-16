@@ -4,6 +4,7 @@
 #include <vector>
 #include <tanh/tanh.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
+#include <tanh/dsp/granular/GrainVisualizationListener.h>
 
 namespace thl::dsp::granular {
 
@@ -62,6 +63,11 @@ public:
     void reset_grains();
 
     bool is_active() const { return m_envelope.is_active(); }
+
+    void set_visualization_listener(GrainVisualizationListener* listener);
+    void add_visualization_listener(GrainVisualizationListener* listener);
+    void remove_visualization_listener(GrainVisualizationListener* listener);
+    void set_visualization_update_rate(float fps);
 
 protected:
     enum Parameter {
@@ -147,6 +153,11 @@ private:
                                   float temperature);
     float apply_temperature_ramp(float temperature) const;
     SampleRegion compute_sample_region(size_t total_frames);
+
+    // Visualization listeners (optional, not owned)
+    std::vector<GrainVisualizationListener*> m_viz_listeners;
+    size_t m_viz_update_interval = 0;  // in samples, 0 = disabled
+    size_t m_viz_update_counter = 0;
 };
 
 // Template specializations for get_parameter
