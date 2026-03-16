@@ -40,6 +40,12 @@ public:
      * @param grain_index  Index in the grain pool
      */
     virtual void on_grain_finished(int grain_index) = 0;
+
+    /**
+     * Called periodically with the master ADSR envelope value for this voice.
+     * @param value  Master envelope amplitude (0-1)
+     */
+    virtual void on_master_envelope_updated(float value) = 0;
 };
 
 }  // namespace thl::dsp::granular

@@ -119,6 +119,9 @@ void GrainProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer) {
                     }
                 }
             }
+            for (auto* l : m_viz_listeners) {
+                l->on_master_envelope_updated(0.f);
+            }
         }
         return;
     }
@@ -302,6 +305,13 @@ void GrainProcessorImpl::update_grains(float** buffer, size_t n_buffer_frames) {
         if (m_viz_update_counter >= m_viz_update_interval) {
             m_viz_update_counter = 0;
             float total_f = static_cast<float>(total_frames);
+
+            // Send current master envelope value
+            float master_env = m_envelope.get_current_level();
+            for (auto* l : m_viz_listeners) {
+                l->on_master_envelope_updated(master_env);
+            }
+
             for (size_t gi = 0; gi < m_grains.size(); ++gi) {
                 auto& grain = m_grains[gi];
                 if (!grain.active) continue;
