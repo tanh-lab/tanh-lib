@@ -271,13 +271,20 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index) {
             if (region.size() == 0) return;
 
             auto effective_grain_size = static_cast<size_t>(std::ceil(grain_size * velocity));
-            if (static_cast<long>(region.size()) - static_cast<long>(effective_grain_size) <= 0)
-                return;
 
             float position_temperature =
                 apply_temperature_ramp(get_parameter<float>(TemperaturePosition));
             long start_position =
                 calculate_start_position(region, position_temperature, grain_size, velocity);
+
+            // Truncate grain if it would overshoot past region end
+            long end_frame = static_cast<long>(region.end);
+            long grain_end = start_position + static_cast<long>(effective_grain_size);
+            if (grain_end > end_frame) {
+                effective_grain_size = static_cast<size_t>(std::max(0L, end_frame - start_position));
+                if (effective_grain_size == 0) return;
+                grain_size = std::max(size_t(1), static_cast<size_t>(effective_grain_size / velocity));
+            }
 
             // Setup the grain
             grain.start_position = start_position;
@@ -330,8 +337,7 @@ long GrainProcessorImpl::calculate_start_position(const SampleRegion& region,
     long start_position = static_cast<long>(m_sequential_position);
 
     // Apply temperature-based randomization to grain start position
-    auto effective_grain_size = static_cast<size_t>(std::ceil(grain_size * velocity));
-    long max_position = static_cast<long>(region.size()) - static_cast<long>(effective_grain_size);
+    long max_position = static_cast<long>(region.size());
     if (max_position <= 0) return static_cast<long>(region.start);
 
     float rand_value = m_uni_dist(m_random_generator);  // [0, 1)
@@ -362,13 +368,12 @@ long GrainProcessorImpl::calculate_start_position(const SampleRegion& region,
 
     start_position += region.start;
 
-    // Advance sequential position and handle looping
+    // Advance sequential position and handle looping.
+    // Scanner traverses the full region (start → end), then restarts at loop_point.
     m_sequential_position += static_cast<long>(m_min_grain_interval);
+
     if (m_sequential_position >= max_position) {
-        long loop_offset = static_cast<long>(region.loop_point - region.start) < max_position
-                               ? static_cast<long>(region.loop_point - region.start)
-                               : 0;
-        m_sequential_position = loop_offset + (m_sequential_position - max_position);
+        m_sequential_position = static_cast<long>(region.loop_point - region.start);
     }
 
     return start_position;
