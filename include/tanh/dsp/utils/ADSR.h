@@ -131,6 +131,11 @@ public:
     State get_state() const;
 
     /**
+     * Get the current envelope level without advancing the state.
+     */
+    float get_current_level() const { return m_current_level; }
+
+    /**
      * Set the attack curve shape
      *
      * @param curve_blend Blend factor between linear (0.0) and exponential
