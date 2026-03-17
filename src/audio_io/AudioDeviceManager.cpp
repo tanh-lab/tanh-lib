@@ -602,19 +602,23 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
     auto* device = static_cast<ma_device*>(devicePtr);
     RCU<std::vector<AudioIODeviceCallback*>>* callbacks = nullptr;
     std::atomic<bool>* audioThreadRegistered = nullptr;
+    uint32_t preparedBufferSize = 0;
 
     switch (role) {
         case DeviceRole::Playback:
             callbacks = &m_playbackCallbacks;
             audioThreadRegistered = &m_playbackAudioThreadRegistered;
+            preparedBufferSize = m_impl->playbackBufferSize;
             break;
         case DeviceRole::Capture:
             callbacks = &m_captureCallbacks;
             audioThreadRegistered = &m_captureAudioThreadRegistered;
+            preparedBufferSize = m_impl->captureBufferSize;
             break;
         case DeviceRole::Duplex:
             callbacks = &m_duplexCallbacks;
             audioThreadRegistered = &m_duplexAudioThreadRegistered;
+            preparedBufferSize = m_impl->duplexBufferSize;
             break;
     }
 
@@ -637,11 +641,31 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
     float* safeOutput = outputChannels > 0 ? output : nullptr;
     const float* safeInput = inputChannels > 0 ? input : nullptr;
 
-    callbacks->read([&](const auto& list) {
-        for (auto* callback : list) {
-            callback->process(safeOutput, safeInput, frameCount, inputChannels, outputChannels);
-        }
-    });
+    // Process in chunks no larger than the prepared buffer size to avoid
+    // overflowing internal DSP buffers.
+    uint32_t framesRemaining = frameCount;
+    uint32_t offset = 0;
+
+    while (framesRemaining > 0) {
+        uint32_t chunkSize = (preparedBufferSize > 0)
+                                 ? std::min(framesRemaining, preparedBufferSize)
+                                 : framesRemaining;
+
+        float* chunkOutput =
+            safeOutput ? safeOutput + offset * outputChannels : nullptr;
+        const float* chunkInput =
+            safeInput ? safeInput + offset * inputChannels : nullptr;
+
+        callbacks->read([&](const auto& list) {
+            for (auto* callback : list) {
+                callback->process(
+                    chunkOutput, chunkInput, chunkSize, inputChannels, outputChannels);
+            }
+        });
+
+        offset += chunkSize;
+        framesRemaining -= chunkSize;
+    }
 }
 
 void AudioDeviceManager::dataCallback(void* pDeviceVoid,
