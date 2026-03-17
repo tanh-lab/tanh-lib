@@ -71,7 +71,10 @@ void GrainProcessorImpl::prepare(const double& sample_rate,
     m_envelope.set_parameters(get_parameter<float>(EnvelopeAttack),
                               get_parameter<float>(EnvelopeDecay),
                               get_parameter<float>(EnvelopeSustain),
-                              get_parameter<float>(EnvelopeRelease));
+                              get_parameter<float>(EnvelopeRelease),
+                              get_parameter<float>(EnvelopeAttackCurve),
+                              get_parameter<float>(EnvelopeDecayCurve),
+                              get_parameter<float>(EnvelopeReleaseCurve));
     m_envelope.reset();
 }
 
@@ -157,6 +160,23 @@ void GrainProcessorImpl::update_envelope_if_needed() {
     if (release != m_last_envelope_release) {
         m_envelope.set_release(release);
         m_last_envelope_release = release;
+    }
+
+    float attack_curve = get_parameter<float>(EnvelopeAttackCurve);
+    float decay_curve = get_parameter<float>(EnvelopeDecayCurve);
+    float release_curve = get_parameter<float>(EnvelopeReleaseCurve);
+
+    if (attack_curve != m_last_envelope_attack_curve) {
+        m_envelope.set_attack_curve(attack_curve);
+        m_last_envelope_attack_curve = attack_curve;
+    }
+    if (decay_curve != m_last_envelope_decay_curve) {
+        m_envelope.set_decay_curve(decay_curve);
+        m_last_envelope_decay_curve = decay_curve;
+    }
+    if (release_curve != m_last_envelope_release_curve) {
+        m_envelope.set_release_curve(release_curve);
+        m_last_envelope_release_curve = release_curve;
     }
 }
 
