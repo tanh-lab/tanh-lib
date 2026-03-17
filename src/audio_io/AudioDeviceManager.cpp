@@ -96,6 +96,15 @@ ma_bool32 enumCallback(ma_context* /*pContext*/,
 }
 
 uint32_t resolveBufferSize(ma_device& device, uint32_t requested, const char* label) {
+    // When noFixedSizedCallback is false (default), miniaudio uses an
+    // intermediary buffer to deliver exactly `periodSizeInFrames` to our
+    // data callback, regardless of the hardware's internal period size.
+    // Return the requested size so DSP buffers match what the callback
+    // actually receives.
+    if (!device.noFixedSizedCallback && requested > 0) {
+        return requested;
+    }
+
     uint32_t actualBufferSize = 0;
     if (device.playback.internalPeriodSizeInFrames > 0) {
         actualBufferSize = device.playback.internalPeriodSizeInFrames;
@@ -579,6 +588,22 @@ uint32_t AudioDeviceManager::getSampleRate() const {
 }
 
 uint32_t AudioDeviceManager::getBufferSize() const {
+    return m_bufferSize;
+}
+
+uint32_t AudioDeviceManager::getHardwareBufferSize() const {
+    if (m_impl->playbackDeviceInitialised) {
+        uint32_t hw = m_impl->playbackDevice.playback.internalPeriodSizeInFrames;
+        if (hw > 0) return hw;
+    }
+    if (m_impl->duplexDeviceInitialised) {
+        uint32_t hw = m_impl->duplexDevice.playback.internalPeriodSizeInFrames;
+        if (hw > 0) return hw;
+    }
+    if (m_impl->captureDeviceInitialised) {
+        uint32_t hw = m_impl->captureDevice.capture.internalPeriodSizeInFrames;
+        if (hw > 0) return hw;
+    }
     return m_bufferSize;
 }
 
