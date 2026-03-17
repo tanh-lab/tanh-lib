@@ -94,6 +94,9 @@ protected:
         EnvelopeDecay,
         EnvelopeSustain,
         EnvelopeRelease,
+        EnvelopeAttackCurve,
+        EnvelopeDecayCurve,
+        EnvelopeReleaseCurve,
 
         NUM_PARAMETERS
     };
@@ -138,6 +141,9 @@ private:
     float m_last_envelope_decay{-1.0f};
     float m_last_envelope_sustain{-1.0f};
     float m_last_envelope_release{-1.0f};
+    float m_last_envelope_attack_curve{-2.0f};
+    float m_last_envelope_decay_curve{-2.0f};
+    float m_last_envelope_release_curve{-2.0f};
     void update_envelope_if_needed();
 
     // Sample index management

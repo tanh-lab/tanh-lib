@@ -50,9 +50,10 @@ void ADSR::set_parameters(float attack_time,
     m_release_time = std::max(0.1f, release_time);
 
     // Set curve blend parameters
-    m_attack_curve = std::clamp(attack_curve, 0.0f, 1.0f);
-    m_decay_curve = std::clamp(decay_curve, 0.0f, 1.0f);
-    m_release_curve = std::clamp(release_curve, 0.0f, 1.0f);
+    // Range: -1.0 = inverse exponential, 0.0 = linear, 1.0 = exponential
+    m_attack_curve = std::clamp(attack_curve, -1.0f, 1.0f);
+    m_decay_curve = std::clamp(decay_curve, -1.0f, 1.0f);
+    m_release_curve = std::clamp(release_curve, -1.0f, 1.0f);
 
     update_rates();
 }
@@ -108,16 +109,25 @@ float ADSR::process() {
 
         case State::ATTACK:
             // Apply blended curve for attack phase
-            if (m_attack_curve > 0.0f) {
+            // Positive: fast start, slow finish. Negative: slow start, fast finish.
+            if (std::abs(m_attack_curve) > 0.01f) {
+                float abs_curve = std::abs(m_attack_curve);
+
                 // Calculate exponential curve
                 float exponential_target =
                     (1.00f - std::exp(-(m_attack_rate * 5.0f))) / exponential_normalization;
                 float linear_increment = m_attack_rate;
 
+                // Positive: weight by distance to target (1 - level)
+                // Negative: weight by distance from start (level), bowing the other way
+                float weight = m_attack_curve > 0.0f
+                    ? (1.0f - m_current_level)
+                    : (m_current_level + 0.01f);
+
                 // Apply blended increment between linear and exponential
                 float blended_increment =
-                    (1.0f - m_attack_curve) * linear_increment +
-                    m_attack_curve * exponential_target * (1.0f - m_current_level);
+                    (1.0f - abs_curve) * linear_increment +
+                    abs_curve * exponential_target * weight;
                 m_current_level += blended_increment;
             } else {
                 // Simple linear attack (original behavior)
@@ -134,20 +144,28 @@ float ADSR::process() {
 
         case State::DECAY:
             // Apply blended curve for decay phase
-            if (m_decay_curve > 0.0f) {
+            // Positive: fast drop, slow tail. Negative: slow drop, fast tail.
+            if (std::abs(m_decay_curve) > 0.01f) {
+                float abs_curve = std::abs(m_decay_curve);
+
                 // Calculate the target level and distance from current to
                 // target
                 float target_level = m_sustain_level;
                 float distance = m_current_level - target_level;
+                float total_range = std::max(1.0f - target_level, 0.001f);
 
                 // Calculate exponential decay factor
-                float exp_decay = distance * ((1.0f - std::exp(-(m_decay_rate * 5.0f)))) /
-                                  exponential_normalization;
+                float exp_factor = (1.0f - std::exp(-(m_decay_rate * 5.0f))) / exponential_normalization;
                 float linear_decay = m_decay_rate;
+
+                // Positive: weight by distance (fast start). Negative: weight by progress (fast end).
+                float weight = m_decay_curve > 0.0f
+                    ? distance
+                    : total_range * (1.0f - distance / total_range + 0.01f);
 
                 // Apply blended decrement between linear and exponential
                 float blended_decrement =
-                    (1.0f - m_decay_curve) * linear_decay + m_decay_curve * exp_decay;
+                    (1.0f - abs_curve) * linear_decay + abs_curve * exp_factor * weight;
                 m_current_level -= blended_decrement;
             } else {
                 // Simple linear decay (original behavior)
@@ -169,16 +187,23 @@ float ADSR::process() {
 
         case State::RELEASE:
             // Apply blended curve for release phase
-            if (m_release_curve > 0.0f) {
+            // Positive: fast drop, slow tail. Negative: slow drop, fast tail.
+            if (std::abs(m_release_curve) > 0.01f) {
+                float abs_curve = std::abs(m_release_curve);
+                float safe_release_level = std::max(m_release_level, 0.001f);
+
                 // Calculate exponential decay factor
-                float distance = m_release_level;
-                float exp_decay = m_current_level * (1.0f - std::exp(-(m_release_rate * 5.0f))) /
-                                  exponential_normalization;
+                float exp_factor = (1.0f - std::exp(-(m_release_rate * 5.0f))) / exponential_normalization;
                 float linear_decay = m_release_rate;
+
+                // Positive: weight by current level (fast start). Negative: weight by progress (fast end).
+                float weight = m_release_curve > 0.0f
+                    ? m_current_level
+                    : safe_release_level * (1.0f - m_current_level / safe_release_level + 0.01f);
 
                 // Apply blended decrement between linear and exponential
                 float blended_decrement =
-                    (1.0f - m_release_curve) * linear_decay + m_release_curve * exp_decay;
+                    (1.0f - abs_curve) * linear_decay + abs_curve * exp_factor * weight;
                 m_current_level -= blended_decrement;
             } else {
                 // Simple linear release (original behavior)
@@ -208,21 +233,21 @@ ADSR::State ADSR::get_state() const {
 }
 
 void ADSR::set_attack_curve(float curve_blend) {
-    m_attack_curve = std::clamp(curve_blend, 0.0f, 1.0f);
+    m_attack_curve = std::clamp(curve_blend, -1.0f, 1.0f);
 }
 
 void ADSR::set_decay_curve(float curve_blend) {
-    m_decay_curve = std::clamp(curve_blend, 0.0f, 1.0f);
+    m_decay_curve = std::clamp(curve_blend, -1.0f, 1.0f);
 }
 
 void ADSR::set_release_curve(float curve_blend) {
-    m_release_curve = std::clamp(curve_blend, 0.0f, 1.0f);
+    m_release_curve = std::clamp(curve_blend, -1.0f, 1.0f);
 }
 
 void ADSR::set_curves(float attack_curve, float decay_curve, float release_curve) {
-    m_attack_curve = std::clamp(attack_curve, 0.0f, 1.0f);
-    m_decay_curve = std::clamp(decay_curve, 0.0f, 1.0f);
-    m_release_curve = std::clamp(release_curve, 0.0f, 1.0f);
+    m_attack_curve = std::clamp(attack_curve, -1.0f, 1.0f);
+    m_decay_curve = std::clamp(decay_curve, -1.0f, 1.0f);
+    m_release_curve = std::clamp(release_curve, -1.0f, 1.0f);
 }
 
 void ADSR::update_rates() {
