@@ -467,17 +467,23 @@ public:
     uint32_t getBufferSize() const;
 
     /**
-     * @brief Gets the hardware's internal period size in frames.
+     * @brief Gets the per-callback period (chunk) size in frames.
      *
-     * This is the actual period size negotiated by the audio driver
-     * (e.g. AAudio on Android), which may differ from the requested
-     * buffer size. When miniaudio's fixed-size callback mode is active,
-     * the data callback receives the requested size, not this value.
+     * On Android this equals one hardware burst; on Apple platforms
+     * it equals the requested buffer size.
      *
-     * @return The hardware internal period size, or the requested
-     *         buffer size if not available.
+     * @return The period size used for each audio callback.
      */
-    uint32_t getHardwareBufferSize() const;
+    uint32_t getPeriodSize() const;
+
+    /**
+     * @brief Gets the number of periods that make up the total buffer.
+     *
+     * On Android this is bufferSize / burstSize; on Apple platforms it is 1.
+     *
+     * @return The period count.
+     */
+    uint32_t getPeriodCount() const;
 
     /**
      * @brief Gets the current number of input (capture) channels.
