@@ -486,6 +486,17 @@ public:
     uint32_t getPeriodCount() const;
 
     /**
+     * @brief Gets the hardware burst size in frames.
+     *
+     * On Android this is the AAudio framesPerBurst (the smallest callback
+     * granularity). On Apple platforms it equals the period size.
+     * Use this as the base unit for generating selectable buffer sizes.
+     *
+     * @return The hardware burst size.
+     */
+    uint32_t getBurstSize() const;
+
+    /**
      * @brief Gets the current number of input (capture) channels.
      *
      * @return The actual capture channel count if initialised, otherwise the
