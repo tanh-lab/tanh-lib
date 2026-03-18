@@ -37,6 +37,9 @@ struct AudioDeviceManager::Impl {
     uint32_t capturePeriods = 1;
     uint32_t duplexPeriods = 1;
 
+    // Hardware burst size (Android: AAudio framesPerBurst, Apple: same as periodSize).
+    uint32_t burstSize = 0;
+
     DeviceUserData playbackUserData;
     DeviceUserData captureUserData;
     DeviceUserData duplexUserData;
@@ -194,6 +197,63 @@ std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateOutputDevices() const 
     return enumerateDevices(DeviceType::Playback);
 }
 
+#if defined(THL_PLATFORM_ANDROID)
+static uint32_t probeAAudioBurstSize(ma_context& context,
+                                     const ma_device_config& devConfig,
+                                     const char* label) {
+    ma_device_config probeConfig = devConfig;
+    probeConfig.periodSizeInFrames = 0;
+    probeConfig.noFixedSizedCallback = MA_TRUE;
+    // Probe without setting buffer capacity to discover the natural burst.
+    probeConfig.aaudio.allowSetBufferCapacity = MA_FALSE;
+    probeConfig.dataCallback = nullptr;
+    probeConfig.notificationCallback = nullptr;
+    probeConfig.pUserData = nullptr;
+
+    uint32_t burstSize = 0;
+    ma_device probeDevice;
+    if (ma_device_init(&context, &probeConfig, &probeDevice) == MA_SUCCESS) {
+        auto* pStream = probeDevice.aaudio.pStreamPlayback
+                            ? probeDevice.aaudio.pStreamPlayback
+                            : probeDevice.aaudio.pStreamCapture;
+
+        // Read burst and capacity directly from the AAudio stream.
+        int32_t probedBurst = 0;
+        int32_t probedCapacity = 0;
+        if (pStream) {
+            if (context.aaudio.AAudioStream_getFramesPerBurst) {
+                probedBurst = reinterpret_cast<int32_t (*)(void*)>(
+                    context.aaudio.AAudioStream_getFramesPerBurst)(pStream);
+            }
+            if (context.aaudio.AAudioStream_getBufferCapacityInFrames) {
+                probedCapacity = reinterpret_cast<int32_t (*)(void*)>(
+                    context.aaudio.AAudioStream_getBufferCapacityInFrames)(pStream);
+            }
+        }
+
+        // Fallback to miniaudio's internalPeriodSizeInFrames if AAudio API unavailable.
+        uint32_t maPeriod = probeDevice.playback.internalPeriodSizeInFrames;
+        if (maPeriod == 0) maPeriod = probeDevice.capture.internalPeriodSizeInFrames;
+
+        if (probedBurst > 0) {
+            burstSize = static_cast<uint32_t>(probedBurst);
+        } else if (maPeriod > 0) {
+            burstSize = maPeriod;
+        }
+
+        thl::Logger::logf(thl::Logger::LogLevel::Debug,
+                           "thl.audio_io.audio_device_manager",
+                           "Android %s probe: AAudio burst=%d, capacity=%d, "
+                           "ma internalPeriodSizeInFrames=%u → burstSize=%u",
+                           label, probedBurst, probedCapacity, maPeriod, burstSize);
+
+        ma_device_uninit(&probeDevice);
+    }
+
+    return burstSize;
+}
+#endif
+
 bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
                                              const AudioDeviceInfo* inputDevice,
                                              const AudioDeviceInfo* outputDevice,
@@ -267,74 +327,38 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
     uint32_t burstSize = 0;
 
 #if defined(THL_PLATFORM_ANDROID)
-    // Probe for the hardware burst size so we can configure period = burst
-    // and period count = requested multiple (total buffer = burst × periods).
+    // Probe for the hardware burst size and derive periodSize / periods.
+    //
+    // Buffer sizes are expected to be power-of-two multiples of burst (1×,2×,4×,8×,…).
+    //   1× burst → periodSize = burst,      periods = 1   (lowest latency)
+    //   2× burst → periodSize = burst,      periods = 2   (more write-ahead)
+    //   4×+      → periodSize = burst×(m/2), periods = 2   (bigger callback = more DSP headroom)
     {
-        ma_device_config probeConfig = devConfig;
-        probeConfig.periodSizeInFrames = 0;
-        probeConfig.noFixedSizedCallback = MA_TRUE;
-        // Probe without setting buffer capacity to discover the natural burst.
-        probeConfig.aaudio.allowSetBufferCapacity = MA_FALSE;
-        probeConfig.dataCallback = nullptr;
-        probeConfig.notificationCallback = nullptr;
-        probeConfig.pUserData = nullptr;
-
-        ma_device probeDevice;
-        if (ma_device_init(&m_impl->context, &probeConfig, &probeDevice) == MA_SUCCESS) {
-            auto* pStream = probeDevice.aaudio.pStreamPlayback
-                                ? probeDevice.aaudio.pStreamPlayback
-                                : probeDevice.aaudio.pStreamCapture;
-
-            // Read burst and capacity directly from the AAudio stream.
-            int32_t probedBurst = 0;
-            int32_t probedCapacity = 0;
-            if (pStream) {
-                if (m_impl->context.aaudio.AAudioStream_getFramesPerBurst) {
-                    probedBurst = reinterpret_cast<int32_t (*)(void*)>(
-                        m_impl->context.aaudio.AAudioStream_getFramesPerBurst)(pStream);
-                }
-                if (m_impl->context.aaudio.AAudioStream_getBufferCapacityInFrames) {
-                    probedCapacity = reinterpret_cast<int32_t (*)(void*)>(
-                        m_impl->context.aaudio.AAudioStream_getBufferCapacityInFrames)(pStream);
-                }
-            }
-
-            // Fallback to miniaudio's internalPeriodSizeInFrames if AAudio API unavailable.
-            uint32_t maPeriod = probeDevice.playback.internalPeriodSizeInFrames;
-            if (maPeriod == 0) maPeriod = probeDevice.capture.internalPeriodSizeInFrames;
-
-            if (probedBurst > 0) {
-                burstSize = static_cast<uint32_t>(probedBurst);
-            } else if (maPeriod > 0) {
-                burstSize = maPeriod;
-            }
-
-            thl::Logger::logf(thl::Logger::LogLevel::Debug,
-                               "thl.audio_io.audio_device_manager",
-                               "Android %s probe: AAudio burst=%d, capacity=%d, "
-                               "ma internalPeriodSizeInFrames=%u → burstSize=%u",
-                               label, probedBurst, probedCapacity, maPeriod, burstSize);
-
-            ma_device_uninit(&probeDevice);
-        }
+        burstSize = probeAAudioBurstSize(m_impl->context, devConfig, label);
 
         if (burstSize > 0) {
-            if (bufferSizeInFrames == 0) bufferSizeInFrames = burstSize;
+            // Default to 4× burst when no buffer size requested.
+            if (bufferSizeInFrames == 0) bufferSizeInFrames = burstSize * 4;
 
-            configuredPeriods = (bufferSizeInFrames + burstSize - 1) / burstSize;
-            if (configuredPeriods == 0) configuredPeriods = 1;
+            // Compute the multiplier as the nearest power-of-two multiple of burst.
+            uint32_t m = bufferSizeInFrames / burstSize;
+            if (m == 0) m = 1;
+            // Round up to next power of two.
+            uint32_t pot = 1;
+            while (pot < m) pot <<= 1;
+            m = pot;
+            bufferSizeInFrames = burstSize * m;
 
-            if (bufferSizeInFrames % burstSize != 0) {
-                uint32_t aligned = burstSize * configuredPeriods;
-                thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                                   "thl.audio_io.audio_device_manager",
-                                   "Requested buffer %u not a multiple of burst %u, "
-                                   "rounding up to %u",
-                                   bufferSizeInFrames, burstSize, aligned);
-                bufferSizeInFrames = aligned;
+            uint32_t periodSize;
+            if (m <= 2) {
+                periodSize = burstSize;
+                configuredPeriods = m;
+            } else {
+                periodSize = burstSize * (m / 2);
+                configuredPeriods = 2;
             }
 
-            devConfig.periodSizeInFrames = burstSize;
+            devConfig.periodSizeInFrames = periodSize;
             devConfig.periods = configuredPeriods;
         } else {
             devConfig.periodSizeInFrames =
@@ -420,16 +444,18 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
         uint32_t maPeriod = device->playback.internalPeriodSizeInFrames;
         if (maPeriod == 0) maPeriod = device->capture.internalPeriodSizeInFrames;
 
-        // Prefer AAudio burst, fall back to miniaudio's internalPeriodSizeInFrames.
-        resolvedSize = (actualBurst > 0) ? static_cast<uint32_t>(actualBurst) : maPeriod;
+        // Use the configured periodSize (which may be a multiple of burst).
+        // Fall back to AAudio burst, then miniaudio's internalPeriodSizeInFrames.
+        resolvedSize = devConfig.periodSizeInFrames;
+        if (resolvedSize == 0) resolvedSize = (actualBurst > 0) ? static_cast<uint32_t>(actualBurst) : maPeriod;
         if (resolvedSize == 0) resolvedSize = burstSize;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
                            "thl.audio_io.audio_device_manager",
                            "AAudio %s: burst=%d, capacity=%d, framesPerDataCallback=%d, "
-                           "ma internalPeriodSize=%u → periodSize=%u",
+                           "ma internalPeriodSize=%u, configuredPeriodSize=%u → periodSize=%u",
                            label, actualBurst, actualCapacity, actualFPDC,
-                           maPeriod, resolvedSize);
+                           maPeriod, devConfig.periodSizeInFrames, resolvedSize);
     }
 #else
     {
@@ -449,6 +475,10 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
                            ? outputDevice->name.c_str() : inputDevice->name.c_str(),
                        sampleRate, resolvedSize, configuredPeriods,
                        numOutputChannels, numInputChannels);
+
+    if (burstSize > 0 && m_impl->burstSize == 0) {
+        m_impl->burstSize = burstSize;
+    }
 
     switch (role) {
         case DeviceRole::Playback:
@@ -502,6 +532,7 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     m_impl->playbackPeriods = 1;
     m_impl->capturePeriods = 1;
     m_impl->duplexPeriods = 1;
+    m_impl->burstSize = 0;
 
     bool anyInitialised = false;
     anyInitialised |= tryInitialiseDevice(DeviceRole::Playback,
@@ -774,6 +805,11 @@ uint32_t AudioDeviceManager::getPeriodCount() const {
     if (m_impl->duplexDeviceInitialised) { return m_impl->duplexPeriods; }
     if (m_impl->captureDeviceInitialised) { return m_impl->capturePeriods; }
     return 1;
+}
+
+uint32_t AudioDeviceManager::getBurstSize() const {
+    if (m_impl->burstSize > 0) { return m_impl->burstSize; }
+    return getPeriodSize();
 }
 
 uint32_t AudioDeviceManager::getNumInputChannels() const {
