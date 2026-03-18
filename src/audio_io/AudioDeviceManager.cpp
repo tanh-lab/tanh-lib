@@ -27,10 +27,10 @@ struct AudioDeviceManager::Impl {
     bool captureDeviceInitialised = false;
     bool duplexDeviceInitialised = false;
 
-    // Per-callback chunk size (burst on Android, period on iOS).
-    uint32_t playbackBufferSize = 512;
-    uint32_t captureBufferSize = 512;
-    uint32_t duplexBufferSize = 512;
+    // Per-callback period size (burst on Android, period on iOS/macOS).
+    uint32_t playbackPeriodSize = 512;
+    uint32_t capturePeriodSize = 512;
+    uint32_t duplexPeriodSize = 512;
 
     // Number of periods (Android: bufferSize / burst, iOS: 1).
     uint32_t playbackPeriods = 1;
@@ -371,14 +371,14 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
             m_impl->playbackDeviceInitialised = true;
             m_numOutputChannels = device->playback.channels;
             m_sampleRate = device->sampleRate;
-            m_impl->playbackBufferSize = resolvedSize;
+            m_impl->playbackPeriodSize = resolvedSize;
             m_impl->playbackPeriods = configuredPeriods;
             break;
         case DeviceRole::Capture:
             m_impl->captureDeviceInitialised = true;
             m_numInputChannels = device->capture.channels;
             if (!m_impl->playbackDeviceInitialised) { m_sampleRate = device->sampleRate; }
-            m_impl->captureBufferSize = resolvedSize;
+            m_impl->capturePeriodSize = resolvedSize;
             m_impl->capturePeriods = configuredPeriods;
             break;
         case DeviceRole::Duplex:
@@ -386,7 +386,7 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
             if (!m_impl->playbackDeviceInitialised && !m_impl->captureDeviceInitialised) {
                 m_sampleRate = device->sampleRate;
             }
-            m_impl->duplexBufferSize = resolvedSize;
+            m_impl->duplexPeriodSize = resolvedSize;
             m_impl->duplexPeriods = configuredPeriods;
             break;
     }
@@ -412,9 +412,9 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     m_bufferSize = bufferSizeInFrames;
     m_numInputChannels = inputDevice ? numInputChannels : 0;
     m_numOutputChannels = outputDevice ? numOutputChannels : 0;
-    m_impl->playbackBufferSize = bufferSizeInFrames;
-    m_impl->captureBufferSize = bufferSizeInFrames;
-    m_impl->duplexBufferSize = bufferSizeInFrames;
+    m_impl->playbackPeriodSize = bufferSizeInFrames;
+    m_impl->capturePeriodSize = bufferSizeInFrames;
+    m_impl->duplexPeriodSize = bufferSizeInFrames;
     m_impl->playbackPeriods = 1;
     m_impl->capturePeriods = 1;
     m_impl->duplexPeriods = 1;
@@ -445,11 +445,11 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     if (!anyInitialised) { return false; }
 
     if (m_impl->playbackDeviceInitialised) {
-        m_bufferSize = m_impl->playbackBufferSize * m_impl->playbackPeriods;
+        m_bufferSize = m_impl->playbackPeriodSize * m_impl->playbackPeriods;
     } else if (m_impl->duplexDeviceInitialised) {
-        m_bufferSize = m_impl->duplexBufferSize * m_impl->duplexPeriods;
+        m_bufferSize = m_impl->duplexPeriodSize * m_impl->duplexPeriods;
     } else if (m_impl->captureDeviceInitialised) {
-        m_bufferSize = m_impl->captureBufferSize * m_impl->capturePeriods;
+        m_bufferSize = m_impl->capturePeriodSize * m_impl->capturePeriods;
     }
 
     auto prepareCallbacks =
@@ -462,13 +462,13 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
         };
 
     if (m_impl->playbackDeviceInitialised) {
-        prepareCallbacks(m_playbackCallbacks, m_impl->playbackDevice, m_impl->playbackBufferSize);
+        prepareCallbacks(m_playbackCallbacks, m_impl->playbackDevice, m_impl->playbackPeriodSize);
     }
     if (m_impl->captureDeviceInitialised) {
-        prepareCallbacks(m_captureCallbacks, m_impl->captureDevice, m_impl->captureBufferSize);
+        prepareCallbacks(m_captureCallbacks, m_impl->captureDevice, m_impl->capturePeriodSize);
     }
     if (m_impl->duplexDeviceInitialised) {
-        prepareCallbacks(m_duplexCallbacks, m_impl->duplexDevice, m_impl->duplexBufferSize);
+        prepareCallbacks(m_duplexCallbacks, m_impl->duplexDevice, m_impl->duplexPeriodSize);
     }
 
     return true;
@@ -571,7 +571,7 @@ void AudioDeviceManager::addPlaybackCallback(AudioIODeviceCallback* callback) {
     });
 
     if (added && m_impl->playbackDeviceInitialised) {
-        callback->prepareToPlay(m_impl->playbackDevice.sampleRate, m_impl->playbackBufferSize);
+        callback->prepareToPlay(m_impl->playbackDevice.sampleRate, m_impl->playbackPeriodSize);
     }
 }
 
@@ -587,7 +587,7 @@ void AudioDeviceManager::addCaptureCallback(AudioIODeviceCallback* callback) {
     });
 
     if (added && m_impl->captureDeviceInitialised) {
-        callback->prepareToPlay(m_impl->captureDevice.sampleRate, m_impl->captureBufferSize);
+        callback->prepareToPlay(m_impl->captureDevice.sampleRate, m_impl->capturePeriodSize);
     }
 }
 
@@ -603,7 +603,7 @@ void AudioDeviceManager::addDuplexCallback(AudioIODeviceCallback* callback) {
     });
 
     if (added && m_impl->duplexDeviceInitialised) {
-        callback->prepareToPlay(m_impl->duplexDevice.sampleRate, m_impl->duplexBufferSize);
+        callback->prepareToPlay(m_impl->duplexDevice.sampleRate, m_impl->duplexPeriodSize);
     }
 }
 
@@ -679,16 +679,16 @@ uint32_t AudioDeviceManager::getBufferSize() const {
 }
 
 uint32_t AudioDeviceManager::getPeriodSize() const {
-    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.playback.internalPeriodSizeInFrames; }
-    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.playback.internalPeriodSizeInFrames; }
-    if (m_impl->captureDeviceInitialised) { return m_impl->captureDevice.capture.internalPeriodSizeInFrames; }
+    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackPeriodSize; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexPeriodSize; }
+    if (m_impl->captureDeviceInitialised) { return m_impl->capturePeriodSize; }
     return m_bufferSize;
 }
 
 uint32_t AudioDeviceManager::getPeriodCount() const {
-    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.playback.internalPeriods; }
-    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.playback.internalPeriods; }
-    if (m_impl->captureDeviceInitialised) { return m_impl->captureDevice.capture.internalPeriods; }
+    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackPeriods; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexPeriods; }
+    if (m_impl->captureDeviceInitialised) { return m_impl->capturePeriods; }
     return 1;
 }
 
@@ -718,17 +718,17 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
         case DeviceRole::Playback:
             callbacks = &m_playbackCallbacks;
             audioThreadRegistered = &m_playbackAudioThreadRegistered;
-            preparedBufferSize = m_impl->playbackBufferSize;
+            preparedBufferSize = m_impl->playbackPeriodSize;
             break;
         case DeviceRole::Capture:
             callbacks = &m_captureCallbacks;
             audioThreadRegistered = &m_captureAudioThreadRegistered;
-            preparedBufferSize = m_impl->captureBufferSize;
+            preparedBufferSize = m_impl->capturePeriodSize;
             break;
         case DeviceRole::Duplex:
             callbacks = &m_duplexCallbacks;
             audioThreadRegistered = &m_duplexAudioThreadRegistered;
-            preparedBufferSize = m_impl->duplexBufferSize;
+            preparedBufferSize = m_impl->duplexPeriodSize;
             break;
     }
 
