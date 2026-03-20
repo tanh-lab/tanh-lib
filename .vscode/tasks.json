@@ -43,6 +43,36 @@
             ],
             "dependsOrder": "sequence",
             "problemMatcher": []
+        },
+        {
+            "label": "iOS Device: Build Audio IO Example",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset", "ios-device-debug",
+                "--target", "audio_io"
+            ],
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "iOS Device: Launch Audio IO Example",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/run-ios-device.sh",
+            "args": [
+                "${workspaceFolder}/build-ios-device/examples/ios/audio_io/Debug-iphoneos/audio_io.app"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "iOS Device: Build & Launch Audio IO Example",
+            "dependsOn": [
+                "iOS Device: Build Audio IO Example",
+                "iOS Device: Launch Audio IO Example"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
         }
     ]
 }
