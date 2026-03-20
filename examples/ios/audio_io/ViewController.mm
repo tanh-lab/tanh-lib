@@ -2,6 +2,7 @@
 #import <tanh/audio_io.h>
 #import <tanh/audio_io/AudioFileSink.h>
 #import <tanh/audio_io/AudioPlayerSource.h>
+#import <tanh/core/Logger.h>
 #import <memory>
 
 @interface ViewController ()
@@ -30,6 +31,7 @@
     _hasRecording = NO;
 
     [self setupUI];
+    [self registerLoggerCallback];
     [self initializeAudio];
 }
 
@@ -141,36 +143,48 @@
                                     viewHeight - yPos - safeBottom - 20);
 }
 
+- (void)registerLoggerCallback {
+    __weak ViewController *weakSelf = self;
+    thl::Logger::set_callback([weakSelf](const thl::Logger::LogRecord& record) {
+        NSString *message = [NSString stringWithUTF8String:
+            thl::Logger::format_plain(record).c_str()];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            ViewController *strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf appendToLogView:message];
+            }
+        });
+    });
+}
+
 - (void)initializeAudio {
-    [self log:@"Initialising AudioDeviceManager..."];
+    thl::Logger::info("audio-io-example", "Initialising AudioDeviceManager...");
 
     _audioManager = std::make_unique<thl::AudioDeviceManager>();
 
     if (!_audioManager->isContextInitialised()) {
-        [self log:@"ERROR: Failed to initialise audio context"];
+        thl::Logger::error("audio-io-example", "Failed to initialise audio context");
         return;
     }
 
-    [self log:@"Audio context initialised successfully"];
+    thl::Logger::info("audio-io-example", "Audio context initialised successfully");
 
     // Enumerate devices
     auto inputDevices = _audioManager->enumerateInputDevices();
     auto outputDevices = _audioManager->enumerateOutputDevices();
 
-    [self log:[NSString stringWithFormat:@"Found %lu input devices",
-                                         inputDevices.size()]];
+    thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                      "Found %lu input devices", inputDevices.size());
     for (size_t i = 0; i < inputDevices.size(); ++i) {
-        [self log:[NSString stringWithFormat:@"  Input %zu: %s",
-                                             i,
-                                             inputDevices[i].name.c_str()]];
+        thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                          "  Input %zu: %s", i, inputDevices[i].name.c_str());
     }
 
-    [self log:[NSString stringWithFormat:@"Found %lu output devices",
-                                         outputDevices.size()]];
+    thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                      "Found %lu output devices", outputDevices.size());
     for (size_t i = 0; i < outputDevices.size(); ++i) {
-        [self log:[NSString stringWithFormat:@"  Output %zu: %s",
-                                             i,
-                                             outputDevices[i].name.c_str()]];
+        thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                          "  Output %zu: %s", i, outputDevices[i].name.c_str());
     }
 
     // Initialise with both input and output (separate devices)
@@ -183,30 +197,25 @@
                                                  1);  // mono output (must match for playback)
 
         if (success) {
-            [self log:@"Audio device initialised"];
-            [self
-                log:[NSString stringWithFormat:@"Sample Rate: %u",
-                                               _audioManager->getSampleRate()]];
-            [self
-                log:[NSString stringWithFormat:@"Buffer Size: %u",
-                                               _audioManager->getBufferSize()]];
-            [self
-                log:[NSString
-                        stringWithFormat:@"Input Channels: %u",
-                                         _audioManager->getNumInputChannels()]];
-            [self log:[NSString stringWithFormat:@"Output Channels: %u",
-                                                 _audioManager
-                                                     ->getNumOutputChannels()]];
+            thl::Logger::info("audio-io-example", "Audio device initialised");
+            thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                              "Sample Rate: %u", _audioManager->getSampleRate());
+            thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                              "Buffer Size: %u", _audioManager->getBufferSize());
+            thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                              "Input Channels: %u", _audioManager->getNumInputChannels());
+            thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                              "Output Channels: %u", _audioManager->getNumOutputChannels());
 
             // Create AudioFileSink for recording
             _fileSink = std::make_unique<thl::AudioFileSink>();
             _audioManager->addCaptureCallback(_fileSink.get());
-            [self log:@"AudioFileSink registered for capture"];
+            thl::Logger::info("audio-io-example", "AudioFileSink registered for capture");
 
             // Create AudioPlayerSource for playback
             _playerSource = std::make_unique<thl::AudioPlayerSource>();
             _audioManager->addPlaybackCallback(_playerSource.get());
-            [self log:@"AudioPlayerSource registered for playback"];
+            thl::Logger::info("audio-io-example", "AudioPlayerSource registered for playback");
 
             // Set up finished callback (safe because _playerSource is destroyed
             // before self in dealloc)
@@ -218,15 +227,15 @@
             });
 
         } else {
-            [self log:@"ERROR: Failed to initialise audio device"];
+            thl::Logger::error("audio-io-example", "Failed to initialise audio device");
         }
     } else {
-        [self log:@"ERROR: Need both input and output devices for recording"];
+        thl::Logger::error("audio-io-example", "Need both input and output devices for recording");
     }
 }
 
 - (void)startAudio {
-    [self log:@"Starting audio..."];
+    thl::Logger::info("audio-io-example", "Starting audio...");
 
     bool playbackStarted = false;
 
@@ -235,7 +244,7 @@
     }
 
     if (playbackStarted) {
-        [self log:@"Audio started (playback only)"];
+        thl::Logger::info("audio-io-example", "Audio started (playback only)");
         _statusLabel.text = @"Audio Running";
         _startAudioButton.enabled = NO;
         _startAudioButton.alpha = 0.5;
@@ -245,12 +254,12 @@
         _recordButton.alpha = 1.0;
         [self updatePlayButtonState];
     } else {
-        [self log:@"ERROR: Failed to start playback"];
+        thl::Logger::error("audio-io-example", "Failed to start playback");
     }
 }
 
 - (void)stopAudio {
-    [self log:@"Stopping audio..."];
+    thl::Logger::info("audio-io-example", "Stopping audio...");
 
     if (_fileSink && _fileSink->isRecording()) {
         _fileSink->stopRecording();
@@ -264,7 +273,7 @@
     if (_audioManager) {
         _audioManager->stopCapture();
         _audioManager->stopPlayback();
-        [self log:@"Audio stopped"];
+        thl::Logger::info("audio-io-example", "Audio stopped");
         _statusLabel.text = @"Audio Stopped";
         _startAudioButton.enabled = YES;
         _startAudioButton.alpha = 1.0;
@@ -289,7 +298,7 @@
 
         // Stop capture — only needed while recording
         _audioManager->stopCapture();
-        [self log:@"Capture stopped"];
+        thl::Logger::info("audio-io-example", "Capture stopped");
 
         uint64_t framesWritten = _fileSink->getFramesWritten();
         float duration =
@@ -301,8 +310,8 @@
                                                         green:0.4
                                                          blue:0.0
                                                         alpha:1.0];
-        [self log:[NSString stringWithFormat:@"Recording stopped (%.2fs)",
-                                             duration]];
+        thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                          "Recording stopped (%.2fs)", duration);
         _hasRecording = YES;
         [self updatePlayButtonState];
     } else {
@@ -314,10 +323,10 @@
 
         // Start capture for the recording
         if (!_audioManager->startCapture()) {
-            [self log:@"ERROR: Failed to start capture"];
+            thl::Logger::error("audio-io-example", "Failed to start capture");
             return;
         }
-        [self log:@"Capture started"];
+        thl::Logger::info("audio-io-example", "Capture started");
 
         // Open file and start recording
         bool opened = _fileSink->openFile(
@@ -334,13 +343,14 @@
                                                             green:0.1
                                                              blue:0.1
                                                             alpha:1.0];
-            [self log:@"Recording started..."];
-            [self log:[NSString stringWithFormat:@"File: %@", _recordingPath]];
+            thl::Logger::info("audio-io-example", "Recording started...");
+            thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                              "File: %s", [_recordingPath UTF8String]);
             _playButton.enabled = NO;
             _playButton.alpha = 0.5;
         } else {
             _audioManager->stopCapture();
-            [self log:@"ERROR: Failed to open file for recording"];
+            thl::Logger::error("audio-io-example", "Failed to open file for recording");
         }
     }
 }
@@ -350,7 +360,7 @@
 
     // Cannot play while recording
     if (_fileSink && _fileSink->isRecording()) {
-        [self log:@"Cannot play while recording"];
+        thl::Logger::warning("audio-io-example", "Cannot play while recording");
         return;
     }
 
@@ -366,19 +376,19 @@
         float duration =
             static_cast<float>(totalFrames) / _audioManager->getSampleRate();
 
-        [self log:[NSString stringWithFormat:@"Playing recording (%.2fs)...",
-                                             duration]];
+        thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                          "Playing recording (%.2fs)...", duration);
         _playButton.enabled = NO;
         _playButton.alpha = 0.5;
         _recordButton.enabled = NO;
         _recordButton.alpha = 0.5;
     } else {
-        [self log:@"ERROR: Failed to load recording for playback"];
+        thl::Logger::error("audio-io-example", "Failed to load recording for playback");
     }
 }
 
 - (void)onPlaybackFinished {
-    [self log:@"Playback finished"];
+    thl::Logger::info("audio-io-example", "Playback finished");
 
     if (_playerSource) {
         _playerSource->unloadFile();
@@ -402,7 +412,7 @@
     _playButton.alpha = canPlay ? 1.0 : 0.5;
 }
 
-- (void)log:(NSString *)message {
+- (void)appendToLogView:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{
         NSString *timestamp = [NSDateFormatter
             localizedStringFromDate:[NSDate date]
@@ -435,6 +445,7 @@
         _audioManager->stopPlayback();
         _audioManager->shutdown();
     }
+    thl::Logger::clear_callback();
 }
 
 @end

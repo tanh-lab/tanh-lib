@@ -41,6 +41,7 @@ using Callback = std::function<void(const LogRecord&)>;
 /// with get_config().  Defaults: platform on, file off, callback on.
 struct LoggerConfig {
     bool platform_enabled = true;   ///< Platform sink (os_log / android_log / stdout+stderr).
+    bool console_enabled = false;   ///< Explicit stdout/stderr sink (errors+warnings to stderr, rest to stdout).
     bool file_enabled = true;      ///< Logfmt file sink.
     bool callback_enabled = true;   ///< Gate for the registered callback.
     std::string file_path;          ///< Output path for the file sink (empty = no writes).
