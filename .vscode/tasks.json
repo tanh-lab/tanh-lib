@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "iOS Simulator: Build Audio IO Example",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset", "ios-simulator-debug",
+                "--target", "audio_io"
+            ],
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "iOS Simulator: Launch Audio IO Example",
+            "type": "shell",
+            "command": "DEVICE=$(xcrun simctl list devices available | grep -m1 -i iphone | grep -oE '[0-9A-Fa-f-]{36}') && open -a Simulator && xcrun simctl boot \"$DEVICE\" 2>/dev/null; xcrun simctl install \"$DEVICE\" build-ios-simulator/examples/ios/audio_io/Debug-iphonesimulator/audio_io.app && xcrun simctl launch \"$DEVICE\" com.tanh.audioio-ios",
+            "problemMatcher": []
+        },
+        {
+            "label": "iOS Simulator: Build & Launch Audio IO Example",
+            "dependsOn": [
+                "iOS Simulator: Build Audio IO Example",
+                "iOS Simulator: Launch Audio IO Example"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        }
+    ]
+}
