@@ -16,8 +16,24 @@
         {
             "label": "iOS Simulator: Launch Audio IO Example",
             "type": "shell",
-            "command": "DEVICE=$(xcrun simctl list devices available | grep -m1 -i iphone | grep -oE '[0-9A-Fa-f-]{36}') && open -a Simulator && xcrun simctl boot \"$DEVICE\" 2>/dev/null; xcrun simctl install \"$DEVICE\" build-ios-simulator/examples/ios/audio_io/Debug-iphonesimulator/audio_io.app && xcrun simctl launch \"$DEVICE\" com.tanh.audioio-ios",
-            "problemMatcher": []
+            "command": "${workspaceFolder}/scripts/run-ios-sim.sh",
+            "args": [
+                "${workspaceFolder}/build-ios-simulator/examples/ios/audio_io/Debug-iphonesimulator/audio_io.app"
+            ],
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^$",
+                    "file": 1,
+                    "location": 2,
+                    "message": 3
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".",
+                    "endsPattern": "com\\.tanh\\.audio-io-example"
+                }
+            }
         },
         {
             "label": "iOS Simulator: Build & Launch Audio IO Example",
