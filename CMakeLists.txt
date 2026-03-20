@@ -511,10 +511,21 @@ if (TANH_WITH_TESTS)
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
         foreach(_test test_core test_state test_dsp test_audio_io)
             if(TARGET ${_test})
+                # Bundle IDs must use hyphens, not underscores
+                string(REPLACE "_" "-" _bundle_suffix "${_test}")
                 set_target_properties(${_test} PROPERTIES
-                    MACOSX_BUNDLE_GUI_IDENTIFIER "com.tanh.${_test}"
-                    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.tanh.${_test}"
+                    MACOSX_BUNDLE TRUE
+                    MACOSX_BUNDLE_BUNDLE_NAME "${_test}"
+                    MACOSX_BUNDLE_GUI_IDENTIFIER "com.tanh.${_bundle_suffix}"
+                    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.tanh.${_bundle_suffix}"
                 )
+                if(DEVELOPMENT_TEAM)
+                    set_target_properties(${_test} PROPERTIES
+                        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+                        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
+                        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}"
+                    )
+                endif()
             endif()
         endforeach()
     endif()

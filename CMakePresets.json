@@ -93,12 +93,14 @@
     {
       "name": "ios-device-debug",
       "configurePreset": "ios-device-debug",
-      "configuration": "Debug"
+      "configuration": "Debug",
+      "nativeToolOptions": ["-allowProvisioningUpdates"]
     },
     {
       "name": "ios-device-release",
       "configurePreset": "ios-device-release",
-      "configuration": "Release"
+      "configuration": "Release",
+      "nativeToolOptions": ["-allowProvisioningUpdates"]
     }
   ],
   "testPresets": [

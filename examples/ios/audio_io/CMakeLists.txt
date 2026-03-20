@@ -21,7 +21,7 @@ target_link_libraries(${TARGET_NAME}
 # Code signing configuration
 # Pass -DDEVELOPMENT_TEAM=YOUR_TEAM_ID for automatic signing
 # Requires: Xcode > Settings > Accounts has your Apple ID logged in
-if(CMAKE_OSX_SYSROOT MATCHES "iphoneos")
+if(THL_IOS_PLATFORM STREQUAL "DEVICE")
     set(CODE_SIGN_STYLE "Automatic")
     set(CODE_SIGN_IDENTITY "Apple Development")
 else()
@@ -32,10 +32,10 @@ endif()
 set_target_properties(${TARGET_NAME} PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist
     MACOSX_BUNDLE_BUNDLE_NAME ${TARGET_NAME}
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.tanh.audioio-ios"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.tanh.audio-io-example"
     MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.tanh.audioio-ios"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.tanh.audio-io-example"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2" # iPhone and iPad
     XCODE_ATTRIBUTE_CODE_SIGN_STYLE "${CODE_SIGN_STYLE}"
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${CODE_SIGN_IDENTITY}"
