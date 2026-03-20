@@ -92,6 +92,11 @@ enum class DeviceNotificationType {
 class AudioDeviceManager {
 public:
     /**
+     * @brief Identifies a device role for queries and internal routing.
+     */
+    enum class DeviceRole { Playback, Capture, Duplex };
+
+    /**
      * @brief Callback type for device notification events.
      *
      * This callback is invoked when device events occur, such as the device
@@ -458,31 +463,54 @@ public:
     /**
      * @brief Gets the current buffer size.
      *
-     * @return The requested buffer size in frames, or the default (512) if not
+     * Returns the resolved period size in frames used for callback preparation.
+     * Without a role argument, returns the value using priority order:
+     * playback > duplex > capture. With a role argument, returns the value
+     * for that specific role.
+     *
+     * @param role Optional device role to query. If omitted, uses priority order.
+     * @return The resolved period size in frames, or 512 if no device is
      *         initialised.
      *
-     * @note This is the requested buffer size; the actual size may differ
+     * @note The returned value may differ from the requested buffer size
      *       depending on the audio driver.
      */
+    uint32_t getBufferSize(DeviceRole role) const;
     uint32_t getBufferSize() const;
 
     /**
      * @brief Gets the per-callback period (chunk) size in frames.
      *
-     * On Android this equals one hardware burst; on Apple platforms
-     * it equals the requested buffer size.
+     * Returns the actual period size observed from the audio callback.
+     * On the first callback, the actual frame count is recorded and used
+     * for subsequent queries — this may differ from the prepared period size
+     * (e.g. on iOS where the Audio Unit may deliver fewer frames than
+     * AVAudioSession reports).
      *
-     * @return The period size used for each audio callback.
+     * Without a role argument, returns the value using priority order:
+     * playback > duplex > capture. With a role argument, returns the value
+     * for that specific role.
+     *
+     * @param role Optional device role to query. If omitted, uses priority order.
+     * @return The period size used for each audio callback, or the buffer size
+     *         default if not initialised.
+     *
+     * @note Updated on the first audio callback to reflect the true frame count.
      */
+    uint32_t getPeriodSize(DeviceRole role) const;
     uint32_t getPeriodSize() const;
 
     /**
      * @brief Gets the number of periods that make up the total buffer.
      *
      * On Android this is bufferSize / burstSize; on Apple platforms it is 1.
+     * Without a role argument, returns the value using priority order:
+     * playback > duplex > capture.
      *
-     * @return The period count.
+     * @param role Optional device role to query. If omitted, uses priority order.
+     * @return The period count, or 1 if not initialised.
      */
+    uint32_t getPeriodCount(DeviceRole role) const;
     uint32_t getPeriodCount() const;
 
     /**
@@ -492,8 +520,14 @@ public:
      * granularity). On Apple platforms it equals the period size.
      * Use this as the base unit for generating selectable buffer sizes.
      *
-     * @return The hardware burst size.
+     * Without a role argument, returns the value using priority order:
+     * playback > duplex > capture. With a role argument, returns the value
+     * for that specific role. Falls back to the period size if unavailable.
+     *
+     * @param role Optional device role to query. If omitted, uses priority order.
+     * @return The hardware burst size, or the period size if unavailable.
      */
+    uint32_t getBurstSize(DeviceRole role) const;
     uint32_t getBurstSize() const;
 
     /**
@@ -513,7 +547,6 @@ public:
     uint32_t getNumOutputChannels() const;
 
 private:
-    enum class DeviceRole { Playback, Capture, Duplex };
     struct Impl;
     struct DeviceUserData;
 
@@ -547,7 +580,6 @@ private:
     bool m_duplexRunning = false;
 
     uint32_t m_sampleRate = 44100;
-    uint32_t m_bufferSize = 512;
     uint32_t m_numInputChannels = 1;
     uint32_t m_numOutputChannels = 1;
 
