@@ -293,6 +293,7 @@ struct LoggerState {
     // Protects config booleans + callback + early buffers.
     std::mutex config_mutex;
     bool platform_enabled = true;
+    bool console_enabled = false;
     bool file_enabled = true;
     bool callback_enabled = true;
     Callback callback;
@@ -393,6 +394,7 @@ void dispatch_record(const LogRecord& record) {
 
     // Snapshot config booleans + callback under config_mutex.
     bool platform_on = false;
+    bool console_on = false;
     bool file_on = false;
     bool callback_on = false;
     std::size_t early_cap = 0;
@@ -400,6 +402,7 @@ void dispatch_record(const LogRecord& record) {
     {
         std::lock_guard<std::mutex> lock(state().config_mutex);
         platform_on = state().platform_enabled;
+        console_on = state().console_enabled;
         file_on = state().file_enabled;
         callback_on = state().callback_enabled;
         early_cap = state().early_buffer_capacity;
@@ -413,7 +416,13 @@ void dispatch_record(const LogRecord& record) {
         if (emit_platform(record)) { any_sink_ran = true; }
     }
 
-    // 2. File sink (acquires file_mutex internally).
+    // 2. Console sink (explicit stdout/stderr output).
+    if (console_on) {
+        write_to_default_sink(record);
+        any_sink_ran = true;
+    }
+
+    // 3. File sink (acquires file_mutex internally).
     if (file_on) {
         if (emit_file(record)) {
             any_sink_ran = true;
@@ -427,7 +436,7 @@ void dispatch_record(const LogRecord& record) {
         }
     }
 
-    // 3. Callback sink (gated by callback_enabled + re-entrancy guard).
+    // 4. Callback sink (gated by callback_enabled + re-entrancy guard).
     if (callback_copy && callback_on) {
         try {
             CallbackDispatchScope scope;
@@ -449,7 +458,7 @@ void dispatch_record(const LogRecord& record) {
         }
     }
 
-    // 4. Last-resort fallback if every sink was disabled or failed.
+    // 5. Last-resort fallback if every sink was disabled or failed.
     if (!any_sink_ran) {
         write_to_default_sink(record);
     }
@@ -468,6 +477,7 @@ void set_config(const LoggerConfig& config) {
     {
         std::lock_guard<std::mutex> lock(s.config_mutex);
         s.platform_enabled = config.platform_enabled;
+        s.console_enabled = config.console_enabled;
         s.file_enabled = config.file_enabled;
         s.callback_enabled = config.callback_enabled;
         s.early_buffer_capacity = config.early_buffer_capacity;
@@ -499,6 +509,7 @@ LoggerConfig get_config() {
     {
         std::lock_guard<std::mutex> lock(s.config_mutex);
         config.platform_enabled = s.platform_enabled;
+        config.console_enabled = s.console_enabled;
         config.file_enabled = s.file_enabled;
         config.callback_enabled = s.callback_enabled;
         config.early_buffer_capacity = s.early_buffer_capacity;
