@@ -435,14 +435,6 @@
         _audioManager->stopPlayback();
         _audioManager->shutdown();
     }
-    [_recordingPath release];
-    [_statusLabel release];
-    [_startAudioButton release];
-    [_stopAudioButton release];
-    [_recordButton release];
-    [_playButton release];
-    [_logTextView release];
-    [super dealloc];
 }
 
 @end

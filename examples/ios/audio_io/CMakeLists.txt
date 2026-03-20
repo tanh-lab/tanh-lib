@@ -1,4 +1,4 @@
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(NOT TANH_OPERATING_SYSTEM STREQUAL "iOS")
     message(FATAL_ERROR "This example is only for iOS")
 endif()
 
