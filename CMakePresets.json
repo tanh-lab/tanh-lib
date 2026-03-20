@@ -1,0 +1,130 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 15,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "desktop-debug",
+      "displayName": "Desktop Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-desktop",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "desktop-release",
+      "displayName": "Desktop Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-desktop",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ios-simulator-debug",
+      "displayName": "iOS Simulator Debug",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build-ios-simulator",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
+        "THL_IOS_PLATFORM": "SIMULATOR",
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    },
+    {
+      "name": "ios-simulator-release",
+      "displayName": "iOS Simulator Release",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build-ios-simulator",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
+        "THL_IOS_PLATFORM": "SIMULATOR",
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    },
+    {
+      "name": "ios-device-debug",
+      "displayName": "iOS Device Debug",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build-ios-device",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
+        "THL_IOS_PLATFORM": "DEVICE",
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    },
+    {
+      "name": "ios-device-release",
+      "displayName": "iOS Device Release",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build-ios-device",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
+        "THL_IOS_PLATFORM": "DEVICE",
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "desktop-debug",
+      "configurePreset": "desktop-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-release",
+      "configurePreset": "desktop-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "ios-simulator-debug",
+      "configurePreset": "ios-simulator-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ios-simulator-release",
+      "configurePreset": "ios-simulator-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "ios-device-debug",
+      "configurePreset": "ios-device-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ios-device-release",
+      "configurePreset": "ios-device-release",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "desktop-debug",
+      "configurePreset": "desktop-debug",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-release",
+      "configurePreset": "desktop-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ios-simulator-debug",
+      "configurePreset": "ios-simulator-debug",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ios-simulator-release",
+      "configurePreset": "ios-simulator-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

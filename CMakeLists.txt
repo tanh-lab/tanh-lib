@@ -8,9 +8,15 @@ cmake_minimum_required(VERSION 3.15)
 option(BUILD_SHARED_LIBS "Build the library as a shared library" ON)
 option(TANH_WITH_INSTALL "Add install targets" ON)
 option(TANH_WITH_TESTS "Add Build Tests" ON)
+option(TANH_WITH_EXAMPLES "Add Build Examples" ON)
 option(TANH_WITH_DOCS "Add Build Documentation" ON)
 
 option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" OFF)
+option(TANH_WITH_ASAN "Enable AddressSanitizer (asan) checks" OFF)
+option(TANH_WITH_USAN "Enable UndefinedBehaviorSanitizer (usan) checks" OFF)
+option(TANH_WITH_TSAN "Enable ThreadSanitizer (tsan) checks" OFF)
+option(TANH_WITH_MSAN "Enable MemorySanitizer (msan) checks" OFF)
+option(TANH_WITH_LSAN "Enable LeakSanitizer (lsan) checks" OFF)
 
 # Define available components
 set(TANH_COMPONENTS Core State DSP AudioIO)
@@ -90,7 +96,7 @@ message(STATUS "Project version: ${PROJECT_VERSION_SHORT} (${PROJECT_VERSION_FUL
 if (APPLE)
 	# For iOS builds, use 14.0 as minimum (required for SwiftUI @main)
 	# For macOS builds, use 12.0 as minimum
-	if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+	if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
 		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET LESS "14.0")
 			set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum iOS deployment version")
 		endif()
@@ -169,9 +175,9 @@ if(TANH_BUILD_CORE)
         $<$<CONFIG:MinSizeRel>:THL_MINSIZEREL=1>
     )
 
-    if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    if(TANH_OPERATING_SYSTEM STREQUAL "Android")
         target_link_libraries(${PROJECT_NAME}_core PRIVATE log)
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Linux")
         target_link_libraries(${PROJECT_NAME}_core PRIVATE systemd)
     endif()
 
@@ -338,11 +344,22 @@ if(TANH_BUILD_AUDIO_IO)
         GIT_TAG 0.11.24
         GIT_SHALLOW TRUE
     )
-    set(MINIAUDIO_NO_EXTRA_NODES ON)
+    set(MINIAUDIO_NO_EXTRA_NODES ON CACHE BOOL "" FORCE)
+    set(MINIAUDIO_NO_LIBVORBIS ON CACHE BOOL "" FORCE)
+    set(MINIAUDIO_NO_LIBOPUS ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(miniaudio)
 
-    # Disable code signing for miniaudio targets on iOS
-    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # On iOS, miniaudio.c includes AVFoundation which contains Objective-C
+    # syntax. The FetchContent target compiles it as plain C, so we must
+    # force Objective-C compilation and disable code signing.
+    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+        # Force miniaudio.c to compile as Objective-C
+        set_source_files_properties(
+            ${miniaudio_SOURCE_DIR}/miniaudio.c
+            TARGET_DIRECTORY miniaudio
+            PROPERTIES COMPILE_FLAGS "-x objective-c"
+        )
+
         get_property(miniaudio_targets DIRECTORY ${miniaudio_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
         foreach(target ${miniaudio_targets})
             if(TARGET ${target})
@@ -391,15 +408,17 @@ if(TANH_BUILD_AUDIO_IO)
     target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC ${PROJECT_NAME}_core)
 
     # Link platform-specific frameworks required by miniaudio
-    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
         target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC
             "-framework AVFoundation"
             "-framework AudioToolbox"
             "-framework CoreAudio"
             "-framework CoreMIDI"
             "-framework Accelerate"
+            "-framework Foundation"
+            "-lobjc"
         )
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "macOS")
         target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC
             "-framework CoreAudio"
             "-framework AudioToolbox"
@@ -420,7 +439,7 @@ endif()
 
 foreach(target ${TANH_BUILT_COMPONENTS})
     # Disable code signing for iOS library targets (only apps need signing)
-    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
         set_target_properties(${target} PROPERTIES
             XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
             XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
@@ -429,26 +448,34 @@ foreach(target ${TANH_BUILT_COMPONENTS})
     endif()
 
     if(TANH_WITH_RTSAN)
-        include(cmake/real-time-sanitizers.cmake)
-        tanh_rtsan_configure(${target})
+        include(cmake/sanitizers.cmake)
+        tanh_realtime_sanitizer(${target})
     endif()
 
-    target_compile_options(${target}
-        PUBLIC
-            # -fsanitize=address
-            # -fsanitize=leak
-            # -fsanitize=realtime
-            # -fsanitize=undefined
-            # -fsanitize=thread
-    )
-    target_link_options(${target}
-        PUBLIC
-            # -fsanitize=address
-            # -fsanitize=leak
-            # -fsanitize=realtime
-            # -fsanitize=undefined
-            # -fsanitize=thread
-    )
+    if(TANH_WITH_ASAN)
+        include(cmake/sanitizers.cmake)
+        tanh_address_sanitizer(${target})
+    endif()
+
+    if(TANH_WITH_USAN)
+        include(cmake/sanitizers.cmake)
+        tanh_undefined_sanitizer(${target})
+    endif()
+
+    if(TANH_WITH_TSAN)
+        include(cmake/sanitizers.cmake)
+        tanh_thread_sanitizer(${target})
+    endif()
+
+    if(TANH_WITH_MSAN)
+        include(cmake/sanitizers.cmake)
+        tanh_memory_sanitizer(${target})
+    endif()
+
+    if(TANH_WITH_LSAN)
+        include(cmake/sanitizers.cmake)
+        tanh_leak_sanitizer(${target})
+    endif()
 endforeach()
 
 # ==============================================================================
@@ -478,9 +505,22 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_AUDIO_IO)
         add_subdirectory(test/audio_io)
     endif()
+
+    # On iOS, test executables become .app bundles and need a bundle identifier
+    # for simctl install/launch to work.
+    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+        foreach(_test test_core test_state test_dsp test_audio_io)
+            if(TARGET ${_test})
+                set_target_properties(${_test} PROPERTIES
+                    MACOSX_BUNDLE_GUI_IDENTIFIER "com.tanh.${_test}"
+                    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.tanh.${_test}"
+                )
+            endif()
+        endforeach()
+    endif()
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
     add_subdirectory(examples/ios/audio_io)
 endif()
 

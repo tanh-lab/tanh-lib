@@ -17,18 +17,20 @@ if(TARGET tanh_resonator)
 		test_RingsResonatorSynthProcessor.cpp
 	)
 
-	# Generator tool for producing reference fixture data
-	add_executable(generate_rings_reference generate_rings_reference.cpp)
-	target_link_libraries(generate_rings_reference
-		PRIVATE
-			tanh::Resonator
-			tanh::DSP
-			tanh::Core
-	)
-	target_compile_definitions(generate_rings_reference
-		PRIVATE
-			FIXTURE_OUTPUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-	)
+	# Generator tool for producing reference fixture data (host-only, not for iOS)
+	if(NOT (TANH_OPERATING_SYSTEM STREQUAL "iOS" OR TANH_OPERATING_SYSTEM STREQUAL "Android"))
+		add_executable(generate_rings_reference generate_rings_reference.cpp)
+		target_link_libraries(generate_rings_reference
+			PRIVATE
+				tanh::Resonator
+				tanh::DSP
+				tanh::Core
+		)
+		target_compile_definitions(generate_rings_reference
+			PRIVATE
+				FIXTURE_OUTPUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+		)
+	endif()
 
 	# Embed reference fixtures (only if they exist)
 	include(${CMAKE_SOURCE_DIR}/cmake/binary_data.cmake)
@@ -71,4 +73,8 @@ if(TARGET tanh_resonator)
 	)
 endif()
 
-gtest_discover_tests(${PROJECT_NAME})
+if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+	gtest_add_tests(TARGET ${PROJECT_NAME})
+else()
+	gtest_discover_tests(${PROJECT_NAME})
+endif()
