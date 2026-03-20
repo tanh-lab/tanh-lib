@@ -79,6 +79,10 @@ echo "Device: $DEVICE_UDID"
 echo "App:    $APP_PATH"
 echo "Bundle: $BUNDLE_ID"
 
+# ── Terminate if already running ────────────────────────────────────────────
+
+xcrun devicectl device process terminate --device "$DEVICE_UDID" "$BUNDLE_ID" 2>/dev/null || true
+
 # ── Install and launch ──────────────────────────────────────────────────────
 
 xcrun devicectl device install app --device "$DEVICE_UDID" "$APP_PATH"
