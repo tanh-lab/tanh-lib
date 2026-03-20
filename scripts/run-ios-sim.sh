@@ -74,6 +74,10 @@ SIMULATOR_UDID=$(echo "$SIMULATOR_INFO" | grep -E -o '([A-F0-9-]{36})')
 
 xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || true
 
+# ── Terminate if already running ────────────────────────────────────────────
+
+xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" 2>/dev/null || true
+
 # ── Install and launch ──────────────────────────────────────────────────────
 
 xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
