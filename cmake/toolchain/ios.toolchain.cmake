@@ -68,11 +68,15 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN YES)
 
-# CTest: use simulator emulator wrapper so ctest can run iOS test bundles
+# CTest: use wrapper scripts so ctest can run iOS test bundles
 if(THL_IOS_PLATFORM STREQUAL "SIMULATOR")
     set(CMAKE_CROSSCOMPILING_EMULATOR
         "${CMAKE_CURRENT_LIST_DIR}/../../scripts/run-ios-sim.sh"
         CACHE STRING "iOS simulator test runner" FORCE)
+elseif(THL_IOS_PLATFORM STREQUAL "DEVICE")
+    set(CMAKE_CROSSCOMPILING_EMULATOR
+        "${CMAKE_CURRENT_LIST_DIR}/../../scripts/run-ios-device.sh"
+        CACHE STRING "iOS device test runner" FORCE)
 endif()
 
 message(STATUS "iOS Toolchain Configuration:")
