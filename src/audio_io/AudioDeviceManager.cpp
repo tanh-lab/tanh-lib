@@ -771,22 +771,46 @@ uint32_t AudioDeviceManager::getSampleRate() const {
 }
 
 uint32_t AudioDeviceManager::getBufferSize() const {
+#if defined(THL_PLATFORM_ANDROID)
+    if (m_impl->playbackDeviceInitialised)
+        return m_impl->playbackPreparedPeriodSize * m_impl->playbackPeriods;
+    if (m_impl->duplexDeviceInitialised)
+        return m_impl->duplexPreparedPeriodSize * m_impl->duplexPeriods;
+    if (m_impl->captureDeviceInitialised)
+        return m_impl->capturePreparedPeriodSize * m_impl->capturePeriods;
+#else
     if (m_impl->playbackDeviceInitialised) return m_impl->playbackPreparedPeriodSize;
     if (m_impl->duplexDeviceInitialised) return m_impl->duplexPreparedPeriodSize;
     if (m_impl->captureDeviceInitialised) return m_impl->capturePreparedPeriodSize;
+#endif
     return 0;
 }
 
 uint32_t AudioDeviceManager::getBufferSize(DeviceRole role) const {
     switch (role) {
         case DeviceRole::Playback:
-            if (m_impl->playbackDeviceInitialised) return m_impl->playbackPreparedPeriodSize;
+            if (m_impl->playbackDeviceInitialised)
+#if defined(THL_PLATFORM_ANDROID)
+                return m_impl->playbackPreparedPeriodSize * m_impl->playbackPeriods;
+#else
+                return m_impl->playbackPreparedPeriodSize;
+#endif
             break;
         case DeviceRole::Capture:
-            if (m_impl->captureDeviceInitialised) return m_impl->capturePreparedPeriodSize;
+            if (m_impl->captureDeviceInitialised)
+#if defined(THL_PLATFORM_ANDROID)
+                return m_impl->capturePreparedPeriodSize * m_impl->capturePeriods;
+#else
+                return m_impl->capturePreparedPeriodSize;
+#endif
             break;
         case DeviceRole::Duplex:
-            if (m_impl->duplexDeviceInitialised) return m_impl->duplexPreparedPeriodSize;
+            if (m_impl->duplexDeviceInitialised)
+#if defined(THL_PLATFORM_ANDROID)
+                return m_impl->duplexPreparedPeriodSize * m_impl->duplexPeriods;
+#else
+                return m_impl->duplexPreparedPeriodSize;
+#endif
             break;
     }
     return getBufferSize();
@@ -966,6 +990,13 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
                                static_cast<int>(role));
             actualPeriodSize->store(frameCount, std::memory_order_relaxed);
         }
+        // if (callbackCounter % 100 == 0) {
+        //     thl::Logger::logf(thl::Logger::LogLevel::Debug,
+        //                        "thl.audio_io.audio_device_manager",
+        //                        "Callback #%u: frameCount %u, prepared %u, previous %u (role %d)",
+        //                        callbackCounter, frameCount, maxChunkSize, actualPeriodSize->load(std::memory_order_relaxed),
+        //                        static_cast<int>(role));
+        // }
         ++callbackCounter;
     }
 #endif
