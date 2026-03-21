@@ -9,6 +9,10 @@
 #include <TargetConditionals.h>
 #endif
 
+#if defined(THL_PLATFORM_IOS)
+#import <AVFoundation/AVAudioSession.h>
+#endif
+
 namespace thl {
 
 struct AudioDeviceManager::DeviceUserData {
@@ -115,6 +119,36 @@ ma_bool32 enumCallback(ma_context* /*pContext*/,
 }
 
 }  // namespace
+
+#if defined(THL_PLATFORM_IOS)
+namespace {
+bool isBluetoothRouteActive() {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    for (AVAudioSessionPortDescription* port in session.currentRoute.outputs) {
+        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothA2DP] ||
+            [port.portType isEqualToString:AVAudioSessionPortBluetoothHFP] ||
+            [port.portType isEqualToString:AVAudioSessionPortBluetoothLE]) {
+            return true;
+        }
+    }
+    for (AVAudioSessionPortDescription* port in session.currentRoute.inputs) {
+        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
+            return true;
+        }
+    }
+    return false;
+}
+}  // namespace
+#endif
+
+uint32_t AudioDeviceManager::clampBufferSizeForBluetoothRoute(uint32_t bufferSizeInFrames,
+                                                              uint32_t sampleRate) {
+    if (sampleRate == 0) return bufferSizeInFrames;
+    uint32_t maxFrames = static_cast<uint32_t>(
+        static_cast<float>(sampleRate) * kMaxBluetoothIOBufferDurationSeconds);
+    if (maxFrames == 0) maxFrames = 1;
+    return (bufferSizeInFrames > maxFrames) ? maxFrames : bufferSizeInFrames;
+}
 
 AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     m_impl->playbackUserData.manager = this;
@@ -391,6 +425,25 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
     // --- Platform-specific buffer configuration ---
     uint32_t configuredPeriods = 1;
     uint32_t burstSize = 0;
+
+#if defined(THL_PLATFORM_IOS)
+    // Bluetooth HFP/SCO delivers silent capture buffers when the
+    // AVAudioSession IO buffer duration exceeds ~64 ms.  Clamp the
+    // requested size so miniaudio never sets a duration beyond this
+    // limit when a Bluetooth route is active.
+    if (isBluetoothRouteActive()) {
+        uint32_t clamped = clampBufferSizeForBluetoothRoute(bufferSizeInFrames, sampleRate);
+        if (clamped != bufferSizeInFrames) {
+            thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                               "thl.audio_io.audio_device_manager",
+                               "%s: Bluetooth route active — clamping buffer from %u to %u frames "
+                               "(max %.0f ms)",
+                               label, bufferSizeInFrames, clamped,
+                               kMaxBluetoothIOBufferDurationSeconds * 1000.0f);
+            bufferSizeInFrames = clamped;
+        }
+    }
+#endif
 
 #if defined(THL_PLATFORM_ANDROID)
     {

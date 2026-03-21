@@ -395,6 +395,7 @@ if(TANH_BUILD_AUDIO_IO)
     if(APPLE)
         set_source_files_properties(
             src/audio_io/miniaudio_impl.cpp
+            src/audio_io/AudioDeviceManager.cpp
             PROPERTIES COMPILE_FLAGS "-x objective-c++"
         )
     endif()

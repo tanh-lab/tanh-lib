@@ -210,6 +210,48 @@ TEST(AudioDeviceManager, ConcurrentCallbackModification) {
 }
 
 // =============================================================================
+// Bluetooth Buffer Size Clamping Tests
+// =============================================================================
+
+TEST(AudioDeviceManager, BluetoothClampNoOpWhenBelowLimit) {
+    // 512 frames @ 16 kHz = 32 ms, well below the 64 ms cap.
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(512, 16000), 512u);
+}
+
+TEST(AudioDeviceManager, BluetoothClampAtExactLimit) {
+    // 1024 frames @ 16 kHz = exactly 64 ms — should NOT be clamped.
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(1024, 16000), 1024u);
+}
+
+TEST(AudioDeviceManager, BluetoothClampAboveLimit) {
+    // 2048 frames @ 16 kHz = 128 ms — must be clamped to 1024.
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(2048, 16000), 1024u);
+}
+
+TEST(AudioDeviceManager, BluetoothClampAt48kHz) {
+    // At 48 kHz the 64 ms cap is 3072 frames.
+    uint32_t maxFrames = static_cast<uint32_t>(48000 * 0.064f);
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(4096, 48000), maxFrames);
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(3072, 48000), 3072u);
+}
+
+TEST(AudioDeviceManager, BluetoothClampAt44100Hz) {
+    uint32_t maxFrames = static_cast<uint32_t>(44100 * 0.064f);
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(4096, 44100), maxFrames);
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(256, 44100), 256u);
+}
+
+TEST(AudioDeviceManager, BluetoothClampZeroSampleRate) {
+    // Zero sample rate should return the original size (no division by zero).
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(2048, 0), 2048u);
+}
+
+TEST(AudioDeviceManager, BluetoothClampSmallBuffer) {
+    // Very small buffer should pass through unchanged.
+    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(64, 16000), 64u);
+}
+
+// =============================================================================
 // Hardware Tests (DISABLED by default - run with
 // --gtest_also_run_disabled_tests)
 // =============================================================================
