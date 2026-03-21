@@ -546,6 +546,29 @@ public:
      */
     uint32_t getNumOutputChannels() const;
 
+    /**
+     * @brief Maximum IO buffer duration (in seconds) safe for Bluetooth HFP.
+     *
+     * Bluetooth SCO links used by HFP can fail silently when the iOS
+     * AVAudioSession preferred IO buffer duration exceeds this threshold.
+     */
+    static constexpr float kMaxBluetoothIOBufferDurationSeconds = 0.064f;
+
+    /**
+     * @brief Clamps a buffer size so the resulting IO buffer duration stays
+     *        within the Bluetooth HFP safe limit.
+     *
+     * If the buffer size would produce an IO buffer duration longer than
+     * kMaxBluetoothIOBufferDurationSeconds, the returned size is reduced to
+     * exactly that limit.
+     *
+     * @param bufferSizeInFrames The requested buffer size in frames.
+     * @param sampleRate The sample rate in Hz.
+     * @return The (possibly reduced) buffer size in frames.
+     */
+    static uint32_t clampBufferSizeForBluetoothRoute(uint32_t bufferSizeInFrames,
+                                                     uint32_t sampleRate);
+
 private:
     struct Impl;
     struct DeviceUserData;
