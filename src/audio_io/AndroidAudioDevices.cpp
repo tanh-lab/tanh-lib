@@ -361,6 +361,121 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// Active device name helpers — query the current audio route via
+// MediaRouter or AudioManager to match what AAudio is actually using.
+// ---------------------------------------------------------------------------
+
+static std::string getAndroidActiveDeviceName(int flags, int32_t targetDeviceId) {
+    if (!g_javaVM) return {};
+
+    ScopedJNIEnv jni(g_javaVM);
+    if (!jni) return {};
+    JNIEnv* env = jni.env;
+
+    jobject audioManager = getAudioManager(env);
+    if (!audioManager) return {};
+
+    jclass audioManagerClass = env->FindClass("android/media/AudioManager");
+    jmethodID getDevicesMethod = env->GetMethodID(
+        audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
+
+    auto devices = static_cast<jobjectArray>(
+        env->CallObjectMethod(audioManager, getDevicesMethod, flags));
+    if (!devices || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(audioManager);
+        return {};
+    }
+
+    jsize count = env->GetArrayLength(devices);
+
+    jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
+    jmethodID getIdMethod    = env->GetMethodID(deviceInfoClass, "getId", "()I");
+    jmethodID getTypeMethod  = env->GetMethodID(deviceInfoClass, "getType", "()I");
+    jmethodID getProductName = env->GetMethodID(deviceInfoClass, "getProductName",
+                                                 "()Ljava/lang/CharSequence;");
+    jclass charSeqClass = env->FindClass("java/lang/CharSequence");
+    jmethodID toStringMethod = env->GetMethodID(charSeqClass, "toString",
+                                                 "()Ljava/lang/String;");
+
+    bool isOutput = (flags == 2);
+    std::string result;
+    std::string firstSupported;  // fallback if ID not found
+
+    for (jsize i = 0; i < count; i++) {
+        jobject deviceObj = env->GetObjectArrayElement(devices, i);
+        int deviceType = env->CallIntMethod(deviceObj, getTypeMethod);
+
+        bool supported = isOutput ? isSupportedOutputType(deviceType)
+                                  : isSupportedInputType(deviceType);
+        if (!supported) {
+            env->DeleteLocalRef(deviceObj);
+            continue;
+        }
+
+        // Build display name using same format as enumerateAndroidAudioDevices
+        std::string displayName = androidDeviceTypeName(deviceType);
+        jobject productNameCS = env->CallObjectMethod(deviceObj, getProductName);
+        if (productNameCS) {
+            auto nameStr = static_cast<jstring>(
+                env->CallObjectMethod(productNameCS, toStringMethod));
+            if (nameStr) {
+                const char* chars = env->GetStringUTFChars(nameStr, nullptr);
+                if (chars && chars[0] != '\0') {
+                    std::string productName = chars;
+                    if (productName != displayName) {
+                        displayName += " (" + productName + ")";
+                    }
+                    env->ReleaseStringUTFChars(nameStr, chars);
+                }
+                env->DeleteLocalRef(nameStr);
+            }
+            env->DeleteLocalRef(productNameCS);
+        }
+
+        // Remember the first supported device as fallback
+        if (firstSupported.empty()) {
+            firstSupported = displayName;
+        }
+
+        // If a specific device ID was requested, match by ID
+        if (targetDeviceId > 0) {
+            int id = env->CallIntMethod(deviceObj, getIdMethod);
+            if (id == targetDeviceId) {
+                result = std::move(displayName);
+                env->DeleteLocalRef(deviceObj);
+                break;
+            }
+        } else {
+            // No specific ID — return first supported device
+            result = std::move(displayName);
+            env->DeleteLocalRef(deviceObj);
+            break;
+        }
+
+        env->DeleteLocalRef(deviceObj);
+    }
+
+    // If we had a specific ID but didn't find it (device disconnected),
+    // fall back to the first supported device.
+    if (result.empty() && !firstSupported.empty()) {
+        result = std::move(firstSupported);
+    }
+
+    env->DeleteLocalRef(devices);
+    env->DeleteLocalRef(audioManager);
+    return result;
+}
+
+std::string getAndroidActiveOutputDeviceName(int32_t aaudioDeviceId) {
+    return getAndroidActiveDeviceName(/* GET_DEVICES_OUTPUTS */ 2, aaudioDeviceId);
+}
+
+std::string getAndroidActiveInputDeviceName(int32_t aaudioDeviceId) {
+    return getAndroidActiveDeviceName(/* GET_DEVICES_INPUTS */ 1, aaudioDeviceId);
+}
+
 }  // namespace thl
 
 #endif  // THL_PLATFORM_ANDROID

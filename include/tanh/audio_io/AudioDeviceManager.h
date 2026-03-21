@@ -53,21 +53,6 @@ enum class BluetoothProfile {
 };
 
 /**
- * @struct AudioRouteInfo
- * @brief Describes an iOS audio route (port).
- *
- * On non-iOS platforms, route enumeration returns an empty vector.
- *
- * @see AudioDeviceManager::getAvailableInputRoutes()
- * @see AudioDeviceManager::setPreferredInputRoute()
- */
-struct AudioRouteInfo {
-    std::string name;      ///< Human-readable port name (e.g. "iPhone Microphone").
-    std::string portType;  ///< Port type identifier (e.g. "MicrophoneBuiltIn", "BluetoothHFP").
-    std::string uid;       ///< Unique identifier used for route selection.
-};
-
-/**
  * @class AudioDeviceManager
  * @brief Manages audio device initialisation, lifecycle, and callback dispatch.
  *
@@ -535,61 +520,6 @@ public:
     BluetoothProfile getBluetoothProfile() const;
 
     /**
-     * @brief Returns all available audio input routes (iOS only).
-     *
-     * Queries AVAudioSession.availableInputs for the list of input ports
-     * the user can choose from (built-in mic, headset mic, Bluetooth, etc.).
-     *
-     * @return Vector of AudioRouteInfo for each available input.
-     *         Empty on non-iOS platforms.
-     *
-     * @warning NOT real-time safe - performs system queries.
-     */
-    std::vector<AudioRouteInfo> getAvailableInputRoutes() const;
-
-    /**
-     * @brief Selects a preferred audio input route (iOS only).
-     *
-     * Sets the AVAudioSession preferred input to the route matching
-     * the given AudioRouteInfo::uid.  The change takes effect immediately
-     * if the audio session is active; a Rerouted notification will fire.
-     *
-     * @param route The route obtained from getAvailableInputRoutes().
-     * @return true if the preferred input was set successfully.
-     *
-     * @warning NOT real-time safe - performs system calls.
-     */
-    bool setPreferredInputRoute(const AudioRouteInfo& route);
-
-    /**
-     * @brief Forces audio output to the built-in speaker (iOS only).
-     *
-     * When @p toSpeaker is true, output is routed to the device speaker
-     * regardless of connected accessories.  Pass false to return to the
-     * default routing (headphones, Bluetooth, etc.).
-     *
-     * @param toSpeaker true to force speaker output, false for default.
-     * @return true if the override was applied successfully.
-     *
-     * @warning NOT real-time safe - performs system calls.
-     */
-    bool overrideOutputToSpeaker(bool toSpeaker);
-
-    /**
-     * @brief Returns the name of the currently active input route (iOS only).
-     *
-     * @return The port name of the first active input, or an empty string.
-     */
-    std::string getCurrentInputRouteName() const;
-
-    /**
-     * @brief Returns the name of the currently active output route (iOS only).
-     *
-     * @return The port name of the first active output, or an empty string.
-     */
-    std::string getCurrentOutputRouteName() const;
-
-    /**
      * @brief Gets the current sample rate.
      *
      * @return The actual device sample rate in Hz if initialised, otherwise
@@ -682,6 +612,26 @@ public:
      *         requested output channel count.
      */
     uint32_t getNumOutputChannels() const;
+
+    /**
+     * @brief Gets the name of the current output device.
+     *
+     * On iOS returns the active AVAudioSession output route name.
+     * On other platforms returns the device name passed to initialise().
+     *
+     * @return Device name string, or empty if not initialised.
+     */
+    std::string getCurrentOutputDeviceName() const;
+
+    /**
+     * @brief Gets the name of the current input device.
+     *
+     * On iOS returns the active AVAudioSession input route name.
+     * On other platforms returns the device name passed to initialise().
+     *
+     * @return Device name string, or empty if not initialised.
+     */
+    std::string getCurrentInputDeviceName() const;
 
     /**
      * @brief Maximum IO buffer duration (in seconds) safe for Bluetooth HFP.

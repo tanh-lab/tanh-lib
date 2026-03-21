@@ -14,12 +14,7 @@
 #endif
 
 #if defined(THL_PLATFORM_IOS)
-#import <AVFoundation/AVAudioSession.h>
-
-static constexpr AVAudioSessionCategoryOptions kBaseSessionOptions =
-    AVAudioSessionCategoryOptionDefaultToSpeaker |
-    AVAudioSessionCategoryOptionAllowAirPlay |
-    AVAudioSessionCategoryOptionMixWithOthers;
+#include <tanh/audio_io/iOSAudioDevices.h>
 #endif
 
 namespace thl {
@@ -68,6 +63,10 @@ struct AudioDeviceManager::Impl {
     DeviceUserData duplexUserData;
 
     LogCallback logCallback;
+
+    // Device names passed to initialise()
+    std::string outputDeviceName;
+    std::string inputDeviceName;
 };
 
 namespace {
@@ -129,27 +128,6 @@ ma_bool32 enumCallback(ma_context* /*pContext*/,
 
 }  // namespace
 
-#if defined(THL_PLATFORM_IOS)
-namespace {
-bool isBluetoothRouteActive() {
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-    for (AVAudioSessionPortDescription* port in session.currentRoute.outputs) {
-        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothA2DP] ||
-            [port.portType isEqualToString:AVAudioSessionPortBluetoothHFP] ||
-            [port.portType isEqualToString:AVAudioSessionPortBluetoothLE]) {
-            return true;
-        }
-    }
-    for (AVAudioSessionPortDescription* port in session.currentRoute.inputs) {
-        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
-            return true;
-        }
-    }
-    return false;
-}
-}  // namespace
-#endif
-
 uint32_t AudioDeviceManager::clampBufferSizeForBluetoothRoute(uint32_t bufferSizeInFrames,
                                                               uint32_t sampleRate) {
     if (sampleRate == 0) return bufferSizeInFrames;
@@ -170,20 +148,7 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     ma_context_config ctxConfig = ma_context_config_init();
 
 #if defined(THL_PLATFORM_IOS)
-    // Configure AVAudioSession directly so we have full control over
-    // category options (AirPlay, mixWithOthers, high-quality BT, etc.).
-    // Then tell miniaudio to leave the session category alone.
-    {
-        AVAudioSession* session = [AVAudioSession sharedInstance];
-        AVAudioSessionCategoryOptions options =
-            kBaseSessionOptions |
-            AVAudioSessionCategoryOptionAllowBluetoothA2DP;
-
-        NSError* error = nil;
-        [session setCategory:AVAudioSessionCategoryPlayAndRecord
-                 withOptions:options
-                       error:&error];
-    }
+    configureIOSAudioSession();
     ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_none;
 #endif
 
@@ -470,7 +435,7 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
     // AVAudioSession IO buffer duration exceeds ~64 ms.  Clamp the
     // requested size so miniaudio never sets a duration beyond this
     // limit when a Bluetooth route is active.
-    if (isBluetoothRouteActive()) {
+    if (isIOSBluetoothRouteActive()) {
         uint32_t clamped = clampBufferSizeForBluetoothRoute(bufferSizeInFrames, sampleRate);
         if (clamped != bufferSizeInFrames) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
@@ -602,6 +567,8 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
     m_sampleRate = sampleRate;
     m_numInputChannels = inputDevice ? numInputChannels : 0;
     m_numOutputChannels = outputDevice ? numOutputChannels : 0;
+    m_impl->outputDeviceName = outputDevice ? outputDevice->name : "";
+    m_impl->inputDeviceName = inputDevice ? inputDevice->name : "";
     m_impl->playbackPreparedPeriodSize = bufferSizeInFrames;
     m_impl->capturePreparedPeriodSize = bufferSizeInFrames;
     m_impl->duplexPreparedPeriodSize = bufferSizeInFrames;
@@ -679,6 +646,9 @@ void AudioDeviceManager::shutdown() {
         m_impl->duplexDeviceInitialised = false;
         m_impl->duplexActualPeriodSize.store(0, std::memory_order_relaxed);
     }
+
+    m_impl->outputDeviceName.clear();
+    m_impl->inputDeviceName.clear();
 }
 
 bool AudioDeviceManager::startPlayback() {
@@ -859,58 +829,9 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
     m_bluetoothProfile = profile;
 
 #if defined(THL_PLATFORM_IOS)
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-
-    AVAudioSessionCategoryOptions options = kBaseSessionOptions;
-
-    const char* profileName = "HFP";
-
-    switch (profile) {
-        case BluetoothProfile::HFP:
-            options |= AVAudioSessionCategoryOptionAllowBluetoothHFP;
-            profileName = "HFP";
-            break;
-        case BluetoothProfile::A2DP:
-            options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
-            profileName = "A2DP";
-            break;
-        case BluetoothProfile::HighQuality:
-            options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
-            if (@available(iOS 18.2, *)) {
-                options |= AVAudioSessionCategoryOptionBluetoothHighQualityRecording;
-            }
-            profileName = "HighQuality";
-            break;
-    }
-
-    NSError* error = nil;
-    BOOL ok = [session setCategory:AVAudioSessionCategoryPlayAndRecord
-                       withOptions:options
-                             error:&error];
-
-    if (!ok) {
-        thl::Logger::logf(thl::Logger::LogLevel::Error,
-                           "thl.audio_io.audio_device_manager",
-                           "setBluetoothProfile: failed to set session category — %s",
-                           error ? [[error localizedDescription] UTF8String] : "unknown error");
+    if (!setIOSBluetoothProfile(profile, nullptr)) {
         return false;
     }
-
-    ok = [session setActive:YES error:&error];
-    if (!ok) {
-        thl::Logger::logf(thl::Logger::LogLevel::Error,
-                           "thl.audio_io.audio_device_manager",
-                           "setBluetoothProfile: failed to activate session — %s",
-                           error ? [[error localizedDescription] UTF8String] : "unknown error");
-        return false;
-    }
-
-    thl::Logger::logf(thl::Logger::LogLevel::Info,
-                       "thl.audio_io.audio_device_manager",
-                       "Bluetooth profile set to %s (session sampleRate=%.0f, IOBufferDuration=%.4f)",
-                       profileName,
-                       session.sampleRate,
-                       session.IOBufferDuration);
 #elif defined(THL_PLATFORM_ANDROID)
     // On Android, SCO requires an explicit AudioManager handshake.
     // A2DP works as a normal media device — no special setup needed.
@@ -936,117 +857,6 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
 BluetoothProfile AudioDeviceManager::getBluetoothProfile() const {
     return m_bluetoothProfile;
 }
-
-#if defined(THL_PLATFORM_IOS)
-
-std::vector<AudioRouteInfo> AudioDeviceManager::getAvailableInputRoutes() const {
-    std::vector<AudioRouteInfo> routes;
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-    for (AVAudioSessionPortDescription* port in session.availableInputs) {
-        AudioRouteInfo info;
-        info.name = [port.portName UTF8String];
-        info.portType = [port.portType UTF8String];
-        info.uid = [port.UID UTF8String];
-        routes.push_back(std::move(info));
-    }
-    return routes;
-}
-
-bool AudioDeviceManager::setPreferredInputRoute(const AudioRouteInfo& route) {
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-    NSString* targetUID = [NSString stringWithUTF8String:route.uid.c_str()];
-
-    for (AVAudioSessionPortDescription* port in session.availableInputs) {
-        if ([port.UID isEqualToString:targetUID]) {
-            NSError* error = nil;
-            BOOL ok = [session setPreferredInput:port error:&error];
-            if (!ok) {
-                thl::Logger::logf(thl::Logger::LogLevel::Error,
-                                   "thl.audio_io.audio_device_manager",
-                                   "Failed to set preferred input '%s': %s",
-                                   route.name.c_str(),
-                                   error ? [[error localizedDescription] UTF8String]
-                                         : "unknown error");
-                return false;
-            }
-            thl::Logger::logf(thl::Logger::LogLevel::Info,
-                               "thl.audio_io.audio_device_manager",
-                               "Preferred input set to '%s' (%s)",
-                               route.name.c_str(), route.portType.c_str());
-            return true;
-        }
-    }
-
-    thl::Logger::logf(thl::Logger::LogLevel::Error,
-                       "thl.audio_io.audio_device_manager",
-                       "Input route '%s' (uid=%s) not found in available inputs",
-                       route.name.c_str(), route.uid.c_str());
-    return false;
-}
-
-bool AudioDeviceManager::overrideOutputToSpeaker(bool toSpeaker) {
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-    NSError* error = nil;
-    AVAudioSessionPortOverride override = toSpeaker
-        ? AVAudioSessionPortOverrideSpeaker
-        : AVAudioSessionPortOverrideNone;
-    BOOL ok = [session overrideOutputAudioPort:override error:&error];
-    if (!ok) {
-        thl::Logger::logf(thl::Logger::LogLevel::Error,
-                           "thl.audio_io.audio_device_manager",
-                           "Failed to override output port: %s",
-                           error ? [[error localizedDescription] UTF8String]
-                                 : "unknown error");
-        return false;
-    }
-    thl::Logger::logf(thl::Logger::LogLevel::Info,
-                       "thl.audio_io.audio_device_manager",
-                       "Output port override: %s",
-                       toSpeaker ? "speaker" : "none (default route)");
-    return true;
-}
-
-std::string AudioDeviceManager::getCurrentInputRouteName() const {
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-    NSArray<AVAudioSessionPortDescription*>* inputs = session.currentRoute.inputs;
-    if (inputs.count > 0) {
-        return [inputs[0].portName UTF8String];
-    }
-    return {};
-}
-
-std::string AudioDeviceManager::getCurrentOutputRouteName() const {
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-    NSArray<AVAudioSessionPortDescription*>* outputs = session.currentRoute.outputs;
-    if (outputs.count > 0) {
-        return [outputs[0].portName UTF8String];
-    }
-    return {};
-}
-
-#else
-
-std::vector<AudioRouteInfo> AudioDeviceManager::getAvailableInputRoutes() const {
-    return {};
-}
-
-bool AudioDeviceManager::setPreferredInputRoute(const AudioRouteInfo& /* route */) {
-    return false;
-}
-
-bool AudioDeviceManager::overrideOutputToSpeaker(bool /* toSpeaker */) {
-    return false;
-}
-
-std::string AudioDeviceManager::getCurrentInputRouteName() const {
-    return {};
-}
-
-std::string AudioDeviceManager::getCurrentOutputRouteName() const {
-    return {};
-}
-
-#endif
 
 uint32_t AudioDeviceManager::getSampleRate() const {
     if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.sampleRate; }
@@ -1199,6 +1009,44 @@ uint32_t AudioDeviceManager::getNumOutputChannels() const {
     if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.playback.channels; }
     if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.playback.channels; }
     return m_numOutputChannels;
+}
+
+std::string AudioDeviceManager::getCurrentOutputDeviceName() const {
+#if defined(THL_PLATFORM_IOS)
+    return getIOSCurrentOutputRouteName();
+#elif defined(THL_PLATFORM_ANDROID)
+    {
+        int32_t deviceId = 0;
+        if (m_impl->playbackDeviceInitialised)
+            deviceId = m_impl->playbackDevice.playback.id.aaudio;
+        else if (m_impl->duplexDeviceInitialised)
+            deviceId = m_impl->duplexDevice.playback.id.aaudio;
+        return getAndroidActiveOutputDeviceName(deviceId);
+    }
+#else
+    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.playback.name; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.playback.name; }
+    return {};
+#endif
+}
+
+std::string AudioDeviceManager::getCurrentInputDeviceName() const {
+#if defined(THL_PLATFORM_IOS)
+    return getIOSCurrentInputRouteName();
+#elif defined(THL_PLATFORM_ANDROID)
+    {
+        int32_t deviceId = 0;
+        if (m_impl->captureDeviceInitialised)
+            deviceId = m_impl->captureDevice.capture.id.aaudio;
+        else if (m_impl->duplexDeviceInitialised)
+            deviceId = m_impl->duplexDevice.capture.id.aaudio;
+        return getAndroidActiveInputDeviceName(deviceId);
+    }
+#else
+    if (m_impl->captureDeviceInitialised) { return m_impl->captureDevice.capture.name; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexDevice.capture.name; }
+    return {};
+#endif
 }
 
 void AudioDeviceManager::processCallbacks(DeviceRole role,

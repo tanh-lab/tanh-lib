@@ -394,12 +394,15 @@ if(TANH_BUILD_AUDIO_IO)
         target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio_io/AndroidAudioDevices.cpp)
     endif()
 
+    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio_io/iOSAudioDevices.mm)
+    endif()
+
     # On Apple platforms, miniaudio implementation includes Objective-C code
     # for CoreAudio/AVFoundation, so it must be compiled as Objective-C++
     if(APPLE)
         set_source_files_properties(
             src/audio_io/miniaudio_impl.cpp
-            src/audio_io/AudioDeviceManager.cpp
             PROPERTIES COMPILE_FLAGS "-x objective-c++"
         )
     endif()
