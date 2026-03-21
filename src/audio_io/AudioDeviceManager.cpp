@@ -11,6 +11,11 @@
 
 #if defined(THL_PLATFORM_IOS)
 #import <AVFoundation/AVAudioSession.h>
+
+static constexpr AVAudioSessionCategoryOptions kBaseSessionOptions =
+    AVAudioSessionCategoryOptionDefaultToSpeaker |
+    AVAudioSessionCategoryOptionAllowAirPlay |
+    AVAudioSessionCategoryOptionMixWithOthers;
 #endif
 
 namespace thl {
@@ -161,10 +166,21 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     ma_context_config ctxConfig = ma_context_config_init();
 
 #if defined(THL_PLATFORM_IOS)
-    ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_play_and_record;
-    ctxConfig.coreaudio.sessionCategoryOptions =
-        ma_ios_session_category_option_default_to_speaker |
-        ma_ios_session_category_option_allow_bluetooth_a2dp;
+    // Configure AVAudioSession directly so we have full control over
+    // category options (AirPlay, mixWithOthers, high-quality BT, etc.).
+    // Then tell miniaudio to leave the session category alone.
+    {
+        AVAudioSession* session = [AVAudioSession sharedInstance];
+        AVAudioSessionCategoryOptions options =
+            kBaseSessionOptions |
+            AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+
+        NSError* error = nil;
+        [session setCategory:AVAudioSessionCategoryPlayAndRecord
+                 withOptions:options
+                       error:&error];
+    }
+    ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_none;
 #endif
 
     ma_result result = ma_context_init(nullptr, 0, &ctxConfig, &m_impl->context);
@@ -819,24 +835,31 @@ void AudioDeviceManager::setLogCallback(LogCallback callback) {
 }
 
 bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
-    if (m_playbackRunning || m_captureRunning || m_duplexRunning) {
-        thl::Logger::warning("thl.audio_io.audio_device_manager",
-                             "setBluetoothProfile: cannot change while devices are running");
-        return false;
-    }
-
     m_bluetoothProfile = profile;
 
 #if defined(THL_PLATFORM_IOS)
     AVAudioSession* session = [AVAudioSession sharedInstance];
 
-    AVAudioSessionCategoryOptions options =
-        AVAudioSessionCategoryOptionDefaultToSpeaker;
+    AVAudioSessionCategoryOptions options = kBaseSessionOptions;
 
-    if (profile == BluetoothProfile::A2DP) {
-        options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
-    } else {
-        options |= AVAudioSessionCategoryOptionAllowBluetooth;
+    const char* profileName = "HFP";
+
+    switch (profile) {
+        case BluetoothProfile::HFP:
+            options |= AVAudioSessionCategoryOptionAllowBluetoothHFP;
+            profileName = "HFP";
+            break;
+        case BluetoothProfile::A2DP:
+            options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+            profileName = "A2DP";
+            break;
+        case BluetoothProfile::HighQuality:
+            options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+            if (@available(iOS 18.2, *)) {
+                options |= AVAudioSessionCategoryOptionBluetoothHighQualityRecording;
+            }
+            profileName = "HighQuality";
+            break;
     }
 
     NSError* error = nil;
@@ -864,7 +887,7 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
     thl::Logger::logf(thl::Logger::LogLevel::Info,
                        "thl.audio_io.audio_device_manager",
                        "Bluetooth profile set to %s (session sampleRate=%.0f, IOBufferDuration=%.4f)",
-                       profile == BluetoothProfile::A2DP ? "A2DP" : "HFP",
+                       profileName,
                        session.sampleRate,
                        session.IOBufferDuration);
 #elif defined(THL_PLATFORM_ANDROID)
@@ -872,10 +895,11 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
     // applied per-device at init time via tryInitialiseDevice().  Storing
     // the profile here is sufficient — the next initialise() call will
     // pick it up.
+    const char* profileName = (profile == BluetoothProfile::HFP) ? "HFP" : "A2DP";
     thl::Logger::logf(thl::Logger::LogLevel::Info,
                        "thl.audio_io.audio_device_manager",
                        "Bluetooth profile set to %s (will take effect on next initialise)",
-                       profile == BluetoothProfile::A2DP ? "A2DP" : "HFP");
+                       profileName);
 #else
     (void)profile;
 #endif
@@ -886,6 +910,117 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
 BluetoothProfile AudioDeviceManager::getBluetoothProfile() const {
     return m_bluetoothProfile;
 }
+
+#if defined(THL_PLATFORM_IOS)
+
+std::vector<AudioRouteInfo> AudioDeviceManager::getAvailableInputRoutes() const {
+    std::vector<AudioRouteInfo> routes;
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    for (AVAudioSessionPortDescription* port in session.availableInputs) {
+        AudioRouteInfo info;
+        info.name = [port.portName UTF8String];
+        info.portType = [port.portType UTF8String];
+        info.uid = [port.UID UTF8String];
+        routes.push_back(std::move(info));
+    }
+    return routes;
+}
+
+bool AudioDeviceManager::setPreferredInputRoute(const AudioRouteInfo& route) {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    NSString* targetUID = [NSString stringWithUTF8String:route.uid.c_str()];
+
+    for (AVAudioSessionPortDescription* port in session.availableInputs) {
+        if ([port.UID isEqualToString:targetUID]) {
+            NSError* error = nil;
+            BOOL ok = [session setPreferredInput:port error:&error];
+            if (!ok) {
+                thl::Logger::logf(thl::Logger::LogLevel::Error,
+                                   "thl.audio_io.audio_device_manager",
+                                   "Failed to set preferred input '%s': %s",
+                                   route.name.c_str(),
+                                   error ? [[error localizedDescription] UTF8String]
+                                         : "unknown error");
+                return false;
+            }
+            thl::Logger::logf(thl::Logger::LogLevel::Info,
+                               "thl.audio_io.audio_device_manager",
+                               "Preferred input set to '%s' (%s)",
+                               route.name.c_str(), route.portType.c_str());
+            return true;
+        }
+    }
+
+    thl::Logger::logf(thl::Logger::LogLevel::Error,
+                       "thl.audio_io.audio_device_manager",
+                       "Input route '%s' (uid=%s) not found in available inputs",
+                       route.name.c_str(), route.uid.c_str());
+    return false;
+}
+
+bool AudioDeviceManager::overrideOutputToSpeaker(bool toSpeaker) {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    NSError* error = nil;
+    AVAudioSessionPortOverride override = toSpeaker
+        ? AVAudioSessionPortOverrideSpeaker
+        : AVAudioSessionPortOverrideNone;
+    BOOL ok = [session overrideOutputAudioPort:override error:&error];
+    if (!ok) {
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                           "thl.audio_io.audio_device_manager",
+                           "Failed to override output port: %s",
+                           error ? [[error localizedDescription] UTF8String]
+                                 : "unknown error");
+        return false;
+    }
+    thl::Logger::logf(thl::Logger::LogLevel::Info,
+                       "thl.audio_io.audio_device_manager",
+                       "Output port override: %s",
+                       toSpeaker ? "speaker" : "none (default route)");
+    return true;
+}
+
+std::string AudioDeviceManager::getCurrentInputRouteName() const {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    NSArray<AVAudioSessionPortDescription*>* inputs = session.currentRoute.inputs;
+    if (inputs.count > 0) {
+        return [inputs[0].portName UTF8String];
+    }
+    return {};
+}
+
+std::string AudioDeviceManager::getCurrentOutputRouteName() const {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    NSArray<AVAudioSessionPortDescription*>* outputs = session.currentRoute.outputs;
+    if (outputs.count > 0) {
+        return [outputs[0].portName UTF8String];
+    }
+    return {};
+}
+
+#else
+
+std::vector<AudioRouteInfo> AudioDeviceManager::getAvailableInputRoutes() const {
+    return {};
+}
+
+bool AudioDeviceManager::setPreferredInputRoute(const AudioRouteInfo& /* route */) {
+    return false;
+}
+
+bool AudioDeviceManager::overrideOutputToSpeaker(bool /* toSpeaker */) {
+    return false;
+}
+
+std::string AudioDeviceManager::getCurrentInputRouteName() const {
+    return {};
+}
+
+std::string AudioDeviceManager::getCurrentOutputRouteName() const {
+    return {};
+}
+
+#endif
 
 uint32_t AudioDeviceManager::getSampleRate() const {
     if (m_impl->playbackDeviceInitialised) { return m_impl->playbackDevice.sampleRate; }
@@ -1103,26 +1238,26 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
     if (outputChannels == 0 && inputChannels == 0) { return; }
 
 #if defined(THL_DEBUG) && !defined(THL_PLATFORM_IOS_SIMULATOR)
-    {
-        static uint32_t callbackCounter = 0;
-        if (frameCount != actualPeriodSize->load(std::memory_order_relaxed)) {
-            thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                               "thl.audio_io.audio_device_manager",
-                               "Callback #%u: frameCount %u, prepared %u, previous %u (role %d)",
-                               callbackCounter, frameCount, maxChunkSize,
-                               actualPeriodSize->load(std::memory_order_relaxed),
-                               static_cast<int>(role));
-            actualPeriodSize->store(frameCount, std::memory_order_relaxed);
-        }
-        // if (callbackCounter % 100 == 0) {
-        //     thl::Logger::logf(thl::Logger::LogLevel::Debug,
-        //                        "thl.audio_io.audio_device_manager",
-        //                        "Callback #%u: frameCount %u, prepared %u, previous %u (role %d)",
-        //                        callbackCounter, frameCount, maxChunkSize, actualPeriodSize->load(std::memory_order_relaxed),
-        //                        static_cast<int>(role));
-        // }
-        ++callbackCounter;
-    }
+    // {
+    //     static uint32_t callbackCounter = 0;
+    //     if (frameCount != actualPeriodSize->load(std::memory_order_relaxed)) {
+    //         thl::Logger::logf(thl::Logger::LogLevel::Warning,
+    //                            "thl.audio_io.audio_device_manager",
+    //                            "Callback #%u: frameCount %u, prepared %u, previous %u (role %d)",
+    //                            callbackCounter, frameCount, maxChunkSize,
+    //                            actualPeriodSize->load(std::memory_order_relaxed),
+    //                            static_cast<int>(role));
+    //         actualPeriodSize->store(frameCount, std::memory_order_relaxed);
+    //     }
+    //     if (callbackCounter % 100 == 0) {
+    //         thl::Logger::logf(thl::Logger::LogLevel::Debug,
+    //                            "thl.audio_io.audio_device_manager",
+    //                            "Callback #%u: frameCount %u, prepared %u, previous %u (role %d)",
+    //                            callbackCounter, frameCount, maxChunkSize, actualPeriodSize->load(std::memory_order_relaxed),
+    //                            static_cast<int>(role));
+    //     }
+    //     ++callbackCounter;
+    // }
 #endif
 
     // Zero output so callbacks can additively mix.
