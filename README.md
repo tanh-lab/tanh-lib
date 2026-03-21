@@ -70,3 +70,17 @@ cmake --build build --target test_dsp
 ```
 
 The fixture files are not checked into version control.
+
+## Android Bluetooth SCO (HFP) Notes
+
+Bluetooth SCO (used by the HFP profile) is a synchronous bidirectional codec.
+Unlike A2DP (output-only, high quality), SCO carries both playback and capture
+in a single link.  Getting audio to flow requires several steps that are easy
+to miss:
+
+1. **Permissions** — the app manifest must declare `BLUETOOTH`, `BLUETOOTH_CONNECT`
+   (runtime permission on API 31+), and `MODIFY_AUDIO_SETTINGS`.
+2. **Capture must run alongside playback** — the SCO codec does not fully
+   negotiate the bidirectional channel until both an output and input stream
+   are active.  Call `startCapture()` immediately after `startPlayback()` when
+   the selected input device is a SCO device.
