@@ -22,6 +22,18 @@ bool isAndroidBluetoothScoEnabled();
 /// Falls back to an empty list if the JavaVM has not been set.
 std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type);
 
+/// Query the name of the currently active output audio device via
+/// AudioManager.getDevices(GET_DEVICES_OUTPUTS).
+/// If aaudioDeviceId > 0, looks up by Android device ID; otherwise returns
+/// the first supported connected output device.
+std::string getAndroidActiveOutputDeviceName(int32_t aaudioDeviceId = 0);
+
+/// Query the name of the currently active input audio device via
+/// AudioManager.getDevices(GET_DEVICES_INPUTS).
+/// If aaudioDeviceId > 0, looks up by Android device ID; otherwise returns
+/// the first supported connected input device.
+std::string getAndroidActiveInputDeviceName(int32_t aaudioDeviceId = 0);
+
 }  // namespace thl
 
 #endif  // THL_PLATFORM_ANDROID

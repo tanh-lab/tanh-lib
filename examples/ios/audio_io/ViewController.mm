@@ -239,7 +239,7 @@
     }
 
     // Enumerate iOS audio routes
-    auto inputRoutes = _audioManager->getAvailableInputRoutes();
+    auto inputRoutes = thl::getIOSAvailableInputRoutes();
     thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
                       "Found %lu input routes", inputRoutes.size());
     for (size_t i = 0; i < inputRoutes.size(); ++i) {
@@ -250,10 +250,10 @@
     }
     thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
                       "Current input: %s",
-                      _audioManager->getCurrentInputRouteName().c_str());
+                      thl::getIOSCurrentInputRouteName().c_str());
     thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
                       "Current output: %s",
-                      _audioManager->getCurrentOutputRouteName().c_str());
+                      thl::getIOSCurrentOutputRouteName().c_str());
 
     // Initialise with both input and output (separate devices)
     if (!inputDevices.empty() && !outputDevices.empty()) {
@@ -393,7 +393,7 @@
 - (void)showInputRoutePicker {
     if (!_audioManager) return;
 
-    auto routes = _audioManager->getAvailableInputRoutes();
+    auto routes = thl::getIOSAvailableInputRoutes();
     if (routes.empty()) {
         thl::Logger::warning("audio-io-example", "No input routes available");
         return;
@@ -404,7 +404,7 @@
                                             message:nil
                                      preferredStyle:UIAlertControllerStyleActionSheet];
 
-    std::string currentInput = _audioManager->getCurrentInputRouteName();
+    std::string currentInput = thl::getIOSCurrentInputRouteName();
 
     for (size_t i = 0; i < routes.size(); ++i) {
         NSString *title = [NSString stringWithUTF8String:routes[i].name.c_str()];
@@ -422,14 +422,14 @@
                                    handler:^(UIAlertAction * _Nonnull) {
                 ViewController *strongSelf = weakSelf;
                 if (!strongSelf) return;
-                if (strongSelf->_audioManager->setPreferredInputRoute(route)) {
+                if (thl::setIOSPreferredInputRoute(route)) {
                     thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
                                       "Input route changed to '%s'",
                                       route.name.c_str());
                     thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
                                       "Current input: %s, output: %s",
-                                      strongSelf->_audioManager->getCurrentInputRouteName().c_str(),
-                                      strongSelf->_audioManager->getCurrentOutputRouteName().c_str());
+                                      thl::getIOSCurrentInputRouteName().c_str(),
+                                      thl::getIOSCurrentOutputRouteName().c_str());
                 }
             }];
         [alert addAction:action];
