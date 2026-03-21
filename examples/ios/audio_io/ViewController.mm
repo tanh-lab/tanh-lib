@@ -11,6 +11,7 @@
 @property(nonatomic, strong) UIButton *stopAudioButton;
 @property(nonatomic, strong) UIButton *recordButton;
 @property(nonatomic, strong) UIButton *playButton;
+@property(nonatomic, strong) UIButton *btProfileButton;
 @property(nonatomic, strong) UITextView *logTextView;
 @property(nonatomic, copy) NSString *recordingPath;
 @property(nonatomic, assign) BOOL hasRecording;
@@ -109,6 +110,21 @@
     _playButton.alpha = 0.5;
     [self.view addSubview:_playButton];
 
+    // Bluetooth profile toggle button
+    _btProfileButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_btProfileButton setTitle:@"BT: HFP" forState:UIControlStateNormal];
+    [_btProfileButton setTitleColor:[UIColor whiteColor]
+                           forState:UIControlStateNormal];
+    [_btProfileButton addTarget:self
+                         action:@selector(toggleBluetoothProfile)
+               forControlEvents:UIControlEventTouchUpInside];
+    _btProfileButton.backgroundColor = [UIColor colorWithRed:0.4
+                                                       green:0.2
+                                                        blue:0.6
+                                                       alpha:1.0];
+    _btProfileButton.layer.cornerRadius = 8;
+    [self.view addSubview:_btProfileButton];
+
     // Log text view
     _logTextView = [[UITextView alloc] initWithFrame:CGRectMake(0, 0, 0, 0)];
     _logTextView.editable = NO;
@@ -137,7 +153,10 @@
 
     _recordButton.frame = CGRectMake(20, yPos, buttonWidth, 50);
     _playButton.frame = CGRectMake(40 + buttonWidth, yPos, buttonWidth, 50);
-    yPos += 70;
+    yPos += 60;
+
+    _btProfileButton.frame = CGRectMake(20, yPos, viewWidth - 40, 50);
+    yPos += 60;
 
     _logTextView.frame = CGRectMake(20, yPos, viewWidth - 40,
                                     viewHeight - yPos - safeBottom - 20);
@@ -285,6 +304,69 @@
                        forState:UIControlStateNormal];
         _playButton.enabled = NO;
         _playButton.alpha = 0.5;
+    }
+}
+
+- (void)toggleBluetoothProfile {
+    if (!_audioManager) return;
+
+    // Stop everything first
+    [self stopAudio];
+
+    // Remove existing callbacks before shutdown
+    if (_fileSink) {
+        _audioManager->removeCaptureCallback(_fileSink.get());
+    }
+    if (_playerSource) {
+        _audioManager->removePlaybackCallback(_playerSource.get());
+    }
+
+    _audioManager->shutdown();
+
+    // Toggle profile
+    thl::BluetoothProfile current = _audioManager->getBluetoothProfile();
+    thl::BluetoothProfile next = (current == thl::BluetoothProfile::HFP)
+                                     ? thl::BluetoothProfile::A2DP
+                                     : thl::BluetoothProfile::HFP;
+
+    bool profileSet = _audioManager->setBluetoothProfile(next);
+    if (!profileSet) {
+        thl::Logger::error("audio-io-example", "Failed to set Bluetooth profile");
+        return;
+    }
+
+    // Update button label
+    NSString *label = (next == thl::BluetoothProfile::A2DP) ? @"BT: A2DP" : @"BT: HFP";
+    [_btProfileButton setTitle:label forState:UIControlStateNormal];
+
+    // Re-initialise with appropriate sample rate
+    uint32_t sampleRate = (next == thl::BluetoothProfile::A2DP) ? 48000 : 16000;
+
+    auto inputDevices = _audioManager->enumerateInputDevices();
+    auto outputDevices = _audioManager->enumerateOutputDevices();
+
+    if (!inputDevices.empty() && !outputDevices.empty()) {
+        bool success = _audioManager->initialise(&inputDevices[0],
+                                                 &outputDevices[0],
+                                                 sampleRate,
+                                                 1025,
+                                                 1,   // mono input
+                                                 1);  // mono output
+
+        if (success) {
+            _audioManager->addCaptureCallback(_fileSink.get());
+            _audioManager->addPlaybackCallback(_playerSource.get());
+
+            thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                              "Reinitialised with %s (SR=%u, buf=%u)",
+                              next == thl::BluetoothProfile::A2DP ? "A2DP" : "HFP",
+                              _audioManager->getSampleRate(),
+                              _audioManager->getBufferSize());
+            _statusLabel.text = [NSString stringWithFormat:@"Profile: %@ — Ready",
+                                 next == thl::BluetoothProfile::A2DP ? @"A2DP" : @"HFP"];
+        } else {
+            thl::Logger::error("audio-io-example", "Failed to reinitialise after profile switch");
+        }
     }
 }
 

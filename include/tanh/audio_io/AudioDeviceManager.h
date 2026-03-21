@@ -25,6 +25,28 @@ enum class DeviceNotificationType {
 };
 
 /**
+ * @enum BluetoothProfile
+ * @brief Bluetooth audio profile to use when a BT headset is connected.
+ *
+ * On iOS, the active Bluetooth profile determines audio quality and
+ * microphone availability:
+ *
+ * | Profile | Sample Rate      | BT Mic Input |
+ * |---------|------------------|--------------|
+ * | HFP     | 8 kHz / 16 kHz   | Yes          |
+ * | A2DP    | 44.1 kHz / 48 kHz | No (built-in mic fallback) |
+ *
+ * Switching profiles requires re-initialising the audio device because
+ * the sample rate and buffer configuration change.
+ *
+ * @see AudioDeviceManager::setBluetoothProfile()
+ */
+enum class BluetoothProfile {
+    HFP,  ///< Hands-Free Profile — bidirectional, low quality.
+    A2DP  ///< Advanced Audio Distribution Profile — output-only, high quality.
+};
+
+/**
  * @class AudioDeviceManager
  * @brief Manages audio device initialisation, lifecycle, and callback dispatch.
  *
@@ -453,6 +475,33 @@ public:
     void setLogCallback(LogCallback callback);
 
     /**
+     * @brief Switches the iOS Bluetooth audio profile.
+     *
+     * Reconfigures the AVAudioSession category options to use the specified
+     * Bluetooth profile. After calling this you must shutdown() and
+     * re-initialise() the device because the sample rate and buffer
+     * configuration will have changed.
+     *
+     * On non-iOS platforms this is a no-op that returns true.
+     *
+     * @param profile The desired Bluetooth profile.
+     * @return true if the session was reconfigured successfully.
+     *
+     * @warning Must be called while no devices are running.
+     * @warning NOT real-time safe - performs system calls.
+     *
+     * @see BluetoothProfile
+     */
+    bool setBluetoothProfile(BluetoothProfile profile);
+
+    /**
+     * @brief Returns the currently configured Bluetooth profile.
+     *
+     * @return The active BluetoothProfile (defaults to HFP).
+     */
+    BluetoothProfile getBluetoothProfile() const;
+
+    /**
      * @brief Gets the current sample rate.
      *
      * @return The actual device sample rate in Hz if initialised, otherwise
@@ -605,6 +654,7 @@ private:
     uint32_t m_sampleRate = 44100;
     uint32_t m_numInputChannels = 1;
     uint32_t m_numOutputChannels = 1;
+    BluetoothProfile m_bluetoothProfile = BluetoothProfile::A2DP;
 
     RCU<std::vector<AudioIODeviceCallback*>> m_playbackCallbacks;
     RCU<std::vector<AudioIODeviceCallback*>> m_captureCallbacks;
