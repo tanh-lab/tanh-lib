@@ -406,9 +406,7 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
     devConfig.pUserData = userData;
 #if defined(THL_PLATFORM_ANDROID)
     devConfig.aaudio.allowSetBufferCapacity = MA_TRUE;
-    devConfig.aaudio.usage = (m_bluetoothProfile == BluetoothProfile::A2DP)
-                                 ? ma_aaudio_usage_media
-                                 : ma_aaudio_usage_voice_communication;
+    devConfig.aaudio.usage = ma_aaudio_usage_media;
 #endif
 
     ma_device_id outputDeviceId{};
