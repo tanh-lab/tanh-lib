@@ -1,4 +1,5 @@
 #import "ViewController.h"
+#import <AVKit/AVRoutePickerView.h>
 #import <tanh/audio_io.h>
 #import <tanh/audio_io/AudioFileSink.h>
 #import <tanh/audio_io/AudioPlayerSource.h>
@@ -12,6 +13,8 @@
 @property(nonatomic, strong) UIButton *recordButton;
 @property(nonatomic, strong) UIButton *playButton;
 @property(nonatomic, strong) UIButton *btProfileButton;
+@property(nonatomic, strong) UIButton *inputRouteButton;
+@property(nonatomic, strong) AVRoutePickerView *routePickerView;
 @property(nonatomic, strong) UITextView *logTextView;
 @property(nonatomic, copy) NSString *recordingPath;
 @property(nonatomic, assign) BOOL hasRecording;
@@ -112,7 +115,7 @@
 
     // Bluetooth profile toggle button
     _btProfileButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [_btProfileButton setTitle:@"BT: HFP" forState:UIControlStateNormal];
+    [_btProfileButton setTitle:@"BT: A2DP" forState:UIControlStateNormal];
     [_btProfileButton setTitleColor:[UIColor whiteColor]
                            forState:UIControlStateNormal];
     [_btProfileButton addTarget:self
@@ -124,6 +127,31 @@
                                                        alpha:1.0];
     _btProfileButton.layer.cornerRadius = 8;
     [self.view addSubview:_btProfileButton];
+
+    // Input route picker button
+    _inputRouteButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_inputRouteButton setTitle:@"Input Route" forState:UIControlStateNormal];
+    [_inputRouteButton setTitleColor:[UIColor whiteColor]
+                            forState:UIControlStateNormal];
+    [_inputRouteButton addTarget:self
+                          action:@selector(showInputRoutePicker)
+                forControlEvents:UIControlEventTouchUpInside];
+    _inputRouteButton.backgroundColor = [UIColor colorWithRed:0.2
+                                                        green:0.5
+                                                         blue:0.5
+                                                        alpha:1.0];
+    _inputRouteButton.layer.cornerRadius = 8;
+    [self.view addSubview:_inputRouteButton];
+
+    // System output route picker (AVRoutePickerView)
+    _routePickerView = [[AVRoutePickerView alloc] initWithFrame:CGRectZero];
+    _routePickerView.activeTintColor = [UIColor systemBlueColor];
+    _routePickerView.backgroundColor = [UIColor colorWithRed:0.5
+                                                       green:0.3
+                                                        blue:0.1
+                                                       alpha:1.0];
+    _routePickerView.layer.cornerRadius = 8;
+    [self.view addSubview:_routePickerView];
 
     // Log text view
     _logTextView = [[UITextView alloc] initWithFrame:CGRectMake(0, 0, 0, 0)];
@@ -156,6 +184,10 @@
     yPos += 60;
 
     _btProfileButton.frame = CGRectMake(20, yPos, viewWidth - 40, 50);
+    yPos += 60;
+
+    _inputRouteButton.frame = CGRectMake(20, yPos, buttonWidth, 50);
+    _routePickerView.frame = CGRectMake(40 + buttonWidth, yPos, buttonWidth, 50);
     yPos += 60;
 
     _logTextView.frame = CGRectMake(20, yPos, viewWidth - 40,
@@ -206,12 +238,29 @@
                           "  Output %zu: %s", i, outputDevices[i].name.c_str());
     }
 
+    // Enumerate iOS audio routes
+    auto inputRoutes = _audioManager->getAvailableInputRoutes();
+    thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                      "Found %lu input routes", inputRoutes.size());
+    for (size_t i = 0; i < inputRoutes.size(); ++i) {
+        thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                          "  Route %zu: %s (%s)", i,
+                          inputRoutes[i].name.c_str(),
+                          inputRoutes[i].portType.c_str());
+    }
+    thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                      "Current input: %s",
+                      _audioManager->getCurrentInputRouteName().c_str());
+    thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                      "Current output: %s",
+                      _audioManager->getCurrentOutputRouteName().c_str());
+
     // Initialise with both input and output (separate devices)
     if (!inputDevices.empty() && !outputDevices.empty()) {
         bool success = _audioManager->initialise(&inputDevices[0],
                                                  &outputDevices[0],
                                                  48000,
-                                                 512,
+                                                 1025,
                                                  1,   // mono input
                                                  1);  // mono output (must match for playback)
 
@@ -310,24 +359,20 @@
 - (void)toggleBluetoothProfile {
     if (!_audioManager) return;
 
-    // Stop everything first
-    [self stopAudio];
-
-    // Remove existing callbacks before shutdown
-    if (_fileSink) {
-        _audioManager->removeCaptureCallback(_fileSink.get());
-    }
-    if (_playerSource) {
-        _audioManager->removePlaybackCallback(_playerSource.get());
-    }
-
-    _audioManager->shutdown();
-
-    // Toggle profile
+    // Cycle profile: HighQuality → A2DP → HFP → HighQuality
     thl::BluetoothProfile current = _audioManager->getBluetoothProfile();
-    thl::BluetoothProfile next = (current == thl::BluetoothProfile::HFP)
-                                     ? thl::BluetoothProfile::A2DP
-                                     : thl::BluetoothProfile::HFP;
+    thl::BluetoothProfile next;
+    switch (current) {
+        case thl::BluetoothProfile::HighQuality:
+            next = thl::BluetoothProfile::A2DP;
+            break;
+        case thl::BluetoothProfile::A2DP:
+            next = thl::BluetoothProfile::HFP;
+            break;
+        case thl::BluetoothProfile::HFP:
+            next = thl::BluetoothProfile::HighQuality;
+            break;
+    }
 
     bool profileSet = _audioManager->setBluetoothProfile(next);
     if (!profileSet) {
@@ -336,38 +381,69 @@
     }
 
     // Update button label
-    NSString *label = (next == thl::BluetoothProfile::A2DP) ? @"BT: A2DP" : @"BT: HFP";
-    [_btProfileButton setTitle:label forState:UIControlStateNormal];
-
-    // Re-initialise with appropriate sample rate
-    uint32_t sampleRate = (next == thl::BluetoothProfile::A2DP) ? 48000 : 16000;
-
-    auto inputDevices = _audioManager->enumerateInputDevices();
-    auto outputDevices = _audioManager->enumerateOutputDevices();
-
-    if (!inputDevices.empty() && !outputDevices.empty()) {
-        bool success = _audioManager->initialise(&inputDevices[0],
-                                                 &outputDevices[0],
-                                                 sampleRate,
-                                                 1025,
-                                                 1,   // mono input
-                                                 1);  // mono output
-
-        if (success) {
-            _audioManager->addCaptureCallback(_fileSink.get());
-            _audioManager->addPlaybackCallback(_playerSource.get());
-
-            thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
-                              "Reinitialised with %s (SR=%u, buf=%u)",
-                              next == thl::BluetoothProfile::A2DP ? "A2DP" : "HFP",
-                              _audioManager->getSampleRate(),
-                              _audioManager->getBufferSize());
-            _statusLabel.text = [NSString stringWithFormat:@"Profile: %@ — Ready",
-                                 next == thl::BluetoothProfile::A2DP ? @"A2DP" : @"HFP"];
-        } else {
-            thl::Logger::error("audio-io-example", "Failed to reinitialise after profile switch");
-        }
+    NSString *label;
+    switch (next) {
+        case thl::BluetoothProfile::HighQuality:  label = @"BT: HQ"; break;
+        case thl::BluetoothProfile::A2DP:         label = @"BT: A2DP"; break;
+        case thl::BluetoothProfile::HFP:          label = @"BT: HFP"; break;
     }
+    [_btProfileButton setTitle:label forState:UIControlStateNormal];
+}
+
+- (void)showInputRoutePicker {
+    if (!_audioManager) return;
+
+    auto routes = _audioManager->getAvailableInputRoutes();
+    if (routes.empty()) {
+        thl::Logger::warning("audio-io-example", "No input routes available");
+        return;
+    }
+
+    UIAlertController *alert =
+        [UIAlertController alertControllerWithTitle:@"Select Input Route"
+                                            message:nil
+                                     preferredStyle:UIAlertControllerStyleActionSheet];
+
+    std::string currentInput = _audioManager->getCurrentInputRouteName();
+
+    for (size_t i = 0; i < routes.size(); ++i) {
+        NSString *title = [NSString stringWithUTF8String:routes[i].name.c_str()];
+        NSString *portType = [NSString stringWithUTF8String:routes[i].portType.c_str()];
+
+        if (routes[i].name == currentInput) {
+            title = [title stringByAppendingString:@" ✓"];
+        }
+
+        thl::AudioRouteInfo route = routes[i];
+        __weak ViewController *weakSelf = self;
+        UIAlertAction *action =
+            [UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@ (%@)", title, portType]
+                                     style:UIAlertActionStyleDefault
+                                   handler:^(UIAlertAction * _Nonnull) {
+                ViewController *strongSelf = weakSelf;
+                if (!strongSelf) return;
+                if (strongSelf->_audioManager->setPreferredInputRoute(route)) {
+                    thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                                      "Input route changed to '%s'",
+                                      route.name.c_str());
+                    thl::Logger::logf(thl::Logger::LogLevel::Info, "audio-io-example",
+                                      "Current input: %s, output: %s",
+                                      strongSelf->_audioManager->getCurrentInputRouteName().c_str(),
+                                      strongSelf->_audioManager->getCurrentOutputRouteName().c_str());
+                }
+            }];
+        [alert addAction:action];
+    }
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+
+    // For iPad popover support
+    alert.popoverPresentationController.sourceView = _inputRouteButton;
+    alert.popoverPresentationController.sourceRect = _inputRouteButton.bounds;
+
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)toggleRecording {

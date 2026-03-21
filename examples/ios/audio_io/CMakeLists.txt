@@ -16,6 +16,8 @@ target_link_libraries(${TARGET_NAME}
         tanh::Core
         "-framework UIKit"
         "-framework Foundation"
+        "-framework AVKit"
+        "-framework CoreGraphics"
 )
 
 # Code signing configuration
