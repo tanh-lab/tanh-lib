@@ -162,8 +162,9 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
 
 #if defined(THL_PLATFORM_IOS)
     ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_play_and_record;
-    ctxConfig.coreaudio.sessionCategoryOptions = ma_ios_session_category_option_default_to_speaker |
-                                                 ma_ios_session_category_option_allow_bluetooth;
+    ctxConfig.coreaudio.sessionCategoryOptions =
+        ma_ios_session_category_option_default_to_speaker |
+        ma_ios_session_category_option_allow_bluetooth;
 #endif
 
     ma_result result = ma_context_init(nullptr, 0, &ctxConfig, &m_impl->context);
@@ -405,6 +406,9 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
     devConfig.pUserData = userData;
 #if defined(THL_PLATFORM_ANDROID)
     devConfig.aaudio.allowSetBufferCapacity = MA_TRUE;
+    devConfig.aaudio.usage = (m_bluetoothProfile == BluetoothProfile::A2DP)
+                                 ? ma_aaudio_usage_media
+                                 : ma_aaudio_usage_voice_communication;
 #endif
 
     ma_device_id outputDeviceId{};
@@ -814,6 +818,75 @@ void AudioDeviceManager::setLogCallback(LogCallback callback) {
     } else {
         ma_log_unregister_callback(log, ma_log_callback_init(staticLogCallback, m_impl.get()));
     }
+}
+
+bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
+    if (m_playbackRunning || m_captureRunning || m_duplexRunning) {
+        thl::Logger::warning("thl.audio_io.audio_device_manager",
+                             "setBluetoothProfile: cannot change while devices are running");
+        return false;
+    }
+
+    m_bluetoothProfile = profile;
+
+#if defined(THL_PLATFORM_IOS)
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+
+    AVAudioSessionCategoryOptions options =
+        AVAudioSessionCategoryOptionDefaultToSpeaker;
+
+    if (profile == BluetoothProfile::A2DP) {
+        options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+    } else {
+        options |= AVAudioSessionCategoryOptionAllowBluetooth;
+    }
+
+    NSError* error = nil;
+    BOOL ok = [session setCategory:AVAudioSessionCategoryPlayAndRecord
+                       withOptions:options
+                             error:&error];
+
+    if (!ok) {
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                           "thl.audio_io.audio_device_manager",
+                           "setBluetoothProfile: failed to set session category — %s",
+                           error ? [[error localizedDescription] UTF8String] : "unknown error");
+        return false;
+    }
+
+    ok = [session setActive:YES error:&error];
+    if (!ok) {
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                           "thl.audio_io.audio_device_manager",
+                           "setBluetoothProfile: failed to activate session — %s",
+                           error ? [[error localizedDescription] UTF8String] : "unknown error");
+        return false;
+    }
+
+    thl::Logger::logf(thl::Logger::LogLevel::Info,
+                       "thl.audio_io.audio_device_manager",
+                       "Bluetooth profile set to %s (session sampleRate=%.0f, IOBufferDuration=%.4f)",
+                       profile == BluetoothProfile::A2DP ? "A2DP" : "HFP",
+                       session.sampleRate,
+                       session.IOBufferDuration);
+#elif defined(THL_PLATFORM_ANDROID)
+    // On Android the AAudio usage type (media vs voice_communication) is
+    // applied per-device at init time via tryInitialiseDevice().  Storing
+    // the profile here is sufficient — the next initialise() call will
+    // pick it up.
+    thl::Logger::logf(thl::Logger::LogLevel::Info,
+                       "thl.audio_io.audio_device_manager",
+                       "Bluetooth profile set to %s (will take effect on next initialise)",
+                       profile == BluetoothProfile::A2DP ? "A2DP" : "HFP");
+#else
+    (void)profile;
+#endif
+
+    return true;
+}
+
+BluetoothProfile AudioDeviceManager::getBluetoothProfile() const {
+    return m_bluetoothProfile;
 }
 
 uint32_t AudioDeviceManager::getSampleRate() const {
