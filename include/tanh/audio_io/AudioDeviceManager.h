@@ -169,6 +169,18 @@ public:
      */
     AudioDeviceManager();
 
+#if defined(THL_PLATFORM_ANDROID)
+    /**
+     * @brief Provides the JavaVM pointer required for Android device enumeration.
+     *
+     * Must be called once (e.g. from JNI_OnLoad) before enumerateInputDevices()
+     * or enumerateOutputDevices() will return real device lists on Android.
+     *
+     * @param javaVM The JavaVM* obtained in JNI_OnLoad.
+     */
+    static void setJavaVM(void* javaVM);
+#endif
+
     /**
      * @brief Destructs the AudioDeviceManager, stopping and releasing all
      * resources.

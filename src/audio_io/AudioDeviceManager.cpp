@@ -5,6 +5,10 @@
 #include <cstring>
 #include <vector>
 
+#if defined(THL_PLATFORM_ANDROID)
+#include <tanh/audio_io/AndroidAudioDevices.h>
+#endif
+
 #if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
 #include <TargetConditionals.h>
 #endif
@@ -238,8 +242,24 @@ void AudioDeviceManager::populateSampleRates(std::vector<AudioDeviceInfo>& devic
     }
 }
 
+#if defined(THL_PLATFORM_ANDROID)
+void AudioDeviceManager::setJavaVM(void* javaVM) {
+    setAndroidJavaVM(javaVM);
+}
+#endif
+
 std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateDevices(DeviceType type) const {
     if (!m_impl->contextInitialised) return {};
+
+#if defined(THL_PLATFORM_ANDROID)
+    // Miniaudio's AAudio backend only reports default devices.
+    // Use the Android AudioManager JNI bridge for real enumeration.
+    {
+        auto jniDevices = enumerateAndroidAudioDevices(type);
+        if (!jniDevices.empty()) return jniDevices;
+    }
+    // Fall through to miniaudio as last-resort fallback.
+#endif
 
     std::vector<AudioDeviceInfo> devices;
     EnumUserData userData{&devices, toMaDeviceType(type)};
@@ -423,6 +443,7 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
 #if defined(THL_PLATFORM_ANDROID)
     devConfig.aaudio.allowSetBufferCapacity = MA_TRUE;
     devConfig.aaudio.usage = ma_aaudio_usage_media;
+    devConfig.aaudio.contentType = ma_aaudio_content_type_music;
 #endif
 
     ma_device_id outputDeviceId{};
@@ -891,15 +912,20 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
                        session.sampleRate,
                        session.IOBufferDuration);
 #elif defined(THL_PLATFORM_ANDROID)
-    // On Android the AAudio usage type (media vs voice_communication) is
-    // applied per-device at init time via tryInitialiseDevice().  Storing
-    // the profile here is sufficient — the next initialise() call will
-    // pick it up.
-    const char* profileName = (profile == BluetoothProfile::HFP) ? "HFP" : "A2DP";
-    thl::Logger::logf(thl::Logger::LogLevel::Info,
-                       "thl.audio_io.audio_device_manager",
-                       "Bluetooth profile set to %s (will take effect on next initialise)",
-                       profileName);
+    // On Android, SCO requires an explicit AudioManager handshake.
+    // A2DP works as a normal media device — no special setup needed.
+    {
+        bool wantSco = (profile == BluetoothProfile::HFP);
+        bool scoNow  = isAndroidBluetoothScoEnabled();
+        if (wantSco != scoNow) {
+            setAndroidBluetoothSco(wantSco);
+        }
+        thl::Logger::logf(thl::Logger::LogLevel::Info,
+                           "thl.audio_io.audio_device_manager",
+                           "Bluetooth profile set to %s (SCO %s)",
+                           wantSco ? "HFP" : "A2DP",
+                           wantSco ? "started" : "stopped");
+    }
 #else
     (void)profile;
 #endif
