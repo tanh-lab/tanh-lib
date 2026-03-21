@@ -164,7 +164,7 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_play_and_record;
     ctxConfig.coreaudio.sessionCategoryOptions =
         ma_ios_session_category_option_default_to_speaker |
-        ma_ios_session_category_option_allow_bluetooth;
+        ma_ios_session_category_option_allow_bluetooth_a2dp;
 #endif
 
     ma_result result = ma_context_init(nullptr, 0, &ctxConfig, &m_impl->context);
