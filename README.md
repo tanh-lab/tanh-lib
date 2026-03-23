@@ -84,3 +84,53 @@ to miss:
    negotiate the bidirectional channel until both an output and input stream
    are active.  Call `startCapture()` immediately after `startPlayback()` when
    the selected input device is a SCO device.
+
+## Android Bluetooth SCO Capture — Sample Rate Bug
+
+On Android, when recording via Bluetooth SCO (HFP profile), the actual audio
+codec rate is **16 kHz (mSBC)** or **8 kHz (CVSD)**. However, every public
+Android API incorrectly reports **48 000 Hz** (the system mixer rate):
+
+| API | Returns | Actual |
+|-----|---------|--------|
+| `AAudioStream_getSampleRate()` | 48 000 | 8 000 / 16 000 |
+| `AudioDeviceInfo.getSampleRates()` | [48 000] | 8 000 / 16 000 |
+| `AudioRecordingConfiguration.getFormat().getSampleRate()` | 48 000 | 8 000 / 16 000 |
+
+This is an **undocumented platform behavior** — the Android audio HAL silently
+resamples SCO capture from the real codec rate to the mixer rate before any
+public API can observe it. This is not filed as a bug on the Google Issue
+Tracker, and no workaround exists to query the true rate.
+
+### Our workaround
+
+`getAndroidScoSampleRate()` in `AndroidAudioDevices.cpp` clamps any reported
+rate above 16 kHz down to **16 000 Hz** (`kMaxScoRate`), since no SCO codec
+operates above 16 kHz. `getCaptureSampleRate()` in `AudioDeviceManager.cpp`
+applies this correction only when:
+
+1. The SCO link is globally enabled (`isAndroidBluetoothScoEnabled()`), **and**
+2. The currently selected input device is a Bluetooth SCO device.
+
+This ensures WAV files are written with the correct sample rate header.
+
+### Duplex capture
+
+Currently, SCO recording uses a **standalone capture device** (not duplex).
+If duplex capture via SCO is ever needed (e.g. real-time monitoring or
+effects), the capture side will deliver audio at the real codec rate
+(8/16 kHz) while the playback side runs at 48 kHz. In that case the capture
+audio must be **resampled to the playback sample rate** before mixing or
+processing in the duplex callback.
+
+### Relevant source
+
+- `modules/tanh-lib/src/audio_io/AndroidAudioDevices.cpp` — `getAndroidScoSampleRate()`
+- `modules/tanh-lib/src/audio_io/AudioDeviceManager.cpp` — `getCaptureSampleRate()`
+- `native/jsi/src/NativeCosmosJSI.cpp` — `startRecording` uses `getCaptureSampleRate()`
+
+### References
+
+- Android `startBluetoothSco()` docs state SCO input sampling "must be 8 kHz"
+  (predates mSBC; modern headsets use 16 kHz)
+- Confirmed on Samsung SM-X716B, Android API 36 (March 2026)
