@@ -10,6 +10,10 @@ namespace thl {
 /// Must be called once (e.g. from JNI_OnLoad) before enumeration works.
 void setAndroidJavaVM(void* javaVM);
 
+/// Configure Android audio routing for media (A2DP) at startup.
+/// Ensures SCO/HFP is disabled and AudioManager mode is restored to normal.
+void configureAndroidBluetoothSession();
+
 /// Start or stop the Bluetooth SCO link via AudioManager.
 /// Must be called before enumerating devices so that SCO devices
 /// are included/excluded from the list.

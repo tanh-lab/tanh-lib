@@ -154,6 +154,10 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_none;
 #endif
 
+#if defined(THL_PLATFORM_ANDROID)
+    configureAndroidBluetoothSession();
+#endif
+
     ma_result result = ma_context_init(nullptr, 0, &ctxConfig, &m_impl->context);
     m_impl->contextInitialised = (result == MA_SUCCESS);
 }
