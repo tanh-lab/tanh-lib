@@ -28,6 +28,30 @@ int getAndroidApiLevel() {
 
 void setAndroidJavaVM(void* javaVM) {
     g_javaVM = static_cast<JavaVM*>(javaVM);
+    configureAndroidBluetoothSession();
+}
+
+void configureAndroidBluetoothSession() {
+    // A2DP is the default media route on Android. Enforce it at startup by
+    // ensuring SCO/HFP is disabled.
+    if (!g_javaVM) {
+        g_scoEnabled.store(false, std::memory_order_relaxed);
+        thl::Logger::logf(thl::Logger::LogLevel::Debug,
+                          "thl.audio_io.android_devices",
+                          "configureAndroidBluetoothSession: JavaVM not set yet; deferring AudioManager configuration");
+        return;
+    }
+
+    if (!setAndroidBluetoothSco(false)) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "thl.audio_io.android_devices",
+                          "configureAndroidBluetoothSession: failed to enforce A2DP startup mode");
+        return;
+    }
+
+    thl::Logger::logf(thl::Logger::LogLevel::Info,
+                      "thl.audio_io.android_devices",
+                      "configureAndroidBluetoothSession: startup mode set to A2DP");
 }
 
 bool isAndroidBluetoothScoEnabled() {
