@@ -359,18 +359,15 @@
 - (void)toggleBluetoothProfile {
     if (!_audioManager) return;
 
-    // Cycle profile: HighQuality → A2DP → HFP → HighQuality
+    // Cycle profile: A2DP → HFP → A2DP
     thl::BluetoothProfile current = _audioManager->getBluetoothProfile();
     thl::BluetoothProfile next;
     switch (current) {
-        case thl::BluetoothProfile::HighQuality:
-            next = thl::BluetoothProfile::A2DP;
-            break;
         case thl::BluetoothProfile::A2DP:
             next = thl::BluetoothProfile::HFP;
             break;
         case thl::BluetoothProfile::HFP:
-            next = thl::BluetoothProfile::HighQuality;
+            next = thl::BluetoothProfile::A2DP;
             break;
     }
 
@@ -383,9 +380,8 @@
     // Update button label
     NSString *label;
     switch (next) {
-        case thl::BluetoothProfile::HighQuality:  label = @"BT: HQ"; break;
-        case thl::BluetoothProfile::A2DP:         label = @"BT: A2DP"; break;
-        case thl::BluetoothProfile::HFP:          label = @"BT: HFP"; break;
+        case thl::BluetoothProfile::A2DP:  label = @"BT: A2DP"; break;
+        case thl::BluetoothProfile::HFP:   label = @"BT: HFP"; break;
     }
     [_btProfileButton setTitle:label forState:UIControlStateNormal];
 }
