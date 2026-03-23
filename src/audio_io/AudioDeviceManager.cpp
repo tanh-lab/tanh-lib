@@ -60,6 +60,14 @@ struct AudioDeviceManager::Impl {
     std::atomic<uint32_t> captureActualPeriodSize{0};
     std::atomic<uint32_t> duplexActualPeriodSize{0};
 
+    // Capture rate measurement — used on Android to detect the actual SCO
+    // sample rate by timing callbacks.  Written from the audio thread,
+    // read from the main thread via getCaptureSampleRate().
+    std::atomic<uint64_t> captureFirstCallbackUs{0};   // microseconds since epoch
+    std::atomic<uint64_t> captureTotalFrames{0};
+    std::atomic<uint32_t> captureMeasuredRate{0};       // 0 = not yet measured
+    static constexpr uint64_t kRateCalibrationFrames = 16000;  // ~1 s at 16 kHz
+
     DeviceUserData playbackUserData;
     DeviceUserData captureUserData;
     DeviceUserData duplexUserData;
@@ -774,6 +782,11 @@ void AudioDeviceManager::stopPlayback() {
 bool AudioDeviceManager::startCapture() {
     if (!m_impl->captureDeviceInitialised || m_captureRunning.load(std::memory_order_relaxed)) return false;
 
+    // Reset rate measurement so a fresh calibration runs for this session.
+    m_impl->captureFirstCallbackUs.store(0, std::memory_order_relaxed);
+    m_impl->captureTotalFrames.store(0, std::memory_order_relaxed);
+    m_impl->captureMeasuredRate.store(0, std::memory_order_relaxed);
+
     ma_result result = ma_device_start(&m_impl->captureDevice);
     if (result != MA_SUCCESS) { return false; }
 
@@ -940,7 +953,7 @@ std::vector<BluetoothProfile> getSupportedBluetoothProfiles() {
     std::vector<BluetoothProfile> profiles;
     profiles.push_back(BluetoothProfile::A2DP);
 #if defined(THL_PLATFORM_ANDROID)
-    if (getAndroidApiLevel() > 28) {
+    if (getAndroidApiLevel() > 30) {
         profiles.push_back(BluetoothProfile::HFP);
     }
 #else
@@ -1030,16 +1043,55 @@ uint32_t AudioDeviceManager::getSampleRate() const {
 
 uint32_t AudioDeviceManager::getCaptureSampleRate() const {
 #if defined(THL_PLATFORM_ANDROID)
-    // AAudio lies about the SCO capture sample rate (reports 48000 when the
-    // codec actually delivers 8/16 kHz).  Only apply the correction when the
-    // currently selected input device is actually a Bluetooth SCO device.
+    // AAudio lies about the SCO capture sample rate on some devices (reports
+    // 48 kHz when the codec actually delivers 8/16 kHz) but on others the
+    // HAL genuinely resamples to 48 kHz.  Use the measured delivery rate
+    // from the capture callback when available — it reflects the actual
+    // frame rate regardless of what the API reports.
     if (isAndroidBluetoothScoEnabled() &&
         getCurrentInputDeviceName().find("Bluetooth SCO") != std::string::npos) {
-        uint32_t scoRate = getAndroidScoSampleRate();
-        if (scoRate > 0) return scoRate;
+        uint32_t measured = m_impl->captureMeasuredRate.load(std::memory_order_relaxed);
+        if (measured > 0) {
+            thl::Logger::logf(thl::Logger::LogLevel::Info,
+                              "thl.audio_io.audio_device_manager",
+                              "Using measured SCO capture rate: %u", measured);
+            return measured;
+        }
+        // Measurement not ready yet — fall back to API-reported rate.
+        // Callers should use waitForCaptureRateMeasurement() first when
+        // accuracy is critical (e.g. before opening a WAV file).
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "thl.audio_io.audio_device_manager",
+                          "SCO capture rate measurement not ready, "
+                          "falling back to API-reported rate");
     }
 #endif
     return getSampleRate();
+}
+
+bool AudioDeviceManager::waitForCaptureRateMeasurement(uint32_t timeoutMs) const {
+#if defined(THL_PLATFORM_ANDROID)
+    if (!isAndroidBluetoothScoEnabled() ||
+        !m_captureRunning.load(std::memory_order_relaxed) ||
+        getCurrentInputDeviceName().find("Bluetooth SCO") == std::string::npos)
+        return false;
+
+    constexpr uint32_t kPollIntervalMs = 50;
+    uint32_t elapsed = 0;
+    while (elapsed < timeoutMs) {
+        if (m_impl->captureMeasuredRate.load(std::memory_order_relaxed) > 0)
+            return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(kPollIntervalMs));
+        elapsed += kPollIntervalMs;
+    }
+    thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                      "thl.audio_io.audio_device_manager",
+                      "Capture rate measurement timed out after %u ms", timeoutMs);
+    return false;
+#else
+    (void)timeoutMs;
+    return false;
+#endif
 }
 
 uint32_t AudioDeviceManager::getBufferSize() const {
@@ -1277,6 +1329,51 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
                                static_cast<int>(role));
         }
     }
+
+#if defined(THL_PLATFORM_ANDROID)
+    // Measure actual capture delivery rate by timing callbacks.
+    // Only needed for SCO devices where Android lies about the rate.
+    if (role == DeviceRole::Capture &&
+        isAndroidBluetoothScoEnabled() &&
+        getCurrentInputDeviceName().find("Bluetooth SCO") != std::string::npos &&
+        m_impl->captureMeasuredRate.load(std::memory_order_relaxed) == 0) {
+        auto nowUs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+
+        uint64_t firstUs = m_impl->captureFirstCallbackUs.load(std::memory_order_relaxed);
+        if (firstUs == 0) {
+            m_impl->captureFirstCallbackUs.store(nowUs, std::memory_order_relaxed);
+            m_impl->captureTotalFrames.store(frameCount, std::memory_order_relaxed);
+        } else {
+            uint64_t total = m_impl->captureTotalFrames.load(std::memory_order_relaxed) + frameCount;
+            m_impl->captureTotalFrames.store(total, std::memory_order_relaxed);
+
+            if (total >= Impl::kRateCalibrationFrames) {
+                uint64_t elapsedUs = nowUs - firstUs;
+                if (elapsedUs > 0) {
+                    uint32_t measured = static_cast<uint32_t>(
+                        (total * 1000000ULL + elapsedUs / 2) / elapsedUs);
+                    // Snap to nearest standard rate
+                    constexpr uint32_t kStdRates[] = {8000, 16000, 32000, 48000};
+                    uint32_t best = measured;
+                    uint32_t bestDist = UINT32_MAX;
+                    for (uint32_t sr : kStdRates) {
+                        uint32_t dist = measured > sr ? measured - sr : sr - measured;
+                        if (dist < bestDist) { bestDist = dist; best = sr; }
+                    }
+                    m_impl->captureMeasuredRate.store(best, std::memory_order_relaxed);
+                    thl::Logger::logf(thl::Logger::LogLevel::Info,
+                                       "thl.audio_io.audio_device_manager",
+                                       "Capture rate measurement: %u frames in %llu us "
+                                       "= %u Hz (snapped to %u Hz)",
+                                       static_cast<uint32_t>(total), elapsedUs,
+                                       measured, best);
+                }
+            }
+        }
+    }
+#endif
 
     // One-time RCU reader registration for this audio thread.
     if (!audioThreadRegistered->load(std::memory_order_relaxed)) [[unlikely]] {
