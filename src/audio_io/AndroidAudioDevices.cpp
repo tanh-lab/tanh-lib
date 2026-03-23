@@ -191,63 +191,89 @@ bool setAndroidBluetoothSco(bool enable) {
     jmethodID setMode = env->GetMethodID(audioManagerClass, "setMode", "(I)V");
 
     bool success = false;
+    const int apiLevel = getAndroidApiLevel();
 
-    if (enable) {
-        // MODE_IN_COMMUNICATION (3) is required for SCO input to be routed.
-        env->CallVoidMethod(audioManager, setMode, static_cast<jint>(3));
+    if (apiLevel >= 31) {
+        // ---- API 31+: setCommunicationDevice / clearCommunicationDevice ----
+        if (enable) {
+            // MODE_IN_COMMUNICATION (3) is required for SCO input to be routed.
+            env->CallVoidMethod(audioManager, setMode, static_cast<jint>(3));
 
-        // Find the SCO device among available communication devices.
-        // setCommunicationDevice() (API 31+) is synchronous — no polling needed.
-        jmethodID getAvailableDevices = env->GetMethodID(
-            audioManagerClass, "getAvailableCommunicationDevices",
-            "()Ljava/util/List;");
-        jobject deviceList = env->CallObjectMethod(audioManager, getAvailableDevices);
-        if (deviceList && !env->ExceptionCheck()) {
-            jclass listClass = env->FindClass("java/util/List");
-            jmethodID sizeMethod = env->GetMethodID(listClass, "size", "()I");
-            jmethodID getMethod  = env->GetMethodID(listClass, "get",
-                                                     "(I)Ljava/lang/Object;");
-            jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
-            jmethodID getTypeMethod = env->GetMethodID(deviceInfoClass, "getType", "()I");
-            jmethodID setCommunicationDevice = env->GetMethodID(
-                audioManagerClass, "setCommunicationDevice",
-                "(Landroid/media/AudioDeviceInfo;)Z");
+            // Find the SCO device among available communication devices.
+            // setCommunicationDevice() is synchronous — no polling needed.
+            jmethodID getAvailableDevices = env->GetMethodID(
+                audioManagerClass, "getAvailableCommunicationDevices",
+                "()Ljava/util/List;");
+            jobject deviceList = env->CallObjectMethod(audioManager, getAvailableDevices);
+            if (deviceList && !env->ExceptionCheck()) {
+                jclass listClass = env->FindClass("java/util/List");
+                jmethodID sizeMethod = env->GetMethodID(listClass, "size", "()I");
+                jmethodID getMethod  = env->GetMethodID(listClass, "get",
+                                                         "(I)Ljava/lang/Object;");
+                jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
+                jmethodID getTypeMethod = env->GetMethodID(deviceInfoClass, "getType", "()I");
+                jmethodID setCommunicationDevice = env->GetMethodID(
+                    audioManagerClass, "setCommunicationDevice",
+                    "(Landroid/media/AudioDeviceInfo;)Z");
 
-            int listSize = env->CallIntMethod(deviceList, sizeMethod);
-            for (int i = 0; i < listSize; ++i) {
-                jobject device = env->CallObjectMethod(deviceList, getMethod, i);
-                int type = env->CallIntMethod(device, getTypeMethod);
-                // TYPE_BLUETOOTH_SCO = 7
-                if (type == 7) {
-                    jboolean accepted = env->CallBooleanMethod(
-                        audioManager, setCommunicationDevice, device);
-                    success = static_cast<bool>(accepted);
-                    if (!success) {
-                        thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                                          "thl.audio_io.android_devices",
-                                          "setCommunicationDevice(SCO) was rejected");
+                int listSize = env->CallIntMethod(deviceList, sizeMethod);
+                for (int i = 0; i < listSize; ++i) {
+                    jobject device = env->CallObjectMethod(deviceList, getMethod, i);
+                    int type = env->CallIntMethod(device, getTypeMethod);
+                    // TYPE_BLUETOOTH_SCO = 7
+                    if (type == 7) {
+                        jboolean accepted = env->CallBooleanMethod(
+                            audioManager, setCommunicationDevice, device);
+                        success = static_cast<bool>(accepted);
+                        if (!success) {
+                            thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                                              "thl.audio_io.android_devices",
+                                              "setCommunicationDevice(SCO) was rejected");
+                        }
+                        env->DeleteLocalRef(device);
+                        break;
                     }
                     env->DeleteLocalRef(device);
-                    break;
                 }
-                env->DeleteLocalRef(device);
+                if (!success && !env->ExceptionCheck()) {
+                    thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                                      "thl.audio_io.android_devices",
+                                      "No SCO device found among available communication devices");
+                }
+                env->DeleteLocalRef(deviceList);
             }
-            if (!success && !env->ExceptionCheck()) {
-                thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                                  "thl.audio_io.android_devices",
-                                  "No SCO device found among available communication devices");
-            }
-            env->DeleteLocalRef(deviceList);
+        } else {
+            // clearCommunicationDevice() restores default routing.
+            jmethodID clearDevice = env->GetMethodID(
+                audioManagerClass, "clearCommunicationDevice", "()V");
+            env->CallVoidMethod(audioManager, clearDevice);
+
+            // MODE_NORMAL (0) — restore default audio routing.
+            env->CallVoidMethod(audioManager, setMode, static_cast<jint>(0));
+            success = true;
         }
     } else {
-        // clearCommunicationDevice() restores default routing.
-        jmethodID clearDevice = env->GetMethodID(
-            audioManagerClass, "clearCommunicationDevice", "()V");
-        env->CallVoidMethod(audioManager, clearDevice);
+        // ---- API ≤ 30: legacy startBluetoothSco / stopBluetoothSco --------
+        if (enable) {
+            env->CallVoidMethod(audioManager, setMode, static_cast<jint>(3));
 
-        // MODE_NORMAL (0) — restore default audio routing.
-        env->CallVoidMethod(audioManager, setMode, static_cast<jint>(0));
-        success = true;
+            jmethodID startSco = env->GetMethodID(
+                audioManagerClass, "startBluetoothSco", "()V");
+            env->CallVoidMethod(audioManager, startSco);
+            // startBluetoothSco() is asynchronous — the SCO link transitions
+            // DISCONNECTED → CONNECTING → CONNECTED in the background.
+            // We report success optimistically; the higher-level HFP gate
+            // (API 31+) prevents this enable path from being reached anyway.
+            success = !env->ExceptionCheck();
+        } else {
+            jmethodID stopSco = env->GetMethodID(
+                audioManagerClass, "stopBluetoothSco", "()V");
+            env->CallVoidMethod(audioManager, stopSco);
+
+            // MODE_NORMAL (0) — restore default audio routing.
+            env->CallVoidMethod(audioManager, setMode, static_cast<jint>(0));
+            success = !env->ExceptionCheck();
+        }
     }
 
     env->DeleteLocalRef(audioManager);
