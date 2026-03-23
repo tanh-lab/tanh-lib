@@ -347,21 +347,21 @@ public:
      *
      * @return true if playback is actively processing audio, false otherwise.
      */
-    bool isPlaybackRunning() const { return m_playbackRunning; }
+    bool isPlaybackRunning() const { return m_playbackRunning.load(std::memory_order_relaxed); }
 
     /**
      * @brief Checks if capture processing is currently running.
      *
      * @return true if capture is actively processing audio, false otherwise.
      */
-    bool isCaptureRunning() const { return m_captureRunning; }
+    bool isCaptureRunning() const { return m_captureRunning.load(std::memory_order_relaxed); }
 
     /**
      * @brief Checks if duplex processing is currently running.
      *
      * @return true if duplex is actively processing audio, false otherwise.
      */
-    bool isDuplexRunning() const { return m_duplexRunning; }
+    bool isDuplexRunning() const { return m_duplexRunning.load(std::memory_order_relaxed); }
 
     /**
      * @brief Registers a playback audio callback to receive audio data.
@@ -685,9 +685,9 @@ private:
 
     static void staticLogCallback(void* pUserData, uint32_t level, const char* pMessage);
 
-    bool m_playbackRunning = false;
-    bool m_captureRunning = false;
-    bool m_duplexRunning = false;
+    std::atomic<bool> m_playbackRunning{false};
+    std::atomic<bool> m_captureRunning{false};
+    std::atomic<bool> m_duplexRunning{false};
 
     uint32_t m_sampleRate = 44100;
     uint32_t m_numInputChannels = 1;

@@ -6,6 +6,8 @@
 
 namespace thl {
 
+inline const std::vector<uint32_t> kDefaultSampleRates = {22050, 44100, 48000};
+
 /**
  * @enum DeviceType
  * @brief Identifies the type of audio device.

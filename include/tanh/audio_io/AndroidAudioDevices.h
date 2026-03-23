@@ -22,6 +22,9 @@ bool isAndroidBluetoothScoEnabled();
 /// Falls back to an empty list if the JavaVM has not been set.
 std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type);
 
+/// Returns the Android API level (e.g. 28 for Android 9, 29 for Android 10).
+int getAndroidApiLevel();
+
 /// Query the name of the currently active output audio device via
 /// AudioManager.getDevices(GET_DEVICES_OUTPUTS).
 /// If aaudioDeviceId > 0, looks up by Android device ID; otherwise returns
