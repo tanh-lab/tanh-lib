@@ -33,12 +33,6 @@ int getAndroidApiLevel();
 /// BLE Audio devices are excluded — they don't need profile switching.
 bool isAndroidClassicBluetoothConnected();
 
-/// Returns the native sample rate for the Bluetooth SCO capture device
-/// as reported by AudioDeviceInfo.getSampleRates().  Returns the highest
-/// reported rate, or 16000 (mSBC default) if no rates are advertised.
-/// Returns 0 if no SCO input device is found or JNI is unavailable.
-uint32_t getAndroidScoSampleRate();
-
 /// Query the name of the currently active output audio device via
 /// AudioManager.getDevices(GET_DEVICES_OUTPUTS).
 /// If aaudioDeviceId > 0, looks up by Android device ID; otherwise returns

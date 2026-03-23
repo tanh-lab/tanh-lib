@@ -88,46 +88,59 @@ to miss:
 ## Android Bluetooth SCO Capture — Sample Rate Bug
 
 On Android, when recording via Bluetooth SCO (HFP profile), the actual audio
-codec rate is **16 kHz (mSBC)** or **8 kHz (CVSD)**. However, every public
+codec rate is **16 kHz (mSBC)**, **8 kHz (CVSD)**, or **32 kHz (LC3-SWB,
+HFP 1.9+)**. However, every public
 Android API incorrectly reports **48 000 Hz** (the system mixer rate):
 
 | API | Returns | Actual |
 |-----|---------|--------|
-| `AAudioStream_getSampleRate()` | 48 000 | 8 000 / 16 000 |
-| `AudioDeviceInfo.getSampleRates()` | [48 000] | 8 000 / 16 000 |
-| `AudioRecordingConfiguration.getFormat().getSampleRate()` | 48 000 | 8 000 / 16 000 |
+| `AAudioStream_getSampleRate()` | 48 000 | 8 000 / 16 000 / 32 000 |
+| `AudioDeviceInfo.getSampleRates()` | [48 000] | 8 000 / 16 000 / 32 000 |
+| `AudioRecordingConfiguration.getFormat().getSampleRate()` | 48 000 | 8 000 / 16 000 / 32 000 |
 
-This is an **undocumented platform behavior** — the Android audio HAL silently
-resamples SCO capture from the real codec rate to the mixer rate before any
-public API can observe it. This is not filed as a bug on the Google Issue
-Tracker, and no workaround exists to query the true rate.
+This is an **undocumented platform behavior** — the Android audio HAL
+behaviour is **device-specific**: some HALs silently deliver raw codec-rate
+frames labelled as 48 kHz, while others genuinely resample to 48 kHz before
+the app receives them. No public API can distinguish the two cases.
 
-### Our workaround
+### Our workaround — callback-based rate measurement
 
-`getAndroidScoSampleRate()` in `AndroidAudioDevices.cpp` clamps any reported
-rate above 16 kHz down to **16 000 Hz** (`kMaxScoRate`), since no SCO codec
-operates above 16 kHz. `getCaptureSampleRate()` in `AudioDeviceManager.cpp`
-applies this correction only when:
+Because Android APIs lie about the SCO capture rate, and the actual behaviour
+differs between devices, we **measure the real delivery rate at runtime** by
+timing capture callbacks:
 
-1. The SCO link is globally enabled (`isAndroidBluetoothScoEnabled()`), **and**
-2. The currently selected input device is a Bluetooth SCO device.
+1. When `startCapture()` is called, three atomics are reset
+   (`captureFirstCallbackUs`, `captureTotalFrames`, `captureMeasuredRate`).
+2. In `processCallbacks()`, the first capture callback records a timestamp.
+   Subsequent callbacks accumulate a frame count. After
+   `kRateCalibrationFrames` (16 000) frames the elapsed wall-clock time is
+   used to compute the actual rate, which is snapped to the nearest standard
+   rate (8 000 / 16 000 / 32 000 / 48 000 Hz).
+3. `waitForCaptureRateMeasurement(timeoutMs)` blocks until the measurement
+   completes (or times out). The recording flow calls this before opening the
+   WAV file so the header sample rate is correct.
+4. `getCaptureSampleRate()` returns the measured rate when available; otherwise
+   it falls back to the API-reported rate.
 
-This ensures WAV files are written with the correct sample rate header.
+This correctly handles both device types:
+- Devices whose HAL delivers 16 kHz data labelled as 48 kHz → measurement
+  yields **16 000 Hz**.
+- Devices whose HAL genuinely resamples to 48 kHz → measurement yields
+  **48 000 Hz**.
 
 ### Duplex capture
 
 Currently, SCO recording uses a **standalone capture device** (not duplex).
 If duplex capture via SCO is ever needed (e.g. real-time monitoring or
 effects), the capture side will deliver audio at the real codec rate
-(8/16 kHz) while the playback side runs at 48 kHz. In that case the capture
+(8/16/32 kHz) while the playback side runs at 48 kHz. In that case the capture
 audio must be **resampled to the playback sample rate** before mixing or
 processing in the duplex callback.
 
 ### Relevant source
 
-- `modules/tanh-lib/src/audio_io/AndroidAudioDevices.cpp` — `getAndroidScoSampleRate()`
-- `modules/tanh-lib/src/audio_io/AudioDeviceManager.cpp` — `getCaptureSampleRate()`
-- `native/jsi/src/NativeCosmosJSI.cpp` — `startRecording` uses `getCaptureSampleRate()`
+- `modules/tanh-lib/src/audio_io/AudioDeviceManager.cpp` — `processCallbacks()` (rate measurement), `getCaptureSampleRate()`, `waitForCaptureRateMeasurement()`
+- `native/jsi/src/NativeCosmosJSI.cpp` — `startRecording` calls `waitForCaptureRateMeasurement()` then `getCaptureSampleRate()`
 
 ### References
 
