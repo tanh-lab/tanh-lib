@@ -6,14 +6,25 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <jni.h>
+#include <sys/system_properties.h>
 #include <thread>
 
 namespace thl {
 
 static JavaVM* g_javaVM = nullptr;
 static std::atomic<bool> g_scoEnabled{false};
+
+int getAndroidApiLevel() {
+    static const int level = [] {
+        char value[PROP_VALUE_MAX] = {};
+        __system_property_get("ro.build.version.sdk", value);
+        return std::atoi(value);
+    }();
+    return level;
+}
 
 void setAndroidJavaVM(void* javaVM) {
     g_javaVM = static_cast<JavaVM*>(javaVM);
@@ -312,7 +323,7 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
         }
         // Empty array → device supports all common rates.
         if (sampleRates.empty()) {
-            sampleRates = {22050, 44100, 48000, 96000};
+            sampleRates = kDefaultSampleRates;
         }
         std::sort(sampleRates.begin(), sampleRates.end());
 

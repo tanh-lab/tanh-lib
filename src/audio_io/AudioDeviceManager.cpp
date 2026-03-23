@@ -2,7 +2,9 @@
 #include "miniaudio.h"
 #include "tanh/core/Logger.h"
 #include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)
@@ -199,7 +201,7 @@ void AudioDeviceManager::populateSampleRates(std::vector<AudioDeviceInfo>& devic
                              "device '%s', using defaults",
                              info.name.c_str());
             }
-            rates = {22050, 44100, 48000, 96000};
+            rates = kDefaultSampleRates;
         }
 
         std::sort(rates.begin(), rates.end());
@@ -631,6 +633,97 @@ void AudioDeviceManager::shutdown() {
     stopCapture();
     stopDuplex();
 
+#if defined(THL_PLATFORM_ANDROID)
+    // On API <= 28, AAudio wraps AudioTrack internally and
+    // ma_device_uninit() can deadlock in ~AudioTrack::requestExitAndWait().
+    // Use timed async uninit on the legacy path; sync uninit on API 29+.
+    const int androidApi = getAndroidApiLevel();
+
+    if (androidApi <= 28) {
+        thl::Logger::logf(thl::Logger::LogLevel::Info,
+                          "thl.audio_io.audio_device_manager",
+                          "shutdown: API %d — using async timed uninit (legacy AudioTrack path)",
+                          androidApi);
+        // Give AudioTrack callback threads time to notice the stop and exit. This is where the deadlock can occur if we uninit too early, as android is in the process of tearing down the AudioTrack but hasn't completed yet. 100 ms is somewhat arbitrary but should be sufficient for even slow devices to exit their callbacks. To make sure we do not block the shutdown thread at any cost we also do async uninit with a timeout below, but in the common case where callbacks exit promptly this sleep should allow the uninit to complete without needing to spawn a worker thread at all.
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto timedUninit = [](ma_device& device, const char* label) {
+            auto* heap = static_cast<ma_device*>(std::malloc(sizeof(ma_device)));
+            if (!heap) {
+                thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                                  "thl.audio_io.audio_device_manager",
+                                  "%s: malloc failed, falling back to sync uninit", label);
+                ma_device_uninit(&device);
+                return;
+            }
+            std::memcpy(heap, &device, sizeof(ma_device));
+            std::memset(&device, 0, sizeof(ma_device));
+
+            auto done = std::make_shared<std::atomic<bool>>(false);
+
+            std::thread worker([heap, label, done]() {
+                ma_device_uninit(heap);
+                std::free(heap);
+                done->store(true, std::memory_order_release);
+                thl::Logger::logf(thl::Logger::LogLevel::Info,
+                                  "thl.audio_io.audio_device_manager",
+                                  "%s: device cleanup completed", label);
+            });
+
+            constexpr auto kTimeout = std::chrono::milliseconds(300);
+            auto deadline = std::chrono::steady_clock::now() + kTimeout;
+            while (!done->load(std::memory_order_acquire)) {
+                if (std::chrono::steady_clock::now() >= deadline) {
+                    worker.detach();
+                    thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                                      "thl.audio_io.audio_device_manager",
+                                      "%s: uninit timed out, detached worker", label);
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+
+            worker.join();
+        };
+
+        if (m_impl->playbackDeviceInitialised) {
+            timedUninit(m_impl->playbackDevice, "playback");
+            m_impl->playbackDeviceInitialised = false;
+            m_impl->playbackActualPeriodSize.store(0, std::memory_order_relaxed);
+        }
+        if (m_impl->captureDeviceInitialised) {
+            timedUninit(m_impl->captureDevice, "capture");
+            m_impl->captureDeviceInitialised = false;
+            m_impl->captureActualPeriodSize.store(0, std::memory_order_relaxed);
+        }
+        if (m_impl->duplexDeviceInitialised) {
+            timedUninit(m_impl->duplexDevice, "duplex");
+            m_impl->duplexDeviceInitialised = false;
+            m_impl->duplexActualPeriodSize.store(0, std::memory_order_relaxed);
+        }
+    } else {
+        // API 29+: native AAudio, no AudioTrack deadlock risk.
+        thl::Logger::logf(thl::Logger::LogLevel::Info,
+                          "thl.audio_io.audio_device_manager",
+                          "shutdown: API %d — using sync uninit (native AAudio path)",
+                          androidApi);
+        if (m_impl->playbackDeviceInitialised) {
+            ma_device_uninit(&m_impl->playbackDevice);
+            m_impl->playbackDeviceInitialised = false;
+            m_impl->playbackActualPeriodSize.store(0, std::memory_order_relaxed);
+        }
+        if (m_impl->captureDeviceInitialised) {
+            ma_device_uninit(&m_impl->captureDevice);
+            m_impl->captureDeviceInitialised = false;
+            m_impl->captureActualPeriodSize.store(0, std::memory_order_relaxed);
+        }
+        if (m_impl->duplexDeviceInitialised) {
+            ma_device_uninit(&m_impl->duplexDevice);
+            m_impl->duplexDeviceInitialised = false;
+            m_impl->duplexActualPeriodSize.store(0, std::memory_order_relaxed);
+        }
+    }
+#else
     if (m_impl->playbackDeviceInitialised) {
         ma_device_uninit(&m_impl->playbackDevice);
         m_impl->playbackDeviceInitialised = false;
@@ -646,26 +739,27 @@ void AudioDeviceManager::shutdown() {
         m_impl->duplexDeviceInitialised = false;
         m_impl->duplexActualPeriodSize.store(0, std::memory_order_relaxed);
     }
+#endif
 
     m_impl->outputDeviceName.clear();
     m_impl->inputDeviceName.clear();
 }
 
 bool AudioDeviceManager::startPlayback() {
-    if (!m_impl->playbackDeviceInitialised || m_playbackRunning) return false;
+    if (!m_impl->playbackDeviceInitialised || m_playbackRunning.load(std::memory_order_relaxed)) return false;
 
     ma_result result = ma_device_start(&m_impl->playbackDevice);
     if (result != MA_SUCCESS) { return false; }
 
-    m_playbackRunning = true;
+    m_playbackRunning.store(true, std::memory_order_relaxed);
     return true;
 }
 
 void AudioDeviceManager::stopPlayback() {
-    if (!m_playbackRunning) return;
+    if (!m_playbackRunning.load(std::memory_order_relaxed)) return;
 
+    m_playbackRunning.store(false, std::memory_order_relaxed);
     ma_device_stop(&m_impl->playbackDevice);
-    m_playbackRunning = false;
     m_playbackAudioThreadRegistered.store(false, std::memory_order_relaxed);
 
     m_playbackCallbacks.read([](const auto& callbacks) {
@@ -674,20 +768,20 @@ void AudioDeviceManager::stopPlayback() {
 }
 
 bool AudioDeviceManager::startCapture() {
-    if (!m_impl->captureDeviceInitialised || m_captureRunning) return false;
+    if (!m_impl->captureDeviceInitialised || m_captureRunning.load(std::memory_order_relaxed)) return false;
 
     ma_result result = ma_device_start(&m_impl->captureDevice);
     if (result != MA_SUCCESS) { return false; }
 
-    m_captureRunning = true;
+    m_captureRunning.store(true, std::memory_order_relaxed);
     return true;
 }
 
 void AudioDeviceManager::stopCapture() {
-    if (!m_captureRunning) return;
+    if (!m_captureRunning.load(std::memory_order_relaxed)) return;
 
+    m_captureRunning.store(false, std::memory_order_relaxed);
     ma_device_stop(&m_impl->captureDevice);
-    m_captureRunning = false;
     m_captureAudioThreadRegistered.store(false, std::memory_order_relaxed);
 
     m_captureCallbacks.read([](const auto& callbacks) {
@@ -696,20 +790,20 @@ void AudioDeviceManager::stopCapture() {
 }
 
 bool AudioDeviceManager::startDuplex() {
-    if (!m_impl->duplexDeviceInitialised || m_duplexRunning) return false;
+    if (!m_impl->duplexDeviceInitialised || m_duplexRunning.load(std::memory_order_relaxed)) return false;
 
     ma_result result = ma_device_start(&m_impl->duplexDevice);
     if (result != MA_SUCCESS) { return false; }
 
-    m_duplexRunning = true;
+    m_duplexRunning.store(true, std::memory_order_relaxed);
     return true;
 }
 
 void AudioDeviceManager::stopDuplex() {
-    if (!m_duplexRunning) return;
+    if (!m_duplexRunning.load(std::memory_order_relaxed)) return;
 
+    m_duplexRunning.store(false, std::memory_order_relaxed);
     ma_device_stop(&m_impl->duplexDevice);
-    m_duplexRunning = false;
     m_duplexAudioThreadRegistered.store(false, std::memory_order_relaxed);
 
     m_duplexCallbacks.read([](const auto& callbacks) {
@@ -1085,7 +1179,7 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
     }
 
     if (!callbacks || !audioThreadRegistered) { return; }
-
+    
     // Record the true period size from the first callback for reporting via
     // getPeriodSize(). On iOS the actual AU render callback may deliver fewer
     // frames than internalPeriodSizeInFrames / AVAudioSession report.
