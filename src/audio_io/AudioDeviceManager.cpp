@@ -965,22 +965,20 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
         return false;
     }
 #elif defined(THL_PLATFORM_ANDROID)
-    // On Android, SCO requires an explicit AudioManager handshake.
-    // A2DP works as a normal media device — no special setup needed.
-    // SCO/HFP is only supported on API 29+ (native AAudio). On the legacy
-    // AudioTrack path (API ≤ 28) it is unreliable, so reject the request.
-    if (getAndroidApiLevel() <= 28) {
+    // On Android, SCO requires setCommunicationDevice() which is only
+    // available on API 31+.  On older versions only A2DP is supported.
+    if (getAndroidApiLevel() <= 30) {
         if (profile != BluetoothProfile::A2DP) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
                               "thl.audio_io.audio_device_manager",
-                              "Bluetooth profile '%s' not supported on API %d (requires API 29+), profile remains %s",
+                              "Bluetooth profile '%s' not supported on API %d (requires API 31+), profile remains %s",
                               bluetoothProfileToString(profile),
                               getAndroidApiLevel(),
                               bluetoothProfileToString(m_bluetoothProfile));
             return false;
         }
 
-        // A2DP is the default media route on API <= 28.
+        // A2DP is the default media route on API <= 30.
         // Ensure SCO is disabled and treat this as success.
         if (isAndroidBluetoothScoEnabled()) {
             setAndroidBluetoothSco(false);
