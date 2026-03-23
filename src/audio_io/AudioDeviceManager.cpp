@@ -991,9 +991,20 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
     {
         bool wantSco = (profile == BluetoothProfile::HFP);
         bool scoNow  = isAndroidBluetoothScoEnabled();
-        if (wantSco != scoNow) {
-            setAndroidBluetoothSco(wantSco);
+
+        if (wantSco) {
+            // Always cycle the SCO link when requesting HFP. After a
+            // Bluetooth reconnection the old SCO session is dead but
+            // g_scoEnabled may still be true — skipping the restart
+            // leaves the audio route on the internal mic / A2DP.
+            if (scoNow) {
+                setAndroidBluetoothSco(false);
+            }
+            setAndroidBluetoothSco(true);
+        } else if (scoNow) {
+            setAndroidBluetoothSco(false);
         }
+
         thl::Logger::logf(thl::Logger::LogLevel::Info,
                            "thl.audio_io.audio_device_manager",
                            "Bluetooth profile set to %s (SCO %s)",
