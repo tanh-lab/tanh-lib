@@ -539,6 +539,21 @@ public:
     uint32_t getSampleRate() const;
 
     /**
+     * @brief Gets the actual capture device sample rate.
+     *
+     * On Android with Bluetooth SCO active, AAudio may report an incorrect
+     * sample rate for the capture stream.  This method queries the true
+     * SCO codec rate via the Android AudioManager and returns it instead.
+     * In all other cases it returns getSampleRate().
+     *
+     * Use this when opening a recording file so the WAV header matches
+     * the actual audio data rate.
+     *
+     * @return The true capture sample rate in Hz.
+     */
+    uint32_t getCaptureSampleRate() const;
+
+    /**
      * @brief Gets the current buffer size.
      *
      * Returns the resolved period size in frames used for callback preparation.

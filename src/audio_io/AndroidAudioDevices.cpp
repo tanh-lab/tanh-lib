@@ -397,6 +397,108 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
 }
 
 // ---------------------------------------------------------------------------
+// SCO sample rate helper.
+//
+// Bluetooth SCO codecs operate at fixed rates:
+//   - CVSD  →  8 000 Hz
+//   - mSBC  → 16 000 Hz  (most modern headsets)
+//
+// Unfortunately, on many Android devices AAudio *and* AudioDeviceInfo both
+// report the system mixer rate (e.g. 48 000 Hz) instead of the true codec
+// rate.  We therefore cannot trust the value returned by getSampleRates().
+//
+// Strategy: query the SCO device's advertised rates via JNI.  If *all*
+// values exceed the maximum possible SCO rate (16 kHz) the device is lying
+// and we fall back to 16 000 Hz (mSBC, the most common modern codec).
+// ---------------------------------------------------------------------------
+
+static constexpr uint32_t kMaxScoRate = 16000;  // mSBC ceiling
+
+uint32_t getAndroidScoSampleRate() {
+    if (!g_javaVM) return 0;
+
+    ScopedJNIEnv jni(g_javaVM);
+    if (!jni) return 0;
+    JNIEnv* env = jni.env;
+
+    jobject audioManager = getAudioManager(env);
+    if (!audioManager) return 0;
+
+    jclass audioManagerClass = env->FindClass("android/media/AudioManager");
+    jmethodID getDevicesMethod = env->GetMethodID(
+        audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
+
+    // GET_DEVICES_INPUTS = 1
+    auto devices = static_cast<jobjectArray>(
+        env->CallObjectMethod(audioManager, getDevicesMethod, 1));
+    if (!devices || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(audioManager);
+        return 0;
+    }
+
+    jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
+    jmethodID getTypeMethod = env->GetMethodID(deviceInfoClass, "getType", "()I");
+    jmethodID getSampleRates = env->GetMethodID(deviceInfoClass, "getSampleRates", "()[I");
+
+    uint32_t bestRate = 0;
+    jsize count = env->GetArrayLength(devices);
+    for (jsize i = 0; i < count; i++) {
+        jobject deviceObj = env->GetObjectArrayElement(devices, i);
+        int deviceType = env->CallIntMethod(deviceObj, getTypeMethod);
+
+        // TYPE_BLUETOOTH_SCO = 7
+        if (deviceType == 7) {
+            auto ratesArray = static_cast<jintArray>(
+                env->CallObjectMethod(deviceObj, getSampleRates));
+            if (ratesArray) {
+                jsize rateCount = env->GetArrayLength(ratesArray);
+                if (rateCount > 0) {
+                    jint* rates = env->GetIntArrayElements(ratesArray, nullptr);
+                    for (jsize r = 0; r < rateCount; r++) {
+                        uint32_t rate = static_cast<uint32_t>(rates[r]);
+                        if (rate > bestRate) bestRate = rate;
+                    }
+                    env->ReleaseIntArrayElements(ratesArray, rates, 0);
+                }
+                env->DeleteLocalRef(ratesArray);
+            }
+            env->DeleteLocalRef(deviceObj);
+            break;
+        }
+        env->DeleteLocalRef(deviceObj);
+    }
+
+    env->DeleteLocalRef(devices);
+    env->DeleteLocalRef(audioManager);
+
+    // If the reported rate exceeds the maximum SCO codec rate the device is
+    // lying (common on Android).  Fall back to the mSBC rate.
+    if (bestRate > kMaxScoRate) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "thl.audio_io.android_devices",
+                          "SCO device reported rate %u exceeds max SCO codec "
+                          "rate; using %u (mSBC default)",
+                          bestRate, kMaxScoRate);
+        bestRate = kMaxScoRate;
+    } else if (bestRate == 0)
+    {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "thl.audio_io.android_devices",
+                          "SCO device did not report any sample rates; using %u "
+                          "(mSBC default)",
+                          kMaxScoRate);
+        bestRate = kMaxScoRate;
+    } else {
+        thl::Logger::logf(thl::Logger::LogLevel::Info,
+                          "thl.audio_io.android_devices",
+                          "SCO input device sample rate: %u", bestRate);
+    }
+
+    return bestRate;
+}
+
+// ---------------------------------------------------------------------------
 // Active device name helpers — query the current audio route via
 // MediaRouter or AudioManager to match what AAudio is actually using.
 // ---------------------------------------------------------------------------
