@@ -1019,6 +1019,19 @@ uint32_t AudioDeviceManager::getSampleRate() const {
     return m_sampleRate;
 }
 
+uint32_t AudioDeviceManager::getCaptureSampleRate() const {
+#if defined(THL_PLATFORM_ANDROID)
+    // AAudio may lie about the SCO capture stream sample rate (reports 48000
+    // when the codec actually delivers 8000 or 16000).  Query the true rate
+    // from the Android AudioDeviceInfo for the SCO input device.
+    if (isAndroidBluetoothScoEnabled()) {
+        uint32_t scoRate = getAndroidScoSampleRate();
+        if (scoRate > 0) return scoRate;
+    }
+#endif
+    return getSampleRate();
+}
+
 uint32_t AudioDeviceManager::getBufferSize() const {
 #if defined(THL_PLATFORM_ANDROID)
     if (m_impl->playbackDeviceInitialised)
