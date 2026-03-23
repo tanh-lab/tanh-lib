@@ -25,6 +25,10 @@ void configureIOSAudioSession();
 /// Returns true if any Bluetooth route (A2DP, HFP, or LE) is currently active.
 bool isIOSBluetoothRouteActive();
 
+/// Returns true if a classic Bluetooth device (A2DP / HFP) is connected.
+/// BLE Audio devices are excluded — they don't need profile switching.
+bool isIOSClassicBluetoothConnected();
+
 /// Reconfigure AVAudioSession category options for the given Bluetooth profile.
 /// Returns true on success.
 bool setIOSBluetoothProfile(BluetoothProfile profile, const char** outProfileName);

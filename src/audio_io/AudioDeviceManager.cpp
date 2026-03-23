@@ -919,15 +919,40 @@ void AudioDeviceManager::setLogCallback(LogCallback callback) {
     }
 }
 
-static const char* btProfileStr(BluetoothProfile p) {
+const char* bluetoothProfileToString(BluetoothProfile p) {
     switch (p) {
         case BluetoothProfile::HFP:  return "HFP";
         case BluetoothProfile::A2DP: return "A2DP";
-#if defined(THL_PLATFORM_IOS)
-        case BluetoothProfile::HighQuality: return "HighQuality";
-#endif
     }
     return "A2DP";
+}
+
+BluetoothProfile bluetoothProfileFromString(const std::string& str) {
+    if (str == "HFP") return BluetoothProfile::HFP;
+    return BluetoothProfile::A2DP;
+}
+
+std::vector<BluetoothProfile> getSupportedBluetoothProfiles() {
+    std::vector<BluetoothProfile> profiles;
+    profiles.push_back(BluetoothProfile::A2DP);
+#if defined(THL_PLATFORM_ANDROID)
+    if (getAndroidApiLevel() > 28) {
+        profiles.push_back(BluetoothProfile::HFP);
+    }
+#else
+    profiles.push_back(BluetoothProfile::HFP);
+#endif
+    return profiles;
+}
+
+bool isClassicBluetoothConnected() {
+#if defined(THL_PLATFORM_IOS)
+    return isIOSClassicBluetoothConnected();
+#elif defined(THL_PLATFORM_ANDROID)
+    return isAndroidClassicBluetoothConnected();
+#else
+    return false;
+#endif
 }
 
 bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
@@ -944,7 +969,7 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
         thl::Logger::logf(thl::Logger::LogLevel::Warning,
                           "thl.audio_io.audio_device_manager",
                           "Bluetooth profile switching not supported on API %d (requires API 29+), profile remains %s",
-                          getAndroidApiLevel(), btProfileStr(m_bluetoothProfile));
+                          getAndroidApiLevel(), bluetoothProfileToString(m_bluetoothProfile));
         return false;
     }
     {

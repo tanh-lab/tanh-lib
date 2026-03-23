@@ -26,31 +26,42 @@ enum class DeviceNotificationType {
 
 /**
  * @enum BluetoothProfile
- * @brief Bluetooth audio profile to use when a BT headset is connected.
+ * @brief Bluetooth audio profile to use when a classic BT headset is connected.
  *
  * On iOS, the active Bluetooth profile determines audio quality and
  * microphone availability:
  *
- * | Profile     | Sample Rate        | BT Mic Input | Mixes With Others |
- * |-------------|--------------------|--------------|-----------|
- * | HFP         | 8 kHz / 16 kHz     | Yes          | No        |
- * | A2DP        | 44.1 kHz / 48 kHz  | No (built-in mic fallback) | No |
- * | HighQuality | 44.1 kHz / 48 kHz  | No (built-in mic fallback) | Yes |
+ * | Profile | Sample Rate        | BT Mic Input |
+ * |---------|--------------------|--------------|
+ * | HFP     | 8 kHz / 16 kHz     | Yes          |
+ * | A2DP    | 44.1 kHz / 48 kHz  | No (built-in mic fallback) |
  *
- * All profiles enable AirPlay output.
+ * BLE Audio devices are handled automatically by the OS and do not
+ * require profile switching.
  *
- * Switching profiles requires re-initialising the audio device because
- * the sample rate and buffer configuration change.
+ * After switching you may want to re-initialise the audio device because
+ * the sample rate and buffer configuration can change.
  *
  * @see AudioDeviceManager::setBluetoothProfile()
  */
 enum class BluetoothProfile {
-#if defined(THL_PLATFORM_IOS)
-    HighQuality,  ///< A2DP + mixWithOthers + high-quality BT recording (iOS only).
-#endif
     A2DP,         ///< Advanced Audio Distribution Profile — output-only, high quality.
     HFP           ///< Hands-Free Profile — bidirectional, low quality.
 };
+
+/// Convert a BluetoothProfile enum value to its string representation.
+const char* bluetoothProfileToString(BluetoothProfile profile);
+
+/// Parse a string into a BluetoothProfile. Returns A2DP for unrecognised values.
+BluetoothProfile bluetoothProfileFromString(const std::string& str);
+
+/// Returns the list of Bluetooth profiles supported on the current device/OS.
+/// On Android API ≤ 28 only A2DP is returned.
+std::vector<BluetoothProfile> getSupportedBluetoothProfiles();
+
+/// Returns true if a classic Bluetooth device (A2DP / HFP / SCO) is connected.
+/// BLE Audio devices are excluded — they don't need profile switching.
+bool isClassicBluetoothConnected();
 
 /**
  * @class AudioDeviceManager

@@ -487,6 +487,50 @@ std::string getAndroidActiveInputDeviceName(int32_t aaudioDeviceId) {
     return getAndroidActiveDeviceName(/* GET_DEVICES_INPUTS */ 1, aaudioDeviceId);
 }
 
+bool isAndroidClassicBluetoothConnected() {
+    if (!g_javaVM) return false;
+
+    ScopedJNIEnv jni(g_javaVM);
+    if (!jni) return false;
+    JNIEnv* env = jni.env;
+
+    jobject audioManager = getAudioManager(env);
+    if (!audioManager) return false;
+
+    jclass audioManagerClass = env->FindClass("android/media/AudioManager");
+    jmethodID getDevicesMethod = env->GetMethodID(
+        audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
+
+    // GET_DEVICES_ALL = 3 (outputs | inputs)
+    auto devices = static_cast<jobjectArray>(
+        env->CallObjectMethod(audioManager, getDevicesMethod, 3));
+    if (!devices || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(audioManager);
+        return false;
+    }
+
+    jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
+    jmethodID getTypeMethod = env->GetMethodID(deviceInfoClass, "getType", "()I");
+
+    bool found = false;
+    jsize count = env->GetArrayLength(devices);
+    for (jsize i = 0; i < count; ++i) {
+        jobject deviceObj = env->GetObjectArrayElement(devices, i);
+        int type = env->CallIntMethod(deviceObj, getTypeMethod);
+        env->DeleteLocalRef(deviceObj);
+        // 7 = SCO, 8 = A2DP (classic BT only — BLE excluded)
+        if (type == 7 || type == 8) {
+            found = true;
+            break;
+        }
+    }
+
+    env->DeleteLocalRef(devices);
+    env->DeleteLocalRef(audioManager);
+    return found;
+}
+
 }  // namespace thl
 
 #endif  // THL_PLATFORM_ANDROID

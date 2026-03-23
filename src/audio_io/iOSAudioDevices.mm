@@ -18,6 +18,11 @@ void configureIOSAudioSession() {
         kBaseSessionOptions |
         AVAudioSessionCategoryOptionAllowBluetoothA2DP;
 
+    // On iOS 26+ enable high-quality BLE recording automatically.
+    if (@available(iOS 26.0, *)) {
+        options |= AVAudioSessionCategoryOptionBluetoothHighQualityRecording;
+    }
+
     NSError* error = nil;
     [session setCategory:AVAudioSessionCategoryPlayAndRecord
              withOptions:options
@@ -34,7 +39,26 @@ bool isIOSBluetoothRouteActive() {
         }
     }
     for (AVAudioSessionPortDescription* port in session.currentRoute.inputs) {
+        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothHFP] ||
+            [port.portType isEqualToString:AVAudioSessionPortBluetoothLE]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isIOSClassicBluetoothConnected() {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    // Check available inputs for classic BT (HFP) ports.
+    for (AVAudioSessionPortDescription* port in session.availableInputs) {
         if ([port.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
+            return true;
+        }
+    }
+    // Check current route outputs (A2DP devices don't appear in availableInputs).
+    for (AVAudioSessionPortDescription* port in session.currentRoute.outputs) {
+        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothA2DP] ||
+            [port.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
             return true;
         }
     }
@@ -55,13 +79,11 @@ bool setIOSBluetoothProfile(BluetoothProfile profile, const char** outProfileNam
             options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
             profileName = "A2DP";
             break;
-        case BluetoothProfile::HighQuality:
-            options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
-            if (@available(iOS 18.2, *)) {
-                options |= AVAudioSessionCategoryOptionBluetoothHighQualityRecording;
-            }
-            profileName = "HighQuality";
-            break;
+    }
+
+    // On iOS 26+ always enable high-quality BLE recording regardless of profile.
+    if (@available(iOS 26.0, *)) {
+        options |= AVAudioSessionCategoryOptionBluetoothHighQualityRecording;
     }
 
     if (outProfileName) *outProfileName = profileName;
