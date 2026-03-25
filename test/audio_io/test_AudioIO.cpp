@@ -55,7 +55,7 @@ TEST(AudioDeviceManager, ContextInitialisation) {
 TEST(AudioDeviceManager, DefaultValues) {
     AudioDeviceManager manager;
     EXPECT_EQ(manager.getSampleRate(), 44100);
-    EXPECT_EQ(manager.getBufferSize(), 512);
+    EXPECT_EQ(manager.getBufferSize(), 0);
     EXPECT_EQ(manager.getNumOutputChannels(), 1);
     EXPECT_EQ(manager.getNumInputChannels(), 1);
     EXPECT_FALSE(manager.isPlaybackRunning());
