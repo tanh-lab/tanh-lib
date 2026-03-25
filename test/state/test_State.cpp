@@ -1600,282 +1600,277 @@ TEST(StateTests, SliderPolarityInJsonDump) {
     }
 }
 
-// // Test for string_view invalidation when listener calls set() in callback
-// TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
-//     State state;
+// Test for string_view invalidation when listener calls set() in callback
+TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
+    State state;
 
-//     // Create a listener that captures the path string_view and then calls
-//     set() on another parameter class NestedSetListener : public
-//     ParameterListener { public:
-//         void on_parameter_changed(std::string_view path, const Parameter&
-//         param) override {
-//             // Store the path immediately - this creates a copy
-//             std::string path_copy_immediate(path);
-//             paths_received.push_back(path_copy_immediate);
+    // Create a listener that captures the path string_view and then calls set() on another parameter
+    class NestedSetListener : public ParameterListener {
+    public:
+        // Each invocation records a (before, after) pair in matched_pairs
+        struct PathPair {
+            std::string before;
+            std::string after;
+        };
 
-//             // Also store pointer and size of the string_view to check later
-//             const char* view_data = path.data();
-//             size_t view_size = path.size();
-//             view_pointers.push_back(view_data);
-//             view_sizes.push_back(view_size);
+        void on_parameter_changed(std::string_view path, const Parameter& param) override {
+            // Store the path immediately - this creates a copy
+            std::string path_copy_immediate(path);
 
-//             // Now trigger a nested set() call which might invalidate the
-//             string_view if (path == "trigger.param1") {
-//                 // This might cause reallocation and invalidate the
-//                 string_view buffer state_ref->set("response.param1", 100.0);
-//                 state_ref->set("response.param2", 200.0);
-//                 state_ref->set("response.param3", 300.0);
-//             }
-//             else if (path == "trigger.deeply.nested.param") {
-//                 // Create more deeply nested structures
-//                 state_ref->set("response.deep.level1.param", 1.0);
-//                 state_ref->set("response.deep.level2.param", 2.0);
-//                 state_ref->set("response.deep.level3.param", 3.0);
-//             }
+            // Also store pointer and size of the string_view to check later
+            const char* view_data = path.data();
+            size_t view_size = path.size();
 
-//             // Now try to access the original string_view - this is where it
-//             might be corrupted std::string path_copy_after(path);
-//             paths_after_set.push_back(path_copy_after);
+            // Now trigger a nested set() call which might invalidate the string_view
+            if (path == "trigger.param1") {
+                state_ref->set("response.param1", 100.0);
+                state_ref->set("response.param2", 200.0);
+                state_ref->set("response.param3", 300.0);
+            } else if (path == "trigger.deeply.nested.param") {
+                state_ref->set("response.deep.level1.param", 1.0);
+                state_ref->set("response.deep.level2.param", 2.0);
+                state_ref->set("response.deep.level3.param", 3.0);
+            }
 
-//             // Verify the string_view still points to valid data
-//             EXPECT_EQ(path_copy_immediate, path_copy_after)
-//                 << "string_view was corrupted during nested set() call!";
+            // Now try to access the original string_view - this is where it might be corrupted
+            std::string path_copy_after(path);
 
-//             // Verify the string_view hasn't changed pointer or size
-//             EXPECT_EQ(view_data, path.data())
-//                 << "string_view data pointer changed during nested set()
-//                 call!";
-//             EXPECT_EQ(view_size, path.size())
-//                 << "string_view size changed during nested set() call!";
-//         }
+            // Store matched pair for this invocation
+            matched_pairs.push_back({path_copy_immediate, path_copy_after});
 
-//         State* state_ref;
-//         std::vector<std::string> paths_received;
-//         std::vector<std::string> paths_after_set;
-//         std::vector<const char*> view_pointers;
-//         std::vector<size_t> view_sizes;
-//     };
+            // Verify the string_view still points to valid data
+            EXPECT_EQ(path_copy_immediate, path_copy_after)
+                << "string_view was corrupted during nested set() call!";
 
-//     NestedSetListener listener;
-//     listener.state_ref = &state;
-//     state.add_listener(&listener);
+            // Verify the string_view hasn't changed pointer or size
+            EXPECT_EQ(view_data, path.data())
+                << "string_view data pointer changed during nested set() call!";
+            EXPECT_EQ(view_size, path.size())
+                << "string_view size changed during nested set() call!";
+        }
 
-//     // Test 1: Simple nested set
-//     state.set("trigger.param1", 42.0);
+        State* state_ref;
+        std::vector<PathPair> matched_pairs;
+    };
 
-//     // Verify the listener received the correct path and it wasn't corrupted
-//     ASSERT_EQ(4, listener.paths_received.size()); // trigger.param1 + 3
-//     response params EXPECT_EQ("trigger.param1", listener.paths_received[0]);
-//     EXPECT_EQ("trigger.param1", listener.paths_after_set[0]);
+    NestedSetListener listener;
+    listener.state_ref = &state;
+    state.add_listener(&listener);
 
-//     // Test 2: Deeply nested path
-//     state.set("trigger.deeply.nested.param", 123.0);
+    // Test 1: Simple nested set
+    state.set("trigger.param1", 42.0);
 
-//     // Should have received more notifications
-//     ASSERT_EQ(8, listener.paths_received.size()); // Previous 4 +
-//     trigger.deeply.nested.param + 3 response.deep params
-//     EXPECT_EQ("trigger.deeply.nested.param", listener.paths_received[4]);
-//     EXPECT_EQ("trigger.deeply.nested.param", listener.paths_after_set[4]);
+    // trigger.param1 + 3 response params = 4 notifications
+    ASSERT_EQ(4, listener.matched_pairs.size());
 
-//     // Test 3: Multiple consecutive sets that trigger nested calls
-//     state.set("trigger.param1", 99.0);
+    // Verify every invocation's before/after match (string_view not corrupted)
+    for (size_t i = 0; i < listener.matched_pairs.size(); ++i) {
+        EXPECT_EQ(listener.matched_pairs[i].before, listener.matched_pairs[i].after)
+            << "Path mismatch at invocation " << i;
+    }
 
-//     // Verify all paths remain valid
-//     for (size_t i = 0; i < listener.paths_received.size(); ++i) {
-//         EXPECT_EQ(listener.paths_received[i], listener.paths_after_set[i])
-//             << "Path mismatch at index " << i;
-//     }
+    // Test 2: Deeply nested path
+    state.set("trigger.deeply.nested.param", 123.0);
 
-//     // Verify all response parameters were actually set
-//     EXPECT_DOUBLE_EQ(100.0, state.get<double>("response.param1"));
-//     EXPECT_DOUBLE_EQ(200.0, state.get<double>("response.param2"));
-//     EXPECT_DOUBLE_EQ(300.0, state.get<double>("response.param3"));
-//     EXPECT_DOUBLE_EQ(1.0, state.get<double>("response.deep.level1.param"));
-//     EXPECT_DOUBLE_EQ(2.0, state.get<double>("response.deep.level2.param"));
-//     EXPECT_DOUBLE_EQ(3.0, state.get<double>("response.deep.level3.param"));
-// }
+    // Previous 4 + trigger.deeply.nested.param + 3 response.deep params = 8 total
+    ASSERT_EQ(8, listener.matched_pairs.size());
 
-// // Test string_view invalidation with callback-based listeners
-// TEST(StateTests, StringViewInvalidationInCallbackListeners) {
-//     State state;
+    // Test 3: Multiple consecutive sets that trigger nested calls
+    state.set("trigger.param1", 99.0);
 
-//     std::vector<std::string> paths_immediate;
-//     std::vector<std::string> paths_after;
-//     std::vector<const char*> view_ptrs;
+    // Verify all invocations' before/after pairs match
+    for (size_t i = 0; i < listener.matched_pairs.size(); ++i) {
+        EXPECT_EQ(listener.matched_pairs[i].before, listener.matched_pairs[i].after)
+            << "Path mismatch at invocation " << i;
+    }
 
-//     // Add a callback listener that performs nested set() calls
-//     state.add_callback_listener([&](std::string_view path, const Parameter&
-//     param) {
-//         // Capture path immediately
-//         std::string immediate_copy(path);
-//         paths_immediate.push_back(immediate_copy);
+    // Verify all response parameters were actually set
+    EXPECT_DOUBLE_EQ(100.0, state.get<double>("response.param1"));
+    EXPECT_DOUBLE_EQ(200.0, state.get<double>("response.param2"));
+    EXPECT_DOUBLE_EQ(300.0, state.get<double>("response.param3"));
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("response.deep.level1.param"));
+    EXPECT_DOUBLE_EQ(2.0, state.get<double>("response.deep.level2.param"));
+    EXPECT_DOUBLE_EQ(3.0, state.get<double>("response.deep.level3.param"));
+}
 
-//         const char* view_ptr = path.data();
-//         view_ptrs.push_back(view_ptr);
+// Test string_view invalidation with callback-based listeners
+TEST(StateTests, StringViewInvalidationInCallbackListeners) {
+    State state;
 
-//         // Perform nested set that might invalidate the string_view
-//         if (path == "source.a") {
-//             state.set("target.b", 20.0);
-//             state.set("target.c", 30.0);
-//         }
+    struct PathPair {
+        std::string before;
+        std::string after;
+    };
+    std::vector<PathPair> matched_pairs;
 
-//         // Try to use the string_view again
-//         std::string after_copy(path);
-//         paths_after.push_back(after_copy);
+    // Add a callback listener that performs nested set() calls
+    state.add_callback_listener([&](std::string_view path, const Parameter& param) {
+        // Capture path immediately
+        std::string immediate_copy(path);
 
-//         // Verify they match
-//         EXPECT_EQ(immediate_copy, after_copy)
-//             << "string_view corrupted in callback listener!";
+        const char* view_ptr = path.data();
 
-//         // Verify pointer hasn't changed
-//         EXPECT_EQ(view_ptr, path.data())
-//             << "string_view pointer changed in callback listener!";
-//     });
+        // Perform nested set that might invalidate the string_view
+        if (path == "source.a") {
+            state.set("target.b", 20.0);
+            state.set("target.c", 30.0);
+        }
 
-//     // Trigger the callback
-//     state.set("source.a", 10.0);
+        // Try to use the string_view again
+        std::string after_copy(path);
+        matched_pairs.push_back({immediate_copy, after_copy});
 
-//     // Verify we got notifications for all three parameters
-//     ASSERT_EQ(3, paths_immediate.size());
-//     EXPECT_EQ("source.a", paths_immediate[0]);
-//     EXPECT_EQ("target.b", paths_immediate[1]);
-//     EXPECT_EQ("target.c", paths_immediate[2]);
+        // Verify they match
+        EXPECT_EQ(immediate_copy, after_copy)
+            << "string_view corrupted in callback listener!";
 
-//     // Verify all paths remained valid throughout
-//     for (size_t i = 0; i < paths_immediate.size(); ++i) {
-//         EXPECT_EQ(paths_immediate[i], paths_after[i]);
-//     }
-// }
+        // Verify pointer hasn't changed
+        EXPECT_EQ(view_ptr, path.data())
+            << "string_view pointer changed in callback listener!";
+    });
 
-// // Test string_view invalidation with very long parameter paths
-// TEST(StateTests, StringViewInvalidationWithLongPaths) {
-//     State state;
+    // Trigger the callback
+    state.set("source.a", 10.0);
 
-//     class LongPathListener : public ParameterListener {
-//     public:
-//         void on_parameter_changed(std::string_view path, const Parameter&
-//         param) override {
-//             std::string path_before(path);
-//             const char* ptr_before = path.data();
-//             size_t size_before = path.size();
+    // Verify we got notifications for all three parameters
+    ASSERT_EQ(3, matched_pairs.size());
 
-//             // If we get a trigger with a very long path, create even longer
-//             paths if (path.find("very.long.hierarchical") !=
-//             std::string_view::npos) {
-//                 // Create multiple long paths that might cause reallocation
-//                 state_ref->set("another.very.long.hierarchical.path.level1.level2.level3.param1",
-//                 1.0);
-//                 state_ref->set("another.very.long.hierarchical.path.level1.level2.level3.param2",
-//                 2.0);
-//                 state_ref->set("another.very.long.hierarchical.path.level1.level2.level3.param3",
-//                 3.0);
-//                 state_ref->set("yet.another.extremely.long.path.with.many.nested.groups.param",
-//                 4.0);
-//             }
+    // Verify all invocations' before/after pairs match
+    for (size_t i = 0; i < matched_pairs.size(); ++i) {
+        EXPECT_EQ(matched_pairs[i].before, matched_pairs[i].after)
+            << "Path mismatch at invocation " << i;
+    }
+}
 
-//             // Verify string_view is still valid
-//             std::string path_after(path);
-//             EXPECT_EQ(path_before, path_after)
-//                 << "Long path string_view was corrupted!";
-//             EXPECT_EQ(ptr_before, path.data())
-//                 << "Long path string_view pointer changed!";
-//             EXPECT_EQ(size_before, path.size())
-//                 << "Long path string_view size changed!";
+// Test string_view invalidation with very long parameter paths
+TEST(StateTests, StringViewInvalidationWithLongPaths) {
+    State state;
 
-//             paths.push_back(path_before);
-//         }
+    class LongPathListener : public ParameterListener {
+    public:
+        void on_parameter_changed(std::string_view path, const Parameter& param) override {
+            std::string path_before(path);
+            const char* ptr_before = path.data();
+            size_t size_before = path.size();
 
-//         State* state_ref;
-//         std::vector<std::string> paths;
-//     };
+            // Only trigger nested sets for the original trigger path (exact prefix match)
+            // to avoid infinite recursion from response paths also matching
+            if (path.substr(0, 5) == "very.") {
+                state_ref->set(
+                    "another.very.long.hierarchical.path.level1.level2.level3.param1", 1.0);
+                state_ref->set(
+                    "another.very.long.hierarchical.path.level1.level2.level3.param2", 2.0);
+                state_ref->set(
+                    "another.very.long.hierarchical.path.level1.level2.level3.param3", 3.0);
+                state_ref->set(
+                    "yet.another.extremely.long.path.with.many.nested.groups.param", 4.0);
+            }
 
-//     LongPathListener listener;
-//     listener.state_ref = &state;
-//     state.add_listener(&listener);
+            // Verify string_view is still valid
+            std::string path_after(path);
+            EXPECT_EQ(path_before, path_after)
+                << "Long path string_view was corrupted!";
+            EXPECT_EQ(ptr_before, path.data())
+                << "Long path string_view pointer changed!";
+            EXPECT_EQ(size_before, path.size())
+                << "Long path string_view size changed!";
 
-//     // Create a very long parameter path
-//     state.set("very.long.hierarchical.path.with.multiple.levels.and.groups.final.param",
-//     99.0);
+            paths.push_back(path_before);
+        }
 
-//     // Verify the listener received all notifications with valid paths
-//     ASSERT_GE(listener.paths.size(), 1);
-//     EXPECT_EQ("very.long.hierarchical.path.with.multiple.levels.and.groups.final.param",
-//               listener.paths[0]);
+        State* state_ref;
+        std::vector<std::string> paths;
+    };
 
-//     // Verify all the nested parameters were created
-//     EXPECT_DOUBLE_EQ(1.0,
-//     state.get<double>("another.very.long.hierarchical.path.level1.level2.level3.param1"));
-//     EXPECT_DOUBLE_EQ(4.0,
-//     state.get<double>("yet.another.extremely.long.path.with.many.nested.groups.param"));
-// }
+    LongPathListener listener;
+    listener.state_ref = &state;
+    state.add_listener(&listener);
 
-// // Test chain of listener notifications where each triggers more sets
-// TEST(StateTests, StringViewInvalidationWithListenerChain) {
-//     State state;
+    // Create a very long parameter path
+    state.set("very.long.hierarchical.path.with.multiple.levels.and.groups.final.param", 99.0);
 
-//     class ChainListener : public ParameterListener {
-//     public:
-//         explicit ChainListener(int id) : listener_id(id) {}
+    // Verify the listener received notifications with valid paths
+    // (paths vector is in DFS post-order due to recursion, so check by content)
+    ASSERT_GE(listener.paths.size(), 1);
+    bool found_trigger = false;
+    for (const auto& p : listener.paths) {
+        if (p == "very.long.hierarchical.path.with.multiple.levels.and.groups.final.param") {
+            found_trigger = true;
+        }
+    }
+    EXPECT_TRUE(found_trigger) << "Trigger path not found in listener notifications";
 
-//         void on_parameter_changed(std::string_view path, const Parameter&
-//         param) override {
-//             std::string path_copy(path);
-//             const char* ptr = path.data();
+    // Verify all the nested parameters were created
+    EXPECT_DOUBLE_EQ(
+        1.0,
+        state.get<double>("another.very.long.hierarchical.path.level1.level2.level3.param1"));
+    EXPECT_DOUBLE_EQ(
+        4.0,
+        state.get<double>("yet.another.extremely.long.path.with.many.nested.groups.param"));
+}
 
-//             // Each listener in the chain triggers the next
-//             if (path == "chain.step1" && listener_id == 1) {
-//                 state_ref->set("chain.step2", 2.0);
-//             }
-//             else if (path == "chain.step2" && listener_id == 2) {
-//                 state_ref->set("chain.step3", 3.0);
-//             }
-//             else if (path == "chain.step3" && listener_id == 3) {
-//                 state_ref->set("chain.step4", 4.0);
-//             }
+// Test chain of listener notifications where each triggers more sets
+TEST(StateTests, StringViewInvalidationWithListenerChain) {
+    State state;
 
-//             // Verify string_view is still valid after potential nested calls
-//             std::string path_after(path);
-//             EXPECT_EQ(path_copy, path_after)
-//                 << "string_view corrupted in listener chain at listener " <<
-//                 listener_id;
-//             EXPECT_EQ(ptr, path.data())
-//                 << "string_view pointer changed in listener chain at listener
-//                 " << listener_id;
+    class ChainListener : public ParameterListener {
+    public:
+        explicit ChainListener(int id) : listener_id(id) {}
 
-//             notifications.push_back(path_copy);
-//         }
+        void on_parameter_changed(std::string_view path, const Parameter& param) override {
+            std::string path_copy(path);
+            const char* ptr = path.data();
 
-//         State* state_ref;
-//         int listener_id;
-//         std::vector<std::string> notifications;
-//     };
+            // Each listener in the chain triggers the next
+            if (path == "chain.step1" && listener_id == 1) {
+                state_ref->set("chain.step2", 2.0);
+            } else if (path == "chain.step2" && listener_id == 2) {
+                state_ref->set("chain.step3", 3.0);
+            } else if (path == "chain.step3" && listener_id == 3) {
+                state_ref->set("chain.step4", 4.0);
+            }
 
-//     ChainListener listener1(1);
-//     ChainListener listener2(2);
-//     ChainListener listener3(3);
+            // Verify string_view is still valid after potential nested calls
+            std::string path_after(path);
+            EXPECT_EQ(path_copy, path_after)
+                << "string_view corrupted in listener chain at listener " << listener_id;
+            EXPECT_EQ(ptr, path.data())
+                << "string_view pointer changed in listener chain at listener " << listener_id;
 
-//     listener1.state_ref = &state;
-//     listener2.state_ref = &state;
-//     listener3.state_ref = &state;
+            notifications.push_back(path_copy);
+        }
 
-//     state.add_listener(&listener1);
-//     state.add_listener(&listener2);
-//     state.add_listener(&listener3);
+        State* state_ref;
+        int listener_id;
+        std::vector<std::string> notifications;
+    };
 
-//     // Start the chain
-//     state.set("chain.step1", 1.0);
+    ChainListener listener1(1);
+    ChainListener listener2(2);
+    ChainListener listener3(3);
 
-//     // All listeners should have received notifications
-//     EXPECT_GE(listener1.notifications.size(), 1);
-//     EXPECT_GE(listener2.notifications.size(), 1);
-//     EXPECT_GE(listener3.notifications.size(), 1);
+    listener1.state_ref = &state;
+    listener2.state_ref = &state;
+    listener3.state_ref = &state;
 
-//     // Verify the chain completed
-//     EXPECT_DOUBLE_EQ(1.0, state.get<double>("chain.step1"));
-//     EXPECT_DOUBLE_EQ(2.0, state.get<double>("chain.step2"));
-//     EXPECT_DOUBLE_EQ(3.0, state.get<double>("chain.step3"));
-//     EXPECT_DOUBLE_EQ(4.0, state.get<double>("chain.step4"));
-// }
+    state.add_listener(&listener1);
+    state.add_listener(&listener2);
+    state.add_listener(&listener3);
+
+    // Start the chain
+    state.set("chain.step1", 1.0);
+
+    // All listeners should have received notifications
+    EXPECT_GE(listener1.notifications.size(), 1);
+    EXPECT_GE(listener2.notifications.size(), 1);
+    EXPECT_GE(listener3.notifications.size(), 1);
+
+    // Verify the chain completed
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("chain.step1"));
+    EXPECT_DOUBLE_EQ(2.0, state.get<double>("chain.step2"));
+    EXPECT_DOUBLE_EQ(3.0, state.get<double>("chain.step3"));
+    EXPECT_DOUBLE_EQ(4.0, state.get<double>("chain.step4"));
+}
 
 // =============================================================================
 // ParameterHandle Tests
