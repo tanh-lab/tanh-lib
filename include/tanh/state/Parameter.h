@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -12,6 +13,94 @@ namespace thl {
 class State;
 class StateGroup;
 class ParameterListener;
+
+/**
+ * @brief Atomic cache entry for real-time safe per-sample parameter access.
+ *
+ * Each numeric parameter gets one AtomicCacheEntry, owned by State via
+ * m_atomic_cache. ParameterHandle<T> holds a raw pointer to this entry.
+ * The entry's address is stable (std::map pointer stability) until
+ * State::clear() or State destruction.
+ *
+ * @note Non-copyable, non-movable — always accessed via pointer.
+ */
+struct AtomicCacheEntry {
+    std::atomic<double> atomic_double{0.0};
+    std::atomic<float> atomic_float{0.0f};
+    std::atomic<int> atomic_int{0};
+    std::atomic<bool> atomic_bool{false};
+
+    AtomicCacheEntry() = default;
+    AtomicCacheEntry(const AtomicCacheEntry&) = delete;
+    AtomicCacheEntry& operator=(const AtomicCacheEntry&) = delete;
+};
+
+/**
+ * @brief Lightweight handle for real-time safe per-sample parameter access.
+ *
+ * Obtained via State::get_handle<T>(). Provides ~1–5 ns atomic load/store,
+ * bypassing the RCU path entirely. Only supports numeric types (double, float,
+ * int, bool).
+ *
+ * @section lifetime Handle Lifetime
+ *
+ * A handle is valid as long as the owning State is alive and State::clear()
+ * has not been called. After clear() or State destruction, using a handle is
+ * undefined behaviour.
+ *
+ * @section consistency Consistency
+ *
+ * - State::set_in_root() updates both the RCU map and the atomic cache
+ *   (all 4 numeric types).
+ * - ParameterHandle::store() updates only the atomic cache for the native
+ *   type T. The RCU map is NOT updated — use set_in_root() if you need
+ *   RCU readers, listeners, or serialization to reflect the new value.
+ *
+ * @tparam T Numeric type: double, float, int, or bool
+ *
+ * @note **REAL-TIME SAFE** — load() and store() are wait-free atomic
+ *       operations with relaxed memory ordering.
+ */
+template <typename T>
+class ParameterHandle {
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> ||
+                      std::is_same_v<T, int> || std::is_same_v<T, bool>,
+                  "ParameterHandle only supports numeric types (double, float, int, bool)");
+
+public:
+    ParameterHandle() : m_entry(nullptr) {}
+
+    T load() const TANH_NONBLOCKING_FUNCTION {
+        if constexpr (std::is_same_v<T, double>) {
+            return m_entry->atomic_double.load(std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, float>) {
+            return m_entry->atomic_float.load(std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, int>) {
+            return m_entry->atomic_int.load(std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return m_entry->atomic_bool.load(std::memory_order_relaxed);
+        }
+    }
+
+    void store(T value) TANH_NONBLOCKING_FUNCTION {
+        if constexpr (std::is_same_v<T, double>) {
+            m_entry->atomic_double.store(value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, float>) {
+            m_entry->atomic_float.store(value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, int>) {
+            m_entry->atomic_int.store(value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, bool>) {
+            m_entry->atomic_bool.store(value, std::memory_order_relaxed);
+        }
+    }
+
+    [[nodiscard]] bool is_valid() const { return m_entry != nullptr; }
+
+private:
+    friend class State;
+    explicit ParameterHandle(AtomicCacheEntry* entry) : m_entry(entry) {}
+    AtomicCacheEntry* m_entry;
+};
 
 // Parameter type enum
 enum class ParameterType { Double, Float, Int, Bool, String, Unknown };
@@ -29,6 +118,10 @@ struct ParameterData {
     std::string string_value;
     std::unique_ptr<ParameterDefinition> parameter_definition;
 
+    /// @brief Non-owning pointer to the atomic cache entry (owned by State).
+    /// Shallow-copied during RCU map copy so all versions share the same cache.
+    AtomicCacheEntry* cache_ptr = nullptr;
+
     // Default constructor
     ParameterData() = default;
 
@@ -42,7 +135,8 @@ struct ParameterData {
         , string_value(other.string_value)
         , parameter_definition(other.parameter_definition ? std::make_unique<ParameterDefinition>(
                                                                 *other.parameter_definition)
-                                                          : nullptr) {}
+                                                          : nullptr)
+        , cache_ptr(other.cache_ptr) {}
 
     // Custom assignment operator
     ParameterData& operator=(const ParameterData& other) {
@@ -57,6 +151,7 @@ struct ParameterData {
                 other.parameter_definition
                     ? std::make_unique<ParameterDefinition>(*other.parameter_definition)
                     : nullptr;
+            cache_ptr = other.cache_ptr;
         }
         return *this;
     }

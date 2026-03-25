@@ -1876,3 +1876,198 @@ TEST(StateTests, SliderPolarityInJsonDump) {
 //     EXPECT_DOUBLE_EQ(3.0, state.get<double>("chain.step3"));
 //     EXPECT_DOUBLE_EQ(4.0, state.get<double>("chain.step4"));
 // }
+
+// =============================================================================
+// ParameterHandle Tests
+// =============================================================================
+
+TEST(StateTests, HandleDefaultConstructor) {
+    ParameterHandle<double> handle;
+    EXPECT_FALSE(handle.is_valid());
+}
+
+TEST(StateTests, HandleNonExistentKey) {
+    State state;
+    EXPECT_THROW(state.get_handle<double>("nonexistent"), StateKeyNotFoundException);
+}
+
+TEST(StateTests, HandleBasicLoadStore) {
+    State state;
+    state.set("volume", 0.75);
+
+    auto handle = state.get_handle<double>("volume");
+    EXPECT_TRUE(handle.is_valid());
+    EXPECT_DOUBLE_EQ(0.75, handle.load());
+
+    handle.store(0.5);
+    EXPECT_DOUBLE_EQ(0.5, handle.load());
+}
+
+TEST(StateTests, HandleAllNumericTypes) {
+    State state;
+    state.set("d_param", 3.14);
+    state.set("f_param", 2.71f);
+    state.set("i_param", 42);
+    state.set("b_param", true);
+
+    auto dh = state.get_handle<double>("d_param");
+    auto fh = state.get_handle<float>("f_param");
+    auto ih = state.get_handle<int>("i_param");
+    auto bh = state.get_handle<bool>("b_param");
+
+    EXPECT_DOUBLE_EQ(3.14, dh.load());
+    EXPECT_FLOAT_EQ(2.71f, fh.load());
+    EXPECT_EQ(42, ih.load());
+    EXPECT_TRUE(bh.load());
+}
+
+TEST(StateTests, HandleReflectsSetInRoot) {
+    State state;
+    state.set("gain", 1.0);
+
+    auto handle = state.get_handle<double>("gain");
+    EXPECT_DOUBLE_EQ(1.0, handle.load());
+
+    // set_in_root updates both RCU and atomic cache
+    state.set("gain", 2.0);
+    EXPECT_DOUBLE_EQ(2.0, handle.load());
+}
+
+TEST(StateTests, HandleStoreOnlyUpdatesAtomicCache) {
+    State state;
+    state.set("gain", 1.0);
+
+    auto handle = state.get_handle<double>("gain");
+    handle.store(3.0);
+
+    // Handle sees the new value
+    EXPECT_DOUBLE_EQ(3.0, handle.load());
+
+    // RCU still has the old value (handle.store does NOT update RCU)
+    EXPECT_DOUBLE_EQ(1.0, state.get_from_root<double>("gain"));
+}
+
+TEST(StateTests, HandleSetUpdatesAllAtomicTypes) {
+    State state;
+    state.set("param", 3.14);
+
+    // Get handles for all types on the same parameter
+    auto dh = state.get_handle<double>("param");
+    auto fh = state.get_handle<float>("param");
+    auto ih = state.get_handle<int>("param");
+    auto bh = state.get_handle<bool>("param");
+
+    EXPECT_DOUBLE_EQ(3.14, dh.load());
+    EXPECT_FLOAT_EQ(3.14f, fh.load());
+    EXPECT_EQ(3, ih.load());
+    EXPECT_TRUE(bh.load());
+
+    // set_in_root updates all 4 atomic types
+    state.set("param", 0.0);
+    EXPECT_DOUBLE_EQ(0.0, dh.load());
+    EXPECT_FLOAT_EQ(0.0f, fh.load());
+    EXPECT_EQ(0, ih.load());
+    EXPECT_FALSE(bh.load());
+}
+
+TEST(StateTests, HandleSurvivesOtherParameterCreation) {
+    State state;
+    state.set("param_a", 1.0);
+
+    auto handle = state.get_handle<double>("param_a");
+    EXPECT_DOUBLE_EQ(1.0, handle.load());
+
+    // Create many more parameters — must not invalidate handle
+    for (int i = 0; i < 100; ++i) {
+        state.set("param_" + std::to_string(i), static_cast<double>(i));
+    }
+
+    // Handle still works
+    EXPECT_DOUBLE_EQ(1.0, handle.load());
+
+    state.set("param_a", 99.0);
+    EXPECT_DOUBLE_EQ(99.0, handle.load());
+}
+
+TEST(StateTests, HandleWithHierarchicalPath) {
+    State state;
+    state.set("audio.effects.reverb.mix", 0.5);
+
+    auto handle = state.get_handle<double>("audio.effects.reverb.mix");
+    EXPECT_DOUBLE_EQ(0.5, handle.load());
+
+    state.set("audio.effects.reverb.mix", 0.8);
+    EXPECT_DOUBLE_EQ(0.8, handle.load());
+}
+
+TEST(StateTests, HandleStoreNativeTypeOnly) {
+    State state;
+    state.set("value", 10.0);
+
+    auto fh = state.get_handle<float>("value");
+    auto dh = state.get_handle<double>("value");
+
+    // float handle store only updates atomic_float
+    fh.store(99.0f);
+    EXPECT_FLOAT_EQ(99.0f, fh.load());
+
+    // double handle still has the value from set_in_root
+    EXPECT_DOUBLE_EQ(10.0, dh.load());
+}
+
+TEST(StateTests, HandleCopySemantics) {
+    State state;
+    state.set("param", 42.0);
+
+    auto h1 = state.get_handle<double>("param");
+    auto h2 = h1;  // Copy
+
+    EXPECT_TRUE(h2.is_valid());
+    EXPECT_DOUBLE_EQ(42.0, h2.load());
+
+    h1.store(99.0);
+    // Both handles point to the same AtomicCacheEntry
+    EXPECT_DOUBLE_EQ(99.0, h2.load());
+}
+
+TEST(StateTests, HandleConcurrentLoadStore) {
+    State state;
+    state.set("param", 0.0);
+
+    auto handle = state.get_handle<double>("param");
+
+    const int num_threads = 4;
+    const int ops_per_thread = 10000;
+    std::atomic<bool> go{false};
+
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
+    // Writer threads use handle.store
+    for (int t = 0; t < num_threads / 2; ++t) {
+        threads.emplace_back([&, t] {
+            while (!go.load(std::memory_order_acquire)) {}
+            for (int i = 0; i < ops_per_thread; ++i) {
+                handle.store(static_cast<double>(t * ops_per_thread + i));
+            }
+        });
+    }
+
+    // Reader threads use handle.load
+    for (int t = 0; t < num_threads / 2; ++t) {
+        threads.emplace_back([&] {
+            while (!go.load(std::memory_order_acquire)) {}
+            for (int i = 0; i < ops_per_thread; ++i) {
+                volatile double val = handle.load();
+                (void)val;
+            }
+        });
+    }
+
+    go.store(true, std::memory_order_release);
+    for (auto& t : threads) { t.join(); }
+
+    // Just verify handle is still usable
+    double final_val = handle.load();
+    EXPECT_GE(final_val, 0.0);
+}

@@ -20,3 +20,16 @@ if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
 else()
 	gtest_discover_tests(${PROJECT_NAME})
 endif()
+
+# Benchmark target
+add_executable(benchmark_state
+	benchmark_State.cpp
+)
+
+target_link_libraries(benchmark_state
+	PRIVATE
+		tanh::State
+		tanh::Core
+		benchmark::benchmark
+		gtest
+)
