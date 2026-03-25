@@ -2,6 +2,7 @@
 
 #include "StateGroup.h"
 #include "tanh/utils/RealtimeSanitizer.h"
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 namespace thl {
@@ -164,6 +165,29 @@ public:
     ParameterType get_type_from_root(std::string_view key) const TANH_NONBLOCKING_FUNCTION;
 
     /**
+     * @brief Gets a lightweight handle for real-time safe per-sample parameter access.
+     *
+     * The returned handle provides ~1–5 ns atomic load/store, bypassing the
+     * RCU path entirely. Only supports numeric types (double, float, int, bool).
+     *
+     * @tparam T Numeric type: double, float, int, or bool
+     * @param key The parameter key (must already exist)
+     *
+     * @return ParameterHandle<T> pointing to the parameter's atomic cache entry
+     *
+     * @throws StateKeyNotFoundException if the key doesn't exist
+     *
+     * @warning NOT real-time safe — call during setup, then use the handle
+     *          on the real-time thread.
+     * @warning The handle is valid until State::clear() or State destruction.
+     *          Using a handle after either is undefined behaviour.
+     *
+     * @see ParameterHandle for usage details and consistency guarantees
+     */
+    template <typename T>
+    ParameterHandle<T> get_handle(std::string_view key) const;
+
+    /**
      * @brief Sets the definition for a parameter.
      *
      * Associates a ParameterDefinition with an existing parameter, providing
@@ -241,6 +265,14 @@ private:
     /// @brief RCU-protected parameter map for lock-free reads
     using ParameterMap = std::map<std::string, ParameterData, std::less<>>;
     mutable RCU<ParameterMap> m_parameters_rcu;
+
+    /// @brief Atomic cache for per-sample real-time access via ParameterHandle.
+    /// Keyed by the same full path used in m_parameters_rcu.
+    /// std::map guarantees pointer stability — entries are never moved.
+    std::map<std::string, std::unique_ptr<AtomicCacheEntry>, std::less<>> m_atomic_cache;
+
+    /// @brief Mutex protecting m_atomic_cache insertions and lookups
+    mutable std::mutex m_cache_mutex;
 
     /// @brief Maximum string size for pre-allocated buffers
     size_t m_max_string_size;

@@ -13,9 +13,17 @@ FetchContent_Declare(googletest
     GIT_SHALLOW TRUE
     GIT_TAG v1.14.0)
 
+FetchContent_Declare(googlebenchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_PROGRESS TRUE
+    GIT_SHALLOW TRUE
+    GIT_TAG v1.9.1)
+
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
 # This command ensures that each of the named dependencies are made available to the project by the time it returns. If the dependency has already been populated the command does nothing. Otherwise, the command populates the dependency and then calls add_subdirectory() on the result.
-FetchContent_MakeAvailable(googletest)
+FetchContent_MakeAvailable(googletest googlebenchmark)
 
 # enable position independent code because otherwise the library cannot be linked into a shared library
 set_target_properties(gtest PROPERTIES POSITION_INDEPENDENT_CODE ON)

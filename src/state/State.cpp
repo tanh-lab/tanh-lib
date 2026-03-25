@@ -121,10 +121,31 @@ void State::set_in_root(std::string_view key,
                 it->second.int_value = i_value;
                 it->second.bool_value = b_value;
             }
+
+            // Update atomic cache (all 4 numeric types)
+            if (it->second.cache_ptr) {
+                it->second.cache_ptr->atomic_double.store(it->second.double_value,
+                                                          std::memory_order_relaxed);
+                it->second.cache_ptr->atomic_float.store(it->second.float_value,
+                                                         std::memory_order_relaxed);
+                it->second.cache_ptr->atomic_int.store(it->second.int_value,
+                                                       std::memory_order_relaxed);
+                it->second.cache_ptr->atomic_bool.store(it->second.bool_value,
+                                                        std::memory_order_relaxed);
+            }
         }
     });
 
     if (!parameter_exists) {
+        // Create atomic cache entry for the new parameter
+        AtomicCacheEntry* cache_entry = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(m_cache_mutex);
+            auto [cache_it, inserted] =
+                m_atomic_cache.emplace(std::string(key), std::make_unique<AtomicCacheEntry>());
+            cache_entry = cache_it->second.get();
+        }
+
         // Parameter doesn't exist - use RCU to create it
         m_parameters_rcu.update([&](ParameterMap& params) {
             ParameterData new_param;
@@ -190,6 +211,13 @@ void State::set_in_root(std::string_view key,
                 new_param.int_value = i_value;
                 new_param.bool_value = b_value;
             }
+
+            // Link to atomic cache and populate it
+            new_param.cache_ptr = cache_entry;
+            cache_entry->atomic_double.store(new_param.double_value, std::memory_order_relaxed);
+            cache_entry->atomic_float.store(new_param.float_value, std::memory_order_relaxed);
+            cache_entry->atomic_int.store(new_param.int_value, std::memory_order_relaxed);
+            cache_entry->atomic_bool.store(new_param.bool_value, std::memory_order_relaxed);
 
             params[std::string(key)] = std::move(new_param);
         });
@@ -351,6 +379,12 @@ void State::clear() {
     // Clear parameters
     m_parameters_rcu.update([](ParameterMap& params) { params.clear(); });
 
+    // Clear the atomic cache — all existing ParameterHandles are now invalid
+    {
+        std::lock_guard<std::mutex> lock(m_cache_mutex);
+        m_atomic_cache.clear();
+    }
+
     // Call the base class implementation to clear groups
     StateGroup::clear_groups();
 }
@@ -463,6 +497,15 @@ ParameterDefinition* State::get_definition_from_root(std::string_view key) const
     });
 }
 
+// get_handle - returns a lightweight handle for per-sample real-time access
+template <typename T>
+ParameterHandle<T> State::get_handle(std::string_view key) const {
+    std::lock_guard<std::mutex> lock(m_cache_mutex);
+    auto it = m_atomic_cache.find(key);
+    if (it == m_atomic_cache.end()) { throw StateKeyNotFoundException(key); }
+    return ParameterHandle<T>(it->second.get());
+}
+
 template void State::set_in_root(std::string_view key,
                                  const double value,
                                  NotifyStrategies strategy,
@@ -494,4 +537,9 @@ template bool State::get_from_root(std::string_view key,
                                    bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template std::string State::get_from_root(std::string_view key,
                                           bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+
+template ParameterHandle<double> State::get_handle(std::string_view key) const;
+template ParameterHandle<float> State::get_handle(std::string_view key) const;
+template ParameterHandle<int> State::get_handle(std::string_view key) const;
+template ParameterHandle<bool> State::get_handle(std::string_view key) const;
 }  // namespace thl
