@@ -30,9 +30,9 @@ void StateGroup::clear() {
         std::string_view fullPath = get_full_path();
 
         // Use RCU to update parameters map
+        std::vector<std::string> keys_to_delete;
         m_rootState->m_parameters_rcu.update([&](auto& parameters) {
             // First pass: collect parameters to delete
-            std::vector<std::string> keys_to_delete;
             keys_to_delete.reserve(parameters.size());  // Prevent reallocation
 
             for (const auto& [key, param] : parameters) {
@@ -48,6 +48,14 @@ void StateGroup::clear() {
 
             // Second pass: delete the parameters
             for (const auto& key : keys_to_delete) { parameters.erase(key); }
+        });
+
+        // Also clear corresponding entries from strings and definitions RCUs
+        m_rootState->m_strings_rcu.update([&](auto& strings) {
+            for (const auto& key : keys_to_delete) { strings.erase(key); }
+        });
+        m_rootState->m_definitions_rcu.update([&](auto& defs) {
+            for (const auto& key : keys_to_delete) { defs.erase(key); }
         });
     }
     clear_groups();

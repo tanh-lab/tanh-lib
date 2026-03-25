@@ -7,7 +7,9 @@ State::State(size_t max_string_size, size_t max_levels)
     : m_max_string_size(max_string_size)
     , m_max_levels(max_levels)
     , StateGroup(nullptr, nullptr, "")
-    , m_parameters_rcu(ParameterMap{}) {
+    , m_parameters_rcu(ParameterMap{})
+    , m_strings_rcu(StringMap{})
+    , m_definitions_rcu(DefinitionMap{}) {
     // Initialize the StateGroup with this as the root state
     m_rootState = this;
 
@@ -28,6 +30,8 @@ void State::ensure_thread_registered() {
 void State::register_reader_thread() {
     // Register this thread with all RCU structures for this State
     m_parameters_rcu.register_reader_thread();
+    m_strings_rcu.register_reader_thread();
+    m_definitions_rcu.register_reader_thread();
     m_groups_rcu.register_reader_thread();
     m_listeners_rcu.register_reader_thread();
 }
@@ -91,12 +95,9 @@ void State::set_in_root(std::string_view key,
             }
 
             if (existing_type == ParameterType::String) {
-                // Only String-typed params store string_value (via RCU)
-                m_parameters_rcu.update([&](ParameterMap& params) {
-                    auto it = params.find(key);
-                    if (it != params.end()) {
-                        it->second.string_value = value;
-                    }
+                // Only String-typed params store string_value (via strings RCU)
+                m_strings_rcu.update([&](StringMap& strings) {
+                    strings[std::string(key)] = value;
                 });
                 // get_from_root reads atomic_double for String-typed numeric access
                 existing_cache->atomic_double.store(d_value, std::memory_order_relaxed);
@@ -178,13 +179,19 @@ void State::set_in_root(std::string_view key,
                 new_param.type = ParameterType::Bool;
             } else if constexpr (std::is_same_v<T, std::string>) {
                 new_param.type = ParameterType::String;
-                new_param.string_value = value;
             }
 
             // Link to atomic cache
             new_param.cache_ptr = cache_entry;
             params[std::string(key)] = std::move(new_param);
         });
+
+        // String values go into the separate strings RCU
+        if constexpr (std::is_same_v<T, std::string>) {
+            m_strings_rcu.update([&](StringMap& strings) {
+                strings[std::string(key)] = value;
+            });
+        }
 
         // Populate the atomic cache with the native-type value
         if constexpr (std::is_same_v<T, double>) {
@@ -249,70 +256,71 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
         if (!allow_blocking) { throw BlockingException(key); }
     }
 
-    auto reader_fn = [&](const ParameterMap& params) -> T {
+    // Read type and cache_ptr from parameters RCU (lock-free)
+    ParameterType param_type = ParameterType::Unknown;
+    AtomicCacheEntry* cache = nullptr;
+    m_parameters_rcu.read([&](const ParameterMap& params) {
         auto it = params.find(key);
         if (it == params.end()) { throw StateKeyNotFoundException(key); }
+        param_type = it->second.type;
+        cache = it->second.cache_ptr;
+    });
 
-        const auto& data = it->second;
-
-        if constexpr (std::is_same_v<T, std::string>) {
-            // String type: read from RCU for string-typed params, or convert from native atomic
-            auto type = data.type;
-            switch (type) {
-                case ParameterType::String: {
-                    return data.string_value;
-                }
-                case ParameterType::Double:
-                    return std::to_string(
-                        data.cache_ptr->atomic_double.load(std::memory_order_relaxed));
-                case ParameterType::Float:
-                    return std::to_string(
-                        data.cache_ptr->atomic_float.load(std::memory_order_relaxed));
-                case ParameterType::Int:
-                    return std::to_string(
-                        data.cache_ptr->atomic_int.load(std::memory_order_relaxed));
-                case ParameterType::Bool:
-                    return data.cache_ptr->atomic_bool.load(std::memory_order_relaxed) ? "true"
-                                                                                       : "false";
-                default: return "";  // Unknown type
-            }
-        } else {
-            // Numeric types: read from the native atomic and convert on the fly
-            auto type = data.type;
-            switch (type) {
-                case ParameterType::Double:
-                    return static_cast<T>(
-                        data.cache_ptr->atomic_double.load(std::memory_order_relaxed));
-                case ParameterType::Float:
-                    return static_cast<T>(
-                        data.cache_ptr->atomic_float.load(std::memory_order_relaxed));
-                case ParameterType::Int:
-                    return static_cast<T>(
-                        data.cache_ptr->atomic_int.load(std::memory_order_relaxed));
-                case ParameterType::Bool:
-                    return static_cast<T>(
-                        data.cache_ptr->atomic_bool.load(std::memory_order_relaxed));
-                case ParameterType::String: {
-                    // For string-typed params, convert from atomic_double
-                    return static_cast<T>(
-                        data.cache_ptr->atomic_double.load(std::memory_order_relaxed));
-                }
-                default: return T{};
-            }
-        }
-    };
-
-    if (!allow_blocking) {
-        return m_parameters_rcu.read(reader_fn);
-    } else {
+    if constexpr (std::is_same_v<T, std::string>) {
         TANH_NONBLOCKING_SCOPED_DISABLER
-        return m_parameters_rcu.read(reader_fn);
+        switch (param_type) {
+            case ParameterType::String:
+                return m_strings_rcu.read([&](const StringMap& strings) -> std::string {
+                    auto it = strings.find(key);
+                    return it != strings.end() ? it->second : "";
+                });
+            case ParameterType::Double:
+                return std::to_string(
+                    cache->atomic_double.load(std::memory_order_relaxed));
+            case ParameterType::Float:
+                return std::to_string(
+                    cache->atomic_float.load(std::memory_order_relaxed));
+            case ParameterType::Int:
+                return std::to_string(
+                    cache->atomic_int.load(std::memory_order_relaxed));
+            case ParameterType::Bool:
+                return cache->atomic_bool.load(std::memory_order_relaxed) ? "true"
+                                                                         : "false";
+            default: return "";
+        }
+    } else {
+        // Numeric types: read from the native atomic and convert on the fly
+        switch (param_type) {
+            case ParameterType::Double:
+                return static_cast<T>(
+                    cache->atomic_double.load(std::memory_order_relaxed));
+            case ParameterType::Float:
+                return static_cast<T>(
+                    cache->atomic_float.load(std::memory_order_relaxed));
+            case ParameterType::Int:
+                return static_cast<T>(
+                    cache->atomic_int.load(std::memory_order_relaxed));
+            case ParameterType::Bool:
+                return static_cast<T>(
+                    cache->atomic_bool.load(std::memory_order_relaxed));
+            case ParameterType::String: {
+                // For string-typed params, convert from atomic_double
+                return static_cast<T>(
+                    cache->atomic_double.load(std::memory_order_relaxed));
+            }
+            default: return T{};
+        }
     }
 }
 
 std::string State::get_state_dump() const {
     nlohmann::json root = nlohmann::json::array();
 
+    // Snapshot string values
+    StringMap strings_snap;
+    m_strings_rcu.read([&](const StringMap& s) { strings_snap = s; });
+
+    // Build parameter entries from the parameters RCU
     m_parameters_rcu.read([&](const ParameterMap& params) {
         for (const auto& [key, data] : params) {
             nlohmann::json param_obj = nlohmann::json::object();
@@ -332,50 +340,57 @@ std::string State::get_state_dump() const {
                 param_obj["value"] =
                     data.cache_ptr->atomic_bool.load(std::memory_order_relaxed);
             } else if (type == ParameterType::String) {
-                param_obj["value"] = data.string_value;
-            }
-
-            // Include definition if it exists
-            if (data.parameter_definition) {
-                nlohmann::json def_obj = nlohmann::json::object();
-                const auto& def = *data.parameter_definition;
-
-                def_obj["name"] = def.m_name;
-                def_obj["type"] = [&]() {
-                    switch (def.m_type) {
-                        case PluginParamType::ParamFloat: return "float";
-                        case PluginParamType::ParamInt: return "int";
-                        case PluginParamType::ParamBool: return "bool";
-                        case PluginParamType::ParamChoice: return "choice";
-                        default: return "unknown";
-                    }
-                }();
-
-                // Range information
-                def_obj["min"] = def.m_range.m_min;
-                def_obj["max"] = def.m_range.m_max;
-                def_obj["step"] = def.m_range.m_step;
-                def_obj["skew"] = def.m_range.m_skew;
-
-                def_obj["default_value"] = def.m_default_value;
-                def_obj["decimal_places"] = def.m_decimal_places;
-                def_obj["automation"] = def.m_automation;
-                def_obj["modulation"] = def.m_modulation;
-
-                def_obj["slider_polarity"] = [&]() {
-                    switch (def.m_slider_polarity) {
-                        case SliderPolarity::Unipolar: return "unipolar";
-                        case SliderPolarity::Bipolar: return "bipolar";
-                        default: return "unipolar";
-                    }
-                }();
-
-                if (!def.m_data.empty()) { def_obj["data"] = def.m_data; }
-
-                param_obj["definition"] = def_obj;
+                auto sit = strings_snap.find(key);
+                param_obj["value"] = sit != strings_snap.end() ? sit->second : "";
             }
 
             root.push_back(param_obj);
+        }
+    });
+
+    // Add definitions from the definitions RCU
+    m_definitions_rcu.read([&](const DefinitionMap& defs) {
+        for (auto& elem : root) {
+            std::string key = elem["key"].get<std::string>();
+            auto it = defs.find(key);
+            if (it == defs.end()) continue;
+
+            const auto& def = it->second;
+            nlohmann::json def_obj = nlohmann::json::object();
+
+            def_obj["name"] = def.m_name;
+            def_obj["type"] = [&]() {
+                switch (def.m_type) {
+                    case PluginParamType::ParamFloat: return "float";
+                    case PluginParamType::ParamInt: return "int";
+                    case PluginParamType::ParamBool: return "bool";
+                    case PluginParamType::ParamChoice: return "choice";
+                    default: return "unknown";
+                }
+            }();
+
+            // Range information
+            def_obj["min"] = def.m_range.m_min;
+            def_obj["max"] = def.m_range.m_max;
+            def_obj["step"] = def.m_range.m_step;
+            def_obj["skew"] = def.m_range.m_skew;
+
+            def_obj["default_value"] = def.m_default_value;
+            def_obj["decimal_places"] = def.m_decimal_places;
+            def_obj["automation"] = def.m_automation;
+            def_obj["modulation"] = def.m_modulation;
+
+            def_obj["slider_polarity"] = [&]() {
+                switch (def.m_slider_polarity) {
+                    case SliderPolarity::Unipolar: return "unipolar";
+                    case SliderPolarity::Bipolar: return "bipolar";
+                    default: return "unipolar";
+                }
+            }();
+
+            if (!def.m_data.empty()) { def_obj["data"] = def.m_data; }
+
+            elem["definition"] = def_obj;
         }
     });
 
@@ -399,6 +414,12 @@ ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOC
 void State::clear() {
     // Clear parameters
     m_parameters_rcu.update([](ParameterMap& params) { params.clear(); });
+
+    // Clear string values
+    m_strings_rcu.update([](StringMap& strings) { strings.clear(); });
+
+    // Clear definitions
+    m_definitions_rcu.update([](DefinitionMap& defs) { defs.clear(); });
 
     // Clear the atomic cache — all existing ParameterHandles are now invalid
     {
@@ -499,22 +520,31 @@ void State::update_from_json(const nlohmann::json& json_data,
 
 // Parameter definition management
 void State::set_definition_in_root(std::string_view key, const ParameterDefinition& def) {
-    m_parameters_rcu.update([&](ParameterMap& params) {
-        auto it = params.find(key);
-        if (it != params.end()) {
-            it->second.parameter_definition = std::make_unique<ParameterDefinition>(def);
-        } else {
-            throw StateKeyNotFoundException(key);
-        }
+    // Verify param exists
+    bool exists = m_parameters_rcu.read([&](const ParameterMap& params) {
+        return params.find(key) != params.end();
+    });
+    if (!exists) { throw StateKeyNotFoundException(key); }
+
+    m_definitions_rcu.update([&](DefinitionMap& defs) {
+        defs.erase(std::string(key));
+        defs.emplace(std::string(key), def);
     });
 }
 
-ParameterDefinition* State::get_definition_from_root(std::string_view key) const
-    TANH_NONBLOCKING_FUNCTION {
-    return m_parameters_rcu.read([&](const ParameterMap& params) -> ParameterDefinition* {
-        auto it = params.find(key);
-        if (it == params.end()) { throw StateKeyNotFoundException(key); }
-        return it->second.parameter_definition.get();
+std::optional<ParameterDefinition> State::get_definition_from_root(std::string_view key) const {
+    // Verify param exists
+    bool exists = m_parameters_rcu.read([&](const ParameterMap& params) {
+        return params.find(key) != params.end();
+    });
+    if (!exists) { throw StateKeyNotFoundException(key); }
+
+    return m_definitions_rcu.read([&](const DefinitionMap& defs) -> std::optional<ParameterDefinition> {
+        auto it = defs.find(key);
+        if (it != defs.end()) {
+            return it->second;
+        }
+        return std::nullopt;
     });
 }
 

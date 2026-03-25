@@ -206,14 +206,13 @@ public:
      * @brief Gets the definition for a parameter.
      *
      * @param key The parameter key
-     * @return Pointer to the ParameterDefinition, or nullptr if not set
+     * @return A copy of the ParameterDefinition, or std::nullopt if not set
      *
      * @throws StateKeyNotFoundException if the key doesn't exist
      *
-     * @note **REAL-TIME SAFE** - uses RCU for lock-free access
+     * @warning NOT real-time safe - copies the definition (may allocate)
      */
-    ParameterDefinition* get_definition_from_root(std::string_view key) const
-        TANH_NONBLOCKING_FUNCTION;
+    std::optional<ParameterDefinition> get_definition_from_root(std::string_view key) const;
 
     /**
      * @brief Clears all parameters and groups from the state.
@@ -266,6 +265,14 @@ private:
     /// @brief RCU-protected parameter map for lock-free reads
     using ParameterMap = std::map<std::string, ParameterRecord, std::less<>>;
     mutable RCU<ParameterMap> m_parameters_rcu;
+
+    /// @brief RCU-protected string values for string-typed parameters
+    using StringMap = std::map<std::string, std::string, std::less<>>;
+    mutable RCU<StringMap> m_strings_rcu;
+
+    /// @brief RCU-protected parameter definitions
+    using DefinitionMap = std::map<std::string, ParameterDefinition, std::less<>>;
+    mutable RCU<DefinitionMap> m_definitions_rcu;
 
     /// @brief Atomic cache for per-sample real-time access via ParameterHandle.
     /// Keyed by the same full path used in m_parameters_rcu.
