@@ -5,7 +5,15 @@
 namespace thl {
 
 // Parameter class implementation
-Parameter::Parameter(const State* state, std::string_view key) : m_state(state), m_key(key) {}
+Parameter::Parameter(const State* state, std::string_view key) : m_state(state), m_key(key) {
+    state->m_parameters_rcu.read([&](const auto& params) {
+        auto it = params.find(key);
+        if (it != params.end()) {
+            m_cache_ptr = it->second.cache_ptr;
+            m_type = it->second.type;
+        }
+    });
+}
 
 Parameter::Parameter(const StateGroup* group, std::string_view key, const State* rootState)
     : m_state(rootState) {
@@ -13,52 +21,93 @@ Parameter::Parameter(const StateGroup* group, std::string_view key, const State*
     size_t required_size = detail::join_path_size(group_path, key);
     m_key.reserve(required_size);
     detail::join_path(group_path, key, m_key);
+
+    rootState->m_parameters_rcu.read([&](const auto& params) {
+        auto it = params.find(m_key);
+        if (it != params.end()) {
+            m_cache_ptr = it->second.cache_ptr;
+            m_type = it->second.type;
+        }
+    });
 }
 
 // Parameter conversion methods
 template <typename T>
 T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
-    if constexpr (std::is_same_v<T, double>) {
-        return m_state->get_from_root<double>(m_key, allow_blocking);
-    } else if constexpr (std::is_same_v<T, float>) {
-        return m_state->get_from_root<float>(m_key, allow_blocking);
-    } else if constexpr (std::is_same_v<T, int>) {
-        return m_state->get_from_root<int>(m_key, allow_blocking);
-    } else if constexpr (std::is_same_v<T, bool>) {
-        return m_state->get_from_root<bool>(m_key, allow_blocking);
-    } else if constexpr (std::is_same_v<T, std::string>) {
-        return m_state->get_from_root<std::string>(m_key, allow_blocking);
+    if (!m_cache_ptr) { throw StateKeyNotFoundException(m_key); }
+
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (!allow_blocking) { throw BlockingException(m_key); }
+        TANH_NONBLOCKING_SCOPED_DISABLER
+        switch (m_type) {
+            case ParameterType::String: {
+                // Must read string_value from RCU
+                return m_state->m_parameters_rcu.read([&](const auto& params) -> std::string {
+                    auto it = params.find(m_key);
+                    if (it == params.end()) { throw StateKeyNotFoundException(m_key); }
+                    return it->second.string_value;
+                });
+            }
+            case ParameterType::Double:
+                return std::to_string(
+                    m_cache_ptr->atomic_double.load(std::memory_order_relaxed));
+            case ParameterType::Float:
+                return std::to_string(
+                    m_cache_ptr->atomic_float.load(std::memory_order_relaxed));
+            case ParameterType::Int:
+                return std::to_string(
+                    m_cache_ptr->atomic_int.load(std::memory_order_relaxed));
+            case ParameterType::Bool:
+                return m_cache_ptr->atomic_bool.load(std::memory_order_relaxed) ? "true"
+                                                                               : "false";
+            default: return "";
+        }
     } else {
-        static_assert(std::is_same_v<T, void>, "Unsupported type for Parameter::to()");
-        // This line will never be reached, but needed to avoid compiler
-        // warnings
-        return T{};
+        // Numeric types: load from native atomic and static_cast — no RCU needed
+        switch (m_type) {
+            case ParameterType::Double:
+                return static_cast<T>(
+                    m_cache_ptr->atomic_double.load(std::memory_order_relaxed));
+            case ParameterType::Float:
+                return static_cast<T>(
+                    m_cache_ptr->atomic_float.load(std::memory_order_relaxed));
+            case ParameterType::Int:
+                return static_cast<T>(
+                    m_cache_ptr->atomic_int.load(std::memory_order_relaxed));
+            case ParameterType::Bool:
+                return static_cast<T>(
+                    m_cache_ptr->atomic_bool.load(std::memory_order_relaxed));
+            case ParameterType::String:
+                return static_cast<T>(
+                    m_cache_ptr->atomic_double.load(std::memory_order_relaxed));
+            default: return T{};
+        }
     }
 }
 
-// Parameter type checking
+// Parameter type checking — uses cached m_type, no RCU read needed
 ParameterType Parameter::get_type() const TANH_NONBLOCKING_FUNCTION {
-    return m_state->get_type_from_root(m_key);
+    return m_type;
 }
 
 bool Parameter::is_double() const TANH_NONBLOCKING_FUNCTION {
-    return get_type() == ParameterType::Double;
+    return m_type == ParameterType::Double;
 }
 
 bool Parameter::is_float() const TANH_NONBLOCKING_FUNCTION {
-    return get_type() == ParameterType::Float;
+    return m_type == ParameterType::Float;
 }
 
 bool Parameter::is_int() const TANH_NONBLOCKING_FUNCTION {
-    return get_type() == ParameterType::Int;
+    return m_type == ParameterType::Int;
 }
 
 bool Parameter::is_bool() const TANH_NONBLOCKING_FUNCTION {
-    return get_type() == ParameterType::Bool;
+    return m_type == ParameterType::Bool;
 }
 
 bool Parameter::is_string() const TANH_NONBLOCKING_FUNCTION {
-    return get_type() == ParameterType::String;
+    return m_type == ParameterType::String;
 }
 
 // Object-oriented parameter access - renamed to get_from_root
@@ -68,9 +117,6 @@ Parameter State::get_from_root(std::string_view key) const {
 
 // Parameter notification method
 void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) const {
-    // Create a temporary parameter object for notification
-    Parameter param_obj(m_state, m_key);
-
     // Check if this parameter belongs to a group by looking for dots in the
     // path
     std::string path = m_key;
@@ -92,13 +138,13 @@ void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) con
         if (found_group) {
             // This will notify both the group listener and propagate up to the
             // root
-            found_group->notify_listeners(path, param_obj, strategy, source);
+            found_group->notify_listeners(path, *this, strategy, source);
             return;
         }
     }
 
     // Otherwise notify directly from State
-    const_cast<State*>(m_state)->notify_listeners(path, param_obj, strategy, source);
+    const_cast<State*>(m_state)->notify_listeners(path, *this, strategy, source);
 }
 
 // Get full path for this parameter
@@ -109,6 +155,29 @@ std::string Parameter::get_path() const {
 ParameterDefinition* Parameter::get_definition() const TANH_NONBLOCKING_FUNCTION {
     return m_state->get_definition_from_root(m_key);
 }
+
+template <typename T>
+ParameterHandle<T> Parameter::get_handle() const {
+    if (!m_cache_ptr) { throw StateKeyNotFoundException(m_key); }
+
+    constexpr ParameterType expected_type = []() {
+        if constexpr (std::is_same_v<T, double>) return ParameterType::Double;
+        else if constexpr (std::is_same_v<T, float>) return ParameterType::Float;
+        else if constexpr (std::is_same_v<T, int>) return ParameterType::Int;
+        else if constexpr (std::is_same_v<T, bool>) return ParameterType::Bool;
+    }();
+    if (m_type != expected_type) {
+        throw std::invalid_argument(
+            "ParameterHandle type mismatch: requested handle type does not match parameter type");
+    }
+
+    return ParameterHandle<T>(m_cache_ptr);
+}
+
+template ParameterHandle<double> Parameter::get_handle<double>() const;
+template ParameterHandle<float> Parameter::get_handle<float>() const;
+template ParameterHandle<int> Parameter::get_handle<int>() const;
+template ParameterHandle<bool> Parameter::get_handle<bool>() const;
 
 template double Parameter::to<double>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template float Parameter::to<float>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
