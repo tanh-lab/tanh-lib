@@ -57,86 +57,104 @@ void State::set_in_root(std::string_view key,
                       std::is_same_v<T, bool> || std::is_same_v<T, std::string>,
                   "Unsupported type for set_in_root");
 
-    // Try to update existing parameter first
+    // Try to update existing parameter via atomic cache (no RCU copy needed for numerics)
     bool parameter_exists = false;
-    m_parameters_rcu.update([&](ParameterMap& params) {
+    AtomicCacheEntry* existing_cache = nullptr;
+    ParameterType existing_type = ParameterType::Unknown;
+
+    // Read-only RCU check: does the parameter already exist?
+    m_parameters_rcu.read([&](const ParameterMap& params) {
         auto it = params.find(key);
         if (it != params.end()) {
             parameter_exists = true;
-
-            // Update values directly
-            if constexpr (std::is_same_v<T, double>) {
-                it->second.double_value = value;
-                it->second.float_value = static_cast<float>(value);
-                it->second.int_value = static_cast<int>(value);
-                it->second.bool_value = value != 0.0;
-            } else if constexpr (std::is_same_v<T, float>) {
-                it->second.float_value = value;
-                it->second.double_value = static_cast<double>(value);
-                it->second.int_value = static_cast<int>(value);
-                it->second.bool_value = value != 0.0f;
-            } else if constexpr (std::is_same_v<T, int>) {
-                it->second.int_value = value;
-                it->second.double_value = static_cast<double>(value);
-                it->second.float_value = static_cast<float>(value);
-                it->second.bool_value = value != 0;
-            } else if constexpr (std::is_same_v<T, bool>) {
-                it->second.bool_value = value;
-                it->second.double_value = value ? 1.0 : 0.0;
-                it->second.float_value = value ? 1.0f : 0.0f;
-                it->second.int_value = value ? 1 : 0;
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                it->second.string_value = value;
-
-                // Convert string to numeric values
-                double d_value = 0.0;
-                float f_value = 0.0f;
-                int i_value = 0;
-                bool b_value = false;
-
-                try {
-                    if (value == "true" || value == "1" || value == "yes" || value == "on") {
-                        b_value = true;
-                        d_value = 1.0;
-                        f_value = 1.0f;
-                        i_value = 1;
-                    } else if (value == "false" || value == "0" || value == "no" ||
-                               value == "off") {
-                        b_value = false;
-                        d_value = 0.0;
-                        f_value = 0.0f;
-                        i_value = 0;
-                    } else {
-                        d_value = std::stod(value);
-                        f_value = static_cast<float>(d_value);
-                        i_value = static_cast<int>(d_value);
-                        b_value = d_value != 0.0;
-                    }
-                } catch (...) {
-                    // Leave default values if conversion fails
-                }
-
-                it->second.double_value = d_value;
-                it->second.float_value = f_value;
-                it->second.int_value = i_value;
-                it->second.bool_value = b_value;
-            }
-
-            // Update atomic cache (all 4 numeric types)
-            if (it->second.cache_ptr) {
-                it->second.cache_ptr->atomic_double.store(it->second.double_value,
-                                                          std::memory_order_relaxed);
-                it->second.cache_ptr->atomic_float.store(it->second.float_value,
-                                                         std::memory_order_relaxed);
-                it->second.cache_ptr->atomic_int.store(it->second.int_value,
-                                                       std::memory_order_relaxed);
-                it->second.cache_ptr->atomic_bool.store(it->second.bool_value,
-                                                        std::memory_order_relaxed);
-            }
+            existing_cache = it->second.cache_ptr;
+            existing_type = it->second.type;
         }
     });
 
-    if (!parameter_exists) {
+    if (parameter_exists && existing_cache) {
+        if constexpr (std::is_same_v<T, std::string>) {
+            // Convert string to double — this is the only numeric conversion needed.
+            // get_from_root reads from the native atomic and casts on the fly.
+            double d_value = 0.0;
+            try {
+                if (value == "true" || value == "1" || value == "yes" || value == "on") {
+                    d_value = 1.0;
+                } else if (value == "false" || value == "0" || value == "no" ||
+                           value == "off") {
+                    d_value = 0.0;
+                } else {
+                    d_value = std::stod(value);
+                }
+            } catch (...) {
+                // Leave default value (0.0) if conversion fails
+            }
+
+            if (existing_type == ParameterType::String) {
+                // Only String-typed params store string_value (via RCU)
+                m_parameters_rcu.update([&](ParameterMap& params) {
+                    auto it = params.find(key);
+                    if (it != params.end()) {
+                        it->second.string_value = value;
+                    }
+                });
+                // get_from_root reads atomic_double for String-typed numeric access
+                existing_cache->atomic_double.store(d_value, std::memory_order_relaxed);
+            } else {
+                // Non-string param receiving a string value: cast to its native atomic
+                switch (existing_type) {
+                    case ParameterType::Double:
+                        existing_cache->atomic_double.store(d_value, std::memory_order_relaxed);
+                        break;
+                    case ParameterType::Float:
+                        existing_cache->atomic_float.store(static_cast<float>(d_value),
+                                                           std::memory_order_relaxed);
+                        break;
+                    case ParameterType::Int:
+                        existing_cache->atomic_int.store(static_cast<int>(d_value),
+                                                         std::memory_order_relaxed);
+                        break;
+                    case ParameterType::Bool:
+                        existing_cache->atomic_bool.store(d_value != 0.0,
+                                                          std::memory_order_relaxed);
+                        break;
+                    default: break;
+                }
+            }
+        } else {
+            // Numeric params: skip RCU entirely, convert and write to the parameter's native-type
+            // atomic. This handles cross-type sets (e.g., set<int> on a Double-typed param).
+            switch (existing_type) {
+                case ParameterType::Double:
+                    existing_cache->atomic_double.store(static_cast<double>(value),
+                                                        std::memory_order_relaxed);
+                    break;
+                case ParameterType::Float:
+                    existing_cache->atomic_float.store(static_cast<float>(value),
+                                                       std::memory_order_relaxed);
+                    break;
+                case ParameterType::Int:
+                    existing_cache->atomic_int.store(static_cast<int>(value),
+                                                     std::memory_order_relaxed);
+                    break;
+                case ParameterType::Bool:
+                    if constexpr (std::is_same_v<T, bool>) {
+                        existing_cache->atomic_bool.store(value, std::memory_order_relaxed);
+                    } else {
+                        existing_cache->atomic_bool.store(value != T{0},
+                                                          std::memory_order_relaxed);
+                    }
+                    break;
+                case ParameterType::String:
+                    // Numeric value to a string-typed param: store in the native numeric atomic
+                    // (string_value is not updated — use set<string> for that)
+                    existing_cache->atomic_double.store(static_cast<double>(value),
+                                                        std::memory_order_relaxed);
+                    break;
+                default: break;
+            }
+        }
+    } else if (!parameter_exists) {
         // Create atomic cache entry for the new parameter
         AtomicCacheEntry* cache_entry = nullptr;
         {
@@ -152,75 +170,51 @@ void State::set_in_root(std::string_view key,
 
             if constexpr (std::is_same_v<T, double>) {
                 new_param.type = ParameterType::Double;
-                new_param.double_value = value;
-                new_param.float_value = static_cast<float>(value);
-                new_param.int_value = static_cast<int>(value);
-                new_param.bool_value = value != 0.0;
             } else if constexpr (std::is_same_v<T, float>) {
                 new_param.type = ParameterType::Float;
-                new_param.float_value = value;
-                new_param.double_value = static_cast<double>(value);
-                new_param.int_value = static_cast<int>(value);
-                new_param.bool_value = value != 0.0f;
             } else if constexpr (std::is_same_v<T, int>) {
                 new_param.type = ParameterType::Int;
-                new_param.int_value = value;
-                new_param.double_value = static_cast<double>(value);
-                new_param.float_value = static_cast<float>(value);
-                new_param.bool_value = value != 0;
             } else if constexpr (std::is_same_v<T, bool>) {
                 new_param.type = ParameterType::Bool;
-                new_param.bool_value = value;
-                new_param.double_value = value ? 1.0 : 0.0;
-                new_param.float_value = value ? 1.0f : 0.0f;
-                new_param.int_value = value ? 1 : 0;
             } else if constexpr (std::is_same_v<T, std::string>) {
                 new_param.type = ParameterType::String;
                 new_param.string_value = value;
-
-                // Convert string to numeric values
-                double d_value = 0.0;
-                float f_value = 0.0f;
-                int i_value = 0;
-                bool b_value = false;
-
-                try {
-                    if (value == "true" || value == "1" || value == "yes" || value == "on") {
-                        b_value = true;
-                        d_value = 1.0;
-                        f_value = 1.0f;
-                        i_value = 1;
-                    } else if (value == "false" || value == "0" || value == "no" ||
-                               value == "off") {
-                        b_value = false;
-                        d_value = 0.0;
-                        f_value = 0.0f;
-                        i_value = 0;
-                    } else {
-                        d_value = std::stod(value);
-                        f_value = static_cast<float>(d_value);
-                        i_value = static_cast<int>(d_value);
-                        b_value = d_value != 0.0;
-                    }
-                } catch (...) {
-                    // Leave default values if conversion fails
-                }
-
-                new_param.double_value = d_value;
-                new_param.float_value = f_value;
-                new_param.int_value = i_value;
-                new_param.bool_value = b_value;
             }
 
-            // Link to atomic cache and populate it
+            // Link to atomic cache
             new_param.cache_ptr = cache_entry;
-            cache_entry->atomic_double.store(new_param.double_value, std::memory_order_relaxed);
-            cache_entry->atomic_float.store(new_param.float_value, std::memory_order_relaxed);
-            cache_entry->atomic_int.store(new_param.int_value, std::memory_order_relaxed);
-            cache_entry->atomic_bool.store(new_param.bool_value, std::memory_order_relaxed);
-
             params[std::string(key)] = std::move(new_param);
         });
+
+        // Populate the atomic cache with the native-type value
+        if constexpr (std::is_same_v<T, double>) {
+            cache_entry->atomic_double.store(value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, float>) {
+            cache_entry->atomic_float.store(value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, int>) {
+            cache_entry->atomic_int.store(value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, bool>) {
+            cache_entry->atomic_bool.store(value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            // Only atomic_double is needed for String-typed params because
+            // get_from_root reads exclusively from atomic_double and casts to
+            // the requested type T on the fly via static_cast<T>.
+            double d_value = 0.0;
+            try {
+                if (value == "true" || value == "1" || value == "yes" || value == "on") {
+                    d_value = 1.0;
+                } else if (value == "false" || value == "0" || value == "no" ||
+                           value == "off") {
+                    d_value = 0.0;
+                } else {
+                    d_value = std::stod(value);
+                }
+            } catch (...) {
+                // Leave default value (0.0) if conversion fails
+            }
+
+            cache_entry->atomic_double.store(d_value, std::memory_order_relaxed);
+        }
     }
 
     // Handle notification
@@ -259,27 +253,51 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
         auto it = params.find(key);
         if (it == params.end()) { throw StateKeyNotFoundException(key); }
 
-        if constexpr (std::is_same_v<T, double>) {
-            return it->second.double_value;
-        } else if constexpr (std::is_same_v<T, float>) {
-            return it->second.float_value;
-        } else if constexpr (std::is_same_v<T, int>) {
-            return it->second.int_value;
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return it->second.bool_value;
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            // If the string is longer than the SSO buffer, this may allocate
-            // memory!
-            auto type = it->second.type;
+        const auto& data = it->second;
+
+        if constexpr (std::is_same_v<T, std::string>) {
+            // String type: read from RCU for string-typed params, or convert from native atomic
+            auto type = data.type;
             switch (type) {
                 case ParameterType::String: {
-                    return it->second.string_value;
+                    return data.string_value;
                 }
-                case ParameterType::Double: return std::to_string(it->second.double_value);
-                case ParameterType::Float: return std::to_string(it->second.float_value);
-                case ParameterType::Int: return std::to_string(it->second.int_value);
-                case ParameterType::Bool: return it->second.bool_value ? "true" : "false";
+                case ParameterType::Double:
+                    return std::to_string(
+                        data.cache_ptr->atomic_double.load(std::memory_order_relaxed));
+                case ParameterType::Float:
+                    return std::to_string(
+                        data.cache_ptr->atomic_float.load(std::memory_order_relaxed));
+                case ParameterType::Int:
+                    return std::to_string(
+                        data.cache_ptr->atomic_int.load(std::memory_order_relaxed));
+                case ParameterType::Bool:
+                    return data.cache_ptr->atomic_bool.load(std::memory_order_relaxed) ? "true"
+                                                                                       : "false";
                 default: return "";  // Unknown type
+            }
+        } else {
+            // Numeric types: read from the native atomic and convert on the fly
+            auto type = data.type;
+            switch (type) {
+                case ParameterType::Double:
+                    return static_cast<T>(
+                        data.cache_ptr->atomic_double.load(std::memory_order_relaxed));
+                case ParameterType::Float:
+                    return static_cast<T>(
+                        data.cache_ptr->atomic_float.load(std::memory_order_relaxed));
+                case ParameterType::Int:
+                    return static_cast<T>(
+                        data.cache_ptr->atomic_int.load(std::memory_order_relaxed));
+                case ParameterType::Bool:
+                    return static_cast<T>(
+                        data.cache_ptr->atomic_bool.load(std::memory_order_relaxed));
+                case ParameterType::String: {
+                    // For string-typed params, convert from atomic_double
+                    return static_cast<T>(
+                        data.cache_ptr->atomic_double.load(std::memory_order_relaxed));
+                }
+                default: return T{};
             }
         }
     };
@@ -303,13 +321,16 @@ std::string State::get_state_dump() const {
             // Get current value based on type
             auto type = data.type;
             if (type == ParameterType::Double) {
-                param_obj["value"] = data.double_value;
+                param_obj["value"] =
+                    data.cache_ptr->atomic_double.load(std::memory_order_relaxed);
             } else if (type == ParameterType::Float) {
-                param_obj["value"] = data.float_value;
+                param_obj["value"] =
+                    data.cache_ptr->atomic_float.load(std::memory_order_relaxed);
             } else if (type == ParameterType::Int) {
-                param_obj["value"] = data.int_value;
+                param_obj["value"] = data.cache_ptr->atomic_int.load(std::memory_order_relaxed);
             } else if (type == ParameterType::Bool) {
-                param_obj["value"] = data.bool_value;
+                param_obj["value"] =
+                    data.cache_ptr->atomic_bool.load(std::memory_order_relaxed);
             } else if (type == ParameterType::String) {
                 param_obj["value"] = data.string_value;
             }
@@ -500,6 +521,19 @@ ParameterDefinition* State::get_definition_from_root(std::string_view key) const
 // get_handle - returns a lightweight handle for per-sample real-time access
 template <typename T>
 ParameterHandle<T> State::get_handle(std::string_view key) const {
+    // Verify the parameter's type matches T
+    ParameterType param_type = get_type_from_root(key);
+    constexpr ParameterType expected_type = []() {
+        if constexpr (std::is_same_v<T, double>) return ParameterType::Double;
+        else if constexpr (std::is_same_v<T, float>) return ParameterType::Float;
+        else if constexpr (std::is_same_v<T, int>) return ParameterType::Int;
+        else if constexpr (std::is_same_v<T, bool>) return ParameterType::Bool;
+    }();
+    if (param_type != expected_type) {
+        throw std::invalid_argument(
+            "ParameterHandle type mismatch: requested handle type does not match parameter type");
+    }
+
     std::lock_guard<std::mutex> lock(m_cache_mutex);
     auto it = m_atomic_cache.find(key);
     if (it == m_atomic_cache.end()) { throw StateKeyNotFoundException(key); }
