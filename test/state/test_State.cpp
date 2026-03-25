@@ -929,9 +929,9 @@ TEST(StateTests, ParameterDefinitionFloat) {
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("audio.volume");
-    ParameterDefinition* def = param.get_definition();
+    auto def = param.get_definition();
 
-    ASSERT_NE(nullptr, def);
+    ASSERT_TRUE(def.has_value());
     EXPECT_EQ("Volume", def->m_name);
     EXPECT_EQ(PluginParamType::ParamFloat, def->m_type);
     EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
@@ -964,9 +964,9 @@ TEST(StateTests, ParameterDefinitionInt) {
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("synth.filter.cutoff");
-    ParameterDefinition* def = param.get_definition();
+    auto def = param.get_definition();
 
-    ASSERT_NE(nullptr, def);
+    ASSERT_TRUE(def.has_value());
     EXPECT_EQ("Filter Cutoff", def->m_name);
     EXPECT_EQ(PluginParamType::ParamInt, def->m_type);
     EXPECT_EQ(20, def->m_range.min_int());
@@ -997,9 +997,9 @@ TEST(StateTests, ParameterDefinitionBool) {
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("effects.reverb.bypass");
-    ParameterDefinition* def = param.get_definition();
+    auto def = param.get_definition();
 
-    ASSERT_NE(nullptr, def);
+    ASSERT_TRUE(def.has_value());
     EXPECT_EQ("Bypass", def->m_name);
     EXPECT_EQ(PluginParamType::ParamBool, def->m_type);
     EXPECT_EQ(0, def->m_range.min_int());
@@ -1031,9 +1031,9 @@ TEST(StateTests, ParameterDefinitionChoice) {
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("oscillator.waveform");
-    ParameterDefinition* def = param.get_definition();
+    auto def = param.get_definition();
 
-    ASSERT_NE(nullptr, def);
+    ASSERT_TRUE(def.has_value());
     EXPECT_EQ("Waveform", def->m_name);
     EXPECT_EQ(PluginParamType::ParamChoice, def->m_type);
     EXPECT_EQ(0, def->m_range.min_int());
@@ -1069,9 +1069,9 @@ TEST(StateTests, ParameterDefinitionPersistence) {
 
     // Verify the definition is still present and unchanged
     Parameter param = state.get_parameter("gain");
-    ParameterDefinition* def = param.get_definition();
+    auto def = param.get_definition();
 
-    ASSERT_NE(nullptr, def);
+    ASSERT_TRUE(def.has_value());
     EXPECT_EQ("Gain", def->m_name);
     EXPECT_FLOAT_EQ(1.0f, def->m_default_value);  // Default should still be 1.0
     EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
@@ -1099,14 +1099,14 @@ TEST(StateTests, MultipleParameterDefinitions) {
     EXPECT_EQ(1, state.get<int>("reverb.type"));
 
     // Verify all definitions exist
-    EXPECT_NE(nullptr, state.get_parameter("reverb.dry_wet").get_definition());
-    EXPECT_NE(nullptr, state.get_parameter("reverb.room_size").get_definition());
-    EXPECT_NE(nullptr, state.get_parameter("reverb.damping").get_definition());
-    EXPECT_NE(nullptr, state.get_parameter("reverb.enabled").get_definition());
-    EXPECT_NE(nullptr, state.get_parameter("reverb.type").get_definition());
+    EXPECT_TRUE(state.get_parameter("reverb.dry_wet").get_definition().has_value());
+    EXPECT_TRUE(state.get_parameter("reverb.room_size").get_definition().has_value());
+    EXPECT_TRUE(state.get_parameter("reverb.damping").get_definition().has_value());
+    EXPECT_TRUE(state.get_parameter("reverb.enabled").get_definition().has_value());
+    EXPECT_TRUE(state.get_parameter("reverb.type").get_definition().has_value());
 
     // Check specific definition properties
-    ParameterDefinition* type_def = state.get_parameter("reverb.type").get_definition();
+    auto type_def = state.get_parameter("reverb.type").get_definition();
     EXPECT_EQ("Room Type", type_def->m_name);
     EXPECT_EQ(4, type_def->m_data.size());
     EXPECT_EQ("Medium", type_def->m_data[1]);
@@ -1124,9 +1124,9 @@ TEST(StateTests, ParameterWithoutDefinition) {
 
     // Verify no definition exists
     Parameter param = state.get_parameter("simple.param");
-    ParameterDefinition* def = param.get_definition();
+    auto def = param.get_definition();
 
-    EXPECT_EQ(nullptr, def);
+    EXPECT_FALSE(def.has_value());
 }
 
 // Test Range construction and conversions
@@ -1205,8 +1205,8 @@ TEST(StateTests, UpdateParameterDefinition) {
     state.set("param", ParameterFloat("Initial", Range(0.0f, 1.0f), 0.5f, 2));
 
     // Verify initial definition
-    ParameterDefinition* def1 = state.get_parameter("param").get_definition();
-    ASSERT_NE(nullptr, def1);
+    auto def1 = state.get_parameter("param").get_definition();
+    ASSERT_TRUE(def1.has_value());
     EXPECT_EQ("Initial", def1->m_name);
     EXPECT_FLOAT_EQ(0.5f, def1->m_default_value);
 
@@ -1214,8 +1214,8 @@ TEST(StateTests, UpdateParameterDefinition) {
     state.set("param", ParameterFloat("Updated", Range(0.0f, 10.0f), 5.0f, 3));
 
     // Verify updated definition
-    ParameterDefinition* def2 = state.get_parameter("param").get_definition();
-    ASSERT_NE(nullptr, def2);
+    auto def2 = state.get_parameter("param").get_definition();
+    ASSERT_TRUE(def2.has_value());
     EXPECT_EQ("Updated", def2->m_name);
     EXPECT_FLOAT_EQ(5.0f, def2->m_default_value);
     EXPECT_FLOAT_EQ(10.0f, def2->m_range.m_max);
@@ -1240,8 +1240,8 @@ TEST(StateTests, ChoiceParameterUsage) {
     state.set("filter.type", filter_type_def);
 
     // Get the definition
-    ParameterDefinition* def = state.get_parameter("filter.type").get_definition();
-    ASSERT_NE(nullptr, def);
+    auto def = state.get_parameter("filter.type").get_definition();
+    ASSERT_TRUE(def.has_value());
 
     // Verify range is correct
     EXPECT_EQ(0, def->m_range.min_int());
@@ -1259,9 +1259,9 @@ TEST(StateTests, ChoiceParameterUsage) {
     EXPECT_EQ(2, state.get<int>("filter.type"));
 
     // Definition should still be intact
-    def = state.get_parameter("filter.type").get_definition();
-    ASSERT_NE(nullptr, def);
-    EXPECT_EQ("Band Pass", def->m_data[2]);
+    auto def2 = state.get_parameter("filter.type").get_definition();
+    ASSERT_TRUE(def2.has_value());
+    EXPECT_EQ("Band Pass", def2->m_data[2]);
 }
 
 // Test automation and modulation flags
@@ -1278,17 +1278,17 @@ TEST(StateTests, AutomationModulationFlags) {
     state.set("param3", ParameterFloat("Param 3", Range(0.0f, 1.0f), 0.5f, 2, false, false));
 
     // Check param1
-    ParameterDefinition* def1 = state.get_parameter("param1").get_definition();
+    auto def1 = state.get_parameter("param1").get_definition();
     EXPECT_TRUE(def1->m_automation);
     EXPECT_FALSE(def1->m_modulation);
 
     // Check param2
-    ParameterDefinition* def2 = state.get_parameter("param2").get_definition();
+    auto def2 = state.get_parameter("param2").get_definition();
     EXPECT_TRUE(def2->m_automation);
     EXPECT_TRUE(def2->m_modulation);
 
     // Check param3
-    ParameterDefinition* def3 = state.get_parameter("param3").get_definition();
+    auto def3 = state.get_parameter("param3").get_definition();
     EXPECT_FALSE(def3->m_automation);
     EXPECT_FALSE(def3->m_modulation);
 }
@@ -1315,26 +1315,26 @@ TEST(StateTests, SliderPolarityFlags) {
               ParameterInt("Bipolar Int", Range(-12, 12), 0, true, true, SliderPolarity::Bipolar));
 
     // Check unipolar float (should default to Unipolar)
-    ParameterDefinition* def1 = state.get_parameter("unipolar_float").get_definition();
+    auto def1 = state.get_parameter("unipolar_float").get_definition();
     EXPECT_EQ(SliderPolarity::Unipolar, def1->m_slider_polarity);
 
     // Check bipolar float
-    ParameterDefinition* def2 = state.get_parameter("bipolar_float").get_definition();
+    auto def2 = state.get_parameter("bipolar_float").get_definition();
     EXPECT_EQ(SliderPolarity::Bipolar, def2->m_slider_polarity);
 
     // Check bipolar int
-    ParameterDefinition* def3 = state.get_parameter("bipolar_int").get_definition();
+    auto def3 = state.get_parameter("bipolar_int").get_definition();
     EXPECT_EQ(SliderPolarity::Bipolar, def3->m_slider_polarity);
 
     // Bool parameter (should default to Unipolar)
     state.set("bool_param", ParameterBool("Bool Param", false));
-    ParameterDefinition* def4 = state.get_parameter("bool_param").get_definition();
+    auto def4 = state.get_parameter("bool_param").get_definition();
     EXPECT_EQ(SliderPolarity::Unipolar, def4->m_slider_polarity);
 
     // Choice parameter (should default to Unipolar)
     std::vector<std::string> choices = {"A", "B", "C"};
     state.set("choice_param", ParameterChoice("Choice Param", choices, 0));
-    ParameterDefinition* def5 = state.get_parameter("choice_param").get_definition();
+    auto def5 = state.get_parameter("choice_param").get_definition();
     EXPECT_EQ(SliderPolarity::Unipolar, def5->m_slider_polarity);
 }
 
@@ -1532,23 +1532,23 @@ TEST(StateTests, ParameterRecordField) {
               ParameterBool("Play", false, true, false, SliderPolarity::Unipolar, bool_data));
 
     // Verify float parameter data
-    ParameterDefinition* float_def = state.get_parameter("gain_db").get_definition();
-    ASSERT_NE(nullptr, float_def);
+    auto float_def = state.get_parameter("gain_db").get_definition();
+    ASSERT_TRUE(float_def.has_value());
     EXPECT_EQ(2, float_def->m_data.size());
     EXPECT_EQ("unit:dB", float_def->m_data[0]);
     EXPECT_EQ("display:log", float_def->m_data[1]);
     EXPECT_EQ(SliderPolarity::Bipolar, float_def->m_slider_polarity);
 
     // Verify int parameter data
-    ParameterDefinition* int_def = state.get_parameter("midi_value").get_definition();
-    ASSERT_NE(nullptr, int_def);
+    auto int_def = state.get_parameter("midi_value").get_definition();
+    ASSERT_TRUE(int_def.has_value());
     EXPECT_EQ(2, int_def->m_data.size());
     EXPECT_EQ("midi:cc1", int_def->m_data[0]);
     EXPECT_EQ("channel:1", int_def->m_data[1]);
 
     // Verify bool parameter data
-    ParameterDefinition* bool_def = state.get_parameter("play_state").get_definition();
-    ASSERT_NE(nullptr, bool_def);
+    auto bool_def = state.get_parameter("play_state").get_definition();
+    ASSERT_TRUE(bool_def.has_value());
     EXPECT_EQ(2, bool_def->m_data.size());
     EXPECT_EQ("shortcut:space", bool_def->m_data[0]);
     EXPECT_EQ("icon:play", bool_def->m_data[1]);
@@ -1557,8 +1557,8 @@ TEST(StateTests, ParameterRecordField) {
     std::vector<std::string> waveforms = {"Sine", "Saw", "Square"};
     state.set("waveform", ParameterChoice("Waveform", waveforms, 0));
 
-    ParameterDefinition* choice_def = state.get_parameter("waveform").get_definition();
-    ASSERT_NE(nullptr, choice_def);
+    auto choice_def = state.get_parameter("waveform").get_definition();
+    ASSERT_TRUE(choice_def.has_value());
     EXPECT_EQ(3, choice_def->m_data.size());
     EXPECT_EQ("Sine", choice_def->m_data[0]);
     EXPECT_EQ("Saw", choice_def->m_data[1]);

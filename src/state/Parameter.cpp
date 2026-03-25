@@ -41,11 +41,10 @@ T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
         TANH_NONBLOCKING_SCOPED_DISABLER
         switch (m_type) {
             case ParameterType::String: {
-                // Must read string_value from RCU
-                return m_state->m_parameters_rcu.read([&](const auto& params) -> std::string {
-                    auto it = params.find(m_key);
-                    if (it == params.end()) { throw StateKeyNotFoundException(m_key); }
-                    return it->second.string_value;
+                // Must read string_value from strings RCU
+                return m_state->m_strings_rcu.read([&](const auto& strings) -> std::string {
+                    auto it = strings.find(m_key);
+                    return it != strings.end() ? it->second : "";
                 });
             }
             case ParameterType::Double:
@@ -152,7 +151,7 @@ std::string Parameter::get_path() const {
     return m_key;
 }
 
-ParameterDefinition* Parameter::get_definition() const TANH_NONBLOCKING_FUNCTION {
+std::optional<ParameterDefinition> Parameter::get_definition() const {
     return m_state->get_definition_from_root(m_key);
 }
 

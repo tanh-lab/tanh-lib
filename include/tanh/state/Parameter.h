@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "ParameterDefinitions.h"
@@ -117,47 +118,16 @@ enum class ParameterType { Double, Float, Int, Bool, String, Unknown };
 // different strategies for notification
 enum class NotifyStrategies { all, none, others, self };
 
-// Internal parameter storage.
+// Internal parameter storage — trivially copyable index into stable storage.
 // Numeric values live in the AtomicCacheEntry (pointed to by cache_ptr).
-// Only string_value is stored directly here (for string-typed parameters).
+// String values live in a separate RCU<StringMap>.
+// Definitions live in a separate RCU<DefinitionMap>.
 struct ParameterRecord {
     ParameterType type = ParameterType::Double;
-    std::string string_value;
-    std::unique_ptr<ParameterDefinition> parameter_definition;
 
     /// @brief Non-owning pointer to the atomic cache entry (owned by State).
     /// Shallow-copied during RCU map copy so all versions share the same cache.
     AtomicCacheEntry* cache_ptr = nullptr;
-
-    // Default constructor
-    ParameterRecord() = default;
-
-    // Custom copy constructor for RCU map copying (deep copy the definition)
-    ParameterRecord(const ParameterRecord& other)
-        : type(other.type)
-        , string_value(other.string_value)
-        , parameter_definition(other.parameter_definition ? std::make_unique<ParameterDefinition>(
-                                                                *other.parameter_definition)
-                                                          : nullptr)
-        , cache_ptr(other.cache_ptr) {}
-
-    // Custom assignment operator
-    ParameterRecord& operator=(const ParameterRecord& other) {
-        if (this != &other) {
-            type = other.type;
-            string_value = other.string_value;
-            parameter_definition =
-                other.parameter_definition
-                    ? std::make_unique<ParameterDefinition>(*other.parameter_definition)
-                    : nullptr;
-            cache_ptr = other.cache_ptr;
-        }
-        return *this;
-    }
-
-    // Move operations
-    ParameterRecord(ParameterRecord&& other) noexcept = default;
-    ParameterRecord& operator=(ParameterRecord&& other) noexcept = default;
 };
 
 /**
@@ -281,11 +251,11 @@ public:
     /**
      * @brief Gets the parameter definition if one was set.
      *
-     * @return Pointer to the ParameterDefinition, or nullptr if not set
+     * @return A copy of the ParameterDefinition, or std::nullopt if not set
      *
-     * @note **REAL-TIME SAFE** - returns a pointer to existing data
+     * @warning NOT real-time safe - copies the definition (may allocate)
      */
-    [[nodiscard]] ParameterDefinition* get_definition() const TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] std::optional<ParameterDefinition> get_definition() const;
 
     /**
      * @brief Returns a typed ParameterHandle for direct atomic load/store.
