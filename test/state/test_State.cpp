@@ -1933,7 +1933,7 @@ TEST(StateTests, HandleReflectsSetInRoot) {
     EXPECT_DOUBLE_EQ(2.0, handle.load());
 }
 
-TEST(StateTests, HandleStoreOnlyUpdatesAtomicCache) {
+TEST(StateTests, HandleStoreKeepsStateInSync) {
     State state;
     state.set("gain", 1.0);
 
@@ -1943,31 +1943,31 @@ TEST(StateTests, HandleStoreOnlyUpdatesAtomicCache) {
     // Handle sees the new value
     EXPECT_DOUBLE_EQ(3.0, handle.load());
 
-    // RCU still has the old value (handle.store does NOT update RCU)
-    EXPECT_DOUBLE_EQ(1.0, state.get_from_root<double>("gain"));
+    // get_from_root also reads from the same atomic — state stays in sync
+    EXPECT_DOUBLE_EQ(3.0, state.get_from_root<double>("gain"));
 }
 
-TEST(StateTests, HandleSetUpdatesAllAtomicTypes) {
+TEST(StateTests, HandleSetUpdatesNativeAtomicOnly) {
     State state;
     state.set("param", 3.14);
 
-    // Get handles for all types on the same parameter
+    // Only native-type handle is allowed
     auto dh = state.get_handle<double>("param");
-    auto fh = state.get_handle<float>("param");
-    auto ih = state.get_handle<int>("param");
-    auto bh = state.get_handle<bool>("param");
-
     EXPECT_DOUBLE_EQ(3.14, dh.load());
-    EXPECT_FLOAT_EQ(3.14f, fh.load());
-    EXPECT_EQ(3, ih.load());
-    EXPECT_TRUE(bh.load());
 
-    // set_in_root updates all 4 atomic types
+    // Cross-type handles should throw
+    EXPECT_THROW(state.get_handle<float>("param"), std::invalid_argument);
+    EXPECT_THROW(state.get_handle<int>("param"), std::invalid_argument);
+    EXPECT_THROW(state.get_handle<bool>("param"), std::invalid_argument);
+
+    // set_in_root updates only the native atomic (double)
     state.set("param", 0.0);
     EXPECT_DOUBLE_EQ(0.0, dh.load());
-    EXPECT_FLOAT_EQ(0.0f, fh.load());
-    EXPECT_EQ(0, ih.load());
-    EXPECT_FALSE(bh.load());
+
+    // Cross-type get still works via on-the-fly conversion
+    EXPECT_FLOAT_EQ(0.0f, state.get<float>("param"));
+    EXPECT_EQ(0, state.get<int>("param"));
+    EXPECT_FALSE(state.get<bool>("param"));
 }
 
 TEST(StateTests, HandleSurvivesOtherParameterCreation) {
@@ -2000,19 +2000,24 @@ TEST(StateTests, HandleWithHierarchicalPath) {
     EXPECT_DOUBLE_EQ(0.8, handle.load());
 }
 
-TEST(StateTests, HandleStoreNativeTypeOnly) {
+TEST(StateTests, HandleNativeTypeEnforced) {
     State state;
-    state.set("value", 10.0);
+    state.set("dval", 10.0);
+    state.set("fval", 2.5f);
+    state.set("ival", 42);
+    state.set("bval", true);
 
-    auto fh = state.get_handle<float>("value");
-    auto dh = state.get_handle<double>("value");
+    // Native-type handles succeed
+    EXPECT_NO_THROW(state.get_handle<double>("dval"));
+    EXPECT_NO_THROW(state.get_handle<float>("fval"));
+    EXPECT_NO_THROW(state.get_handle<int>("ival"));
+    EXPECT_NO_THROW(state.get_handle<bool>("bval"));
 
-    // float handle store only updates atomic_float
-    fh.store(99.0f);
-    EXPECT_FLOAT_EQ(99.0f, fh.load());
-
-    // double handle still has the value from set_in_root
-    EXPECT_DOUBLE_EQ(10.0, dh.load());
+    // Cross-type handles throw
+    EXPECT_THROW(state.get_handle<float>("dval"), std::invalid_argument);
+    EXPECT_THROW(state.get_handle<double>("fval"), std::invalid_argument);
+    EXPECT_THROW(state.get_handle<bool>("ival"), std::invalid_argument);
+    EXPECT_THROW(state.get_handle<int>("bval"), std::invalid_argument);
 }
 
 TEST(StateTests, HandleCopySemantics) {

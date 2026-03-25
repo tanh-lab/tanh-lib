@@ -17,10 +17,14 @@ class ParameterListener;
 /**
  * @brief Atomic cache entry for real-time safe per-sample parameter access.
  *
- * Each numeric parameter gets one AtomicCacheEntry, owned by State via
- * m_atomic_cache. ParameterHandle<T> holds a raw pointer to this entry.
+ * Each parameter gets one AtomicCacheEntry, owned by State via
+ * m_atomic_cache. This is the single source of truth for numeric values.
+ * ParameterHandle<T> holds a raw pointer to this entry.
  * The entry's address is stable (std::map pointer stability) until
  * State::clear() or State destruction.
+ *
+ * Only the native-type atomic (matching ParameterData::type) is written
+ * on set. Reads convert on the fly from the native atomic.
  *
  * @note Non-copyable, non-movable — always accessed via pointer.
  */
@@ -50,11 +54,15 @@ struct AtomicCacheEntry {
  *
  * @section consistency Consistency
  *
- * - State::set_in_root() updates both the RCU map and the atomic cache
- *   (all 4 numeric types).
- * - ParameterHandle::store() updates only the atomic cache for the native
- *   type T. The RCU map is NOT updated — use set_in_root() if you need
- *   RCU readers, listeners, or serialization to reflect the new value.
+ * The atomic cache is the single source of truth for numeric values.
+ * Both State::set_in_root() and ParameterHandle::store() write to the
+ * same native-type atomic, so the state always stays in sync.
+ *
+ * - set_in_root() additionally fires listener notifications.
+ * - ParameterHandle::store() is silent (no notifications, no RCU update).
+ *
+ * Only native-type handles are supported: get_handle<T>() requires T to
+ * match the parameter's stored type.
  *
  * @tparam T Numeric type: double, float, int, or bool
  *
@@ -108,13 +116,11 @@ enum class ParameterType { Double, Float, Int, Bool, String, Unknown };
 // different strategies for notification
 enum class NotifyStrategies { all, none, others, self };
 
-// Internal parameter storage - RCU provides synchronization, no atomics needed
+// Internal parameter storage.
+// Numeric values live in the AtomicCacheEntry (pointed to by cache_ptr).
+// Only string_value is stored directly here (for string-typed parameters).
 struct ParameterData {
     ParameterType type = ParameterType::Double;
-    double double_value = 0.0;
-    float float_value = 0.0f;
-    int int_value = 0;
-    bool bool_value = false;
     std::string string_value;
     std::unique_ptr<ParameterDefinition> parameter_definition;
 
@@ -128,10 +134,6 @@ struct ParameterData {
     // Custom copy constructor for RCU map copying (deep copy the definition)
     ParameterData(const ParameterData& other)
         : type(other.type)
-        , double_value(other.double_value)
-        , float_value(other.float_value)
-        , int_value(other.int_value)
-        , bool_value(other.bool_value)
         , string_value(other.string_value)
         , parameter_definition(other.parameter_definition ? std::make_unique<ParameterDefinition>(
                                                                 *other.parameter_definition)
@@ -142,10 +144,6 @@ struct ParameterData {
     ParameterData& operator=(const ParameterData& other) {
         if (this != &other) {
             type = other.type;
-            double_value = other.double_value;
-            float_value = other.float_value;
-            int_value = other.int_value;
-            bool_value = other.bool_value;
             string_value = other.string_value;
             parameter_definition =
                 other.parameter_definition
