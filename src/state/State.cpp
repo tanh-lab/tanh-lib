@@ -166,7 +166,7 @@ void State::set_in_root(std::string_view key,
 
         // Parameter doesn't exist - use RCU to create it
         m_parameters_rcu.update([&](ParameterMap& params) {
-            ParameterData new_param;
+            ParameterRecord new_param;
 
             if constexpr (std::is_same_v<T, double>) {
                 new_param.type = ParameterType::Double;

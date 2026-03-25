@@ -1500,7 +1500,7 @@ TEST(StateTests, EmptyStateDump) {
 }
 
 // Test data field for all parameter types
-TEST(StateTests, ParameterDataField) {
+TEST(StateTests, ParameterRecordField) {
     State state;
 
     // Float parameter with custom data

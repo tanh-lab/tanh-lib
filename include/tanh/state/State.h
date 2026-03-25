@@ -245,6 +245,7 @@ public:
     std::string get_state_dump() const;
 
 private:
+    friend class Parameter;
     friend class StateGroup;
 
     /// @brief Thread-local string buffer for path operations (real-time safe
@@ -263,7 +264,7 @@ private:
     static inline thread_local std::string m_temp_buffer_3;
 
     /// @brief RCU-protected parameter map for lock-free reads
-    using ParameterMap = std::map<std::string, ParameterData, std::less<>>;
+    using ParameterMap = std::map<std::string, ParameterRecord, std::less<>>;
     mutable RCU<ParameterMap> m_parameters_rcu;
 
     /// @brief Atomic cache for per-sample real-time access via ParameterHandle.

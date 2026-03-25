@@ -23,7 +23,7 @@ class ParameterListener;
  * The entry's address is stable (std::map pointer stability) until
  * State::clear() or State destruction.
  *
- * Only the native-type atomic (matching ParameterData::type) is written
+ * Only the native-type atomic (matching ParameterRecord::type) is written
  * on set. Reads convert on the fly from the native atomic.
  *
  * @note Non-copyable, non-movable — always accessed via pointer.
@@ -106,6 +106,7 @@ public:
 
 private:
     friend class State;
+    friend class Parameter;
     explicit ParameterHandle(AtomicCacheEntry* entry) : m_entry(entry) {}
     AtomicCacheEntry* m_entry;
 };
@@ -119,7 +120,7 @@ enum class NotifyStrategies { all, none, others, self };
 // Internal parameter storage.
 // Numeric values live in the AtomicCacheEntry (pointed to by cache_ptr).
 // Only string_value is stored directly here (for string-typed parameters).
-struct ParameterData {
+struct ParameterRecord {
     ParameterType type = ParameterType::Double;
     std::string string_value;
     std::unique_ptr<ParameterDefinition> parameter_definition;
@@ -129,10 +130,10 @@ struct ParameterData {
     AtomicCacheEntry* cache_ptr = nullptr;
 
     // Default constructor
-    ParameterData() = default;
+    ParameterRecord() = default;
 
     // Custom copy constructor for RCU map copying (deep copy the definition)
-    ParameterData(const ParameterData& other)
+    ParameterRecord(const ParameterRecord& other)
         : type(other.type)
         , string_value(other.string_value)
         , parameter_definition(other.parameter_definition ? std::make_unique<ParameterDefinition>(
@@ -141,7 +142,7 @@ struct ParameterData {
         , cache_ptr(other.cache_ptr) {}
 
     // Custom assignment operator
-    ParameterData& operator=(const ParameterData& other) {
+    ParameterRecord& operator=(const ParameterRecord& other) {
         if (this != &other) {
             type = other.type;
             string_value = other.string_value;
@@ -155,8 +156,8 @@ struct ParameterData {
     }
 
     // Move operations
-    ParameterData(ParameterData&& other) noexcept = default;
-    ParameterData& operator=(ParameterData&& other) noexcept = default;
+    ParameterRecord(ParameterRecord&& other) noexcept = default;
+    ParameterRecord& operator=(ParameterRecord&& other) noexcept = default;
 };
 
 /**
@@ -286,6 +287,21 @@ public:
      */
     [[nodiscard]] ParameterDefinition* get_definition() const TANH_NONBLOCKING_FUNCTION;
 
+    /**
+     * @brief Returns a typed ParameterHandle for direct atomic load/store.
+     *
+     * @tparam T Numeric type matching the parameter's native type
+     * @return ParameterHandle<T> pointing to the cached AtomicCacheEntry
+     *
+     * @throws std::invalid_argument if T doesn't match the parameter's native type
+     * @throws StateKeyNotFoundException if the parameter doesn't exist
+     *
+     * @note The returned handle is valid as long as the owning State is alive
+     *       and State::clear() has not been called.
+     */
+    template <typename T>
+    [[nodiscard]] ParameterHandle<T> get_handle() const;
+
 private:
     friend class State;
     friend class StateGroup;
@@ -297,6 +313,10 @@ private:
     // State reference and parameter key
     const State* m_state;
     std::string m_key;
+
+    // Cached from construction — avoids RCU reads in to<T>() and get_type()
+    AtomicCacheEntry* m_cache_ptr = nullptr;
+    ParameterType m_type = ParameterType::Unknown;
 };
 
 }  // namespace thl
