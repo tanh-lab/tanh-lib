@@ -226,16 +226,20 @@ void State::set_in_root(std::string_view key,
 
     // Handle notification
     if (strategy != NotifyStrategies::none) {
-        Parameter param_obj(this, key);
+        // Copy the key before notifying — key may point into m_temp_buffer_2
+        // which re-entrant set() calls from listeners would overwrite.
+        std::string key_copy(key);
 
-        auto [group, param_name] = resolve_path(key);
+        Parameter param_obj(this, key_copy);
+
+        auto [group, param_name] = resolve_path(key_copy);
 
         // Notify through the most specific group (which will propagate up)
         // or notify directly from State if no group was found
         if (group) {
-            group->notify_listeners(key, param_obj, strategy, source);
+            group->notify_listeners(key_copy, param_obj, strategy, source);
         } else {
-            const_cast<State*>(this)->notify_listeners(key, param_obj, strategy, source);
+            const_cast<State*>(this)->notify_listeners(key_copy, param_obj, strategy, source);
         }
     }
 }
