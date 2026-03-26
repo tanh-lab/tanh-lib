@@ -171,7 +171,7 @@ public:
      * @warning String type requires `allow_blocking=true` as it may allocate
      * memory
      *
-     * @par Example
+     * @par Example:
      * @code
      * Parameter param = state.get_parameter("volume");
      * double vol = param.to<double>();           // Real-time safe
