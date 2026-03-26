@@ -105,6 +105,16 @@ class Parameter;
  */
 class ParameterListener {
 public:
+    /**
+     * @brief Constructs a ParameterListener.
+     *
+     * @param receives_during_gesture If false, this listener will be skipped
+     *        while a parameter is in an active user gesture (e.g., drag).
+     *        Defaults to true (always receive notifications).
+     */
+    explicit ParameterListener(bool receives_during_gesture = true)
+        : m_receives_during_gesture(receives_during_gesture) {}
+
     virtual ~ParameterListener() = default;
 
     /**
@@ -118,6 +128,9 @@ public:
      *          if called from a real-time context.
      */
     virtual void on_parameter_changed(std::string_view path, const Parameter& param) = 0;
+
+    /// Whether this listener receives notifications during active gestures.
+    bool m_receives_during_gesture;
 };
 
 /**
@@ -436,11 +449,13 @@ private:
      * @brief Notifies all listeners about a parameter change.
      *
      * Propagates notifications up the group hierarchy to parent groups.
+     * Listeners that have m_receives_during_gesture=false will be skipped if in_gesture=true.
      *
      * @param path The parameter path
      * @param param The Parameter object
      * @param strategy Notification strategy
      * @param source Source listener to exclude
+     * @param in_gesture Whether the parameter is currently in a user gesture
      *
      * @note Uses RCU for lock-free listener access, but listener callbacks
      *       may not be real-time safe depending on implementation.
@@ -448,7 +463,8 @@ private:
     void notify_listeners(std::string_view path,
                           const Parameter& param,
                           NotifyStrategies strategy = NotifyStrategies::all,
-                          ParameterListener* source = nullptr) const;
+                          ParameterListener* source = nullptr,
+                          bool in_gesture = false) const;
 
     /**
      * @brief Resolves a dot-separated path to a group and parameter name.
