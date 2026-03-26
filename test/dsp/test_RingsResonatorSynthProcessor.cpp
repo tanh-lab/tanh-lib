@@ -13,21 +13,27 @@
 
 namespace {
 
-using Parameter = thl::dsp::synth::RingsParameter;
+using Parameter = thl::dsp::synth::RingsResonatorSynthProcessor::Parameter;
 
 class TestResonator : public thl::dsp::synth::RingsResonatorSynthProcessor {
 public:
-    float get_parameter_value(Parameter p) override {
-        return m_values[static_cast<int>(p)];
+    float get_parameter_float(Parameter p) override {
+        return m_float_values[p];
     }
 
-    void set(Parameter p, float v) { m_values[static_cast<int>(p)] = v; }
+    int get_parameter_int(Parameter p) override {
+        return m_int_values[p];
+    }
+
+    void set_float(Parameter p, float v) { m_float_values[p] = v; }
+    void set_int(Parameter p, int v) { m_int_values[p] = v; }
 
 private:
     static constexpr int kN = static_cast<int>(Parameter::NUM_PARAMETERS);
-    std::array<float, kN> m_values = {
+    std::array<float, kN> m_float_values = {
         440.0f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f,
     };
+    std::array<int, kN> m_int_values = {};
 };
 
 static constexpr int kBlockSize = 256;
@@ -54,27 +60,27 @@ protected:
 };
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyOneProducesOutput) {
-    synth.set(Parameter::Polyphony, 0.0f);
+    synth.set_int(Parameter::Polyphony, 0);
     float energy = process_and_measure_energy(synth);
     EXPECT_GT(energy, 1e-6f);
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyTwoProducesFiniteOutput) {
-    synth.set(Parameter::Polyphony, 1.0f);
+    synth.set_int(Parameter::Polyphony, 1);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
     EXPECT_GT(energy, 1e-6f);
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyFourProducesFiniteOutput) {
-    synth.set(Parameter::Polyphony, 2.0f);
+    synth.set_int(Parameter::Polyphony, 2);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
     EXPECT_GT(energy, 1e-6f);
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyClampedToValidRange) {
-    synth.set(Parameter::Polyphony, 5.0f);
+    synth.set_int(Parameter::Polyphony, 5);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
 }
