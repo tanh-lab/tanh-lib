@@ -18,8 +18,8 @@ class ParameterListener;
 /**
  * @brief Atomic cache entry for real-time safe per-sample parameter access.
  *
- * Each parameter gets one AtomicCacheEntry, owned by State via
- * m_atomic_cache. This is the single source of truth for numeric values.
+ * Each parameter gets one AtomicCacheEntry, embedded in the owning
+ * ParameterRecord. This is the single source of truth for numeric values.
  * ParameterHandle<T> holds a raw pointer to this entry.
  * The entry's address is stable (std::map pointer stability) until
  * State::clear() or State destruction.
@@ -118,16 +118,37 @@ enum class ParameterType { Double, Float, Int, Bool, String, Unknown };
 // different strategies for notification
 enum class NotifyStrategies { all, none, others, self };
 
-// Internal parameter storage — trivially copyable index into stable storage.
-// Numeric values live in the AtomicCacheEntry (pointed to by cache_ptr).
-// String values live in a separate RCU<StringMap>.
-// Definitions live in a separate RCU<DefinitionMap>.
+/**
+ * @brief Consolidated per-parameter storage.
+ *
+ * Each parameter gets one heap-allocated ParameterRecord, owned by
+ * State::m_storage via unique_ptr.  The record holds everything about the
+ * parameter: type, atomic cache, gesture metadata, string value, and
+ * definition.  A thin RCU index (State::m_index_rcu) maps keys to raw
+ * pointers into this storage for lock-free lookups.
+ *
+ * Because AtomicCacheEntry is non-copyable/non-movable the record itself
+ * is non-copyable/non-movable — always accessed via pointer.
+ */
+
+/// @brief Per-parameter metadata (extensible for future flags).
+struct ParameterMetadata {
+    /// True while the UI is actively dragging / gesturing this parameter.
+    /// Listeners that return false from receives_during_gesture() are
+    /// skipped while this flag is set.
+    std::atomic<bool> in_gesture{false};
+};
+
 struct ParameterRecord {
     ParameterType type = ParameterType::Double;
+    AtomicCacheEntry cache;
+    ParameterMetadata metadata;
+    std::string string_value;
+    std::optional<ParameterDefinition> definition;
 
-    /// @brief Non-owning pointer to the atomic cache entry (owned by State).
-    /// Shallow-copied during RCU map copy so all versions share the same cache.
-    AtomicCacheEntry* cache_ptr = nullptr;
+    ParameterRecord() = default;
+    ParameterRecord(const ParameterRecord&) = delete;
+    ParameterRecord& operator=(const ParameterRecord&) = delete;
 };
 
 /**

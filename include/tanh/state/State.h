@@ -215,6 +215,18 @@ public:
     std::optional<ParameterDefinition> get_definition_from_root(std::string_view key) const;
 
     /**
+     * @brief Sets the gesture state for a parameter.
+     *
+     * While a parameter is in-gesture, listeners that return false from
+     * receives_during_gesture() will be skipped during notifications.
+     * This prevents echo-back to the UI during active user drags.
+     *
+     * @param key The parameter key
+     * @param gesture true to begin gesture, false to end
+     */
+    void set_gesture(std::string_view key, bool gesture);
+
+    /**
      * @brief Clears all parameters and groups from the state.
      *
      * @warning NOT real-time safe - modifies RCU-protected data
@@ -278,25 +290,22 @@ private:
     /// after initialization)
     static inline thread_local std::string m_temp_buffer_3;
 
-    /// @brief RCU-protected parameter map for lock-free reads
-    using ParameterMap = std::map<std::string, ParameterRecord, std::less<>>;
-    mutable RCU<ParameterMap> m_parameters_rcu;
+    /// @brief Owning storage — one heap-allocated ParameterRecord per parameter.
+    /// std::map guarantees pointer stability (tree nodes are never moved).
+    /// Protected by m_storage_mutex for insertions, erasures, and string/definition access.
+    using StorageMap = std::map<std::string, std::unique_ptr<ParameterRecord>, std::less<>>;
+    StorageMap m_storage;
 
-    /// @brief RCU-protected string values for string-typed parameters
-    using StringMap = std::map<std::string, std::string, std::less<>>;
-    mutable RCU<StringMap> m_strings_rcu;
+    /// @brief Mutex protecting m_storage insertions, erasures, and non-atomic field access
+    /// (string_value, definition).  Numeric reads/writes go through the embedded
+    /// AtomicCacheEntry and do NOT require this mutex.
+    mutable std::mutex m_storage_mutex;
 
-    /// @brief RCU-protected parameter definitions
-    using DefinitionMap = std::map<std::string, ParameterDefinition, std::less<>>;
-    mutable RCU<DefinitionMap> m_definitions_rcu;
-
-    /// @brief Atomic cache for per-sample real-time access via ParameterHandle.
-    /// Keyed by the same full path used in m_parameters_rcu.
-    /// std::map guarantees pointer stability — entries are never moved.
-    std::map<std::string, std::unique_ptr<AtomicCacheEntry>, std::less<>> m_atomic_cache;
-
-    /// @brief Mutex protecting m_atomic_cache insertions and lookups
-    mutable std::mutex m_cache_mutex;
+    /// @brief Lock-free index into m_storage.  Each entry is a raw pointer to the
+    /// corresponding ParameterRecord.  Copied only when parameters are created or
+    /// destroyed (startup / clear), never during normal value writes.
+    using IndexMap = std::map<std::string, ParameterRecord*, std::less<>>;
+    mutable RCU<IndexMap> m_index_rcu;
 
     /// @brief Maximum string size for pre-allocated buffers
     size_t m_max_string_size;
