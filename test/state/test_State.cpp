@@ -1,5 +1,6 @@
 #include "tanh/state/State.h"
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 #include <thread>
 #include <vector>
 #include <future>
@@ -1786,8 +1787,278 @@ TEST(StateTests, StringViewInvalidationWithLongPaths) {
     listener.state_ref = &state;
     state.add_listener(&listener);
 
+<<<<<<< Updated upstream
     // Create a very long parameter path
     state.set("very.long.hierarchical.path.with.multiple.levels.and.groups.final.param", 99.0);
+=======
+// ============================================================
+// State dump tests
+// ============================================================
+
+TEST(StateTests, GetStateDumpWithDefinitions) {
+    State state;
+    state.set("synth.osc.frequency",
+              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f));
+    state.set("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
+    state.set("synth.filter.cutoff",
+              ParameterFloat("Cutoff", Range(20.0f, 20000.0f, 1.0f), 1000.0f));
+
+    auto dump = state.get_state_dump(true);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(3, json.size());
+    for (const auto& entry : json) {
+        EXPECT_TRUE(entry.contains("key"));
+        EXPECT_TRUE(entry.contains("value"));
+        EXPECT_TRUE(entry.contains("definition"));
+        const auto& def = entry["definition"];
+        EXPECT_TRUE(def.contains("name"));
+        EXPECT_TRUE(def.contains("min"));
+        EXPECT_TRUE(def.contains("max"));
+    }
+}
+
+TEST(StateTests, GetStateDumpWithoutDefinitions) {
+    State state;
+    state.set("synth.osc.frequency",
+              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.set("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
+
+    auto dump = state.get_state_dump(false);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(2, json.size());
+    for (const auto& entry : json) {
+        EXPECT_TRUE(entry.contains("key"));
+        EXPECT_TRUE(entry.contains("value"));
+        EXPECT_FALSE(entry.contains("definition"));
+    }
+}
+
+TEST(StateTests, GetStateDumpDefaultIncludesDefinitions) {
+    State state;
+    state.set("param", ParameterFloat("Param", Range(0.0f, 1.0f, 0.01f), 0.5f));
+
+    auto dump = state.get_state_dump();  // no arg = include definitions
+    auto json = nlohmann::json::parse(dump);
+    EXPECT_TRUE(json[0].contains("definition"));
+}
+
+TEST(StateTests, GetGroupStateDump) {
+    State state;
+    state.set("engine0.grain0.volume", 1.0f);
+    state.set("engine0.grain0.size", 0.5f);
+    state.set("engine0.grain1.volume", 0.8f);
+    state.set("engine1.grain0.volume", 0.7f);
+    state.set("mixer.volume", 0.9f);
+
+    auto dump = state.get_group_state_dump("engine0", false);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(3, json.size());
+    for (const auto& entry : json) {
+        std::string key = entry["key"];
+        EXPECT_EQ(0, key.find("engine0"));
+    }
+}
+
+TEST(StateTests, GetGroupStateDumpDeepPrefix) {
+    State state;
+    state.set("engine0.grain0.volume", 1.0f);
+    state.set("engine0.grain0.size", 0.5f);
+    state.set("engine0.grain1.volume", 0.8f);
+    state.set("engine1.grain0.volume", 0.7f);
+
+    auto dump = state.get_group_state_dump("engine0.grain0", false);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(2, json.size());
+    for (const auto& entry : json) {
+        std::string key = entry["key"];
+        EXPECT_EQ(0, key.find("engine0.grain0"));
+    }
+}
+
+TEST(StateTests, GetGroupStateDumpNoMatch) {
+    State state;
+    state.set("engine0.volume", 1.0f);
+
+    auto dump = state.get_group_state_dump("nonexistent", false);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(0, json.size());
+}
+
+TEST(StateTests, GetGroupStateDumpEmptyPrefixReturnsAll) {
+    State state;
+    state.set("a.b", 1.0f);
+    state.set("c.d", 2.0f);
+
+    auto all_dump = state.get_state_dump(false);
+    auto group_dump = state.get_group_state_dump("", false);
+
+    EXPECT_EQ(all_dump, group_dump);
+}
+
+TEST(StateTests, GetGroupStateDumpWithDefinitions) {
+    State state;
+    state.set("synth.osc.freq",
+              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.set("synth.osc.vol", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
+    state.set("mixer.vol", ParameterFloat("Mixer Vol", Range(0.0f, 1.0f, 0.01f), 0.5f));
+
+    auto dump = state.get_group_state_dump("synth", true);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(2, json.size());
+    for (const auto& entry : json) {
+        EXPECT_TRUE(entry.contains("definition"));
+    }
+}
+
+TEST(StateTests, GetGroupStateDumpWithoutDefinitions) {
+    State state;
+    state.set("synth.freq", ParameterFloat("Freq", Range(0.0f, 1.0f, 0.01f), 0.5f));
+
+    auto dump = state.get_group_state_dump("synth", false);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(1, json.size());
+    EXPECT_FALSE(json[0].contains("definition"));
+}
+
+TEST(StateTests, GetStateDumpPreservesAllValueTypes) {
+    State state;
+    state.set("f", 3.14f);
+    state.set("d", 2.71828);
+    state.set("i", 42);
+    state.set("b", true);
+    state.set("s", std::string("hello"));
+
+    auto dump = state.get_state_dump(false);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(5, json.size());
+
+    std::map<std::string, nlohmann::json> entries;
+    for (const auto& e : json) {
+        entries[e["key"]] = e["value"];
+    }
+
+    EXPECT_NEAR(3.14f, entries["f"].get<float>(), 0.001f);
+    EXPECT_NEAR(2.71828, entries["d"].get<double>(), 0.00001);
+    EXPECT_EQ(42, entries["i"].get<int>());
+    EXPECT_TRUE(entries["b"].get<bool>());
+    EXPECT_EQ("hello", entries["s"].get<std::string>());
+}
+
+TEST(StateTests, GetStateDumpRoundTrip) {
+    State state;
+    state.set("synth.freq", 440.0f);
+    state.set("synth.vol", 0.8f);
+    state.set("mixer.vol", 0.5f);
+
+    auto dump = state.get_state_dump(false);
+    auto json = nlohmann::json::parse(dump);
+
+    state.clear();
+    EXPECT_TRUE(state.is_empty());
+
+    for (const auto& entry : json) {
+        std::string key = entry["key"];
+        float value = entry["value"];
+        state.set(key, value);
+    }
+
+    EXPECT_FLOAT_EQ(440.0f, state.get<float>("synth.freq"));
+    EXPECT_FLOAT_EQ(0.8f, state.get<float>("synth.vol"));
+    EXPECT_FLOAT_EQ(0.5f, state.get<float>("mixer.vol"));
+}
+
+TEST(StateTests, GetStateDumpDefinitionValues) {
+    State state;
+    state.set("synth.freq",
+              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f, 1, true, true));
+
+    // With definitions: verify actual values
+    auto dump_with = state.get_state_dump(true);
+    auto json_with = nlohmann::json::parse(dump_with);
+    ASSERT_EQ(1, json_with.size());
+
+    const auto& entry = json_with[0];
+    EXPECT_EQ("synth.freq", entry["key"].get<std::string>());
+    EXPECT_NEAR(440.0f, entry["value"].get<float>(), 0.01f);
+
+    ASSERT_TRUE(entry.contains("definition"));
+    const auto& def = entry["definition"];
+    EXPECT_EQ("Frequency", def["name"].get<std::string>());
+    EXPECT_EQ("float", def["type"].get<std::string>());
+    EXPECT_NEAR(20.0f, def["min"].get<float>(), 0.01f);
+    EXPECT_NEAR(20000.0f, def["max"].get<float>(), 0.01f);
+    EXPECT_NEAR(1.0f, def["step"].get<float>(), 0.01f);
+    EXPECT_NEAR(0.3f, def["skew"].get<float>(), 0.01f);
+    EXPECT_NEAR(440.0f, def["default_value"].get<float>(), 0.01f);
+    EXPECT_EQ(1, def["decimal_places"].get<int>());
+    EXPECT_TRUE(def["automation"].get<bool>());
+    EXPECT_TRUE(def["modulation"].get<bool>());
+    EXPECT_EQ("unipolar", def["slider_polarity"].get<std::string>());
+
+    // Without definitions: verify no definition key at all
+    auto dump_without = state.get_state_dump(false);
+    auto json_without = nlohmann::json::parse(dump_without);
+    ASSERT_EQ(1, json_without.size());
+    EXPECT_EQ("synth.freq", json_without[0]["key"].get<std::string>());
+    EXPECT_NEAR(440.0f, json_without[0]["value"].get<float>(), 0.01f);
+    EXPECT_FALSE(json_without[0].contains("definition"));
+}
+
+TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
+    State state;
+    state.set("synth.model",
+              ParameterChoice("Model", {"Saw", "Square", "Sine"}, 0));
+    state.set("synth.pan",
+              ParameterFloat("Pan", Range(0.0f, 1.0f, 0.01f), 0.5f, 2, true, true, SliderPolarity::Bipolar));
+
+    auto dump = state.get_state_dump(true);
+    auto json = nlohmann::json::parse(dump);
+    ASSERT_EQ(2, json.size());
+
+    // Find entries by key
+    std::map<std::string, nlohmann::json> entries;
+    for (const auto& e : json) entries[e["key"]] = e;
+
+    // Choice param
+    const auto& model_def = entries["synth.model"]["definition"];
+    EXPECT_EQ("choice", model_def["type"].get<std::string>());
+    EXPECT_EQ("Model", model_def["name"].get<std::string>());
+    ASSERT_TRUE(model_def.contains("data"));
+    auto data = model_def["data"].get<std::vector<std::string>>();
+    ASSERT_EQ(3, data.size());
+    EXPECT_EQ("Saw", data[0]);
+    EXPECT_EQ("Square", data[1]);
+    EXPECT_EQ("Sine", data[2]);
+
+    // Bipolar param
+    const auto& pan_def = entries["synth.pan"]["definition"];
+    EXPECT_EQ("bipolar", pan_def["slider_polarity"].get<std::string>());
+}
+
+TEST(StateTests, GetGroupStateDumpPrefixBoundary) {
+    State state;
+    state.set("engine0.volume", 1.0f);
+    state.set("engine0_extra.volume", 0.5f);
+
+    auto dump = state.get_group_state_dump("engine0.", false);
+    auto json = nlohmann::json::parse(dump);
+
+    EXPECT_EQ(1, json.size());
+    EXPECT_EQ("engine0.volume", json[0]["key"].get<std::string>());
+}
+
+// // Test chain of listener notifications where each triggers more sets
+// TEST(StateTests, StringViewInvalidationWithListenerChain) {
+//     State state;
+>>>>>>> Stashed changes
 
     // Verify the listener received notifications with valid paths
     // (paths vector is in DFS post-order due to recursion, so check by content)
