@@ -136,15 +136,16 @@ void RingsResonatorSynthProcessor::process(
 
     auto& e = *m_engine;
 
-    float frequency = get_parameter_value(RingsParameter::Frequency);
-    float structure = get_parameter_value(RingsParameter::Structure);
-    float brightness = get_parameter_value(RingsParameter::Brightness);
-    float damping = get_parameter_value(RingsParameter::Damping);
-    float position = get_parameter_value(RingsParameter::Position);
-    float oddEvenMix = get_parameter_value(RingsParameter::OddEvenMix);
-    float dryWet = get_parameter_value(RingsParameter::DryWet);
-    int model = static_cast<int>(get_parameter_value(RingsParameter::Model));
-    int polyphony = static_cast<int>(get_parameter_value(RingsParameter::Polyphony));
+    float frequency = get_parameter_float(Parameter::Frequency);
+    float structure = get_parameter_float(Parameter::Structure);
+    float brightness = get_parameter_float(Parameter::Brightness);
+    float damping = get_parameter_float(Parameter::Damping);
+    float position = get_parameter_float(Parameter::Position);
+    float oddEvenMix = get_parameter_float(Parameter::OddEvenMix);
+    oddEvenMix = 0.05f + std::clamp(oddEvenMix, 0.0f, 1.0f) * 0.9f;
+    float dryWet = get_parameter_float(Parameter::DryWet);
+    int model = get_parameter_int(Parameter::Model);
+    int polyphony = get_parameter_int(Parameter::Polyphony);
 
     e.m_frequency = frequency;
     e.m_patch.structure = structure;

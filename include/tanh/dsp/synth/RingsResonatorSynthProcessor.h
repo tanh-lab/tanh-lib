@@ -6,24 +6,23 @@
 
 namespace thl::dsp::synth {
 
-enum class RingsParameter {
-    Frequency,
-    Structure,
-    Brightness,
-    Damping,
-    Position,
-    OddEvenMix,
-    DryWet,
-    Model,
-    Polyphony,
-    NUM_PARAMETERS
-};
-
 enum class RingsPolyphonyMode { One, Two, Four };
 
 class RingsResonatorSynthProcessor {
 public:
-    using Parameter = RingsParameter;
+    enum Parameter {
+        Frequency = 0,
+        Structure,
+        Brightness,
+        Damping,
+        Position,
+        OddEvenMix,
+        DryWet,
+        Model,
+        Polyphony,
+        NUM_PARAMETERS
+    };
+
     using PolyphonyMode = RingsPolyphonyMode;
 
     RingsResonatorSynthProcessor();
@@ -40,7 +39,8 @@ public:
     int get_latency() const;
 
 protected:
-    virtual float get_parameter_value(RingsParameter parameter, uint32_t modulation_offset = 0) = 0;
+    virtual float get_parameter_float(Parameter parameter) = 0;
+    virtual int get_parameter_int(Parameter parameter) = 0;
 
 private:
     static constexpr size_t kBlockSize = 24;
