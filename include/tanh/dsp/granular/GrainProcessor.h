@@ -58,7 +58,8 @@ public:
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
-    void process(thl::dsp::audio::AudioBufferView buffer) override;
+    void process(thl::dsp::audio::AudioBufferView buffer,
+                 uint32_t modulation_offset = 0) override;
 
     void reset_grains();
 
@@ -114,11 +115,11 @@ private:
 
     // Template wrapper for get_parameter
     template <typename T>
-    T get_parameter(Parameter parameter);
+    T get_parameter(Parameter parameter, uint32_t modulation_offset = 0);
 
-    virtual float get_parameter_float(Parameter parameter) = 0;
-    virtual bool get_parameter_bool(Parameter parameter) = 0;
-    virtual int get_parameter_int(Parameter parameter) = 0;
+    virtual float get_parameter_float(Parameter parameter, uint32_t modulation_offset = 0) = 0;
+    virtual bool get_parameter_bool(Parameter parameter, uint32_t modulation_offset = 0) = 0;
+    virtual int get_parameter_int(Parameter parameter, uint32_t modulation_offset = 0) = 0;
 
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
@@ -144,21 +145,21 @@ private:
     float m_last_envelope_attack_curve{-2.0f};
     float m_last_envelope_decay_curve{-2.0f};
     float m_last_envelope_release_curve{-2.0f};
-    void update_envelope_if_needed();
+    void update_envelope_if_needed(uint32_t modulation_offset);
 
     // Sample index management
     size_t m_current_sample_index;
 
     // Grain generation and management
-    void trigger_grain(const size_t sample_index);
-    void update_grains(float** buffer, size_t n_buffer_frames);
+    void trigger_grain(const size_t sample_index, uint32_t modulation_offset);
+    void update_grains(float** buffer, size_t n_buffer_frames, uint32_t modulation_offset);
     void read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample);
     size_t calculate_grain_size(float grain_size_param, float temperature);
     float calculate_velocity(float velocity, float temperature);
     long calculate_start_position(const SampleRegion& region,
                                   float temperature);
     float apply_temperature_ramp(float temperature) const;
-    SampleRegion compute_sample_region(size_t total_frames);
+    SampleRegion compute_sample_region(size_t total_frames, uint32_t modulation_offset);
 
     // Visualization listeners (optional, not owned)
     std::vector<GrainVisualizationListener*> m_viz_listeners;
@@ -168,16 +169,19 @@ private:
 
 // Template specializations for get_parameter
 template <>
-inline float GrainProcessorImpl::get_parameter<float>(Parameter p) {
-    return get_parameter_float(p);
+inline float GrainProcessorImpl::get_parameter<float>(Parameter p,
+                                                       uint32_t modulation_offset) {
+    return get_parameter_float(p, modulation_offset);
 }
 template <>
-inline bool GrainProcessorImpl::get_parameter<bool>(Parameter p) {
-    return get_parameter_bool(p);
+inline bool GrainProcessorImpl::get_parameter<bool>(Parameter p,
+                                                     uint32_t modulation_offset) {
+    return get_parameter_bool(p, modulation_offset);
 }
 template <>
-inline int GrainProcessorImpl::get_parameter<int>(Parameter p) {
-    return get_parameter_int(p);
+inline int GrainProcessorImpl::get_parameter<int>(Parameter p,
+                                                   uint32_t modulation_offset) {
+    return get_parameter_int(p, modulation_offset);
 }
 
 }  // namespace thl::dsp::granular

@@ -15,7 +15,8 @@ void LimiterImpl::prepare(const double& sample_rate,
     m_gain = 1.0f;
 }
 
-void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer) {
+void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer,
+                          uint32_t modulation_offset) {
     constexpr size_t kMaxChannels = 16;
     const size_t num_samples = buffer.get_num_frames();
     const size_t num_channels = std::min(buffer.get_num_channels(), kMaxChannels);
@@ -24,10 +25,10 @@ void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer) {
         channel_ptrs[ch] = buffer.get_write_pointer(ch);
     }
 
-    float threshold_db = get_parameter<float>(Threshold);
+    float threshold_db = get_parameter<float>(Threshold, modulation_offset);
     float threshold = std::pow(10.0f, threshold_db / 20.0f);
-    float attack_ms = std::max(get_parameter<float>(Attack), 0.01f);
-    float release_ms = std::max(get_parameter<float>(Release), 0.01f);
+    float attack_ms = std::max(get_parameter<float>(Attack, modulation_offset), 0.01f);
+    float release_ms = std::max(get_parameter<float>(Release, modulation_offset), 0.01f);
 
     float attack_coeff = std::exp(-1.0 / (attack_ms * 0.001 * m_sample_rate));
     float release_coeff = std::exp(-1.0 / (release_ms * 0.001 * m_sample_rate));

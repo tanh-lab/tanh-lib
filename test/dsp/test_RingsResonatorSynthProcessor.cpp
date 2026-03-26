@@ -17,7 +17,7 @@ using Parameter = thl::dsp::synth::RingsParameter;
 
 class TestResonator : public thl::dsp::synth::RingsResonatorSynthProcessor {
 public:
-    float get_parameter_value(Parameter p) override {
+    float get_parameter_value(Parameter p, uint32_t /*modulation_offset*/) override {
         return m_values[static_cast<int>(p)];
     }
 

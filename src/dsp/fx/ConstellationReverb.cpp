@@ -76,7 +76,8 @@ void ConstellationReverbImpl::prepare(const double& sample_rate,
     m_tank_a_out = m_tank_b_out = 0.0f;
 }
 
-void ConstellationReverbImpl::process(thl::dsp::audio::AudioBufferView buffer) {
+void ConstellationReverbImpl::process(thl::dsp::audio::AudioBufferView buffer,
+                                      uint32_t modulation_offset) {
     if (buffer.get_num_channels() < 2) return;
 
     const size_t num_frames = buffer.get_num_frames();
@@ -86,28 +87,28 @@ void ConstellationReverbImpl::process(thl::dsp::audio::AudioBufferView buffer) {
     // ── Cache all parameters once per block ───────────────────────────────
     // These are stored as members so process_tank() can use them without
     // incurring a virtual dispatch on every sample.
-    m_p_decay      = get_parameter<float>(Decay);
-    m_p_freeze     = get_parameter<bool>(Freeze);
-    m_p_shimmer    = get_parameter<float>(Shimmer);
-    m_p_shim_mod   = get_parameter<float>(ShimmerModDepth);
-    m_p_fshift_hz  = get_parameter<float>(FreqShiftHz);
-    m_p_fshift_det = get_parameter<float>(FreqShiftDetune);
-    m_p_fshift_mod = get_parameter<float>(FreqShiftModDepth);
+    m_p_decay      = get_parameter<float>(Decay, modulation_offset);
+    m_p_freeze     = get_parameter<bool>(Freeze, modulation_offset);
+    m_p_shimmer    = get_parameter<float>(Shimmer, modulation_offset);
+    m_p_shim_mod   = get_parameter<float>(ShimmerModDepth, modulation_offset);
+    m_p_fshift_hz  = get_parameter<float>(FreqShiftHz, modulation_offset);
+    m_p_fshift_det = get_parameter<float>(FreqShiftDetune, modulation_offset);
+    m_p_fshift_mod = get_parameter<float>(FreqShiftModDepth, modulation_offset);
 
-    m_damping_coeff = 1.0f - get_parameter<float>(Damping);
-    m_predelay_len  = get_parameter<float>(PredelayMs)
+    m_damping_coeff = 1.0f - get_parameter<float>(Damping, modulation_offset);
+    m_predelay_len  = get_parameter<float>(PredelayMs, modulation_offset)
                     * static_cast<float>(m_sample_rate) / 1000.0f;
     m_hp_coeff      = 1.0f - std::exp(
         -2.0f * std::numbers::pi_v<float>
-        * get_parameter<float>(InputHpHz)
+        * get_parameter<float>(InputHpHz, modulation_offset)
         / static_cast<float>(m_sample_rate));
-    m_target_size   = get_parameter<float>(Size);
-    m_target_fshift = get_parameter<float>(FreqShift);
+    m_target_size   = get_parameter<float>(Size, modulation_offset);
+    m_target_fshift = get_parameter<float>(FreqShift, modulation_offset);
 
-    apply_shimmer_pitch();
+    apply_shimmer_pitch(modulation_offset);
 
     const auto mode = static_cast<ConstellationReverbChannelMode>(
-        get_parameter<int>(ChannelModeParam));
+        get_parameter<int>(ChannelModeParam, modulation_offset));
 
     // ── Per-sample loop ───────────────────────────────────────────────────
     for (size_t i = 0; i < num_frames; ++i) {
@@ -314,13 +315,13 @@ void ConstellationReverbImpl::prepare_oscillators() {
     m_fshift_a.prepare(fshift_hz + ha, sr);
     m_fshift_b.prepare(fshift_hz + hb, sr);
 
-    apply_shimmer_pitch();
+    apply_shimmer_pitch(0);
 }
 
-void ConstellationReverbImpl::apply_shimmer_pitch() {
-    const auto [ca, cb] = shimmer_detune_to_cents(get_parameter<float>(ShimmerDetune));
-    m_pitch_a.set_pitch(get_parameter<float>(ShimmerSemitones), ca);
-    m_pitch_b.set_pitch(get_parameter<float>(ShimmerSemitones), cb);
+void ConstellationReverbImpl::apply_shimmer_pitch(uint32_t modulation_offset) {
+    const auto [ca, cb] = shimmer_detune_to_cents(get_parameter<float>(ShimmerDetune, modulation_offset));
+    m_pitch_a.set_pitch(get_parameter<float>(ShimmerSemitones, modulation_offset), ca);
+    m_pitch_b.set_pitch(get_parameter<float>(ShimmerSemitones, modulation_offset), cb);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

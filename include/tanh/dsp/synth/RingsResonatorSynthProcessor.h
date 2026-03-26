@@ -1,8 +1,8 @@
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
-
+#include <cstdint>
 #include <memory>
+#include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl::dsp::synth {
 
@@ -40,7 +40,7 @@ public:
     int get_latency() const;
 
 protected:
-    virtual float get_parameter_value(RingsParameter parameter) = 0;
+    virtual float get_parameter_value(RingsParameter parameter, uint32_t modulation_offset = 0) = 0;
 
 private:
     static constexpr size_t kBlockSize = 24;

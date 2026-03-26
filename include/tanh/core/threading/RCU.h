@@ -276,6 +276,11 @@ public:
         return count;
     }
 
+    void synchronize() {
+        std::lock_guard<std::mutex> lock(m_writer_mutex);
+        synchronize_rcu();
+    }
+
 private:
     // RCU-protected data pointer
     std::atomic<T*> m_data_ptr;
