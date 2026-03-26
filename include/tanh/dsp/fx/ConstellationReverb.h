@@ -58,7 +58,8 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
 
-    void process(thl::dsp::audio::AudioBufferView buffer) override;
+    void process(thl::dsp::audio::AudioBufferView buffer,
+                 uint32_t modulation_offset = 0) override;
 
 protected:
     enum Parameter {
@@ -81,11 +82,11 @@ protected:
     };
 
     template <typename T>
-    T get_parameter(Parameter p);
+    T get_parameter(Parameter p, uint32_t modulation_offset = 0);
 
-    virtual float get_parameter_float(Parameter p) = 0;
-    virtual bool  get_parameter_bool(Parameter p)  = 0;
-    virtual int   get_parameter_int(Parameter p)   = 0;
+    virtual float get_parameter_float(Parameter p, uint32_t modulation_offset = 0) = 0;
+    virtual bool  get_parameter_bool(Parameter p, uint32_t modulation_offset = 0)  = 0;
+    virtual int   get_parameter_int(Parameter p, uint32_t modulation_offset = 0)   = 0;
 
 private:
     // ── Per-sample helpers ────────────────────────────────────────────────
@@ -95,7 +96,7 @@ private:
     // ── Allocation / initialisation ───────────────────────────────────────
     void allocate_buffers(float predelay_ms);
     void prepare_oscillators();
-    void apply_shimmer_pitch();
+    void apply_shimmer_pitch(uint32_t modulation_offset = 0);
 
     // ── Utility ───────────────────────────────────────────────────────────
     float sr_scale(int base) const;
@@ -170,16 +171,19 @@ private:
 };
 
 template <>
-inline float ConstellationReverbImpl::get_parameter<float>(Parameter p) {
-    return get_parameter_float(p);
+inline float ConstellationReverbImpl::get_parameter<float>(Parameter p,
+                                                           uint32_t modulation_offset) {
+    return get_parameter_float(p, modulation_offset);
 }
 template <>
-inline bool ConstellationReverbImpl::get_parameter<bool>(Parameter p) {
-    return get_parameter_bool(p);
+inline bool ConstellationReverbImpl::get_parameter<bool>(Parameter p,
+                                                         uint32_t modulation_offset) {
+    return get_parameter_bool(p, modulation_offset);
 }
 template <>
-inline int ConstellationReverbImpl::get_parameter<int>(Parameter p) {
-    return get_parameter_int(p);
+inline int ConstellationReverbImpl::get_parameter<int>(Parameter p,
+                                                       uint32_t modulation_offset) {
+    return get_parameter_int(p, modulation_offset);
 }
 
 }  // namespace thl::dsp::fx

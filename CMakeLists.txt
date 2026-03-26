@@ -25,6 +25,7 @@ set(TANH_COMPONENTS Core State DSP AudioIO)
 option(TANH_BUILD_CORE "Build Core component" ON)
 option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
+option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 
 # ==============================================================================
@@ -340,6 +341,47 @@ if(TANH_BUILD_DSP)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
 endif()
 
+# Modulation component (depends on DSP and State)
+if(TANH_BUILD_MODULATION)
+    if(NOT TARGET ${PROJECT_NAME}_dsp)
+        message(FATAL_ERROR "Modulation component requires DSP component")
+    endif()
+    if(NOT TARGET ${PROJECT_NAME}_state)
+        message(FATAL_ERROR "Modulation component requires State component")
+    endif()
+
+    add_library(${PROJECT_NAME}_modulation
+        src/modulation/ModulationMatrix.cpp
+        src/modulation/LFOSource.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_modulation PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Modulation ALIAS ${PROJECT_NAME}_modulation)
+
+    target_include_directories(${PROJECT_NAME}_modulation
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_modulation
+        PUBLIC
+        ${PROJECT_NAME}_dsp
+        ${PROJECT_NAME}_state
+    )
+
+    target_compile_definitions(${PROJECT_NAME}_modulation
+        PUBLIC
+        -DTANH_MODULATION_ENABLED
+    )
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_modulation)
+endif()
+
 # AudioIO component (depends on Core)
 if(TANH_BUILD_AUDIO_IO)
     if(NOT TARGET ${PROJECT_NAME}_core)
@@ -518,6 +560,9 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_DSP)
         add_subdirectory(test/dsp)
     endif()
+    if (TANH_BUILD_MODULATION)
+        add_subdirectory(test/modulation)
+    endif()
     if (TANH_BUILD_AUDIO_IO)
         add_subdirectory(test/audio_io)
     endif()
@@ -525,7 +570,7 @@ if (TANH_WITH_TESTS)
     # On iOS, test executables become .app bundles and need a bundle identifier
     # for simctl install/launch to work.
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        foreach(_test test_core test_state test_dsp test_audio_io)
+        foreach(_test test_core test_state test_dsp test_modulation test_audio_io)
             if(TARGET ${_test})
                 # Bundle IDs must use hyphens, not underscores
                 string(REPLACE "_" "-" _bundle_suffix "${_test}")

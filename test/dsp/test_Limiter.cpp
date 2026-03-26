@@ -17,7 +17,7 @@ public:
     float threshold_linear() const { return std::pow(10.0f, threshold_db / 20.0f); }
 
 private:
-    float get_parameter_float(Parameter p) override {
+    float get_parameter_float(Parameter p, uint32_t /*modulation_offset*/) override {
         switch (p) {
             case Threshold: return threshold_db;
             case Attack: return attack_ms;
@@ -25,8 +25,8 @@ private:
             default: return 0.0f;
         }
     }
-    bool get_parameter_bool(Parameter /*p*/) override { return false; }
-    int get_parameter_int(Parameter /*p*/) override { return 0; }
+    bool get_parameter_bool(Parameter /*p*/, uint32_t /*modulation_offset*/) override { return false; }
+    int get_parameter_int(Parameter /*p*/, uint32_t /*modulation_offset*/) override { return 0; }
 };
 
 static constexpr double kSampleRate = 48000.0;

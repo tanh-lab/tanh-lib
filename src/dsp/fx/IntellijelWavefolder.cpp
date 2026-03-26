@@ -14,11 +14,12 @@ void IntellijelWavefolderImpl::prepare(const double& /*sample_rate*/,
     // Stateless — nothing to initialise.
 }
 
-void IntellijelWavefolderImpl::process(thl::dsp::audio::AudioBufferView buffer) {
-    const float drive     = std::clamp(get_parameter<float>(Drive),    0.1f, 20.0f);
-    const float folds     = std::clamp(get_parameter<float>(Folds),    0.0f, 10.0f);
-    const float symmetry  = get_parameter<float>(Symmetry);
-    const float jfet_tone = std::clamp(get_parameter<float>(JfetTone), 0.0f,  1.0f);
+void IntellijelWavefolderImpl::process(thl::dsp::audio::AudioBufferView buffer,
+                                       uint32_t modulation_offset) {
+    const float drive     = std::clamp(get_parameter<float>(Drive, modulation_offset),    0.1f, 20.0f);
+    const float folds     = std::clamp(get_parameter<float>(Folds, modulation_offset),    0.0f, 10.0f);
+    const float symmetry  = get_parameter<float>(Symmetry, modulation_offset);
+    const float jfet_tone = std::clamp(get_parameter<float>(JfetTone, modulation_offset), 0.0f,  1.0f);
 
     const size_t num_channels = buffer.get_num_channels();
     const size_t num_frames   = buffer.get_num_frames();

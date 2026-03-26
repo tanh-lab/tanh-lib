@@ -26,7 +26,8 @@ void SineProcessorImpl::prepare(const double& sample_rate,
     smoothed_amplitude.set_current_and_target_value(get_parameter<float>(Amplitude));
 }
 
-void SineProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer) {
+void SineProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer,
+                                uint32_t modulation_offset) {
     constexpr size_t kMaxChannels = 16;
     const size_t num_samples = buffer.get_num_frames();
     const size_t num_channels = std::min(buffer.get_num_channels(), kMaxChannels);
@@ -38,8 +39,8 @@ void SineProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer) {
     constexpr float two_pi = 2.0f * static_cast<float>(M_PI);
     const auto sample_rate_f = static_cast<float>(m_sample_rate);
 
-    smoothed_frequency.set_target_value(get_parameter<float>(Frequency));
-    smoothed_amplitude.set_target_value(get_parameter<float>(Amplitude));
+    smoothed_frequency.set_target_value(get_parameter<float>(Frequency, modulation_offset));
+    smoothed_amplitude.set_target_value(get_parameter<float>(Amplitude, modulation_offset));
 
     for (size_t i = 0; i < num_samples; ++i) {
         const float current_freq = smoothed_frequency.get_smoothed_value(1);
