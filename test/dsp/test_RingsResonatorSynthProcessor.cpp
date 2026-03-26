@@ -13,21 +13,31 @@
 
 namespace {
 
-using Parameter = thl::dsp::synth::RingsParameter;
+using Parameter = thl::dsp::synth::RingsResonatorSynthProcessor::Parameter;
 
 class TestResonator : public thl::dsp::synth::RingsResonatorSynthProcessor {
 public:
-    float get_parameter_value(Parameter p, uint32_t /*modulation_offset*/) override {
-        return m_values[static_cast<int>(p)];
-    }
+    float get_parameter_float(Parameter p) override { return m_float_values[p]; }
 
-    void set(Parameter p, float v) { m_values[static_cast<int>(p)] = v; }
+    int get_parameter_int(Parameter p) override { return m_int_values[p]; }
+
+    void set_float(Parameter p, float v) { m_float_values[p] = v; }
+    void set_int(Parameter p, int v) { m_int_values[p] = v; }
 
 private:
     static constexpr int kN = static_cast<int>(Parameter::NUM_PARAMETERS);
-    std::array<float, kN> m_values = {
-        440.0f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f,
+    std::array<float, kN> m_float_values = {
+        440.0f,
+        0.5f,
+        0.5f,
+        0.5f,
+        0.5f,
+        0.5f,
+        1.0f,
+        0.0f,
+        0.0f,
     };
+    std::array<int, kN> m_int_values = {};
 };
 
 static constexpr int kBlockSize = 256;
@@ -38,9 +48,8 @@ float process_and_measure_energy(TestResonator& synth, int num_blocks = 4) {
         float input[kBlockSize] = {};
         float output[kBlockSize] = {};
         if (b == 0) input[0] = 1.0f;
-        synth.process(
-            thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
-            thl::dsp::audio::AudioBufferView(output, kBlockSize));
+        synth.process(thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
+                      thl::dsp::audio::AudioBufferView(output, kBlockSize));
         for (float v : output) energy += v * v;
     }
     return energy;
@@ -54,27 +63,27 @@ protected:
 };
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyOneProducesOutput) {
-    synth.set(Parameter::Polyphony, 0.0f);
+    synth.set_int(Parameter::Polyphony, 0);
     float energy = process_and_measure_energy(synth);
     EXPECT_GT(energy, 1e-6f);
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyTwoProducesFiniteOutput) {
-    synth.set(Parameter::Polyphony, 1.0f);
+    synth.set_int(Parameter::Polyphony, 1);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
     EXPECT_GT(energy, 1e-6f);
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyFourProducesFiniteOutput) {
-    synth.set(Parameter::Polyphony, 2.0f);
+    synth.set_int(Parameter::Polyphony, 2);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
     EXPECT_GT(energy, 1e-6f);
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, PolyphonyClampedToValidRange) {
-    synth.set(Parameter::Polyphony, 5.0f);
+    synth.set_int(Parameter::Polyphony, 5);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
 }
@@ -88,9 +97,8 @@ TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {
         float input[kBlockSize] = {};
         if (b == 0) input[0] = 1.0f;
         float* out_ptr = out_zero.data() + b * kBlockSize;
-        synth.process(
-            thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
-            thl::dsp::audio::AudioBufferView(out_ptr, kBlockSize));
+        synth.process(thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
+                      thl::dsp::audio::AudioBufferView(out_ptr, kBlockSize));
     }
 
     TestResonator synth2;
@@ -103,15 +111,12 @@ TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {
         float input[kBlockSize] = {};
         if (b == 0) input[0] = 1.0f;
         float* out_ptr = out_one.data() + b * kBlockSize;
-        synth2.process(
-            thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
-            thl::dsp::audio::AudioBufferView(out_ptr, kBlockSize));
+        synth2.process(thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
+                       thl::dsp::audio::AudioBufferView(out_ptr, kBlockSize));
     }
 
     float diff = 0.0f;
-    for (size_t i = 0; i < out_zero.size(); ++i) {
-        diff += std::abs(out_zero[i] - out_one[i]);
-    }
+    for (size_t i = 0; i < out_zero.size(); ++i) { diff += std::abs(out_zero[i] - out_one[i]); }
     EXPECT_GT(diff, 1e-4f);
 }
 
@@ -141,9 +146,8 @@ TEST_F(RingsResonatorSynthProcessorTest, DryWetZeroPassesDrySignal) {
         float input[kBlockSize];
         std::fill_n(input, kBlockSize, 0.5f);
         float* out_ptr = output.data() + b * kBlockSize;
-        synth.process(
-            thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
-            thl::dsp::audio::AudioBufferView(out_ptr, kBlockSize));
+        synth.process(thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
+                      thl::dsp::audio::AudioBufferView(out_ptr, kBlockSize));
     }
 
     int count_near_dry = 0;
@@ -180,16 +184,13 @@ TEST_F(RingsResonatorSynthProcessorTest, DeterministicOutput) {
         float input_copy[kBlockSize];
         std::copy(input, input + kBlockSize, input_copy);
 
-        synth_a.process(
-            thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
-            thl::dsp::audio::AudioBufferView(out_a, kBlockSize));
-        synth_b.process(
-            thl::dsp::audio::ConstAudioBufferView(input_copy, kBlockSize),
-            thl::dsp::audio::AudioBufferView(out_b, kBlockSize));
+        synth_a.process(thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
+                        thl::dsp::audio::AudioBufferView(out_a, kBlockSize));
+        synth_b.process(thl::dsp::audio::ConstAudioBufferView(input_copy, kBlockSize),
+                        thl::dsp::audio::AudioBufferView(out_b, kBlockSize));
 
         for (int i = 0; i < kBlockSize; ++i) {
-            ASSERT_EQ(out_a[i], out_b[i])
-                << "Mismatch at block " << b << " sample " << i;
+            ASSERT_EQ(out_a[i], out_b[i]) << "Mismatch at block " << b << " sample " << i;
         }
     }
 }
@@ -230,12 +231,10 @@ TEST_F(RingsResonatorSynthProcessorTest, WrapperOutputMatchesManualBlend) {
 
         float out1[kBlockSize] = {};
         float out2[kBlockSize] = {};
-        synth.process(
-            thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
-            thl::dsp::audio::AudioBufferView(out1, kBlockSize));
-        synth2.process(
-            thl::dsp::audio::ConstAudioBufferView(input2, kBlockSize),
-            thl::dsp::audio::AudioBufferView(out2, kBlockSize));
+        synth.process(thl::dsp::audio::ConstAudioBufferView(input, kBlockSize),
+                      thl::dsp::audio::AudioBufferView(out1, kBlockSize));
+        synth2.process(thl::dsp::audio::ConstAudioBufferView(input2, kBlockSize),
+                       thl::dsp::audio::AudioBufferView(out2, kBlockSize));
 
         for (int i = 0; i < kBlockSize; ++i) {
             ASSERT_FLOAT_EQ(out1[i], out2[i])
@@ -253,8 +252,7 @@ TEST_F(RingsResonatorSynthProcessorTest, WrapperOutputMatchesManualBlend) {
 static constexpr int kWrapperWarmUpBlocks = 20;
 static constexpr int kWrapperNumBlocks = 16;
 static constexpr int kWrapperProcessBlockSize = 256;
-static constexpr size_t kWrapperTotalFrames =
-    kWrapperNumBlocks * kWrapperProcessBlockSize;
+static constexpr size_t kWrapperTotalFrames = kWrapperNumBlocks * kWrapperProcessBlockSize;
 
 struct WrapperModelInfo {
     int model_index;
@@ -276,23 +274,19 @@ float wrapper_reference_tolerance(int model) {
     }
 }
 
-class RingsWrapperReferenceTest
-    : public ::testing::TestWithParam<WrapperModelInfo> {};
+class RingsWrapperReferenceTest : public ::testing::TestWithParam<WrapperModelInfo> {};
 
 TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
     const auto& info = GetParam();
     const float tolerance = wrapper_reference_tolerance(info.model_index);
 
     int size_bytes = 0;
-    const char* raw =
-        RingsTestFixtures::getNamedResource(info.fixture_filename, size_bytes);
+    const char* raw = RingsTestFixtures::getNamedResource(info.fixture_filename, size_bytes);
     ASSERT_NE(raw, nullptr) << "Missing fixture: " << info.fixture_filename;
-    ASSERT_EQ(size_bytes,
-              static_cast<int>(kWrapperTotalFrames * 2 * sizeof(float)))
+    ASSERT_EQ(size_bytes, static_cast<int>(kWrapperTotalFrames * 2 * sizeof(float)))
         << "Fixture size mismatch for " << info.fixture_filename;
 
-    const float* ref_input =
-        reinterpret_cast<const float*>(raw);
+    const float* ref_input = reinterpret_cast<const float*>(raw);
     const float* ref_output = ref_input + kWrapperTotalFrames;
 
     TestResonator synth;
@@ -311,9 +305,8 @@ TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
     for (int b = 0; b < kWrapperWarmUpBlocks; ++b) {
         float in[kWrapperProcessBlockSize] = {};
         float out[kWrapperProcessBlockSize] = {};
-        synth.process(
-            thl::dsp::audio::ConstAudioBufferView(in, kWrapperProcessBlockSize),
-            thl::dsp::audio::AudioBufferView(out, kWrapperProcessBlockSize));
+        synth.process(thl::dsp::audio::ConstAudioBufferView(in, kWrapperProcessBlockSize),
+                      thl::dsp::audio::AudioBufferView(out, kWrapperProcessBlockSize));
     }
 
     for (int b = 0; b < kWrapperNumBlocks; ++b) {
@@ -324,9 +317,8 @@ TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
         float in[kWrapperProcessBlockSize];
         std::copy(in_ptr, in_ptr + kWrapperProcessBlockSize, in);
 
-        synth.process(
-            thl::dsp::audio::ConstAudioBufferView(in, kWrapperProcessBlockSize),
-            thl::dsp::audio::AudioBufferView(out, kWrapperProcessBlockSize));
+        synth.process(thl::dsp::audio::ConstAudioBufferView(in, kWrapperProcessBlockSize),
+                      thl::dsp::audio::AudioBufferView(out, kWrapperProcessBlockSize));
 
         for (int i = 0; i < kWrapperProcessBlockSize; ++i) {
             size_t idx = b * kWrapperProcessBlockSize + i;
@@ -339,13 +331,12 @@ TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
 INSTANTIATE_TEST_SUITE_P(
     AllModels,
     RingsWrapperReferenceTest,
-    ::testing::Values(
-        WrapperModelInfo{0, "wrapper_modal.bin"},
-        WrapperModelInfo{1, "wrapper_sympathetic_string.bin"},
-        WrapperModelInfo{2, "wrapper_modulated_string.bin"},
-        WrapperModelInfo{3, "wrapper_fm_voice.bin"},
-        WrapperModelInfo{4, "wrapper_sympathetic_string_quantized.bin"},
-        WrapperModelInfo{5, "wrapper_string_and_reverb.bin"}),
+    ::testing::Values(WrapperModelInfo{0, "wrapper_modal.bin"},
+                      WrapperModelInfo{1, "wrapper_sympathetic_string.bin"},
+                      WrapperModelInfo{2, "wrapper_modulated_string.bin"},
+                      WrapperModelInfo{3, "wrapper_fm_voice.bin"},
+                      WrapperModelInfo{4, "wrapper_sympathetic_string_quantized.bin"},
+                      WrapperModelInfo{5, "wrapper_string_and_reverb.bin"}),
     [](const ::testing::TestParamInfo<WrapperModelInfo>& info) {
         switch (info.param.model_index) {
             case 0: return std::string("Modal");
