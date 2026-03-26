@@ -317,7 +317,12 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
     }
 }
 
-std::string State::get_state_dump() const {
+std::string State::get_state_dump(bool include_definitions) const {
+    return get_group_state_dump("", include_definitions);
+}
+
+std::string State::get_group_state_dump(std::string_view group_prefix,
+                                        bool include_definitions) const {
     nlohmann::json root = nlohmann::json::array();
 
     // Snapshot string values
@@ -327,6 +332,12 @@ std::string State::get_state_dump() const {
     // Build parameter entries from the parameters RCU
     m_parameters_rcu.read([&](const ParameterMap& params) {
         for (const auto& [key, data] : params) {
+            // Filter by prefix
+            if (!group_prefix.empty()
+                && key.compare(0, group_prefix.size(), group_prefix) != 0) {
+                continue;
+            }
+
             nlohmann::json param_obj = nlohmann::json::object();
             param_obj["key"] = key;
 
@@ -344,8 +355,52 @@ std::string State::get_state_dump() const {
                 param_obj["value"] =
                     data.cache_ptr->atomic_bool.load(std::memory_order_relaxed);
             } else if (type == ParameterType::String) {
+<<<<<<< Updated upstream
                 auto sit = strings_snap.find(key);
                 param_obj["value"] = sit != strings_snap.end() ? sit->second : "";
+=======
+                param_obj["value"] = data.string_value;
+            }
+
+            // Include definition if requested and it exists
+            if (include_definitions && data.parameter_definition) {
+                nlohmann::json def_obj = nlohmann::json::object();
+                const auto& def = *data.parameter_definition;
+
+                def_obj["name"] = def.m_name;
+                def_obj["type"] = [&]() {
+                    switch (def.m_type) {
+                        case PluginParamType::ParamFloat: return "float";
+                        case PluginParamType::ParamInt: return "int";
+                        case PluginParamType::ParamBool: return "bool";
+                        case PluginParamType::ParamChoice: return "choice";
+                        default: return "unknown";
+                    }
+                }();
+
+                // Range information
+                def_obj["min"] = def.m_range.m_min;
+                def_obj["max"] = def.m_range.m_max;
+                def_obj["step"] = def.m_range.m_step;
+                def_obj["skew"] = def.m_range.m_skew;
+
+                def_obj["default_value"] = def.m_default_value;
+                def_obj["decimal_places"] = def.m_decimal_places;
+                def_obj["automation"] = def.m_automation;
+                def_obj["modulation"] = def.m_modulation;
+
+                def_obj["slider_polarity"] = [&]() {
+                    switch (def.m_slider_polarity) {
+                        case SliderPolarity::Unipolar: return "unipolar";
+                        case SliderPolarity::Bipolar: return "bipolar";
+                        default: return "unipolar";
+                    }
+                }();
+
+                if (!def.m_data.empty()) { def_obj["data"] = def.m_data; }
+
+                param_obj["definition"] = def_obj;
+>>>>>>> Stashed changes
             }
 
             root.push_back(param_obj);
