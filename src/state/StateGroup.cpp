@@ -29,34 +29,30 @@ void StateGroup::clear() {
         // Get the full path once to avoid repeated calls
         std::string_view fullPath = get_full_path();
 
-        // Use RCU to update parameters map
+        // Collect keys to delete from storage under mutex
         std::vector<std::string> keys_to_delete;
-        m_rootState->m_parameters_rcu.update([&](auto& parameters) {
-            // First pass: collect parameters to delete
-            keys_to_delete.reserve(parameters.size());  // Prevent reallocation
-
-            for (const auto& [key, param] : parameters) {
-                // String operations like find() aren't real-time safe, but
-                // we're doing this under RCU update and with keys_to_delete
-                // pre-allocated to avoid allocation during iteration
+        {
+            std::lock_guard<std::mutex> lock(m_rootState->m_storage_mutex);
+            for (const auto& [key, record] : m_rootState->m_storage) {
                 if (key.find(fullPath) == 0) {
-                    // If the parameter belongs to this group, mark it for
-                    // deletion
                     keys_to_delete.push_back(key);
                 }
             }
+        }
 
-            // Second pass: delete the parameters
-            for (const auto& key : keys_to_delete) { parameters.erase(key); }
+        // Remove from the lock-free index first so readers can no longer
+        // obtain pointers to records we are about to destroy.
+        m_rootState->m_index_rcu.update([&](auto& idx) {
+            for (const auto& key : keys_to_delete) { idx.erase(key); }
         });
 
-        // Also clear corresponding entries from strings and definitions RCUs
-        m_rootState->m_strings_rcu.update([&](auto& strings) {
-            for (const auto& key : keys_to_delete) { strings.erase(key); }
-        });
-        m_rootState->m_definitions_rcu.update([&](auto& defs) {
-            for (const auto& key : keys_to_delete) { defs.erase(key); }
-        });
+        // Now safe to destroy the records from storage
+        {
+            std::lock_guard<std::mutex> lock(m_rootState->m_storage_mutex);
+            for (const auto& key : keys_to_delete) {
+                m_rootState->m_storage.erase(key);
+            }
+        }
     }
     clear_groups();
 }
@@ -71,15 +67,11 @@ bool StateGroup::is_empty() const TANH_NONBLOCKING_FUNCTION {
     // Get the full path once to avoid repeated calls - real-time safe
     std::string_view fullPath = get_full_path();
 
-    // Use RCU to check if this group has any parameters (lock-free read)
+    // Use RCU index to check if this group has any parameters (lock-free read)
     bool has_parameters = false;
-    m_rootState->m_parameters_rcu.read([&](const auto& parameters) {
-        for (const auto& [key, param] : parameters) {
-            // std::string::find() isn't formally guaranteed RT-safe by the
-            // standard, but in practice doesn't allocate - we're only searching
-            // pre-existing strings
+    m_rootState->m_index_rcu.read([&](const auto& idx) {
+        for (const auto& [key, record] : idx) {
             if (key.find(fullPath) == 0) {
-                // If the parameter belongs to this group, we're not empty
                 has_parameters = true;
                 return;  // Early exit from lambda
             }
@@ -135,8 +127,17 @@ void StateGroup::notify_parameter_change(std::string_view path) {
         detail::join_path(group_path, param_name, m_rootState->m_temp_buffer_1);
         Parameter param = group->m_rootState->get_from_root(m_rootState->m_temp_buffer_1);
 
+        // Look up gesture state
+        bool is_in_gesture = false;
+        m_rootState->m_index_rcu.read([&](const auto& idx) {
+            auto it = idx.find(m_rootState->m_temp_buffer_1);
+            if (it != idx.end()) {
+                is_in_gesture = it->second->metadata.in_gesture.load(std::memory_order_relaxed);
+            }
+        });
+
         // Notify all listeners
-        notify_listeners(path, param);
+        notify_listeners(path, param, NotifyStrategies::all, nullptr, is_in_gesture);
     } catch (const StateKeyNotFoundException&) {
         // Parameter not found, do nothing
     }
@@ -145,7 +146,8 @@ void StateGroup::notify_parameter_change(std::string_view path) {
 void StateGroup::notify_listeners(std::string_view path,
                                   const Parameter& param,
                                   NotifyStrategies strategy,
-                                  ParameterListener* source) const {
+                                  ParameterListener* source,
+                                  bool in_gesture) const {
     if (strategy == NotifyStrategies::none) { return; }
     // Notify listeners at this level using RCU (lock-free read)
     m_listeners_rcu.read([&](const ListenerData& data) {
@@ -153,6 +155,10 @@ void StateGroup::notify_listeners(std::string_view path,
         for (auto listener : data.object_listeners) {
             if ((strategy == NotifyStrategies::others && listener == source) ||
                 (strategy == NotifyStrategies::self && listener != source)) {
+                continue;
+            }
+            // Skip listeners that don't want notifications during gestures
+            if (in_gesture && !listener->m_receives_during_gesture) {
                 continue;
             }
             listener->on_parameter_changed(path, param);
@@ -165,7 +171,7 @@ void StateGroup::notify_listeners(std::string_view path,
     });
 
     // Then, notify parent groups to propagate up the hierarchy
-    if (m_parent) { m_parent->notify_listeners(path, param, strategy, source); }
+    if (m_parent) { m_parent->notify_listeners(path, param, strategy, source, in_gesture); }
 }
 
 // StateGroup implementation
@@ -388,11 +394,11 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
     std::map<std::string, Parameter> params = {};
     std::string_view fullPath = get_full_path();
 
-    // Use RCU to read parameters (lock-free)
-    m_rootState->m_parameters_rcu.read([&](const auto& parameters) {
+    // Use RCU index to read parameters (lock-free)
+    m_rootState->m_index_rcu.read([&](const auto& idx) {
         // Special case for root StateGroup (empty path)
         if (fullPath.empty()) {
-            for (const auto& [key, param] : parameters) {
+            for (const auto& [key, record] : idx) {
                 params.emplace(key, Parameter(m_rootState, key));
             }
             return;
@@ -400,7 +406,7 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
 
         // For non-root groups, we need to check if the parameter belongs to
         // this group or its subgroups
-        for (const auto& [key, param] : parameters) {
+        for (const auto& [key, record] : idx) {
             // Check if key starts with the full path and is either:
             // 1. Exactly equal to the full path (shouldn't happen with proper
             // hierarchical paths)
@@ -450,9 +456,9 @@ void StateGroup::set(std::string_view path,
         // If not creating and the parameter doesn't exist, check using RCU
         if (!create) {
             bool parameter_exists = false;
-            m_rootState->m_parameters_rcu.read([&](const auto& parameters) {
+            m_rootState->m_index_rcu.read([&](const auto& idx) {
                 parameter_exists =
-                    parameters.find(m_rootState->m_temp_buffer_2) != parameters.end();
+                    idx.find(m_rootState->m_temp_buffer_2) != idx.end();
             });
 
             if (!parameter_exists) {

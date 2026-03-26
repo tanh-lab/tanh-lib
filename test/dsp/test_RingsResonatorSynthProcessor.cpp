@@ -86,8 +86,8 @@ TEST_F(RingsResonatorSynthProcessorTest, PolyphonyClampedToValidRange) {
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {
-    synth.set(Parameter::OddEvenMix, 0.0f);
-    synth.set(Parameter::DryWet, 1.0f);
+    synth.set_float(Parameter::OddEvenMix, 0.0f);
+    synth.set_float(Parameter::DryWet, 1.0f);
 
     std::array<float, kBlockSize * 4> out_zero{};
     for (int b = 0; b < 4; ++b) {
@@ -101,8 +101,8 @@ TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {
 
     TestResonator synth2;
     synth2.prepare(48000.0, kBlockSize);
-    synth2.set(Parameter::OddEvenMix, 1.0f);
-    synth2.set(Parameter::DryWet, 1.0f);
+    synth2.set_float(Parameter::OddEvenMix, 1.0f);
+    synth2.set_float(Parameter::DryWet, 1.0f);
 
     std::array<float, kBlockSize * 4> out_one{};
     for (int b = 0; b < 4; ++b) {
@@ -122,25 +122,25 @@ TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, StructureAt0_9995ProducesFiniteOutput) {
-    synth.set(Parameter::Structure, 0.9995f);
+    synth.set_float(Parameter::Structure, 0.9995f);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, DampingAt0_9995ProducesFiniteOutput) {
-    synth.set(Parameter::Damping, 0.9995f);
+    synth.set_float(Parameter::Damping, 0.9995f);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, PositionAt0_9995ProducesFiniteOutput) {
-    synth.set(Parameter::Position, 0.9995f);
+    synth.set_float(Parameter::Position, 0.9995f);
     float energy = process_and_measure_energy(synth);
     EXPECT_TRUE(std::isfinite(energy));
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, DryWetZeroPassesDrySignal) {
-    synth.set(Parameter::DryWet, 0.0f);
+    synth.set_float(Parameter::DryWet, 0.0f);
 
     std::array<float, kBlockSize * 4> output{};
     for (int b = 0; b < 4; ++b) {
@@ -201,27 +201,27 @@ TEST_F(RingsResonatorSynthProcessorTest, DeterministicOutput) {
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, WrapperOutputMatchesManualBlend) {
-    synth.set(Parameter::DryWet, 1.0f);
-    synth.set(Parameter::OddEvenMix, 0.5f);
-    synth.set(Parameter::Frequency, 440.0f);
-    synth.set(Parameter::Structure, 0.5f);
-    synth.set(Parameter::Brightness, 0.5f);
-    synth.set(Parameter::Damping, 0.3f);
-    synth.set(Parameter::Position, 0.5f);
-    synth.set(Parameter::Model, 0.0f);
-    synth.set(Parameter::Polyphony, 0.0f);
+    synth.set_float(Parameter::DryWet, 1.0f);
+    synth.set_float(Parameter::OddEvenMix, 0.5f);
+    synth.set_float(Parameter::Frequency, 440.0f);
+    synth.set_float(Parameter::Structure, 0.5f);
+    synth.set_float(Parameter::Brightness, 0.5f);
+    synth.set_float(Parameter::Damping, 0.3f);
+    synth.set_float(Parameter::Position, 0.5f);
+    synth.set_int(Parameter::Model, 0);
+    synth.set_int(Parameter::Polyphony, 0);
 
     TestResonator synth2;
     synth2.prepare(48000.0, kBlockSize);
-    synth2.set(Parameter::DryWet, 1.0f);
-    synth2.set(Parameter::OddEvenMix, 0.5f);
-    synth2.set(Parameter::Frequency, 440.0f);
-    synth2.set(Parameter::Structure, 0.5f);
-    synth2.set(Parameter::Brightness, 0.5f);
-    synth2.set(Parameter::Damping, 0.3f);
-    synth2.set(Parameter::Position, 0.5f);
-    synth2.set(Parameter::Model, 0.0f);
-    synth2.set(Parameter::Polyphony, 0.0f);
+    synth2.set_float(Parameter::DryWet, 1.0f);
+    synth2.set_float(Parameter::OddEvenMix, 0.5f);
+    synth2.set_float(Parameter::Frequency, 440.0f);
+    synth2.set_float(Parameter::Structure, 0.5f);
+    synth2.set_float(Parameter::Brightness, 0.5f);
+    synth2.set_float(Parameter::Damping, 0.3f);
+    synth2.set_float(Parameter::Position, 0.5f);
+    synth2.set_int(Parameter::Model, 0);
+    synth2.set_int(Parameter::Polyphony, 0);
 
     static constexpr int kNumBlocks = 16;
 
@@ -303,15 +303,15 @@ TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
 
     TestResonator synth;
     synth.prepare(48000.0, kWrapperProcessBlockSize);
-    synth.set(Parameter::Frequency, 440.0f);
-    synth.set(Parameter::Structure, 0.5f);
-    synth.set(Parameter::Brightness, 0.5f);
-    synth.set(Parameter::Damping, 0.5f);
-    synth.set(Parameter::Position, 0.5f);
-    synth.set(Parameter::OddEvenMix, 0.5f);
-    synth.set(Parameter::DryWet, 1.0f);
-    synth.set(Parameter::Model, static_cast<float>(info.model_index));
-    synth.set(Parameter::Polyphony, 0.0f);
+    synth.set_float(Parameter::Frequency, 440.0f);
+    synth.set_float(Parameter::Structure, 0.5f);
+    synth.set_float(Parameter::Brightness, 0.5f);
+    synth.set_float(Parameter::Damping, 0.5f);
+    synth.set_float(Parameter::Position, 0.5f);
+    synth.set_float(Parameter::OddEvenMix, 0.5f);
+    synth.set_float(Parameter::DryWet, 1.0f);
+    synth.set_int(Parameter::Model, info.model_index);
+    synth.set_int(Parameter::Polyphony, 0);
 
     // Warm up
     for (int b = 0; b < kWrapperWarmUpBlocks; ++b) {

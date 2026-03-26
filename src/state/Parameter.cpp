@@ -6,11 +6,11 @@ namespace thl {
 
 // Parameter class implementation
 Parameter::Parameter(const State* state, std::string_view key) : m_state(state), m_key(key) {
-    state->m_parameters_rcu.read([&](const auto& params) {
-        auto it = params.find(key);
-        if (it != params.end()) {
-            m_cache_ptr = it->second.cache_ptr;
-            m_type = it->second.type;
+    state->m_index_rcu.read([&](const auto& idx) {
+        auto it = idx.find(key);
+        if (it != idx.end()) {
+            m_cache_ptr = &it->second->cache;
+            m_type = it->second->type;
         }
     });
 }
@@ -22,11 +22,11 @@ Parameter::Parameter(const StateGroup* group, std::string_view key, const State*
     m_key.reserve(required_size);
     detail::join_path(group_path, key, m_key);
 
-    rootState->m_parameters_rcu.read([&](const auto& params) {
-        auto it = params.find(m_key);
-        if (it != params.end()) {
-            m_cache_ptr = it->second.cache_ptr;
-            m_type = it->second.type;
+    rootState->m_index_rcu.read([&](const auto& idx) {
+        auto it = idx.find(m_key);
+        if (it != idx.end()) {
+            m_cache_ptr = &it->second->cache;
+            m_type = it->second->type;
         }
     });
 }
@@ -41,11 +41,14 @@ T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
         TANH_NONBLOCKING_SCOPED_DISABLER
         switch (m_type) {
             case ParameterType::String: {
-                // Must read string_value from strings RCU
-                return m_state->m_strings_rcu.read([&](const auto& strings) -> std::string {
-                    auto it = strings.find(m_key);
-                    return it != strings.end() ? it->second : "";
+                // Must read string_value from record under storage mutex
+                std::lock_guard<std::mutex> lock(m_state->m_storage_mutex);
+                ParameterRecord* record = nullptr;
+                m_state->m_index_rcu.read([&](const auto& idx) {
+                    auto it = idx.find(m_key);
+                    if (it != idx.end()) record = it->second;
                 });
+                return record ? record->string_value : "";
             }
             case ParameterType::Double:
                 return std::to_string(
@@ -121,6 +124,16 @@ void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) con
     std::string path = m_key;
     std::string root_segment = path;
     size_t first_dot = path.find('.');
+
+    // Look up gesture state
+    bool is_in_gesture = false;
+    m_state->m_index_rcu.read([&](const auto& idx) {
+        auto it = idx.find(m_key);
+        if (it != idx.end()) {
+            is_in_gesture = it->second->metadata.in_gesture.load(std::memory_order_relaxed);
+        }
+    });
+
     if (first_dot != std::string::npos) {
         root_segment = path.substr(0, first_dot);
 
@@ -137,13 +150,13 @@ void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) con
         if (found_group) {
             // This will notify both the group listener and propagate up to the
             // root
-            found_group->notify_listeners(path, *this, strategy, source);
+            found_group->notify_listeners(path, *this, strategy, source, is_in_gesture);
             return;
         }
     }
 
     // Otherwise notify directly from State
-    const_cast<State*>(m_state)->notify_listeners(path, *this, strategy, source);
+    const_cast<State*>(m_state)->notify_listeners(path, *this, strategy, source, is_in_gesture);
 }
 
 // Get full path for this parameter
@@ -152,7 +165,14 @@ std::string Parameter::get_path() const {
 }
 
 std::optional<ParameterDefinition> Parameter::get_definition() const {
-    return m_state->get_definition_from_root(m_key);
+    std::lock_guard<std::mutex> lock(m_state->m_storage_mutex);
+    ParameterRecord* record = nullptr;
+    m_state->m_index_rcu.read([&](const auto& idx) {
+        auto it = idx.find(m_key);
+        if (it != idx.end()) record = it->second;
+    });
+    if (!record) return std::nullopt;
+    return record->definition;
 }
 
 template <typename T>
