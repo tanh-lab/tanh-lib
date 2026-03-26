@@ -236,12 +236,28 @@ public:
      * Creates a JSON array containing all parameters with their values and
      * definitions.
      *
+     * @param include_definitions Whether to include parameter definitions
      * @return JSON string representation of the state
      *
      * @warning NOT real-time safe - performs JSON serialization and memory
      * allocation
      */
-    std::string get_state_dump() const;
+    std::string get_state_dump(bool include_definitions = true) const;
+
+    /**
+     * @brief Generates a JSON dump of parameters matching a group prefix.
+     *
+     * Only includes parameters whose key starts with the given prefix.
+     *
+     * @param group_prefix Prefix to filter by (e.g., "parameter.engine0")
+     * @param include_definitions Whether to include parameter definitions
+     * @return JSON string representation of matching parameters
+     *
+     * @warning NOT real-time safe - performs JSON serialization and memory
+     * allocation
+     */
+    std::string get_group_state_dump(std::string_view group_prefix,
+                                     bool include_definitions = true) const;
 
 private:
     friend class Parameter;
