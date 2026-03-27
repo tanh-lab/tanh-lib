@@ -24,7 +24,7 @@ struct ModulationRouting {
         source_id = std::string(view_source_id);
         target_id = std::string(view_target_id);
         depth = new_depth;
-        new_max_decimation = max_decimation;
+        max_decimation = new_max_decimation;
     }
 };
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -54,8 +56,19 @@ private:
 };
 
 // Free utility: collect change points from a span of SmartHandles.
-// Builds a sorted, deduplicated list of change points.
-inline void collect_change_points (
+// Writes a sorted, deduplicated list of change points into target_buffer.
+//
+// RT-SAFETY CONTRACT (must hold to avoid allocation on the audio thread):
+//   target_buffer.capacity() must be >= the block size used when the
+//   ModulationMatrix was prepared. Change points are indices within a block,
+//   so their count is bounded by block_size. The caller is responsible for
+//   reserving the buffer once at prepare() time, e.g.:
+//     m_change_points.reserve(samples_per_block);
+//
+// std::sort and the linear dedup search are both allocation-free. The only
+// allocation risk is push_back exceeding capacity — the assert below catches
+// that at debug time.
+inline void collect_change_points(
     std::span<const SmartHandle> handles, std::vector<uint32_t>& target_buffer) TANH_NONBLOCKING_FUNCTION {
     target_buffer.clear();
     for (auto& h : handles) {
@@ -68,10 +81,16 @@ inline void collect_change_points (
                         break;
                     }
                 }
-                if (!cb_in_target_buffer) target_buffer.push_back(v);
+                if (!cb_in_target_buffer) {
+                    assert(target_buffer.size() < target_buffer.capacity() &&
+                           "collect_change_points: target_buffer capacity exceeded — "
+                           "reserve at least samples_per_block before calling on the audio thread");
+                    target_buffer.push_back(v);
+                }
             }
         }
     }
+    std::sort(target_buffer.begin(), target_buffer.end());
 }
 
 // Overload: collect change points from explicit span lists.

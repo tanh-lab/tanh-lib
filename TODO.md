@@ -1,6 +1,5 @@
 TODOs
 
-- [ ] Make sure that using std::stringviews and std::map instead of unordered_map for m_sources and m_targets is fine... Commit "Updated Modulation Matrix to use string_views and made ModulationMatrix::process realtime safe"
 - [ ] With RT-San fix the tests that throw exceptions (SmartHandle.ThrowsOnNonexistentParameter, StateTests.HandleNonExistentKey)
 - [ ] Properly disable HardwareTests on plattforms that are not supported
 - [ ] Add on_gesture_start and on_gesture_end callbacks for parameter_listners so it gets notified when the gesture starts and ends. 
