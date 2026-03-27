@@ -87,6 +87,8 @@ void ModulationMatrix::add_source(const std::string_view id,
     std::lock_guard<std::mutex> lock(m_writer_mutex);
     auto it = m_sources.find(id);
     if (it != m_sources.end()) {
+        it->second = source;
+        rebuild_schedule_locked();
         return;
     }
     auto [source_it, inserted] = m_sources.emplace(std::string(id), source);
