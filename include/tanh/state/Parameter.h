@@ -103,7 +103,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool is_valid() const { return m_entry != nullptr; }
+    [[nodiscard]] bool is_valid() const TANH_NONBLOCKING_FUNCTION { return m_entry != nullptr; }
 
 private:
     friend class State;

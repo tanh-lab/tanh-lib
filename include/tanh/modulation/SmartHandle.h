@@ -25,7 +25,7 @@ public:
 
     // Read the parameter value at a given sample offset.
     // If a modulation target is attached, returns base + modulation.
-    float load(uint32_t modulation_offset = 0) const {
+    float load(uint32_t modulation_offset = 0) const TANH_NONBLOCKING_FUNCTION {
         float base = m_handle.load();
         if (m_target && modulation_offset < m_target->modulation_buffer.size()) {
             return base + m_target->modulation_buffer[modulation_offset];
@@ -35,12 +35,17 @@ public:
 
     // Access the change points for this parameter's modulation target.
     // Returns nullptr if unmodulated.
-    const std::vector<uint32_t>* change_points() const {
+    const std::vector<uint32_t>* change_points() const TANH_NONBLOCKING_FUNCTION {
         return m_target ? &m_target->change_points : nullptr;
     }
 
-    thl::ParameterHandle<float> raw_handle() const { return m_handle; }
-    bool is_valid() const { return m_handle.is_valid(); }
+    thl::ParameterHandle<float> raw_handle() const TANH_NONBLOCKING_FUNCTION { return m_handle; }
+    bool is_valid() const TANH_NONBLOCKING_FUNCTION { return m_handle.is_valid(); }
+
+    size_t get_buffer_size() TANH_NONBLOCKING_FUNCTION {
+        if (m_target) return m_target->modulation_buffer.size();
+        else return 0;
+    }
 
 private:
     thl::ParameterHandle<float> m_handle;
