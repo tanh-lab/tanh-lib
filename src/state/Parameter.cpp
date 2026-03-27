@@ -182,6 +182,5 @@ template double Parameter::to<double>(bool allow_blocking) const TANH_NONBLOCKIN
 template float Parameter::to<float>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template int Parameter::to<int>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template bool Parameter::to<bool>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template std::string Parameter::to<std::string>(bool allow_blocking) const
-    TANH_NONBLOCKING_FUNCTION;
+template std::string Parameter::to<std::string>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 }  // namespace thl

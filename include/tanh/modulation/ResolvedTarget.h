@@ -26,6 +26,7 @@ struct ResolvedTarget {
         modulation_buffer.assign(num_samples, 0.0f);
         change_point_flags.assign(num_samples, false);
         change_points.clear();
+        change_points.reserve(num_samples);
     }
 
     void clear_per_block() {

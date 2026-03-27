@@ -46,6 +46,7 @@ protected:
     void resize_buffers(size_t num_samples) {
         m_output_buffer.resize(num_samples, 0.0f);
         m_change_points.clear();
+        m_change_points.reserve(num_samples);
     }
 
     void record_change_point(uint32_t sample_index) {

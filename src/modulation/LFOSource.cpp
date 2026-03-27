@@ -20,12 +20,12 @@ void LFOSourceImpl::process(size_t num_samples) {
 
     for (size_t i = 0; i < num_samples; ++i) {
         float freq = get_parameter<float>(Frequency, static_cast<uint32_t>(i));
-        auto waveform = static_cast<LFOWaveform>(get_parameter<int>(Waveform, static_cast<uint32_t>(i)));
-        uint32_t decimation = static_cast<uint32_t>(get_parameter<int>(Decimation, static_cast<uint32_t>(i)));
-
+        
         m_phase_increment = static_cast<float>(freq / m_sample_rate);
-
+        
         if (m_samples_until_update == 0) {
+            uint32_t decimation = static_cast<uint32_t>(get_parameter<int>(Decimation, static_cast<uint32_t>(i)));
+            auto waveform = static_cast<LFOWaveform>(get_parameter<int>(Waveform, static_cast<uint32_t>(i)));
             m_last_output = generate_sample(m_phase, waveform);
             m_samples_until_update = decimation;
             m_change_points.push_back(static_cast<uint32_t>(i));
