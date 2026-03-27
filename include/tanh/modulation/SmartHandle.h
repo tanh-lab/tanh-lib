@@ -6,6 +6,7 @@
 
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/state/Parameter.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 namespace thl::modulation {
 
@@ -54,34 +55,23 @@ private:
 
 // Free utility: collect change points from a span of SmartHandles.
 // Builds a sorted, deduplicated list of change points.
-inline std::vector<uint32_t> collect_change_points(
-    std::span<const SmartHandle> handles) {
-    uint32_t max_sample = 0;
-    bool any_non_empty = false;
+inline void collect_change_points (
+    std::span<const SmartHandle> handles, std::vector<uint32_t>& target_buffer) TANH_NONBLOCKING_FUNCTION {
+    target_buffer.clear();
     for (auto& h : handles) {
         if (auto* cp = h.change_points()) {
             for (uint32_t v : *cp) {
-                if (v > max_sample) max_sample = v;
-            }
-            if (!cp->empty()) any_non_empty = true;
-        }
-    }
-    if (!any_non_empty) return {};
-
-    std::vector<bool> flags(max_sample + 1, false);
-    for (auto& h : handles) {
-        if (auto* cp = h.change_points()) {
-            for (uint32_t v : *cp) {
-                flags[v] = true;
+                bool cb_in_target_buffer = false;
+                for (uint32_t t : target_buffer) {
+                    if (v == t) {
+                        cb_in_target_buffer = true;
+                        break;
+                    }
+                }
+                if (!cb_in_target_buffer) target_buffer.push_back(v);
             }
         }
     }
-
-    std::vector<uint32_t> result;
-    for (uint32_t i = 0; i <= max_sample; ++i) {
-        if (flags[i]) result.push_back(i);
-    }
-    return result;
 }
 
 // Overload: collect change points from explicit span lists.
