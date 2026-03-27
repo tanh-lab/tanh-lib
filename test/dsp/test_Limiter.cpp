@@ -25,8 +25,6 @@ private:
             default: return 0.0f;
         }
     }
-    bool get_parameter_bool(Parameter /*p*/, uint32_t /*modulation_offset*/) override { return false; }
-    int get_parameter_int(Parameter /*p*/, uint32_t /*modulation_offset*/) override { return 0; }
 };
 
 static constexpr double kSampleRate = 48000.0;

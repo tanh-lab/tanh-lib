@@ -29,8 +29,6 @@ protected:
     T get_parameter(Parameter parameter, uint32_t modulation_offset = 0);
 
     virtual float get_parameter_float(Parameter parameter, uint32_t modulation_offset = 0) = 0;
-    virtual bool get_parameter_bool(Parameter parameter, uint32_t modulation_offset = 0) = 0;
-    virtual int get_parameter_int(Parameter parameter, uint32_t modulation_offset = 0) = 0;
 
 private:
     double m_sample_rate = 48000.0;
@@ -45,16 +43,6 @@ template <>
 inline float LimiterImpl::get_parameter<float>(Parameter p,
                                                uint32_t modulation_offset) {
     return get_parameter_float(p, modulation_offset);
-}
-template <>
-inline bool LimiterImpl::get_parameter<bool>(Parameter p,
-                                              uint32_t modulation_offset) {
-    return get_parameter_bool(p, modulation_offset);
-}
-template <>
-inline int LimiterImpl::get_parameter<int>(Parameter p,
-                                            uint32_t modulation_offset) {
-    return get_parameter_int(p, modulation_offset);
 }
 
 }  // namespace thl::dsp::utils
