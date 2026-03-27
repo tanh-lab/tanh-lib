@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
-#include <unordered_map>
+#include <map>
 #include <variant>
 #include <vector>
 
@@ -55,14 +55,14 @@ public:
     void prepare(double sample_rate, size_t samples_per_block);
 
     // Process all sources and fill modulation buffers for all targets.
-    void process(size_t num_samples);
+    void process(size_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
     // Source management
-    void add_source(const std::string& id, ModulationSource* source);
+    void add_source(const std::string_view id, ModulationSource* source);
 
     // Remove source and block until all RT readers have finished with the old
     // config. After this returns the caller may safely delete the source.
-    void remove_source(const std::string& id);
+    void remove_source(const std::string_view id);
 
     // Get a SmartHandle for a State parameter. Lazily creates a ResolvedTarget
     // the first time a parameter key is requested. The returned SmartHandle
@@ -71,16 +71,16 @@ public:
     // Throws StateKeyNotFoundException if the parameter doesn't exist in State.
     // Throws std::invalid_argument if the parameter's definition has
     // modulation disabled.
-    SmartHandle get_smart_handle(const std::string& param_key);
+    SmartHandle get_smart_handle(const std::string_view param_key);
 
     // Routing management
     void add_routing(const ModulationRouting& routing);
-    void remove_routing(const std::string& source_id,
-                        const std::string& target_id);
+    void remove_routing(const std::string_view source_id,
+                        const std::string_view target_id);
 
     // Access the resolved target for reading modulation data.
-    const ResolvedTarget* get_target(const std::string& id) const;
-    ResolvedTarget* get_target(const std::string& id);
+    const ResolvedTarget* get_target(const std::string_view id) const;
+    ResolvedTarget* get_target(const std::string_view id);
 
     // Returns a snapshot of the processing schedule (thread-safe).
     std::vector<ScheduleStep> get_schedule() const;
@@ -94,7 +94,7 @@ private:
 
     // Ensure a target exists for the given id. Returns a stable pointer.
     // Must be called with m_writer_mutex held.
-    ResolvedTarget* ensure_target_locked(const std::string& id);
+    ResolvedTarget* ensure_target_locked(const std::string_view id);
 
     // Process helpers — called from within RCU read section.
     void process_source_bulk(const ProcessingConfig& config,
@@ -122,11 +122,11 @@ private:
     std::mutex m_writer_mutex;
 
     // Registered sources (not owned) — protected by m_writer_mutex
-    std::unordered_map<std::string, ModulationSource*> m_sources;
+    std::map<std::string, ModulationSource*, std::less<>> m_sources;
 
     // Registered targets (owned) — protected by m_writer_mutex.
     // Pointer stability guaranteed by std::unordered_map.
-    std::unordered_map<std::string, ResolvedTarget> m_targets;
+    std::map<std::string, ResolvedTarget, std::less<>> m_targets;
 
     // User-facing routings — protected by m_writer_mutex
     std::vector<ModulationRouting> m_user_routings;

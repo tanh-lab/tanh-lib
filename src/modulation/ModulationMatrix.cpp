@@ -9,9 +9,11 @@
 
 using namespace thl::modulation;
 
-ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {}
+ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {
+    m_config.register_reader_thread();
+}
 
-SmartHandle ModulationMatrix::get_smart_handle(const std::string& param_key) {
+SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key) {
     std::lock_guard<std::mutex> lock(m_writer_mutex);
 
     // Throws StateKeyNotFoundException if parameter doesn't exist
@@ -21,22 +23,23 @@ SmartHandle ModulationMatrix::get_smart_handle(const std::string& param_key) {
     auto def = m_state.get_definition_from_root(param_key);
     if (def.has_value() && !def->m_modulation) {
         throw std::invalid_argument(
-            "Parameter '" + param_key + "' has modulation disabled");
+            "Parameter '" + std::string(param_key) + "' has modulation disabled");
     }
 
     auto* target = ensure_target_locked(param_key);
     return SmartHandle(handle, target);
 }
 
-ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string& id) {
+ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id) {
     auto it = m_targets.find(id);
     if (it != m_targets.end()) {
         return &it->second;
     }
-    auto& target = m_targets[id];
-    target.id = id;
-    target.resize(m_samples_per_block);
-    return &target;
+    ResolvedTarget target;
+    auto [target_it, inserted] = m_targets.emplace(std::string(id), target);
+    target_it->second.id = id;
+    target_it->second.resize(m_samples_per_block);
+    return &target_it->second;
 }
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
@@ -56,7 +59,7 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
     rebuild_schedule_locked();
 }
 
-void ModulationMatrix::process(size_t num_samples) {
+void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     m_config.read([&](const ProcessingConfig& config) {
         // 1. Clear all active targets for this block
         for (auto* target : config.active_targets) {
@@ -79,16 +82,20 @@ void ModulationMatrix::process(size_t num_samples) {
     });
 }
 
-void ModulationMatrix::add_source(const std::string& id,
+void ModulationMatrix::add_source(const std::string_view id,
                                   ModulationSource* source) {
     std::lock_guard<std::mutex> lock(m_writer_mutex);
-    m_sources[id] = source;
+    auto it = m_sources.find(id);
+    if (it != m_sources.end()) {
+        return;
+    }
+    auto [source_it, inserted] = m_sources.emplace(std::string(id), source);
     rebuild_schedule_locked();
 }
 
-void ModulationMatrix::remove_source(const std::string& id) {
+void ModulationMatrix::remove_source(const std::string_view id) {
     std::lock_guard<std::mutex> lock(m_writer_mutex);
-    m_sources.erase(id);
+    m_sources.erase(std::string(id));
 
     // Remove user-facing routings that reference this source.
     m_user_routings.erase(
@@ -111,8 +118,8 @@ void ModulationMatrix::add_routing(const ModulationRouting& routing) {
     rebuild_schedule_locked();
 }
 
-void ModulationMatrix::remove_routing(const std::string& source_id,
-                                      const std::string& target_id) {
+void ModulationMatrix::remove_routing(const std::string_view source_id,
+                                      const std::string_view target_id) {
     std::lock_guard<std::mutex> lock(m_writer_mutex);
     m_user_routings.erase(
         std::remove_if(m_user_routings.begin(), m_user_routings.end(),
@@ -125,12 +132,12 @@ void ModulationMatrix::remove_routing(const std::string& source_id,
 }
 
 const ResolvedTarget* ModulationMatrix::get_target(
-    const std::string& id) const {
+    const std::string_view id) const {
     auto it = m_targets.find(id);
     return it != m_targets.end() ? &it->second : nullptr;
 }
 
-ResolvedTarget* ModulationMatrix::get_target(const std::string& id) {
+ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) {
     auto it = m_targets.find(id);
     return it != m_targets.end() ? &it->second : nullptr;
 }
@@ -198,12 +205,12 @@ void ModulationMatrix::rebuild_schedule_locked() {
         auto owner_it = target_owner.find(routing.target_id);
         if (owner_it == target_owner.end()) continue;
 
-        const std::string& owner_id = owner_it->second;
+        const std::string_view owner_id = owner_it->second;
         if (owner_id == routing.source_id) {
-            has_self_edge[owner_id] = true;
+            has_self_edge[std::string(owner_id)] = true;
         } else {
             // owner depends on routing.source_id
-            adj[owner_id].push_back(routing.source_id);
+            adj[std::string(owner_id)].push_back(routing.source_id);
         }
     }
 
@@ -245,8 +252,8 @@ void ModulationMatrix::build_schedule_from_graph(
     std::stack<std::string> stack;
     std::vector<std::vector<std::string>> sccs;
 
-    std::function<void(const std::string&)> strongconnect =
-        [&](const std::string& v) {
+    std::function<void(const std::string)> strongconnect =
+        [&](const std::string v) {
             index[v] = index_counter;
             lowlink[v] = index_counter;
             ++index_counter;
