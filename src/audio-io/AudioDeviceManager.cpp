@@ -418,9 +418,9 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
         reinterpret_cast<ma_device_notification_proc>(&AudioDeviceManager::notification_callback);
     dev_config.pUserData = user_data;
 #if defined(THL_PLATFORM_ANDROID)
-    devConfig.aaudio.allowSetBufferCapacity = MA_TRUE;
-    devConfig.aaudio.usage = ma_aaudio_usage_media;
-    devConfig.aaudio.contentType = ma_aaudio_content_type_music;
+    dev_config.aaudio.allowSetBufferCapacity = MA_TRUE;
+    dev_config.aaudio.usage = ma_aaudio_usage_media;
+    dev_config.aaudio.contentType = ma_aaudio_content_type_music;
 #endif
 
     ma_device_id output_device_id{};
@@ -448,62 +448,62 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
     // requested size so miniaudio never sets a duration beyond this
     // limit when a Bluetooth route is active.
     if (isIOSBluetoothRouteActive()) {
-        uint32_t clamped = clampBufferSizeForBluetoothRoute(bufferSizeInFrames, sampleRate);
-        if (clamped != bufferSizeInFrames) {
+        uint32_t clamped = clampBufferSizeForBluetoothRoute(buffer_size_in_frames, sample_rate);
+        if (clamped != buffer_size_in_frames) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
                               "thl.audio_io.audio_device_manager",
                               "%s: Bluetooth route active — clamping buffer from %u to %u frames "
                               "(max %.0f ms)",
                               label,
-                              bufferSizeInFrames,
+                              buffer_size_in_frames,
                               clamped,
                               kMaxBluetoothIOBufferDurationSeconds * 1000.0f);
-            bufferSizeInFrames = clamped;
+            buffer_size_in_frames = clamped;
         }
     }
 #endif
 
 #if defined(THL_PLATFORM_ANDROID)
     {
-        auto probe = configureAndroidBuffering(m_impl->context, devConfig, bufferSizeInFrames);
+        auto probe = configureAndroidBuffering(m_impl->m_context, dev_config, buffer_size_in_frames);
 
-        burstSize = probe.burstSize;
-        devConfig.periodSizeInFrames = probe.periodSize;
-        configuredPeriods = probe.periods;
-        devConfig.periods = probe.periods;
+        burst_size = probe.burstSize;
+        dev_config.periodSizeInFrames = probe.periodSize;
+        configured_periods = probe.periods;
+        dev_config.periods = probe.periods;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
                           "thl.audio_io.audio_device_manager",
                           "%s: probed burstSize=%u, configured periodSize=%u, periods=%u",
                           label,
-                          burstSize,
+                          burst_size,
                           probe.periodSize,
                           probe.periods);
     }
 #elif defined(THL_PLATFORM_IOS) || defined(THL_PLATFORM_MACOS)
     {
-        auto probe = probeCoreAudioPeriod(m_impl->context, devConfig, bufferSizeInFrames);
+        auto probe = probeCoreAudioPeriod(m_impl->m_context, dev_config, buffer_size_in_frames);
 
-        if (probe.periodSize > 0 && probe.periodSize != bufferSizeInFrames) {
+        if (probe.periodSize > 0 && probe.periodSize != buffer_size_in_frames) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
                               "thl.audio_io.audio_device_manager",
                               "%s: probed periodSize=%u differs from requested %u, adjusting",
                               label,
                               probe.periodSize,
-                              bufferSizeInFrames);
+                              buffer_size_in_frames);
         }
 
-        burstSize = probe.periodSize;
-        devConfig.periodSizeInFrames = probe.periodSize;
-        configuredPeriods = (probe.periods > 0) ? probe.periods : 1;
-        devConfig.periods = configuredPeriods;
+        burst_size = probe.periodSize;
+        dev_config.periodSizeInFrames = probe.periodSize;
+        configured_periods = (probe.periods > 0) ? probe.periods : 1;
+        dev_config.periods = configured_periods;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
                           "thl.audio_io.audio_device_manager",
                           "%s: probed periodSize=%u, periods=%u",
                           label,
                           probe.periodSize,
-                          configuredPeriods);
+                          configured_periods);
     }
 #else
     dev_config.periodSizeInFrames = buffer_size_in_frames;
@@ -515,8 +515,8 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
     // --- Resolve actual period size ---
     uint32_t resolved_period_size = 0;
 #if defined(THL_PLATFORM_ANDROID)
-    resolvedPeriodSize = resolveAAudioPeriodSize(m_impl->context, *device, deviceType);
-    if (resolvedPeriodSize == 0) { resolvedPeriodSize = devConfig.periodSizeInFrames; }
+    resolved_period_size = resolveAAudioPeriodSize(m_impl->m_context, *device, device_type);
+    if (resolved_period_size == 0) { resolved_period_size = dev_config.periodSizeInFrames; }
 #else
     if (role == DeviceRole::Capture) {
         resolved_period_size = device->capture.internalPeriodSizeInFrames;
@@ -952,7 +952,7 @@ void AudioDeviceManager::remove_duplex_callback(AudioIODeviceCallback* callback)
 void AudioDeviceManager::set_device_notification_callback(DeviceNotificationCallback callback) {
     auto ptr =
         callback ? std::make_shared<DeviceNotificationCallback>(std::move(callback)) : nullptr;
-    m_notification_callback.store(std::move(ptr), std::memory_order_release);
+    std::atomic_store_explicit(&m_notification_callback, std::move(ptr), std::memory_order_release);
 }
 
 void AudioDeviceManager::set_log_callback(LogCallback callback) {
@@ -1509,7 +1509,7 @@ void AudioDeviceManager::notification_callback(const void* p_notification_void) 
     auto* user_data = static_cast<DeviceUserData*>(p_notification->pDevice->pUserData);
     if (!user_data || !user_data->m_manager) { return; }
 
-    auto cb = user_data->m_manager->m_notification_callback.load(std::memory_order_acquire);
+    auto cb = std::atomic_load_explicit(&user_data->m_manager->m_notification_callback, std::memory_order_acquire);
     if (cb) { (*cb)(to_notification_type(p_notification->type)); }
 }
 
