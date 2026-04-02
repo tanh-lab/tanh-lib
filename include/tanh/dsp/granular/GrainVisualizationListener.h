@@ -13,7 +13,7 @@ public:
 
     /**
      * Called when a new grain is triggered.
-     * @param grain_index  Index in the grain pool (0..MAX_GRAINS-1)
+     * @param grain_index  Index in the grain pool (0..k_max_grains-1)
      * @param position     Normalized start position in sample (0-1)
      * @param size         Normalized grain size relative to sample length (0-1)
      * @param velocity     Playback speed factor

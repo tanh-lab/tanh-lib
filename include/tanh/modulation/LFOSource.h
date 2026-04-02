@@ -22,7 +22,7 @@ protected:
         Waveform = 1,
         Decimation = 2,
 
-        NUM_PARAMETERS = 3
+        NumParameters = 3
     };
 
 private:

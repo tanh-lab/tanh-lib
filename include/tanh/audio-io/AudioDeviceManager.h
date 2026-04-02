@@ -50,18 +50,18 @@ enum class BluetoothProfile {
 };
 
 /// Convert a BluetoothProfile enum value to its string representation.
-const char* bluetoothProfileToString(BluetoothProfile profile);
+const char* bluetooth_profile_to_string(BluetoothProfile profile);
 
 /// Parse a string into a BluetoothProfile. Returns A2DP for unrecognised values.
-BluetoothProfile bluetoothProfileFromString(const std::string& str);
+BluetoothProfile bluetooth_profile_from_string(const std::string& str);
 
 /// Returns the list of Bluetooth profiles supported on the current device/OS.
 /// On Android API ≤ 28 only A2DP is returned.
-std::vector<BluetoothProfile> getSupportedBluetoothProfiles();
+std::vector<BluetoothProfile> get_supported_bluetooth_profiles();
 
 /// Returns true if a classic Bluetooth device (A2DP / HFP / SCO) is connected.
 /// BLE Audio devices are excluded — they don't need profile switching.
-bool isClassicBluetoothConnected();
+bool is_classic_bluetooth_connected();
 
 /**
  * @class AudioDeviceManager
@@ -201,7 +201,7 @@ public:
      * @note If this returns false, device enumeration and initialisation will
      * fail.
      */
-    bool isContextInitialised() const;
+    bool is_context_initialised() const;
 
     /**
      * @brief Enumerates all available audio input (capture) devices.
@@ -215,7 +215,7 @@ public:
      *
      * @warning NOT real-time safe - performs system queries.
      */
-    std::vector<AudioDeviceInfo> enumerateInputDevices() const;
+    std::vector<AudioDeviceInfo> enumerate_input_devices() const;
 
     /**
      * @brief Enumerates all available audio output (playback) devices.
@@ -229,7 +229,7 @@ public:
      *
      * @warning NOT real-time safe - performs system queries.
      */
-    std::vector<AudioDeviceInfo> enumerateOutputDevices() const;
+    std::vector<AudioDeviceInfo> enumerate_output_devices() const;
 
     /**
      * @brief Initialises the audio device with the specified configuration.
@@ -258,12 +258,12 @@ public:
      * @warning Must call shutdown() before re-initialising with different
      * settings.
      */
-    bool initialise(const AudioDeviceInfo* inputDevice,
-                    const AudioDeviceInfo* outputDevice,
-                    uint32_t sampleRate = 44100,
-                    uint32_t bufferSizeInFrames = 512,
-                    uint32_t numInputChannels = 1,
-                    uint32_t numOutputChannels = 1);
+    bool initialise(const AudioDeviceInfo* input_device,
+                    const AudioDeviceInfo* output_device,
+                    uint32_t sample_rate = 44100,
+                    uint32_t buffer_size_in_frames = 512,
+                    uint32_t num_input_channels = 1,
+                    uint32_t num_output_channels = 1);
 
     /**
      * @brief Shuts down the audio device and releases associated resources.
@@ -288,18 +288,18 @@ public:
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * start.
      */
-    bool startPlayback();
+    bool start_playback();
 
     /**
      * @brief Stops playback audio processing.
      *
      * Halts audio output on the playback device. Playback callbacks will
-     * receive releaseResources() after audio processing stops.
+     * receive release_resources() after audio processing stops.
      *
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * stop.
      */
-    void stopPlayback();
+    void stop_playback();
 
     /**
      * @brief Starts capture audio processing.
@@ -314,18 +314,18 @@ public:
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * start.
      */
-    bool startCapture();
+    bool start_capture();
 
     /**
      * @brief Stops capture audio processing.
      *
      * Halts audio input on the capture device. Capture callbacks will
-     * receive releaseResources() after audio processing stops.
+     * receive release_resources() after audio processing stops.
      *
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * stop.
      */
-    void stopCapture();
+    void stop_capture();
 
     /**
      * @brief Starts duplex audio processing.
@@ -340,39 +340,39 @@ public:
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * start.
      */
-    bool startDuplex();
+    bool start_duplex();
 
     /**
      * @brief Stops duplex audio processing.
      *
      * Halts audio input and output on the duplex device. Duplex callbacks will
-     * receive releaseResources() after audio processing stops.
+     * receive release_resources() after audio processing stops.
      *
      * @warning NOT real-time safe - may block while waiting for audio thread to
      * stop.
      */
-    void stopDuplex();
+    void stop_duplex();
 
     /**
      * @brief Checks if playback processing is currently running.
      *
      * @return true if playback is actively processing audio, false otherwise.
      */
-    bool isPlaybackRunning() const { return m_playbackRunning.load(std::memory_order_relaxed); }
+    bool is_playback_running() const { return m_playback_running.load(std::memory_order_relaxed); }
 
     /**
      * @brief Checks if capture processing is currently running.
      *
      * @return true if capture is actively processing audio, false otherwise.
      */
-    bool isCaptureRunning() const { return m_captureRunning.load(std::memory_order_relaxed); }
+    bool is_capture_running() const { return m_capture_running.load(std::memory_order_relaxed); }
 
     /**
      * @brief Checks if duplex processing is currently running.
      *
      * @return true if duplex is actively processing audio, false otherwise.
      */
-    bool isDuplexRunning() const { return m_duplexRunning.load(std::memory_order_relaxed); }
+    bool is_duplex_running() const { return m_duplex_running.load(std::memory_order_relaxed); }
 
     /**
      * @brief Registers a playback audio callback to receive audio data.
@@ -384,14 +384,14 @@ public:
      * @param callback Pointer to the callback to register. Must remain valid
      *                 until removed or the manager is destroyed.
      *
-     * @note If the playback device is already initialised, prepareToPlay()
+     * @note If the playback device is already initialised, prepare_to_play()
      *       will be called on the callback before it starts receiving
      *       process() calls.
      * @note Thread-safe - uses RCU for lock-free audio thread access.
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void addPlaybackCallback(AudioIODeviceCallback* callback);
+    void add_playback_callback(AudioIODeviceCallback* callback);
 
     /**
      * @brief Registers a capture audio callback to receive audio data.
@@ -402,14 +402,14 @@ public:
      * @param callback Pointer to the callback to register. Must remain valid
      *                 until removed or the manager is destroyed.
      *
-     * @note If the capture device is already initialised, prepareToPlay()
+     * @note If the capture device is already initialised, prepare_to_play()
      *       will be called on the callback before it starts receiving
      *       process() calls.
      * @note Thread-safe - uses RCU for lock-free audio thread access.
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void addCaptureCallback(AudioIODeviceCallback* callback);
+    void add_capture_callback(AudioIODeviceCallback* callback);
 
     /**
      * @brief Registers a duplex audio callback to receive audio data.
@@ -420,20 +420,20 @@ public:
      * @param callback Pointer to the callback to register. Must remain valid
      *                 until removed or the manager is destroyed.
      *
-     * @note If the duplex device is already initialised, prepareToPlay()
+     * @note If the duplex device is already initialised, prepare_to_play()
      *       will be called on the callback before it starts receiving
      *       process() calls.
      * @note Thread-safe - uses RCU for lock-free audio thread access.
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void addDuplexCallback(AudioIODeviceCallback* callback);
+    void add_duplex_callback(AudioIODeviceCallback* callback);
 
     /**
      * @brief Unregisters a playback audio callback.
      *
      * Removes the callback from the list of registered callbacks. The
-     * callback's releaseResources() method will be called if playback is
+     * callback's release_resources() method will be called if playback is
      * currently running.
      *
      * @param callback Pointer to the callback to remove.
@@ -443,13 +443,13 @@ public:
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void removePlaybackCallback(AudioIODeviceCallback* callback);
+    void remove_playback_callback(AudioIODeviceCallback* callback);
 
     /**
      * @brief Unregisters a capture audio callback.
      *
      * Removes the callback from the list of registered callbacks. The
-     * callback's releaseResources() method will be called if capture is
+     * callback's release_resources() method will be called if capture is
      * currently running.
      *
      * @param callback Pointer to the callback to remove.
@@ -459,13 +459,13 @@ public:
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void removeCaptureCallback(AudioIODeviceCallback* callback);
+    void remove_capture_callback(AudioIODeviceCallback* callback);
 
     /**
      * @brief Unregisters a duplex audio callback.
      *
      * Removes the callback from the list of registered callbacks. The
-     * callback's releaseResources() method will be called if duplex is
+     * callback's release_resources() method will be called if duplex is
      * currently running.
      *
      * @param callback Pointer to the callback to remove.
@@ -475,7 +475,7 @@ public:
      *
      * @warning NOT real-time safe - performs allocation.
      */
-    void removeDuplexCallback(AudioIODeviceCallback* callback);
+    void remove_duplex_callback(AudioIODeviceCallback* callback);
 
     /**
      * @brief Sets a callback for device notification events.
@@ -491,7 +491,7 @@ public:
      *
      * @warning NOT real-time safe - modifies internal state.
      */
-    void setDeviceNotificationCallback(DeviceNotificationCallback callback);
+    void set_device_notification_callback(DeviceNotificationCallback callback);
 
     /**
      * @brief Sets a callback for log messages from the audio backend.
@@ -501,7 +501,7 @@ public:
      *
      * @param callback Log callback function, or nullptr to clear.
      */
-    void setLogCallback(LogCallback callback);
+    void set_log_callback(LogCallback callback);
 
     /**
      * @brief Switches the iOS Bluetooth audio profile.
@@ -521,14 +521,14 @@ public:
      *
      * @see BluetoothProfile
      */
-    bool setBluetoothProfile(BluetoothProfile profile);
+    bool set_bluetooth_profile(BluetoothProfile profile);
 
     /**
      * @brief Returns the currently configured Bluetooth profile.
      *
      * @return The active BluetoothProfile (defaults to HFP).
      */
-    BluetoothProfile getBluetoothProfile() const;
+    BluetoothProfile get_bluetooth_profile() const;
 
     /**
      * @brief Gets the current sample rate.
@@ -536,7 +536,7 @@ public:
      * @return The actual device sample rate in Hz if initialised, otherwise
      *         the default (44100).
      */
-    uint32_t getSampleRate() const;
+    uint32_t get_sample_rate() const;
 
     /**
      * @brief Gets the actual capture device sample rate.
@@ -551,7 +551,7 @@ public:
      *
      * @return The true capture sample rate in Hz.
      */
-    uint32_t getCaptureSampleRate() const;
+    uint32_t get_capture_sample_rate() const;
 
     /**
      * @brief Blocks until the capture rate measurement has completed or
@@ -566,7 +566,7 @@ public:
      * @param timeoutMs Maximum time to wait in milliseconds (default 2000).
      * @return true if a measurement is available, false on timeout.
      */
-    bool waitForCaptureRateMeasurement(uint32_t timeoutMs = 2000) const;
+    bool wait_for_capture_rate_measurement(uint32_t timeout_ms = 2000) const;
 
     /**
      * @brief Gets the current buffer size.
@@ -583,8 +583,8 @@ public:
      * @note The returned value may differ from the requested buffer size
      *       depending on the audio driver.
      */
-    uint32_t getBufferSize(DeviceRole role) const;
-    uint32_t getBufferSize() const;
+    uint32_t get_buffer_size(DeviceRole role) const;
+    uint32_t get_buffer_size() const;
 
     /**
      * @brief Gets the per-callback period (chunk) size in frames.
@@ -605,8 +605,8 @@ public:
      *
      * @note Updated on the first audio callback to reflect the true frame count.
      */
-    uint32_t getPeriodSize(DeviceRole role) const;
-    uint32_t getPeriodSize() const;
+    uint32_t get_period_size(DeviceRole role) const;
+    uint32_t get_period_size() const;
 
     /**
      * @brief Gets the number of periods that make up the total buffer.
@@ -618,8 +618,8 @@ public:
      * @param role Optional device role to query. If omitted, uses priority order.
      * @return The period count, or 1 if not initialised.
      */
-    uint32_t getPeriodCount(DeviceRole role) const;
-    uint32_t getPeriodCount() const;
+    uint32_t get_period_count(DeviceRole role) const;
+    uint32_t get_period_count() const;
 
     /**
      * @brief Gets the hardware burst size in frames.
@@ -635,8 +635,8 @@ public:
      * @param role Optional device role to query. If omitted, uses priority order.
      * @return The hardware burst size, or the period size if unavailable.
      */
-    uint32_t getBurstSize(DeviceRole role) const;
-    uint32_t getBurstSize() const;
+    uint32_t get_burst_size(DeviceRole role) const;
+    uint32_t get_burst_size() const;
 
     /**
      * @brief Gets the current number of input (capture) channels.
@@ -644,7 +644,7 @@ public:
      * @return The actual capture channel count if initialised, otherwise the
      *         requested input channel count.
      */
-    uint32_t getNumInputChannels() const;
+    uint32_t get_num_input_channels() const;
 
     /**
      * @brief Gets the current number of output (playback) channels.
@@ -652,7 +652,7 @@ public:
      * @return The actual playback channel count if initialised, otherwise the
      *         requested output channel count.
      */
-    uint32_t getNumOutputChannels() const;
+    uint32_t get_num_output_channels() const;
 
     /**
      * @brief Gets the name of the current output device.
@@ -662,7 +662,7 @@ public:
      *
      * @return Device name string, or empty if not initialised.
      */
-    std::string getCurrentOutputDeviceName() const;
+    std::string get_current_output_device_name() const;
 
     /**
      * @brief Gets the name of the current input device.
@@ -672,7 +672,7 @@ public:
      *
      * @return Device name string, or empty if not initialised.
      */
-    std::string getCurrentInputDeviceName() const;
+    std::string get_current_input_device_name() const;
 
     /**
      * @brief Maximum IO buffer duration (in seconds) safe for Bluetooth HFP.
@@ -680,7 +680,7 @@ public:
      * Bluetooth SCO links used by HFP can fail silently when the iOS
      * AVAudioSession preferred IO buffer duration exceeds this threshold.
      */
-    static constexpr float kMaxBluetoothIOBufferDurationSeconds = 0.064f;
+    static constexpr float k_max_bluetooth_io_buffer_duration_seconds = 0.064f;
 
     /**
      * @brief Clamps a buffer size so the resulting IO buffer duration stays
@@ -694,8 +694,8 @@ public:
      * @param sampleRate The sample rate in Hz.
      * @return The (possibly reduced) buffer size in frames.
      */
-    static uint32_t clampBufferSizeForBluetoothRoute(uint32_t bufferSizeInFrames,
-                                                     uint32_t sampleRate);
+    static uint32_t clamp_buffer_size_for_bluetooth_route(uint32_t buffer_size_in_frames,
+                                                     uint32_t sample_rate);
 
 private:
     struct Impl;
@@ -703,47 +703,47 @@ private:
 
     std::unique_ptr<Impl> m_impl;
 
-    std::vector<AudioDeviceInfo> enumerateDevices(DeviceType type) const;
-    void populateSampleRates(std::vector<AudioDeviceInfo>& devices) const;
+    std::vector<AudioDeviceInfo> enumerate_devices(DeviceType type) const;
+    void populate_sample_rates(std::vector<AudioDeviceInfo>& devices) const;
 
-    bool tryInitialiseDevice(DeviceRole role,
-                             const AudioDeviceInfo* inputDevice,
-                             const AudioDeviceInfo* outputDevice,
-                             uint32_t sampleRate,
-                             uint32_t bufferSizeInFrames,
-                             uint32_t numInputChannels,
-                             uint32_t numOutputChannels);
+    bool try_initialise_device(DeviceRole role,
+                             const AudioDeviceInfo* input_device,
+                             const AudioDeviceInfo* output_device,
+                             uint32_t sample_rate,
+                             uint32_t buffer_size_in_frames,
+                             uint32_t num_input_channels,
+                             uint32_t num_output_channels);
 
-    void processCallbacks(DeviceRole role,
+    void process_callbacks(DeviceRole role,
                           void* device,
                           float* output,
                           const float* input,
-                          uint32_t frameCount);
+                          uint32_t frame_count);
 
-    static void dataCallback(void* pDevice, void* pOutput, const void* pInput, uint32_t frameCount);
+    static void data_callback(void* p_device, void* p_output, const void* p_input, uint32_t frame_count);
 
-    static void notificationCallback(const void* pNotification);
+    static void notification_callback(const void* p_notification);
 
-    static void staticLogCallback(void* pUserData, uint32_t level, const char* pMessage);
+    static void static_log_callback(void* p_user_data, uint32_t level, const char* p_message);
 
-    std::atomic<bool> m_playbackRunning{false};
-    std::atomic<bool> m_captureRunning{false};
-    std::atomic<bool> m_duplexRunning{false};
+    std::atomic<bool> m_playback_running{false};
+    std::atomic<bool> m_capture_running{false};
+    std::atomic<bool> m_duplex_running{false};
 
-    uint32_t m_sampleRate = 44100;
-    uint32_t m_numInputChannels = 1;
-    uint32_t m_numOutputChannels = 1;
-    BluetoothProfile m_bluetoothProfile = BluetoothProfile::A2DP;
+    uint32_t m_sample_rate = 44100;
+    uint32_t m_num_input_channels = 1;
+    uint32_t m_num_output_channels = 1;
+    BluetoothProfile m_bluetooth_profile = BluetoothProfile::A2DP;
 
-    RCU<std::vector<AudioIODeviceCallback*>> m_playbackCallbacks;
-    RCU<std::vector<AudioIODeviceCallback*>> m_captureCallbacks;
-    RCU<std::vector<AudioIODeviceCallback*>> m_duplexCallbacks;
+    RCU<std::vector<AudioIODeviceCallback*>> m_playback_callbacks;
+    RCU<std::vector<AudioIODeviceCallback*>> m_capture_callbacks;
+    RCU<std::vector<AudioIODeviceCallback*>> m_duplex_callbacks;
 
-    mutable std::atomic<bool> m_playbackAudioThreadRegistered{false};
-    mutable std::atomic<bool> m_captureAudioThreadRegistered{false};
-    mutable std::atomic<bool> m_duplexAudioThreadRegistered{false};
+    mutable std::atomic<bool> m_playback_audio_thread_registered{false};
+    mutable std::atomic<bool> m_capture_audio_thread_registered{false};
+    mutable std::atomic<bool> m_duplex_audio_thread_registered{false};
 
-    std::atomic<std::shared_ptr<DeviceNotificationCallback>> m_notificationCallback;
+    std::atomic<std::shared_ptr<DeviceNotificationCallback>> m_notification_callback;
 };
 
 }  // namespace thl

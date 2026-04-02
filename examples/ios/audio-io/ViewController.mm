@@ -1,8 +1,8 @@
 #import "ViewController.h"
 #import <AVKit/AVRoutePickerView.h>
 #import <tanh/audio_io.h>
-#import <tanh/audio_io/AudioFileSink.h>
-#import <tanh/audio_io/AudioPlayerSource.h>
+#import <tanh/audio-io/AudioFileSink.h>
+#import <tanh/audio-io/AudioPlayerSource.h>
 #import <tanh/core/Logger.h>
 #import <memory>
 

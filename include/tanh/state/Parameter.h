@@ -30,10 +30,10 @@ class ParameterListener;
  * @note Non-copyable, non-movable — always accessed via pointer.
  */
 struct AtomicCacheEntry {
-    std::atomic<double> atomic_double{0.0};
-    std::atomic<float> atomic_float{0.0f};
-    std::atomic<int> atomic_int{0};
-    std::atomic<bool> atomic_bool{false};
+    std::atomic<double> m_atomic_double{0.0};
+    std::atomic<float> m_atomic_float{0.0f};
+    std::atomic<int> m_atomic_int{0};
+    std::atomic<bool> m_atomic_bool{false};
 
     AtomicCacheEntry() = default;
     AtomicCacheEntry(const AtomicCacheEntry&) = delete;
@@ -81,25 +81,25 @@ public:
 
     T load() const TANH_NONBLOCKING_FUNCTION {
         if constexpr (std::is_same_v<T, double>) {
-            return m_entry->atomic_double.load(std::memory_order_relaxed);
+            return m_entry->m_atomic_double.load(std::memory_order_relaxed);
         } else if constexpr (std::is_same_v<T, float>) {
-            return m_entry->atomic_float.load(std::memory_order_relaxed);
+            return m_entry->m_atomic_float.load(std::memory_order_relaxed);
         } else if constexpr (std::is_same_v<T, int>) {
-            return m_entry->atomic_int.load(std::memory_order_relaxed);
+            return m_entry->m_atomic_int.load(std::memory_order_relaxed);
         } else if constexpr (std::is_same_v<T, bool>) {
-            return m_entry->atomic_bool.load(std::memory_order_relaxed);
+            return m_entry->m_atomic_bool.load(std::memory_order_relaxed);
         }
     }
 
     void store(T value) TANH_NONBLOCKING_FUNCTION {
         if constexpr (std::is_same_v<T, double>) {
-            m_entry->atomic_double.store(value, std::memory_order_relaxed);
+            m_entry->m_atomic_double.store(value, std::memory_order_relaxed);
         } else if constexpr (std::is_same_v<T, float>) {
-            m_entry->atomic_float.store(value, std::memory_order_relaxed);
+            m_entry->m_atomic_float.store(value, std::memory_order_relaxed);
         } else if constexpr (std::is_same_v<T, int>) {
-            m_entry->atomic_int.store(value, std::memory_order_relaxed);
+            m_entry->m_atomic_int.store(value, std::memory_order_relaxed);
         } else if constexpr (std::is_same_v<T, bool>) {
-            m_entry->atomic_bool.store(value, std::memory_order_relaxed);
+            m_entry->m_atomic_bool.store(value, std::memory_order_relaxed);
         }
     }
 
@@ -116,7 +116,7 @@ private:
 enum class ParameterType { Double, Float, Int, Bool, String, Unknown };
 
 // different strategies for notification
-enum class NotifyStrategies { all, none, others, self };
+enum class NotifyStrategies { All, None, Others, Self };
 
 /**
  * @brief Consolidated per-parameter storage.
@@ -136,15 +136,15 @@ struct ParameterMetadata {
     /// True while the UI is actively dragging / gesturing this parameter.
     /// Listeners that return false from receives_during_gesture() are
     /// skipped while this flag is set.
-    std::atomic<bool> in_gesture{false};
+    std::atomic<bool> m_in_gesture{false};
 };
 
 struct ParameterRecord {
-    ParameterType type = ParameterType::Double;
-    AtomicCacheEntry cache;
-    ParameterMetadata metadata;
-    std::string string_value;
-    std::optional<ParameterDefinition> definition;
+    ParameterType m_type = ParameterType::Double;
+    AtomicCacheEntry m_cache;
+    ParameterMetadata m_metadata;
+    std::string m_string_value;
+    std::optional<ParameterDefinition> m_definition;
 
     ParameterRecord() = default;
     ParameterRecord(const ParameterRecord&) = delete;
@@ -257,7 +257,7 @@ public:
      *
      * @warning NOT real-time safe - invokes listener callbacks
      */
-    void notify(NotifyStrategies strategy = NotifyStrategies::all,
+    void notify(NotifyStrategies strategy = NotifyStrategies::All,
                 ParameterListener* source = nullptr) const;
 
     /**
@@ -299,7 +299,7 @@ private:
 
     // Private constructors - only State/StateGroup can create Parameters
     Parameter(const State* state, std::string_view key);
-    Parameter(const StateGroup* group, std::string_view key, const State* rootState);
+    Parameter(const StateGroup* group, std::string_view key, const State* root_state);
 
     // State reference and parameter key
     const State* m_state;

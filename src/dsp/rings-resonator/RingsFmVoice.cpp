@@ -44,9 +44,9 @@ using ::thl::dsp::utils::ParameterInterpolator;
 void RingsFmVoice::prepare(float sample_rate) {
     m_sample_rate = sample_rate;
 
-    thl::dsp::resonator::WarmDspFunctions();
-    m_sine_table = thl::dsp::resonator::SineTable();
-    m_fm_frequency_quantizer_table = thl::dsp::resonator::FmFrequencyQuantizerTable();
+    thl::dsp::resonator::warm_dsp_functions();
+    m_sine_table = thl::dsp::resonator::sine_table();
+    m_fm_frequency_quantizer_table = thl::dsp::resonator::fm_frequency_quantizer_table();
 
     set_frequency(220.0f / m_sample_rate);
     set_ratio(0.5f);

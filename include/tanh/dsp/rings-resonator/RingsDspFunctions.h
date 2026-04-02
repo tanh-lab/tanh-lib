@@ -15,14 +15,14 @@
 
 namespace thl::dsp::resonator {
 
-constexpr float kPi = std::numbers::pi_v<float>;
-constexpr float kOneOverPi = std::numbers::inv_pi_v<float>;
+constexpr float k_pi = std::numbers::pi_v<float>;
+constexpr float k_one_over_pi = std::numbers::inv_pi_v<float>;
 
 // Replaces Interpolate(lut_stiffness, structure, 256.0f).
 // Piecewise mapping from structure [0,1] to inharmonicity coefficient.
 // The original LUT forces entries 255-256 to 2.0; this function yields
 // ~1.985 at structure ~0.996 instead -- a negligible difference.
-inline float Stiffness(float structure) {
+inline float stiffness(float structure) {
     if (structure < 0.25f) {
         return -(0.25f - structure) * 0.25f;
     } else if (structure < 0.3f) {
@@ -33,49 +33,49 @@ inline float Stiffness(float structure) {
     } else {
         float g = (structure - 0.9f) * 10.0f;
         g *= g;
-        return std::min(1.5f - std::cos(g * kPi) * 0.5f, 2.0f);
+        return std::min(1.5f - std::cos(g * k_pi) * 0.5f, 2.0f);
     }
 }
 
 // Replaces Interpolate(lut_4_decades, x, 256.0f).
 // Maps [0,1] -> [1, 10000] on a logarithmic scale.
-inline float FourDecades(float x) {
+inline float four_decades(float x) {
     return std::pow(10.0f, 4.0f * x);
 }
 
 // Replaces Interpolate(lut_svf_shift, damping_cutoff, 1.0f).
 // SVF delay compensation: cutoff_semitones is used as a direct table
 // index (size=1.0f in the original Interpolate call).
-inline float SvfShift(float cutoff_semitones) {
+inline float svf_shift(float cutoff_semitones) {
     float ratio = std::exp2(cutoff_semitones / 12.0f);
-    return std::atan(1.0f / ratio) * kOneOverPi;
+    return std::atan(1.0f / ratio) * k_one_over_pi;
 }
 
 namespace detail {
 
-inline std::array<float, 5121> MakeSineTable() {
+inline std::array<float, 5121> make_sine_table() {
     std::array<float, 5121> t;
-    constexpr double pi2 = 2.0 * std::numbers::pi;
+    constexpr double k_pi2 = 2.0 * std::numbers::pi;
     for (size_t i = 0; i < t.size(); ++i) {
-        t[i] = static_cast<float>(std::sin(pi2 * static_cast<double>(i) / 4096.0));
+        t[i] = static_cast<float>(std::sin(k_pi2 * static_cast<double>(i) / 4096.0));
     }
     return t;
 }
 
-inline std::array<float, 129> MakeFmFrequencyQuantizerTable() {
-    const double kDetune16Cents = std::exp2(16.0 / 1200.0);
-    const double kRatios[] = {
+inline std::array<float, 129> make_fm_frequency_quantizer_table() {
+    const double k_detune16_cents = std::exp2(16.0 / 1200.0);
+    const double k_ratios[] = {
         0.5,
-        0.5 * kDetune16Cents,
+        0.5 * k_detune16_cents,
         0.7071067811865476,  // sqrt(2)/2
         0.7853981633974483,  // pi/4
         1.0,
-        1.0 * kDetune16Cents,
+        1.0 * k_detune16_cents,
         1.4142135623730951,  // sqrt(2)
         1.5707963267948966,  // pi/2
         1.75,                // 7/4
         2.0,
-        2.0 * kDetune16Cents,
+        2.0 * k_detune16_cents,
         2.25,                // 9/4
         2.75,                // 11/4
         2.8284271247461903,  // 2*sqrt(2)
@@ -92,7 +92,7 @@ inline std::array<float, 129> MakeFmFrequencyQuantizerTable() {
 
     std::array<double, 129> scale{};
     size_t len = 0;
-    for (double r : kRatios) {
+    for (double r : k_ratios) {
         double semitones = 12.0 * std::log2(r);
         scale[len++] = semitones;
         scale[len++] = semitones;
@@ -132,32 +132,32 @@ inline std::array<float, 129> MakeFmFrequencyQuantizerTable() {
 // Replaces lut_sine[].  4096 + 1024 + 1 = 5121 entries covering one
 // full period plus an extra quarter for safe interpolation overshoot.
 // Built on first use unless pre-warmed via WarmDspFunctions() during Init().
-inline const std::array<float, 5121>& SineTableStorage() {
-    static const std::array<float, 5121> table = detail::MakeSineTable();
-    return table;
+inline const std::array<float, 5121>& sine_table_storage() {
+    static const std::array<float, 5121> k_table = detail::make_sine_table();
+    return k_table;
 }
 
 // Replaces lut_fm_frequency_quantizer[]. 129 entries built from 23
 // musically interesting FM frequency ratios (see lookup_tables.py).
 // Built on first use unless pre-warmed via WarmDspFunctions() during Init().
-inline const std::array<float, 129>& FmFrequencyQuantizerTableStorage() {
-    static const std::array<float, 129> table = detail::MakeFmFrequencyQuantizerTable();
-    return table;
+inline const std::array<float, 129>& fm_frequency_quantizer_table_storage() {
+    static const std::array<float, 129> k_table = detail::make_fm_frequency_quantizer_table();
+    return k_table;
 }
 
 // Call from non-audio-thread Init() paths to ensure table construction never
 // occurs during audio processing.
-inline void WarmDspFunctions() {
-    (void)SineTableStorage();
-    (void)FmFrequencyQuantizerTableStorage();
+inline void warm_dsp_functions() {
+    (void)sine_table_storage();
+    (void)fm_frequency_quantizer_table_storage();
 }
 
-inline const float* SineTable() {
-    return SineTableStorage().data();
+inline const float* sine_table() {
+    return sine_table_storage().data();
 }
 
-inline const float* FmFrequencyQuantizerTable() {
-    return FmFrequencyQuantizerTableStorage().data();
+inline const float* fm_frequency_quantizer_table() {
+    return fm_frequency_quantizer_table_storage().data();
 }
 
 }  // namespace thl::dsp::resonator

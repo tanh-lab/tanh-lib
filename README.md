@@ -82,7 +82,7 @@ to miss:
    (runtime permission on API 31+), and `MODIFY_AUDIO_SETTINGS`.
 2. **Capture must run alongside playback** — the SCO codec does not fully
    negotiate the bidirectional channel until both an output and input stream
-   are active.  Call `startCapture()` immediately after `startPlayback()` when
+   are active.  Call `start_capture()` immediately after `start_playback()` when
    the selected input device is a SCO device.
 
 ## Android Bluetooth SCO Capture — Sample Rate Bug
@@ -109,17 +109,17 @@ Because Android APIs lie about the SCO capture rate, and the actual behaviour
 differs between devices, we **measure the real delivery rate at runtime** by
 timing capture callbacks:
 
-1. When `startCapture()` is called, three atomics are reset
-   (`captureFirstCallbackUs`, `captureTotalFrames`, `captureMeasuredRate`).
-2. In `processCallbacks()`, the first capture callback records a timestamp.
+1. When `start_capture()` is called, three atomics are reset
+   (`m_capture_first_callback_us`, `m_capture_total_frames`, `m_capture_measured_rate`).
+2. In `process_callbacks()`, the first capture callback records a timestamp.
    Subsequent callbacks accumulate a frame count. After
-   `kRateCalibrationFrames` (16 000) frames the elapsed wall-clock time is
+   `k_rate_calibration_frames` (16 000) frames the elapsed wall-clock time is
    used to compute the actual rate, which is snapped to the nearest standard
    rate (8 000 / 16 000 / 32 000 / 48 000 Hz).
-3. `waitForCaptureRateMeasurement(timeoutMs)` blocks until the measurement
+3. `wait_for_capture_rate_measurement(timeoutMs)` blocks until the measurement
    completes (or times out). The recording flow calls this before opening the
    WAV file so the header sample rate is correct.
-4. `getCaptureSampleRate()` returns the measured rate when available; otherwise
+4. `get_capture_sample_rate()` returns the measured rate when available; otherwise
    it falls back to the API-reported rate.
 
 This correctly handles both device types:
@@ -139,8 +139,8 @@ processing in the duplex callback.
 
 ### Relevant source
 
-- `modules/tanh-lib/src/audio_io/AudioDeviceManager.cpp` — `processCallbacks()` (rate measurement), `getCaptureSampleRate()`, `waitForCaptureRateMeasurement()`
-- `native/jsi/src/NativeCosmosJSI.cpp` — `startRecording` calls `waitForCaptureRateMeasurement()` then `getCaptureSampleRate()`
+- `modules/tanh-lib/src/audio-io/AudioDeviceManager.cpp` — `process_callbacks()` (rate measurement), `get_capture_sample_rate()`, `wait_for_capture_rate_measurement()`
+- `native/jsi/src/NativeCosmosJSI.cpp` — `startRecording` calls `wait_for_capture_rate_measurement()` then `get_capture_sample_rate()`
 
 ### References
 

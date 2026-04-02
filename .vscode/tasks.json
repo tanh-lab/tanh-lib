@@ -18,7 +18,7 @@
             "type": "shell",
             "command": "${workspaceFolder}/scripts/run-ios-sim.sh",
             "args": [
-                "${workspaceFolder}/build-ios-simulator/examples/ios/audio_io/Debug-iphonesimulator/audio_io.app"
+                "${workspaceFolder}/build-ios-simulator/examples/ios/audio-io/Debug-iphonesimulator/audio_io.app"
             ],
             "isBackground": true,
             "problemMatcher": {
@@ -61,7 +61,7 @@
             "type": "shell",
             "command": "${workspaceFolder}/scripts/run-ios-device.sh",
             "args": [
-                "${workspaceFolder}/build-ios-device/examples/ios/audio_io/Debug-iphoneos/audio_io.app"
+                "${workspaceFolder}/build-ios-device/examples/ios/audio-io/Debug-iphoneos/audio_io.app"
             ],
             "problemMatcher": []
         },

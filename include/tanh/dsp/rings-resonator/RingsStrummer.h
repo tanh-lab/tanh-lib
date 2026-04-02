@@ -53,32 +53,32 @@ public:
     void process(thl::dsp::audio::ConstAudioBufferView in,
                  RingsPerformanceState* performance_state) {
         bool has_onset = in.get_num_frames() > 0 && m_onset_detector.process(in);
-        bool note_changed = fabs(performance_state->note - m_previous_note) > 0.4f;
+        bool note_changed = fabs(performance_state->m_note - m_previous_note) > 0.4f;
 
         int32_t inhibit_timer = m_inhibit_timer;
-        if (performance_state->internal_strum) {
-            bool has_external_note_cv = !performance_state->internal_note;
-            bool has_external_exciter = !performance_state->internal_exciter;
+        if (performance_state->m_internal_strum) {
+            bool has_external_note_cv = !performance_state->m_internal_note;
+            bool has_external_exciter = !performance_state->m_internal_exciter;
             if (has_external_note_cv) {
-                performance_state->strum = note_changed;
+                performance_state->m_strum = note_changed;
             } else if (has_external_exciter) {
-                performance_state->strum = has_onset;
+                performance_state->m_strum = has_onset;
                 // Use longer inhibit time for onset detector.
                 inhibit_timer *= 4;
             } else {
                 // Nothing is connected. Should the module play itself in this
                 // case?
-                performance_state->strum = false;
+                performance_state->m_strum = false;
             }
         }
 
         if (m_inhibit_counter) {
             --m_inhibit_counter;
-            performance_state->strum = false;
+            performance_state->m_strum = false;
         } else {
-            if (performance_state->strum) { m_inhibit_counter = inhibit_timer; }
+            if (performance_state->m_strum) { m_inhibit_counter = inhibit_timer; }
         }
-        m_previous_note = performance_state->note;
+        m_previous_note = performance_state->m_note;
     }
 
 private:

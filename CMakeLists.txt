@@ -430,27 +430,27 @@ if(TANH_BUILD_AUDIO_IO)
 
 
     add_library(${PROJECT_NAME}_audio_io
-        src/audio_io/AudioDeviceManager.cpp
-        src/audio_io/AudioFileLoader.cpp
-        src/audio_io/AudioFileSink.cpp
-        src/audio_io/AudioPlayerSource.cpp
-        src/audio_io/DataSource.cpp
-        src/audio_io/miniaudio_impl.cpp
+        src/audio-io/AudioDeviceManager.cpp
+        src/audio-io/AudioFileLoader.cpp
+        src/audio-io/AudioFileSink.cpp
+        src/audio-io/AudioPlayerSource.cpp
+        src/audio-io/DataSource.cpp
+        src/audio-io/miniaudio_impl.cpp
     )
 
     if(TANH_OPERATING_SYSTEM STREQUAL "Android")
-        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio_io/AndroidAudioDevices.cpp)
+        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio-io/AndroidAudioDevices.cpp)
     endif()
 
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio_io/iOSAudioDevices.mm)
+        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio-io/iOSAudioDevices.mm)
     endif()
 
     # On Apple platforms, miniaudio implementation includes Objective-C code
     # for CoreAudio/AVFoundation, so it must be compiled as Objective-C++
     if(APPLE)
         set_source_files_properties(
-            src/audio_io/miniaudio_impl.cpp
+            src/audio-io/miniaudio_impl.cpp
             PROPERTIES COMPILE_FLAGS "-x objective-c++"
         )
     endif()
@@ -570,7 +570,7 @@ if (TANH_WITH_TESTS)
         add_subdirectory(test/modulation)
     endif()
     if (TANH_BUILD_AUDIO_IO)
-        add_subdirectory(test/audio_io)
+        add_subdirectory(test/audio-io)
     endif()
 
     # On iOS, test executables become .app bundles and need a bundle identifier
@@ -599,7 +599,7 @@ if (TANH_WITH_TESTS)
 endif()
 
 if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-    add_subdirectory(examples/ios/audio_io)
+    add_subdirectory(examples/ios/audio-io)
 endif()
 
 

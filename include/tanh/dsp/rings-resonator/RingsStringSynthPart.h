@@ -44,21 +44,21 @@
 
 namespace thl::dsp::synth {
 
-const int32_t kMaxStringSynthPolyphony = 4;
-const int32_t kStringSynthVoices = 12;
-const int32_t kMaxChordSize = 8;
-const int32_t kNumHarmonics = 3;
-const int32_t kNumFormants = 3;
+const int32_t k_max_string_synth_polyphony = 4;
+const int32_t k_string_synth_voices = 12;
+const int32_t k_max_chord_size = 8;
+const int32_t k_num_harmonics = 3;
+const int32_t k_num_formants = 3;
 
-enum FxType { FX_FORMANT, FX_CHORUS, FX_REVERB, FX_FORMANT_2, FX_ENSEMBLE, FX_REVERB_2, FX_LAST };
+enum FxType { Formant, Chorus, Reverb, Formant2, Ensemble, Reverb2, Last };
 
 // Per-polyphony-group state: the base pitch, chord selection, AD envelope,
 // and structure snapshot captured at note-on time.
 struct VoiceGroup {
-    float tonic;
-    thl::dsp::utils::StringSynthEnvelope envelope;
-    int32_t chord;
-    float structure;
+    float m_tonic;
+    thl::dsp::utils::StringSynthEnvelope m_envelope;
+    int32_t m_chord;
+    float m_structure;
 };
 
 // Additive string synthesiser with chord voicing and effects routing.
@@ -92,7 +92,7 @@ public:
     ~RingsStringSynthPart() {}
 
     void prepare(uint16_t* reverb_buffer,
-                 float sample_rate = thl::dsp::resonator::kDefaultSampleRate);
+                 float sample_rate = thl::dsp::resonator::k_default_sample_rate);
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
@@ -102,9 +102,9 @@ public:
 
     inline void set_polyphony(int32_t polyphony) {
         int32_t old_polyphony = m_polyphony;
-        m_polyphony = std::min(polyphony, kMaxStringSynthPolyphony);
+        m_polyphony = std::min(polyphony, k_max_string_synth_polyphony);
         for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
-            m_group[i].tonic = m_group[0].tonic + i * 0.01f;
+            m_group[i].m_tonic = m_group[0].m_tonic + i * 0.01f;
         }
         if (m_active_group >= m_polyphony) { m_active_group = 0; }
     }
@@ -132,17 +132,17 @@ private:
                                 thl::dsp::audio::AudioBufferView out,
                                 thl::dsp::audio::AudioBufferView aux);
 
-    thl::dsp::synth::StringSynthVoice<kNumHarmonics> m_voice[kStringSynthVoices];
-    VoiceGroup m_group[kMaxStringSynthPolyphony];
+    thl::dsp::synth::StringSynthVoice<k_num_harmonics> m_voice[k_string_synth_voices];
+    VoiceGroup m_group[k_max_string_synth_polyphony];
 
-    thl::dsp::filter::Svf m_formant_filter[kNumFormants];
+    thl::dsp::filter::Svf m_formant_filter[k_num_formants];
     thl::dsp::fx::RingsEnsemble m_ensemble;
     thl::dsp::fx::RingsReverb m_reverb;
     thl::dsp::fx::RingsChorus m_chorus;
     thl::dsp::utils::SoftLimiter m_limiter;
 
-    float m_sample_rate = thl::dsp::resonator::kDefaultSampleRate;
-    float m_a3 = 440.0f / thl::dsp::resonator::kDefaultSampleRate;
+    float m_sample_rate = thl::dsp::resonator::k_default_sample_rate;
+    float m_a3 = 440.0f / thl::dsp::resonator::k_default_sample_rate;
 
     int32_t m_num_voices = 0;
     int32_t m_active_group = 0;
@@ -150,12 +150,12 @@ private:
     int32_t m_polyphony = 1;
     int32_t m_acquisition_delay = 0;
 
-    FxType m_fx_type = FX_ENSEMBLE;
+    FxType m_fx_type = Ensemble;
 
     thl::dsp::analysis::NoteFilter m_note_filter;
 
-    float m_filter_in_buffer[thl::dsp::resonator::kMaxBlockSize];
-    float m_filter_out_buffer[thl::dsp::resonator::kMaxBlockSize];
+    float m_filter_in_buffer[thl::dsp::resonator::k_max_block_size];
+    float m_filter_out_buffer[thl::dsp::resonator::k_max_block_size];
 
     bool m_clear_fx = false;
 

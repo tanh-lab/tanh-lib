@@ -21,7 +21,7 @@ protected:
         Attack = 1,
         Release = 2,
 
-        NUM_PARAMETERS = 3
+        NumParameters = 3
     };
 
     template <typename T>

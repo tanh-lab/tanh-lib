@@ -15,7 +15,7 @@ namespace rings = thl::dsp::synth;
 
 static constexpr int kWarmUpBlocks = 4;
 static constexpr int kNumBlocks = 171;
-static constexpr size_t kFramesPerBlock = thl::dsp::resonator::kMaxBlockSize;
+static constexpr size_t kFramesPerBlock = thl::dsp::resonator::k_max_block_size;
 static constexpr size_t kTotalFrames = kNumBlocks * kFramesPerBlock;
 
 struct ModelInfo {
@@ -24,33 +24,33 @@ struct ModelInfo {
 };
 
 static constexpr ModelInfo kModels[] = {
-    {rings::RESONATOR_MODEL_MODAL, "modal.bin"},
-    {rings::RESONATOR_MODEL_SYMPATHETIC_STRING, "sympathetic_string.bin"},
-    {rings::RESONATOR_MODEL_STRING, "modulated_string.bin"},
-    {rings::RESONATOR_MODEL_FM_VOICE, "fm_voice.bin"},
-    {rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED, "sympathetic_string_quantized.bin"},
-    {rings::RESONATOR_MODEL_STRING_AND_REVERB, "string_and_reverb.bin"},
+    {rings::Modal, "modal.bin"},
+    {rings::SympatheticString, "sympathetic_string.bin"},
+    {rings::String, "modulated_string.bin"},
+    {rings::FmVoice, "fm_voice.bin"},
+    {rings::SympatheticStringQuantized, "sympathetic_string_quantized.bin"},
+    {rings::StringAndReverb, "string_and_reverb.bin"},
 };
 
 static thl::dsp::resonator::RingsPatch default_patch() {
     thl::dsp::resonator::RingsPatch patch{};
-    patch.structure = 0.5f;
-    patch.brightness = 0.5f;
-    patch.damping = 0.3f;
-    patch.position = 0.5f;
+    patch.m_structure = 0.5f;
+    patch.m_brightness = 0.5f;
+    patch.m_damping = 0.3f;
+    patch.m_position = 0.5f;
     return patch;
 }
 
 static thl::dsp::resonator::RingsPerformanceState default_state() {
     thl::dsp::resonator::RingsPerformanceState state{};
-    state.strum = false;
-    state.internal_exciter = false;
-    state.internal_strum = false;
-    state.internal_note = false;
-    state.tonic = 12.0f;
-    state.note = 48.0f;
-    state.fm = 0.0f;
-    state.chord = 0;
+    state.m_strum = false;
+    state.m_internal_exciter = false;
+    state.m_internal_strum = false;
+    state.m_internal_note = false;
+    state.m_tonic = 12.0f;
+    state.m_note = 48.0f;
+    state.m_fm = 0.0f;
+    state.m_chord = 0;
     return state;
 }
 
@@ -72,7 +72,7 @@ int main() {
     for (const auto& info : kModels) {
         rings::RingsVoiceManager part;
         std::memset(static_cast<void*>(&part), 0, sizeof(part));
-        std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
+        std::array<uint16_t, thl::dsp::fx::RingsReverb::k_reverb_buffer_size> reverb_buffer{};
         part.prepare(reverb_buffer.data());
         part.set_model(info.model);
 

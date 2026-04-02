@@ -35,14 +35,14 @@ float PitchShifter::process(float x) {
 
     const float phase_a = m_phase;
     const float phase_b = std::fmod(m_phase + 0.5f, 1.0f);
-    const float N = static_cast<float>(m_window_size);
+    const float n = static_cast<float>(m_window_size);
 
-    const float delay_a = m_pitch_up ? (1.0f - phase_a) * N : phase_a * N;
-    const float delay_b = m_pitch_up ? (1.0f - phase_b) * N : phase_b * N;
+    const float delay_a = m_pitch_up ? (1.0f - phase_a) * n : phase_a * n;
+    const float delay_b = m_pitch_up ? (1.0f - phase_b) * n : phase_b * n;
 
-    constexpr float two_pi = 2.0f * std::numbers::pi_v<float>;
-    const float w_a = 0.5f * (1.0f - std::cos(two_pi * phase_a));
-    const float w_b = 0.5f * (1.0f - std::cos(two_pi * phase_b));
+    constexpr float k_two_pi = 2.0f * std::numbers::pi_v<float>;
+    const float w_a = 0.5f * (1.0f - std::cos(k_two_pi * phase_a));
+    const float w_b = 0.5f * (1.0f - std::cos(k_two_pi * phase_b));
 
     const float val_a = read_interp(buf, delay_a);
     const float val_b = read_interp(buf, delay_b);

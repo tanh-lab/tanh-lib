@@ -63,10 +63,10 @@ void LFOSourceImpl::process_single(float* out, uint32_t sample_index) {
 }
 
 float LFOSourceImpl::generate_sample(float phase, LFOWaveform waveform) {
-    constexpr float two_pi = 2.0f * static_cast<float>(M_PI);
+    constexpr float k_two_pi = 2.0f * static_cast<float>(M_PI);
 
     switch (waveform) {
-        case LFOWaveform::Sine: return std::sin(phase * two_pi);
+        case LFOWaveform::Sine: return std::sin(phase * k_two_pi);
 
         case LFOWaveform::Triangle:
             if (phase < 0.25f) { return phase * 4.0f; }

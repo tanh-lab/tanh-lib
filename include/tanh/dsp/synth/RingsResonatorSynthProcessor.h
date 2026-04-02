@@ -20,7 +20,7 @@ public:
         DryWet,
         Model,
         Polyphony,
-        NUM_PARAMETERS
+        NumParameters
     };
 
     using PolyphonyMode = RingsPolyphonyMode;
@@ -33,7 +33,7 @@ public:
     RingsResonatorSynthProcessor(RingsResonatorSynthProcessor&&) noexcept;
     RingsResonatorSynthProcessor& operator=(RingsResonatorSynthProcessor&&) noexcept;
 
-    void prepare(double sampleRate, int maxBlockSize);
+    void prepare(double sample_rate, int max_block_size);
     void process(thl::dsp::audio::ConstAudioBufferView input,
                  thl::dsp::audio::AudioBufferView output);
     int get_latency() const;
@@ -43,7 +43,7 @@ protected:
     virtual int get_parameter_int(Parameter parameter) = 0;
 
 private:
-    static constexpr size_t kBlockSize = 24;
+    static constexpr size_t k_block_size = 24;
 
     struct EngineState;
     std::unique_ptr<EngineState> m_engine;

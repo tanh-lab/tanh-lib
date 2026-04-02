@@ -15,7 +15,7 @@ namespace thl::dsp::fx {
 enum class ConstellationReverbChannelMode : int {
     MonoToStereo = 0,  // Read ch0 as mono input  → stereo out on ch0+ch1
     StereoToStereo,    // Average ch0+ch1 as input → stereo out on ch0+ch1
-    NUM_CHANNEL_MODES
+    NumChannelModes
 };
 
 /**
@@ -77,7 +77,7 @@ protected:
         FreqShiftDetune,
         FreqShiftModDepth,
         ChannelModeParam,
-        NUM_PARAMETERS
+        NumParameters
     };
 
     template <typename T>

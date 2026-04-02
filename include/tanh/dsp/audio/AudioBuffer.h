@@ -100,6 +100,7 @@ public:
         return m_channels[channel] + sample_index;
     }
 
+    // NOLINTNEXTLINE(clang-analyzer-core.NullDereference)
     T* get_write_pointer(size_t channel) { return m_channels[channel]; }
 
     T* get_write_pointer(size_t channel, size_t sample_index) {

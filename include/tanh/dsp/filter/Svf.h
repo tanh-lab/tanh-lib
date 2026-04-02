@@ -211,9 +211,9 @@ public:
     void set_f_q(float f, float resonance) {
         f = f < 0.497f ? f : 0.497f;
         if constexpr (approximation == Approximation::Exact) {
-            m_f = 2.0f * std::sin(detail::kPiF * f);
+            m_f = 2.0f * std::sin(detail::k_pi_f * f);
         } else {
-            m_f = 2.0f * detail::kPiF * f;
+            m_f = 2.0f * detail::k_pi_f * f;
         }
         m_damp = 1.0f / resonance;
     }

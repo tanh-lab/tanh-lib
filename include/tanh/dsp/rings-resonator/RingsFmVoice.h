@@ -47,7 +47,7 @@ public:
     RingsFmVoice() {}
     ~RingsFmVoice() {}
 
-    void prepare(float sample_rate = thl::dsp::resonator::kDefaultSampleRate);
+    void prepare(float sample_rate = thl::dsp::resonator::k_default_sample_rate);
     void process(thl::dsp::audio::ConstAudioBufferView in,
                  thl::dsp::audio::AudioBufferView out,
                  thl::dsp::audio::AudioBufferView aux);
@@ -81,7 +81,7 @@ public:
 private:
     void prepare_coefficients();
 
-    float m_sample_rate = thl::dsp::resonator::kDefaultSampleRate;
+    float m_sample_rate = thl::dsp::resonator::k_default_sample_rate;
     float m_carrier_frequency = 0.0f;
     float m_ratio = 0.0f;
     float m_brightness = 0.0f;

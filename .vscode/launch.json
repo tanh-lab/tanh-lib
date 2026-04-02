@@ -17,7 +17,7 @@
             "name": "Attach to iOS Simulator (Audio IO Example)",
             "type": "lldb",
             "request": "attach",
-            "program": "${workspaceFolder}/build-ios-simulator/examples/ios/audio_io/Debug-iphonesimulator/audio_io.app/audio_io",
+            "program": "${workspaceFolder}/build-ios-simulator/examples/ios/audio-io/Debug-iphonesimulator/audio_io.app/audio_io",
             "waitFor": true,
             "preLaunchTask": "iOS Simulator: Build & Launch Audio IO Example"
         }

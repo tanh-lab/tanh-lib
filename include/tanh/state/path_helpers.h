@@ -1,5 +1,10 @@
 #pragma once
 
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <utility>
+
 namespace thl {
 
 namespace detail {

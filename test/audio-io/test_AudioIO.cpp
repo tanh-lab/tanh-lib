@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
-#include "tanh/audio_io/AudioDeviceInfo.h"
-#include "tanh/audio_io/AudioDeviceManager.h"
-#include "tanh/audio_io/AudioFileLoader.h"
-#include "tanh/audio_io/AudioFileSink.h"
-#include "tanh/audio_io/AudioIODeviceCallback.h"
-#include "tanh/audio_io/AudioPlayerSource.h"
-#include "tanh/audio_io/DataSource.h"
+#include "tanh/audio-io/AudioDeviceInfo.h"
+#include "tanh/audio-io/AudioDeviceManager.h"
+#include "tanh/audio-io/AudioFileLoader.h"
+#include "tanh/audio-io/AudioFileSink.h"
+#include "tanh/audio-io/AudioIODeviceCallback.h"
+#include "tanh/audio-io/AudioPlayerSource.h"
+#include "tanh/audio-io/DataSource.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -23,13 +23,13 @@ using namespace thl;
 
 TEST(AudioDeviceInfo, DefaultConstruction) {
     AudioDeviceInfo info;
-    EXPECT_TRUE(info.name.empty());
-    EXPECT_TRUE(info.sampleRates.empty());
+    EXPECT_TRUE(info.m_name.empty());
+    EXPECT_TRUE(info.m_sample_rates.empty());
 }
 
 TEST(AudioDeviceInfo, DeviceIDPointer) {
     AudioDeviceInfo info;
-    const void* ptr = info.deviceIDPtr();
+    const void* ptr = info.device_id_ptr();
     EXPECT_NE(ptr, nullptr);
 }
 
@@ -48,25 +48,25 @@ TEST(AudioDeviceManager, ContextInitialisation) {
     AudioDeviceManager manager;
     // On systems with audio, this should be true
     // On headless CI, it might be false - either way, shouldn't crash
-    bool initialised = manager.isContextInitialised();
+    bool initialised = manager.is_context_initialised();
     (void)initialised;  // Suppress unused warning
 }
 
 TEST(AudioDeviceManager, DefaultValues) {
     AudioDeviceManager manager;
-    EXPECT_EQ(manager.getSampleRate(), 44100);
-    EXPECT_EQ(manager.getBufferSize(), 0);
-    EXPECT_EQ(manager.getNumOutputChannels(), 1);
-    EXPECT_EQ(manager.getNumInputChannels(), 1);
-    EXPECT_FALSE(manager.isPlaybackRunning());
+    EXPECT_EQ(manager.get_sample_rate(), 44100);
+    EXPECT_EQ(manager.get_buffer_size(), 0);
+    EXPECT_EQ(manager.get_num_output_channels(), 1);
+    EXPECT_EQ(manager.get_num_input_channels(), 1);
+    EXPECT_FALSE(manager.is_playback_running());
 }
 
 TEST(AudioDeviceManager, EnumerateDevicesDoesNotCrash) {
     AudioDeviceManager manager;
 
     // These should not crash even if no devices are available
-    auto inputDevices = manager.enumerateInputDevices();
-    auto outputDevices = manager.enumerateOutputDevices();
+    auto inputDevices = manager.enumerate_input_devices();
+    auto outputDevices = manager.enumerate_output_devices();
 
     // We can't assert specific device counts as this depends on the system
     // Just verify the calls complete without crashing
@@ -82,7 +82,7 @@ TEST(AudioDeviceManager, ShutdownWithoutInitialise) {
 TEST(AudioDeviceManager, StopWithoutStart) {
     AudioDeviceManager manager;
     // Calling stop without start should be safe
-    manager.stopPlayback();
+    manager.stop_playback();
 }
 
 // =============================================================================
@@ -107,13 +107,13 @@ public:
         (void)inputBuffer;
     }
 
-    void prepareToPlay(uint32_t sampleRate, uint32_t bufferSize) override {
+    void prepare_to_play(uint32_t sampleRate, uint32_t bufferSize) override {
         ++prepareCallCount;
         (void)sampleRate;
         (void)bufferSize;
     }
 
-    void releaseResources() override { ++releaseCallCount; }
+    void release_resources() override { ++releaseCallCount; }
 };
 
 TEST(AudioIODeviceCallback, MockCallbackConstruction) {
@@ -147,11 +147,11 @@ TEST(AudioDeviceManager, AddRemoveCallback) {
     MockCallback callback;
 
     // Adding and removing callbacks should not crash
-    manager.addPlaybackCallback(&callback);
-    manager.removePlaybackCallback(&callback);
+    manager.add_playback_callback(&callback);
+    manager.remove_playback_callback(&callback);
 
     // Removing non-existent callback should be safe
-    manager.removePlaybackCallback(&callback);
+    manager.remove_playback_callback(&callback);
 }
 
 TEST(AudioDeviceManager, MultipleCallbacks) {
@@ -160,13 +160,13 @@ TEST(AudioDeviceManager, MultipleCallbacks) {
     MockCallback callback2;
     MockCallback callback3;
 
-    manager.addPlaybackCallback(&callback1);
-    manager.addPlaybackCallback(&callback2);
-    manager.addPlaybackCallback(&callback3);
+    manager.add_playback_callback(&callback1);
+    manager.add_playback_callback(&callback2);
+    manager.add_playback_callback(&callback3);
 
-    manager.removePlaybackCallback(&callback2);
-    manager.removePlaybackCallback(&callback1);
-    manager.removePlaybackCallback(&callback3);
+    manager.remove_playback_callback(&callback2);
+    manager.remove_playback_callback(&callback1);
+    manager.remove_playback_callback(&callback3);
 }
 
 TEST(AudioDeviceManager, ConcurrentCallbackModification) {
@@ -185,12 +185,12 @@ TEST(AudioDeviceManager, ConcurrentCallbackModification) {
         threads.emplace_back([&, t]() {
             while (running.load(std::memory_order_relaxed)) {
                 int idx = (t * 2) % kNumCallbacks;
-                manager.addPlaybackCallback(&callbacks[idx]);
+                manager.add_playback_callback(&callbacks[idx]);
                 addCount.fetch_add(1, std::memory_order_relaxed);
 
                 std::this_thread::sleep_for(std::chrono::microseconds(50));
 
-                manager.removePlaybackCallback(&callbacks[idx]);
+                manager.remove_playback_callback(&callbacks[idx]);
                 removeCount.fetch_add(1, std::memory_order_relaxed);
 
                 std::this_thread::sleep_for(std::chrono::microseconds(50));
@@ -215,40 +215,40 @@ TEST(AudioDeviceManager, ConcurrentCallbackModification) {
 
 TEST(AudioDeviceManager, BluetoothClampNoOpWhenBelowLimit) {
     // 512 frames @ 16 kHz = 32 ms, well below the 64 ms cap.
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(512, 16000), 512u);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(512, 16000), 512u);
 }
 
 TEST(AudioDeviceManager, BluetoothClampAtExactLimit) {
     // 1024 frames @ 16 kHz = exactly 64 ms — should NOT be clamped.
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(1024, 16000), 1024u);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(1024, 16000), 1024u);
 }
 
 TEST(AudioDeviceManager, BluetoothClampAboveLimit) {
     // 2048 frames @ 16 kHz = 128 ms — must be clamped to 1024.
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(2048, 16000), 1024u);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(2048, 16000), 1024u);
 }
 
 TEST(AudioDeviceManager, BluetoothClampAt48kHz) {
     // At 48 kHz the 64 ms cap is 3072 frames.
     uint32_t maxFrames = static_cast<uint32_t>(48000 * 0.064f);
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(4096, 48000), maxFrames);
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(3072, 48000), 3072u);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(4096, 48000), maxFrames);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(3072, 48000), 3072u);
 }
 
 TEST(AudioDeviceManager, BluetoothClampAt44100Hz) {
     uint32_t maxFrames = static_cast<uint32_t>(44100 * 0.064f);
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(4096, 44100), maxFrames);
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(256, 44100), 256u);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(4096, 44100), maxFrames);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(256, 44100), 256u);
 }
 
 TEST(AudioDeviceManager, BluetoothClampZeroSampleRate) {
     // Zero sample rate should return the original size (no division by zero).
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(2048, 0), 2048u);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(2048, 0), 2048u);
 }
 
 TEST(AudioDeviceManager, BluetoothClampSmallBuffer) {
     // Very small buffer should pass through unchanged.
-    EXPECT_EQ(AudioDeviceManager::clampBufferSizeForBluetoothRoute(64, 16000), 64u);
+    EXPECT_EQ(AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(64, 16000), 64u);
 }
 
 // =============================================================================
@@ -286,7 +286,7 @@ public:
         }
     }
 
-    void prepareToPlay(uint32_t rate, uint32_t /*bufferSize*/) override {
+    void prepare_to_play(uint32_t rate, uint32_t /*bufferSize*/) override {
         sampleRate = static_cast<double>(rate);
         phase = 0.0;
     }
@@ -295,27 +295,27 @@ public:
 TEST(HardwareTests, DISABLED_DeviceEnumeration) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
+    if (!manager.is_context_initialised()) { GTEST_SKIP() << "Audio context not available"; }
 
-    auto inputs = manager.enumerateInputDevices();
-    auto outputs = manager.enumerateOutputDevices();
+    auto inputs = manager.enumerate_input_devices();
+    auto outputs = manager.enumerate_output_devices();
 
     std::cout << "\n=== Input Devices (" << inputs.size() << ") ===\n";
     for (const auto& device : inputs) {
-        std::cout << "  - " << device.name << " (rates: ";
-        for (size_t i = 0; i < device.sampleRates.size(); ++i) {
+        std::cout << "  - " << device.m_name << " (rates: ";
+        for (size_t i = 0; i < device.m_sample_rates.size(); ++i) {
             if (i > 0) std::cout << ", ";
-            std::cout << device.sampleRates[i];
+            std::cout << device.m_sample_rates[i];
         }
         std::cout << ")\n";
     }
 
     std::cout << "\n=== Output Devices (" << outputs.size() << ") ===\n";
     for (const auto& device : outputs) {
-        std::cout << "  - " << device.name << " (rates: ";
-        for (size_t i = 0; i < device.sampleRates.size(); ++i) {
+        std::cout << "  - " << device.m_name << " (rates: ";
+        for (size_t i = 0; i < device.m_sample_rates.size(); ++i) {
             if (i > 0) std::cout << ", ";
-            std::cout << device.sampleRates[i];
+            std::cout << device.m_sample_rates[i];
         }
         std::cout << ")\n";
     }
@@ -326,28 +326,28 @@ TEST(HardwareTests, DISABLED_DeviceEnumeration) {
 TEST(HardwareTests, DISABLED_PlaySineWave) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
+    if (!manager.is_context_initialised()) { GTEST_SKIP() << "Audio context not available"; }
 
-    auto outputs = manager.enumerateOutputDevices();
+    auto outputs = manager.enumerate_output_devices();
     if (outputs.empty()) { GTEST_SKIP() << "No output devices available"; }
 
-    std::cout << "\nUsing output device: " << outputs[0].name << "\n";
+    std::cout << "\nUsing output device: " << outputs[0].m_name << "\n";
 
     SineCallback sineCallback(440.0);
 
     bool initialised = manager.initialise(nullptr, &outputs[0], 48000, 256, 0, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise audio device";
 
-    manager.addPlaybackCallback(&sineCallback);
+    manager.add_playback_callback(&sineCallback);
 
-    ASSERT_TRUE(manager.startPlayback()) << "Failed to start audio";
-    EXPECT_TRUE(manager.isPlaybackRunning());
+    ASSERT_TRUE(manager.start_playback()) << "Failed to start audio";
+    EXPECT_TRUE(manager.is_playback_running());
 
     std::cout << "Playing 440Hz sine wave for 500ms...\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    manager.stopPlayback();
-    EXPECT_FALSE(manager.isPlaybackRunning());
+    manager.stop_playback();
+    EXPECT_FALSE(manager.is_playback_running());
 
     std::cout << "Process callback was called " << sineCallback.processCallCount << " times\n";
 
@@ -357,22 +357,22 @@ TEST(HardwareTests, DISABLED_PlaySineWave) {
 TEST(HardwareTests, DISABLED_StartStopCycles) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
+    if (!manager.is_context_initialised()) { GTEST_SKIP() << "Audio context not available"; }
 
-    auto outputs = manager.enumerateOutputDevices();
+    auto outputs = manager.enumerate_output_devices();
     if (outputs.empty()) { GTEST_SKIP() << "No output devices available"; }
 
     SineCallback callback;
 
     ASSERT_TRUE(manager.initialise(nullptr, &outputs[0], 48000, 512, 0, 2));
-    manager.addPlaybackCallback(&callback);
+    manager.add_playback_callback(&callback);
 
     for (int i = 0; i < 3; ++i) {
         std::cout << "Start/stop cycle " << (i + 1) << "/3\n";
 
-        ASSERT_TRUE(manager.startPlayback());
+        ASSERT_TRUE(manager.start_playback());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        manager.stopPlayback();
+        manager.stop_playback();
 
         EXPECT_GT(callback.processCallCount.load(), 0);
     }
@@ -383,28 +383,28 @@ TEST(HardwareTests, DISABLED_StartStopCycles) {
 TEST(HardwareTests, DISABLED_FullDuplex) {
     AudioDeviceManager manager;
 
-    if (!manager.isContextInitialised()) { GTEST_SKIP() << "Audio context not available"; }
+    if (!manager.is_context_initialised()) { GTEST_SKIP() << "Audio context not available"; }
 
-    auto inputs = manager.enumerateInputDevices();
-    auto outputs = manager.enumerateOutputDevices();
+    auto inputs = manager.enumerate_input_devices();
+    auto outputs = manager.enumerate_output_devices();
 
     if (inputs.empty() || outputs.empty()) {
         GTEST_SKIP() << "Need both input and output devices for duplex test";
     }
 
-    std::cout << "\nInput: " << inputs[0].name << "\n";
-    std::cout << "Output: " << outputs[0].name << "\n";
+    std::cout << "\nInput: " << inputs[0].m_name << "\n";
+    std::cout << "Output: " << outputs[0].m_name << "\n";
 
     MockCallback callback;
 
     bool initialised = manager.initialise(&inputs[0], &outputs[0], 48000, 512, 2, 2);
     ASSERT_TRUE(initialised) << "Failed to initialise duplex device";
 
-    manager.addPlaybackCallback(&callback);
+    manager.add_playback_callback(&callback);
 
-    ASSERT_TRUE(manager.startPlayback());
+    ASSERT_TRUE(manager.start_playback());
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    manager.stopPlayback();
+    manager.stop_playback();
 
     std::cout << "Duplex process calls: " << callback.processCallCount << "\n";
     EXPECT_GT(callback.processCallCount, 0);
@@ -416,27 +416,27 @@ TEST(HardwareTests, DISABLED_FullDuplex) {
 
 TEST(AudioFileSink, DefaultConstruction) {
     AudioFileSink sink;
-    EXPECT_FALSE(sink.isOpen());
-    EXPECT_FALSE(sink.isRecording());
-    EXPECT_EQ(sink.getFramesWritten(), 0);
+    EXPECT_FALSE(sink.is_open());
+    EXPECT_FALSE(sink.is_recording());
+    EXPECT_EQ(sink.get_frames_written(), 0);
 }
 
 TEST(AudioFileSink, CloseWithoutOpen) {
     AudioFileSink sink;
-    sink.closeFile();
-    EXPECT_FALSE(sink.isOpen());
+    sink.close_file();
+    EXPECT_FALSE(sink.is_open());
 }
 
 TEST(AudioFileSink, StartRecordingWithoutOpen) {
     AudioFileSink sink;
-    sink.startRecording();
-    EXPECT_FALSE(sink.isRecording());
+    sink.start_recording();
+    EXPECT_FALSE(sink.is_recording());
 }
 
 TEST(AudioFileSink, StopRecordingWithoutStart) {
     AudioFileSink sink;
-    sink.stopRecording();
-    EXPECT_FALSE(sink.isRecording());
+    sink.stop_recording();
+    EXPECT_FALSE(sink.is_recording());
 }
 
 TEST(AudioFileSink, ProcessWithoutOpen) {
@@ -448,7 +448,7 @@ TEST(AudioFileSink, ProcessWithoutOpen) {
     float input[frameCount * numChannels] = {0};
 
     sink.process(output, input, frameCount, numChannels, 0);
-    EXPECT_EQ(sink.getFramesWritten(), 0);
+    EXPECT_EQ(sink.get_frames_written(), 0);
 }
 
 TEST(AudioFileSink, OpenAndCloseFile) {
@@ -457,13 +457,13 @@ TEST(AudioFileSink, OpenAndCloseFile) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
     std::filesystem::path testFile = tempDir / "test_audio_sink.wav";
 
-    bool opened = sink.openFile(testFile.string(), 2, 48000);
+    bool opened = sink.open_file(testFile.string(), 2, 48000);
     EXPECT_TRUE(opened);
-    EXPECT_TRUE(sink.isOpen());
-    EXPECT_FALSE(sink.isRecording());
+    EXPECT_TRUE(sink.is_open());
+    EXPECT_FALSE(sink.is_recording());
 
-    sink.closeFile();
-    EXPECT_FALSE(sink.isOpen());
+    sink.close_file();
+    EXPECT_FALSE(sink.is_open());
 
     std::filesystem::remove(testFile);
 }
@@ -474,15 +474,15 @@ TEST(AudioFileSink, RecordingStateToggle) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
     std::filesystem::path testFile = tempDir / "test_audio_sink_toggle.wav";
 
-    ASSERT_TRUE(sink.openFile(testFile.string(), 2, 48000));
+    ASSERT_TRUE(sink.open_file(testFile.string(), 2, 48000));
 
-    EXPECT_FALSE(sink.isRecording());
-    sink.startRecording();
-    EXPECT_TRUE(sink.isRecording());
-    sink.stopRecording();
-    EXPECT_FALSE(sink.isRecording());
+    EXPECT_FALSE(sink.is_recording());
+    sink.start_recording();
+    EXPECT_TRUE(sink.is_recording());
+    sink.stop_recording();
+    EXPECT_FALSE(sink.is_recording());
 
-    sink.closeFile();
+    sink.close_file();
     std::filesystem::remove(testFile);
 }
 
@@ -492,8 +492,8 @@ TEST(AudioFileSink, WriteFrames) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
     std::filesystem::path testFile = tempDir / "test_audio_sink_write.wav";
 
-    ASSERT_TRUE(sink.openFile(testFile.string(), 2, 48000));
-    sink.startRecording();
+    ASSERT_TRUE(sink.open_file(testFile.string(), 2, 48000));
+    sink.start_recording();
 
     constexpr uint32_t frameCount = 256;
     constexpr uint32_t numChannels = 2;
@@ -505,12 +505,12 @@ TEST(AudioFileSink, WriteFrames) {
     }
 
     sink.process(output, input, frameCount, numChannels, 0);
-    EXPECT_EQ(sink.getFramesWritten(), frameCount);
+    EXPECT_EQ(sink.get_frames_written(), frameCount);
 
     sink.process(output, input, frameCount, numChannels, 0);
-    EXPECT_EQ(sink.getFramesWritten(), frameCount * 2);
+    EXPECT_EQ(sink.get_frames_written(), frameCount * 2);
 
-    sink.closeFile();
+    sink.close_file();
     EXPECT_TRUE(std::filesystem::exists(testFile));
     std::filesystem::remove(testFile);
 }
@@ -521,8 +521,8 @@ TEST(AudioFileSink, RejectMismatchedInputChannels) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
     std::filesystem::path testFile = tempDir / "test_audio_sink_channel_mismatch.wav";
 
-    ASSERT_TRUE(sink.openFile(testFile.string(), 2, 48000));
-    sink.startRecording();
+    ASSERT_TRUE(sink.open_file(testFile.string(), 2, 48000));
+    sink.start_recording();
 
     constexpr uint32_t frameCount = 256;
     constexpr uint32_t inputChannels = 1;
@@ -530,9 +530,9 @@ TEST(AudioFileSink, RejectMismatchedInputChannels) {
     float input[frameCount * inputChannels] = {0};
 
     sink.process(output, input, frameCount, inputChannels, 0);
-    EXPECT_EQ(sink.getFramesWritten(), 0);
+    EXPECT_EQ(sink.get_frames_written(), 0);
 
-    sink.closeFile();
+    sink.close_file();
     std::filesystem::remove(testFile);
 }
 
@@ -542,12 +542,12 @@ TEST(AudioFileSink, ReleaseResources) {
     std::filesystem::path tempDir = std::filesystem::temp_directory_path();
     std::filesystem::path testFile = tempDir / "test_audio_sink_release.wav";
 
-    ASSERT_TRUE(sink.openFile(testFile.string(), 2, 48000));
-    sink.startRecording();
+    ASSERT_TRUE(sink.open_file(testFile.string(), 2, 48000));
+    sink.start_recording();
 
-    sink.releaseResources();
-    EXPECT_FALSE(sink.isOpen());
-    EXPECT_FALSE(sink.isRecording());
+    sink.release_resources();
+    EXPECT_FALSE(sink.is_open());
+    EXPECT_FALSE(sink.is_recording());
 
     std::filesystem::remove(testFile);
 }
@@ -614,11 +614,11 @@ TEST(AudioFileLoader, RoundTripRecordAndLoad) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount * numChannels] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     thl::audio_io::AudioFileLoader loader;
@@ -654,11 +654,11 @@ TEST(AudioFileLoader, RoundTripDataSource) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount * numChannels] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     thl::audio_io::AudioFileLoader loader;
@@ -719,11 +719,11 @@ TEST(DataSource, SequentialRead) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     thl::audio_io::AudioFileLoader loader;
@@ -764,11 +764,11 @@ TEST(DataSource, SeekUpdatesPosition) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     thl::audio_io::AudioFileLoader loader;
@@ -796,11 +796,11 @@ TEST(DataSource, ReadBeyondEnd) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     thl::audio_io::AudioFileLoader loader;
@@ -820,40 +820,40 @@ TEST(DataSource, ReadBeyondEnd) {
 
 TEST(AudioPlayerSource, DefaultConstruction) {
     AudioPlayerSource player;
-    EXPECT_FALSE(player.isLoaded());
-    EXPECT_FALSE(player.isPlaying());
-    EXPECT_EQ(player.getCurrentFrame(), 0);
-    EXPECT_EQ(player.getTotalFrames(), 0);
+    EXPECT_FALSE(player.is_loaded());
+    EXPECT_FALSE(player.is_playing());
+    EXPECT_EQ(player.get_current_frame(), 0);
+    EXPECT_EQ(player.get_total_frames(), 0);
 }
 
 TEST(AudioPlayerSource, UnloadWithoutLoad) {
     AudioPlayerSource player;
-    player.unloadFile();
-    EXPECT_FALSE(player.isLoaded());
+    player.unload_file();
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, PlayWithoutLoad) {
     AudioPlayerSource player;
     player.play();
-    EXPECT_FALSE(player.isPlaying());
+    EXPECT_FALSE(player.is_playing());
 }
 
 TEST(AudioPlayerSource, PauseWithoutLoad) {
     AudioPlayerSource player;
     player.pause();
-    EXPECT_FALSE(player.isPlaying());
+    EXPECT_FALSE(player.is_playing());
 }
 
 TEST(AudioPlayerSource, StopWithoutLoad) {
     AudioPlayerSource player;
     player.stop();
-    EXPECT_FALSE(player.isPlaying());
+    EXPECT_FALSE(player.is_playing());
 }
 
 TEST(AudioPlayerSource, SeekWithoutLoad) {
     AudioPlayerSource player;
-    player.seekToFrame(100);
-    EXPECT_EQ(player.getCurrentFrame(), 0);
+    player.seek_to_frame(100);
+    EXPECT_EQ(player.get_current_frame(), 0);
 }
 
 TEST(AudioPlayerSource, ProcessWithoutLoad) {
@@ -873,24 +873,24 @@ TEST(AudioPlayerSource, ProcessWithoutLoad) {
 
 TEST(AudioPlayerSource, LoadNonExistentFile) {
     AudioPlayerSource player;
-    bool loaded = player.loadFile("/nonexistent/path/audio.wav", 2, 48000);
+    bool loaded = player.load_file("/nonexistent/path/audio.wav", 2, 48000);
     EXPECT_FALSE(loaded);
-    EXPECT_FALSE(player.isLoaded());
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, SetFinishedCallback) {
     AudioPlayerSource player;
     bool callbackCalled = false;
 
-    player.setFinishedCallback([&callbackCalled]() { callbackCalled = true; });
+    player.set_finished_callback([&callbackCalled]() { callbackCalled = true; });
 
     EXPECT_FALSE(callbackCalled);
 }
 
 TEST(AudioPlayerSource, ReleaseResources) {
     AudioPlayerSource player;
-    player.releaseResources();
-    EXPECT_FALSE(player.isLoaded());
+    player.release_resources();
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, ProcessRejectsOutputChannelMismatch) {
@@ -904,15 +904,15 @@ TEST(AudioPlayerSource, ProcessRejectsOutputChannelMismatch) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), writeChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), writeChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount * writeChannels] = {0};
         sink.process(sinkOutput, sourceData, frameCount, writeChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFile(testFile.string(), writeChannels, sampleRate));
+    ASSERT_TRUE(player.load_file(testFile.string(), writeChannels, sampleRate));
     player.play();
 
     float output[frameCount] = {};
@@ -923,7 +923,7 @@ TEST(AudioPlayerSource, ProcessRejectsOutputChannelMismatch) {
 
     for (const auto& sample : output) { EXPECT_FLOAT_EQ(sample, 1.0f); }
 
-    player.unloadFile();
+    player.unload_file();
     std::filesystem::remove(testFile);
 }
 
@@ -943,26 +943,26 @@ TEST(AudioFileIntegration, RecordAndPlayback) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
 
         float output[frameCount * numChannels] = {0};
         sink.process(output, originalData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     ASSERT_TRUE(std::filesystem::exists(testFile));
 
     {
         AudioPlayerSource player;
-        ASSERT_TRUE(player.loadFile(testFile.string(), numChannels, sampleRate));
-        EXPECT_TRUE(player.isLoaded());
-        EXPECT_EQ(player.getTotalFrames(), frameCount);
-        EXPECT_EQ(player.getCurrentFrame(), 0);
+        ASSERT_TRUE(player.load_file(testFile.string(), numChannels, sampleRate));
+        EXPECT_TRUE(player.is_loaded());
+        EXPECT_EQ(player.get_total_frames(), frameCount);
+        EXPECT_EQ(player.get_current_frame(), 0);
 
-        player.setFadeEnabled(false);
+        player.set_fade_enabled(false);
         player.play();
-        EXPECT_TRUE(player.isPlaying());
+        EXPECT_TRUE(player.is_playing());
 
         float playedData[frameCount * numChannels] = {0};
         float input[frameCount * numChannels] = {0};
@@ -973,8 +973,8 @@ TEST(AudioFileIntegration, RecordAndPlayback) {
             EXPECT_FLOAT_EQ(playedData[i], originalData[i]) << "Mismatch at sample " << i;
         }
 
-        player.unloadFile();
-        EXPECT_FALSE(player.isLoaded());
+        player.unload_file();
+        EXPECT_FALSE(player.is_loaded());
     }
 
     std::filesystem::remove(testFile);
@@ -1035,11 +1035,11 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryRoundTrip) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount * numChannels] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
@@ -1082,11 +1082,11 @@ TEST(AudioFileLoader, LoadDataSourceFromMemorySeek) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
@@ -1130,11 +1130,11 @@ TEST(AudioFileLoader, LoadDataSourceFromMemorySequentialRead) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
@@ -1179,11 +1179,11 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryNativeFormat) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount * numChannels] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
@@ -1204,33 +1204,33 @@ TEST(AudioFileLoader, LoadDataSourceFromMemoryNativeFormat) {
 
 TEST(AudioPlayerSource, LoadFromMemoryNullData) {
     AudioPlayerSource player;
-    bool loaded = player.loadFromMemory(nullptr, 0, 2, 48000);
+    bool loaded = player.load_from_memory(nullptr, 0, 2, 48000);
     EXPECT_FALSE(loaded);
-    EXPECT_FALSE(player.isLoaded());
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, LoadFromMemoryZeroSize) {
     AudioPlayerSource player;
     uint8_t data[] = {0};
-    bool loaded = player.loadFromMemory(data, 0, 2, 48000);
+    bool loaded = player.load_from_memory(data, 0, 2, 48000);
     EXPECT_FALSE(loaded);
-    EXPECT_FALSE(player.isLoaded());
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, LoadFromMemoryZeroChannels) {
     AudioPlayerSource player;
     uint8_t data[] = {0};
-    bool loaded = player.loadFromMemory(data, 1, 0, 48000);
+    bool loaded = player.load_from_memory(data, 1, 0, 48000);
     EXPECT_FALSE(loaded);
-    EXPECT_FALSE(player.isLoaded());
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, LoadFromMemoryZeroSampleRate) {
     AudioPlayerSource player;
     uint8_t data[] = {0};
-    bool loaded = player.loadFromMemory(data, 1, 2, 0);
+    bool loaded = player.load_from_memory(data, 1, 2, 0);
     EXPECT_FALSE(loaded);
-    EXPECT_FALSE(player.isLoaded());
+    EXPECT_FALSE(player.is_loaded());
 }
 
 // Disabled: currently passes assertions but intermittently aborts during
@@ -1238,9 +1238,9 @@ TEST(AudioPlayerSource, LoadFromMemoryZeroSampleRate) {
 TEST(AudioPlayerSource, LoadFromMemoryInvalidData) {
     AudioPlayerSource player;
     uint8_t garbage[] = {0xDE, 0xAD, 0xBE, 0xEF};
-    bool loaded = player.loadFromMemory(garbage, sizeof(garbage), 2, 48000);
+    bool loaded = player.load_from_memory(garbage, sizeof(garbage), 2, 48000);
     EXPECT_FALSE(loaded);
-    EXPECT_FALSE(player.isLoaded());
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, LoadFromMemoryAndPlayback) {
@@ -1258,11 +1258,11 @@ TEST(AudioPlayerSource, LoadFromMemoryAndPlayback) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount * numChannels] = {0};
         sink.process(sinkOutput, originalData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
@@ -1270,14 +1270,14 @@ TEST(AudioPlayerSource, LoadFromMemoryAndPlayback) {
     std::filesystem::remove(testFile);
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
-    EXPECT_TRUE(player.isLoaded());
-    EXPECT_EQ(player.getTotalFrames(), frameCount);
-    EXPECT_EQ(player.getCurrentFrame(), 0u);
+    ASSERT_TRUE(player.load_from_memory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
+    EXPECT_TRUE(player.is_loaded());
+    EXPECT_EQ(player.get_total_frames(), frameCount);
+    EXPECT_EQ(player.get_current_frame(), 0u);
 
-    player.setFadeEnabled(false);
+    player.set_fade_enabled(false);
     player.play();
-    EXPECT_TRUE(player.isPlaying());
+    EXPECT_TRUE(player.is_playing());
 
     float playedData[frameCount * numChannels] = {0};
     float input[frameCount * numChannels] = {0};
@@ -1287,8 +1287,8 @@ TEST(AudioPlayerSource, LoadFromMemoryAndPlayback) {
         EXPECT_FLOAT_EQ(playedData[i], originalData[i]) << "Mismatch at sample " << i;
     }
 
-    player.unloadFile();
-    EXPECT_FALSE(player.isLoaded());
+    player.unload_file();
+    EXPECT_FALSE(player.is_loaded());
 }
 
 TEST(AudioPlayerSource, LoadFromMemorySeek) {
@@ -1306,11 +1306,11 @@ TEST(AudioPlayerSource, LoadFromMemorySeek) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
@@ -1318,12 +1318,12 @@ TEST(AudioPlayerSource, LoadFromMemorySeek) {
     std::filesystem::remove(testFile);
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
+    ASSERT_TRUE(player.load_from_memory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
 
-    player.seekToFrame(128);
-    EXPECT_EQ(player.getCurrentFrame(), 128u);
+    player.seek_to_frame(128);
+    EXPECT_EQ(player.get_current_frame(), 128u);
 
-    player.setFadeEnabled(false);
+    player.set_fade_enabled(false);
     player.play();
 
     float readBuf[128] = {0};
@@ -1334,7 +1334,7 @@ TEST(AudioPlayerSource, LoadFromMemorySeek) {
         EXPECT_FLOAT_EQ(readBuf[i], sourceData[128 + i]) << "Mismatch at sample " << i;
     }
 
-    player.unloadFile();
+    player.unload_file();
 }
 
 TEST(AudioPlayerSource, LoadFromMemoryStopResetsPosition) {
@@ -1349,11 +1349,11 @@ TEST(AudioPlayerSource, LoadFromMemoryStopResetsPosition) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
@@ -1361,19 +1361,19 @@ TEST(AudioPlayerSource, LoadFromMemoryStopResetsPosition) {
     std::filesystem::remove(testFile);
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
+    ASSERT_TRUE(player.load_from_memory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
     player.play();
 
     float readBuf[64] = {0};
     float input[64] = {0};
     player.process(readBuf, input, 64, 0, numChannels);
-    EXPECT_EQ(player.getCurrentFrame(), 64u);
+    EXPECT_EQ(player.get_current_frame(), 64u);
 
     player.stop();
-    EXPECT_FALSE(player.isPlaying());
-    EXPECT_EQ(player.getCurrentFrame(), 0u);
+    EXPECT_FALSE(player.is_playing());
+    EXPECT_EQ(player.get_current_frame(), 0u);
 
-    player.unloadFile();
+    player.unload_file();
 }
 
 TEST(AudioPlayerSource, LoadFromMemoryReplacesFile) {
@@ -1389,24 +1389,24 @@ TEST(AudioPlayerSource, LoadFromMemoryReplacesFile) {
 
     {
         AudioFileSink sink;
-        ASSERT_TRUE(sink.openFile(testFile.string(), numChannels, sampleRate));
-        sink.startRecording();
+        ASSERT_TRUE(sink.open_file(testFile.string(), numChannels, sampleRate));
+        sink.start_recording();
         float sinkOutput[frameCount] = {0};
         sink.process(sinkOutput, sourceData, frameCount, numChannels, 0);
-        sink.closeFile();
+        sink.close_file();
     }
 
     auto wavBytes = read_file_bytes(testFile);
     ASSERT_FALSE(wavBytes.empty());
 
     AudioPlayerSource player;
-    ASSERT_TRUE(player.loadFile(testFile.string(), numChannels, sampleRate));
-    EXPECT_TRUE(player.isLoaded());
+    ASSERT_TRUE(player.load_file(testFile.string(), numChannels, sampleRate));
+    EXPECT_TRUE(player.is_loaded());
 
-    ASSERT_TRUE(player.loadFromMemory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
-    EXPECT_TRUE(player.isLoaded());
-    EXPECT_EQ(player.getTotalFrames(), frameCount);
+    ASSERT_TRUE(player.load_from_memory(wavBytes.data(), wavBytes.size(), numChannels, sampleRate));
+    EXPECT_TRUE(player.is_loaded());
+    EXPECT_EQ(player.get_total_frames(), frameCount);
 
-    player.unloadFile();
+    player.unload_file();
     std::filesystem::remove(testFile);
 }

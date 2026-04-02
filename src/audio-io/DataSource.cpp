@@ -1,4 +1,4 @@
-#include <tanh/audio_io/DataSource.h>
+#include <tanh/audio-io/DataSource.h>
 #include "DataSourceImpl.h"
 
 namespace thl::audio_io {
@@ -25,12 +25,12 @@ bool DataSource::seek(uint64_t frame_index) {
 
 uint32_t DataSource::get_channel_count() const {
     if (!m_impl || !m_impl->is_valid()) { return 0; }
-    return m_impl->channels;
+    return m_impl->m_channels;
 }
 
 uint32_t DataSource::get_sample_rate() const {
     if (!m_impl || !m_impl->is_valid()) { return 0; }
-    return m_impl->sampleRate;
+    return m_impl->m_sample_rate;
 }
 
 uint64_t DataSource::get_total_frames() const {

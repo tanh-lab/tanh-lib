@@ -13,7 +13,7 @@ namespace core {
 /**
  * @brief Get the library version
  */
-std::string getVersion();
+std::string get_version();
 }  // namespace core
 
 }  // namespace thl
