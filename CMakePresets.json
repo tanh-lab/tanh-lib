@@ -14,8 +14,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "TANH_WITH_RTSAN": true
+        "CMAKE_CXX_COMPILER": "clang++"
       }
     },
     {

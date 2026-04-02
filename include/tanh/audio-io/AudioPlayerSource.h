@@ -289,7 +289,7 @@ private:
                            uint64_t initial_frame);
 
     audio_io::AudioFileLoader m_loader;
-    std::atomic<std::shared_ptr<audio_io::DataSource>> m_data_source;
+    std::shared_ptr<audio_io::DataSource> m_data_source;
 
     std::atomic<bool> m_loaded{false};
     std::atomic<bool> m_playing{false};
@@ -301,7 +301,7 @@ private:
     uint32_t m_channels = 0;
     uint32_t m_sample_rate = 0;
 
-    std::atomic<std::shared_ptr<FinishedCallback>> m_finished_callback;
+    std::shared_ptr<FinishedCallback> m_finished_callback;
 
     // Fade state — written by control thread, consumed by audio thread
     std::atomic<uint32_t> m_fade_in_remaining{0};
