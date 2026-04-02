@@ -63,6 +63,11 @@
             "args": [
                 "${workspaceFolder}/build-ios-device/examples/ios/audio-io/Debug-iphoneos/audio_io.app"
             ],
+            "options": {
+                "env": {
+                    "IOS_DEVICE_UDID": "27E7756C-9D5A-528A-9E10-EAB0394B90FF"
+                }
+            },
             "problemMatcher": []
         },
         {
