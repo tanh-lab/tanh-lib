@@ -37,7 +37,7 @@ int get_note_offset(int scale_note_index, ScaleMode mode) {
         // subtract one halfstep for each halfstep that was passed by this scale
         // note index
         for (int halfstep : halfsteps) {
-            if (scale_note_index < halfstep) break;
+            if (scale_note_index < halfstep) { break; }
             note_offset--;
         }
 

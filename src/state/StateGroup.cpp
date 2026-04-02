@@ -34,9 +34,7 @@ void StateGroup::clear() {
         {
             std::lock_guard<std::mutex> lock(m_rootState->m_storage_mutex);
             for (const auto& [key, record] : m_rootState->m_storage) {
-                if (key.find(fullPath) == 0) {
-                    keys_to_delete.push_back(key);
-                }
+                if (key.find(fullPath) == 0) { keys_to_delete.push_back(key); }
             }
         }
 
@@ -49,9 +47,7 @@ void StateGroup::clear() {
         // Now safe to destroy the records from storage
         {
             std::lock_guard<std::mutex> lock(m_rootState->m_storage_mutex);
-            for (const auto& key : keys_to_delete) {
-                m_rootState->m_storage.erase(key);
-            }
+            for (const auto& key : keys_to_delete) { m_rootState->m_storage.erase(key); }
         }
     }
     clear_groups();
@@ -113,7 +109,7 @@ void StateGroup::remove_callback_listener(size_t listener_id) {
 void StateGroup::notify_parameter_change(std::string_view path) {
     // Resolve the path to get the parameter
     auto [group, param_name] = resolve_path(path);
-    if (!group || !group->m_rootState) return;
+    if (!group || !group->m_rootState) { return; }
 
     // Ensure thread is registered for RCU and buffers
     m_rootState->ensure_thread_registered();
@@ -158,9 +154,7 @@ void StateGroup::notify_listeners(std::string_view path,
                 continue;
             }
             // Skip listeners that don't want notifications during gestures
-            if (in_gesture && !listener->m_receives_during_gesture) {
-                continue;
-            }
+            if (in_gesture && !listener->m_receives_during_gesture) { continue; }
             listener->on_parameter_changed(path, param);
         }
 
@@ -457,8 +451,7 @@ void StateGroup::set(std::string_view path,
         if (!create) {
             bool parameter_exists = false;
             m_rootState->m_index_rcu.read([&](const auto& idx) {
-                parameter_exists =
-                    idx.find(m_rootState->m_temp_buffer_2) != idx.end();
+                parameter_exists = idx.find(m_rootState->m_temp_buffer_2) != idx.end();
             });
 
             if (!parameter_exists) {

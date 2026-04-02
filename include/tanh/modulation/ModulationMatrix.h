@@ -39,8 +39,7 @@ using ScheduleStep = std::variant<BulkStep, CyclicStep>;
 struct ProcessingConfig {
     std::vector<ResolvedRouting> routings;
     std::vector<ScheduleStep> schedule;
-    std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>>
-        routings_by_source;
+    std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>> routings_by_source;
     std::vector<ResolvedTarget*> active_targets;
 };
 
@@ -75,8 +74,7 @@ public:
 
     // Routing management
     void add_routing(const ModulationRouting& routing);
-    void remove_routing(const std::string_view source_id,
-                        const std::string_view target_id);
+    void remove_routing(const std::string_view source_id, const std::string_view target_id);
 
     // Access the resolved target for reading modulation data.
     const ResolvedTarget* get_target(const std::string_view id) const;
@@ -98,13 +96,13 @@ private:
 
     // Process helpers — called from within RCU read section.
     void process_source_bulk(const ProcessingConfig& config,
-                             ModulationSource* source, size_t num_samples);
+                             ModulationSource* source,
+                             size_t num_samples);
     void process_cyclic(const ProcessingConfig& config,
                         const std::vector<ModulationSource*>& sources,
                         size_t num_samples);
 
-    void apply_routing_change_points(const ResolvedRouting& routing,
-                                     size_t num_samples);
+    void apply_routing_change_points(const ResolvedRouting& routing, size_t num_samples);
 
     // Tarjan SCC helper
     void build_schedule_from_graph(

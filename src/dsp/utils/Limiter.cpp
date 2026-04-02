@@ -15,8 +15,7 @@ void LimiterImpl::prepare(const double& sample_rate,
     m_gain = 1.0f;
 }
 
-void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer,
-                          uint32_t modulation_offset) {
+void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset) {
     constexpr size_t kMaxChannels = 16;
     const size_t num_samples = buffer.get_num_frames();
     const size_t num_channels = std::min(buffer.get_num_channels(), kMaxChannels);

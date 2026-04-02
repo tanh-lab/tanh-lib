@@ -16,8 +16,8 @@ struct DataSource::Impl {
     uint32_t sampleRate = 0;
 
     ma_data_source* get_data_source() {
-        if (decoderInitialised) return &decoder;
-        if (dataSourceInitialised) return &dataSource;
+        if (decoderInitialised) { return &decoder; }
+        if (dataSourceInitialised) { return &dataSource; }
         return nullptr;
     }
 

@@ -196,7 +196,7 @@ public:
 
 private:
     void malloc_channels() {
-        if (m_num_channels == 0) return;
+        if (m_num_channels == 0) { return; }
         void* channels = std::malloc(m_num_channels * sizeof(T*));
         if (channels != nullptr) {
             m_channels = static_cast<T**>(channels);

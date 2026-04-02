@@ -36,7 +36,8 @@ void configureAndroidBluetoothSession() {
         g_scoEnabled.store(false, std::memory_order_relaxed);
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
                           "thl.audio_io.android_devices",
-                          "configureAndroidBluetoothSession: JavaVM not set yet; deferring AudioManager configuration");
+                          "configureAndroidBluetoothSession: JavaVM not set yet; deferring "
+                          "AudioManager configuration");
         return;
     }
 
@@ -60,13 +61,13 @@ bool isAndroidBluetoothScoEnabled() {
 // See android.media.AudioDeviceInfo.TYPE_* constants.
 static const char* androidDeviceTypeName(int type) {
     switch (type) {
-        case 1:  return "Earpiece";
-        case 2:  return "Speaker";
-        case 3:  return "Wired Headset";
-        case 4:  return "Wired Headphones";
-        case 7:  return "Bluetooth SCO";
-        case 8:  return "Bluetooth A2DP";
-        case 9:  return "HDMI";
+        case 1: return "Earpiece";
+        case 2: return "Speaker";
+        case 3: return "Wired Headset";
+        case 4: return "Wired Headphones";
+        case 7: return "Bluetooth SCO";
+        case 8: return "Bluetooth A2DP";
+        case 9: return "HDMI";
         case 11: return "USB Device";
         case 13: return "Telephony";
         case 15: return "Line In";
@@ -92,34 +93,32 @@ static bool isSupportedOutputType(int type) {
             return true;
         case 8:  // Bluetooth A2DP — hide when SCO/HFP is active
             return !g_scoEnabled.load(std::memory_order_relaxed);
-        case 9:  // HDMI
-        case 11: // USB Device
-        case 17: // Line Out
-        case 22: // USB Headset
-        case 24: // Hearing Aid
-        case 26: // BLE Headset
-        case 27: // BLE Speaker
+        case 9:   // HDMI
+        case 11:  // USB Device
+        case 17:  // Line Out
+        case 22:  // USB Headset
+        case 24:  // Hearing Aid
+        case 26:  // BLE Headset
+        case 27:  // BLE Speaker
             return true;
         case 7:  // Bluetooth SCO — only when SCO link is active
             return g_scoEnabled.load(std::memory_order_relaxed);
-        default:
-            return false;
+        default: return false;
     }
 }
 
 static bool isSupportedInputType(int type) {
     switch (type) {
-        case 3:  // Wired Headset (has mic)
-        case 11: // USB Device
-        case 15: // Line In
-        case 19: // Microphone Array
-        case 22: // USB Headset
-        case 25: // Built-in Mic (TYPE_BUILTIN_MIC)
+        case 3:   // Wired Headset (has mic)
+        case 11:  // USB Device
+        case 15:  // Line In
+        case 19:  // Microphone Array
+        case 22:  // USB Headset
+        case 25:  // Built-in Mic (TYPE_BUILTIN_MIC)
             return true;
         case 7:  // Bluetooth SCO — only when SCO link is active
             return g_scoEnabled.load(std::memory_order_relaxed);
-        default:
-            return false;
+        default: return false;
     }
 }
 
@@ -142,9 +141,7 @@ struct ScopedJNIEnv {
     }
 
     ~ScopedJNIEnv() {
-        if (needsDetach && g_javaVM) {
-            g_javaVM->DetachCurrentThread();
-        }
+        if (needsDetach && g_javaVM) { g_javaVM->DetachCurrentThread(); }
     }
 
     explicit operator bool() const { return env != nullptr; }
@@ -154,38 +151,49 @@ struct ScopedJNIEnv {
 // returned object and all intermediate refs.
 static jobject getAudioManager(JNIEnv* env) {
     jclass activityThreadClass = env->FindClass("android/app/ActivityThread");
-    if (!activityThreadClass || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!activityThreadClass || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
 
-    jmethodID currentAppMethod = env->GetStaticMethodID(
-        activityThreadClass, "currentApplication", "()Landroid/app/Application;");
+    jmethodID currentAppMethod = env->GetStaticMethodID(activityThreadClass,
+                                                        "currentApplication",
+                                                        "()Landroid/app/Application;");
     jobject appContext = env->CallStaticObjectMethod(activityThreadClass, currentAppMethod);
-    if (!appContext || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!appContext || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
 
     jclass contextClass = env->FindClass("android/content/Context");
-    jfieldID audioServiceField = env->GetStaticFieldID(
-        contextClass, "AUDIO_SERVICE", "Ljava/lang/String;");
+    jfieldID audioServiceField =
+        env->GetStaticFieldID(contextClass, "AUDIO_SERVICE", "Ljava/lang/String;");
     jobject audioServiceStr = env->GetStaticObjectField(contextClass, audioServiceField);
 
-    jmethodID getSystemService = env->GetMethodID(
-        contextClass, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
+    jmethodID getSystemService = env->GetMethodID(contextClass,
+                                                  "getSystemService",
+                                                  "(Ljava/lang/String;)Ljava/lang/Object;");
     jobject audioManager = env->CallObjectMethod(appContext, getSystemService, audioServiceStr);
 
     env->DeleteLocalRef(audioServiceStr);
     env->DeleteLocalRef(appContext);
 
-    if (env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
     return audioManager;
 }
 
 bool setAndroidBluetoothSco(bool enable) {
-    if (!g_javaVM) return false;
+    if (!g_javaVM) { return false; }
 
     ScopedJNIEnv jni(g_javaVM);
-    if (!jni) return false;
+    if (!jni) { return false; }
     JNIEnv* env = jni.env;
 
     jobject audioManager = getAudioManager(env);
-    if (!audioManager) return false;
+    if (!audioManager) { return false; }
 
     jclass audioManagerClass = env->FindClass("android/media/AudioManager");
     jmethodID setMode = env->GetMethodID(audioManagerClass, "setMode", "(I)V");
@@ -201,20 +209,20 @@ bool setAndroidBluetoothSco(bool enable) {
 
             // Find the SCO device among available communication devices.
             // setCommunicationDevice() is synchronous — no polling needed.
-            jmethodID getAvailableDevices = env->GetMethodID(
-                audioManagerClass, "getAvailableCommunicationDevices",
-                "()Ljava/util/List;");
+            jmethodID getAvailableDevices = env->GetMethodID(audioManagerClass,
+                                                             "getAvailableCommunicationDevices",
+                                                             "()Ljava/util/List;");
             jobject deviceList = env->CallObjectMethod(audioManager, getAvailableDevices);
             if (deviceList && !env->ExceptionCheck()) {
                 jclass listClass = env->FindClass("java/util/List");
                 jmethodID sizeMethod = env->GetMethodID(listClass, "size", "()I");
-                jmethodID getMethod  = env->GetMethodID(listClass, "get",
-                                                         "(I)Ljava/lang/Object;");
+                jmethodID getMethod = env->GetMethodID(listClass, "get", "(I)Ljava/lang/Object;");
                 jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
                 jmethodID getTypeMethod = env->GetMethodID(deviceInfoClass, "getType", "()I");
-                jmethodID setCommunicationDevice = env->GetMethodID(
-                    audioManagerClass, "setCommunicationDevice",
-                    "(Landroid/media/AudioDeviceInfo;)Z");
+                jmethodID setCommunicationDevice =
+                    env->GetMethodID(audioManagerClass,
+                                     "setCommunicationDevice",
+                                     "(Landroid/media/AudioDeviceInfo;)Z");
 
                 int listSize = env->CallIntMethod(deviceList, sizeMethod);
                 for (int i = 0; i < listSize; ++i) {
@@ -222,8 +230,8 @@ bool setAndroidBluetoothSco(bool enable) {
                     int type = env->CallIntMethod(device, getTypeMethod);
                     // TYPE_BLUETOOTH_SCO = 7
                     if (type == 7) {
-                        jboolean accepted = env->CallBooleanMethod(
-                            audioManager, setCommunicationDevice, device);
+                        jboolean accepted =
+                            env->CallBooleanMethod(audioManager, setCommunicationDevice, device);
                         success = static_cast<bool>(accepted);
                         if (!success) {
                             thl::Logger::logf(thl::Logger::LogLevel::Warning,
@@ -244,8 +252,8 @@ bool setAndroidBluetoothSco(bool enable) {
             }
         } else {
             // clearCommunicationDevice() restores default routing.
-            jmethodID clearDevice = env->GetMethodID(
-                audioManagerClass, "clearCommunicationDevice", "()V");
+            jmethodID clearDevice =
+                env->GetMethodID(audioManagerClass, "clearCommunicationDevice", "()V");
             env->CallVoidMethod(audioManager, clearDevice);
 
             // MODE_NORMAL (0) — restore default audio routing.
@@ -257,8 +265,7 @@ bool setAndroidBluetoothSco(bool enable) {
         if (enable) {
             env->CallVoidMethod(audioManager, setMode, static_cast<jint>(3));
 
-            jmethodID startSco = env->GetMethodID(
-                audioManagerClass, "startBluetoothSco", "()V");
+            jmethodID startSco = env->GetMethodID(audioManagerClass, "startBluetoothSco", "()V");
             env->CallVoidMethod(audioManager, startSco);
             // startBluetoothSco() is asynchronous — the SCO link transitions
             // DISCONNECTED → CONNECTING → CONNECTED in the background.
@@ -266,8 +273,7 @@ bool setAndroidBluetoothSco(bool enable) {
             // (API 31+) prevents this enable path from being reached anyway.
             success = !env->ExceptionCheck();
         } else {
-            jmethodID stopSco = env->GetMethodID(
-                audioManagerClass, "stopBluetoothSco", "()V");
+            jmethodID stopSco = env->GetMethodID(audioManagerClass, "stopBluetoothSco", "()V");
             env->CallVoidMethod(audioManager, stopSco);
 
             // MODE_NORMAL (0) — restore default audio routing.
@@ -291,7 +297,8 @@ bool setAndroidBluetoothSco(bool enable) {
         g_scoEnabled.store(enable, std::memory_order_relaxed);
         thl::Logger::logf(thl::Logger::LogLevel::Info,
                           "thl.audio_io.android_devices",
-                          "Bluetooth SCO %s", enable ? "started" : "stopped");
+                          "Bluetooth SCO %s",
+                          enable ? "started" : "stopped");
     }
     return success;
 }
@@ -307,21 +314,21 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
     }
 
     ScopedJNIEnv jni(g_javaVM);
-    if (!jni) return result;
+    if (!jni) { return result; }
     JNIEnv* env = jni.env;
 
     jobject audioManager = getAudioManager(env);
-    if (!audioManager) return result;
+    if (!audioManager) { return result; }
 
     // --- Call AudioManager.getDevices(flags) ---
     // GET_DEVICES_OUTPUTS = 2, GET_DEVICES_INPUTS = 1
     jclass audioManagerClass = env->FindClass("android/media/AudioManager");
-    jmethodID getDevicesMethod = env->GetMethodID(
-        audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
+    jmethodID getDevicesMethod =
+        env->GetMethodID(audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
 
     int flags = (type == DeviceType::Playback) ? 2 : 1;
-    auto devices = static_cast<jobjectArray>(
-        env->CallObjectMethod(audioManager, getDevicesMethod, flags));
+    auto devices =
+        static_cast<jobjectArray>(env->CallObjectMethod(audioManager, getDevicesMethod, flags));
     if (!devices || env->ExceptionCheck()) {
         env->ExceptionClear();
         return result;
@@ -331,11 +338,11 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
 
     // --- Cache AudioDeviceInfo method IDs ---
     jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
-    jmethodID getIdMethod        = env->GetMethodID(deviceInfoClass, "getId", "()I");
-    jmethodID getProductName     = env->GetMethodID(deviceInfoClass, "getProductName",
-                                                     "()Ljava/lang/CharSequence;");
-    jmethodID getTypeMethod      = env->GetMethodID(deviceInfoClass, "getType", "()I");
-    jmethodID getSampleRates     = env->GetMethodID(deviceInfoClass, "getSampleRates", "()[I");
+    jmethodID getIdMethod = env->GetMethodID(deviceInfoClass, "getId", "()I");
+    jmethodID getProductName =
+        env->GetMethodID(deviceInfoClass, "getProductName", "()Ljava/lang/CharSequence;");
+    jmethodID getTypeMethod = env->GetMethodID(deviceInfoClass, "getType", "()I");
+    jmethodID getSampleRates = env->GetMethodID(deviceInfoClass, "getSampleRates", "()[I");
 
     jclass charSeqClass = env->FindClass("java/lang/CharSequence");
     jmethodID toStringMethod = env->GetMethodID(charSeqClass, "toString", "()Ljava/lang/String;");
@@ -343,13 +350,12 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
     for (jsize i = 0; i < count; i++) {
         jobject deviceObj = env->GetObjectArrayElement(devices, i);
 
-        int id         = env->CallIntMethod(deviceObj, getIdMethod);
+        int id = env->CallIntMethod(deviceObj, getIdMethod);
         int deviceType = env->CallIntMethod(deviceObj, getTypeMethod);
 
         // Skip device types that can't be opened with AAudio usage_media.
-        bool supported = (type == DeviceType::Playback)
-                             ? isSupportedOutputType(deviceType)
-                             : isSupportedInputType(deviceType);
+        bool supported = (type == DeviceType::Playback) ? isSupportedOutputType(deviceType)
+                                                        : isSupportedInputType(deviceType);
         if (!supported) {
             env->DeleteLocalRef(deviceObj);
             continue;
@@ -359,8 +365,8 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
         std::string productName;
         jobject productNameCS = env->CallObjectMethod(deviceObj, getProductName);
         if (productNameCS) {
-            auto nameStr = static_cast<jstring>(
-                env->CallObjectMethod(productNameCS, toStringMethod));
+            auto nameStr =
+                static_cast<jstring>(env->CallObjectMethod(productNameCS, toStringMethod));
             if (nameStr) {
                 const char* chars = env->GetStringUTFChars(nameStr, nullptr);
                 if (chars) {
@@ -379,8 +385,7 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
 
         // --- Get supported sample rates ---
         std::vector<uint32_t> sampleRates;
-        auto ratesArray = static_cast<jintArray>(
-            env->CallObjectMethod(deviceObj, getSampleRates));
+        auto ratesArray = static_cast<jintArray>(env->CallObjectMethod(deviceObj, getSampleRates));
         if (ratesArray) {
             jsize rateCount = env->GetArrayLength(ratesArray);
             if (rateCount > 0) {
@@ -393,15 +398,13 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
             env->DeleteLocalRef(ratesArray);
         }
         // Empty array → device supports all common rates.
-        if (sampleRates.empty()) {
-            sampleRates = kDefaultSampleRates;
-        }
+        if (sampleRates.empty()) { sampleRates = kDefaultSampleRates; }
         std::sort(sampleRates.begin(), sampleRates.end());
 
         // --- Populate AudioDeviceInfo ---
         AudioDeviceInfo info;
-        info.name        = displayName;
-        info.deviceType  = type;
+        info.name = displayName;
+        info.deviceType = type;
         info.sampleRates = std::move(sampleRates);
 
         // Store the Android device ID so miniaudio's AAudio backend can open
@@ -427,8 +430,9 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
         std::vector<AudioDeviceInfo> unique;
         unique.reserve(result.size());
         for (auto& dev : result) {
-            if (std::none_of(unique.begin(), unique.end(),
-                             [&](const AudioDeviceInfo& u) { return u.name == dev.name; })) {
+            if (std::none_of(unique.begin(), unique.end(), [&](const AudioDeviceInfo& u) {
+                    return u.name == dev.name;
+                })) {
                 unique.push_back(std::move(dev));
             }
         }
@@ -449,21 +453,21 @@ std::vector<AudioDeviceInfo> enumerateAndroidAudioDevices(DeviceType type) {
 // ---------------------------------------------------------------------------
 
 static std::string getAndroidActiveDeviceName(int flags, int32_t targetDeviceId) {
-    if (!g_javaVM) return {};
+    if (!g_javaVM) { return {}; }
 
     ScopedJNIEnv jni(g_javaVM);
-    if (!jni) return {};
+    if (!jni) { return {}; }
     JNIEnv* env = jni.env;
 
     jobject audioManager = getAudioManager(env);
-    if (!audioManager) return {};
+    if (!audioManager) { return {}; }
 
     jclass audioManagerClass = env->FindClass("android/media/AudioManager");
-    jmethodID getDevicesMethod = env->GetMethodID(
-        audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
+    jmethodID getDevicesMethod =
+        env->GetMethodID(audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
 
-    auto devices = static_cast<jobjectArray>(
-        env->CallObjectMethod(audioManager, getDevicesMethod, flags));
+    auto devices =
+        static_cast<jobjectArray>(env->CallObjectMethod(audioManager, getDevicesMethod, flags));
     if (!devices || env->ExceptionCheck()) {
         env->ExceptionClear();
         env->DeleteLocalRef(audioManager);
@@ -473,13 +477,12 @@ static std::string getAndroidActiveDeviceName(int flags, int32_t targetDeviceId)
     jsize count = env->GetArrayLength(devices);
 
     jclass deviceInfoClass = env->FindClass("android/media/AudioDeviceInfo");
-    jmethodID getIdMethod    = env->GetMethodID(deviceInfoClass, "getId", "()I");
-    jmethodID getTypeMethod  = env->GetMethodID(deviceInfoClass, "getType", "()I");
-    jmethodID getProductName = env->GetMethodID(deviceInfoClass, "getProductName",
-                                                 "()Ljava/lang/CharSequence;");
+    jmethodID getIdMethod = env->GetMethodID(deviceInfoClass, "getId", "()I");
+    jmethodID getTypeMethod = env->GetMethodID(deviceInfoClass, "getType", "()I");
+    jmethodID getProductName =
+        env->GetMethodID(deviceInfoClass, "getProductName", "()Ljava/lang/CharSequence;");
     jclass charSeqClass = env->FindClass("java/lang/CharSequence");
-    jmethodID toStringMethod = env->GetMethodID(charSeqClass, "toString",
-                                                 "()Ljava/lang/String;");
+    jmethodID toStringMethod = env->GetMethodID(charSeqClass, "toString", "()Ljava/lang/String;");
 
     bool isOutput = (flags == 2);
     std::string result;
@@ -489,8 +492,8 @@ static std::string getAndroidActiveDeviceName(int flags, int32_t targetDeviceId)
         jobject deviceObj = env->GetObjectArrayElement(devices, i);
         int deviceType = env->CallIntMethod(deviceObj, getTypeMethod);
 
-        bool supported = isOutput ? isSupportedOutputType(deviceType)
-                                  : isSupportedInputType(deviceType);
+        bool supported =
+            isOutput ? isSupportedOutputType(deviceType) : isSupportedInputType(deviceType);
         if (!supported) {
             env->DeleteLocalRef(deviceObj);
             continue;
@@ -500,15 +503,13 @@ static std::string getAndroidActiveDeviceName(int flags, int32_t targetDeviceId)
         std::string displayName = androidDeviceTypeName(deviceType);
         jobject productNameCS = env->CallObjectMethod(deviceObj, getProductName);
         if (productNameCS) {
-            auto nameStr = static_cast<jstring>(
-                env->CallObjectMethod(productNameCS, toStringMethod));
+            auto nameStr =
+                static_cast<jstring>(env->CallObjectMethod(productNameCS, toStringMethod));
             if (nameStr) {
                 const char* chars = env->GetStringUTFChars(nameStr, nullptr);
                 if (chars && chars[0] != '\0') {
                     std::string productName = chars;
-                    if (productName != displayName) {
-                        displayName += " (" + productName + ")";
-                    }
+                    if (productName != displayName) { displayName += " (" + productName + ")"; }
                     env->ReleaseStringUTFChars(nameStr, chars);
                 }
                 env->DeleteLocalRef(nameStr);
@@ -517,9 +518,7 @@ static std::string getAndroidActiveDeviceName(int flags, int32_t targetDeviceId)
         }
 
         // Remember the first supported device as fallback
-        if (firstSupported.empty()) {
-            firstSupported = displayName;
-        }
+        if (firstSupported.empty()) { firstSupported = displayName; }
 
         // If a specific device ID was requested, match by ID
         if (targetDeviceId > 0) {
@@ -541,9 +540,7 @@ static std::string getAndroidActiveDeviceName(int flags, int32_t targetDeviceId)
 
     // If we had a specific ID but didn't find it (device disconnected),
     // fall back to the first supported device.
-    if (result.empty() && !firstSupported.empty()) {
-        result = std::move(firstSupported);
-    }
+    if (result.empty() && !firstSupported.empty()) { result = std::move(firstSupported); }
 
     env->DeleteLocalRef(devices);
     env->DeleteLocalRef(audioManager);
@@ -559,22 +556,22 @@ std::string getAndroidActiveInputDeviceName(int32_t aaudioDeviceId) {
 }
 
 bool isAndroidClassicBluetoothConnected() {
-    if (!g_javaVM) return false;
+    if (!g_javaVM) { return false; }
 
     ScopedJNIEnv jni(g_javaVM);
-    if (!jni) return false;
+    if (!jni) { return false; }
     JNIEnv* env = jni.env;
 
     jobject audioManager = getAudioManager(env);
-    if (!audioManager) return false;
+    if (!audioManager) { return false; }
 
     jclass audioManagerClass = env->FindClass("android/media/AudioManager");
-    jmethodID getDevicesMethod = env->GetMethodID(
-        audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
+    jmethodID getDevicesMethod =
+        env->GetMethodID(audioManagerClass, "getDevices", "(I)[Landroid/media/AudioDeviceInfo;");
 
     // GET_DEVICES_ALL = 3 (outputs | inputs)
-    auto devices = static_cast<jobjectArray>(
-        env->CallObjectMethod(audioManager, getDevicesMethod, 3));
+    auto devices =
+        static_cast<jobjectArray>(env->CallObjectMethod(audioManager, getDevicesMethod, 3));
     if (!devices || env->ExceptionCheck()) {
         env->ExceptionClear();
         env->DeleteLocalRef(audioManager);

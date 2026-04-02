@@ -24,9 +24,9 @@ public:
     float process();
 
 private:
-    float m_s1        = 0.0f;
-    float m_s2        = 0.0f;
-    float m_w         = 0.0f;
+    float m_s1 = 0.0f;
+    float m_s2 = 0.0f;
+    float m_w = 0.0f;
     float m_amplitude = 1.0f;
 };
 

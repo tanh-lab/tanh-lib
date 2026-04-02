@@ -24,8 +24,8 @@ struct RingsResonatorSynthProcessor::EngineState {
     uint16_t m_reverb_buffer[thl::dsp::fx::RingsReverb::kReverbBufferSize] = {};
 
     thl::dsp::resonator::RingsPatch m_patch{0.5f, 0.5f, 0.5f, 0.5f};
-    thl::dsp::resonator::RingsPerformanceState m_performance_state{
-        false, false, false, false, 12.0f, 48.0f, 0.0f, 0};
+    thl::dsp::resonator::RingsPerformanceState
+        m_performance_state{false, false, false, false, 12.0f, 48.0f, 0.0f, 0};
 
     float m_frequency = 440.0f;
     float m_odd_even_mix = 0.5f;
@@ -98,11 +98,9 @@ struct RingsResonatorSynthProcessor::EngineState {
         m_strummer.process(in_view, &m_performance_state);
 
         if (m_model == resonator::RESONATOR_MODEL_STRING_AND_REVERB) {
-            m_string_synth.process(
-                m_performance_state, m_patch, in_view, out_view, aux_view);
+            m_string_synth.process(m_performance_state, m_patch, in_view, out_view, aux_view);
         } else {
-            m_part.process(
-                m_performance_state, m_patch, in_view, out_view, aux_view);
+            m_part.process(m_performance_state, m_patch, in_view, out_view, aux_view);
         }
 
         for (size_t i = 0; i < kBlockSize; ++i) {
@@ -127,9 +125,8 @@ void RingsResonatorSynthProcessor::prepare(double sampleRate, int maxBlockSize) 
     m_engine->prepare(sampleRate, maxBlockSize);
 }
 
-void RingsResonatorSynthProcessor::process(
-    thl::dsp::audio::ConstAudioBufferView input,
-    thl::dsp::audio::AudioBufferView output) {
+void RingsResonatorSynthProcessor::process(thl::dsp::audio::ConstAudioBufferView input,
+                                           thl::dsp::audio::AudioBufferView output) {
     const float* input_ptr = input.get_read_pointer(0);
     float* output_ptr = output.get_write_pointer(0);
     int numSamples = static_cast<int>(input.get_num_frames());
@@ -184,9 +181,7 @@ void RingsResonatorSynthProcessor::process(
         float blockOdd[kBlockSize];
         float blockEven[kBlockSize];
 
-        for (size_t j = 0; j < kBlockSize; ++j) {
-            blockInput[j] = e.m_input_fifo.pop_sample(0);
-        }
+        for (size_t j = 0; j < kBlockSize; ++j) { blockInput[j] = e.m_input_fifo.pop_sample(0); }
 
         e.render_block(blockInput, blockOdd, blockEven);
 
@@ -201,8 +196,12 @@ void RingsResonatorSynthProcessor::process(
 
     for (int i = 0; i < numSamples; ++i) {
         float odd = 0.0f, even = 0.0f;
-        if (e.m_output_fifo_odd.get_available_samples(0) > 0) odd = e.m_output_fifo_odd.pop_sample(0);
-        if (e.m_output_fifo_even.get_available_samples(0) > 0) even = e.m_output_fifo_even.pop_sample(0);
+        if (e.m_output_fifo_odd.get_available_samples(0) > 0) {
+            odd = e.m_output_fifo_odd.pop_sample(0);
+        }
+        if (e.m_output_fifo_even.get_available_samples(0) > 0) {
+            even = e.m_output_fifo_even.pop_sample(0);
+        }
         output_ptr[i] = odd * oddGain + even * evenGain;
     }
 

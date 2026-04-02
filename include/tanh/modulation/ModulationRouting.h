@@ -20,7 +20,10 @@ struct ModulationRouting {
 
     ModulationRouting() = default;
 
-    ModulationRouting(std::string_view view_source_id, std::string_view view_target_id, float new_depth = 1.0f, uint32_t new_max_decimation = 0) {
+    ModulationRouting(std::string_view view_source_id,
+                      std::string_view view_target_id,
+                      float new_depth = 1.0f,
+                      uint32_t new_max_decimation = 0) {
         source_id = std::string(view_source_id);
         target_id = std::string(view_target_id);
         depth = new_depth;

@@ -32,8 +32,8 @@ inline void join_path(std::string_view parent, std::string_view child, std::stri
 }
 
 constexpr size_t join_path_size(std::string_view parent, std::string_view child) {
-    if (parent.empty()) return child.size();
-    if (child.empty()) return parent.size();
+    if (parent.empty()) { return child.size(); }
+    if (child.empty()) { return parent.size(); }
     return parent.size() + 1 + child.size();  // +1 for dot
 }
 

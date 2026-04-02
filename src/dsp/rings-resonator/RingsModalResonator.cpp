@@ -75,9 +75,7 @@ int32_t RingsModalResonator::compute_filters() {
         } else {
             num_modes = i + 1;
         }
-        m_f[i].set_f_q<Approximation::Fast>(
-            partial_frequency,
-            1.0f + partial_frequency * q);
+        m_f[i].set_f_q<Approximation::Fast>(partial_frequency, 1.0f + partial_frequency * q);
         stretch_factor += stiffness;
         if (stiffness < 0.0f) {
             // Make sure that the partials do not fold back into negative

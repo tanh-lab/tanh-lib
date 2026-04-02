@@ -28,19 +28,13 @@ public:
 
     float last_output() const { return m_last_output; }
 
-    const std::vector<uint32_t>& get_change_points() const {
-        return m_change_points;
-    }
+    const std::vector<uint32_t>& get_change_points() const { return m_change_points; }
 
     void clear_change_points() { m_change_points.clear(); }
 
-    const std::vector<float>& get_output_buffer() const {
-        return m_output_buffer;
-    }
+    const std::vector<float>& get_output_buffer() const { return m_output_buffer; }
 
-    float get_output_at(uint32_t index) const {
-        return m_output_buffer[index];
-    }
+    float get_output_at(uint32_t index) const { return m_output_buffer[index]; }
 
 protected:
     void resize_buffers(size_t num_samples) {
@@ -49,9 +43,7 @@ protected:
         m_change_points.reserve(num_samples);
     }
 
-    void record_change_point(uint32_t sample_index) {
-        m_change_points.push_back(sample_index);
-    }
+    void record_change_point(uint32_t sample_index) { m_change_points.push_back(sample_index); }
 
     std::vector<float> m_output_buffer;
     std::vector<uint32_t> m_change_points;

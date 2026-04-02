@@ -217,10 +217,10 @@ float chords[kMaxPolyphony][11][8] = {{{-12.0f, 0.0f, 0.01f, 0.02f, 0.03f, 11.98
 #endif  // BRYAN_CHORDS
 
 void RingsVoiceManager::compute_sympathetic_strings_notes(float tonic,
-                                             float note,
-                                             float parameter,
-                                             float* destination,
-                                             size_t num_strings) {
+                                                          float note,
+                                                          float parameter,
+                                                          float* destination,
+                                                          size_t num_strings) {
     float notes[9] = {tonic,
                       note - 12.0f,
                       note - 7.01955f,
@@ -264,12 +264,13 @@ void RingsVoiceManager::compute_sympathetic_strings_notes(float tonic,
     }
 }
 
-void RingsVoiceManager::render_modal_voice(int32_t voice,
-                              const thl::dsp::resonator::RingsPerformanceState& performance_state,
-                              const thl::dsp::resonator::RingsPatch& patch,
-                              float frequency,
-                              float filter_cutoff,
-                              size_t size) {
+void RingsVoiceManager::render_modal_voice(
+    int32_t voice,
+    const thl::dsp::resonator::RingsPerformanceState& performance_state,
+    const thl::dsp::resonator::RingsPatch& patch,
+    float frequency,
+    float filter_cutoff,
+    size_t size) {
     // Internal exciter is a pulse, pre-filter.
     if (performance_state.internal_exciter && voice == m_active_voice && performance_state.strum) {
         m_resonator_input[0] +=
@@ -279,7 +280,8 @@ void RingsVoiceManager::render_modal_voice(int32_t voice,
     // Process through filter.
     thl::dsp::audio::AudioBufferView res_in_view(m_resonator_input, size);
     m_excitation_filter[voice].process<thl::dsp::filter::FilterMode::LowPass>(
-        thl::dsp::audio::ConstAudioBufferView(m_resonator_input, size), res_in_view);
+        thl::dsp::audio::ConstAudioBufferView(m_resonator_input, size),
+        res_in_view);
 
     thl::dsp::resonator::RingsModalResonator& r = m_resonator[voice];
     r.set_frequency(frequency);
@@ -292,12 +294,13 @@ void RingsVoiceManager::render_modal_voice(int32_t voice,
     r.process(thl::dsp::audio::ConstAudioBufferView(m_resonator_input, size), out_view, aux_view);
 }
 
-void RingsVoiceManager::render_fm_voice(int32_t voice,
-                           const thl::dsp::resonator::RingsPerformanceState& performance_state,
-                           const thl::dsp::resonator::RingsPatch& patch,
-                           float frequency,
-                           float filter_cutoff,
-                           size_t size) {
+void RingsVoiceManager::render_fm_voice(
+    int32_t voice,
+    const thl::dsp::resonator::RingsPerformanceState& performance_state,
+    const thl::dsp::resonator::RingsPatch& patch,
+    float frequency,
+    float filter_cutoff,
+    size_t size) {
     RingsFmVoice& v = m_fm_voice[voice];
     if (performance_state.internal_exciter && voice == m_active_voice && performance_state.strum) {
         v.trigger_internal_envelope();
@@ -315,12 +318,13 @@ void RingsVoiceManager::render_fm_voice(int32_t voice,
     v.process(in_view, out_view, aux_view);
 }
 
-void RingsVoiceManager::render_string_voice(int32_t voice,
-                               const thl::dsp::resonator::RingsPerformanceState& performance_state,
-                               const thl::dsp::resonator::RingsPatch& patch,
-                               float frequency,
-                               float filter_cutoff,
-                               size_t size) {
+void RingsVoiceManager::render_string_voice(
+    int32_t voice,
+    const thl::dsp::resonator::RingsPerformanceState& performance_state,
+    const thl::dsp::resonator::RingsPatch& patch,
+    float frequency,
+    float filter_cutoff,
+    size_t size) {
     // Compute number of strings and frequency.
     int32_t num_strings = 1;
     float frequencies[kNumStrings];
@@ -352,7 +356,8 @@ void RingsVoiceManager::render_string_voice(int32_t voice,
     // Process external input.
     thl::dsp::audio::AudioBufferView res_in_view(m_resonator_input, size);
     m_excitation_filter[voice].process<thl::dsp::filter::FilterMode::LowPass>(
-        thl::dsp::audio::ConstAudioBufferView(m_resonator_input, size), res_in_view);
+        thl::dsp::audio::ConstAudioBufferView(m_resonator_input, size),
+        res_in_view);
 
     // Add noise burst.
     if (performance_state.internal_exciter) {
@@ -426,7 +431,9 @@ void RingsVoiceManager::render_string_voice(int32_t voice,
 
 const int32_t kPingPattern[] = {1, 0, 2, 1, 0, 2, 1, 0};
 
-void RingsVoiceManager::prepare_voice_params(const thl::dsp::resonator::RingsPerformanceState& performance_state, const thl::dsp::resonator::RingsPatch& patch) {
+void RingsVoiceManager::prepare_voice_params(
+    const thl::dsp::resonator::RingsPerformanceState& performance_state,
+    const thl::dsp::resonator::RingsPatch& patch) {
     float cutoff = patch.brightness * (2.0f - patch.brightness);
     float filter_q = performance_state.internal_exciter ? 1.5f : 0.8f;
 
@@ -446,10 +453,10 @@ void RingsVoiceManager::prepare_voice_params(const thl::dsp::resonator::RingsPer
 }
 
 void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
-                   const thl::dsp::resonator::RingsPatch& patch,
-                   thl::dsp::audio::ConstAudioBufferView in,
-                   thl::dsp::audio::AudioBufferView out,
-                   thl::dsp::audio::AudioBufferView aux) {
+                                const thl::dsp::resonator::RingsPatch& patch,
+                                thl::dsp::audio::ConstAudioBufferView in,
+                                thl::dsp::audio::AudioBufferView out,
+                                thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
@@ -489,9 +496,7 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
 
         // Process input with excitation filter. Inactive voices receive
         // silence.
-        m_excitation_filter[voice].set_f_q<thl::dsp::Approximation::Dirty>(
-            filter_cutoff,
-            filter_q);
+        m_excitation_filter[voice].set_f_q<thl::dsp::Approximation::Dirty>(filter_cutoff, filter_q);
         if (voice == m_active_voice) {
             copy(&in_ptr[0], &in_ptr[size], &m_resonator_input[0]);
         } else {

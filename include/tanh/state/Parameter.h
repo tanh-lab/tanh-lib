@@ -72,8 +72,8 @@ struct AtomicCacheEntry {
  */
 template <typename T>
 class ParameterHandle {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> ||
-                      std::is_same_v<T, int> || std::is_same_v<T, bool>,
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> ||
+                      std::is_same_v<T, bool>,
                   "ParameterHandle only supports numeric types (double, float, int, bool)");
 
 public:

@@ -93,8 +93,8 @@ bool AudioFileLoader::init_resource_manager_data_source(DataSource::Impl& impl,
         ma_uint32 ch = 0;
         ma_uint32 sr = 0;
         ma_data_source_get_data_format(&impl.dataSource, &format, &ch, &sr, nullptr, 0);
-        if (impl.channels == 0) impl.channels = ch;
-        if (impl.sampleRate == 0) impl.sampleRate = sr;
+        if (impl.channels == 0) { impl.channels = ch; }
+        if (impl.sampleRate == 0) { impl.sampleRate = sr; }
     }
 
     return true;
@@ -104,7 +104,7 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
     auto channels = static_cast<size_t>(impl.channels);
     auto sample_rate = static_cast<double>(impl.sampleRate);
 
-    if (channels == 0) return {};
+    if (channels == 0) { return {}; }
 
     ma_uint64 total_frames = 0;
     ma_data_source_get_length_in_pcm_frames(&impl.dataSource, &total_frames);
@@ -129,7 +129,7 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
         if (result != MA_SUCCESS || frames_read < READ_CHUNK_FRAMES) { break; }
     }
 
-    if (interleaved.empty()) return {};
+    if (interleaved.empty()) { return {}; }
 
     size_t num_frames = interleaved.size() / channels;
     return dsp::audio::from_interleaved(interleaved.data(), channels, num_frames, sample_rate);
@@ -138,7 +138,7 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
 dsp::audio::AudioBuffer AudioFileLoader::load_from_file(const std::string& file_path,
                                                         double target_sample_rate,
                                                         uint32_t target_channels) {
-    if (file_path.empty()) return {};
+    if (file_path.empty()) { return {}; }
 
     DataSource::Impl impl;
     uint32_t flags = MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE |

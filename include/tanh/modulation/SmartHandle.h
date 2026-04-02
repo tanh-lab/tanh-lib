@@ -46,8 +46,11 @@ public:
     bool is_valid() const TANH_NONBLOCKING_FUNCTION { return m_handle.is_valid(); }
 
     size_t get_buffer_size() TANH_NONBLOCKING_FUNCTION {
-        if (m_target) return m_target->modulation_buffer.size();
-        else return 0;
+        if (m_target) {
+            return m_target->modulation_buffer.size();
+        } else {
+            return 0;
+        }
     }
 
 private:
@@ -68,8 +71,8 @@ private:
 // std::sort and the linear dedup search are both allocation-free. The only
 // allocation risk is push_back exceeding capacity — the assert below catches
 // that at debug time.
-inline void collect_change_points(
-    std::span<const SmartHandle> handles, std::vector<uint32_t>& target_buffer) TANH_NONBLOCKING_FUNCTION {
+inline void collect_change_points(std::span<const SmartHandle> handles,
+                                  std::vector<uint32_t>& target_buffer) TANH_NONBLOCKING_FUNCTION {
     target_buffer.clear();
     for (auto& h : handles) {
         if (auto* cp = h.change_points()) {
@@ -99,27 +102,28 @@ inline std::vector<uint32_t> collect_change_points(
     uint32_t max_sample = 0;
     for (auto& list : target_change_point_lists) {
         for (uint32_t cp : list) {
-            if (cp > max_sample) max_sample = cp;
+            if (cp > max_sample) { max_sample = cp; }
         }
     }
     if (max_sample == 0) {
         bool any_non_empty = false;
         for (auto& list : target_change_point_lists) {
-            if (!list.empty()) { any_non_empty = true; break; }
+            if (!list.empty()) {
+                any_non_empty = true;
+                break;
+            }
         }
-        if (!any_non_empty) return {};
+        if (!any_non_empty) { return {}; }
     }
 
     std::vector<bool> flags(max_sample + 1, false);
     for (auto& list : target_change_point_lists) {
-        for (uint32_t cp : list) {
-            flags[cp] = true;
-        }
+        for (uint32_t cp : list) { flags[cp] = true; }
     }
 
     std::vector<uint32_t> result;
     for (uint32_t i = 0; i <= max_sample; ++i) {
-        if (flags[i]) result.push_back(i);
+        if (flags[i]) { result.push_back(i); }
     }
     return result;
 }

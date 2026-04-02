@@ -58,8 +58,7 @@ public:
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
-    void process(thl::dsp::audio::AudioBufferView buffer,
-                 uint32_t modulation_offset = 0) override;
+    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
 
     void reset_grains();
 
@@ -156,8 +155,7 @@ private:
     void read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample);
     size_t calculate_grain_size(float grain_size_param, float temperature);
     float calculate_velocity(float velocity, float temperature);
-    long calculate_start_position(const SampleRegion& region,
-                                  float temperature);
+    long calculate_start_position(const SampleRegion& region, float temperature);
     float apply_temperature_ramp(float temperature) const;
     SampleRegion compute_sample_region(size_t total_frames, uint32_t modulation_offset);
 
@@ -169,18 +167,15 @@ private:
 
 // Template specializations for get_parameter
 template <>
-inline float GrainProcessorImpl::get_parameter<float>(Parameter p,
-                                                       uint32_t modulation_offset) {
+inline float GrainProcessorImpl::get_parameter<float>(Parameter p, uint32_t modulation_offset) {
     return get_parameter_float(p, modulation_offset);
 }
 template <>
-inline bool GrainProcessorImpl::get_parameter<bool>(Parameter p,
-                                                     uint32_t modulation_offset) {
+inline bool GrainProcessorImpl::get_parameter<bool>(Parameter p, uint32_t modulation_offset) {
     return get_parameter_bool(p, modulation_offset);
 }
 template <>
-inline int GrainProcessorImpl::get_parameter<int>(Parameter p,
-                                                   uint32_t modulation_offset) {
+inline int GrainProcessorImpl::get_parameter<int>(Parameter p, uint32_t modulation_offset) {
     return get_parameter_int(p, modulation_offset);
 }
 

@@ -364,7 +364,7 @@ private:
      * Must be called while holding s_writer_mutex.
      */
     void cleanup_safe_versions() {
-        if (m_retired_list.empty()) return;
+        if (m_retired_list.empty()) { return; }
 
         // Get current grace period - we can never delete data from current or
         // previous period

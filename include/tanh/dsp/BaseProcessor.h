@@ -26,9 +26,7 @@ public:
                            std::span<const uint32_t> change_points) TANH_NONBLOCKING_FUNCTION;
 
 protected:
-    virtual std::span<const uint32_t> get_change_points() TANH_NONBLOCKING_FUNCTION {
-        return {};
-    }
+    virtual std::span<const uint32_t> get_change_points() TANH_NONBLOCKING_FUNCTION { return {}; }
 
 private:
     void split_and_process(thl::dsp::audio::AudioBufferView buffer,

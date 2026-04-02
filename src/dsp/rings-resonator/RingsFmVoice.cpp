@@ -124,8 +124,14 @@ void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
 
         brightness_envelope *= 2.0f * amplitude_envelope * (2.0f - amplitude_envelope);
 
-        thl::dsp::utils::slope<float>(m_amplitude_envelope, amplitude_envelope, 0.05f, m_amplitude_decay);
-        thl::dsp::utils::slope<float>(m_brightness_envelope, brightness_envelope, 0.01f, m_brightness_decay);
+        thl::dsp::utils::slope<float>(m_amplitude_envelope,
+                                      amplitude_envelope,
+                                      0.05f,
+                                      m_amplitude_decay);
+        thl::dsp::utils::slope<float>(m_brightness_envelope,
+                                      brightness_envelope,
+                                      0.01f,
+                                      m_brightness_decay);
 
         // Compute envelopes.
         float brightness_value = brightness.next();

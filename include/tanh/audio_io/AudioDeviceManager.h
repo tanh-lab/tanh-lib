@@ -45,8 +45,8 @@ enum class DeviceNotificationType {
  * @see AudioDeviceManager::setBluetoothProfile()
  */
 enum class BluetoothProfile {
-    A2DP,         ///< Advanced Audio Distribution Profile — output-only, high quality.
-    HFP           ///< Hands-Free Profile — bidirectional, low quality.
+    A2DP,  ///< Advanced Audio Distribution Profile — output-only, high quality.
+    HFP    ///< Hands-Free Profile — bidirectional, low quality.
 };
 
 /// Convert a BluetoothProfile enum value to its string representation.

@@ -14,7 +14,7 @@ void DynamicDelayLine::prepare(size_t max_delay) {
     m_buf.resize(1, max_delay);
     m_buf.clear();
     m_write_ptr = 0;
-    m_delay     = 1;
+    m_delay = 1;
 }
 
 void DynamicDelayLine::reset() {
@@ -52,16 +52,15 @@ float DynamicDelayLine::read(float delay) const {
 }
 
 float DynamicDelayLine::read_hermite(float delay) const {
-    const auto [i, f]  = split_integral_fractional(delay);
-    const int32_t t    = static_cast<int32_t>(m_write_ptr) + i
-                       + static_cast<int32_t>(m_max_delay);
+    const auto [i, f] = split_integral_fractional(delay);
+    const int32_t t = static_cast<int32_t>(m_write_ptr) + i + static_cast<int32_t>(m_max_delay);
     const float xm1 = m_buf.get_read_pointer(0)[static_cast<size_t>(t - 1) % m_max_delay];
-    const float x0  = m_buf.get_read_pointer(0)[static_cast<size_t>(t)     % m_max_delay];
-    const float x1  = m_buf.get_read_pointer(0)[static_cast<size_t>(t + 1) % m_max_delay];
-    const float x2  = m_buf.get_read_pointer(0)[static_cast<size_t>(t + 2) % m_max_delay];
-    const float c     = (x1 - xm1) * 0.5f;
-    const float v     = x0 - x1;
-    const float w     = c + v;
+    const float x0 = m_buf.get_read_pointer(0)[static_cast<size_t>(t) % m_max_delay];
+    const float x1 = m_buf.get_read_pointer(0)[static_cast<size_t>(t + 1) % m_max_delay];
+    const float x2 = m_buf.get_read_pointer(0)[static_cast<size_t>(t + 2) % m_max_delay];
+    const float c = (x1 - xm1) * 0.5f;
+    const float v = x0 - x1;
+    const float w = c + v;
     const float a_val = w + v + (x2 - x0) * 0.5f;
     const float b_neg = w + a_val;
     return (((a_val * f) - b_neg) * f + c) * f + x0;

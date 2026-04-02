@@ -7,7 +7,9 @@
 #include <vector>
 
 // Forward-declare so we don't pull in the full AudioDeviceManager header.
-namespace thl { enum class BluetoothProfile; }
+namespace thl {
+enum class BluetoothProfile;
+}
 
 namespace thl {
 
