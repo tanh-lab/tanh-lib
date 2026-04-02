@@ -81,14 +81,16 @@ bool StateGroup::is_empty() const TANH_NONBLOCKING_FUNCTION {
 void StateGroup::add_listener(ParameterListener* listener) {
     m_listeners_rcu.update([&](ListenerData& data) {
         // Check if listener already exists
-        auto it = std::find(data.m_object_listeners.begin(), data.m_object_listeners.end(), listener);
+        auto it =
+            std::find(data.m_object_listeners.begin(), data.m_object_listeners.end(), listener);
         if (it == data.m_object_listeners.end()) { data.m_object_listeners.push_back(listener); }
     });
 }
 
 void StateGroup::remove_listener(ParameterListener* listener) {
     m_listeners_rcu.update([&](ListenerData& data) {
-        auto it = std::find(data.m_object_listeners.begin(), data.m_object_listeners.end(), listener);
+        auto it =
+            std::find(data.m_object_listeners.begin(), data.m_object_listeners.end(), listener);
         if (it != data.m_object_listeners.end()) { data.m_object_listeners.erase(it); }
     });
 }
@@ -103,7 +105,8 @@ size_t StateGroup::add_callback_listener(ParameterChangeCallback callback) {
 }
 
 void StateGroup::remove_callback_listener(size_t listener_id) {
-    m_listeners_rcu.update([&](ListenerData& data) { data.m_callback_listeners.erase(listener_id); });
+    m_listeners_rcu.update(
+        [&](ListenerData& data) { data.m_callback_listeners.erase(listener_id); });
 }
 
 void StateGroup::notify_parameter_change(std::string_view path) {
@@ -460,9 +463,9 @@ void StateGroup::set(std::string_view path,
         }
 
         m_root_state->set_in_root(m_root_state->m_temp_buffer_2,
-                                 value,
-                                 strategy,
-                                 source);  // Pass the notify parameter
+                                  value,
+                                  strategy,
+                                  source);  // Pass the notify parameter
     } else {
         // Parameter in a child group
         group->set(param_name, value, strategy, source, create);

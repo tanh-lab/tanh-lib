@@ -34,11 +34,7 @@ namespace thl::dsp::utils {
 
 enum EnvelopeShape { Linear, Quartic };
 
-enum EnvelopeFlags {
-    RisingEdge = 1,
-    FallingEdge = 2,
-    Gate = 4
-};
+enum EnvelopeFlags { RisingEdge = 1, FallingEdge = 2, Gate = 4 };
 
 class StringSynthEnvelope {
 public:
@@ -69,8 +65,7 @@ public:
         }
 
         bool done = m_segment == m_num_segments;
-        bool sustained =
-            m_sustain_point && m_segment == m_sustain_point && flags & Gate;
+        bool sustained = m_sustain_point && m_segment == m_sustain_point && flags & Gate;
 
         float phase_increment = 0.0f;
         if (!sustained && !done) { phase_increment = m_rate[m_segment]; }

@@ -46,7 +46,7 @@ struct Grain {
     float m_position_spread;                 // Pan position [0, 1] for MonoToStereo spread
     bool m_active;                           // Whether the grain is currently active
     thl::dsp::utils::HannWindow m_envelope;  // Hann window envelope for amplitude
-                                           // modulation
+                                             // modulation
     size_t m_sample_index;                   // Index of the sample in the audio data
 };
 

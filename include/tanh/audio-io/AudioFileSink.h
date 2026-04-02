@@ -94,9 +94,9 @@ public:
      * @warning NOT real-time safe - performs file I/O and allocations.
      */
     bool open_file(const std::string& file_path,
-                  uint32_t channels,
-                  uint32_t sample_rate,
-                  AudioEncodingFormat format = AudioEncodingFormat::WAV);
+                   uint32_t channels,
+                   uint32_t sample_rate,
+                   AudioEncodingFormat format = AudioEncodingFormat::WAV);
 
     /**
      * @brief Closes the currently open file.

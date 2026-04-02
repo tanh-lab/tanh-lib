@@ -213,7 +213,9 @@ void ModulationMatrix::rebuild_schedule_locked() {
         config.m_active_targets = std::move(new_active_targets);
         // Rebuild per-source routing lookup — pointers into config.routings
         config.m_routings_by_source.clear();
-        for (const auto& r : config.m_routings) { config.m_routings_by_source[r.m_source].push_back(&r); }
+        for (const auto& r : config.m_routings) {
+            config.m_routings_by_source[r.m_source].push_back(&r);
+        }
     });
 }
 

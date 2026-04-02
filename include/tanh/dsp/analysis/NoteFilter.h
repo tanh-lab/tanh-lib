@@ -73,7 +73,8 @@ public:
             std::rotate(&m_previous_values[0], &m_previous_values[1], &m_previous_values[N]);
             m_previous_values[N - 1] = note;
             std::copy(&m_previous_values[0], &m_previous_values[N], &sorted_values[0]);
-            std::sort(&sorted_values[0], &sorted_values[N]); // NOLINT(clang-analyzer-security.ArrayBound)
+            std::sort(&sorted_values[0],
+                      &sorted_values[N]);  // NOLINT(clang-analyzer-security.ArrayBound)
             float median = 0.5f * (sorted_values[(N - 1) / 2] + sorted_values[N / 2]);
 
             // Adaptive lag processor.

@@ -186,7 +186,8 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
 
     // ── Half A ────────────────────────────────────────────────────────────
     float x_a = m_ap_a1.process(a_in, scaled(k_base_ap_a1) + lfo_a + brown_a, k_decay_dif_f1);
-    x_a = m_delay_a1.write_read(x_a, scaled(k_base_delay_a1) + m_brown_delay_a1.process() * delay_mod);
+    x_a = m_delay_a1.write_read(x_a,
+                                scaled(k_base_delay_a1) + m_brown_delay_a1.process() * delay_mod);
     if (!m_p_freeze) {
         utils::one_pole(m_damp_a, x_a, m_damping_coeff);
         x_a = m_damp_a;
@@ -195,9 +196,12 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     if (m_freq_shift > 0.0f) {
         x_a = (1.0f - m_freq_shift) * x_a + m_freq_shift * m_fshift_a.process(x_a);
     }
-    x_a = m_ap_a2.process(x_a, scaled(k_base_ap_a2) + m_brown_ap_a2.process() * ap_mod, k_decay_dif_f2);
+    x_a = m_ap_a2.process(x_a,
+                          scaled(k_base_ap_a2) + m_brown_ap_a2.process() * ap_mod,
+                          k_decay_dif_f2);
     float tank_a =
-        m_delay_a2.write_read(x_a, scaled(k_base_delay_a2) + m_brown_delay_a2.process() * delay_mod);
+        m_delay_a2.write_read(x_a,
+                              scaled(k_base_delay_a2) + m_brown_delay_a2.process() * delay_mod);
     if (m_p_shimmer > 0.0f) {
         m_pitch_a.set_cents_modulation(m_brown_shim_a.process() * m_p_shim_mod);
         tank_a = (1.0f - m_p_shimmer) * tank_a + m_p_shimmer * m_pitch_a.process(tank_a);
@@ -206,7 +210,8 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
 
     // ── Half B ────────────────────────────────────────────────────────────
     float x_b = m_ap_b1.process(b_in, scaled(k_base_ap_b1) + lfo_b + brown_b, k_decay_dif_f1);
-    x_b = m_delay_b1.write_read(x_b, scaled(k_base_delay_b1) + m_brown_delay_b1.process() * delay_mod);
+    x_b = m_delay_b1.write_read(x_b,
+                                scaled(k_base_delay_b1) + m_brown_delay_b1.process() * delay_mod);
     if (!m_p_freeze) {
         utils::one_pole(m_damp_b, x_b, m_damping_coeff);
         x_b = m_damp_b;
@@ -215,9 +220,12 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     if (m_freq_shift > 0.0f) {
         x_b = (1.0f - m_freq_shift) * x_b + m_freq_shift * m_fshift_b.process(x_b);
     }
-    x_b = m_ap_b2.process(x_b, scaled(k_base_ap_b2) + m_brown_ap_b2.process() * ap_mod, k_decay_dif_f2);
+    x_b = m_ap_b2.process(x_b,
+                          scaled(k_base_ap_b2) + m_brown_ap_b2.process() * ap_mod,
+                          k_decay_dif_f2);
     float tank_b =
-        m_delay_b2.write_read(x_b, scaled(k_base_delay_b2) + m_brown_delay_b2.process() * delay_mod);
+        m_delay_b2.write_read(x_b,
+                              scaled(k_base_delay_b2) + m_brown_delay_b2.process() * delay_mod);
     if (m_p_shimmer > 0.0f) {
         m_pitch_b.set_cents_modulation(m_brown_shim_b.process() * m_p_shim_mod);
         tank_b = (1.0f - m_p_shimmer) * tank_b + m_p_shimmer * m_pitch_b.process(tank_b);
@@ -225,16 +233,17 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     m_tank_b_out = tank_b;
 
     // ── Output tap matrix (7-tap per side, gain 0.6) ──────────────────────
-    left = 0.6f * (m_delay_a1.tap(scaled(k_base_taps_l[0])) + m_delay_a1.tap(scaled(k_base_taps_l[1])) -
-                   m_ap_a2.tap(scaled(k_base_taps_l[2])) + m_delay_a2.tap(scaled(k_base_taps_l[3])) -
-                   m_delay_b1.tap(scaled(k_base_taps_l[4])) - m_ap_b2.tap(scaled(k_base_taps_l[5])) -
-                   m_delay_b2.tap(scaled(k_base_taps_l[6])));
+    left = 0.6f *
+           (m_delay_a1.tap(scaled(k_base_taps_l[0])) + m_delay_a1.tap(scaled(k_base_taps_l[1])) -
+            m_ap_a2.tap(scaled(k_base_taps_l[2])) + m_delay_a2.tap(scaled(k_base_taps_l[3])) -
+            m_delay_b1.tap(scaled(k_base_taps_l[4])) - m_ap_b2.tap(scaled(k_base_taps_l[5])) -
+            m_delay_b2.tap(scaled(k_base_taps_l[6])));
 
-    right =
-        0.6f * (m_delay_b1.tap(scaled(k_base_taps_r[0])) + m_delay_b1.tap(scaled(k_base_taps_r[1])) -
-                m_ap_b2.tap(scaled(k_base_taps_r[2])) + m_delay_b2.tap(scaled(k_base_taps_r[3])) -
-                m_delay_a1.tap(scaled(k_base_taps_r[4])) - m_ap_a2.tap(scaled(k_base_taps_r[5])) -
-                m_delay_a2.tap(scaled(k_base_taps_r[6])));
+    right = 0.6f *
+            (m_delay_b1.tap(scaled(k_base_taps_r[0])) + m_delay_b1.tap(scaled(k_base_taps_r[1])) -
+             m_ap_b2.tap(scaled(k_base_taps_r[2])) + m_delay_b2.tap(scaled(k_base_taps_r[3])) -
+             m_delay_a1.tap(scaled(k_base_taps_r[4])) - m_ap_a2.tap(scaled(k_base_taps_r[5])) -
+             m_delay_a2.tap(scaled(k_base_taps_r[6])));
 }
 
 // ── Allocation / initialisation ───────────────────────────────────────────────

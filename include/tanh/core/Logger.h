@@ -27,8 +27,8 @@ struct LogRecord {
     std::uint64_t m_monotonic_ns = 0;  ///< Steady-clock epoch (ns).
     std::uint32_t m_level = static_cast<std::uint32_t>(LogLevel::Info);  ///< Severity level.
     std::string m_group;                                                 ///< Logical group tag.
-    std::string m_message;                                               ///< Formatted message body.
-    std::string m_source;  ///< Origin identifier (e.g. "native").
+    std::string m_message;  ///< Formatted message body.
+    std::string m_source;   ///< Origin identifier (e.g. "native").
 };
 
 /// Signature for a user-provided log sink.
@@ -40,8 +40,8 @@ using Callback = std::function<void(const LogRecord&)>;
 /// with get_config().  Defaults: platform on, file off, callback on.
 struct LoggerConfig {
     bool m_platform_enabled = true;  ///< Platform sink (os_log / android_log / stdout+stderr).
-    bool m_console_enabled = false;  ///< Explicit stdout/stderr sink (errors+warnings to stderr, rest
-                                   ///< to stdout).
+    bool m_console_enabled = false;  ///< Explicit stdout/stderr sink (errors+warnings to stderr,
+                                     ///< rest to stdout).
     bool m_file_enabled = true;      ///< Logfmt file sink.
     bool m_callback_enabled = true;  ///< Gate for the registered callback.
     std::string m_file_path;         ///< Output path for the file sink (empty = no writes).

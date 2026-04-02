@@ -26,9 +26,9 @@ AudioFileSink::~AudioFileSink() {
 }
 
 bool AudioFileSink::open_file(const std::string& file_path,
-                             uint32_t channels,
-                             uint32_t sample_rate,
-                             AudioEncodingFormat format) {
+                              uint32_t channels,
+                              uint32_t sample_rate,
+                              AudioEncodingFormat format) {
     close_file();
 
     ma_encoder_config config =
