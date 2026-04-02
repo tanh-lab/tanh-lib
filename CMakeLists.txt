@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.25)
 
 # ==============================================================================
 # Define the options for the tanh library
@@ -207,6 +207,7 @@ if(TANH_BUILD_STATE)
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG v3.12.0
         GIT_SHALLOW TRUE
+        SYSTEM
     )
     FetchContent_MakeAvailable(nlohmann_json)
     
@@ -394,11 +395,15 @@ if(TANH_BUILD_AUDIO_IO)
         GIT_REPOSITORY https://github.com/mackron/miniaudio.git
         GIT_TAG 0.11.24
         GIT_SHALLOW TRUE
+        SYSTEM
     )
     set(MINIAUDIO_NO_EXTRA_NODES ON CACHE BOOL "" FORCE)
     set(MINIAUDIO_NO_LIBVORBIS ON CACHE BOOL "" FORCE)
     set(MINIAUDIO_NO_LIBOPUS ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(miniaudio)
+
+    # Suppress warnings from miniaudio source compilation
+    target_compile_options(miniaudio PRIVATE -w)
 
     # On iOS, miniaudio.c includes AVFoundation which contains Objective-C
     # syntax. The FetchContent target compiles it as plain C, so we must
