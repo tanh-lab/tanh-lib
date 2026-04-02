@@ -18,4 +18,8 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 include(GoogleTest)
-gtest_discover_tests(${PROJECT_NAME})
+if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+	gtest_add_tests(TARGET ${PROJECT_NAME})
+else()
+	gtest_discover_tests(${PROJECT_NAME})
+endif()

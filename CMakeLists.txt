@@ -119,6 +119,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# When using non-Apple Clang on macOS, CMake does not set the sysroot
+# automatically. Without it the compilation database lacks -isysroot and
+# tools like clang-tidy cannot find system headers (e.g. pthread.h).
+if(TANH_OPERATING_SYSTEM STREQUAL "macOS" AND NOT CMAKE_OSX_SYSROOT)
+    execute_process(
+        COMMAND xcrun --show-sdk-path
+        OUTPUT_VARIABLE _osx_sysroot
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(_osx_sysroot)
+        set(CMAKE_OSX_SYSROOT "${_osx_sysroot}" CACHE PATH "macOS SDK path" FORCE)
+    endif()
+endif()
+
 ## ==============================================================================
 # Fetch dependencies
 # ==============================================================================
@@ -576,7 +590,7 @@ if (TANH_WITH_TESTS)
     # On iOS, test executables become .app bundles and need a bundle identifier
     # for simctl install/launch to work.
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        foreach(_test test_core test_state test_dsp test_modulation test_audio_io)
+        foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state)
             if(TARGET ${_test})
                 # Bundle IDs must use hyphens, not underscores
                 string(REPLACE "_" "-" _bundle_suffix "${_test}")

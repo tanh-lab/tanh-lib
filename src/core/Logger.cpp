@@ -12,7 +12,6 @@
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)

@@ -1,4 +1,5 @@
 Checks: "readability-identifier-naming"
+HeaderFilterRegex: "^.*/(?:src|include|examples)/.*"
 
 CheckOptions:
   # Classes/structs/enums/unions: PascalCase

@@ -39,11 +39,11 @@ rebuild: clean build
 
 # Run clang-format on source files
 format:
-    find src include -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format -i
+    find src include examples -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format -i
 
 # Check formatting without modifying files
 format-check:
-    find src include -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format --dry-run --Werror
+    find src include examples -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format --dry-run --Werror
 
 # Run clang-tidy on source files (check only)
 tidy:
@@ -52,16 +52,6 @@ tidy:
 # Run clang-tidy and auto-fix where possible
 tidy-fix:
     find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p build-desktop/ --fix
-
-# Run clang-tidy on iOS source files (requires macOS with Xcode and bear installed)
-tidy-ios: configure-ios-sim
-    bear -- xcodebuild -project build-ios-simulator/tanh.xcodeproj -scheme ALL_BUILD -sdk iphonesimulator -configuration Debug
-    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p ./
-
-# Run clang-tidy on iOS source files (requires macOS with Xcode and bear installed)
-tidy-ios-fix: configure-ios-sim
-    bear -- xcodebuild -project build-ios-simulator/tanh.xcodeproj -scheme ALL_BUILD -sdk iphonesimulator -configuration Debug
-    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p ./ --fix
 
 # Build desktop release
 build-release:
@@ -73,15 +63,15 @@ configure-ios-sim:
     cmake --preset ios-simulator-debug
 
 # Configure for iOS Device
-configure-ios-device:
-    cmake --preset ios-device-debug
+configure-ios-device team=`./scripts/resolve-team-id.sh`:
+    cmake --preset ios-device-debug -DDEVELOPMENT_TEAM={{ team }}
 
 # Build iOS example for simulator
 build-ios-sim: configure-ios-sim
     cmake --build --preset ios-simulator-debug --parallel
 
 # Build iOS example for device
-build-ios-device: configure-ios-device
+build-ios-device team=`./scripts/resolve-team-id.sh`: (configure-ios-device team)
     cmake --build --preset ios-device-debug --parallel
 
 # Open iOS project in Xcode (configured for simulator)
@@ -90,6 +80,6 @@ open-xcode-ios-sim: configure-ios-sim
     open build-ios-simulator/tanh.xcodeproj
 
 # Open iOS project in Xcode (configured for device)
-open-xcode-ios-device: configure-ios-device
+open-xcode-ios-device team=`./scripts/resolve-team-id.sh`: (configure-ios-device team)
     @echo "Opening Xcode project. Select 'audio_io' scheme."
     open build-ios-device/tanh.xcodeproj
