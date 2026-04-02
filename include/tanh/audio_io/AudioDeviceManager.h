@@ -743,7 +743,7 @@ private:
     mutable std::atomic<bool> m_captureAudioThreadRegistered{false};
     mutable std::atomic<bool> m_duplexAudioThreadRegistered{false};
 
-    std::shared_ptr<DeviceNotificationCallback> m_notificationCallback;
+    std::atomic<std::shared_ptr<DeviceNotificationCallback>> m_notificationCallback;
 };
 
 }  // namespace thl
