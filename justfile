@@ -4,7 +4,7 @@ default:
 
 # Configure desktop debug build
 configure:
-    cmake --preset desktop-debug -DTANH_WITH_TESTS=ON
+    cmake --preset desktop-debug
 
 # Build desktop debug
 build: configure
@@ -65,7 +65,7 @@ tidy-ios-fix: configure-ios-sim
 
 # Build desktop release
 build-release:
-    cmake --preset desktop-release -DTANH_WITH_TESTS=ON
+    cmake --preset desktop-release
     cmake --build --preset desktop-release --parallel
 
 # Configure for iOS Simulator
