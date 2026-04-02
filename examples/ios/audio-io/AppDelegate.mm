@@ -7,7 +7,7 @@
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     auto config = thl::Logger::get_config();
-    config.console_enabled = true;
+    config.m_console_enabled = true;
     thl::Logger::set_config(config);
 
     _window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];

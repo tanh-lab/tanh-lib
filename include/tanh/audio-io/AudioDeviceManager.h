@@ -172,9 +172,9 @@ public:
      * Must be called once (e.g. from JNI_OnLoad) before enumerateInputDevices()
      * or enumerateOutputDevices() will return real device lists on Android.
      *
-     * @param javaVM The JavaVM* obtained in JNI_OnLoad.
+     * @param java_vm The JavaVM* obtained in JNI_OnLoad.
      */
-    static void setJavaVM(void* javaVM);
+    static void set_java_vm(void* java_vm);
 #endif
 
     /**

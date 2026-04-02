@@ -2,9 +2,7 @@
 #include "miniaudio.h"
 #include "tanh/core/Logger.h"
 #include <algorithm>
-#include <chrono>
 #include <cstring>
-#include <thread>
 #include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)
@@ -158,12 +156,12 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     ma_context_config ctx_config = ma_context_config_init();
 
 #if defined(THL_PLATFORM_IOS)
-    configureIOSAudioSession();
-    ctxConfig.coreaudio.sessionCategory = ma_ios_session_category_none;
+    configure_ios_audio_session();
+    ctx_config.coreaudio.sessionCategory = ma_ios_session_category_none;
 #endif
 
 #if defined(THL_PLATFORM_ANDROID)
-    configureAndroidBluetoothSession();
+    configure_android_bluetooth_session();
 #endif
 
     ma_result result = ma_context_init(nullptr, 0, &ctx_config, &m_impl->m_context);
@@ -222,8 +220,8 @@ void AudioDeviceManager::populate_sample_rates(std::vector<AudioDeviceInfo>& dev
 }
 
 #if defined(THL_PLATFORM_ANDROID)
-void AudioDeviceManager::setJavaVM(void* javaVM) {
-    setAndroidJavaVM(javaVM);
+void AudioDeviceManager::set_java_vm(void* java_vm) {
+    set_android_java_vm(java_vm);
 }
 #endif
 
@@ -234,7 +232,7 @@ std::vector<AudioDeviceInfo> AudioDeviceManager::enumerate_devices(DeviceType ty
     // Miniaudio's AAudio backend only reports default devices.
     // Use the Android AudioManager JNI bridge for real enumeration.
     {
-        auto jniDevices = enumerateAndroidAudioDevices(type);
+        auto jniDevices = enumerate_android_audio_devices(type);
         if (!jniDevices.empty()) { return jniDevices; }
     }
     // Fall through to miniaudio as last-resort fallback.
@@ -292,7 +290,7 @@ struct AndroidBufferConfig {
     uint32_t burstSize = 0;
 };
 
-static AndroidBufferConfig configureAndroidBuffering(ma_context& context,
+static AndroidBufferConfig configure_android_buffering(ma_context& context,
                                                      ma_device_config& devConfig,
                                                      uint32_t bufferSizeInFrames) {
     AndroidBufferConfig result;
@@ -340,32 +338,32 @@ static uint32_t resolveAAudioPeriodSize(ma_context& context,
 #elif defined(THL_PLATFORM_IOS) || defined(THL_PLATFORM_MACOS)
 
 struct CoreAudioProbeResult {
-    uint32_t periodSize = 0;
-    uint32_t periods = 0;
+    uint32_t m_period_size = 0;
+    uint32_t m_periods = 0;
 };
 
-static CoreAudioProbeResult probeCoreAudioPeriod(ma_context& context,
-                                                 const ma_device_config& devConfig,
-                                                 uint32_t requestedSize) {
-    ma_device_config probeConfig = devConfig;
-    probeConfig.periodSizeInFrames = requestedSize;
-    probeConfig.periods = 1;
-    probeConfig.noFixedSizedCallback = MA_TRUE;
-    probeConfig.dataCallback = nullptr;
-    probeConfig.notificationCallback = nullptr;
-    probeConfig.pUserData = nullptr;
+static CoreAudioProbeResult probe_core_audio_period(ma_context& context,
+                                                    const ma_device_config& dev_config,
+                                                    uint32_t requested_size) {
+    ma_device_config probe_config = dev_config;
+    probe_config.periodSizeInFrames = requested_size;
+    probe_config.periods = 1;
+    probe_config.noFixedSizedCallback = MA_TRUE;
+    probe_config.dataCallback = nullptr;
+    probe_config.notificationCallback = nullptr;
+    probe_config.pUserData = nullptr;
 
     CoreAudioProbeResult result;
-    ma_device probeDevice;
-    if (ma_device_init(&context, &probeConfig, &probeDevice) == MA_SUCCESS) {
-        if (devConfig.deviceType == ma_device_type_capture) {
-            result.periodSize = probeDevice.capture.internalPeriodSizeInFrames;
-            result.periods = probeDevice.capture.internalPeriods;
+    ma_device probe_device;
+    if (ma_device_init(&context, &probe_config, &probe_device) == MA_SUCCESS) {
+        if (dev_config.deviceType == ma_device_type_capture) {
+            result.m_period_size = probe_device.capture.internalPeriodSizeInFrames;
+            result.m_periods = probe_device.capture.internalPeriods;
         } else {
-            result.periodSize = probeDevice.playback.internalPeriodSizeInFrames;
-            result.periods = probeDevice.playback.internalPeriods;
+            result.m_period_size = probe_device.playback.internalPeriodSizeInFrames;
+            result.m_periods = probe_device.playback.internalPeriods;
         }
-        ma_device_uninit(&probeDevice);
+        ma_device_uninit(&probe_device);
     }
     return result;
 }
@@ -447,8 +445,9 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
     // AVAudioSession IO buffer duration exceeds ~64 ms.  Clamp the
     // requested size so miniaudio never sets a duration beyond this
     // limit when a Bluetooth route is active.
-    if (isIOSBluetoothRouteActive()) {
-        uint32_t clamped = clampBufferSizeForBluetoothRoute(buffer_size_in_frames, sample_rate);
+    if (is_ios_bluetooth_route_active()) {
+        uint32_t clamped =
+            clamp_buffer_size_for_bluetooth_route(buffer_size_in_frames, sample_rate);
         if (clamped != buffer_size_in_frames) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
                               "thl.audio_io.audio_device_manager",
@@ -457,7 +456,7 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
                               label,
                               buffer_size_in_frames,
                               clamped,
-                              kMaxBluetoothIOBufferDurationSeconds * 1000.0f);
+                              k_max_bluetooth_io_buffer_duration_seconds * 1000.0f);
             buffer_size_in_frames = clamped;
         }
     }
@@ -466,7 +465,7 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
 #if defined(THL_PLATFORM_ANDROID)
     {
         auto probe =
-            configureAndroidBuffering(m_impl->m_context, dev_config, buffer_size_in_frames);
+            configure_android_buffering(m_impl->m_context, dev_config, buffer_size_in_frames);
 
         burst_size = probe.burstSize;
         dev_config.periodSizeInFrames = probe.periodSize;
@@ -483,27 +482,27 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
     }
 #elif defined(THL_PLATFORM_IOS) || defined(THL_PLATFORM_MACOS)
     {
-        auto probe = probeCoreAudioPeriod(m_impl->m_context, dev_config, buffer_size_in_frames);
+        auto probe = probe_core_audio_period(m_impl->m_context, dev_config, buffer_size_in_frames);
 
-        if (probe.periodSize > 0 && probe.periodSize != buffer_size_in_frames) {
+        if (probe.m_period_size > 0 && probe.m_period_size != buffer_size_in_frames) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
                               "thl.audio_io.audio_device_manager",
                               "%s: probed periodSize=%u differs from requested %u, adjusting",
                               label,
-                              probe.periodSize,
+                              probe.m_period_size,
                               buffer_size_in_frames);
         }
 
-        burst_size = probe.periodSize;
-        dev_config.periodSizeInFrames = probe.periodSize;
-        configured_periods = (probe.periods > 0) ? probe.periods : 1;
+        burst_size = probe.m_period_size;
+        dev_config.periodSizeInFrames = probe.m_period_size;
+        configured_periods = (probe.m_periods > 0) ? probe.m_periods : 1;
         dev_config.periods = configured_periods;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
                           "thl.audio_io.audio_device_manager",
                           "%s: probed periodSize=%u, periods=%u",
                           label,
-                          probe.periodSize,
+                          probe.m_period_size,
                           configured_periods);
     }
 #else
@@ -670,7 +669,7 @@ void AudioDeviceManager::shutdown() {
     // On API <= 28, AAudio wraps AudioTrack internally and
     // ma_device_uninit() can deadlock in ~AudioTrack::requestExitAndWait().
     // Use timed async uninit on the legacy path; sync uninit on API 29+.
-    const int androidApi = getAndroidApiLevel();
+    const int androidApi = get_android_api_level();
 
     if (androidApi <= 28) {
         thl::Logger::logf(thl::Logger::LogLevel::Info,
@@ -994,7 +993,7 @@ std::vector<BluetoothProfile> get_supported_bluetooth_profiles() {
     std::vector<BluetoothProfile> profiles;
     profiles.push_back(BluetoothProfile::A2DP);
 #if defined(THL_PLATFORM_ANDROID)
-    if (getAndroidApiLevel() > 30) { profiles.push_back(BluetoothProfile::HFP); }
+    if (get_android_api_level() > 30) { profiles.push_back(BluetoothProfile::HFP); }
 #else
     profiles.push_back(BluetoothProfile::HFP);
 #endif
@@ -1003,9 +1002,9 @@ std::vector<BluetoothProfile> get_supported_bluetooth_profiles() {
 
 bool is_classic_bluetooth_connected() {
 #if defined(THL_PLATFORM_IOS)
-    return isIOSClassicBluetoothConnected();
+    return is_ios_classic_bluetooth_connected();
 #elif defined(THL_PLATFORM_ANDROID)
-    return isAndroidClassicBluetoothConnected();
+    return is_android_classic_bluetooth_connected();
 #else
     return false;
 #endif
@@ -1013,41 +1012,41 @@ bool is_classic_bluetooth_connected() {
 
 bool AudioDeviceManager::set_bluetooth_profile(BluetoothProfile profile) {
 #if defined(THL_PLATFORM_IOS)
-    if (!setIOSBluetoothProfile(profile, nullptr)) { return false; }
+    if (!set_ios_bluetooth_profile(profile, nullptr)) { return false; }
 #elif defined(THL_PLATFORM_ANDROID)
     // On Android, SCO requires setCommunicationDevice() which is only
     // available on API 31+.  On older versions only A2DP is supported.
-    if (getAndroidApiLevel() <= 30) {
+    if (get_android_api_level() <= 30) {
         if (profile != BluetoothProfile::A2DP) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
                               "thl.audio_io.audio_device_manager",
                               "Bluetooth profile '%s' not supported on API %d (requires API 31+), "
                               "profile remains %s",
                               bluetoothProfileToString(profile),
-                              getAndroidApiLevel(),
+                              get_android_api_level(),
                               bluetoothProfileToString(m_bluetoothProfile));
             return false;
         }
 
         // A2DP is the default media route on API <= 30.
         // Ensure SCO is disabled and treat this as success.
-        if (isAndroidBluetoothScoEnabled()) { setAndroidBluetoothSco(false); }
+        if (is_android_bluetooth_sco_enabled()) { set_android_bluetooth_sco(false); }
         m_bluetoothProfile = BluetoothProfile::A2DP;
         return true;
     }
     {
         bool wantSco = (profile == BluetoothProfile::HFP);
-        bool scoNow = isAndroidBluetoothScoEnabled();
+        bool scoNow = is_android_bluetooth_sco_enabled();
 
         if (wantSco) {
             // Always cycle the SCO link when requesting HFP. After a
             // Bluetooth reconnection the old SCO session is dead but
             // g_scoEnabled may still be true — skipping the restart
             // leaves the audio route on the internal mic / A2DP.
-            if (scoNow) { setAndroidBluetoothSco(false); }
-            setAndroidBluetoothSco(true);
+            if (scoNow) { set_android_bluetooth_sco(false); }
+            set_android_bluetooth_sco(true);
         } else if (scoNow) {
-            setAndroidBluetoothSco(false);
+            set_android_bluetooth_sco(false);
         }
 
         thl::Logger::logf(thl::Logger::LogLevel::Info,
@@ -1082,7 +1081,7 @@ uint32_t AudioDeviceManager::get_capture_sample_rate() const {
     // HAL genuinely resamples to 48 kHz.  Use the measured delivery rate
     // from the capture callback when available — it reflects the actual
     // frame rate regardless of what the API reports.
-    if (isAndroidBluetoothScoEnabled() &&
+    if (is_android_bluetooth_sco_enabled() &&
         getCurrentInputDeviceName().find("Bluetooth SCO") != std::string::npos) {
         uint32_t measured = m_impl->captureMeasuredRate.load(std::memory_order_relaxed);
         if (measured > 0) {
@@ -1106,7 +1105,7 @@ uint32_t AudioDeviceManager::get_capture_sample_rate() const {
 
 bool AudioDeviceManager::wait_for_capture_rate_measurement(uint32_t timeout_ms) const {
 #if defined(THL_PLATFORM_ANDROID)
-    if (!isAndroidBluetoothScoEnabled() || !m_captureRunning.load(std::memory_order_relaxed) ||
+    if (!is_android_bluetooth_sco_enabled() || !m_captureRunning.load(std::memory_order_relaxed) ||
         getCurrentInputDeviceName().find("Bluetooth SCO") == std::string::npos) {
         return false;
     }
@@ -1294,7 +1293,7 @@ uint32_t AudioDeviceManager::get_num_output_channels() const {
 
 std::string AudioDeviceManager::get_current_output_device_name() const {
 #if defined(THL_PLATFORM_IOS)
-    return getIOSCurrentOutputRouteName();
+    return get_ios_current_output_route_name();
 #elif defined(THL_PLATFORM_ANDROID)
     {
         int32_t deviceId = 0;
@@ -1303,7 +1302,7 @@ std::string AudioDeviceManager::get_current_output_device_name() const {
         } else if (m_impl->duplexDeviceInitialised) {
             deviceId = m_impl->duplexDevice.playback.id.aaudio;
         }
-        return getAndroidActiveOutputDeviceName(deviceId);
+        return get_android_active_output_device_name(deviceId);
     }
 #else
     if (m_impl->m_playback_device_initialised) { return m_impl->m_playback_device.playback.name; }
@@ -1314,7 +1313,7 @@ std::string AudioDeviceManager::get_current_output_device_name() const {
 
 std::string AudioDeviceManager::get_current_input_device_name() const {
 #if defined(THL_PLATFORM_IOS)
-    return getIOSCurrentInputRouteName();
+    return get_ios_current_input_route_name();
 #elif defined(THL_PLATFORM_ANDROID)
     {
         int32_t deviceId = 0;
@@ -1323,7 +1322,7 @@ std::string AudioDeviceManager::get_current_input_device_name() const {
         } else if (m_impl->duplexDeviceInitialised) {
             deviceId = m_impl->duplexDevice.capture.id.aaudio;
         }
-        return getAndroidActiveInputDeviceName(deviceId);
+        return get_android_active_input_device_name(deviceId);
     }
 #else
     if (m_impl->m_capture_device_initialised) { return m_impl->m_capture_device.capture.name; }
@@ -1389,7 +1388,7 @@ void AudioDeviceManager::process_callbacks(DeviceRole role,
 #if defined(THL_PLATFORM_ANDROID)
     // Measure actual capture delivery rate by timing callbacks.
     // Only needed for SCO devices where Android lies about the rate.
-    if (role == DeviceRole::Capture && isAndroidBluetoothScoEnabled() &&
+    if (role == DeviceRole::Capture && is_android_bluetooth_sco_enabled() &&
         getCurrentInputDeviceName().find("Bluetooth SCO") != std::string::npos &&
         m_impl->captureMeasuredRate.load(std::memory_order_relaxed) == 0) {
         auto nowUs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
