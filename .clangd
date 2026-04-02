@@ -1,0 +1,9 @@
+CompileFlags:
+  CompilationDatabase: build-desktop/
+
+Diagnostics:
+  ClangTidy:
+    Add: ['*']
+
+Index:
+  Background: Build

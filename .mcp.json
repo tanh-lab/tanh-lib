@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "gh",
+      "args": [
+        "mcp-server"
+      ]
+    }
+  }
+}
