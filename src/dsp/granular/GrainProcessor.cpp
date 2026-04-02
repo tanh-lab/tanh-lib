@@ -187,10 +187,10 @@ void GrainProcessorImpl::update_grains(float** buffer,
     // Calculate how frequently we should trigger new grains
     unsigned int min_interval =
         static_cast<unsigned int>(m_sample_rate * k_min_grain_interval);  // max is 50 grains per
-                                                                        // second
+                                                                          // second
     unsigned int max_interval =
         static_cast<unsigned int>(m_sample_rate * k_max_grain_interval);  // min is 5 grains per
-                                                                        // second
+                                                                          // second
     unsigned int interval_range = max_interval - min_interval;
     m_min_grain_interval = max_interval - static_cast<unsigned int>(density * interval_range);
 
@@ -241,8 +241,8 @@ void GrainProcessorImpl::update_grains(float** buffer,
             if (!grain.m_active) { continue; }
 
             // Hann window envelope for amplitude control
-            float normalized_position =
-                static_cast<float>(grain.m_current_position) / static_cast<float>(grain.m_grain_size);
+            float normalized_position = static_cast<float>(grain.m_current_position) /
+                                        static_cast<float>(grain.m_grain_size);
             float envelope = grain.m_envelope.process_at_position(normalized_position);
 
             // Check if the grain should be deactivated
@@ -253,7 +253,8 @@ void GrainProcessorImpl::update_grains(float** buffer,
             }
 
             // Calculate the current position in the source audio
-            float source_pos = grain.m_start_position + (grain.m_current_position * grain.m_velocity);
+            float source_pos =
+                grain.m_start_position + (grain.m_current_position * grain.m_velocity);
 
             float position_spread = 0.5f + (grain.m_position_spread - 0.5f) * spread;
 
@@ -331,9 +332,10 @@ void GrainProcessorImpl::update_grains(float** buffer,
             for (size_t gi = 0; gi < m_grains.size(); ++gi) {
                 auto& grain = m_grains[gi];
                 if (!grain.m_active) { continue; }
-                float current_pos = static_cast<float>(grain.m_start_position +
-                                                       grain.m_current_position * grain.m_velocity) /
-                                    total_f;
+                float current_pos =
+                    static_cast<float>(grain.m_start_position +
+                                       grain.m_current_position * grain.m_velocity) /
+                    total_f;
                 float normalized_position = static_cast<float>(grain.m_current_position) /
                                             static_cast<float>(grain.m_grain_size);
                 float envelope = grain.m_envelope.process_at_position(normalized_position);

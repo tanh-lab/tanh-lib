@@ -111,7 +111,9 @@ public:
      *
      * @warning NOT real-time safe - performs file I/O and allocations.
      */
-    bool load_file(const std::string& file_path, uint32_t output_channels, uint32_t output_sample_rate);
+    bool load_file(const std::string& file_path,
+                   uint32_t output_channels,
+                   uint32_t output_sample_rate);
 
     /**
      * @brief Loads audio from an in-memory buffer for playback.
@@ -132,9 +134,9 @@ public:
      * @warning NOT real-time safe - performs allocations.
      */
     bool load_from_memory(const void* data,
-                        size_t size,
-                        uint32_t output_channels,
-                        uint32_t output_sample_rate);
+                          size_t size,
+                          uint32_t output_channels,
+                          uint32_t output_sample_rate);
 
     /**
      * @brief Unloads the currently loaded file.
@@ -285,8 +287,8 @@ public:
 
 private:
     bool rebuild_data_source(uint32_t decoded_channels,
-                           uint32_t decoded_sample_rate,
-                           uint64_t initial_frame);
+                             uint32_t decoded_sample_rate,
+                             uint64_t initial_frame);
 
     audio_io::AudioFileLoader m_loader;
     std::shared_ptr<audio_io::DataSource> m_data_source;

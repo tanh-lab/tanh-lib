@@ -85,9 +85,7 @@ uint32_t Random::nlog2_16(uint16_t x) {
         a = t;
         r += 0x00003u;
     }
-    if (((a * 65537u) >> 16u) < 0x10000u) {
-        r += 0x00001u;
-    }
+    if (((a * 65537u) >> 16u) < 0x10000u) { r += 0x00001u; }
     if (r == 0) { r++; }
     return r;
 }

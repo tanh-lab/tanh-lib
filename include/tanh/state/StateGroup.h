@@ -501,8 +501,9 @@ private:
      */
     struct ListenerData {
         std::vector<ParameterListener*> m_object_listeners;              ///< Object-based
-                                                                       ///< listeners
-        std::map<size_t, ParameterChangeCallback> m_callback_listeners;  ///< Callback-based listeners
+                                                                         ///< listeners
+        std::map<size_t, ParameterChangeCallback> m_callback_listeners;  ///< Callback-based
+                                                                         ///< listeners
         size_t m_next_listener_id = 0;  ///< Next available listener ID
 
         /// @brief Default constructor

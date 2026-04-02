@@ -51,11 +51,11 @@ namespace thl::dsp::synth {
 using thl::dsp::resonator::FmVoice;
 using thl::dsp::resonator::Last;
 using thl::dsp::resonator::Modal;
+using thl::dsp::resonator::ResonatorModel;
 using thl::dsp::resonator::String;
 using thl::dsp::resonator::StringAndReverb;
 using thl::dsp::resonator::SympatheticString;
 using thl::dsp::resonator::SympatheticStringQuantized;
-using thl::dsp::resonator::ResonatorModel;
 
 const int32_t k_max_polyphony = 4;
 const int32_t k_num_strings = k_max_polyphony * 2;

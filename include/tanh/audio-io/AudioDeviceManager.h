@@ -695,7 +695,7 @@ public:
      * @return The (possibly reduced) buffer size in frames.
      */
     static uint32_t clamp_buffer_size_for_bluetooth_route(uint32_t buffer_size_in_frames,
-                                                     uint32_t sample_rate);
+                                                          uint32_t sample_rate);
 
 private:
     struct Impl;
@@ -707,20 +707,23 @@ private:
     void populate_sample_rates(std::vector<AudioDeviceInfo>& devices) const;
 
     bool try_initialise_device(DeviceRole role,
-                             const AudioDeviceInfo* input_device,
-                             const AudioDeviceInfo* output_device,
-                             uint32_t sample_rate,
-                             uint32_t buffer_size_in_frames,
-                             uint32_t num_input_channels,
-                             uint32_t num_output_channels);
+                               const AudioDeviceInfo* input_device,
+                               const AudioDeviceInfo* output_device,
+                               uint32_t sample_rate,
+                               uint32_t buffer_size_in_frames,
+                               uint32_t num_input_channels,
+                               uint32_t num_output_channels);
 
     void process_callbacks(DeviceRole role,
-                          void* device,
-                          float* output,
-                          const float* input,
-                          uint32_t frame_count);
+                           void* device,
+                           float* output,
+                           const float* input,
+                           uint32_t frame_count);
 
-    static void data_callback(void* p_device, void* p_output, const void* p_input, uint32_t frame_count);
+    static void data_callback(void* p_device,
+                              void* p_output,
+                              const void* p_input,
+                              uint32_t frame_count);
 
     static void notification_callback(const void* p_notification);
 

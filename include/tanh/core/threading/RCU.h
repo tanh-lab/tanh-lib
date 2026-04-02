@@ -307,7 +307,7 @@ private:
         std::atomic<uint64_t> m_read_generation{0};
         std::atomic<ReaderNode*> m_next{nullptr};
         std::atomic<bool> m_is_dead{false};  // Mark node as dead when thread
-                                           // exits
+                                             // exits
     };
 
     // Per-instance reader list head

@@ -103,14 +103,15 @@ void State::set_in_root(std::string_view key,
                         break;
                     case ParameterType::Float:
                         record->m_cache.m_atomic_float.store(static_cast<float>(d_value),
-                                                         std::memory_order_relaxed);
+                                                             std::memory_order_relaxed);
                         break;
                     case ParameterType::Int:
                         record->m_cache.m_atomic_int.store(static_cast<int>(d_value),
-                                                       std::memory_order_relaxed);
+                                                           std::memory_order_relaxed);
                         break;
                     case ParameterType::Bool:
-                        record->m_cache.m_atomic_bool.store(d_value != 0.0, std::memory_order_relaxed);
+                        record->m_cache.m_atomic_bool.store(d_value != 0.0,
+                                                            std::memory_order_relaxed);
                         break;
                     default: break;
                 }
@@ -121,28 +122,29 @@ void State::set_in_root(std::string_view key,
             switch (record->m_type) {
                 case ParameterType::Double:
                     record->m_cache.m_atomic_double.store(static_cast<double>(value),
-                                                      std::memory_order_relaxed);
+                                                          std::memory_order_relaxed);
                     break;
                 case ParameterType::Float:
                     record->m_cache.m_atomic_float.store(static_cast<float>(value),
-                                                     std::memory_order_relaxed);
+                                                         std::memory_order_relaxed);
                     break;
                 case ParameterType::Int:
                     record->m_cache.m_atomic_int.store(static_cast<int>(value),
-                                                   std::memory_order_relaxed);
+                                                       std::memory_order_relaxed);
                     break;
                 case ParameterType::Bool:
                     if constexpr (std::is_same_v<T, bool>) {
                         record->m_cache.m_atomic_bool.store(value, std::memory_order_relaxed);
                     } else {
-                        record->m_cache.m_atomic_bool.store(value != T{0}, std::memory_order_relaxed);
+                        record->m_cache.m_atomic_bool.store(value != T{0},
+                                                            std::memory_order_relaxed);
                     }
                     break;
                 case ParameterType::String:
                     // Numeric value to a string-typed param: store in the native numeric atomic
                     // (string_value is not updated — use set<string> for that)
                     record->m_cache.m_atomic_double.store(static_cast<double>(value),
-                                                      std::memory_order_relaxed);
+                                                          std::memory_order_relaxed);
                     break;
                 default: break;
             }
@@ -264,29 +266,36 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
                 return record->m_string_value;
             }
             case ParameterType::Double:
-                return std::to_string(record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
+                return std::to_string(
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
-                return std::to_string(record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
+                return std::to_string(
+                    record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
                 return std::to_string(record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return record->m_cache.m_atomic_bool.load(std::memory_order_relaxed) ? "true" : "false";
+                return record->m_cache.m_atomic_bool.load(std::memory_order_relaxed) ? "true"
+                                                                                     : "false";
             default: return "";
         }
     } else {
         // Numeric types: read from the native atomic and convert on the fly
         switch (param_type) {
             case ParameterType::Double:
-                return static_cast<T>(record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
-                return static_cast<T>(record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
                 return static_cast<T>(record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return static_cast<T>(record->m_cache.m_atomic_bool.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    record->m_cache.m_atomic_bool.load(std::memory_order_relaxed));
             case ParameterType::String: {
                 // For string-typed params, convert from atomic_double
-                return static_cast<T>(record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             }
             default: return T{};
         }
@@ -314,7 +323,8 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
 
         switch (record->m_type) {
             case ParameterType::Double:
-                param_obj["value"] = record->m_cache.m_atomic_double.load(std::memory_order_relaxed);
+                param_obj["value"] =
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed);
                 break;
             case ParameterType::Float:
                 param_obj["value"] = record->m_cache.m_atomic_float.load(std::memory_order_relaxed);

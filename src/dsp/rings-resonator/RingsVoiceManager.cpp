@@ -89,8 +89,7 @@ void RingsVoiceManager::configure_resonators() {
         case StringAndReverb: {
             float lfo_frequencies[k_num_strings] = {0.5f, 0.4f, 0.35f, 0.23f, 0.211f, 0.2f, 0.171f};
             for (int32_t i = 0; i < k_num_strings; ++i) {
-                bool has_dispersion = m_model == String ||
-                                      m_model == StringAndReverb;
+                bool has_dispersion = m_model == String || m_model == StringAndReverb;
                 m_string[i].prepare(has_dispersion, m_sample_rate);
 
                 float f_lfo = float(thl::dsp::resonator::k_max_block_size) / m_sample_rate;
@@ -168,51 +167,51 @@ float chords[k_max_polyphony][11][8] = {
 
 // Original chord table
 float chords[k_max_polyphony][11][8] = {{{-12.0f, 0.0f, 0.01f, 0.02f, 0.03f, 11.98f, 11.99f, 12.0f},
-                                       {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 9.99f, 10.0f, 19.0f},
-                                       {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 11.99f, 12.0f, 19.0f},
-                                       {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 13.99f, 14.0f, 19.0f},
-                                       {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 16.99f, 17.0f, 19.0f},
-                                       {-12.0f, 0.0f, 6.98f, 6.99f, 7.0f, 12.00f, 18.99f, 19.0f},
-                                       {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 16.99f, 17.0f, 19.0f},
-                                       {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 13.99f, 14.0f, 19.0f},
-                                       {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 11.99f, 12.0f, 19.0f},
-                                       {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 10.99f, 11.0f, 19.0f},
-                                       {-12.0f, 0.0f, 4.99f, 5.0f, 7.0f, 11.99f, 12.0f, 17.0f}},
-                                      {
-                                          {-12.0f, 0.0f, 0.01f, 12.0f},
-                                          {-12.0f, 3.0f, 7.0f, 10.0f},
-                                          {-12.0f, 3.0f, 7.0f, 12.0f},
-                                          {-12.0f, 3.0f, 7.0f, 14.0f},
-                                          {-12.0f, 3.0f, 7.0f, 17.0f},
-                                          {-12.0f, 7.0f, 12.0f, 19.0f},
-                                          {-12.0f, 4.0f, 7.0f, 17.0f},
-                                          {-12.0f, 4.0f, 7.0f, 14.0f},
-                                          {-12.0f, 4.0f, 7.0f, 12.0f},
-                                          {-12.0f, 4.0f, 7.0f, 11.0f},
-                                          {-12.0f, 5.0f, 7.0f, 12.0f},
-                                      },
-                                      {{0.0f, -12.0f},
-                                       {0.0f, 0.01f},
-                                       {0.0f, 2.0f},
-                                       {0.0f, 3.0f},
-                                       {0.0f, 4.0f},
-                                       {0.0f, 5.0f},
-                                       {0.0f, 7.0f},
-                                       {0.0f, 10.0f},
-                                       {0.0f, 11.0f},
-                                       {0.0f, 12.0f},
-                                       {-12.0f, 12.0f}},
-                                      {{0.0f, -12.0f},
-                                       {0.0f, 0.01f},
-                                       {0.0f, 2.0f},
-                                       {0.0f, 3.0f},
-                                       {0.0f, 4.0f},
-                                       {0.0f, 5.0f},
-                                       {0.0f, 7.0f},
-                                       {0.0f, 10.0f},
-                                       {0.0f, 11.0f},
-                                       {0.0f, 12.0f},
-                                       {-12.0f, 12.0f}}};
+                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 9.99f, 10.0f, 19.0f},
+                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 11.99f, 12.0f, 19.0f},
+                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 13.99f, 14.0f, 19.0f},
+                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 16.99f, 17.0f, 19.0f},
+                                         {-12.0f, 0.0f, 6.98f, 6.99f, 7.0f, 12.00f, 18.99f, 19.0f},
+                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 16.99f, 17.0f, 19.0f},
+                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 13.99f, 14.0f, 19.0f},
+                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 11.99f, 12.0f, 19.0f},
+                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 10.99f, 11.0f, 19.0f},
+                                         {-12.0f, 0.0f, 4.99f, 5.0f, 7.0f, 11.99f, 12.0f, 17.0f}},
+                                        {
+                                            {-12.0f, 0.0f, 0.01f, 12.0f},
+                                            {-12.0f, 3.0f, 7.0f, 10.0f},
+                                            {-12.0f, 3.0f, 7.0f, 12.0f},
+                                            {-12.0f, 3.0f, 7.0f, 14.0f},
+                                            {-12.0f, 3.0f, 7.0f, 17.0f},
+                                            {-12.0f, 7.0f, 12.0f, 19.0f},
+                                            {-12.0f, 4.0f, 7.0f, 17.0f},
+                                            {-12.0f, 4.0f, 7.0f, 14.0f},
+                                            {-12.0f, 4.0f, 7.0f, 12.0f},
+                                            {-12.0f, 4.0f, 7.0f, 11.0f},
+                                            {-12.0f, 5.0f, 7.0f, 12.0f},
+                                        },
+                                        {{0.0f, -12.0f},
+                                         {0.0f, 0.01f},
+                                         {0.0f, 2.0f},
+                                         {0.0f, 3.0f},
+                                         {0.0f, 4.0f},
+                                         {0.0f, 5.0f},
+                                         {0.0f, 7.0f},
+                                         {0.0f, 10.0f},
+                                         {0.0f, 11.0f},
+                                         {0.0f, 12.0f},
+                                         {-12.0f, 12.0f}},
+                                        {{0.0f, -12.0f},
+                                         {0.0f, 0.01f},
+                                         {0.0f, 2.0f},
+                                         {0.0f, 3.0f},
+                                         {0.0f, 4.0f},
+                                         {0.0f, 5.0f},
+                                         {0.0f, 7.0f},
+                                         {0.0f, 10.0f},
+                                         {0.0f, 11.0f},
+                                         {0.0f, 12.0f},
+                                         {-12.0f, 12.0f}}};
 
 #endif  // BRYAN_CHORDS
 
@@ -259,7 +258,8 @@ void RingsVoiceManager::compute_sympathetic_strings_notes(float tonic,
         note = a + (b - a) * note_fractional;
         destination[i] = note;
         if (i + first_detuned_string < num_strings) {
-            destination[i + first_detuned_string] = destination[i] + detunings[i & 3]; // NOLINT(clang-analyzer-security.ArrayBound)
+            destination[i + first_detuned_string] =
+                destination[i] + detunings[i & 3];  // NOLINT(clang-analyzer-security.ArrayBound)
         }
     }
 }
@@ -272,7 +272,8 @@ void RingsVoiceManager::render_modal_voice(
     float filter_cutoff,
     size_t size) {
     // Internal exciter is a pulse, pre-filter.
-    if (performance_state.m_internal_exciter && voice == m_active_voice && performance_state.m_strum) {
+    if (performance_state.m_internal_exciter && voice == m_active_voice &&
+        performance_state.m_strum) {
         m_resonator_input[0] +=
             0.25f * semitones_to_ratio(filter_cutoff * filter_cutoff * 24.0f) / filter_cutoff;
     }
@@ -302,7 +303,8 @@ void RingsVoiceManager::render_fm_voice(
     float filter_cutoff,
     size_t size) {
     RingsFmVoice& v = m_fm_voice[voice];
-    if (performance_state.m_internal_exciter && voice == m_active_voice && performance_state.m_strum) {
+    if (performance_state.m_internal_exciter && voice == m_active_voice &&
+        performance_state.m_strum) {
         v.trigger_internal_envelope();
     }
 
@@ -329,12 +331,10 @@ void RingsVoiceManager::render_string_voice(
     int32_t num_strings = 1;
     float frequencies[k_num_strings];
 
-    if (m_model == SympatheticString ||
-        m_model == SympatheticStringQuantized) {
+    if (m_model == SympatheticString || m_model == SympatheticStringQuantized) {
         num_strings = 2 * k_max_polyphony / m_polyphony;
-        float parameter = m_model == SympatheticString
-                              ? patch.m_structure
-                              : 2.0f + performance_state.m_chord;
+        float parameter =
+            m_model == SympatheticString ? patch.m_structure : 2.0f + performance_state.m_chord;
         compute_sympathetic_strings_notes(
             performance_state.m_tonic + performance_state.m_fm,
             performance_state.m_tonic + m_note[voice] + performance_state.m_fm,

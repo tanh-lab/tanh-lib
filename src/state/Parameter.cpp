@@ -57,7 +57,8 @@ T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
             case ParameterType::Int:
                 return std::to_string(m_cache_ptr->m_atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return m_cache_ptr->m_atomic_bool.load(std::memory_order_relaxed) ? "true" : "false";
+                return m_cache_ptr->m_atomic_bool.load(std::memory_order_relaxed) ? "true"
+                                                                                  : "false";
             default: return "";
         }
     } else {

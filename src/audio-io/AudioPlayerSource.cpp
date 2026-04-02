@@ -10,13 +10,15 @@ AudioPlayerSource::~AudioPlayerSource() {
 }
 
 bool AudioPlayerSource::load_file(const std::string& file_path,
-                                 uint32_t output_channels,
-                                 uint32_t output_sample_rate) {
+                                  uint32_t output_channels,
+                                  uint32_t output_sample_rate) {
     if (file_path.empty() || output_channels == 0 || output_sample_rate == 0) { return false; }
 
     std::scoped_lock lock(m_state_mutex);
     m_playing.store(false, std::memory_order_release);
-    std::atomic_store_explicit(&m_data_source, std::shared_ptr<audio_io::DataSource>(nullptr), std::memory_order_release);
+    std::atomic_store_explicit(&m_data_source,
+                               std::shared_ptr<audio_io::DataSource>(nullptr),
+                               std::memory_order_release);
     m_loaded.store(false, std::memory_order_release);
 
     m_file_path = file_path;
@@ -36,16 +38,18 @@ bool AudioPlayerSource::load_file(const std::string& file_path,
 }
 
 bool AudioPlayerSource::load_from_memory(const void* data,
-                                       size_t size,
-                                       uint32_t output_channels,
-                                       uint32_t output_sample_rate) {
+                                         size_t size,
+                                         uint32_t output_channels,
+                                         uint32_t output_sample_rate) {
     if (data == nullptr || size == 0 || output_channels == 0 || output_sample_rate == 0) {
         return false;
     }
 
     std::scoped_lock lock(m_state_mutex);
     m_playing.store(false, std::memory_order_release);
-    std::atomic_store_explicit(&m_data_source, std::shared_ptr<audio_io::DataSource>(nullptr), std::memory_order_release);
+    std::atomic_store_explicit(&m_data_source,
+                               std::shared_ptr<audio_io::DataSource>(nullptr),
+                               std::memory_order_release);
     m_loaded.store(false, std::memory_order_release);
 
     m_file_path.clear();
@@ -69,7 +73,9 @@ void AudioPlayerSource::unload_file() {
     m_playing.store(false, std::memory_order_release);
 
     std::scoped_lock lock(m_state_mutex);
-    std::atomic_store_explicit(&m_data_source, std::shared_ptr<audio_io::DataSource>(nullptr), std::memory_order_release);
+    std::atomic_store_explicit(&m_data_source,
+                               std::shared_ptr<audio_io::DataSource>(nullptr),
+                               std::memory_order_release);
     m_loaded.store(false, std::memory_order_release);
     m_channels = 0;
     m_sample_rate = 0;
@@ -177,7 +183,8 @@ void AudioPlayerSource::process(float* output_buffer,
         const uint32_t fade_start = k_fade_samples - fade_in;
         const uint32_t to_fade = std::min(fade_in, static_cast<uint32_t>(frames_read));
         for (uint32_t i = 0; i < to_fade; ++i) {
-            const float gain = static_cast<float>(fade_start + i) / static_cast<float>(k_fade_samples);
+            const float gain =
+                static_cast<float>(fade_start + i) / static_cast<float>(k_fade_samples);
             for (uint32_t ch = 0; ch < num_output_channels; ++ch) {
                 output_buffer[i * num_output_channels + ch] *= gain;
             }
@@ -219,8 +226,8 @@ void AudioPlayerSource::release_resources() {
 }
 
 bool AudioPlayerSource::rebuild_data_source(uint32_t decoded_channels,
-                                          uint32_t decoded_sample_rate,
-                                          uint64_t initial_frame) {
+                                            uint32_t decoded_sample_rate,
+                                            uint64_t initial_frame) {
     if (decoded_channels == 0 || decoded_sample_rate == 0) { return false; }
 
     std::shared_ptr<audio_io::DataSource> ds;

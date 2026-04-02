@@ -6,13 +6,13 @@
 namespace thl::dsp::utils {
 
 const float FrequencyShifter::k_coeffs_a[4] = {0.6923878f,
-                                             0.9360654322959f,
-                                             0.9882295226860f,
-                                             0.9987488452737f};
+                                               0.9360654322959f,
+                                               0.9882295226860f,
+                                               0.9987488452737f};
 const float FrequencyShifter::k_coeffs_b[4] = {0.4021921162426f,
-                                             0.8561710882420f,
-                                             0.9722909545651f,
-                                             0.9952884791278f};
+                                               0.8561710882420f,
+                                               0.9722909545651f,
+                                               0.9952884791278f};
 
 FrequencyShifter::FrequencyShifter() = default;
 
