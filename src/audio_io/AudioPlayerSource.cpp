@@ -16,9 +16,7 @@ bool AudioPlayerSource::loadFile(const std::string& filePath,
 
     std::scoped_lock lock(m_stateMutex);
     m_playing.store(false, std::memory_order_release);
-    std::atomic_store_explicit(&m_dataSource,
-                               std::shared_ptr<audio_io::DataSource>{},
-                               std::memory_order_release);
+    m_dataSource.store(nullptr, std::memory_order_release);
     m_loaded.store(false, std::memory_order_release);
 
     m_filePath = filePath;
@@ -47,9 +45,7 @@ bool AudioPlayerSource::loadFromMemory(const void* data,
 
     std::scoped_lock lock(m_stateMutex);
     m_playing.store(false, std::memory_order_release);
-    std::atomic_store_explicit(&m_dataSource,
-                               std::shared_ptr<audio_io::DataSource>{},
-                               std::memory_order_release);
+    m_dataSource.store(nullptr, std::memory_order_release);
     m_loaded.store(false, std::memory_order_release);
 
     m_filePath.clear();
@@ -73,9 +69,7 @@ void AudioPlayerSource::unloadFile() {
     m_playing.store(false, std::memory_order_release);
 
     std::scoped_lock lock(m_stateMutex);
-    std::atomic_store_explicit(&m_dataSource,
-                               std::shared_ptr<audio_io::DataSource>{},
-                               std::memory_order_release);
+    m_dataSource.store(nullptr, std::memory_order_release);
     m_loaded.store(false, std::memory_order_release);
     m_channels = 0;
     m_sampleRate = 0;
@@ -100,7 +94,7 @@ void AudioPlayerSource::stop() {
     m_playing.store(false, std::memory_order_release);
     m_stopRequested.store(false, std::memory_order_release);
     m_fadeOutCounter = 0;
-    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = m_dataSource.load(std::memory_order_acquire);
     if (ds) { ds->seek(0); }
 }
 
@@ -111,25 +105,25 @@ void AudioPlayerSource::requestStop() {
 }
 
 void AudioPlayerSource::seekToFrame(uint64_t frame) {
-    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = m_dataSource.load(std::memory_order_acquire);
     if (ds) { ds->seek(frame); }
 }
 
 uint64_t AudioPlayerSource::getCurrentFrame() const {
-    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = m_dataSource.load(std::memory_order_acquire);
     if (!ds) { return 0; }
     return ds->get_cursor();
 }
 
 uint64_t AudioPlayerSource::getTotalFrames() const {
-    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = m_dataSource.load(std::memory_order_acquire);
     if (!ds) { return 0; }
     return ds->get_total_frames();
 }
 
 void AudioPlayerSource::setFinishedCallback(FinishedCallback callback) {
     auto ptr = callback ? std::make_shared<FinishedCallback>(std::move(callback)) : nullptr;
-    std::atomic_store_explicit(&m_finishedCallback, std::move(ptr), std::memory_order_release);
+    m_finishedCallback.store(std::move(ptr), std::memory_order_release);
 }
 
 void AudioPlayerSource::prepareToPlay(uint32_t sampleRate, uint32_t /*bufferSize*/) {
@@ -140,7 +134,7 @@ void AudioPlayerSource::prepareToPlay(uint32_t sampleRate, uint32_t /*bufferSize
     if (m_filePath.empty() && m_memoryData == nullptr) { return; }
 
     uint64_t initialFrame = 0;
-    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = m_dataSource.load(std::memory_order_acquire);
     if (ds && ds->get_sample_rate() == sampleRate && ds->get_channel_count() == m_channels) {
         initialFrame = ds->get_cursor();
     }
@@ -164,7 +158,7 @@ void AudioPlayerSource::process(float* outputBuffer,
         return;
     }
 
-    auto ds = std::atomic_load_explicit(&m_dataSource, std::memory_order_acquire);
+    auto ds = m_dataSource.load(std::memory_order_acquire);
     if (!ds) { return; }
 
     if (numOutputChannels != ds->get_channel_count()) { return; }
@@ -215,7 +209,7 @@ void AudioPlayerSource::process(float* outputBuffer,
 
     if (framesRead < frameCount) {
         m_playing.store(false, std::memory_order_release);
-        auto callback = std::atomic_load_explicit(&m_finishedCallback, std::memory_order_acquire);
+        auto callback = m_finishedCallback.load(std::memory_order_acquire);
         if (callback) { (*callback)(); }
     }
 }
@@ -250,7 +244,7 @@ bool AudioPlayerSource::rebuildDataSource(uint32_t decodedChannels,
 
     if (initialFrame > 0) { ds->seek(initialFrame); }
 
-    std::atomic_store_explicit(&m_dataSource, std::move(ds), std::memory_order_release);
+    m_dataSource.store(std::move(ds), std::memory_order_release);
     return true;
 }
 

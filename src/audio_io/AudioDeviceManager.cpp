@@ -952,7 +952,7 @@ void AudioDeviceManager::removeDuplexCallback(AudioIODeviceCallback* callback) {
 void AudioDeviceManager::setDeviceNotificationCallback(DeviceNotificationCallback callback) {
     auto ptr =
         callback ? std::make_shared<DeviceNotificationCallback>(std::move(callback)) : nullptr;
-    std::atomic_store_explicit(&m_notificationCallback, std::move(ptr), std::memory_order_release);
+    m_notificationCallback.store(std::move(ptr), std::memory_order_release);
 }
 
 void AudioDeviceManager::setLogCallback(LogCallback callback) {
@@ -1509,8 +1509,7 @@ void AudioDeviceManager::notificationCallback(const void* pNotificationVoid) {
     auto* userData = static_cast<DeviceUserData*>(pNotification->pDevice->pUserData);
     if (!userData || !userData->manager) { return; }
 
-    auto cb = std::atomic_load_explicit(&userData->manager->m_notificationCallback,
-                                        std::memory_order_acquire);
+    auto cb = userData->manager->m_notificationCallback.load(std::memory_order_acquire);
     if (cb) { (*cb)(toNotificationType(pNotification->type)); }
 }
 
