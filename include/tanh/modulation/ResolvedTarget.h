@@ -39,9 +39,7 @@ struct ResolvedTarget {
     void build_change_points() {
         change_points.clear();
         for (size_t i = 0; i < change_point_flags.size(); ++i) {
-            if (change_point_flags[i]) {
-                change_points.push_back(static_cast<uint32_t>(i));
-            }
+            if (change_point_flags[i]) { change_points.push_back(static_cast<uint32_t>(i)); }
         }
     }
 };

@@ -91,7 +91,8 @@ public:
     RingsStringSynthPart() {}
     ~RingsStringSynthPart() {}
 
-    void prepare(uint16_t* reverb_buffer, float sample_rate = thl::dsp::resonator::kDefaultSampleRate);
+    void prepare(uint16_t* reverb_buffer,
+                 float sample_rate = thl::dsp::resonator::kDefaultSampleRate);
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,

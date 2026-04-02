@@ -20,10 +20,10 @@ public:
      * @param duration_ms  Grain duration in milliseconds
      */
     virtual void on_grain_triggered(int grain_index,
-                                     float position,
-                                     float size,
-                                     float velocity,
-                                     float duration_ms) = 0;
+                                    float position,
+                                    float size,
+                                    float velocity,
+                                    float duration_ms) = 0;
 
     /**
      * Called periodically (at a configurable rate) with current grain state.
@@ -32,8 +32,8 @@ public:
      * @param envelope_amplitude  Current envelope output value (0-1)
      */
     virtual void on_grain_updated(int grain_index,
-                                   float normalized_position,
-                                   float envelope_amplitude) = 0;
+                                  float normalized_position,
+                                  float envelope_amplitude) = 0;
 
     /**
      * Called when a grain finishes playback.

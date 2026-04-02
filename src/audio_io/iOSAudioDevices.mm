@@ -6,8 +6,7 @@
 #import <AVFoundation/AVAudioSession.h>
 
 static constexpr AVAudioSessionCategoryOptions kBaseSessionOptions =
-    AVAudioSessionCategoryOptionDefaultToSpeaker |
-    AVAudioSessionCategoryOptionAllowAirPlay |
+    AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowAirPlay |
     AVAudioSessionCategoryOptionMixWithOthers;
 
 namespace thl {
@@ -15,8 +14,7 @@ namespace thl {
 void configureIOSAudioSession() {
     AVAudioSession* session = [AVAudioSession sharedInstance];
     AVAudioSessionCategoryOptions options =
-        kBaseSessionOptions |
-        AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+        kBaseSessionOptions | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
 
     // On iOS 26+ enable high-quality BLE recording automatically.
     if (@available(iOS 26.0, *)) {
@@ -24,9 +22,7 @@ void configureIOSAudioSession() {
     }
 
     NSError* error = nil;
-    [session setCategory:AVAudioSessionCategoryPlayAndRecord
-             withOptions:options
-                   error:&error];
+    [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
 }
 
 bool isIOSBluetoothRouteActive() {
@@ -51,9 +47,7 @@ bool isIOSClassicBluetoothConnected() {
     AVAudioSession* session = [AVAudioSession sharedInstance];
     // Check available inputs for classic BT (HFP) ports.
     for (AVAudioSessionPortDescription* port in session.availableInputs) {
-        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
-            return true;
-        }
+        if ([port.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) { return true; }
     }
     // Check current route outputs (A2DP devices don't appear in availableInputs).
     for (AVAudioSessionPortDescription* port in session.currentRoute.outputs) {
@@ -86,7 +80,7 @@ bool setIOSBluetoothProfile(BluetoothProfile profile, const char** outProfileNam
         options |= AVAudioSessionCategoryOptionBluetoothHighQualityRecording;
     }
 
-    if (outProfileName) *outProfileName = profileName;
+    if (outProfileName) { *outProfileName = profileName; }
 
     NSError* error = nil;
     BOOL ok = [session setCategory:AVAudioSessionCategoryPlayAndRecord
@@ -95,27 +89,28 @@ bool setIOSBluetoothProfile(BluetoothProfile profile, const char** outProfileNam
 
     if (!ok) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
-                           "thl.audio_io.ios_devices",
-                           "setBluetoothProfile: failed to set session category — %s",
-                           error ? [[error localizedDescription] UTF8String] : "unknown error");
+                          "thl.audio_io.ios_devices",
+                          "setBluetoothProfile: failed to set session category — %s",
+                          error ? [[error localizedDescription] UTF8String] : "unknown error");
         return false;
     }
 
     ok = [session setActive:YES error:&error];
     if (!ok) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
-                           "thl.audio_io.ios_devices",
-                           "setBluetoothProfile: failed to activate session — %s",
-                           error ? [[error localizedDescription] UTF8String] : "unknown error");
+                          "thl.audio_io.ios_devices",
+                          "setBluetoothProfile: failed to activate session — %s",
+                          error ? [[error localizedDescription] UTF8String] : "unknown error");
         return false;
     }
 
-    thl::Logger::logf(thl::Logger::LogLevel::Info,
-                       "thl.audio_io.ios_devices",
-                       "Bluetooth profile set to %s (session sampleRate=%.0f, IOBufferDuration=%.4f)",
-                       profileName,
-                       session.sampleRate,
-                       session.IOBufferDuration);
+    thl::Logger::logf(
+        thl::Logger::LogLevel::Info,
+        "thl.audio_io.ios_devices",
+        "Bluetooth profile set to %s (session sampleRate=%.0f, IOBufferDuration=%.4f)",
+        profileName,
+        session.sampleRate,
+        session.IOBufferDuration);
     return true;
 }
 
@@ -141,66 +136,62 @@ bool setIOSPreferredInputRoute(const AudioRouteInfo& route) {
             NSError* error = nil;
             BOOL ok = [session setPreferredInput:port error:&error];
             if (!ok) {
-                thl::Logger::logf(thl::Logger::LogLevel::Error,
-                                   "thl.audio_io.ios_devices",
-                                   "Failed to set preferred input '%s': %s",
-                                   route.name.c_str(),
-                                   error ? [[error localizedDescription] UTF8String]
-                                         : "unknown error");
+                thl::Logger::logf(
+                    thl::Logger::LogLevel::Error,
+                    "thl.audio_io.ios_devices",
+                    "Failed to set preferred input '%s': %s",
+                    route.name.c_str(),
+                    error ? [[error localizedDescription] UTF8String] : "unknown error");
                 return false;
             }
             thl::Logger::logf(thl::Logger::LogLevel::Info,
-                               "thl.audio_io.ios_devices",
-                               "Preferred input set to '%s' (%s)",
-                               route.name.c_str(), route.portType.c_str());
+                              "thl.audio_io.ios_devices",
+                              "Preferred input set to '%s' (%s)",
+                              route.name.c_str(),
+                              route.portType.c_str());
             return true;
         }
     }
 
     thl::Logger::logf(thl::Logger::LogLevel::Error,
-                       "thl.audio_io.ios_devices",
-                       "Input route '%s' (uid=%s) not found in available inputs",
-                       route.name.c_str(), route.uid.c_str());
+                      "thl.audio_io.ios_devices",
+                      "Input route '%s' (uid=%s) not found in available inputs",
+                      route.name.c_str(),
+                      route.uid.c_str());
     return false;
 }
 
 bool overrideIOSOutputToSpeaker(bool toSpeaker) {
     AVAudioSession* session = [AVAudioSession sharedInstance];
     NSError* error = nil;
-    AVAudioSessionPortOverride override = toSpeaker
-        ? AVAudioSessionPortOverrideSpeaker
-        : AVAudioSessionPortOverrideNone;
+    AVAudioSessionPortOverride override =
+        toSpeaker ? AVAudioSessionPortOverrideSpeaker : AVAudioSessionPortOverrideNone;
     BOOL ok = [session overrideOutputAudioPort:override error:&error];
     if (!ok) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
-                           "thl.audio_io.ios_devices",
-                           "Failed to override output port: %s",
-                           error ? [[error localizedDescription] UTF8String]
-                                 : "unknown error");
+                          "thl.audio_io.ios_devices",
+                          "Failed to override output port: %s",
+                          error ? [[error localizedDescription] UTF8String] : "unknown error");
         return false;
     }
     thl::Logger::logf(thl::Logger::LogLevel::Info,
-                       "thl.audio_io.ios_devices",
-                       "Output port override: %s",
-                       toSpeaker ? "speaker" : "none (default route)");
+                      "thl.audio_io.ios_devices",
+                      "Output port override: %s",
+                      toSpeaker ? "speaker" : "none (default route)");
     return true;
 }
 
 std::string getIOSCurrentInputRouteName() {
     AVAudioSession* session = [AVAudioSession sharedInstance];
     NSArray<AVAudioSessionPortDescription*>* inputs = session.currentRoute.inputs;
-    if (inputs.count > 0) {
-        return [inputs[0].portName UTF8String];
-    }
+    if (inputs.count > 0) { return [inputs[0].portName UTF8String]; }
     return {};
 }
 
 std::string getIOSCurrentOutputRouteName() {
     AVAudioSession* session = [AVAudioSession sharedInstance];
     NSArray<AVAudioSessionPortDescription*>* outputs = session.currentRoute.outputs;
-    if (outputs.count > 0) {
-        return [outputs[0].portName UTF8String];
-    }
+    if (outputs.count > 0) { return [outputs[0].portName UTF8String]; }
     return {};
 }
 

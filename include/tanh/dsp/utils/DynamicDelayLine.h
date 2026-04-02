@@ -44,7 +44,7 @@ private:
     thl::dsp::audio::Buffer<float> m_buf;
     size_t m_max_delay = 1;
     size_t m_write_ptr = 0;
-    size_t m_delay     = 1;
+    size_t m_delay = 1;
 
     DynamicDelayLine(const DynamicDelayLine&) = delete;
     DynamicDelayLine& operator=(const DynamicDelayLine&) = delete;

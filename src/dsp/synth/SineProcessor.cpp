@@ -54,10 +54,11 @@ void SineProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer,
             channel_ptrs[ch][i] = current_amp * std::sin(phase);
             phase += phase_increment;
 
-            if (phase >= two_pi)
+            if (phase >= two_pi) {
                 phase -= two_pi;
-            else if (phase < 0.0f)
+            } else if (phase < 0.0f) {
                 phase += two_pi;
+            }
         }
     }
 }

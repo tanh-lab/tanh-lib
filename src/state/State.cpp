@@ -78,8 +78,7 @@ void State::set_in_root(std::string_view key,
             try {
                 if (value == "true" || value == "1" || value == "yes" || value == "on") {
                     d_value = 1.0;
-                } else if (value == "false" || value == "0" || value == "no" ||
-                           value == "off") {
+                } else if (value == "false" || value == "0" || value == "no" || value == "off") {
                     d_value = 0.0;
                 } else {
                     d_value = std::stod(value);
@@ -111,8 +110,7 @@ void State::set_in_root(std::string_view key,
                                                        std::memory_order_relaxed);
                         break;
                     case ParameterType::Bool:
-                        record->cache.atomic_bool.store(d_value != 0.0,
-                                                        std::memory_order_relaxed);
+                        record->cache.atomic_bool.store(d_value != 0.0, std::memory_order_relaxed);
                         break;
                     default: break;
                 }
@@ -137,8 +135,7 @@ void State::set_in_root(std::string_view key,
                     if constexpr (std::is_same_v<T, bool>) {
                         record->cache.atomic_bool.store(value, std::memory_order_relaxed);
                     } else {
-                        record->cache.atomic_bool.store(value != T{0},
-                                                        std::memory_order_relaxed);
+                        record->cache.atomic_bool.store(value != T{0}, std::memory_order_relaxed);
                     }
                     break;
                 case ParameterType::String:
@@ -203,9 +200,7 @@ void State::set_in_root(std::string_view key,
         }
 
         // Publish the new entry in the lock-free index
-        m_index_rcu.update([&](IndexMap& idx) {
-            idx[std::string(key)] = record;
-        });
+        m_index_rcu.update([&](IndexMap& idx) { idx[std::string(key)] = record; });
     }
 
     // Handle notification
@@ -216,9 +211,8 @@ void State::set_in_root(std::string_view key,
 
         Parameter param_obj(this, key_copy);
 
-        bool is_in_gesture = record
-            ? record->metadata.in_gesture.load(std::memory_order_relaxed)
-            : false;
+        bool is_in_gesture =
+            record ? record->metadata.in_gesture.load(std::memory_order_relaxed) : false;
 
         auto [group, param_name] = resolve_path(key_copy);
 
@@ -227,7 +221,11 @@ void State::set_in_root(std::string_view key,
         if (group) {
             group->notify_listeners(key_copy, param_obj, strategy, source, is_in_gesture);
         } else {
-            const_cast<State*>(this)->notify_listeners(key_copy, param_obj, strategy, source, is_in_gesture);
+            const_cast<State*>(this)->notify_listeners(key_copy,
+                                                       param_obj,
+                                                       strategy,
+                                                       source,
+                                                       is_in_gesture);
         }
     }
 }
@@ -266,38 +264,29 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
                 return record->string_value;
             }
             case ParameterType::Double:
-                return std::to_string(
-                    record->cache.atomic_double.load(std::memory_order_relaxed));
+                return std::to_string(record->cache.atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
-                return std::to_string(
-                    record->cache.atomic_float.load(std::memory_order_relaxed));
+                return std::to_string(record->cache.atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
-                return std::to_string(
-                    record->cache.atomic_int.load(std::memory_order_relaxed));
+                return std::to_string(record->cache.atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return record->cache.atomic_bool.load(std::memory_order_relaxed) ? "true"
-                                                                                : "false";
+                return record->cache.atomic_bool.load(std::memory_order_relaxed) ? "true" : "false";
             default: return "";
         }
     } else {
         // Numeric types: read from the native atomic and convert on the fly
         switch (param_type) {
             case ParameterType::Double:
-                return static_cast<T>(
-                    record->cache.atomic_double.load(std::memory_order_relaxed));
+                return static_cast<T>(record->cache.atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
-                return static_cast<T>(
-                    record->cache.atomic_float.load(std::memory_order_relaxed));
+                return static_cast<T>(record->cache.atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
-                return static_cast<T>(
-                    record->cache.atomic_int.load(std::memory_order_relaxed));
+                return static_cast<T>(record->cache.atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return static_cast<T>(
-                    record->cache.atomic_bool.load(std::memory_order_relaxed));
+                return static_cast<T>(record->cache.atomic_bool.load(std::memory_order_relaxed));
             case ParameterType::String: {
                 // For string-typed params, convert from atomic_double
-                return static_cast<T>(
-                    record->cache.atomic_double.load(std::memory_order_relaxed));
+                return static_cast<T>(record->cache.atomic_double.load(std::memory_order_relaxed));
             }
             default: return T{};
         }
@@ -315,9 +304,8 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
     std::lock_guard<std::mutex> lock(m_storage_mutex);
     for (const auto& [key, record] : m_storage) {
         // If group_prefix is non-empty, skip keys that don't start with it
-        if (!group_prefix.empty() &&
-            (key.size() < group_prefix.size() ||
-             key.compare(0, group_prefix.size(), group_prefix) != 0)) {
+        if (!group_prefix.empty() && (key.size() < group_prefix.size() ||
+                                      key.compare(0, group_prefix.size(), group_prefix) != 0)) {
             continue;
         }
 
@@ -326,24 +314,18 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
 
         switch (record->type) {
             case ParameterType::Double:
-                param_obj["value"] =
-                    record->cache.atomic_double.load(std::memory_order_relaxed);
+                param_obj["value"] = record->cache.atomic_double.load(std::memory_order_relaxed);
                 break;
             case ParameterType::Float:
-                param_obj["value"] =
-                    record->cache.atomic_float.load(std::memory_order_relaxed);
+                param_obj["value"] = record->cache.atomic_float.load(std::memory_order_relaxed);
                 break;
             case ParameterType::Int:
-                param_obj["value"] =
-                    record->cache.atomic_int.load(std::memory_order_relaxed);
+                param_obj["value"] = record->cache.atomic_int.load(std::memory_order_relaxed);
                 break;
             case ParameterType::Bool:
-                param_obj["value"] =
-                    record->cache.atomic_bool.load(std::memory_order_relaxed);
+                param_obj["value"] = record->cache.atomic_bool.load(std::memory_order_relaxed);
                 break;
-            case ParameterType::String:
-                param_obj["value"] = record->string_value;
-                break;
+            case ParameterType::String: param_obj["value"] = record->string_value; break;
             default: break;
         }
 
@@ -418,8 +400,7 @@ void State::clear() {
 
 bool State::is_empty() const TANH_NONBLOCKING_FUNCTION {
     // Check if parameters are empty
-    bool parametersEmpty =
-        m_index_rcu.read([](const IndexMap& idx) { return idx.empty(); });
+    bool parametersEmpty = m_index_rcu.read([](const IndexMap& idx) { return idx.empty(); });
 
     // If parameters exist, it's not empty
     if (!parametersEmpty) { return false; }
@@ -437,8 +418,8 @@ void State::update_from_json(const nlohmann::json& json_data,
 
     // Helper function to check if a parameter exists before updating
     auto check_parameter_exists = [this](std::string_view key) {
-        bool exists = m_index_rcu.read(
-            [&](const IndexMap& idx) { return idx.find(key) != idx.end(); });
+        bool exists =
+            m_index_rcu.read([&](const IndexMap& idx) { return idx.find(key) != idx.end(); });
         if (!exists) { throw StateKeyNotFoundException(key); }
     };
 
@@ -508,7 +489,7 @@ void State::set_definition_in_root(std::string_view key, const ParameterDefiniti
     ParameterRecord* record = nullptr;
     m_index_rcu.read([&](const IndexMap& idx) {
         auto it = idx.find(key);
-        if (it != idx.end()) record = it->second;
+        if (it != idx.end()) { record = it->second; }
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
@@ -520,7 +501,7 @@ std::optional<ParameterDefinition> State::get_definition_from_root(std::string_v
     ParameterRecord* record = nullptr;
     m_index_rcu.read([&](const IndexMap& idx) {
         auto it = idx.find(key);
-        if (it != idx.end()) record = it->second;
+        if (it != idx.end()) { record = it->second; }
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
@@ -539,10 +520,15 @@ ParameterHandle<T> State::get_handle(std::string_view key) const {
     });
 
     constexpr ParameterType expected_type = []() {
-        if constexpr (std::is_same_v<T, double>) return ParameterType::Double;
-        else if constexpr (std::is_same_v<T, float>) return ParameterType::Float;
-        else if constexpr (std::is_same_v<T, int>) return ParameterType::Int;
-        else if constexpr (std::is_same_v<T, bool>) return ParameterType::Bool;
+        if constexpr (std::is_same_v<T, double>) {
+            return ParameterType::Double;
+        } else if constexpr (std::is_same_v<T, float>) {
+            return ParameterType::Float;
+        } else if constexpr (std::is_same_v<T, int>) {
+            return ParameterType::Int;
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return ParameterType::Bool;
+        }
     }();
     if (record->type != expected_type) {
         throw std::invalid_argument(

@@ -22,8 +22,8 @@ SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key)
     // Check modulation flag if a definition exists
     auto def = m_state.get_definition_from_root(param_key);
     if (def.has_value() && !def->m_modulation) {
-        throw std::invalid_argument(
-            "Parameter '" + std::string(param_key) + "' has modulation disabled");
+        throw std::invalid_argument("Parameter '" + std::string(param_key) +
+                                    "' has modulation disabled");
     }
 
     auto* target = ensure_target_locked(param_key);
@@ -32,9 +32,7 @@ SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key)
 
 ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id) {
     auto it = m_targets.find(id);
-    if (it != m_targets.end()) {
-        return &it->second;
-    }
+    if (it != m_targets.end()) { return &it->second; }
     ResolvedTarget target;
     auto [target_it, inserted] = m_targets.emplace(std::string(id), target);
     target_it->second.id = id;
@@ -48,13 +46,9 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
     m_sample_rate = sample_rate;
     m_samples_per_block = samples_per_block;
 
-    for (auto& [id, source] : m_sources) {
-        source->prepare(sample_rate, samples_per_block);
-    }
+    for (auto& [id, source] : m_sources) { source->prepare(sample_rate, samples_per_block); }
 
-    for (auto& [id, target] : m_targets) {
-        target.resize(samples_per_block);
-    }
+    for (auto& [id, target] : m_targets) { target.resize(samples_per_block); }
 
     rebuild_schedule_locked();
 }
@@ -62,9 +56,7 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
 void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     m_config.read([&](const ProcessingConfig& config) {
         // 1. Clear all active targets for this block
-        for (auto* target : config.active_targets) {
-            target->clear_per_block();
-        }
+        for (auto* target : config.active_targets) { target->clear_per_block(); }
 
         // 2. Execute schedule steps
         for (const auto& step : config.schedule) {
@@ -76,14 +68,11 @@ void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
         }
 
         // 3. Build final sorted change point lists from flags
-        for (auto* target : config.active_targets) {
-            target->build_change_points();
-        }
+        for (auto* target : config.active_targets) { target->build_change_points(); }
     });
 }
 
-void ModulationMatrix::add_source(const std::string_view id,
-                                  ModulationSource* source) {
+void ModulationMatrix::add_source(const std::string_view id, ModulationSource* source) {
     std::lock_guard<std::mutex> lock(m_writer_mutex);
     auto it = m_sources.find(id);
     if (it != m_sources.end()) {
@@ -101,10 +90,9 @@ void ModulationMatrix::remove_source(const std::string_view id) {
 
     // Remove user-facing routings that reference this source.
     m_user_routings.erase(
-        std::remove_if(m_user_routings.begin(), m_user_routings.end(),
-                       [&](const ModulationRouting& r) {
-                           return r.source_id == id;
-                       }),
+        std::remove_if(m_user_routings.begin(),
+                       m_user_routings.end(),
+                       [&](const ModulationRouting& r) { return r.source_id == id; }),
         m_user_routings.end());
 
     rebuild_schedule_locked();
@@ -123,18 +111,17 @@ void ModulationMatrix::add_routing(const ModulationRouting& routing) {
 void ModulationMatrix::remove_routing(const std::string_view source_id,
                                       const std::string_view target_id) {
     std::lock_guard<std::mutex> lock(m_writer_mutex);
-    m_user_routings.erase(
-        std::remove_if(m_user_routings.begin(), m_user_routings.end(),
-                       [&](const ModulationRouting& r) {
-                           return r.source_id == source_id &&
-                                  r.target_id == target_id;
-                       }),
-        m_user_routings.end());
+    m_user_routings.erase(std::remove_if(m_user_routings.begin(),
+                                         m_user_routings.end(),
+                                         [&](const ModulationRouting& r) {
+                                             return r.source_id == source_id &&
+                                                    r.target_id == target_id;
+                                         }),
+                          m_user_routings.end());
     rebuild_schedule_locked();
 }
 
-const ResolvedTarget* ModulationMatrix::get_target(
-    const std::string_view id) const {
+const ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) const {
     auto it = m_targets.find(id);
     return it != m_targets.end() ? &it->second : nullptr;
 }
@@ -152,9 +139,7 @@ void ModulationMatrix::rebuild_schedule() {
 }
 
 std::vector<ScheduleStep> ModulationMatrix::get_schedule() const {
-    return m_config.read([](const ProcessingConfig& config) {
-        return config.schedule;
-    });
+    return m_config.read([](const ProcessingConfig& config) { return config.schedule; });
 }
 
 void ModulationMatrix::rebuild_schedule_locked() {
@@ -182,9 +167,7 @@ void ModulationMatrix::rebuild_schedule_locked() {
     // parameter_keys(). This creates edges in the dependency graph.
     std::unordered_map<std::string, std::string> target_owner;
     for (auto& [source_id, source] : m_sources) {
-        for (auto& key : source->parameter_keys()) {
-            target_owner[key] = source_id;
-        }
+        for (auto& key : source->parameter_keys()) { target_owner[key] = source_id; }
     }
 
     // Build dependency graph: adjacency list + self-edge detection.
@@ -192,9 +175,7 @@ void ModulationMatrix::rebuild_schedule_locked() {
     // (there exists a routing from B to one of A's parameter targets).
     std::vector<std::string> source_ids;
     source_ids.reserve(m_sources.size());
-    for (auto& [id, _] : m_sources) {
-        source_ids.push_back(id);
-    }
+    for (auto& [id, _] : m_sources) { source_ids.push_back(id); }
 
     std::unordered_map<std::string, std::vector<std::string>> adj;
     std::unordered_map<std::string, bool> has_self_edge;
@@ -205,7 +186,7 @@ void ModulationMatrix::rebuild_schedule_locked() {
 
     for (auto& routing : m_user_routings) {
         auto owner_it = target_owner.find(routing.target_id);
-        if (owner_it == target_owner.end()) continue;
+        if (owner_it == target_owner.end()) { continue; }
 
         const std::string_view owner_id = owner_it->second;
         if (owner_id == routing.source_id) {
@@ -223,9 +204,7 @@ void ModulationMatrix::rebuild_schedule_locked() {
     // Collect active target pointers (pointer-stable in unordered_map)
     std::vector<ResolvedTarget*> new_active_targets;
     new_active_targets.reserve(m_targets.size());
-    for (auto& [id, target] : m_targets) {
-        new_active_targets.push_back(&target);
-    }
+    for (auto& [id, target] : m_targets) { new_active_targets.push_back(&target); }
 
     // Publish everything atomically via RCU
     m_config.update([&](ProcessingConfig& config) {
@@ -234,9 +213,7 @@ void ModulationMatrix::rebuild_schedule_locked() {
         config.active_targets = std::move(new_active_targets);
         // Rebuild per-source routing lookup — pointers into config.routings
         config.routings_by_source.clear();
-        for (const auto& r : config.routings) {
-            config.routings_by_source[r.source].push_back(&r);
-        }
+        for (const auto& r : config.routings) { config.routings_by_source[r.source].push_back(&r); }
     });
 }
 
@@ -245,7 +222,6 @@ void ModulationMatrix::build_schedule_from_graph(
     const std::unordered_map<std::string, std::vector<std::string>>& adj,
     const std::unordered_map<std::string, bool>& has_self_edge,
     std::vector<ScheduleStep>& out_schedule) {
-
     // Tarjan's SCC algorithm
     int index_counter = 0;
     std::unordered_map<std::string, int> index;
@@ -254,43 +230,40 @@ void ModulationMatrix::build_schedule_from_graph(
     std::stack<std::string> stack;
     std::vector<std::vector<std::string>> sccs;
 
-    std::function<void(const std::string)> strongconnect =
-        [&](const std::string v) {
-            index[v] = index_counter;
-            lowlink[v] = index_counter;
-            ++index_counter;
-            stack.push(v);
-            on_stack[v] = true;
+    std::function<void(const std::string)> strongconnect = [&](const std::string v) {
+        index[v] = index_counter;
+        lowlink[v] = index_counter;
+        ++index_counter;
+        stack.push(v);
+        on_stack[v] = true;
 
-            auto adj_it = adj.find(v);
-            if (adj_it != adj.end()) {
-                for (auto& w : adj_it->second) {
-                    if (index.find(w) == index.end()) {
-                        strongconnect(w);
-                        lowlink[v] = std::min(lowlink[v], lowlink[w]);
-                    } else if (on_stack[w]) {
-                        lowlink[v] = std::min(lowlink[v], index[w]);
-                    }
+        auto adj_it = adj.find(v);
+        if (adj_it != adj.end()) {
+            for (auto& w : adj_it->second) {
+                if (index.find(w) == index.end()) {
+                    strongconnect(w);
+                    lowlink[v] = std::min(lowlink[v], lowlink[w]);
+                } else if (on_stack[w]) {
+                    lowlink[v] = std::min(lowlink[v], index[w]);
                 }
             }
+        }
 
-            if (lowlink[v] == index[v]) {
-                std::vector<std::string> scc;
-                std::string w;
-                do {
-                    w = stack.top();
-                    stack.pop();
-                    on_stack[w] = false;
-                    scc.push_back(w);
-                } while (w != v);
-                sccs.push_back(std::move(scc));
-            }
-        };
+        if (lowlink[v] == index[v]) {
+            std::vector<std::string> scc;
+            std::string w;
+            do {
+                w = stack.top();
+                stack.pop();
+                on_stack[w] = false;
+                scc.push_back(w);
+            } while (w != v);
+            sccs.push_back(std::move(scc));
+        }
+    };
 
     for (auto& id : source_ids) {
-        if (index.find(id) == index.end()) {
-            strongconnect(id);
-        }
+        if (index.find(id) == index.end()) { strongconnect(id); }
     }
 
     // Tarjan outputs SCCs in topological order (dependencies first).
@@ -302,17 +275,13 @@ void ModulationMatrix::build_schedule_from_graph(
 
         if (scc.size() == 1 && !self_loop) {
             auto src_it = m_sources.find(scc[0]);
-            if (src_it != m_sources.end()) {
-                out_schedule.push_back(BulkStep{src_it->second});
-            }
+            if (src_it != m_sources.end()) { out_schedule.push_back(BulkStep{src_it->second}); }
         } else {
             CyclicStep step;
             step.sources.reserve(scc.size());
             for (auto& id : scc) {
                 auto src_it = m_sources.find(id);
-                if (src_it != m_sources.end()) {
-                    step.sources.push_back(src_it->second);
-                }
+                if (src_it != m_sources.end()) { step.sources.push_back(src_it->second); }
             }
             out_schedule.push_back(std::move(step));
         }
@@ -327,19 +296,16 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
     source->process(num_samples);
 
     auto it = config.routings_by_source.find(source);
-    if (it == config.routings_by_source.end()) return;
+    if (it == config.routings_by_source.end()) { return; }
 
     for (auto* routing : it->second) {
         const auto& src_output = source->get_output_buffer();
         for (size_t i = 0; i < num_samples; ++i) {
-            routing->target->modulation_buffer[i] +=
-                src_output[i] * routing->depth;
+            routing->target->modulation_buffer[i] += src_output[i] * routing->depth;
         }
 
         for (uint32_t cp : source->get_change_points()) {
-            if (cp < num_samples) {
-                routing->target->change_point_flags[cp] = true;
-            }
+            if (cp < num_samples) { routing->target->change_point_flags[cp] = true; }
         }
 
         apply_routing_change_points(*routing, num_samples);
@@ -348,13 +314,11 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
 
 // ── Cyclic group processing (per-sample with z⁻¹) ────────────────────────────
 
-void ModulationMatrix::process_cyclic(
-    const ProcessingConfig& config,
-    const std::vector<ModulationSource*>& sources, size_t num_samples) {
+void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
+                                      const std::vector<ModulationSource*>& sources,
+                                      size_t num_samples) {
     // Clear change points for all cyclic sources
-    for (auto* source : sources) {
-        source->clear_change_points();
-    }
+    for (auto* source : sources) { source->clear_change_points(); }
 
     // Per-sample processing: interleave sources, apply routings immediately
     for (size_t i = 0; i < num_samples; ++i) {
@@ -367,8 +331,7 @@ void ModulationMatrix::process_cyclic(
             auto it = config.routings_by_source.find(source);
             if (it != config.routings_by_source.end()) {
                 for (auto* routing : it->second) {
-                    routing->target->modulation_buffer[i] +=
-                        sample * routing->depth;
+                    routing->target->modulation_buffer[i] += sample * routing->depth;
                 }
             }
         }
@@ -377,13 +340,11 @@ void ModulationMatrix::process_cyclic(
     // Propagate change points from sources to target flags
     for (auto* source : sources) {
         auto it = config.routings_by_source.find(source);
-        if (it == config.routings_by_source.end()) continue;
+        if (it == config.routings_by_source.end()) { continue; }
 
         for (auto* routing : it->second) {
             for (uint32_t cp : source->get_change_points()) {
-                if (cp < num_samples) {
-                    routing->target->change_point_flags[cp] = true;
-                }
+                if (cp < num_samples) { routing->target->change_point_flags[cp] = true; }
             }
             apply_routing_change_points(*routing, num_samples);
         }
@@ -394,7 +355,7 @@ void ModulationMatrix::process_cyclic(
 
 void ModulationMatrix::apply_routing_change_points(const ResolvedRouting& routing,
                                                    size_t num_samples) {
-    if (routing.max_decimation == 0) return;
+    if (routing.max_decimation == 0) { return; }
 
     for (size_t i = 0; i < num_samples; ++i) {
         if (routing.m_samples_until_update == 0) {

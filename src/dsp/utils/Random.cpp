@@ -89,7 +89,7 @@ uint32_t Random::nlog2_16(uint16_t x) {
         a = t;
         r += 0x00001u;
     }
-    if (r == 0) r++;
+    if (r == 0) { r++; }
     return r;
 }
 

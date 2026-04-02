@@ -22,14 +22,13 @@ enum class LogLevel : std::uint32_t {
 
 /// A single log entry produced by the logger.
 struct LogRecord {
-    std::uint64_t seq = 0;              ///< Monotonic sequence number.
-    std::int64_t timestamp_ms = 0;      ///< Wall-clock UTC epoch (ms).
-    std::uint64_t monotonic_ns = 0;     ///< Steady-clock epoch (ns).
-    std::uint32_t level =
-        static_cast<std::uint32_t>(LogLevel::Info);  ///< Severity level.
-    std::string group;                  ///< Logical group tag.
-    std::string message;                ///< Formatted message body.
-    std::string source;                 ///< Origin identifier (e.g. "native").
+    std::uint64_t seq = 0;           ///< Monotonic sequence number.
+    std::int64_t timestamp_ms = 0;   ///< Wall-clock UTC epoch (ms).
+    std::uint64_t monotonic_ns = 0;  ///< Steady-clock epoch (ns).
+    std::uint32_t level = static_cast<std::uint32_t>(LogLevel::Info);  ///< Severity level.
+    std::string group;                                                 ///< Logical group tag.
+    std::string message;                                               ///< Formatted message body.
+    std::string source;  ///< Origin identifier (e.g. "native").
 };
 
 /// Signature for a user-provided log sink.
@@ -40,11 +39,12 @@ using Callback = std::function<void(const LogRecord&)>;
 /// Controls which sinks are active.  Apply with set_config(); read back
 /// with get_config().  Defaults: platform on, file off, callback on.
 struct LoggerConfig {
-    bool platform_enabled = true;   ///< Platform sink (os_log / android_log / stdout+stderr).
-    bool console_enabled = false;   ///< Explicit stdout/stderr sink (errors+warnings to stderr, rest to stdout).
+    bool platform_enabled = true;  ///< Platform sink (os_log / android_log / stdout+stderr).
+    bool console_enabled = false;  ///< Explicit stdout/stderr sink (errors+warnings to stderr, rest
+                                   ///< to stdout).
     bool file_enabled = true;      ///< Logfmt file sink.
-    bool callback_enabled = true;   ///< Gate for the registered callback.
-    std::string file_path;          ///< Output path for the file sink (empty = no writes).
+    bool callback_enabled = true;  ///< Gate for the registered callback.
+    std::string file_path;         ///< Output path for the file sink (empty = no writes).
 
     /// Maximum number of records to buffer while no callback is registered.
     /// When a callback is set via set_callback(), buffered records are
@@ -96,10 +96,7 @@ std::string format_logfmt(const LogRecord& record);
 void log(LogLevel level, const char* group, const char* message);
 
 /// Log a message with an explicit @p source tag.
-void log_with_source(LogLevel level,
-                     const char* source,
-                     const char* group,
-                     const char* message);
+void log_with_source(LogLevel level, const char* source, const char* group, const char* message);
 
 /// printf-style logging at the given @p level.
 void logf(LogLevel level, const char* group, const char* fmt, ...);

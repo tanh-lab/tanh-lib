@@ -13,8 +13,7 @@ public:
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
-    void process(thl::dsp::audio::AudioBufferView buffer,
-                 uint32_t modulation_offset = 0) override;
+    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
     enum Parameter {
@@ -40,8 +39,7 @@ private:
 };
 
 template <>
-inline float LimiterImpl::get_parameter<float>(Parameter p,
-                                               uint32_t modulation_offset) {
+inline float LimiterImpl::get_parameter<float>(Parameter p, uint32_t modulation_offset) {
     return get_parameter_float(p, modulation_offset);
 }
 

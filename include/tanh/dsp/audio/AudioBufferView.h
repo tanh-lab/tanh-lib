@@ -17,12 +17,8 @@ class BasicAudioBufferView {
 public:
     BasicAudioBufferView() = default;
 
-    BasicAudioBufferView(T* const* channels,
-                         size_t num_channels,
-                         size_t num_frames)
-        : m_channels(channels)
-        , m_num_channels(num_channels)
-        , m_num_frames(num_frames) {}
+    BasicAudioBufferView(T* const* channels, size_t num_channels, size_t num_frames)
+        : m_channels(channels), m_num_channels(num_channels), m_num_frames(num_frames) {}
 
     BasicAudioBufferView(T* mono, size_t num_frames)
         : m_inline_channel(mono)
@@ -35,18 +31,14 @@ public:
         , m_num_channels(buffer.get_num_channels())
         , m_num_frames(buffer.get_num_frames()) {}
 
-    template <typename U = T,
-              typename = std::enable_if_t<std::is_const_v<U>>>
+    template <typename U = T, typename = std::enable_if_t<std::is_const_v<U>>>
     BasicAudioBufferView(const Buffer<std::remove_const_t<T>>& buffer)
-        : m_channels(
-              reinterpret_cast<const float* const*>(
-                  buffer.get_array_of_read_pointers()))
+        : m_channels(reinterpret_cast<const float* const*>(buffer.get_array_of_read_pointers()))
         , m_num_channels(buffer.get_num_channels())
         , m_num_frames(buffer.get_num_frames()) {}
 
     // Implicit conversion: mutable view -> const view
-    template <typename U = T,
-              typename = std::enable_if_t<std::is_const_v<U>>>
+    template <typename U = T, typename = std::enable_if_t<std::is_const_v<U>>>
     BasicAudioBufferView(const BasicAudioBufferView<float>& other)
         : m_frame_offset(other.get_frame_offset())
         , m_num_channels(other.get_num_channels())
@@ -56,8 +48,7 @@ public:
             m_channels = &m_inline_channel;
             m_frame_offset = 0;
         } else {
-            m_channels = reinterpret_cast<const float* const*>(
-                other.get_raw_channels());
+            m_channels = reinterpret_cast<const float* const*>(other.get_raw_channels());
         }
     }
 
@@ -68,9 +59,7 @@ public:
         , m_frame_offset(other.m_frame_offset)
         , m_num_channels(other.m_num_channels)
         , m_num_frames(other.m_num_frames) {
-        if (other.is_mono_inline()) {
-            m_channels = &m_inline_channel;
-        }
+        if (other.is_mono_inline()) { m_channels = &m_inline_channel; }
     }
 
     // Move constructor with mono fixup
@@ -80,9 +69,7 @@ public:
         , m_frame_offset(other.m_frame_offset)
         , m_num_channels(other.m_num_channels)
         , m_num_frames(other.m_num_frames) {
-        if (other.is_mono_inline()) {
-            m_channels = &m_inline_channel;
-        }
+        if (other.is_mono_inline()) { m_channels = &m_inline_channel; }
     }
 
     // Copy assignment with mono fixup
@@ -93,9 +80,7 @@ public:
             m_frame_offset = other.m_frame_offset;
             m_num_channels = other.m_num_channels;
             m_num_frames = other.m_num_frames;
-            if (other.is_mono_inline()) {
-                m_channels = &m_inline_channel;
-            }
+            if (other.is_mono_inline()) { m_channels = &m_inline_channel; }
         }
         return *this;
     }
@@ -108,19 +93,14 @@ public:
             m_frame_offset = other.m_frame_offset;
             m_num_channels = other.m_num_channels;
             m_num_frames = other.m_num_frames;
-            if (other.is_mono_inline()) {
-                m_channels = &m_inline_channel;
-            }
+            if (other.is_mono_inline()) { m_channels = &m_inline_channel; }
         }
         return *this;
     }
 
-    const T* get_read_pointer(size_t channel) const {
-        return m_channels[channel] + m_frame_offset;
-    }
+    const T* get_read_pointer(size_t channel) const { return m_channels[channel] + m_frame_offset; }
 
-    template <typename U = T,
-              typename = std::enable_if_t<!std::is_const_v<U>>>
+    template <typename U = T, typename = std::enable_if_t<!std::is_const_v<U>>>
     T* get_write_pointer(size_t channel) {
         return m_channels[channel] + m_frame_offset;
     }
@@ -139,9 +119,7 @@ public:
     T* const* get_raw_channels() const { return m_channels; }
     size_t get_frame_offset() const { return m_frame_offset; }
 
-    bool is_mono_inline() const {
-        return m_channels == &m_inline_channel;
-    }
+    bool is_mono_inline() const { return m_channels == &m_inline_channel; }
 
     BasicAudioBufferView sub_block(size_t start_frame, size_t num_frames) const {
         if (is_mono_inline()) {

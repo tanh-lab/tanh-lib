@@ -241,7 +241,7 @@ void RingsStringSynthPart::process_envelopes(float shape, uint8_t* flags, float*
 
     for (int32_t i = 0; i < m_polyphony; ++i) {
         float drone = shape < 0.98f ? 0.0f : (shape - 0.98f) * 55.0f;
-        if (drone >= 1.0f) drone = 1.0f;
+        if (drone >= 1.0f) { drone = 1.0f; }
 
         m_group[i].envelope.set_ad(attack_rate, decay_rate);
         float value = m_group[i].envelope.process(flags[i]);
@@ -259,10 +259,10 @@ const float formants[kFormantTableSize][kNumFormants] = {
 };
 
 void RingsStringSynthPart::process_formant_filter(float vowel,
-                                             float shift,
-                                             float resonance,
-                                             thl::dsp::audio::AudioBufferView out,
-                                             thl::dsp::audio::AudioBufferView aux) {
+                                                  float shift,
+                                                  float resonance,
+                                                  thl::dsp::audio::AudioBufferView out,
+                                                  thl::dsp::audio::AudioBufferView aux) {
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
     size_t size = out.get_num_frames();
@@ -279,13 +279,10 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
         float b = formants[vowel_integral + 1][i];
         float f = a + (b - a) * vowel_fractional;
         f *= shift;
-        m_formant_filter[i].set_f_q<Approximation::Dirty>(
-            f / m_sample_rate,
-            resonance);
+        m_formant_filter[i].set_f_q<Approximation::Dirty>(f / m_sample_rate, resonance);
         thl::dsp::audio::ConstAudioBufferView filter_in(m_filter_in_buffer, size);
         thl::dsp::audio::AudioBufferView filter_out(m_filter_out_buffer, size);
-        m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(filter_in,
-                                                                            filter_out);
+        m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(filter_in, filter_out);
         const float pan = i * 0.3f + 0.2f;
         for (size_t j = 0; j < size; ++j) {
             out_ptr[j] += m_filter_out_buffer[j] * pan * 0.5f;
@@ -299,11 +296,12 @@ struct ChordNote {
     float amplitude;
 };
 
-void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
-                              const thl::dsp::resonator::RingsPatch& patch,
-                              thl::dsp::audio::ConstAudioBufferView in,
-                              thl::dsp::audio::AudioBufferView out,
-                              thl::dsp::audio::AudioBufferView aux) {
+void RingsStringSynthPart::process(
+    const thl::dsp::resonator::RingsPerformanceState& performance_state,
+    const thl::dsp::resonator::RingsPatch& patch,
+    thl::dsp::audio::ConstAudioBufferView in,
+    thl::dsp::audio::AudioBufferView out,
+    thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
@@ -371,11 +369,12 @@ void RingsStringSynthPart::process(const thl::dsp::resonator::RingsPerformanceSt
             }
 
             float frequency = semitones_to_ratio(note - 69.0f) * m_a3;
-            m_voice[group * chord_size + chord_note].render(frequency,
-                                                            amplitudes,
-                                                            num_harmonics,
-                                                            (group + chord_note) & 1 ? out_ptr : aux_ptr,
-                                                            size);
+            m_voice[group * chord_size + chord_note].render(
+                frequency,
+                amplitudes,
+                num_harmonics,
+                (group + chord_note) & 1 ? out_ptr : aux_ptr,
+                size);
         }
     }
 

@@ -48,7 +48,6 @@
 
 namespace thl::dsp::synth {
 
-using thl::dsp::resonator::ResonatorModel;
 using thl::dsp::resonator::RESONATOR_MODEL_FM_VOICE;
 using thl::dsp::resonator::RESONATOR_MODEL_LAST;
 using thl::dsp::resonator::RESONATOR_MODEL_MODAL;
@@ -56,6 +55,7 @@ using thl::dsp::resonator::RESONATOR_MODEL_STRING;
 using thl::dsp::resonator::RESONATOR_MODEL_STRING_AND_REVERB;
 using thl::dsp::resonator::RESONATOR_MODEL_SYMPATHETIC_STRING;
 using thl::dsp::resonator::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED;
+using thl::dsp::resonator::ResonatorModel;
 
 const int32_t kMaxPolyphony = 4;
 const int32_t kNumStrings = kMaxPolyphony * 2;
@@ -71,7 +71,8 @@ public:
     RingsVoiceManager() {}
     ~RingsVoiceManager() {}
 
-    void prepare(uint16_t* reverb_buffer, float sample_rate = thl::dsp::resonator::kDefaultSampleRate);
+    void prepare(uint16_t* reverb_buffer,
+                 float sample_rate = thl::dsp::resonator::kDefaultSampleRate);
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
@@ -100,7 +101,8 @@ public:
 
 private:
     void configure_resonators();
-    void prepare_voice_params(const thl::dsp::resonator::RingsPerformanceState& performance_state, const thl::dsp::resonator::RingsPatch& patch);
+    void prepare_voice_params(const thl::dsp::resonator::RingsPerformanceState& performance_state,
+                              const thl::dsp::resonator::RingsPatch& patch);
     void render_modal_voice(int32_t voice,
                             const thl::dsp::resonator::RingsPerformanceState& performance_state,
                             const thl::dsp::resonator::RingsPatch& patch,

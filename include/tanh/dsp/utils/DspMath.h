@@ -34,8 +34,8 @@ inline float soft_limit(float x) {
 }
 
 inline float soft_clip(float x) {
-    if (x < -3.0f) return -1.0f;
-    if (x > 3.0f) return 1.0f;
+    if (x < -3.0f) { return -1.0f; }
+    if (x > 3.0f) { return 1.0f; }
     return soft_limit(x);
 }
 

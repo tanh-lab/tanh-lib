@@ -81,7 +81,7 @@ void AudioFileSink::process(float* /*outputBuffer*/,
     const uint32_t totalSamples = frameCount * numInputChannels;
     for (uint32_t i = 0; i < totalSamples; ++i) {
         float absVal = std::fabs(inputBuffer[i]);
-        if (absVal > peak) peak = absVal;
+        if (absVal > peak) { peak = absVal; }
     }
     m_peakLevel.store(peak, std::memory_order_release);
 }

@@ -63,9 +63,9 @@ struct AudioDeviceManager::Impl {
     // Capture rate measurement — used on Android to detect the actual SCO
     // sample rate by timing callbacks.  Written from the audio thread,
     // read from the main thread via getCaptureSampleRate().
-    std::atomic<uint64_t> captureFirstCallbackUs{0};   // microseconds since epoch
+    std::atomic<uint64_t> captureFirstCallbackUs{0};  // microseconds since epoch
     std::atomic<uint64_t> captureTotalFrames{0};
-    std::atomic<uint32_t> captureMeasuredRate{0};       // 0 = not yet measured
+    std::atomic<uint32_t> captureMeasuredRate{0};              // 0 = not yet measured
     static constexpr uint64_t kRateCalibrationFrames = 16000;  // ~1 s at 16 kHz
 
     DeviceUserData playbackUserData;
@@ -123,7 +123,7 @@ ma_bool32 enumCallback(ma_context* /*pContext*/,
                        const ma_device_info* pInfo,
                        void* pUserData) {
     auto* userData = static_cast<EnumUserData*>(pUserData);
-    if (deviceType != userData->targetType) return MA_TRUE;
+    if (deviceType != userData->targetType) { return MA_TRUE; }
 
     static_assert(sizeof(ma_device_id) <= AudioDeviceInfo::kDeviceIdStorageSize,
                   "ma_device_id too large for storage");
@@ -140,10 +140,10 @@ ma_bool32 enumCallback(ma_context* /*pContext*/,
 
 uint32_t AudioDeviceManager::clampBufferSizeForBluetoothRoute(uint32_t bufferSizeInFrames,
                                                               uint32_t sampleRate) {
-    if (sampleRate == 0) return bufferSizeInFrames;
-    uint32_t maxFrames = static_cast<uint32_t>(
-        static_cast<float>(sampleRate) * kMaxBluetoothIOBufferDurationSeconds);
-    if (maxFrames == 0) maxFrames = 1;
+    if (sampleRate == 0) { return bufferSizeInFrames; }
+    uint32_t maxFrames = static_cast<uint32_t>(static_cast<float>(sampleRate) *
+                                               kMaxBluetoothIOBufferDurationSeconds);
+    if (maxFrames == 0) { maxFrames = 1; }
     return (bufferSizeInFrames > maxFrames) ? maxFrames : bufferSizeInFrames;
 }
 
@@ -228,14 +228,14 @@ void AudioDeviceManager::setJavaVM(void* javaVM) {
 #endif
 
 std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateDevices(DeviceType type) const {
-    if (!m_impl->contextInitialised) return {};
+    if (!m_impl->contextInitialised) { return {}; }
 
 #if defined(THL_PLATFORM_ANDROID)
     // Miniaudio's AAudio backend only reports default devices.
     // Use the Android AudioManager JNI bridge for real enumeration.
     {
         auto jniDevices = enumerateAndroidAudioDevices(type);
-        if (!jniDevices.empty()) return jniDevices;
+        if (!jniDevices.empty()) { return jniDevices; }
     }
     // Fall through to miniaudio as last-resort fallback.
 #endif
@@ -258,8 +258,7 @@ std::vector<AudioDeviceInfo> AudioDeviceManager::enumerateOutputDevices() const 
 }
 
 #if defined(THL_PLATFORM_ANDROID)
-static uint32_t probeAAudioBurstSize(ma_context& context,
-                                     const ma_device_config& devConfig) {
+static uint32_t probeAAudioBurstSize(ma_context& context, const ma_device_config& devConfig) {
     ma_device_config probeConfig = devConfig;
     probeConfig.periodSizeInFrames = 0;
     probeConfig.noFixedSizedCallback = MA_TRUE;
@@ -278,7 +277,7 @@ static uint32_t probeAAudioBurstSize(ma_context& context,
         if (pStream && context.aaudio.AAudioStream_getFramesPerBurst) {
             int32_t burst = reinterpret_cast<int32_t (*)(void*)>(
                 context.aaudio.AAudioStream_getFramesPerBurst)(pStream);
-            if (burst > 0) burstSize = static_cast<uint32_t>(burst);
+            if (burst > 0) { burstSize = static_cast<uint32_t>(burst); }
         }
 
         ma_device_uninit(&probeDevice);
@@ -300,13 +299,13 @@ static AndroidBufferConfig configureAndroidBuffering(ma_context& context,
     result.burstSize = probeAAudioBurstSize(context, devConfig);
 
     if (result.burstSize > 0) {
-        if (bufferSizeInFrames == 0) bufferSizeInFrames = result.burstSize * 4;
+        if (bufferSizeInFrames == 0) { bufferSizeInFrames = result.burstSize * 4; }
 
         // Round up to nearest power-of-two multiple of burst.
         uint32_t m = bufferSizeInFrames / result.burstSize;
-        if (m == 0) m = 1;
+        if (m == 0) { m = 1; }
         uint32_t pot = 1;
-        while (pot < m) pot <<= 1;
+        while (pot < m) { pot <<= 1; }
         m = pot;
 
         if (m <= 2) {
@@ -326,14 +325,13 @@ static AndroidBufferConfig configureAndroidBuffering(ma_context& context,
 static uint32_t resolveAAudioPeriodSize(ma_context& context,
                                         ma_device& device,
                                         ma_device_type deviceType) {
-    auto* pStream = (deviceType == ma_device_type_capture)
-                        ? device.aaudio.pStreamCapture
-                        : device.aaudio.pStreamPlayback;
+    auto* pStream = (deviceType == ma_device_type_capture) ? device.aaudio.pStreamCapture
+                                                           : device.aaudio.pStreamPlayback;
 
     if (pStream && context.aaudio.AAudioStream_getFramesPerDataCallback) {
         int32_t fpdc = reinterpret_cast<int32_t (*)(void*)>(
             context.aaudio.AAudioStream_getFramesPerDataCallback)(pStream);
-        if (fpdc > 0) return static_cast<uint32_t>(fpdc);
+        if (fpdc > 0) { return static_cast<uint32_t>(fpdc); }
     }
 
     return 0;
@@ -453,11 +451,13 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
         uint32_t clamped = clampBufferSizeForBluetoothRoute(bufferSizeInFrames, sampleRate);
         if (clamped != bufferSizeInFrames) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                               "thl.audio_io.audio_device_manager",
-                               "%s: Bluetooth route active — clamping buffer from %u to %u frames "
-                               "(max %.0f ms)",
-                               label, bufferSizeInFrames, clamped,
-                               kMaxBluetoothIOBufferDurationSeconds * 1000.0f);
+                              "thl.audio_io.audio_device_manager",
+                              "%s: Bluetooth route active — clamping buffer from %u to %u frames "
+                              "(max %.0f ms)",
+                              label,
+                              bufferSizeInFrames,
+                              clamped,
+                              kMaxBluetoothIOBufferDurationSeconds * 1000.0f);
             bufferSizeInFrames = clamped;
         }
     }
@@ -465,8 +465,7 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
 
 #if defined(THL_PLATFORM_ANDROID)
     {
-        auto probe = configureAndroidBuffering(
-            m_impl->context, devConfig, bufferSizeInFrames);
+        auto probe = configureAndroidBuffering(m_impl->context, devConfig, bufferSizeInFrames);
 
         burstSize = probe.burstSize;
         devConfig.periodSizeInFrames = probe.periodSize;
@@ -474,20 +473,24 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
         devConfig.periods = probe.periods;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
-                           "thl.audio_io.audio_device_manager",
-                           "%s: probed burstSize=%u, configured periodSize=%u, periods=%u",
-                           label, burstSize, probe.periodSize, probe.periods);
+                          "thl.audio_io.audio_device_manager",
+                          "%s: probed burstSize=%u, configured periodSize=%u, periods=%u",
+                          label,
+                          burstSize,
+                          probe.periodSize,
+                          probe.periods);
     }
 #elif defined(THL_PLATFORM_IOS) || defined(THL_PLATFORM_MACOS)
     {
-        auto probe = probeCoreAudioPeriod(
-            m_impl->context, devConfig, bufferSizeInFrames);
+        auto probe = probeCoreAudioPeriod(m_impl->context, devConfig, bufferSizeInFrames);
 
         if (probe.periodSize > 0 && probe.periodSize != bufferSizeInFrames) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                               "thl.audio_io.audio_device_manager",
-                               "%s: probed periodSize=%u differs from requested %u, adjusting",
-                               label, probe.periodSize, bufferSizeInFrames);
+                              "thl.audio_io.audio_device_manager",
+                              "%s: probed periodSize=%u differs from requested %u, adjusting",
+                              label,
+                              probe.periodSize,
+                              bufferSizeInFrames);
         }
 
         burstSize = probe.periodSize;
@@ -496,9 +499,11 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
         devConfig.periods = configuredPeriods;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
-                           "thl.audio_io.audio_device_manager",
-                           "%s: probed periodSize=%u, periods=%u",
-                           label, probe.periodSize, configuredPeriods);
+                          "thl.audio_io.audio_device_manager",
+                          "%s: probed periodSize=%u, periods=%u",
+                          label,
+                          probe.periodSize,
+                          configuredPeriods);
     }
 #else
     devConfig.periodSizeInFrames = bufferSizeInFrames;
@@ -511,25 +516,29 @@ bool AudioDeviceManager::tryInitialiseDevice(DeviceRole role,
     uint32_t resolvedPeriodSize = 0;
 #if defined(THL_PLATFORM_ANDROID)
     resolvedPeriodSize = resolveAAudioPeriodSize(m_impl->context, *device, deviceType);
-    if (resolvedPeriodSize == 0) resolvedPeriodSize = devConfig.periodSizeInFrames;
+    if (resolvedPeriodSize == 0) { resolvedPeriodSize = devConfig.periodSizeInFrames; }
 #else
     if (role == DeviceRole::Capture) {
         resolvedPeriodSize = device->capture.internalPeriodSizeInFrames;
     } else {
         resolvedPeriodSize = device->playback.internalPeriodSizeInFrames;
     }
-    if (resolvedPeriodSize == 0) resolvedPeriodSize = bufferSizeInFrames;
+    if (resolvedPeriodSize == 0) { resolvedPeriodSize = bufferSizeInFrames; }
 #endif
 
     thl::Logger::logf(thl::Logger::LogLevel::Debug,
-                       "thl.audio_io.audio_device_manager",
-                       "%s: initialised device '%s', sampleRate=%u, periodSize=%u, periods=%u, "
-                       "channels(out=%u, in=%u)",
-                       label,
-                       (role == DeviceRole::Playback || role == DeviceRole::Duplex)
-                           ? outputDevice->name.c_str() : inputDevice->name.c_str(),
-                       sampleRate, resolvedPeriodSize, configuredPeriods,
-                       numOutputChannels, numInputChannels);
+                      "thl.audio_io.audio_device_manager",
+                      "%s: initialised device '%s', sampleRate=%u, periodSize=%u, periods=%u, "
+                      "channels(out=%u, in=%u)",
+                      label,
+                      (role == DeviceRole::Playback || role == DeviceRole::Duplex)
+                          ? outputDevice->name.c_str()
+                          : inputDevice->name.c_str(),
+                      sampleRate,
+                      resolvedPeriodSize,
+                      configuredPeriods,
+                      numOutputChannels,
+                      numInputChannels);
 
     // --- Store results ---
     switch (role) {
@@ -569,12 +578,16 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
                                     uint32_t bufferSizeInFrames,
                                     uint32_t numInputChannels,
                                     uint32_t numOutputChannels) {
-    if (!m_impl->contextInitialised) return false;
+    if (!m_impl->contextInitialised) { return false; }
 
     thl::Logger::logf(thl::Logger::LogLevel::Info,
                       "thl.audio_io.audio_device_manager",
-                      "Initialising AudioDeviceManager with sampleRate=%u, bufferSizeInFrames=%u, numInputChannels=%u, numOutputChannels=%u",
-                      sampleRate, bufferSizeInFrames, numInputChannels, numOutputChannels);
+                      "Initialising AudioDeviceManager with sampleRate=%u, bufferSizeInFrames=%u, "
+                      "numInputChannels=%u, numOutputChannels=%u",
+                      sampleRate,
+                      bufferSizeInFrames,
+                      numInputChannels,
+                      numOutputChannels);
 
     shutdown();
 
@@ -628,10 +641,14 @@ bool AudioDeviceManager::initialise(const AudioDeviceInfo* inputDevice,
         };
 
     if (m_impl->playbackDeviceInitialised) {
-        prepareCallbacks(m_playbackCallbacks, m_impl->playbackDevice, m_impl->playbackPreparedPeriodSize);
+        prepareCallbacks(m_playbackCallbacks,
+                         m_impl->playbackDevice,
+                         m_impl->playbackPreparedPeriodSize);
     }
     if (m_impl->captureDeviceInitialised) {
-        prepareCallbacks(m_captureCallbacks, m_impl->captureDevice, m_impl->capturePreparedPeriodSize);
+        prepareCallbacks(m_captureCallbacks,
+                         m_impl->captureDevice,
+                         m_impl->capturePreparedPeriodSize);
     }
     if (m_impl->duplexDeviceInitialised) {
         prepareCallbacks(m_duplexCallbacks, m_impl->duplexDevice, m_impl->duplexPreparedPeriodSize);
@@ -656,7 +673,13 @@ void AudioDeviceManager::shutdown() {
                           "thl.audio_io.audio_device_manager",
                           "shutdown: API %d — using async timed uninit (legacy AudioTrack path)",
                           androidApi);
-        // Give AudioTrack callback threads time to notice the stop and exit. This is where the deadlock can occur if we uninit too early, as android is in the process of tearing down the AudioTrack but hasn't completed yet. 100 ms is somewhat arbitrary but should be sufficient for even slow devices to exit their callbacks. To make sure we do not block the shutdown thread at any cost we also do async uninit with a timeout below, but in the common case where callbacks exit promptly this sleep should allow the uninit to complete without needing to spawn a worker thread at all.
+        // Give AudioTrack callback threads time to notice the stop and exit. This is where the
+        // deadlock can occur if we uninit too early, as android is in the process of tearing down
+        // the AudioTrack but hasn't completed yet. 100 ms is somewhat arbitrary but should be
+        // sufficient for even slow devices to exit their callbacks. To make sure we do not block
+        // the shutdown thread at any cost we also do async uninit with a timeout below, but in the
+        // common case where callbacks exit promptly this sleep should allow the uninit to complete
+        // without needing to spawn a worker thread at all.
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         auto timedUninit = [](ma_device& device, const char* label) {
@@ -664,7 +687,8 @@ void AudioDeviceManager::shutdown() {
             if (!heap) {
                 thl::Logger::logf(thl::Logger::LogLevel::Warning,
                                   "thl.audio_io.audio_device_manager",
-                                  "%s: malloc failed, falling back to sync uninit", label);
+                                  "%s: malloc failed, falling back to sync uninit",
+                                  label);
                 ma_device_uninit(&device);
                 return;
             }
@@ -679,7 +703,8 @@ void AudioDeviceManager::shutdown() {
                 done->store(true, std::memory_order_release);
                 thl::Logger::logf(thl::Logger::LogLevel::Info,
                                   "thl.audio_io.audio_device_manager",
-                                  "%s: device cleanup completed", label);
+                                  "%s: device cleanup completed",
+                                  label);
             });
 
             constexpr auto kTimeout = std::chrono::milliseconds(300);
@@ -689,7 +714,8 @@ void AudioDeviceManager::shutdown() {
                     worker.detach();
                     thl::Logger::logf(thl::Logger::LogLevel::Warning,
                                       "thl.audio_io.audio_device_manager",
-                                      "%s: uninit timed out, detached worker", label);
+                                      "%s: uninit timed out, detached worker",
+                                      label);
                     return;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -758,7 +784,9 @@ void AudioDeviceManager::shutdown() {
 }
 
 bool AudioDeviceManager::startPlayback() {
-    if (!m_impl->playbackDeviceInitialised || m_playbackRunning.load(std::memory_order_relaxed)) return false;
+    if (!m_impl->playbackDeviceInitialised || m_playbackRunning.load(std::memory_order_relaxed)) {
+        return false;
+    }
 
     ma_result result = ma_device_start(&m_impl->playbackDevice);
     if (result != MA_SUCCESS) { return false; }
@@ -768,7 +796,7 @@ bool AudioDeviceManager::startPlayback() {
 }
 
 void AudioDeviceManager::stopPlayback() {
-    if (!m_playbackRunning.load(std::memory_order_relaxed)) return;
+    if (!m_playbackRunning.load(std::memory_order_relaxed)) { return; }
 
     m_playbackRunning.store(false, std::memory_order_relaxed);
     ma_device_stop(&m_impl->playbackDevice);
@@ -780,7 +808,9 @@ void AudioDeviceManager::stopPlayback() {
 }
 
 bool AudioDeviceManager::startCapture() {
-    if (!m_impl->captureDeviceInitialised || m_captureRunning.load(std::memory_order_relaxed)) return false;
+    if (!m_impl->captureDeviceInitialised || m_captureRunning.load(std::memory_order_relaxed)) {
+        return false;
+    }
 
     // Reset rate measurement so a fresh calibration runs for this session.
     m_impl->captureFirstCallbackUs.store(0, std::memory_order_relaxed);
@@ -795,7 +825,7 @@ bool AudioDeviceManager::startCapture() {
 }
 
 void AudioDeviceManager::stopCapture() {
-    if (!m_captureRunning.load(std::memory_order_relaxed)) return;
+    if (!m_captureRunning.load(std::memory_order_relaxed)) { return; }
 
     m_captureRunning.store(false, std::memory_order_relaxed);
     ma_device_stop(&m_impl->captureDevice);
@@ -807,7 +837,9 @@ void AudioDeviceManager::stopCapture() {
 }
 
 bool AudioDeviceManager::startDuplex() {
-    if (!m_impl->duplexDeviceInitialised || m_duplexRunning.load(std::memory_order_relaxed)) return false;
+    if (!m_impl->duplexDeviceInitialised || m_duplexRunning.load(std::memory_order_relaxed)) {
+        return false;
+    }
 
     ma_result result = ma_device_start(&m_impl->duplexDevice);
     if (result != MA_SUCCESS) { return false; }
@@ -817,7 +849,7 @@ bool AudioDeviceManager::startDuplex() {
 }
 
 void AudioDeviceManager::stopDuplex() {
-    if (!m_duplexRunning.load(std::memory_order_relaxed)) return;
+    if (!m_duplexRunning.load(std::memory_order_relaxed)) { return; }
 
     m_duplexRunning.store(false, std::memory_order_relaxed);
     ma_device_stop(&m_impl->duplexDevice);
@@ -829,7 +861,7 @@ void AudioDeviceManager::stopDuplex() {
 }
 
 void AudioDeviceManager::addPlaybackCallback(AudioIODeviceCallback* callback) {
-    if (!callback) return;
+    if (!callback) { return; }
 
     bool added = false;
     m_playbackCallbacks.update([&](auto& callbacks) {
@@ -840,12 +872,13 @@ void AudioDeviceManager::addPlaybackCallback(AudioIODeviceCallback* callback) {
     });
 
     if (added && m_impl->playbackDeviceInitialised) {
-        callback->prepareToPlay(m_impl->playbackDevice.sampleRate, m_impl->playbackPreparedPeriodSize);
+        callback->prepareToPlay(m_impl->playbackDevice.sampleRate,
+                                m_impl->playbackPreparedPeriodSize);
     }
 }
 
 void AudioDeviceManager::addCaptureCallback(AudioIODeviceCallback* callback) {
-    if (!callback) return;
+    if (!callback) { return; }
 
     bool added = false;
     m_captureCallbacks.update([&](auto& callbacks) {
@@ -856,12 +889,13 @@ void AudioDeviceManager::addCaptureCallback(AudioIODeviceCallback* callback) {
     });
 
     if (added && m_impl->captureDeviceInitialised) {
-        callback->prepareToPlay(m_impl->captureDevice.sampleRate, m_impl->capturePreparedPeriodSize);
+        callback->prepareToPlay(m_impl->captureDevice.sampleRate,
+                                m_impl->capturePreparedPeriodSize);
     }
 }
 
 void AudioDeviceManager::addDuplexCallback(AudioIODeviceCallback* callback) {
-    if (!callback) return;
+    if (!callback) { return; }
 
     bool added = false;
     m_duplexCallbacks.update([&](auto& callbacks) {
@@ -924,10 +958,10 @@ void AudioDeviceManager::setDeviceNotificationCallback(DeviceNotificationCallbac
 void AudioDeviceManager::setLogCallback(LogCallback callback) {
     m_impl->logCallback = std::move(callback);
 
-    if (!m_impl->contextInitialised) return;
+    if (!m_impl->contextInitialised) { return; }
 
     ma_log* log = ma_context_get_log(&m_impl->context);
-    if (!log) return;
+    if (!log) { return; }
 
     if (m_impl->logCallback) {
         ma_log_register_callback(log, ma_log_callback_init(staticLogCallback, m_impl.get()));
@@ -938,14 +972,14 @@ void AudioDeviceManager::setLogCallback(LogCallback callback) {
 
 const char* bluetoothProfileToString(BluetoothProfile p) {
     switch (p) {
-        case BluetoothProfile::HFP:  return "HFP";
+        case BluetoothProfile::HFP: return "HFP";
         case BluetoothProfile::A2DP: return "A2DP";
     }
     return "A2DP";
 }
 
 BluetoothProfile bluetoothProfileFromString(const std::string& str) {
-    if (str == "HFP") return BluetoothProfile::HFP;
+    if (str == "HFP") { return BluetoothProfile::HFP; }
     return BluetoothProfile::A2DP;
 }
 
@@ -953,9 +987,7 @@ std::vector<BluetoothProfile> getSupportedBluetoothProfiles() {
     std::vector<BluetoothProfile> profiles;
     profiles.push_back(BluetoothProfile::A2DP);
 #if defined(THL_PLATFORM_ANDROID)
-    if (getAndroidApiLevel() > 30) {
-        profiles.push_back(BluetoothProfile::HFP);
-    }
+    if (getAndroidApiLevel() > 30) { profiles.push_back(BluetoothProfile::HFP); }
 #else
     profiles.push_back(BluetoothProfile::HFP);
 #endif
@@ -974,9 +1006,7 @@ bool isClassicBluetoothConnected() {
 
 bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
 #if defined(THL_PLATFORM_IOS)
-    if (!setIOSBluetoothProfile(profile, nullptr)) {
-        return false;
-    }
+    if (!setIOSBluetoothProfile(profile, nullptr)) { return false; }
 #elif defined(THL_PLATFORM_ANDROID)
     // On Android, SCO requires setCommunicationDevice() which is only
     // available on API 31+.  On older versions only A2DP is supported.
@@ -984,7 +1014,8 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
         if (profile != BluetoothProfile::A2DP) {
             thl::Logger::logf(thl::Logger::LogLevel::Warning,
                               "thl.audio_io.audio_device_manager",
-                              "Bluetooth profile '%s' not supported on API %d (requires API 31+), profile remains %s",
+                              "Bluetooth profile '%s' not supported on API %d (requires API 31+), "
+                              "profile remains %s",
                               bluetoothProfileToString(profile),
                               getAndroidApiLevel(),
                               bluetoothProfileToString(m_bluetoothProfile));
@@ -993,34 +1024,30 @@ bool AudioDeviceManager::setBluetoothProfile(BluetoothProfile profile) {
 
         // A2DP is the default media route on API <= 30.
         // Ensure SCO is disabled and treat this as success.
-        if (isAndroidBluetoothScoEnabled()) {
-            setAndroidBluetoothSco(false);
-        }
+        if (isAndroidBluetoothScoEnabled()) { setAndroidBluetoothSco(false); }
         m_bluetoothProfile = BluetoothProfile::A2DP;
         return true;
     }
     {
         bool wantSco = (profile == BluetoothProfile::HFP);
-        bool scoNow  = isAndroidBluetoothScoEnabled();
+        bool scoNow = isAndroidBluetoothScoEnabled();
 
         if (wantSco) {
             // Always cycle the SCO link when requesting HFP. After a
             // Bluetooth reconnection the old SCO session is dead but
             // g_scoEnabled may still be true — skipping the restart
             // leaves the audio route on the internal mic / A2DP.
-            if (scoNow) {
-                setAndroidBluetoothSco(false);
-            }
+            if (scoNow) { setAndroidBluetoothSco(false); }
             setAndroidBluetoothSco(true);
         } else if (scoNow) {
             setAndroidBluetoothSco(false);
         }
 
         thl::Logger::logf(thl::Logger::LogLevel::Info,
-                           "thl.audio_io.audio_device_manager",
-                           "Bluetooth profile set to %s (SCO %s)",
-                           wantSco ? "HFP" : "A2DP",
-                           wantSco ? "started" : "stopped");
+                          "thl.audio_io.audio_device_manager",
+                          "Bluetooth profile set to %s (SCO %s)",
+                          wantSco ? "HFP" : "A2DP",
+                          wantSco ? "started" : "stopped");
     }
 #else
     (void)profile;
@@ -1054,7 +1081,8 @@ uint32_t AudioDeviceManager::getCaptureSampleRate() const {
         if (measured > 0) {
             thl::Logger::logf(thl::Logger::LogLevel::Info,
                               "thl.audio_io.audio_device_manager",
-                              "Using measured SCO capture rate: %u", measured);
+                              "Using measured SCO capture rate: %u",
+                              measured);
             return measured;
         }
         // Measurement not ready yet — fall back to API-reported rate.
@@ -1071,22 +1099,22 @@ uint32_t AudioDeviceManager::getCaptureSampleRate() const {
 
 bool AudioDeviceManager::waitForCaptureRateMeasurement(uint32_t timeoutMs) const {
 #if defined(THL_PLATFORM_ANDROID)
-    if (!isAndroidBluetoothScoEnabled() ||
-        !m_captureRunning.load(std::memory_order_relaxed) ||
-        getCurrentInputDeviceName().find("Bluetooth SCO") == std::string::npos)
+    if (!isAndroidBluetoothScoEnabled() || !m_captureRunning.load(std::memory_order_relaxed) ||
+        getCurrentInputDeviceName().find("Bluetooth SCO") == std::string::npos) {
         return false;
+    }
 
     constexpr uint32_t kPollIntervalMs = 50;
     uint32_t elapsed = 0;
     while (elapsed < timeoutMs) {
-        if (m_impl->captureMeasuredRate.load(std::memory_order_relaxed) > 0)
-            return true;
+        if (m_impl->captureMeasuredRate.load(std::memory_order_relaxed) > 0) { return true; }
         std::this_thread::sleep_for(std::chrono::milliseconds(kPollIntervalMs));
         elapsed += kPollIntervalMs;
     }
     thl::Logger::logf(thl::Logger::LogLevel::Warning,
                       "thl.audio_io.audio_device_manager",
-                      "Capture rate measurement timed out after %u ms", timeoutMs);
+                      "Capture rate measurement timed out after %u ms",
+                      timeoutMs);
     return false;
 #else
     (void)timeoutMs;
@@ -1096,16 +1124,19 @@ bool AudioDeviceManager::waitForCaptureRateMeasurement(uint32_t timeoutMs) const
 
 uint32_t AudioDeviceManager::getBufferSize() const {
 #if defined(THL_PLATFORM_ANDROID)
-    if (m_impl->playbackDeviceInitialised)
+    if (m_impl->playbackDeviceInitialised) {
         return m_impl->playbackPreparedPeriodSize * m_impl->playbackPeriods;
-    if (m_impl->duplexDeviceInitialised)
+    }
+    if (m_impl->duplexDeviceInitialised) {
         return m_impl->duplexPreparedPeriodSize * m_impl->duplexPeriods;
-    if (m_impl->captureDeviceInitialised)
+    }
+    if (m_impl->captureDeviceInitialised) {
         return m_impl->capturePreparedPeriodSize * m_impl->capturePeriods;
+    }
 #else
-    if (m_impl->playbackDeviceInitialised) return m_impl->playbackPreparedPeriodSize;
-    if (m_impl->duplexDeviceInitialised) return m_impl->duplexPreparedPeriodSize;
-    if (m_impl->captureDeviceInitialised) return m_impl->capturePreparedPeriodSize;
+    if (m_impl->playbackDeviceInitialised) { return m_impl->playbackPreparedPeriodSize; }
+    if (m_impl->duplexDeviceInitialised) { return m_impl->duplexPreparedPeriodSize; }
+    if (m_impl->captureDeviceInitialised) { return m_impl->capturePreparedPeriodSize; }
 #endif
     return 0;
 }
@@ -1191,38 +1222,47 @@ uint32_t AudioDeviceManager::getPeriodCount() const {
 uint32_t AudioDeviceManager::getPeriodCount(DeviceRole role) const {
     switch (role) {
         case DeviceRole::Playback:
-            if (m_impl->playbackDeviceInitialised) return m_impl->playbackPeriods;
+            if (m_impl->playbackDeviceInitialised) { return m_impl->playbackPeriods; }
             break;
         case DeviceRole::Capture:
-            if (m_impl->captureDeviceInitialised) return m_impl->capturePeriods;
+            if (m_impl->captureDeviceInitialised) { return m_impl->capturePeriods; }
             break;
         case DeviceRole::Duplex:
-            if (m_impl->duplexDeviceInitialised) return m_impl->duplexPeriods;
+            if (m_impl->duplexDeviceInitialised) { return m_impl->duplexPeriods; }
             break;
     }
     return 1;
 }
 
 uint32_t AudioDeviceManager::getBurstSize() const {
-    if (m_impl->playbackDeviceInitialised && m_impl->playbackBurstSize > 0) return m_impl->playbackBurstSize;
-    if (m_impl->duplexDeviceInitialised && m_impl->duplexBurstSize > 0) return m_impl->duplexBurstSize;
-    if (m_impl->captureDeviceInitialised && m_impl->captureBurstSize > 0) return m_impl->captureBurstSize;
+    if (m_impl->playbackDeviceInitialised && m_impl->playbackBurstSize > 0) {
+        return m_impl->playbackBurstSize;
+    }
+    if (m_impl->duplexDeviceInitialised && m_impl->duplexBurstSize > 0) {
+        return m_impl->duplexBurstSize;
+    }
+    if (m_impl->captureDeviceInitialised && m_impl->captureBurstSize > 0) {
+        return m_impl->captureBurstSize;
+    }
     return getPeriodSize();
 }
 
 uint32_t AudioDeviceManager::getBurstSize(DeviceRole role) const {
     switch (role) {
         case DeviceRole::Playback:
-            if (m_impl->playbackDeviceInitialised && m_impl->playbackBurstSize > 0)
+            if (m_impl->playbackDeviceInitialised && m_impl->playbackBurstSize > 0) {
                 return m_impl->playbackBurstSize;
+            }
             break;
         case DeviceRole::Capture:
-            if (m_impl->captureDeviceInitialised && m_impl->captureBurstSize > 0)
+            if (m_impl->captureDeviceInitialised && m_impl->captureBurstSize > 0) {
                 return m_impl->captureBurstSize;
+            }
             break;
         case DeviceRole::Duplex:
-            if (m_impl->duplexDeviceInitialised && m_impl->duplexBurstSize > 0)
+            if (m_impl->duplexDeviceInitialised && m_impl->duplexBurstSize > 0) {
                 return m_impl->duplexBurstSize;
+            }
             break;
     }
     return getPeriodSize(role);
@@ -1246,10 +1286,11 @@ std::string AudioDeviceManager::getCurrentOutputDeviceName() const {
 #elif defined(THL_PLATFORM_ANDROID)
     {
         int32_t deviceId = 0;
-        if (m_impl->playbackDeviceInitialised)
+        if (m_impl->playbackDeviceInitialised) {
             deviceId = m_impl->playbackDevice.playback.id.aaudio;
-        else if (m_impl->duplexDeviceInitialised)
+        } else if (m_impl->duplexDeviceInitialised) {
             deviceId = m_impl->duplexDevice.playback.id.aaudio;
+        }
         return getAndroidActiveOutputDeviceName(deviceId);
     }
 #else
@@ -1265,10 +1306,11 @@ std::string AudioDeviceManager::getCurrentInputDeviceName() const {
 #elif defined(THL_PLATFORM_ANDROID)
     {
         int32_t deviceId = 0;
-        if (m_impl->captureDeviceInitialised)
+        if (m_impl->captureDeviceInitialised) {
             deviceId = m_impl->captureDevice.capture.id.aaudio;
-        else if (m_impl->duplexDeviceInitialised)
+        } else if (m_impl->duplexDeviceInitialised) {
             deviceId = m_impl->duplexDevice.capture.id.aaudio;
+        }
         return getAndroidActiveInputDeviceName(deviceId);
     }
 #else
@@ -1314,61 +1356,68 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
     }
 
     if (!callbacks || !audioThreadRegistered) { return; }
-    
+
     // Record the true period size from the first callback for reporting via
     // getPeriodSize(). On iOS the actual AU render callback may deliver fewer
     // frames than internalPeriodSizeInFrames / AVAudioSession report.
     if (actualPeriodSize->load(std::memory_order_relaxed) == 0) {
         actualPeriodSize->store(frameCount, std::memory_order_relaxed);
         if (frameCount != maxChunkSize) {
-            thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                               "thl.audio_io.audio_device_manager",
-                               "Actual first callback frameCount %u differs from prepared periodSize %u "
-                               "(role %d)",
-                               frameCount, maxChunkSize,
-                               static_cast<int>(role));
+            thl::Logger::logf(
+                thl::Logger::LogLevel::Warning,
+                "thl.audio_io.audio_device_manager",
+                "Actual first callback frameCount %u differs from prepared periodSize %u "
+                "(role %d)",
+                frameCount,
+                maxChunkSize,
+                static_cast<int>(role));
         }
     }
 
 #if defined(THL_PLATFORM_ANDROID)
     // Measure actual capture delivery rate by timing callbacks.
     // Only needed for SCO devices where Android lies about the rate.
-    if (role == DeviceRole::Capture &&
-        isAndroidBluetoothScoEnabled() &&
+    if (role == DeviceRole::Capture && isAndroidBluetoothScoEnabled() &&
         getCurrentInputDeviceName().find("Bluetooth SCO") != std::string::npos &&
         m_impl->captureMeasuredRate.load(std::memory_order_relaxed) == 0) {
-        auto nowUs = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
+        auto nowUs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                               std::chrono::steady_clock::now().time_since_epoch())
+                                               .count());
 
         uint64_t firstUs = m_impl->captureFirstCallbackUs.load(std::memory_order_relaxed);
         if (firstUs == 0) {
             m_impl->captureFirstCallbackUs.store(nowUs, std::memory_order_relaxed);
             m_impl->captureTotalFrames.store(frameCount, std::memory_order_relaxed);
         } else {
-            uint64_t total = m_impl->captureTotalFrames.load(std::memory_order_relaxed) + frameCount;
+            uint64_t total =
+                m_impl->captureTotalFrames.load(std::memory_order_relaxed) + frameCount;
             m_impl->captureTotalFrames.store(total, std::memory_order_relaxed);
 
             if (total >= Impl::kRateCalibrationFrames) {
                 uint64_t elapsedUs = nowUs - firstUs;
                 if (elapsedUs > 0) {
-                    uint32_t measured = static_cast<uint32_t>(
-                        (total * 1000000ULL + elapsedUs / 2) / elapsedUs);
+                    uint32_t measured =
+                        static_cast<uint32_t>((total * 1000000ULL + elapsedUs / 2) / elapsedUs);
                     // Snap to nearest standard rate
                     constexpr uint32_t kStdRates[] = {8000, 16000, 32000, 48000};
                     uint32_t best = measured;
                     uint32_t bestDist = UINT32_MAX;
                     for (uint32_t sr : kStdRates) {
                         uint32_t dist = measured > sr ? measured - sr : sr - measured;
-                        if (dist < bestDist) { bestDist = dist; best = sr; }
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            best = sr;
+                        }
                     }
                     m_impl->captureMeasuredRate.store(best, std::memory_order_relaxed);
                     thl::Logger::logf(thl::Logger::LogLevel::Info,
-                                       "thl.audio_io.audio_device_manager",
-                                       "Capture rate measurement: %u frames in %llu us "
-                                       "= %u Hz (snapped to %u Hz)",
-                                       static_cast<uint32_t>(total), elapsedUs,
-                                       measured, best);
+                                      "thl.audio_io.audio_device_manager",
+                                      "Capture rate measurement: %u frames in %llu us "
+                                      "= %u Hz (snapped to %u Hz)",
+                                      static_cast<uint32_t>(total),
+                                      elapsedUs,
+                                      measured,
+                                      best);
                 }
             }
         }
@@ -1401,7 +1450,8 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
     //         thl::Logger::logf(thl::Logger::LogLevel::Debug,
     //                            "thl.audio_io.audio_device_manager",
     //                            "Callback #%u: frameCount %u, prepared %u, previous %u (role %d)",
-    //                            callbackCounter, frameCount, maxChunkSize, actualPeriodSize->load(std::memory_order_relaxed),
+    //                            callbackCounter, frameCount, maxChunkSize,
+    //                            actualPeriodSize->load(std::memory_order_relaxed),
     //                            static_cast<int>(role));
     //     }
     //     ++callbackCounter;
@@ -1422,9 +1472,8 @@ void AudioDeviceManager::processCallbacks(DeviceRole role,
     uint32_t offset = 0;
 
     while (framesRemaining > 0) {
-        uint32_t chunk = (maxChunkSize > 0)
-                             ? std::min(framesRemaining, maxChunkSize)
-                             : framesRemaining;
+        uint32_t chunk =
+            (maxChunkSize > 0) ? std::min(framesRemaining, maxChunkSize) : framesRemaining;
 
         float* chunkOut = safeOutput ? safeOutput + offset * outputChannels : nullptr;
         const float* chunkIn = safeInput ? safeInput + offset * inputChannels : nullptr;

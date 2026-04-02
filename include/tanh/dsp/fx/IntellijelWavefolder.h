@@ -29,17 +29,10 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
 
-    void process(thl::dsp::audio::AudioBufferView buffer,
-                 uint32_t modulation_offset = 0) override;
+    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
-    enum Parameter {
-        Drive = 0,
-        Folds,
-        Symmetry,
-        JfetTone,
-        NUM_PARAMETERS
-    };
+    enum Parameter { Drive = 0, Folds, Symmetry, JfetTone, NUM_PARAMETERS };
 
     template <typename T>
     T get_parameter(Parameter p, uint32_t modulation_offset = 0);
@@ -47,14 +40,13 @@ protected:
     virtual float get_parameter_float(Parameter p, uint32_t modulation_offset = 0) = 0;
 
 private:
-    static float process_sample(float x, float drive, float folds,
-                                float symmetry, float jfet_tone);
+    static float process_sample(float x, float drive, float folds, float symmetry, float jfet_tone);
     static float jfet_saturate(float x);
 };
 
 template <>
 inline float IntellijelWavefolderImpl::get_parameter<float>(Parameter p,
-                                                           uint32_t modulation_offset) {
+                                                            uint32_t modulation_offset) {
     return get_parameter_float(p, modulation_offset);
 }
 

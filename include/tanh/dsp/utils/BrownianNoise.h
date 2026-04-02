@@ -29,14 +29,14 @@ public:
 private:
     static float calc_coeff(float rate, float sample_rate);
 
-    float m_rate         = 2.0f;
-    float m_sample_rate  = 48000.0f;
-    float m_momentum     = 0.3f;
+    float m_rate = 2.0f;
+    float m_sample_rate = 48000.0f;
+    float m_momentum = 0.3f;
     float m_smooth_coeff = 0.0f;
-    float m_value        = 0.0f;
-    float m_velocity     = 0.0f;
-    float m_smoothed     = 0.0f;
-    float m_phase        = 0.0f;
+    float m_value = 0.0f;
+    float m_velocity = 0.0f;
+    float m_smoothed = 0.0f;
+    float m_phase = 0.0f;
 };
 
 }  // namespace thl::dsp::utils

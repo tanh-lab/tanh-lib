@@ -5,12 +5,7 @@
 
 namespace thl::modulation {
 
-enum class LFOWaveform {
-    Sine = 0,
-    Triangle,
-    Saw,
-    Square
-};
+enum class LFOWaveform { Sine = 0, Triangle, Saw, Square };
 
 class LFOSourceImpl : public ModulationSource {
 public:
@@ -47,14 +42,12 @@ private:
 };
 
 template <>
-inline float LFOSourceImpl::get_parameter<float>(Parameter p,
-                                                  uint32_t modulation_offset) {
+inline float LFOSourceImpl::get_parameter<float>(Parameter p, uint32_t modulation_offset) {
     return get_parameter_float(p, modulation_offset);
 }
 
 template <>
-inline int LFOSourceImpl::get_parameter<int>(Parameter p,
-                                              uint32_t modulation_offset) {
+inline int LFOSourceImpl::get_parameter<int>(Parameter p, uint32_t modulation_offset) {
     return get_parameter_int(p, modulation_offset);
 }
 
