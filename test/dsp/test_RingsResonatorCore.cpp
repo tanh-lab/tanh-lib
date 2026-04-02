@@ -48,7 +48,7 @@ class RingsResonatorModelTest : public ::testing::TestWithParam<rings::Resonator
 
 TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     rings::RingsVoiceManager part;
-    std::memset(&part, 0, sizeof(part));
+    std::memset(static_cast<void*>(&part), 0, sizeof(part));
     std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(GetParam());
@@ -63,7 +63,8 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     for (int block = 0; block < 8; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), thl::dsp::resonator::kMaxBlockSize);
+        thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
+                                                      thl::dsp::resonator::kMaxBlockSize);
         thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
         thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
         part.process(state, patch, in_view, out_view, aux_view);
@@ -77,7 +78,7 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
 
 TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     rings::RingsVoiceManager part;
-    std::memset(&part, 0, sizeof(part));
+    std::memset(static_cast<void*>(&part), 0, sizeof(part));
     std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(GetParam());
@@ -93,7 +94,8 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     for (int block = 0; block < 4; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(), thl::dsp::resonator::kMaxBlockSize);
+        thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
+                                                       thl::dsp::resonator::kMaxBlockSize);
         thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
         thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
         part.process(state, patch, sil_view, out_view, aux_view);
@@ -102,7 +104,8 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     in.fill(0.0f);
     in[0] = 1.0f;
     {
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), thl::dsp::resonator::kMaxBlockSize);
+        thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
+                                                      thl::dsp::resonator::kMaxBlockSize);
         thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
         thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
         part.process(state, patch, in_view, out_view, aux_view);
@@ -114,9 +117,12 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
         if (block > 0) {
             std::fill(out.begin(), out.end(), 0.0f);
             std::fill(aux.begin(), aux.end(), 0.0f);
-            thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(), thl::dsp::resonator::kMaxBlockSize);
-            thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
-            thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
+            thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
+                                                           thl::dsp::resonator::kMaxBlockSize);
+            thl::dsp::audio::AudioBufferView out_view(out.data(),
+                                                      thl::dsp::resonator::kMaxBlockSize);
+            thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+                                                      thl::dsp::resonator::kMaxBlockSize);
             part.process(state, patch, sil_view, out_view, aux_view);
         }
         for (size_t i = 0; i < thl::dsp::resonator::kMaxBlockSize; ++i) {

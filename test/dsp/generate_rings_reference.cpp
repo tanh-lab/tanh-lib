@@ -71,7 +71,7 @@ int main() {
 
     for (const auto& info : kModels) {
         rings::RingsVoiceManager part;
-        std::memset(&part, 0, sizeof(part));
+        std::memset(static_cast<void*>(&part), 0, sizeof(part));
         std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
         part.prepare(reverb_buffer.data());
         part.set_model(info.model);
