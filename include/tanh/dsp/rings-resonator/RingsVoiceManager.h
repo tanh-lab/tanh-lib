@@ -48,22 +48,22 @@
 
 namespace thl::dsp::synth {
 
-using thl::dsp::resonator::RESONATOR_MODEL_FM_VOICE;
-using thl::dsp::resonator::RESONATOR_MODEL_LAST;
-using thl::dsp::resonator::RESONATOR_MODEL_MODAL;
-using thl::dsp::resonator::RESONATOR_MODEL_STRING;
-using thl::dsp::resonator::RESONATOR_MODEL_STRING_AND_REVERB;
-using thl::dsp::resonator::RESONATOR_MODEL_SYMPATHETIC_STRING;
-using thl::dsp::resonator::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED;
+using thl::dsp::resonator::FmVoice;
+using thl::dsp::resonator::Last;
+using thl::dsp::resonator::Modal;
+using thl::dsp::resonator::String;
+using thl::dsp::resonator::StringAndReverb;
+using thl::dsp::resonator::SympatheticString;
+using thl::dsp::resonator::SympatheticStringQuantized;
 using thl::dsp::resonator::ResonatorModel;
 
-const int32_t kMaxPolyphony = 4;
-const int32_t kNumStrings = kMaxPolyphony * 2;
+const int32_t k_max_polyphony = 4;
+const int32_t k_num_strings = k_max_polyphony * 2;
 
 struct PreparedVoiceParams {
-    float frequency;
-    float filter_cutoff;
-    float filter_q;
+    float m_frequency;
+    float m_filter_cutoff;
+    float m_filter_q;
 };
 
 class RingsVoiceManager {
@@ -72,7 +72,7 @@ public:
     ~RingsVoiceManager() {}
 
     void prepare(uint16_t* reverb_buffer,
-                 float sample_rate = thl::dsp::resonator::kDefaultSampleRate);
+                 float sample_rate = thl::dsp::resonator::k_default_sample_rate);
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
@@ -86,7 +86,7 @@ public:
     inline int32_t polyphony() const { return m_polyphony; }
     inline void set_polyphony(int32_t polyphony) {
         int32_t old_polyphony = m_polyphony;
-        m_polyphony = std::min(polyphony, kMaxPolyphony);
+        m_polyphony = std::min(polyphony, k_max_polyphony);
         for (int32_t i = old_polyphony; i < m_polyphony; ++i) { m_note[i] = m_note[0] + i * 0.05f; }
         m_dirty = true;
     }
@@ -147,43 +147,43 @@ private:
                                            float* destination,
                                            size_t num_strings);
 
-    float m_sample_rate = thl::dsp::resonator::kDefaultSampleRate;
-    float m_a3 = 440.0f / thl::dsp::resonator::kDefaultSampleRate;
+    float m_sample_rate = thl::dsp::resonator::k_default_sample_rate;
+    float m_a3 = 440.0f / thl::dsp::resonator::k_default_sample_rate;
 
     bool m_bypass = false;
     bool m_dirty = true;
 
-    ResonatorModel m_model = RESONATOR_MODEL_MODAL;
+    ResonatorModel m_model = Modal;
 
     int32_t m_num_voices = 0;
     int32_t m_active_voice = 0;
     uint32_t m_step_counter = 0;
     int32_t m_polyphony = 1;
 
-    thl::dsp::resonator::RingsModalResonator m_resonator[kMaxPolyphony];
-    thl::dsp::resonator::RingsString m_string[kNumStrings];
-    thl::dsp::utils::CosineOscillator m_lfo[kNumStrings];
-    RingsFmVoice m_fm_voice[kMaxPolyphony];
+    thl::dsp::resonator::RingsModalResonator m_resonator[k_max_polyphony];
+    thl::dsp::resonator::RingsString m_string[k_num_strings];
+    thl::dsp::utils::CosineOscillator m_lfo[k_num_strings];
+    RingsFmVoice m_fm_voice[k_max_polyphony];
 
-    thl::dsp::filter::Svf m_excitation_filter[kMaxPolyphony];
-    thl::dsp::filter::DCBlocker m_dc_blocker[kMaxPolyphony];
-    thl::dsp::synth::Plucker m_plucker[kMaxPolyphony];
+    thl::dsp::filter::Svf m_excitation_filter[k_max_polyphony];
+    thl::dsp::filter::DCBlocker m_dc_blocker[k_max_polyphony];
+    thl::dsp::synth::Plucker m_plucker[k_max_polyphony];
 
-    float m_note[kMaxPolyphony];
-    PreparedVoiceParams m_prepared[kMaxPolyphony];
+    float m_note[k_max_polyphony];
+    PreparedVoiceParams m_prepared[k_max_polyphony];
     thl::dsp::analysis::NoteFilter m_note_filter;
 
-    float m_resonator_input[thl::dsp::resonator::kMaxBlockSize];
-    float m_sympathetic_resonator_input[thl::dsp::resonator::kMaxBlockSize];
-    float m_noise_burst_buffer[thl::dsp::resonator::kMaxBlockSize];
+    float m_resonator_input[thl::dsp::resonator::k_max_block_size];
+    float m_sympathetic_resonator_input[thl::dsp::resonator::k_max_block_size];
+    float m_noise_burst_buffer[thl::dsp::resonator::k_max_block_size];
 
-    float m_out_buffer[thl::dsp::resonator::kMaxBlockSize];
-    float m_aux_buffer[thl::dsp::resonator::kMaxBlockSize];
+    float m_out_buffer[thl::dsp::resonator::k_max_block_size];
+    float m_aux_buffer[thl::dsp::resonator::k_max_block_size];
 
     thl::dsp::fx::RingsReverb m_reverb;
     thl::dsp::utils::SoftLimiter m_limiter;
 
-    static float m_model_gains[RESONATOR_MODEL_LAST];
+    static float m_model_gains[Last];
 
     RingsVoiceManager(const RingsVoiceManager&) = delete;
     RingsVoiceManager& operator=(const RingsVoiceManager&) = delete;

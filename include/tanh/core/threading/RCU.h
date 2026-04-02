@@ -62,7 +62,7 @@ public:
 
     ~RCU() {
         // Clean up any remaining retired data
-        for (auto& retired : m_retired_list) { delete retired.ptr; }
+        for (auto& retired : m_retired_list) { delete retired.m_ptr; }
         m_retired_list.clear();
 
         // Clean up current data
@@ -76,16 +76,16 @@ public:
 
         ReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
-            ReaderNode* next = current->next.load(std::memory_order_relaxed);
+            ReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
             // Remove from thread-local state if the node is still tracked there
             // Note: For live threads, the node ownership is in
             // t_rcu_state.nodes We need to take ownership back before deleting
-            auto it = t_rcu_state.nodes.find(this);
-            if (it != t_rcu_state.nodes.end() && it->second.get() == current) {
+            auto it = t_rcu_state.m_nodes.find(this);
+            if (it != t_rcu_state.m_nodes.end() && it->second.get() == current) {
                 // This is the current thread's node - transfer ownership back
                 it->second.release();
-                t_rcu_state.nodes.erase(it);
+                t_rcu_state.m_nodes.erase(it);
             }
 
             // For dead nodes or nodes from other threads (which released
@@ -132,9 +132,9 @@ public:
         // RAII guard to ensure rcu_read_unlock() is always called, even if
         // callback throws
         struct ReadGuard {
-            const RCU* rcu;
-            ReadGuard(const RCU* r) : rcu(r) { rcu->rcu_read_lock(); }
-            ~ReadGuard() { rcu->rcu_read_unlock(); }
+            const RCU* m_rcu;
+            ReadGuard(const RCU* r) : m_rcu(r) { m_rcu->rcu_read_lock(); }
+            ~ReadGuard() { m_rcu->rcu_read_unlock(); }
         };
 
         ReadGuard guard(this);
@@ -211,7 +211,7 @@ public:
             synchronize_rcu();  // BLOCKING
 
             // Now delete everything in retired list
-            for (auto& retired : m_retired_list) { delete retired.ptr; }
+            for (auto& retired : m_retired_list) { delete retired.m_ptr; }
             m_retired_list.clear();
         }
 
@@ -254,13 +254,13 @@ public:
             // Lock-free registration using atomic compare-and-swap
             ReaderNode* current_head = m_reader_head.load(std::memory_order_acquire);
             do {
-                node->next.store(current_head, std::memory_order_relaxed);
+                node->m_next.store(current_head, std::memory_order_relaxed);
             } while (!m_reader_head.compare_exchange_weak(current_head,
                                                           node_ptr,
                                                           std::memory_order_release,
                                                           std::memory_order_acquire));
 
-            t_rcu_state.nodes.emplace(this, std::move(node));
+            t_rcu_state.m_nodes.emplace(this, std::move(node));
         }
     }
 
@@ -270,8 +270,8 @@ public:
         unsigned int count = 0;
         ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
-            if (!node->is_dead.load(std::memory_order_acquire)) { ++count; }
-            node = node->next.load(std::memory_order_acquire);
+            if (!node->m_is_dead.load(std::memory_order_acquire)) { ++count; }
+            node = node->m_next.load(std::memory_order_acquire);
         }
         return count;
     }
@@ -293,8 +293,8 @@ private:
 
     // Retired data tracking for deferred reclamation
     struct RetiredData {
-        T* ptr;
-        uint64_t grace_period;
+        T* m_ptr;
+        uint64_t m_grace_period;
     };
     std::vector<RetiredData> m_retired_list;
 
@@ -304,9 +304,9 @@ private:
 
     // Lock-free linked list node for reader registration
     struct ReaderNode {
-        std::atomic<uint64_t> read_generation{0};
-        std::atomic<ReaderNode*> next{nullptr};
-        std::atomic<bool> is_dead{false};  // Mark node as dead when thread
+        std::atomic<uint64_t> m_read_generation{0};
+        std::atomic<ReaderNode*> m_next{nullptr};
+        std::atomic<bool> m_is_dead{false};  // Mark node as dead when thread
                                            // exits
     };
 
@@ -317,23 +317,23 @@ private:
     struct ThreadRCUState {
         // Map from RCU instance pointer to this thread's reader node for that
         // instance
-        std::unordered_map<const void*, std::unique_ptr<ReaderNode>> nodes;
+        std::unordered_map<const void*, std::unique_ptr<ReaderNode>> m_nodes;
 
         ReaderNode* get_node(const void* instance) const {
-            auto it = nodes.find(instance);
-            return it != nodes.end() ? it->second.get() : nullptr;
+            auto it = m_nodes.find(instance);
+            return it != m_nodes.end() ? it->second.get() : nullptr;
         }
 
         ~ThreadRCUState() {
             // Mark all nodes as dead - they'll be cleaned up by respective RCU
             // instances
-            for (auto& [_, node] : nodes) {
+            for (auto& [_, node] : m_nodes) {
                 if (node) {
                     // Ensure we're not in a read section before marking as dead
-                    while (node->read_generation.load(std::memory_order_acquire) != 0) {
+                    while (node->m_read_generation.load(std::memory_order_acquire) != 0) {
                         std::this_thread::yield();
                     }
-                    node->is_dead.store(true, std::memory_order_release);
+                    node->m_is_dead.store(true, std::memory_order_release);
                     node.release();  // Let cleanup_dead_nodes handle deletion
                 }
             }
@@ -345,13 +345,13 @@ private:
     void rcu_read_lock() const {
         if (auto* node = t_rcu_state.get_node(this)) {
             uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
-            node->read_generation.store(current_period, std::memory_order_release);
+            node->m_read_generation.store(current_period, std::memory_order_release);
         }
     }
 
     void rcu_read_unlock() const {
         if (auto* node = t_rcu_state.get_node(this)) {
-            node->read_generation.store(0, std::memory_order_release);
+            node->m_read_generation.store(0, std::memory_order_release);
         }
     }
 
@@ -375,22 +375,22 @@ private:
 
         ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
-            if (!node->is_dead.load(std::memory_order_acquire)) {
-                uint64_t reader_period = node->read_generation.load(std::memory_order_acquire);
+            if (!node->m_is_dead.load(std::memory_order_acquire)) {
+                uint64_t reader_period = node->m_read_generation.load(std::memory_order_acquire);
 
                 if (reader_period != 0) {
                     // Active reader - consider its period
                     if (reader_period < min_active_period) { min_active_period = reader_period; }
                 }
             }
-            node = node->next.load(std::memory_order_acquire);
+            node = node->m_next.load(std::memory_order_acquire);
         }
 
         // Delete all versions older than the threshold
         auto it = m_retired_list.begin();
         while (it != m_retired_list.end()) {
-            if (it->grace_period < min_active_period) {
-                delete it->ptr;  // Safe - all readers past this period
+            if (it->m_grace_period < min_active_period) {
+                delete it->m_ptr;  // Safe - all readers past this period
                 it = m_retired_list.erase(it);
             } else {
                 ++it;  // Keep newer versions
@@ -412,11 +412,11 @@ private:
         ReaderNode* current = m_reader_head.load(std::memory_order_acquire);
         while (current != nullptr) {
             // Skip dead nodes - they can't be in read sections
-            if (!current->is_dead.load(std::memory_order_acquire)) {
+            if (!current->m_is_dead.load(std::memory_order_acquire)) {
                 // Wait for the reader to exit its read section
                 while (true) {
                     uint64_t reader_period =
-                        current->read_generation.load(std::memory_order_acquire);
+                        current->m_read_generation.load(std::memory_order_acquire);
                     if (reader_period == 0) {
                         break;  // Truly idle - not reading and not starting
                     }
@@ -427,7 +427,7 @@ private:
                     std::this_thread::sleep_for(std::chrono::microseconds(1));
                 }
             }
-            current = current->next.load(std::memory_order_acquire);
+            current = current->m_next.load(std::memory_order_acquire);
         }
     }
 
@@ -440,9 +440,9 @@ private:
 
         ReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
-            ReaderNode* next = current->next.load(std::memory_order_relaxed);
+            ReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
-            if (!current->is_dead.load(std::memory_order_acquire)) {
+            if (!current->m_is_dead.load(std::memory_order_acquire)) {
                 live_nodes.push_back(current);
             } else {
                 // Transfer ownership to unique_ptr for automatic cleanup
@@ -457,9 +457,9 @@ private:
             m_reader_head.store(nullptr, std::memory_order_relaxed);
         } else {
             for (size_t i = 0; i < live_nodes.size() - 1; ++i) {
-                live_nodes[i]->next.store(live_nodes[i + 1], std::memory_order_relaxed);
+                live_nodes[i]->m_next.store(live_nodes[i + 1], std::memory_order_relaxed);
             }
-            live_nodes.back()->next.store(nullptr, std::memory_order_relaxed);
+            live_nodes.back()->m_next.store(nullptr, std::memory_order_relaxed);
             m_reader_head.store(live_nodes[0], std::memory_order_relaxed);
         }
 

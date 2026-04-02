@@ -37,54 +37,54 @@ namespace thl::dsp::fx {
 
 #define TAIL , -1
 
-enum Format { FORMAT_12_BIT, FORMAT_16_BIT, FORMAT_32_BIT };
+enum Format { Format12Bit, Format16Bit, Format32Bit };
 
-enum LFOIndex { LFO_1, LFO_2 };
+enum LFOIndex { Lfo1, Lfo2 };
 
 template <Format format>
 struct DataType {};
 
 template <>
-struct DataType<FORMAT_12_BIT> {
+struct DataType<Format12Bit> {
     typedef uint16_t T;
 
-    static inline float Decompress(T value) {
+    static inline float decompress(T value) {
         return static_cast<float>(static_cast<int16_t>(value)) / 4096.0f;
     }
 
-    static inline T Compress(float value) {
+    static inline T compress(float value) {
         return static_cast<uint16_t>(
             thl::dsp::utils::clip16(static_cast<int32_t>(value * 4096.0f)));
     }
 };
 
 template <>
-struct DataType<FORMAT_16_BIT> {
+struct DataType<Format16Bit> {
     typedef uint16_t T;
 
-    static inline float Decompress(T value) {
+    static inline float decompress(T value) {
         return static_cast<float>(static_cast<int16_t>(value)) / 32768.0f;
     }
 
-    static inline T Compress(float value) {
+    static inline T compress(float value) {
         return static_cast<uint16_t>(
             thl::dsp::utils::clip16(static_cast<int32_t>(value * 32768.0f)));
     }
 };
 
 template <>
-struct DataType<FORMAT_32_BIT> {
+struct DataType<Format32Bit> {
     typedef float T;
 
-    static inline float Decompress(T value) {
+    static inline float decompress(T value) {
         return value;
         ;
     }
 
-    static inline T Compress(float value) { return value; }
+    static inline T compress(float value) { return value; }
 };
 
-template <size_t size, Format format = FORMAT_12_BIT>
+template <size_t size, Format format = Format12Bit>
 class RingsFxEngine {
 public:
     typedef typename DataType<format>::T T;
@@ -106,20 +106,20 @@ public:
     template <int32_t l, typename T = Empty>
     struct Reserve {
         typedef T Tail;
-        enum { length = l };
+        enum { Length = l };
     };
 
     template <typename Memory, int32_t index>
     struct DelayLine {
         enum {
-            length = DelayLine<typename Memory::Tail, index - 1>::length,
-            base = DelayLine<Memory, index - 1>::base + DelayLine<Memory, index - 1>::length + 1
+            Length = DelayLine<typename Memory::Tail, index - 1>::Length,
+            Base = DelayLine<Memory, index - 1>::Base + DelayLine<Memory, index - 1>::Length + 1
         };
     };
 
     template <typename Memory>
     struct DelayLine<Memory, 0> {
-        enum { length = Memory::length, base = 0 };
+        enum { Length = Memory::Length, Base = 0 };
     };
 
     class Context {
@@ -144,12 +144,12 @@ public:
 
         template <typename D>
         inline void write(D& d, int32_t offset, float scale) {
-            static_assert((D::base + D::length <= size), "delay_memory_full");
-            T w = DataType<format>::Compress(m_accumulator);
+            static_assert((D::Base + D::Length <= size), "delay_memory_full");
+            T w = DataType<format>::compress(m_accumulator);
             if (offset == -1) {
-                m_buffer[(m_write_ptr + D::base + D::length - 1) & MASK] = w;
+                m_buffer[(m_write_ptr + D::Base + D::Length - 1) & Mask] = w;
             } else {
-                m_buffer[(m_write_ptr + D::base + offset) & MASK] = w;
+                m_buffer[(m_write_ptr + D::Base + offset) & Mask] = w;
             }
             m_accumulator *= scale;
         }
@@ -172,14 +172,14 @@ public:
 
         template <typename D>
         inline void read(D& d, int32_t offset, float scale) {
-            static_assert((D::base + D::length <= size), "delay_memory_full");
+            static_assert((D::Base + D::Length <= size), "delay_memory_full");
             T r;
             if (offset == -1) {
-                r = m_buffer[(m_write_ptr + D::base + D::length - 1) & MASK];
+                r = m_buffer[(m_write_ptr + D::Base + D::Length - 1) & Mask];
             } else {
-                r = m_buffer[(m_write_ptr + D::base + offset) & MASK];
+                r = m_buffer[(m_write_ptr + D::Base + offset) & Mask];
             }
-            float r_f = DataType<format>::Decompress(r);
+            float r_f = DataType<format>::decompress(r);
             m_previous_read = r_f;
             m_accumulator += r_f * scale;
         }
@@ -201,13 +201,13 @@ public:
 
         template <typename D>
         inline void interpolate(D& d, float offset, float scale) {
-            static_assert((D::base + D::length <= size), "delay_memory_full");
+            static_assert((D::Base + D::Length <= size), "delay_memory_full");
             auto [offset_integral, offset_fractional] =
                 thl::dsp::utils::split_integral_fractional(offset);
-            float a = DataType<format>::Decompress(
-                m_buffer[(m_write_ptr + offset_integral + D::base) & MASK]);
-            float b = DataType<format>::Decompress(
-                m_buffer[(m_write_ptr + offset_integral + D::base + 1) & MASK]);
+            float a = DataType<format>::decompress(
+                m_buffer[(m_write_ptr + offset_integral + D::Base) & Mask]);
+            float b = DataType<format>::decompress(
+                m_buffer[(m_write_ptr + offset_integral + D::Base + 1) & Mask]);
             float x = a + (b - a) * offset_fractional;
             m_previous_read = x;
             m_accumulator += x * scale;
@@ -215,25 +215,25 @@ public:
 
         template <typename D>
         inline void interpolate(D& d, float offset, LFOIndex index, float amplitude, float scale) {
-            static_assert((D::base + D::length <= size), "delay_memory_full");
+            static_assert((D::Base + D::Length <= size), "delay_memory_full");
             offset += amplitude * m_lfo_value[index];
             auto [offset_integral, offset_fractional] =
                 thl::dsp::utils::split_integral_fractional(offset);
-            float a = DataType<format>::Decompress(
-                m_buffer[(m_write_ptr + offset_integral + D::base) & MASK]);
-            float b = DataType<format>::Decompress(
-                m_buffer[(m_write_ptr + offset_integral + D::base + 1) & MASK]);
+            float a = DataType<format>::decompress(
+                m_buffer[(m_write_ptr + offset_integral + D::Base) & Mask]);
+            float b = DataType<format>::decompress(
+                m_buffer[(m_write_ptr + offset_integral + D::Base + 1) & Mask]);
             float x = a + (b - a) * offset_fractional;
             m_previous_read = x;
             m_accumulator += x * scale;
         }
 
     private:
-        float m_accumulator;
-        float m_previous_read;
-        float m_lfo_value[2];
-        T* m_buffer;
-        int32_t m_write_ptr;
+        float m_accumulator = 0.0f;
+        float m_previous_read = 0.0f;
+        float m_lfo_value[2] = {};
+        T* m_buffer = nullptr;
+        int32_t m_write_ptr = 0;
 
         Context(const Context&) = delete;
         Context& operator=(const Context&) = delete;
@@ -261,7 +261,7 @@ public:
     }
 
 private:
-    enum { MASK = size - 1 };
+    enum { Mask = size - 1 };
 
     int32_t m_write_ptr = 0;
     T* m_buffer = nullptr;

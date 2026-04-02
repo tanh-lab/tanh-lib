@@ -42,16 +42,16 @@ void RingsStringSynthPart::prepare(uint16_t* reverb_buffer, float sample_rate) {
     m_acquisition_delay = 0;
 
     m_polyphony = 1;
-    m_fx_type = FX_ENSEMBLE;
+    m_fx_type = Ensemble;
 
-    for (int32_t i = 0; i < kStringSynthVoices; ++i) { m_voice[i].prepare(); }
+    for (int32_t i = 0; i < k_string_synth_voices; ++i) { m_voice[i].prepare(); }
 
-    for (int32_t i = 0; i < kMaxStringSynthPolyphony; ++i) {
-        m_group[i].tonic = 0.0f;
-        m_group[i].envelope.prepare();
+    for (int32_t i = 0; i < k_max_string_synth_polyphony; ++i) {
+        m_group[i].m_tonic = 0.0f;
+        m_group[i].m_envelope.prepare();
     }
 
-    for (int32_t i = 0; i < kNumFormants; ++i) { m_formant_filter[i].reset(); }
+    for (int32_t i = 0; i < k_num_formants; ++i) { m_formant_filter[i].reset(); }
 
     m_limiter.prepare();
 
@@ -59,7 +59,7 @@ void RingsStringSynthPart::prepare(uint16_t* reverb_buffer, float sample_rate) {
     m_chorus.prepare(reverb_buffer, m_sample_rate);
     m_ensemble.prepare(reverb_buffer, m_sample_rate);
 
-    m_note_filter.prepare(m_sample_rate / thl::dsp::resonator::kMaxBlockSize,
+    m_note_filter.prepare(m_sample_rate / thl::dsp::resonator::k_max_block_size,
                           0.001f,   // Lag time with a sharp edge on the V/Oct
                                     // input or trigger.
                           0.005f,   // Lag time after the trigger has been
@@ -70,8 +70,8 @@ void RingsStringSynthPart::prepare(uint16_t* reverb_buffer, float sample_rate) {
                                     // the previous voice.
 }
 
-const int32_t kRegistrationTableSize = 11;
-const float registrations[kRegistrationTableSize][kNumHarmonics * 2] = {
+const int32_t k_registration_table_size = 11;
+const float k_registrations[k_registration_table_size][k_num_harmonics * 2] = {
     {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     {1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f},
@@ -86,16 +86,16 @@ const float registrations[kRegistrationTableSize][kNumHarmonics * 2] = {
 };
 
 void RingsStringSynthPart::compute_registration(float gain, float registration, float* amplitudes) {
-    registration *= (kRegistrationTableSize - 1.001f);
+    registration *= (k_registration_table_size - 1.001f);
     auto [registration_integral, registration_fractional] = split_integral_fractional(registration);
     float total = 0.0f;
-    for (int32_t i = 0; i < kNumHarmonics * 2; ++i) {
-        float a = registrations[registration_integral][i];
-        float b = registrations[registration_integral + 1][i];
+    for (int32_t i = 0; i < k_num_harmonics * 2; ++i) {
+        float a = k_registrations[registration_integral][i];
+        float b = k_registrations[registration_integral + 1][i];
         amplitudes[i] = a + (b - a) * registration_fractional;
         total += amplitudes[i];
     }
-    for (int32_t i = 0; i < kNumHarmonics * 2; ++i) {
+    for (int32_t i = 0; i < k_num_harmonics * 2; ++i) {
         amplitudes[i] = gain * amplitudes[i] / total;
     }
 }
@@ -106,7 +106,7 @@ void RingsStringSynthPart::compute_registration(float gain, float registration, 
 // - more compact, leaving room for a bass
 // - more frequent note changes between adjacent chords.
 // - dropped fifth.
-const float chords[kMaxStringSynthPolyphony][thl::dsp::resonator::kNumChords][kMaxChordSize] = {
+const float k_chords[k_max_string_synth_polyphony][thl::dsp::resonator::k_num_chords][k_max_chord_size] = {
     {
         {-12.0f, -0.01f, 0.0f, 0.01f, 0.02f, 11.99f, 12.0f, 24.0f},  // OCT
         {-12.0f, -5.01f, -5.0f, 0.0f, 7.0f, 12.0f, 19.0f, 24.0f},    // 5
@@ -166,7 +166,7 @@ const float chords[kMaxStringSynthPolyphony][thl::dsp::resonator::kNumChords][kM
 // - wider, occupies more room in the spectrum.
 // - minimum number of note changes between adjacent chords.
 // - consistant with the chord table used for the sympathetic strings model.
-const float chords[kMaxStringSynthPolyphony][thl::dsp::resonator::kNumChords][kMaxChordSize] = {
+const float chords[k_max_string_synth_polyphony][thl::dsp::resonator::k_num_chords][k_max_chord_size] = {
     {
         {-24.0f, -12.0f, 0.0f, 0.01f, 0.02f, 11.99f, 12.0f, 24.0f},
         {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 10.0f, 19.0f, 24.0f},
@@ -232,7 +232,7 @@ void RingsStringSynthPart::process_envelopes(float shape, uint8_t* flags, float*
     }
 
     // Convert the arbitrary values to actual units.
-    float period = m_sample_rate / thl::dsp::resonator::kMaxBlockSize;
+    float period = m_sample_rate / thl::dsp::resonator::k_max_block_size;
     float attack_time = semitones_to_ratio(attack * 96.0f) * 0.005f * period;
     // float decay_time = semitones_to_ratio(decay * 96.0f) * 0.125f * period;
     float decay_time = semitones_to_ratio(decay * 84.0f) * 0.180f * period;
@@ -243,14 +243,14 @@ void RingsStringSynthPart::process_envelopes(float shape, uint8_t* flags, float*
         float drone = shape < 0.98f ? 0.0f : (shape - 0.98f) * 55.0f;
         if (drone >= 1.0f) { drone = 1.0f; }
 
-        m_group[i].envelope.set_ad(attack_rate, decay_rate);
-        float value = m_group[i].envelope.process(flags[i]);
+        m_group[i].m_envelope.set_ad(attack_rate, decay_rate);
+        float value = m_group[i].m_envelope.process(flags[i]);
         values[i] = value + (1.0f - value) * drone;
     }
 }
 
-const int32_t kFormantTableSize = 5;
-const float formants[kFormantTableSize][kNumFormants] = {
+const int32_t k_formant_table_size = 5;
+const float k_formants[k_formant_table_size][k_num_formants] = {
     {700, 1100, 2400},
     {500, 1300, 1700},
     {400, 2000, 2500},
@@ -271,12 +271,12 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
     fill(&out_ptr[0], &out_ptr[size], 0.0f);
     fill(&aux_ptr[0], &aux_ptr[size], 0.0f);
 
-    vowel *= (kFormantTableSize - 1.001f);
+    vowel *= (k_formant_table_size - 1.001f);
     auto [vowel_integral, vowel_fractional] = split_integral_fractional(vowel);
 
-    for (int32_t i = 0; i < kNumFormants; ++i) {
-        float a = formants[vowel_integral][i];
-        float b = formants[vowel_integral + 1][i];
+    for (int32_t i = 0; i < k_num_formants; ++i) {
+        float a = k_formants[vowel_integral][i];
+        float b = k_formants[vowel_integral + 1][i];
         float f = a + (b - a) * vowel_fractional;
         f *= shift;
         m_formant_filter[i].set_f_q<Approximation::Dirty>(f / m_sample_rate, resonance);
@@ -292,8 +292,8 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
 }
 
 struct ChordNote {
-    float note;
-    float amplitude;
+    float m_note;
+    float m_amplitude;
 };
 
 void RingsStringSynthPart::process(
@@ -308,62 +308,62 @@ void RingsStringSynthPart::process(
     size_t size = in.get_num_frames();
 
     // Assign note to a voice.
-    uint8_t envelope_flags[kMaxStringSynthPolyphony];
+    uint8_t envelope_flags[k_max_string_synth_polyphony];
 
     fill(&envelope_flags[0], &envelope_flags[m_polyphony], 0);
-    m_note_filter.process(performance_state.note, performance_state.strum);
-    if (performance_state.strum) {
-        m_group[m_active_group].tonic = m_note_filter.stable_note();
-        envelope_flags[m_active_group] = ENVELOPE_FLAG_FALLING_EDGE;
+    m_note_filter.process(performance_state.m_note, performance_state.m_strum);
+    if (performance_state.m_strum) {
+        m_group[m_active_group].m_tonic = m_note_filter.stable_note();
+        envelope_flags[m_active_group] = FallingEdge;
         m_active_group = (m_active_group + 1) % m_polyphony;
-        envelope_flags[m_active_group] = ENVELOPE_FLAG_RISING_EDGE;
+        envelope_flags[m_active_group] = RisingEdge;
         m_acquisition_delay = 3;
     }
     if (m_acquisition_delay) {
         --m_acquisition_delay;
     } else {
-        m_group[m_active_group].tonic = m_note_filter.note();
-        m_group[m_active_group].chord = performance_state.chord;
-        m_group[m_active_group].structure = patch.structure;
-        envelope_flags[m_active_group] |= ENVELOPE_FLAG_GATE;
+        m_group[m_active_group].m_tonic = m_note_filter.note();
+        m_group[m_active_group].m_chord = performance_state.m_chord;
+        m_group[m_active_group].m_structure = patch.m_structure;
+        envelope_flags[m_active_group] |= Gate;
     }
 
     // Process envelopes.
-    float envelope_values[kMaxStringSynthPolyphony];
-    process_envelopes(patch.damping, envelope_flags, envelope_values);
+    float envelope_values[k_max_string_synth_polyphony];
+    process_envelopes(patch.m_damping, envelope_flags, envelope_values);
 
     copy(&in_ptr[0], &in_ptr[size], &aux_ptr[0]);
     copy(&in_ptr[0], &in_ptr[size], &out_ptr[0]);
-    int32_t chord_size = min(kStringSynthVoices / m_polyphony, kMaxChordSize);
+    int32_t chord_size = min(k_string_synth_voices / m_polyphony, k_max_chord_size);
     for (int32_t group = 0; group < m_polyphony; ++group) {
-        ChordNote notes[kMaxChordSize];
-        float harmonics[kNumHarmonics * 2];
+        ChordNote notes[k_max_chord_size];
+        float harmonics[k_num_harmonics * 2];
 
-        compute_registration(envelope_values[group] * 0.25f, patch.brightness, harmonics);
+        compute_registration(envelope_values[group] * 0.25f, patch.m_brightness, harmonics);
 
         // Note enough polyphony for smooth transition between chords.
         for (int32_t i = 0; i < chord_size; ++i) {
-            float n = chords[m_polyphony - 1][m_group[group].chord][i];
-            notes[i].note = n;
-            notes[i].amplitude = n >= 0.0f && n <= 17.0f ? 1.0f : 0.7f;
+            float n = k_chords[m_polyphony - 1][m_group[group].m_chord][i];
+            notes[i].m_note = n;
+            notes[i].m_amplitude = n >= 0.0f && n <= 17.0f ? 1.0f : 0.7f;
         }
 
         for (int32_t chord_note = 0; chord_note < chord_size; ++chord_note) {
             float note = 0.0f;
-            note += m_group[group].tonic;
-            note += performance_state.tonic;
-            note += performance_state.fm;
-            note += notes[chord_note].note;
+            note += m_group[group].m_tonic;
+            note += performance_state.m_tonic;
+            note += performance_state.m_fm;
+            note += notes[chord_note].m_note;
 
-            float amplitudes[kNumHarmonics * 2];
-            for (int32_t i = 0; i < kNumHarmonics * 2; ++i) {
-                amplitudes[i] = notes[chord_note].amplitude * harmonics[i];
+            float amplitudes[k_num_harmonics * 2];
+            for (int32_t i = 0; i < k_num_harmonics * 2; ++i) {
+                amplitudes[i] = notes[chord_note].m_amplitude * harmonics[i];
             }
 
             // Fold truncated harmonics.
             size_t num_harmonics =
-                m_polyphony >= 2 && chord_note < 2 ? kNumHarmonics - 1 : kNumHarmonics;
-            for (int32_t i = num_harmonics; i < kNumHarmonics; ++i) {
+                m_polyphony >= 2 && chord_note < 2 ? k_num_harmonics - 1 : k_num_harmonics;
+            for (int32_t i = num_harmonics; i < k_num_harmonics; ++i) {
                 amplitudes[2 * (num_harmonics - 1)] += amplitudes[2 * i];
                 amplitudes[2 * (num_harmonics - 1) + 1] += amplitudes[2 * i + 1];
             }
@@ -387,35 +387,35 @@ void RingsStringSynthPart::process(
     thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs, 2, size);
 
     switch (m_fx_type) {
-        case FX_FORMANT:
-        case FX_FORMANT_2:
-            process_formant_filter(patch.position,
-                                   m_fx_type == FX_FORMANT ? 1.0f : 1.1f,
-                                   m_fx_type == FX_FORMANT ? 25.0f : 10.0f,
+        case Formant:
+        case Formant2:
+            process_formant_filter(patch.m_position,
+                                   m_fx_type == Formant ? 1.0f : 1.1f,
+                                   m_fx_type == Formant ? 25.0f : 10.0f,
                                    out,
                                    aux);
             break;
 
-        case FX_CHORUS:
-            m_chorus.set_amount(patch.position);
-            m_chorus.set_depth(0.15f + 0.5f * patch.position);
+        case Chorus:
+            m_chorus.set_amount(patch.m_position);
+            m_chorus.set_depth(0.15f + 0.5f * patch.m_position);
             m_chorus.process(stereo_view);
             break;
 
-        case FX_ENSEMBLE:
-            m_ensemble.set_amount(patch.position * (2.0f - patch.position));
-            m_ensemble.set_depth(0.2f + 0.8f * patch.position * patch.position);
+        case Ensemble:
+            m_ensemble.set_amount(patch.m_position * (2.0f - patch.m_position));
+            m_ensemble.set_depth(0.2f + 0.8f * patch.m_position * patch.m_position);
             m_ensemble.process(stereo_view);
             break;
 
-        case FX_REVERB:
-        case FX_REVERB_2:
-            m_reverb.set_amount(patch.position * 0.5f);
+        case Reverb:
+        case Reverb2:
+            m_reverb.set_amount(patch.m_position * 0.5f);
             m_reverb.set_diffusion(0.625f);
-            m_reverb.set_time(m_fx_type == FX_REVERB ? (0.5f + 0.49f * patch.position)
-                                                     : (0.3f + 0.6f * patch.position));
+            m_reverb.set_time(m_fx_type == Reverb ? (0.5f + 0.49f * patch.m_position)
+                                                     : (0.3f + 0.6f * patch.m_position));
             m_reverb.set_input_gain(0.2f);
-            m_reverb.set_lp(m_fx_type == FX_REVERB ? 0.3f : 0.6f);
+            m_reverb.set_lp(m_fx_type == Reverb ? 0.3f : 0.6f);
             m_reverb.process(stereo_view);
             break;
 

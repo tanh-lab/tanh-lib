@@ -2,7 +2,7 @@
 
 #if defined(THL_PLATFORM_ANDROID)
 
-#include <tanh/audio_io/AudioDeviceInfo.h>
+#include <tanh/audio-io/AudioDeviceInfo.h>
 #include <vector>
 
 namespace thl {

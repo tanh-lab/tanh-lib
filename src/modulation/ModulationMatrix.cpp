@@ -35,7 +35,7 @@ ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id
     if (it != m_targets.end()) { return &it->second; }
     ResolvedTarget target;
     auto [target_it, inserted] = m_targets.emplace(std::string(id), target);
-    target_it->second.id = id;
+    target_it->second.m_id = id;
     target_it->second.resize(m_samples_per_block);
     return &target_it->second;
 }
@@ -56,19 +56,19 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
 void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     m_config.read([&](const ProcessingConfig& config) {
         // 1. Clear all active targets for this block
-        for (auto* target : config.active_targets) { target->clear_per_block(); }
+        for (auto* target : config.m_active_targets) { target->clear_per_block(); }
 
         // 2. Execute schedule steps
-        for (const auto& step : config.schedule) {
+        for (const auto& step : config.m_schedule) {
             if (auto* bulk = std::get_if<BulkStep>(&step)) {
-                process_source_bulk(config, bulk->source, num_samples);
+                process_source_bulk(config, bulk->m_source, num_samples);
             } else if (auto* cyclic = std::get_if<CyclicStep>(&step)) {
-                process_cyclic(config, cyclic->sources, num_samples);
+                process_cyclic(config, cyclic->m_sources, num_samples);
             }
         }
 
         // 3. Build final sorted change point lists from flags
-        for (auto* target : config.active_targets) { target->build_change_points(); }
+        for (auto* target : config.m_active_targets) { target->build_change_points(); }
     });
 }
 
@@ -92,7 +92,7 @@ void ModulationMatrix::remove_source(const std::string_view id) {
     m_user_routings.erase(
         std::remove_if(m_user_routings.begin(),
                        m_user_routings.end(),
-                       [&](const ModulationRouting& r) { return r.source_id == id; }),
+                       [&](const ModulationRouting& r) { return r.m_source_id == id; }),
         m_user_routings.end());
 
     rebuild_schedule_locked();
@@ -114,8 +114,8 @@ void ModulationMatrix::remove_routing(const std::string_view source_id,
     m_user_routings.erase(std::remove_if(m_user_routings.begin(),
                                          m_user_routings.end(),
                                          [&](const ModulationRouting& r) {
-                                             return r.source_id == source_id &&
-                                                    r.target_id == target_id;
+                                             return r.m_source_id == source_id &&
+                                                    r.m_target_id == target_id;
                                          }),
                           m_user_routings.end());
     rebuild_schedule_locked();
@@ -139,25 +139,25 @@ void ModulationMatrix::rebuild_schedule() {
 }
 
 std::vector<ScheduleStep> ModulationMatrix::get_schedule() const {
-    return m_config.read([](const ProcessingConfig& config) { return config.schedule; });
+    return m_config.read([](const ProcessingConfig& config) { return config.m_schedule; });
 }
 
 void ModulationMatrix::rebuild_schedule_locked() {
     // Resolve routings from user-facing strings to raw pointers
     std::vector<ResolvedRouting> new_routings;
     for (auto& routing : m_user_routings) {
-        auto src_it = m_sources.find(routing.source_id);
-        auto tgt_it = m_targets.find(routing.target_id);
+        auto src_it = m_sources.find(routing.m_source_id);
+        auto tgt_it = m_targets.find(routing.m_target_id);
 
         if (src_it == m_sources.end() || tgt_it == m_targets.end()) {
             continue;  // Skip unresolved routings
         }
 
         ResolvedRouting r;
-        r.source = src_it->second;
-        r.target = &tgt_it->second;
-        r.depth = routing.depth;
-        r.max_decimation = routing.max_decimation;
+        r.m_source = src_it->second;
+        r.m_target = &tgt_it->second;
+        r.m_depth = routing.m_depth;
+        r.m_max_decimation = routing.m_max_decimation;
         r.m_samples_until_update = 0;
         new_routings.push_back(r);
     }
@@ -185,15 +185,15 @@ void ModulationMatrix::rebuild_schedule_locked() {
     }
 
     for (auto& routing : m_user_routings) {
-        auto owner_it = target_owner.find(routing.target_id);
+        auto owner_it = target_owner.find(routing.m_target_id);
         if (owner_it == target_owner.end()) { continue; }
 
         const std::string_view owner_id = owner_it->second;
-        if (owner_id == routing.source_id) {
+        if (owner_id == routing.m_source_id) {
             has_self_edge[std::string(owner_id)] = true;
         } else {
             // owner depends on routing.source_id
-            adj[std::string(owner_id)].push_back(routing.source_id);
+            adj[std::string(owner_id)].push_back(routing.m_source_id);
         }
     }
 
@@ -208,12 +208,12 @@ void ModulationMatrix::rebuild_schedule_locked() {
 
     // Publish everything atomically via RCU
     m_config.update([&](ProcessingConfig& config) {
-        config.routings = std::move(new_routings);
-        config.schedule = std::move(new_schedule);
-        config.active_targets = std::move(new_active_targets);
+        config.m_routings = std::move(new_routings);
+        config.m_schedule = std::move(new_schedule);
+        config.m_active_targets = std::move(new_active_targets);
         // Rebuild per-source routing lookup — pointers into config.routings
-        config.routings_by_source.clear();
-        for (const auto& r : config.routings) { config.routings_by_source[r.source].push_back(&r); }
+        config.m_routings_by_source.clear();
+        for (const auto& r : config.m_routings) { config.m_routings_by_source[r.m_source].push_back(&r); }
     });
 }
 
@@ -278,10 +278,10 @@ void ModulationMatrix::build_schedule_from_graph(
             if (src_it != m_sources.end()) { out_schedule.push_back(BulkStep{src_it->second}); }
         } else {
             CyclicStep step;
-            step.sources.reserve(scc.size());
+            step.m_sources.reserve(scc.size());
             for (auto& id : scc) {
                 auto src_it = m_sources.find(id);
-                if (src_it != m_sources.end()) { step.sources.push_back(src_it->second); }
+                if (src_it != m_sources.end()) { step.m_sources.push_back(src_it->second); }
             }
             out_schedule.push_back(std::move(step));
         }
@@ -295,17 +295,17 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
                                            size_t num_samples) {
     source->process(num_samples);
 
-    auto it = config.routings_by_source.find(source);
-    if (it == config.routings_by_source.end()) { return; }
+    auto it = config.m_routings_by_source.find(source);
+    if (it == config.m_routings_by_source.end()) { return; }
 
     for (auto* routing : it->second) {
         const auto& src_output = source->get_output_buffer();
         for (size_t i = 0; i < num_samples; ++i) {
-            routing->target->modulation_buffer[i] += src_output[i] * routing->depth;
+            routing->m_target->m_modulation_buffer[i] += src_output[i] * routing->m_depth;
         }
 
         for (uint32_t cp : source->get_change_points()) {
-            if (cp < num_samples) { routing->target->change_point_flags[cp] = true; }
+            if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
         }
 
         apply_routing_change_points(*routing, num_samples);
@@ -328,10 +328,10 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
 
             // Apply routing immediately so subsequent sources see updated
             // target buffers within the same sample iteration.
-            auto it = config.routings_by_source.find(source);
-            if (it != config.routings_by_source.end()) {
+            auto it = config.m_routings_by_source.find(source);
+            if (it != config.m_routings_by_source.end()) {
                 for (auto* routing : it->second) {
-                    routing->target->modulation_buffer[i] += sample * routing->depth;
+                    routing->m_target->m_modulation_buffer[i] += sample * routing->m_depth;
                 }
             }
         }
@@ -339,12 +339,12 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
 
     // Propagate change points from sources to target flags
     for (auto* source : sources) {
-        auto it = config.routings_by_source.find(source);
-        if (it == config.routings_by_source.end()) { continue; }
+        auto it = config.m_routings_by_source.find(source);
+        if (it == config.m_routings_by_source.end()) { continue; }
 
         for (auto* routing : it->second) {
             for (uint32_t cp : source->get_change_points()) {
-                if (cp < num_samples) { routing->target->change_point_flags[cp] = true; }
+                if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
             }
             apply_routing_change_points(*routing, num_samples);
         }
@@ -355,12 +355,12 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
 
 void ModulationMatrix::apply_routing_change_points(const ResolvedRouting& routing,
                                                    size_t num_samples) {
-    if (routing.max_decimation == 0) { return; }
+    if (routing.m_max_decimation == 0) { return; }
 
     for (size_t i = 0; i < num_samples; ++i) {
         if (routing.m_samples_until_update == 0) {
-            routing.target->change_point_flags[i] = true;
-            routing.m_samples_until_update = routing.max_decimation;
+            routing.m_target->m_change_point_flags[i] = true;
+            routing.m_samples_until_update = routing.m_max_decimation;
         }
         --routing.m_samples_until_update;
     }

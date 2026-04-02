@@ -1,0 +1,14 @@
+{
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build-desktop",
+        "--clang-tidy",
+        "--background-index"
+    ],
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "[cpp]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
+    "[c]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    }
+}

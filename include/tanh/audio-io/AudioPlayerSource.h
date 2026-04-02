@@ -1,7 +1,7 @@
 #pragma once
 #include "AudioIODeviceCallback.h"
-#include <tanh/audio_io/AudioFileLoader.h>
-#include <tanh/audio_io/DataSource.h>
+#include <tanh/audio-io/AudioFileLoader.h>
+#include <tanh/audio-io/DataSource.h>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -24,22 +24,22 @@ namespace thl {
  *
  * The typical usage pattern is:
  * 1. Construct an AudioPlayerSource
- * 2. Call loadFile() with the audio file path
+ * 2. Call load_file() with the audio file path
  * 3. Register with AudioDeviceManager::addPlaybackCallback()
  * 4. Call play() to begin playback
  * 5. Call pause() or stop() to control playback
- * 6. Call unloadFile() or let the destructor handle cleanup
+ * 6. Call unload_file() or let the destructor handle cleanup
  *
  * @section playback Playback Control
  *
  * - play() - Starts or resumes playback from the current position
  * - pause() - Pauses playback, maintaining the current position
  * - stop() - Stops playback and resets to the beginning
- * - seekToFrame() - Seeks to a specific frame position
+ * - seek_to_frame() - Seeks to a specific frame position
  *
  * @section rt_safety Real-Time Safety
  *
- * - loadFile(), unloadFile(), and seekToFrame() are NOT real-time safe.
+ * - load_file(), unload_file(), and seek_to_frame() are NOT real-time safe.
  * - play(), pause(), and stop() use atomic operations and are safe to call
  *   from any thread, though stop() also performs a seek operation.
  * - process() reads from pre-decoded buffers managed by the resource manager's
@@ -47,14 +47,14 @@ namespace thl {
  *
  * @section finished_callback Finished Callback
  *
- * Use setFinishedCallback() to be notified when playback reaches the end of
+ * Use set_finished_callback() to be notified when playback reaches the end of
  * the file. The callback is invoked from the audio thread, so it must be
  * real-time safe (no allocations, locks, or blocking).
  *
  * @code
  * AudioPlayerSource player;
- * player.loadFile("audio.wav", 2, 48000);
- * player.setFinishedCallback([]() {
+ * player.load_file("audio.wav", 2, 48000);
+ * player.set_finished_callback([]() {
  *     // Handle end of file (must be RT-safe!)
  * });
  * manager.addPlaybackCallback(&player);
@@ -111,14 +111,14 @@ public:
      *
      * @warning NOT real-time safe - performs file I/O and allocations.
      */
-    bool loadFile(const std::string& filePath, uint32_t outputChannels, uint32_t outputSampleRate);
+    bool load_file(const std::string& file_path, uint32_t output_channels, uint32_t output_sample_rate);
 
     /**
      * @brief Loads audio from an in-memory buffer for playback.
      *
      * Initialises a streaming data source from the provided memory buffer.
      * The caller must keep the memory alive for the lifetime of this player
-     * (or until unloadFile() / loadFile() / loadFromMemory() is called).
+     * (or until unload_file() / load_file() / load_from_memory() is called).
      *
      * @param data            Pointer to the binary audio data.
      * @param size            Size of the data in bytes.
@@ -131,10 +131,10 @@ public:
      *
      * @warning NOT real-time safe - performs allocations.
      */
-    bool loadFromMemory(const void* data,
+    bool load_from_memory(const void* data,
                         size_t size,
-                        uint32_t outputChannels,
-                        uint32_t outputSampleRate);
+                        uint32_t output_channels,
+                        uint32_t output_sample_rate);
 
     /**
      * @brief Unloads the currently loaded file.
@@ -144,7 +144,7 @@ public:
      *
      * @warning NOT real-time safe - waits for background decoding to complete.
      */
-    void unloadFile();
+    void unload_file();
 
     /**
      * @brief Starts or resumes playback.
@@ -168,9 +168,9 @@ public:
     /**
      * @brief Stops playback and resets to the beginning.
      *
-     * Equivalent to pause() followed by seekToFrame(0).
+     * Equivalent to pause() followed by seek_to_frame(0).
      * This is a hard stop — audio output stops immediately.
-     * Use requestStop() for a click-free fade-out.
+     * Use request_stop() for a click-free fade-out.
      *
      * @warning NOT real-time safe - seeking may block.
      */
@@ -186,7 +186,7 @@ public:
      * @note Thread-safe — uses atomic operations. The actual stop happens
      *       asynchronously on the audio thread.
      */
-    void requestStop();
+    void request_stop();
 
     /**
      * @brief Checks if playback is currently active.
@@ -195,7 +195,7 @@ public:
      *
      * @note Thread-safe - uses atomic operations.
      */
-    bool isPlaying() const { return m_playing.load(std::memory_order_acquire); }
+    bool is_playing() const { return m_playing.load(std::memory_order_acquire); }
 
     /**
      * @brief Checks if a file is currently loaded.
@@ -203,7 +203,7 @@ public:
      * @return true if a file is loaded and ready for playback, false
      * otherwise.
      */
-    bool isLoaded() const { return m_loaded.load(std::memory_order_acquire); }
+    bool is_loaded() const { return m_loaded.load(std::memory_order_acquire); }
 
     /**
      * @brief Seeks to a specific frame position.
@@ -212,21 +212,21 @@ public:
      *
      * @warning NOT real-time safe - may trigger buffer refill.
      */
-    void seekToFrame(uint64_t frame);
+    void seek_to_frame(uint64_t frame);
 
     /**
      * @brief Gets the current playback position in frames.
      *
      * @return Current frame position, or 0 if no file is loaded.
      */
-    uint64_t getCurrentFrame() const;
+    uint64_t get_current_frame() const;
 
     /**
      * @brief Gets the total length of the loaded file in frames.
      *
      * @return Total number of frames, or 0 if no file is loaded.
      */
-    uint64_t getTotalFrames() const;
+    uint64_t get_total_frames() const;
 
     /**
      * @brief Sets a callback to be invoked when playback finishes.
@@ -241,9 +241,9 @@ public:
      *          safe. Do not perform allocations, locks, or blocking
      * operations.
      */
-    void setFinishedCallback(FinishedCallback callback);
+    void set_finished_callback(FinishedCallback callback);
 
-    void prepareToPlay(uint32_t sampleRate, uint32_t bufferSize) override;
+    void prepare_to_play(uint32_t sample_rate, uint32_t buffer_size) override;
 
     /**
      * @brief Processes audio by reading from pre-decoded buffers.
@@ -261,11 +261,11 @@ public:
      *
      * @note This method reads from pre-decoded buffers and is real-time safe.
      */
-    void process(float* outputBuffer,
-                 const float* inputBuffer,
-                 uint32_t frameCount,
-                 uint32_t numInputChannels,
-                 uint32_t numOutputChannels) override;
+    void process(float* output_buffer,
+                 const float* input_buffer,
+                 uint32_t frame_count,
+                 uint32_t num_input_channels,
+                 uint32_t num_output_channels) override;
 
     /**
      * @brief Releases resources by unloading any loaded file.
@@ -275,39 +275,39 @@ public:
      *
      * @warning NOT real-time safe - performs deallocations.
      */
-    void releaseResources() override;
+    void release_resources() override;
 
     /// Number of frames used for micro fade-in/out (~1.3 ms at 48 kHz).
-    static constexpr uint32_t kFadeSamples = 64;
+    static constexpr uint32_t k_fade_samples = 64;
 
-    void setFadeEnabled(bool enabled) { m_fadeEnabled = enabled; }
-    bool isFadeEnabled() const { return m_fadeEnabled; }
+    void set_fade_enabled(bool enabled) { m_fade_enabled = enabled; }
+    bool is_fade_enabled() const { return m_fade_enabled; }
 
 private:
-    bool rebuildDataSource(uint32_t decodedChannels,
-                           uint32_t decodedSampleRate,
-                           uint64_t initialFrame);
+    bool rebuild_data_source(uint32_t decoded_channels,
+                           uint32_t decoded_sample_rate,
+                           uint64_t initial_frame);
 
     audio_io::AudioFileLoader m_loader;
-    std::atomic<std::shared_ptr<audio_io::DataSource>> m_dataSource;
+    std::atomic<std::shared_ptr<audio_io::DataSource>> m_data_source;
 
     std::atomic<bool> m_loaded{false};
     std::atomic<bool> m_playing{false};
-    std::mutex m_stateMutex;
+    std::mutex m_state_mutex;
 
-    std::string m_filePath;
-    const void* m_memoryData = nullptr;
-    size_t m_memorySize = 0;
+    std::string m_file_path;
+    const void* m_memory_data = nullptr;
+    size_t m_memory_size = 0;
     uint32_t m_channels = 0;
-    uint32_t m_sampleRate = 0;
+    uint32_t m_sample_rate = 0;
 
-    std::atomic<std::shared_ptr<FinishedCallback>> m_finishedCallback;
+    std::atomic<std::shared_ptr<FinishedCallback>> m_finished_callback;
 
     // Fade state — written by control thread, consumed by audio thread
-    std::atomic<uint32_t> m_fadeInRemaining{0};
-    std::atomic<bool> m_stopRequested{false};
-    uint32_t m_fadeOutCounter{0};  // audio-thread only
-    bool m_fadeEnabled{true};
+    std::atomic<uint32_t> m_fade_in_remaining{0};
+    std::atomic<bool> m_stop_requested{false};
+    uint32_t m_fade_out_counter{0};  // audio-thread only
+    bool m_fade_enabled{true};
 };
 
 }  // namespace thl

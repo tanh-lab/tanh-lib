@@ -170,7 +170,7 @@ TEST(ModulationMatrix, SingleSourceSingleTarget) {
     // Modulation buffer should have non-zero values (sine LFO * depth 100)
     bool has_nonzero = false;
     for (size_t i = 0; i < kBlockSize; ++i) {
-        if (target->modulation_buffer[i] != 0.0f) {
+        if (target->m_modulation_buffer[i] != 0.0f) {
             has_nonzero = true;
             break;
         }
@@ -178,7 +178,7 @@ TEST(ModulationMatrix, SingleSourceSingleTarget) {
     EXPECT_TRUE(has_nonzero);
 
     // Change points should exist
-    EXPECT_FALSE(target->change_points.empty());
+    EXPECT_FALSE(target->m_change_points.empty());
 }
 
 TEST(ModulationMatrix, MultipleSourcesSameTarget) {
@@ -211,7 +211,7 @@ TEST(ModulationMatrix, MultipleSourcesSameTarget) {
     const auto& out2 = lfo2.get_output_buffer();
     for (size_t i = 0; i < kBlockSize; ++i) {
         float expected = out1[i] * 50.0f + out2[i] * 25.0f;
-        EXPECT_FLOAT_EQ(target->modulation_buffer[i], expected)
+        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], expected)
             << "Mismatch at sample " << i;
     }
 }
@@ -235,7 +235,7 @@ TEST(ModulationMatrix, RemoveRouting) {
     ASSERT_NE(target, nullptr);
     bool has_nonzero = false;
     for (size_t i = 0; i < kBlockSize; ++i) {
-        if (target->modulation_buffer[i] != 0.0f) {
+        if (target->m_modulation_buffer[i] != 0.0f) {
             has_nonzero = true;
             break;
         }
@@ -249,7 +249,7 @@ TEST(ModulationMatrix, RemoveRouting) {
     target = matrix.get_target("freq");
     ASSERT_NE(target, nullptr);
     for (size_t i = 0; i < kBlockSize; ++i) {
-        EXPECT_FLOAT_EQ(target->modulation_buffer[i], 0.0f);
+        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], 0.0f);
     }
 }
 
@@ -265,10 +265,10 @@ TEST(ModulationMatrix, PerRoutingDecimation) {
     matrix.get_smart_handle("freq");
 
     ModulationRouting routing;
-    routing.source_id = "lfo1";
-    routing.target_id = "freq";
-    routing.depth = 1.0f;
-    routing.max_decimation = 32;
+    routing.m_source_id = "lfo1";
+    routing.m_target_id = "freq";
+    routing.m_depth = 1.0f;
+    routing.m_max_decimation = 32;
     matrix.add_routing(routing);
 
     matrix.prepare(kSampleRate, kBlockSize);
@@ -279,7 +279,7 @@ TEST(ModulationMatrix, PerRoutingDecimation) {
 
     // With max_decimation = 32, there should be at least
     // kBlockSize / 32 change points from the routing alone
-    EXPECT_GE(target->change_points.size(), kBlockSize / 32);
+    EXPECT_GE(target->m_change_points.size(), kBlockSize / 32);
 }
 
 TEST(ModulationMatrix, UnresolvedRoutingIgnored) {
@@ -387,7 +387,7 @@ TEST(CyclicModulation, CrossRoutingCreatesCyclicStep) {
     ASSERT_TRUE(std::holds_alternative<CyclicStep>(schedule[0]));
 
     const auto& cyclic = std::get<CyclicStep>(schedule[0]);
-    EXPECT_EQ(cyclic.sources.size(), 2u);
+    EXPECT_EQ(cyclic.m_sources.size(), 2u);
 }
 
 TEST(CyclicModulation, SelfEdgeCreatesCyclicStep) {
@@ -407,7 +407,7 @@ TEST(CyclicModulation, SelfEdgeCreatesCyclicStep) {
     ASSERT_TRUE(std::holds_alternative<CyclicStep>(schedule[0]));
 
     const auto& cyclic = std::get<CyclicStep>(schedule[0]);
-    EXPECT_EQ(cyclic.sources.size(), 1u);
+    EXPECT_EQ(cyclic.m_sources.size(), 1u);
 }
 
 TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
@@ -437,7 +437,7 @@ TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
     const auto* target_a = matrix.get_target("param_a");
     ASSERT_NE(target_a, nullptr);
     for (size_t i = 0; i < kBlockSize; ++i) {
-        EXPECT_FLOAT_EQ(target_a->modulation_buffer[i], 0.7f * 2.0f)
+        EXPECT_FLOAT_EQ(target_a->m_modulation_buffer[i], 0.7f * 2.0f)
             << "param_a mismatch at sample " << i;
     }
 
@@ -445,7 +445,7 @@ TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
     const auto* target_b = matrix.get_target("param_b");
     ASSERT_NE(target_b, nullptr);
     for (size_t i = 0; i < kBlockSize; ++i) {
-        EXPECT_FLOAT_EQ(target_b->modulation_buffer[i], 0.5f * 3.0f)
+        EXPECT_FLOAT_EQ(target_b->m_modulation_buffer[i], 0.5f * 3.0f)
             << "param_b mismatch at sample " << i;
     }
 }
@@ -499,7 +499,7 @@ TEST(CyclicModulation, MixedBulkAndCyclicSchedule) {
     const auto* plain = matrix.get_target("plain_target");
     ASSERT_NE(plain, nullptr);
     for (size_t i = 0; i < kBlockSize; ++i) {
-        EXPECT_FLOAT_EQ(plain->modulation_buffer[i], 1.0f);
+        EXPECT_FLOAT_EQ(plain->m_modulation_buffer[i], 1.0f);
     }
 }
 
@@ -536,11 +536,11 @@ TEST(CyclicModulation, DependencyChainIsTopologicallyOrdered) {
     }
 
     // Topological order: src_a before src_b before src_c
-    EXPECT_EQ(std::get<BulkStep>(schedule[0]).source,
+    EXPECT_EQ(std::get<BulkStep>(schedule[0]).m_source,
               static_cast<ModulationSource*>(&src_a));
-    EXPECT_EQ(std::get<BulkStep>(schedule[1]).source,
+    EXPECT_EQ(std::get<BulkStep>(schedule[1]).m_source,
               static_cast<ModulationSource*>(&src_b));
-    EXPECT_EQ(std::get<BulkStep>(schedule[2]).source,
+    EXPECT_EQ(std::get<BulkStep>(schedule[2]).m_source,
               static_cast<ModulationSource*>(&src_c));
 }
 
@@ -569,8 +569,8 @@ TEST(CyclicModulation, CyclicSourcesRecordChangePoints) {
     const auto* target_b = matrix.get_target("param_b");
     ASSERT_NE(target_a, nullptr);
     ASSERT_NE(target_b, nullptr);
-    EXPECT_FALSE(target_a->change_points.empty());
-    EXPECT_FALSE(target_b->change_points.empty());
+    EXPECT_FALSE(target_a->m_change_points.empty());
+    EXPECT_FALSE(target_b->m_change_points.empty());
 }
 
 // =============================================================================
@@ -705,7 +705,7 @@ TEST(SmartHandle, ModulationOffsetReadsBuffer) {
     // SmartHandle should read base + modulation at each offset
     const auto* target = matrix.get_target("freq");
     for (size_t i = 0; i < kBlockSize; ++i) {
-        float expected = 440.0f + target->modulation_buffer[i];
+        float expected = 440.0f + target->m_modulation_buffer[i];
         EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), expected)
             << "Mismatch at sample " << i;
     }
@@ -815,29 +815,29 @@ TEST(ResolvedTarget, BuildChangePointsFromFlags) {
     ResolvedTarget target;
     target.resize(100);
 
-    target.change_point_flags[5] = true;
-    target.change_point_flags[20] = true;
-    target.change_point_flags[50] = true;
+    target.m_change_point_flags[5] = true;
+    target.m_change_point_flags[20] = true;
+    target.m_change_point_flags[50] = true;
 
     target.build_change_points();
 
     std::vector<uint32_t> expected = {5, 20, 50};
-    EXPECT_EQ(target.change_points, expected);
+    EXPECT_EQ(target.m_change_points, expected);
 }
 
 TEST(ResolvedTarget, ClearPerBlock) {
     ResolvedTarget target;
     target.resize(100);
 
-    target.modulation_buffer[10] = 42.0f;
-    target.change_point_flags[10] = true;
-    target.change_points.push_back(10);
+    target.m_modulation_buffer[10] = 42.0f;
+    target.m_change_point_flags[10] = true;
+    target.m_change_points.push_back(10);
 
     target.clear_per_block();
 
-    EXPECT_FLOAT_EQ(target.modulation_buffer[10], 0.0f);
-    EXPECT_FALSE(target.change_point_flags[10]);
-    EXPECT_TRUE(target.change_points.empty());
+    EXPECT_FLOAT_EQ(target.m_modulation_buffer[10], 0.0f);
+    EXPECT_FALSE(target.m_change_point_flags[10]);
+    EXPECT_TRUE(target.m_change_points.empty());
 }
 
 // =============================================================================
@@ -856,7 +856,7 @@ namespace LimiterID {
 class TestLimiter : public thl::dsp::utils::LimiterImpl {
 public:
     TestLimiter(thl::modulation::ModulationMatrix& mmatrix) : m_mmatrix(mmatrix) {
-        m_smart_handles.resize(Parameter::NUM_PARAMETERS);
+        m_smart_handles.resize(Parameter::NumParameters);
         m_smart_handles[Parameter::Attack] = mmatrix.get_smart_handle(LimiterID::Attack);
         m_smart_handles[Parameter::Release] = mmatrix.get_smart_handle(LimiterID::Release);
         m_smart_handles[Parameter::Threshold] = mmatrix.get_smart_handle(LimiterID::Threshold);

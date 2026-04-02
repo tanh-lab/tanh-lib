@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <mutex>
 #include <string>
 #include <map>
@@ -23,11 +22,11 @@ namespace thl::modulation {
 
 // Schedule step types for the processing schedule built by Tarjan SCC.
 struct BulkStep {
-    ModulationSource* source;
+    ModulationSource* m_source;
 };
 
 struct CyclicStep {
-    std::vector<ModulationSource*> sources;
+    std::vector<ModulationSource*> m_sources;
 };
 
 using ScheduleStep = std::variant<BulkStep, CyclicStep>;
@@ -37,10 +36,10 @@ using ScheduleStep = std::variant<BulkStep, CyclicStep>;
 // the routings vector of the same ProcessingConfig instance; they stay valid
 // for the duration of an RCU read section.
 struct ProcessingConfig {
-    std::vector<ResolvedRouting> routings;
-    std::vector<ScheduleStep> schedule;
-    std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>> routings_by_source;
-    std::vector<ResolvedTarget*> active_targets;
+    std::vector<ResolvedRouting> m_routings;
+    std::vector<ScheduleStep> m_schedule;
+    std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>> m_routings_by_source;
+    std::vector<ResolvedTarget*> m_active_targets;
 };
 
 class ModulationMatrix {

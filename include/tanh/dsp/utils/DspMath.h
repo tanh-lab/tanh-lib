@@ -91,8 +91,8 @@ inline void constrain(T& value, const T& min, const T& max) {
 }
 
 struct IntegralFractional {
-    int32_t integral;
-    float fractional;
+    int32_t m_integral;
+    float m_fractional;
 };
 
 inline IntegralFractional split_integral_fractional(float x) {

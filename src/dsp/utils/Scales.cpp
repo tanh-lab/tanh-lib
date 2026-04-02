@@ -25,9 +25,9 @@ std::string note_number_to_note_name(int note_number) {
     return note_name;
 }
 
-std::unordered_map<ScaleMode, std::vector<int>> scale_halfsteps = {{ScaleMode::MINOR, {2, 5}},
-                                                                   {ScaleMode::MAJOR, {3, 7}},
-                                                                   {ScaleMode::PHRYGIAN, {1, 5}}};
+std::unordered_map<ScaleMode, std::vector<int>> scale_halfsteps = {{ScaleMode::Minor, {2, 5}},
+                                                                   {ScaleMode::Major, {3, 7}},
+                                                                   {ScaleMode::Phrygian, {1, 5}}};
 
 int get_note_offset(int scale_note_index, ScaleMode mode) {
     int note_offset = 2 * scale_note_index;

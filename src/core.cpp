@@ -6,7 +6,7 @@ namespace thl {
 
 namespace core {
 
-std::string getVersion() {
+std::string get_version() {
 #ifdef TANH_VERSION
     return TANH_VERSION;
 #else

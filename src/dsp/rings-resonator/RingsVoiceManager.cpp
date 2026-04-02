@@ -38,20 +38,20 @@ using namespace std;
 using namespace thl::dsp::utils;
 
 void RingsVoiceManager::prepare(uint16_t* reverb_buffer, float sample_rate) {
-    thl::dsp::resonator::WarmDspFunctions();
+    thl::dsp::resonator::warm_dsp_functions();
 
     m_sample_rate = sample_rate;
     m_a3 = 440.0f / m_sample_rate;
     m_active_voice = 0;
 
-    fill(&m_note[0], &m_note[kMaxPolyphony], 0.0f);
+    fill(&m_note[0], &m_note[k_max_polyphony], 0.0f);
 
     m_bypass = false;
     m_polyphony = 1;
-    m_model = RESONATOR_MODEL_MODAL;
+    m_model = Modal;
     m_dirty = true;
 
-    for (int32_t i = 0; i < kMaxPolyphony; ++i) {
+    for (int32_t i = 0; i < k_max_polyphony; ++i) {
         m_excitation_filter[i].reset();
         m_plucker[i].prepare();
         m_dc_blocker[i].prepare(1.0f - 10.0f / m_sample_rate);
@@ -60,7 +60,7 @@ void RingsVoiceManager::prepare(uint16_t* reverb_buffer, float sample_rate) {
     m_reverb.prepare(reverb_buffer, m_sample_rate);
     m_limiter.prepare();
 
-    m_note_filter.prepare(m_sample_rate / thl::dsp::resonator::kMaxBlockSize,
+    m_note_filter.prepare(m_sample_rate / thl::dsp::resonator::k_max_block_size,
                           0.001f,   // Lag time with a sharp edge on the V/Oct
                                     // input or trigger.
                           0.010f,   // Lag time after the trigger has been
@@ -75,7 +75,7 @@ void RingsVoiceManager::configure_resonators() {
     if (!m_dirty) { return; }
 
     switch (m_model) {
-        case RESONATOR_MODEL_MODAL: {
+        case Modal: {
             int32_t resolution = 64 / m_polyphony - 4;
             for (int32_t i = 0; i < m_polyphony; ++i) {
                 m_resonator[i].prepare(m_sample_rate);
@@ -83,24 +83,24 @@ void RingsVoiceManager::configure_resonators() {
             }
         } break;
 
-        case RESONATOR_MODEL_SYMPATHETIC_STRING:
-        case RESONATOR_MODEL_STRING:
-        case RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED:
-        case RESONATOR_MODEL_STRING_AND_REVERB: {
-            float lfo_frequencies[kNumStrings] = {0.5f, 0.4f, 0.35f, 0.23f, 0.211f, 0.2f, 0.171f};
-            for (int32_t i = 0; i < kNumStrings; ++i) {
-                bool has_dispersion = m_model == RESONATOR_MODEL_STRING ||
-                                      m_model == RESONATOR_MODEL_STRING_AND_REVERB;
+        case SympatheticString:
+        case String:
+        case SympatheticStringQuantized:
+        case StringAndReverb: {
+            float lfo_frequencies[k_num_strings] = {0.5f, 0.4f, 0.35f, 0.23f, 0.211f, 0.2f, 0.171f};
+            for (int32_t i = 0; i < k_num_strings; ++i) {
+                bool has_dispersion = m_model == String ||
+                                      m_model == StringAndReverb;
                 m_string[i].prepare(has_dispersion, m_sample_rate);
 
-                float f_lfo = float(thl::dsp::resonator::kMaxBlockSize) / m_sample_rate;
+                float f_lfo = float(thl::dsp::resonator::k_max_block_size) / m_sample_rate;
                 f_lfo *= lfo_frequencies[i];
                 m_lfo[i].prepare<thl::dsp::utils::CosineOscillatorMode::Approximate>(f_lfo);
             }
             for (int32_t i = 0; i < m_polyphony; ++i) { m_plucker[i].prepare(); }
         } break;
 
-        case RESONATOR_MODEL_FM_VOICE: {
+        case FmVoice: {
             for (int32_t i = 0; i < m_polyphony; ++i) { m_fm_voice[i].prepare(m_sample_rate); }
         } break;
 
@@ -114,7 +114,7 @@ void RingsVoiceManager::configure_resonators() {
 #ifdef BRYAN_CHORDS
 
 // Chord table by Bryan Noll:
-float chords[kMaxPolyphony][11][8] = {
+float chords[k_max_polyphony][11][8] = {
     {
         {-12.0f, -0.01f, 0.0f, 0.01f, 0.02f, 11.98f, 11.99f, 12.0f},  // OCT
         {-12.0f, -5.0f, 0.0f, 6.99f, 7.0f, 11.99f, 12.0f, 19.0f},     // 5
@@ -167,7 +167,7 @@ float chords[kMaxPolyphony][11][8] = {
 #else
 
 // Original chord table
-float chords[kMaxPolyphony][11][8] = {{{-12.0f, 0.0f, 0.01f, 0.02f, 0.03f, 11.98f, 11.99f, 12.0f},
+float chords[k_max_polyphony][11][8] = {{{-12.0f, 0.0f, 0.01f, 0.02f, 0.03f, 11.98f, 11.99f, 12.0f},
                                        {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 9.99f, 10.0f, 19.0f},
                                        {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 11.99f, 12.0f, 19.0f},
                                        {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 13.99f, 14.0f, 19.0f},
@@ -259,7 +259,7 @@ void RingsVoiceManager::compute_sympathetic_strings_notes(float tonic,
         note = a + (b - a) * note_fractional;
         destination[i] = note;
         if (i + first_detuned_string < num_strings) {
-            destination[i + first_detuned_string] = destination[i] + detunings[i & 3];
+            destination[i + first_detuned_string] = destination[i] + detunings[i & 3]; // NOLINT(clang-analyzer-security.ArrayBound)
         }
     }
 }
@@ -272,7 +272,7 @@ void RingsVoiceManager::render_modal_voice(
     float filter_cutoff,
     size_t size) {
     // Internal exciter is a pulse, pre-filter.
-    if (performance_state.internal_exciter && voice == m_active_voice && performance_state.strum) {
+    if (performance_state.m_internal_exciter && voice == m_active_voice && performance_state.m_strum) {
         m_resonator_input[0] +=
             0.25f * semitones_to_ratio(filter_cutoff * filter_cutoff * 24.0f) / filter_cutoff;
     }
@@ -285,10 +285,10 @@ void RingsVoiceManager::render_modal_voice(
 
     thl::dsp::resonator::RingsModalResonator& r = m_resonator[voice];
     r.set_frequency(frequency);
-    r.set_structure(patch.structure);
-    r.set_brightness(patch.brightness * patch.brightness);
-    r.set_position(patch.position);
-    r.set_damping(patch.damping);
+    r.set_structure(patch.m_structure);
+    r.set_brightness(patch.m_brightness * patch.m_brightness);
+    r.set_position(patch.m_position);
+    r.set_damping(patch.m_damping);
     thl::dsp::audio::AudioBufferView out_view(m_out_buffer, size);
     thl::dsp::audio::AudioBufferView aux_view(m_aux_buffer, size);
     r.process(thl::dsp::audio::ConstAudioBufferView(m_resonator_input, size), out_view, aux_view);
@@ -302,16 +302,16 @@ void RingsVoiceManager::render_fm_voice(
     float filter_cutoff,
     size_t size) {
     RingsFmVoice& v = m_fm_voice[voice];
-    if (performance_state.internal_exciter && voice == m_active_voice && performance_state.strum) {
+    if (performance_state.m_internal_exciter && voice == m_active_voice && performance_state.m_strum) {
         v.trigger_internal_envelope();
     }
 
     v.set_frequency(frequency);
-    v.set_ratio(patch.structure);
-    v.set_brightness(patch.brightness);
-    v.set_feedback_amount(patch.position);
-    v.set_position(/*patch.position*/ 0.0f);
-    v.set_damping(patch.damping);
+    v.set_ratio(patch.m_structure);
+    v.set_brightness(patch.m_brightness);
+    v.set_feedback_amount(patch.m_position);
+    v.set_position(/*patch.m_position*/ 0.0f);
+    v.set_damping(patch.m_damping);
     thl::dsp::audio::ConstAudioBufferView in_view(m_resonator_input, size);
     thl::dsp::audio::AudioBufferView out_view(m_out_buffer, size);
     thl::dsp::audio::AudioBufferView aux_view(m_aux_buffer, size);
@@ -327,17 +327,17 @@ void RingsVoiceManager::render_string_voice(
     size_t size) {
     // Compute number of strings and frequency.
     int32_t num_strings = 1;
-    float frequencies[kNumStrings];
+    float frequencies[k_num_strings];
 
-    if (m_model == RESONATOR_MODEL_SYMPATHETIC_STRING ||
-        m_model == RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED) {
-        num_strings = 2 * kMaxPolyphony / m_polyphony;
-        float parameter = m_model == RESONATOR_MODEL_SYMPATHETIC_STRING
-                              ? patch.structure
-                              : 2.0f + performance_state.chord;
+    if (m_model == SympatheticString ||
+        m_model == SympatheticStringQuantized) {
+        num_strings = 2 * k_max_polyphony / m_polyphony;
+        float parameter = m_model == SympatheticString
+                              ? patch.m_structure
+                              : 2.0f + performance_state.m_chord;
         compute_sympathetic_strings_notes(
-            performance_state.tonic + performance_state.fm,
-            performance_state.tonic + m_note[voice] + performance_state.fm,
+            performance_state.m_tonic + performance_state.m_fm,
+            performance_state.m_tonic + m_note[voice] + performance_state.m_fm,
             parameter,
             frequencies,
             num_strings);
@@ -360,9 +360,9 @@ void RingsVoiceManager::render_string_voice(
         res_in_view);
 
     // Add noise burst.
-    if (performance_state.internal_exciter) {
-        if (voice == m_active_voice && performance_state.strum) {
-            m_plucker[voice].trigger(frequency, filter_cutoff * 8.0f, patch.position);
+    if (performance_state.m_internal_exciter) {
+        if (voice == m_active_voice && performance_state.m_strum) {
+            m_plucker[voice].trigger(frequency, filter_cutoff * 8.0f, patch.m_position);
         }
         thl::dsp::audio::AudioBufferView noise_view(m_noise_burst_buffer, size);
         m_plucker[voice].process(noise_view);
@@ -374,7 +374,7 @@ void RingsVoiceManager::render_string_voice(
     fill(&m_out_buffer[0], &m_out_buffer[size], 0.0f);
     fill(&m_aux_buffer[0], &m_aux_buffer[size], 0.0f);
 
-    float structure = patch.structure;
+    float structure = patch.m_structure;
     float dispersion = structure < 0.24f
                            ? (structure - 0.24f) * 4.166f
                            : (structure > 0.26f ? (structure - 0.26f) * 1.35135f : 0.0f);
@@ -387,25 +387,25 @@ void RingsVoiceManager::render_string_voice(
         thl::dsp::resonator::RingsString& s = m_string[i];
         float lfo_value = m_lfo[i].next();
 
-        float brightness = patch.brightness;
-        float damping = patch.damping;
-        float position = patch.position;
+        float brightness = patch.m_brightness;
+        float damping = patch.m_damping;
+        float position = patch.m_position;
         float glide = 1.0f;
         float string_index = static_cast<float>(string) / static_cast<float>(num_strings);
         const float* input = m_resonator_input;
 
-        if (m_model == RESONATOR_MODEL_STRING_AND_REVERB) { damping *= (2.0f - damping); }
+        if (m_model == StringAndReverb) { damping *= (2.0f - damping); }
 
         // When the internal exciter is used, string 0 is the main
         // source, the other strings are vibrating by sympathetic resonance.
         // When the internal exciter is not used, all strings are vibrating
         // by sympathetic resonance.
-        if (string > 0 && performance_state.internal_exciter) {
+        if (string > 0 && performance_state.m_internal_exciter) {
             brightness *= (2.0f - brightness);
             brightness *= (2.0f - brightness);
-            damping = 0.7f + patch.damping * 0.27f;
-            float amount = (0.5f - fabs(0.5f - patch.position)) * 0.9f;
-            position = patch.position + lfo_value * amount;
+            damping = 0.7f + patch.m_damping * 0.27f;
+            float amount = (0.5f - fabs(0.5f - patch.m_position)) * 0.9f;
+            position = patch.m_position + lfo_value * amount;
             glide = semitones_to_ratio((brightness - 1.0f) * 36.0f);
             input = m_sympathetic_resonator_input;
         }
@@ -429,26 +429,26 @@ void RingsVoiceManager::render_string_voice(
     }
 }
 
-const int32_t kPingPattern[] = {1, 0, 2, 1, 0, 2, 1, 0};
+const int32_t k_ping_pattern[] = {1, 0, 2, 1, 0, 2, 1, 0};
 
 void RingsVoiceManager::prepare_voice_params(
     const thl::dsp::resonator::RingsPerformanceState& performance_state,
     const thl::dsp::resonator::RingsPatch& patch) {
-    float cutoff = patch.brightness * (2.0f - patch.brightness);
-    float filter_q = performance_state.internal_exciter ? 1.5f : 0.8f;
+    float cutoff = patch.m_brightness * (2.0f - patch.m_brightness);
+    float filter_q = performance_state.m_internal_exciter ? 1.5f : 0.8f;
 
     for (int32_t voice = 0; voice < m_polyphony; ++voice) {
-        float note = m_note[voice] + performance_state.tonic + performance_state.fm;
+        float note = m_note[voice] + performance_state.m_tonic + performance_state.m_fm;
         float frequency = semitones_to_ratio(note - 69.0f) * m_a3;
-        float filter_cutoff_range = performance_state.internal_exciter
+        float filter_cutoff_range = performance_state.m_internal_exciter
                                         ? frequency * semitones_to_ratio((cutoff - 0.5f) * 96.0f)
                                         : 0.4f * semitones_to_ratio((cutoff - 1.0f) * 108.0f);
         float filter_cutoff =
             min(voice == m_active_voice ? filter_cutoff_range : (10.0f / m_sample_rate), 0.499f);
 
-        m_prepared[voice].frequency = frequency;
-        m_prepared[voice].filter_cutoff = filter_cutoff;
-        m_prepared[voice].filter_q = filter_q;
+        m_prepared[voice].m_frequency = frequency;
+        m_prepared[voice].m_filter_cutoff = filter_cutoff;
+        m_prepared[voice].m_filter_q = filter_q;
     }
 }
 
@@ -471,12 +471,12 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
 
     configure_resonators();
 
-    m_note_filter.process(performance_state.note, performance_state.strum);
+    m_note_filter.process(performance_state.m_note, performance_state.m_strum);
 
-    if (performance_state.strum) {
+    if (performance_state.m_strum) {
         m_note[m_active_voice] = m_note_filter.stable_note();
         if (m_polyphony > 1 && m_polyphony & 1) {
-            m_active_voice = kPingPattern[m_step_counter % 8];
+            m_active_voice = k_ping_pattern[m_step_counter % 8];
             m_step_counter = (m_step_counter + 1) % 8;
         } else {
             m_active_voice = (m_active_voice + 1) % m_polyphony;
@@ -490,9 +490,9 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
     fill(&out_ptr[0], &out_ptr[size], 0.0f);
     fill(&aux_ptr[0], &aux_ptr[size], 0.0f);
     for (int32_t voice = 0; voice < m_polyphony; ++voice) {
-        float frequency = m_prepared[voice].frequency;
-        float filter_cutoff = m_prepared[voice].filter_cutoff;
-        float filter_q = m_prepared[voice].filter_q;
+        float frequency = m_prepared[voice].m_frequency;
+        float filter_cutoff = m_prepared[voice].m_filter_cutoff;
+        float filter_q = m_prepared[voice].m_filter_q;
 
         // Process input with excitation filter. Inactive voices receive
         // silence.
@@ -503,9 +503,9 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
             fill(&m_resonator_input[0], &m_resonator_input[size], 0.0f);
         }
 
-        if (m_model == RESONATOR_MODEL_MODAL) {
+        if (m_model == Modal) {
             render_modal_voice(voice, performance_state, patch, frequency, filter_cutoff, size);
-        } else if (m_model == RESONATOR_MODEL_FM_VOICE) {
+        } else if (m_model == FmVoice) {
             render_fm_voice(voice, performance_state, patch, frequency, filter_cutoff, size);
         } else {
             render_string_voice(voice, performance_state, patch, frequency, filter_cutoff, size);
@@ -526,18 +526,18 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
         }
     }
 
-    if (m_model == RESONATOR_MODEL_STRING_AND_REVERB) {
+    if (m_model == StringAndReverb) {
         for (size_t i = 0; i < size; ++i) {
             float l = out_ptr[i];
             float r = aux_ptr[i];
-            out_ptr[i] = l * patch.position + (1.0f - patch.position) * r;
-            aux_ptr[i] = r * patch.position + (1.0f - patch.position) * l;
+            out_ptr[i] = l * patch.m_position + (1.0f - patch.m_position) * r;
+            aux_ptr[i] = r * patch.m_position + (1.0f - patch.m_position) * l;
         }
-        m_reverb.set_amount(0.1f + patch.damping * 0.5f);
+        m_reverb.set_amount(0.1f + patch.m_damping * 0.5f);
         m_reverb.set_diffusion(0.625f);
-        m_reverb.set_time(0.35f + 0.63f * patch.damping);
+        m_reverb.set_time(0.35f + 0.63f * patch.m_damping);
         m_reverb.set_input_gain(0.2f);
-        m_reverb.set_lp(0.3f + patch.brightness * 0.6f);
+        m_reverb.set_lp(0.3f + patch.m_brightness * 0.6f);
         float* stereo_ptrs[] = {out_ptr, aux_ptr};
         thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs, 2, size);
         m_reverb.process(stereo_view);
@@ -552,12 +552,12 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
 
 /* static */
 float RingsVoiceManager::m_model_gains[] = {
-    1.4f,  // RESONATOR_MODEL_MODAL
-    1.0f,  // RESONATOR_MODEL_SYMPATHETIC_STRING
-    1.4f,  // RESONATOR_MODEL_STRING
-    0.7f,  // RESONATOR_MODEL_FM_VOICE,
-    1.0f,  // RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED
-    1.4f,  // RESONATOR_MODEL_STRING_AND_REVERB
+    1.4f,  // Modal
+    1.0f,  // SympatheticString
+    1.4f,  // String
+    0.7f,  // FmVoice,
+    1.0f,  // SympatheticStringQuantized
+    1.4f,  // StringAndReverb
 };
 
 }  // namespace thl::dsp::synth

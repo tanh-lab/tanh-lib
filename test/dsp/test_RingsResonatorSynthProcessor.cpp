@@ -25,7 +25,7 @@ public:
     void set_int(Parameter p, int v) { m_int_values[p] = v; }
 
 private:
-    static constexpr int kN = static_cast<int>(Parameter::NUM_PARAMETERS);
+    static constexpr int kN = static_cast<int>(Parameter::NumParameters);
     std::array<float, kN> m_float_values = {
         440.0f,
         0.5f,

@@ -28,14 +28,16 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace thl::dsp::utils {
 
-enum EnvelopeShape { ENVELOPE_SHAPE_LINEAR, ENVELOPE_SHAPE_QUARTIC };
+enum EnvelopeShape { Linear, Quartic };
 
 enum EnvelopeFlags {
-    ENVELOPE_FLAG_RISING_EDGE = 1,
-    ENVELOPE_FLAG_FALLING_EDGE = 2,
-    ENVELOPE_FLAG_GATE = 4
+    RisingEdge = 1,
+    FallingEdge = 2,
+    Gate = 4
 };
 
 class StringSynthEnvelope {
@@ -52,11 +54,11 @@ public:
     }
 
     inline float process(uint8_t flags) {
-        if (flags & ENVELOPE_FLAG_RISING_EDGE) {
+        if (flags & RisingEdge) {
             m_start_value = m_segment == m_num_segments ? m_level[0] : m_value;
             m_segment = 0;
             m_phase = 0.0f;
-        } else if (flags & ENVELOPE_FLAG_FALLING_EDGE && m_sustain_point) {
+        } else if (flags & FallingEdge && m_sustain_point) {
             m_start_value = m_value;
             m_segment = m_sustain_point;
             m_phase = 0.0f;
@@ -68,12 +70,12 @@ public:
 
         bool done = m_segment == m_num_segments;
         bool sustained =
-            m_sustain_point && m_segment == m_sustain_point && flags & ENVELOPE_FLAG_GATE;
+            m_sustain_point && m_segment == m_sustain_point && flags & Gate;
 
         float phase_increment = 0.0f;
         if (!sustained && !done) { phase_increment = m_rate[m_segment]; }
         float t = m_phase;
-        if (m_shape[m_segment] == ENVELOPE_SHAPE_QUARTIC) {
+        if (m_shape[m_segment] == Quartic) {
             t = 1.0f - t;
             t *= t;
             t *= t;
@@ -96,8 +98,8 @@ public:
         m_rate[0] = attack;
         m_rate[1] = decay;
 
-        m_shape[0] = ENVELOPE_SHAPE_LINEAR;
-        m_shape[1] = ENVELOPE_SHAPE_QUARTIC;
+        m_shape[0] = Linear;
+        m_shape[1] = Quartic;
     }
 
     inline void set_ar(float attack, float decay) {
@@ -111,8 +113,8 @@ public:
         m_rate[0] = attack;
         m_rate[1] = decay;
 
-        m_shape[0] = ENVELOPE_SHAPE_LINEAR;
-        m_shape[1] = ENVELOPE_SHAPE_LINEAR;
+        m_shape[0] = Linear;
+        m_shape[1] = Linear;
     }
 
 private:

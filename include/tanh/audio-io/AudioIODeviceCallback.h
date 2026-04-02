@@ -21,15 +21,15 @@ namespace thl {
  * - No unbounded loops
  * - Deterministic execution time
  *
- * The prepareToPlay() and releaseResources() methods are called from the main
+ * The prepare_to_play() and release_resources() methods are called from the main
  * thread and may perform allocations and other non-real-time-safe operations.
  *
  * @section usage Usage
  *
  * To use this interface:
  * 1. Derive from AudioIODeviceCallback and implement process()
- * 2. Optionally override prepareToPlay() for initialisation
- * 3. Optionally override releaseResources() for cleanup
+ * 2. Optionally override prepare_to_play() for initialisation
+ * 3. Optionally override release_resources() for cleanup
  * 4. Register the callback with AudioDeviceManager::addPlaybackCallback(),
  *    addCaptureCallback(), or addDuplexCallback()
  *
@@ -84,11 +84,11 @@ public:
      * @warning **MUST BE REAL-TIME SAFE** - Called from the audio thread.
      *          No allocations, locks, or blocking operations allowed.
      */
-    virtual void process(float* outputBuffer,
-                         const float* inputBuffer,
-                         uint32_t frameCount,
-                         uint32_t numInputChannels,
-                         uint32_t numOutputChannels) = 0;
+    virtual void process(float* output_buffer,
+                         const float* input_buffer,
+                         uint32_t frame_count,
+                         uint32_t num_input_channels,
+                         uint32_t num_output_channels) = 0;
 
     /**
      * @brief Called before audio processing begins to allow resource
@@ -107,9 +107,9 @@ public:
      * operations.
      * @note Default implementation does nothing.
      */
-    virtual void prepareToPlay(uint32_t sampleRate, uint32_t bufferSize) {
-        (void)sampleRate;
-        (void)bufferSize;
+    virtual void prepare_to_play(uint32_t sample_rate, uint32_t buffer_size) {
+        (void)sample_rate;
+        (void)buffer_size;
     }
 
     /**
@@ -123,7 +123,7 @@ public:
      * blocking operations.
      * @note Default implementation does nothing.
      */
-    virtual void releaseResources() {}
+    virtual void release_resources() {}
 };
 
 }  // namespace thl

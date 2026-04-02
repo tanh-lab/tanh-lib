@@ -25,7 +25,7 @@ protected:
         Frequency = 0,
         Amplitude = 1,
 
-        NUM_PARAMETERS = 2
+        NumParameters = 2
     };
 
 private:
@@ -37,8 +37,8 @@ private:
 
     std::vector<float> m_phase;
 
-    utils::SmoothedValue smoothed_frequency;
-    utils::SmoothedValue smoothed_amplitude;
+    utils::SmoothedValue m_smoothed_frequency;
+    utils::SmoothedValue m_smoothed_amplitude;
 
     double m_sample_rate = 44100.f;
     size_t m_samples_per_block = 512;

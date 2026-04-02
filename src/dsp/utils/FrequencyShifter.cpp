@@ -5,11 +5,11 @@
 
 namespace thl::dsp::utils {
 
-const float FrequencyShifter::COEFFS_A[4] = {0.6923878f,
+const float FrequencyShifter::k_coeffs_a[4] = {0.6923878f,
                                              0.9360654322959f,
                                              0.9882295226860f,
                                              0.9987488452737f};
-const float FrequencyShifter::COEFFS_B[4] = {0.4021921162426f,
+const float FrequencyShifter::k_coeffs_b[4] = {0.4021921162426f,
                                              0.8561710882420f,
                                              0.9722909545651f,
                                              0.9952884791278f};
@@ -33,8 +33,8 @@ void FrequencyShifter::reset() {
 }
 
 float FrequencyShifter::process(float x) {
-    const float real = process_chain(x, COEFFS_A, m_states_a);
-    const float imag = process_chain(x, COEFFS_B, m_states_b);
+    const float real = process_chain(x, k_coeffs_a, m_states_a);
+    const float imag = process_chain(x, k_coeffs_b, m_states_b);
 
     const float out = real * std::cos(m_phase) - imag * std::sin(m_phase);
 
@@ -51,9 +51,9 @@ float FrequencyShifter::process(float x) {
 float FrequencyShifter::process_chain(float x, const float* coeffs, State* states) {
     float out = x;
     for (int i = 0; i < 4; ++i) {
-        const float y = coeffs[i] * (out - states[i].y1) + states[i].x1;
-        states[i].x1 = out;
-        states[i].y1 = y;
+        const float y = coeffs[i] * (out - states[i].m_y1) + states[i].m_x1;
+        states[i].m_x1 = out;
+        states[i].m_y1 = y;
         out = y;
     }
     return out;

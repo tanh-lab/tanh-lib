@@ -1,7 +1,7 @@
 #if defined(THL_PLATFORM_IOS)
 
-#include <tanh/audio_io/iOSAudioDevices.h>
-#include <tanh/audio_io/AudioDeviceManager.h>
+#include <tanh/audio-io/iOSAudioDevices.h>
+#include <tanh/audio-io/AudioDeviceManager.h>
 #include <tanh/core/Logger.h>
 #import <AVFoundation/AVAudioSession.h>
 

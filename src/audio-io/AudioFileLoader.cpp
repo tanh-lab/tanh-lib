@@ -1,4 +1,4 @@
-#include <tanh/audio_io/AudioFileLoader.h>
+#include <tanh/audio-io/AudioFileLoader.h>
 #include <tanh/core/Logger.h>
 #include "DataSourceImpl.h"
 
@@ -9,7 +9,7 @@ namespace thl::audio_io {
 
 namespace {
 
-constexpr ma_uint64 READ_CHUNK_FRAMES = 4096;
+constexpr ma_uint64 k_read_chunk_frames = 4096;
 
 dsp::audio::AudioBuffer decode_with_decoder(ma_decoder& decoder, double /*target_sample_rate*/) {
     ma_uint64 total_frames = 0;
@@ -21,11 +21,11 @@ dsp::audio::AudioBuffer decode_with_decoder(ma_decoder& decoder, double /*target
     std::vector<float> interleaved;
     if (total_frames > 0) { interleaved.reserve(static_cast<size_t>(total_frames) * channels); }
 
-    std::vector<float> chunk(READ_CHUNK_FRAMES * channels);
+    std::vector<float> chunk(k_read_chunk_frames * channels);
     while (true) {
         ma_uint64 frames_read = 0;
         ma_result result =
-            ma_decoder_read_pcm_frames(&decoder, chunk.data(), READ_CHUNK_FRAMES, &frames_read);
+            ma_decoder_read_pcm_frames(&decoder, chunk.data(), k_read_chunk_frames, &frames_read);
 
         if (frames_read > 0) {
             interleaved.insert(interleaved.end(),
@@ -33,7 +33,7 @@ dsp::audio::AudioBuffer decode_with_decoder(ma_decoder& decoder, double /*target
                                chunk.begin() + static_cast<ptrdiff_t>(frames_read * channels));
         }
 
-        if (result != MA_SUCCESS || frames_read < READ_CHUNK_FRAMES) { break; }
+        if (result != MA_SUCCESS || frames_read < k_read_chunk_frames) { break; }
     }
 
     ma_decoder_uninit(&decoder);
@@ -58,7 +58,7 @@ bool AudioFileLoader::init_resource_manager_data_source(DataSource::Impl& impl,
     rm_config.decodedSampleRate =
         target_sample_rate > 0.0 ? static_cast<ma_uint32>(target_sample_rate) : 0;
 
-    ma_result result = ma_resource_manager_init(&rm_config, &impl.resourceManager);
+    ma_result result = ma_resource_manager_init(&rm_config, &impl.m_resource_manager);
     if (result != MA_SUCCESS) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
                           "thl.audio_io.audio_file_loader",
@@ -66,13 +66,13 @@ bool AudioFileLoader::init_resource_manager_data_source(DataSource::Impl& impl,
                           static_cast<int>(result));
         return false;
     }
-    impl.resourceManagerInitialised = true;
+    impl.m_resource_manager_initialised = true;
 
-    result = ma_resource_manager_data_source_init(&impl.resourceManager,
+    result = ma_resource_manager_data_source_init(&impl.m_resource_manager,
                                                   file_path.c_str(),
                                                   flags,
                                                   nullptr,
-                                                  &impl.dataSource);
+                                                  &impl.m_data_source);
     if (result != MA_SUCCESS) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
                           "thl.audio_io.audio_file_loader",
@@ -81,43 +81,43 @@ bool AudioFileLoader::init_resource_manager_data_source(DataSource::Impl& impl,
                           static_cast<int>(result));
         return false;
     }
-    impl.dataSourceInitialised = true;
+    impl.m_data_source_initialised = true;
 
-    impl.channels = rm_config.decodedChannels;
-    impl.sampleRate = rm_config.decodedSampleRate;
+    impl.m_channels = rm_config.decodedChannels;
+    impl.m_sample_rate = rm_config.decodedSampleRate;
 
     // If channels/sampleRate were left at 0 (native), query the actual
     // values from the data source after initialisation.
-    if (impl.channels == 0 || impl.sampleRate == 0) {
+    if (impl.m_channels == 0 || impl.m_sample_rate == 0) {
         ma_format format;
         ma_uint32 ch = 0;
         ma_uint32 sr = 0;
-        ma_data_source_get_data_format(&impl.dataSource, &format, &ch, &sr, nullptr, 0);
-        if (impl.channels == 0) { impl.channels = ch; }
-        if (impl.sampleRate == 0) { impl.sampleRate = sr; }
+        ma_data_source_get_data_format(&impl.m_data_source, &format, &ch, &sr, nullptr, 0);
+        if (impl.m_channels == 0) { impl.m_channels = ch; }
+        if (impl.m_sample_rate == 0) { impl.m_sample_rate = sr; }
     }
 
     return true;
 }
 
 dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl) {
-    auto channels = static_cast<size_t>(impl.channels);
-    auto sample_rate = static_cast<double>(impl.sampleRate);
+    auto channels = static_cast<size_t>(impl.m_channels);
+    auto sample_rate = static_cast<double>(impl.m_sample_rate);
 
     if (channels == 0) { return {}; }
 
     ma_uint64 total_frames = 0;
-    ma_data_source_get_length_in_pcm_frames(&impl.dataSource, &total_frames);
+    ma_data_source_get_length_in_pcm_frames(&impl.m_data_source, &total_frames);
 
     std::vector<float> interleaved;
     if (total_frames > 0) { interleaved.reserve(static_cast<size_t>(total_frames) * channels); }
 
-    std::vector<float> chunk(READ_CHUNK_FRAMES * channels);
+    std::vector<float> chunk(k_read_chunk_frames * channels);
     while (true) {
         ma_uint64 frames_read = 0;
-        ma_result result = ma_data_source_read_pcm_frames(&impl.dataSource,
+        ma_result result = ma_data_source_read_pcm_frames(&impl.m_data_source,
                                                           chunk.data(),
-                                                          READ_CHUNK_FRAMES,
+                                                          k_read_chunk_frames,
                                                           &frames_read);
 
         if (frames_read > 0) {
@@ -126,7 +126,7 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
                                chunk.begin() + static_cast<ptrdiff_t>(frames_read * channels));
         }
 
-        if (result != MA_SUCCESS || frames_read < READ_CHUNK_FRAMES) { break; }
+        if (result != MA_SUCCESS || frames_read < k_read_chunk_frames) { break; }
     }
 
     if (interleaved.empty()) { return {}; }
@@ -214,7 +214,7 @@ DataSource AudioFileLoader::load_data_source_from_memory(const void* data,
         target_channels > 0 ? target_channels : 0,
         target_sample_rate > 0.0 ? static_cast<ma_uint32>(target_sample_rate) : 0);
 
-    ma_result result = ma_decoder_init_memory(data, size, &config, &impl->decoder);
+    ma_result result = ma_decoder_init_memory(data, size, &config, &impl->m_decoder);
     if (result != MA_SUCCESS) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
                           "thl.audio_io.audio_file_loader",
@@ -222,10 +222,10 @@ DataSource AudioFileLoader::load_data_source_from_memory(const void* data,
                           static_cast<int>(result));
         return DataSource(std::make_unique<DataSource::Impl>());
     }
-    impl->decoderInitialised = true;
+    impl->m_decoder_initialised = true;
 
-    impl->channels = impl->decoder.outputChannels;
-    impl->sampleRate = impl->decoder.outputSampleRate;
+    impl->m_channels = impl->m_decoder.outputChannels;
+    impl->m_sample_rate = impl->m_decoder.outputSampleRate;
 
     return DataSource(std::move(impl));
 }

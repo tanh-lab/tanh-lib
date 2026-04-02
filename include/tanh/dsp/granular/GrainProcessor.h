@@ -9,45 +9,45 @@
 namespace thl::dsp::granular {
 
 // Maximum number of output channels supported by the GrainProcessor
-constexpr size_t MAX_CHANNEL_SUPPORT = 16;
+constexpr size_t k_max_channel_support = 16;
 
 // Grain size limits in seconds (will be converted to samples based on sample
 // rate)
-constexpr float MIN_GRAIN_SIZE = 0.02f;  // 20 ms
-constexpr float MAX_GRAIN_SIZE = 0.4f;   // 400 ms
+constexpr float k_min_grain_size = 0.02f;  // 20 ms
+constexpr float k_max_grain_size = 0.4f;   // 400 ms
 
 // Minium and maximum grain interval in seconds (for density control)
-constexpr float MIN_GRAIN_INTERVAL = 0.02f;  // 20 ms (50 grains/sec)
-constexpr float MAX_GRAIN_INTERVAL = 0.2f;   // 200 ms (5 grains/sec)
+constexpr float k_min_grain_interval = 0.02f;  // 20 ms (50 grains/sec)
+constexpr float k_max_grain_interval = 0.2f;   // 200 ms (5 grains/sec)
 
 // Maximum number of grains that can be active simultaneously
-constexpr size_t MAX_GRAINS = 32;
+constexpr size_t k_max_grains = 32;
 
 // Duration in seconds over which temperature ramps up from 0 to full at
 // playback start
-constexpr float TEMPERATURE_RAMP_DURATION = 1.0f;
+constexpr float k_temperature_ramp_duration = 1.0f;
 
 enum class ChannelMode : int {
     MonoToStereo,      // Read ch0 from source, spread across L/R
     TrueStereo,        // Read ch0+ch1 from source (mono duplicated if source is mono)
     TrueMultichannel,  // Read all source channels, write to matching output
                        // channels
-    NUM_CHANNEL_MODES
+    NumChannelModes
 };
 
 // Structure to represent a single grain
 struct Grain {
-    size_t start_position;    // Starting position in the sample
-    size_t current_position;  // Current position within the grain
-    size_t grain_size;        // Size of the grain in samples
-    float velocity;           // Playback speed/velocity
-    float amplitude;          // Grain amplitude/volume
-    float gain;
-    float position_spread;                 // Pan position [0, 1] for MonoToStereo spread
-    bool active;                           // Whether the grain is currently active
-    thl::dsp::utils::HannWindow envelope;  // Hann window envelope for amplitude
+    size_t m_start_position;    // Starting position in the sample
+    size_t m_current_position;  // Current position within the grain
+    size_t m_grain_size;        // Size of the grain in samples
+    float m_velocity;           // Playback speed/velocity
+    float m_amplitude;          // Grain amplitude/volume
+    float m_gain;
+    float m_position_spread;                 // Pan position [0, 1] for MonoToStereo spread
+    bool m_active;                           // Whether the grain is currently active
+    thl::dsp::utils::HannWindow m_envelope;  // Hann window envelope for amplitude
                                            // modulation
-    size_t sample_index;                   // Index of the sample in the audio data
+    size_t m_sample_index;                   // Index of the sample in the audio data
 };
 
 class GrainProcessorImpl : public thl::dsp::BaseProcessor {
@@ -98,7 +98,7 @@ protected:
         EnvelopeDecayCurve,
         EnvelopeReleaseCurve,
 
-        NUM_PARAMETERS
+        NumParameters
     };
 
     thl::dsp::utils::ADSR m_envelope;
@@ -106,10 +106,10 @@ protected:
 
 private:
     struct SampleRegion {
-        size_t start;
-        size_t end;
-        size_t loop_point;
-        size_t size() const { return end - start; }
+        size_t m_start;
+        size_t m_end;
+        size_t m_loop_point;
+        size_t size() const { return m_end - m_start; }
     };
 
     // Template wrapper for get_parameter

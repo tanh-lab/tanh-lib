@@ -6,7 +6,7 @@
 
 namespace thl {
 
-inline const std::vector<uint32_t> kDefaultSampleRates = {22050, 44100, 48000};
+inline const std::vector<uint32_t> k_default_sample_rates = {22050, 44100, 48000};
 
 /**
  * @enum DeviceType
@@ -34,7 +34,7 @@ struct AudioDeviceInfo {
      * This is the display name provided by the operating system or driver,
      * suitable for showing to users in device selection interfaces.
      */
-    std::string name;
+    std::string m_name;
 
     /**
      * @brief Type of the audio device (input, output, or duplex).
@@ -42,7 +42,7 @@ struct AudioDeviceInfo {
      * Indicates whether this device is capable of audio capture (input),
      * playback (output), or both (duplex).
      */
-    DeviceType deviceType = DeviceType::Playback;
+    DeviceType m_device_type = DeviceType::Playback;
 
     /**
      * @brief List of sample rates supported by the device.
@@ -50,7 +50,7 @@ struct AudioDeviceInfo {
      * Contains the discrete sample rates that this device can operate at.
      * Common values include 44100, 48000, 88200, 96000, etc.
      */
-    std::vector<uint32_t> sampleRates;
+    std::vector<uint32_t> m_sample_rates;
 
     /**
      * @brief Gets a pointer to the device ID for internal use.
@@ -59,15 +59,15 @@ struct AudioDeviceInfo {
      *
      * @note This is primarily used internally when initialising devices.
      */
-    const void* deviceIDPtr() const { return m_deviceIdStorage.data(); }
-    void* deviceIdStoragePtr() { return m_deviceIdStorage.data(); }
+    const void* device_id_ptr() const { return m_device_id_storage.data(); }
+    void* device_id_storage_ptr() { return m_device_id_storage.data(); }
 
-    static constexpr size_t kDeviceIdStorageSize = 256;
+    static constexpr size_t k_device_id_storage_size = 256;
 
 private:
     friend class AudioDeviceManager;
 
-    std::array<char, kDeviceIdStorageSize> m_deviceIdStorage{};
+    std::array<char, k_device_id_storage_size> m_device_id_storage{};
 };
 
 }  // namespace thl

@@ -32,7 +32,7 @@ public:
     void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
-    enum Parameter { Drive = 0, Folds, Symmetry, JfetTone, NUM_PARAMETERS };
+    enum Parameter { Drive = 0, Folds, Symmetry, JfetTone, NumParameters };
 
     template <typename T>
     T get_parameter(Parameter p, uint32_t modulation_offset = 0);

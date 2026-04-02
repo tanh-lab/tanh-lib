@@ -1,6 +1,6 @@
 #if defined(THL_PLATFORM_ANDROID)
 
-#include <tanh/audio_io/AndroidAudioDevices.h>
+#include <tanh/audio-io/AndroidAudioDevices.h>
 #include "miniaudio.h"
 #include <tanh/core/Logger.h>
 #include <algorithm>

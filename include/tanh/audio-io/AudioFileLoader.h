@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/audio_io/DataSource.h>
+#include <tanh/audio-io/DataSource.h>
 #include <tanh/dsp/audio/AudioBuffer.h>
 
 #include <cstddef>

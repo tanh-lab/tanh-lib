@@ -47,7 +47,7 @@ public:
                 size_t summed_harmonics,
                 float* out,
                 size_t size) {
-        m_oscillator[0].template render<OSCILLATOR_SHAPE_DARK_SQUARE, true>(frequency,
+        m_oscillator[0].template render<DarkSquare, true>(frequency,
                                                                             amplitudes[0],
                                                                             amplitudes[1],
                                                                             out,
@@ -56,7 +56,7 @@ public:
 
         for (size_t i = 1; i < summed_harmonics; ++i) {
             frequency *= 2.0f;
-            m_oscillator[i].template render<OSCILLATOR_SHAPE_BRIGHT_SQUARE, false>(frequency,
+            m_oscillator[i].template render<BrightSquare, false>(frequency,
                                                                                    amplitudes[0],
                                                                                    amplitudes[1],
                                                                                    out,
