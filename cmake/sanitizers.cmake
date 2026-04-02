@@ -1,4 +1,7 @@
 function(tanh_realtime_sanitizer target)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "RTSan (-fsanitize=realtime) requires Clang. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
+    endif()
     target_compile_definitions(${target} PUBLIC TANH_WITH_RTSAN)
     target_compile_options(${target} PUBLIC -fsanitize=realtime)
     target_link_options(${target} PUBLIC -fsanitize=realtime)
