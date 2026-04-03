@@ -1,4 +1,10 @@
-Checks: "readability-identifier-naming"
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  readability-identifier-naming
 HeaderFilterRegex: "^.*/(?:src|include|examples)/.*"
 
 CheckOptions:
