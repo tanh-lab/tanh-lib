@@ -31,7 +31,7 @@ ctest --preset desktop-debug
 
 Run a single test binary directly:
 ```bash
-./build-desktop/test/dsp/test_dsp --gtest_filter="TestSuite.TestName"
+./build/desktop/Debug/test/dsp/test_dsp --gtest_filter="TestSuite.TestName"
 ```
 
 ## Architecture

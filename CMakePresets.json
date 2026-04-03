@@ -10,7 +10,7 @@
       "name": "desktop-debug",
       "displayName": "Desktop Debug",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-desktop",
+      "binaryDir": "${sourceDir}/build/desktop/Debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "clang",
@@ -21,7 +21,7 @@
       "name": "desktop-release",
       "displayName": "Desktop Release",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-desktop",
+      "binaryDir": "${sourceDir}/build/desktop/Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_COMPILER": "clang",
@@ -32,7 +32,7 @@
       "name": "ios-simulator-debug",
       "displayName": "iOS Simulator Debug",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-simulator",
+      "binaryDir": "${sourceDir}/build/ios-iphonesimulator/Debug",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "SIMULATOR",
@@ -43,7 +43,7 @@
       "name": "ios-simulator-release",
       "displayName": "iOS Simulator Release",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-simulator",
+      "binaryDir": "${sourceDir}/build/ios-iphonesimulator/Release",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "SIMULATOR",
@@ -54,7 +54,7 @@
       "name": "ios-device-debug",
       "displayName": "iOS Device Debug",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-device",
+      "binaryDir": "${sourceDir}/build/ios-iphoneos/Debug",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "DEVICE",
@@ -65,7 +65,7 @@
       "name": "ios-device-release",
       "displayName": "iOS Device Release",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-device",
+      "binaryDir": "${sourceDir}/build/ios-iphoneos/Release",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "DEVICE",

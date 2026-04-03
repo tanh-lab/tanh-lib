@@ -20,11 +20,11 @@ test-verbose: build
 
 # Run only audio_io tests
 test-audio: build
-    ./build-desktop/test/audio-io/test_audio_io
+    ./build/desktop/Debug/test/audio-io/test_audio_io
 
 # Run hardware tests (requires audio devices)
 test-hardware: build
-    ./build-desktop/test/audio-io/test_audio_io --gtest_also_run_disabled_tests --gtest_filter="HardwareTests.*"
+    ./build/desktop/Debug/test/audio-io/test_audio_io --gtest_also_run_disabled_tests --gtest_filter="HardwareTests.*"
 
 # Run a specific test by name pattern
 test-filter PATTERN: build
@@ -32,7 +32,7 @@ test-filter PATTERN: build
 
 # Clean build artefacts
 clean:
-    rm -rf build-desktop build-ios-simulator build-ios-device
+    rm -rf build
 
 # Rebuild from scratch
 rebuild: clean build
@@ -47,11 +47,11 @@ format-check:
 
 # Run clang-tidy on source files (check only)
 tidy:
-    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p build-desktop/
+    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p build/desktop/Debug/
 
 # Run clang-tidy and auto-fix where possible
 tidy-fix:
-    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p build-desktop/ --fix
+    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p build/desktop/Debug/ --fix
 
 # Build desktop release
 build-release:
@@ -77,9 +77,9 @@ build-ios-device team=`./scripts/resolve-team-id.sh`: (configure-ios-device team
 # Open iOS project in Xcode (configured for simulator)
 open-xcode-ios-sim: configure-ios-sim
     @echo "Opening Xcode project. Select 'audio_io' scheme to build the example app."
-    open build-ios-simulator/tanh.xcodeproj
+    open build/ios-iphonesimulator/Debug/tanh.xcodeproj
 
 # Open iOS project in Xcode (configured for device)
 open-xcode-ios-device team=`./scripts/resolve-team-id.sh`: (configure-ios-device team)
     @echo "Opening Xcode project. Select 'audio_io' scheme."
-    open build-ios-device/tanh.xcodeproj
+    open build/ios-iphoneos/Debug/tanh.xcodeproj
