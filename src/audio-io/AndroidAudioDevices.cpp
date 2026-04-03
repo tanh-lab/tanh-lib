@@ -42,9 +42,10 @@ void configure_android_bluetooth_session() {
     }
 
     if (!set_android_bluetooth_sco(false)) {
-        thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                          "thl.audio_io.android_devices",
-                          "configure_android_bluetooth_session: failed to enforce A2DP startup mode");
+        thl::Logger::logf(
+            thl::Logger::LogLevel::Warning,
+            "thl.audio_io.android_devices",
+            "configure_android_bluetooth_session: failed to enforce A2DP startup mode");
         return;
     }
 
@@ -403,17 +404,17 @@ std::vector<AudioDeviceInfo> enumerate_android_audio_devices(DeviceType type) {
 
         // --- Populate AudioDeviceInfo ---
         AudioDeviceInfo info;
-        info.name = displayName;
-        info.deviceType = type;
-        info.sampleRates = std::move(sampleRates);
+        info.m_name = displayName;
+        info.m_device_type = type;
+        info.m_sample_rates = std::move(sampleRates);
 
         // Store the Android device ID so miniaudio's AAudio backend can open
         // the specific device via AAudioStreamBuilder_setDeviceId().
         ma_device_id maId{};
         maId.aaudio = static_cast<ma_int32>(id);
-        static_assert(sizeof(ma_device_id) <= AudioDeviceInfo::kDeviceIdStorageSize,
+        static_assert(sizeof(ma_device_id) <= AudioDeviceInfo::k_device_id_storage_size,
                       "ma_device_id too large for storage");
-        std::memcpy(info.deviceIdStoragePtr(), &maId, sizeof(ma_device_id));
+        std::memcpy(info.device_id_storage_ptr(), &maId, sizeof(ma_device_id));
 
         result.push_back(std::move(info));
 
@@ -431,7 +432,7 @@ std::vector<AudioDeviceInfo> enumerate_android_audio_devices(DeviceType type) {
         unique.reserve(result.size());
         for (auto& dev : result) {
             if (std::none_of(unique.begin(), unique.end(), [&](const AudioDeviceInfo& u) {
-                    return u.name == dev.name;
+                    return u.m_name == dev.m_name;
                 })) {
                 unique.push_back(std::move(dev));
             }
