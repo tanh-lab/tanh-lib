@@ -1,7 +1,7 @@
 #!/bin/bash
 # Format C/C++/ObjC++ files after Write|Edit
 
-FILE=$(jq -r '.inputs.file_path' 2>/dev/null)
+FILE=$(jq -r '.tool_input.file_path' 2>/dev/null)
 [ -z "$FILE" ] || [ ! -f "$FILE" ] && exit 0
 
 case "$FILE" in
