@@ -6,7 +6,7 @@ FILE=$(jq -r '.inputs.file_path' 2>/dev/null)
 
 case "$FILE" in
   *.cpp|*.mm)
-    OUTPUT=$(clang-tidy --warnings-as-errors='*' -p build-desktop/ "$FILE" 2>&1)
+    OUTPUT=$(clang-tidy --warnings-as-errors='*' -p build/desktop/Debug/ "$FILE" 2>&1)
     if [ $? -ne 0 ]; then
       echo "$OUTPUT" >&2
       exit 2
