@@ -1,9 +1,10 @@
 #pragma once
 
 /// Platform-portable std::numbers constants.
-/// Uses <numbers> when available, falls back to manual constants on
-/// platforms where C++20 <numbers> is not yet supported (e.g. older Apple Clang).
-#if __has_include(<numbers>)
+/// Apple Clang ships the <numbers> header but does not expose std::numbers
+/// in C++20 mode.  Detect Apple Clang via __apple_build_version__ and
+/// provide a manual fallback.
+#if __has_include(<numbers>) && !defined(__apple_build_version__)
 #include <numbers>
 #else
 
