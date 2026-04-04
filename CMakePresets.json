@@ -29,6 +29,47 @@
       }
     },
     {
+      "name": "desktop-debug-asan",
+      "displayName": "Desktop Debug + ASan/UBSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_ASAN": "ON",
+        "TANH_WITH_USAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-tsan",
+      "displayName": "Desktop Debug + TSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_TSAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-msan",
+      "displayName": "Desktop Debug + MSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_MSAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-lsan",
+      "displayName": "Desktop Debug + LSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_LSAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-rtsan",
+      "displayName": "Desktop Debug + RTSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_RTSAN": "ON"
+      }
+    },
+    {
       "name": "ios-simulator-debug",
       "displayName": "iOS Simulator Debug",
       "generator": "Xcode",
@@ -85,6 +126,31 @@
       "configuration": "Release"
     },
     {
+      "name": "desktop-debug-asan",
+      "configurePreset": "desktop-debug-asan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-tsan",
+      "configurePreset": "desktop-debug-tsan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-msan",
+      "configurePreset": "desktop-debug-msan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-lsan",
+      "configurePreset": "desktop-debug-lsan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-rtsan",
+      "configurePreset": "desktop-debug-rtsan",
+      "configuration": "Debug"
+    },
+    {
       "name": "ios-simulator-debug",
       "configurePreset": "ios-simulator-debug",
       "configuration": "Debug"
@@ -118,6 +184,36 @@
       "name": "desktop-release",
       "configurePreset": "desktop-release",
       "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-asan",
+      "configurePreset": "desktop-debug-asan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-tsan",
+      "configurePreset": "desktop-debug-tsan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-msan",
+      "configurePreset": "desktop-debug-msan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-lsan",
+      "configurePreset": "desktop-debug-lsan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-rtsan",
+      "configurePreset": "desktop-debug-rtsan",
+      "configuration": "Debug",
       "output": { "outputOnFailure": true }
     },
     {
