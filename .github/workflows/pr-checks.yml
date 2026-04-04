@@ -103,6 +103,24 @@ jobs:
         with:
           PRESET: desktop-debug-lsan
 
+  sanitizer-msan:
+    name: MSan
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - name: Linux-x86_64
+            os: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
+      - uses: tanh-lab/ci-actions/cmake-build@main
+        with:
+          PRESET: desktop-debug-msan
+      - uses: tanh-lab/ci-actions/cmake-test@main
+        with:
+          PRESET: desktop-debug-msan
+
   sanitizer-rtsan:
     name: RTSan
     runs-on: ubuntu-24.04
