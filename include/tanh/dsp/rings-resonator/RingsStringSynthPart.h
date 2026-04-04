@@ -51,7 +51,7 @@ const int32_t k_max_chord_size = 8;
 const int32_t k_num_harmonics = 3;
 const int32_t k_num_formants = 3;
 
-enum FxType { Formant, Chorus, Reverb, Formant2, Ensemble, Reverb2, Last };
+enum class FxType { Formant, Chorus, Reverb, Formant2, Ensemble, Reverb2, Last };
 
 // Per-polyphony-group state: the base pitch, chord selection, AD envelope,
 // and structure snapshot captured at note-on time.
@@ -151,7 +151,7 @@ private:
     int32_t m_polyphony = 1;
     int32_t m_acquisition_delay = 0;
 
-    FxType m_fx_type = Ensemble;
+    FxType m_fx_type = FxType::Ensemble;
 
     thl::dsp::analysis::NoteFilter m_note_filter;
 

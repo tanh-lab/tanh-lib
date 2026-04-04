@@ -531,8 +531,13 @@ private:
     void ensure_child_groups_registered();
 
     /// @brief Thread-local set tracking which State instances have fully
-    /// registered this thread
-    static inline thread_local std::unordered_set<const StateGroup*> t_registered_states;
+    /// registered this thread. Implemented as a function-local thread_local
+    /// static to avoid MSVC C2492 (thread_local data may not have dll
+    /// interface).
+    static std::unordered_set<const StateGroup*>& t_registered_states() noexcept {
+        static thread_local std::unordered_set<const StateGroup*> s;
+        return s;
+    }
 };
 
 }  // namespace thl

@@ -22,10 +22,18 @@ inline constexpr T e_v = static_cast<T>(2.71828182845904523536L);
 template <typename T>
 inline constexpr T ln2_v = static_cast<T>(0.69314718055994530942L);
 
+template <typename T>
+inline constexpr T sqrt2_v = static_cast<T>(1.41421356237309504880L);
+
+template <typename T>
+inline constexpr T sqrt3_v = static_cast<T>(1.73205080756887729353L);
+
 inline constexpr double pi = pi_v<double>;
 inline constexpr double e = e_v<double>;
 inline constexpr double inv_pi = inv_pi_v<double>;
 inline constexpr double ln2 = ln2_v<double>;
+inline constexpr double sqrt2 = sqrt2_v<double>;
+inline constexpr double sqrt3 = sqrt3_v<double>;
 
 }  // namespace std::numbers
 

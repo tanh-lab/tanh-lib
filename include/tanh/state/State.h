@@ -275,20 +275,26 @@ private:
     friend class Parameter;
     friend class StateGroup;
 
-    /// @brief Thread-local string buffer for path operations (real-time safe
-    /// after initialization)
-    /// @todo Problem if these are thread_local, how to initialize on audio
-    /// thread?
-    static inline thread_local std::string m_temp_buffer_0;
-    /// @brief Thread-local temporary buffer for path operations (real-time safe
-    /// after initialization)
-    static inline thread_local std::string m_temp_buffer_1;
-    /// @brief Thread-local string buffer for path operations (real-time safe
-    /// after initialization)
-    static inline thread_local std::string m_temp_buffer_2;
-    /// @brief Thread-local string buffer for path operations (real-time safe
-    /// after initialization)
-    static inline thread_local std::string m_temp_buffer_3;
+    /// @brief Thread-local string buffer accessors for path operations (real-time safe
+    /// after initialization). Implemented as function-local thread_local statics to
+    /// avoid MSVC C2492 (thread_local data may not have dll interface).
+    /// @todo Problem if these are thread_local, how to initialize on audio thread?
+    static std::string& m_temp_buffer_0() noexcept {
+        static thread_local std::string s;
+        return s;
+    }
+    static std::string& m_temp_buffer_1() noexcept {
+        static thread_local std::string s;
+        return s;
+    }
+    static std::string& m_temp_buffer_2() noexcept {
+        static thread_local std::string s;
+        return s;
+    }
+    static std::string& m_temp_buffer_3() noexcept {
+        static thread_local std::string s;
+        return s;
+    }
 
     /// @brief Owning storage — one heap-allocated ParameterRecord per parameter.
     /// std::map guarantees pointer stability (tree nodes are never moved).

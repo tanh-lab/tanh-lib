@@ -44,7 +44,7 @@ void RingsStringSynthPart::prepare(uint16_t* reverb_buffer, float sample_rate) {
     m_acquisition_delay = 0;
 
     m_polyphony = 1;
-    m_fx_type = Ensemble;
+    m_fx_type = FxType::Ensemble;
 
     for (auto& voice : m_voice) { voice.prepare(); }
 
@@ -399,35 +399,35 @@ void RingsStringSynthPart::process(
     thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs.data(), 2, size);
 
     switch (m_fx_type) {
-        case Formant:
-        case Formant2:
+        case FxType::Formant:
+        case FxType::Formant2:
             process_formant_filter(patch.m_position,
-                                   m_fx_type == Formant ? 1.0f : 1.1f,
-                                   m_fx_type == Formant ? 25.0f : 10.0f,
+                                   m_fx_type == FxType::Formant ? 1.0f : 1.1f,
+                                   m_fx_type == FxType::Formant ? 25.0f : 10.0f,
                                    out,
                                    aux);
             break;
 
-        case Chorus:
+        case FxType::Chorus:
             m_chorus.set_amount(patch.m_position);
             m_chorus.set_depth(0.15f + 0.5f * patch.m_position);
             m_chorus.process(stereo_view);
             break;
 
-        case Ensemble:
+        case FxType::Ensemble:
             m_ensemble.set_amount(patch.m_position * (2.0f - patch.m_position));
             m_ensemble.set_depth(0.2f + 0.8f * patch.m_position * patch.m_position);
             m_ensemble.process(stereo_view);
             break;
 
-        case Reverb:
-        case Reverb2:
+        case FxType::Reverb:
+        case FxType::Reverb2:
             m_reverb.set_amount(patch.m_position * 0.5f);
             m_reverb.set_diffusion(0.625f);
-            m_reverb.set_time(m_fx_type == Reverb ? (0.5f + 0.49f * patch.m_position)
-                                                  : (0.3f + 0.6f * patch.m_position));
+            m_reverb.set_time(m_fx_type == FxType::Reverb ? (0.5f + 0.49f * patch.m_position)
+                                                          : (0.3f + 0.6f * patch.m_position));
             m_reverb.set_input_gain(0.2f);
-            m_reverb.set_lp(m_fx_type == Reverb ? 0.3f : 0.6f);
+            m_reverb.set_lp(m_fx_type == FxType::Reverb ? 0.3f : 0.6f);
             m_reverb.process(stereo_view);
             break;
 

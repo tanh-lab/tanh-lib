@@ -118,16 +118,16 @@ void StateGroup::notify_parameter_change(std::string_view path) {
     try {
         // Get the parameter
         // Use State's pre-allocated buffer
-        m_root_state->m_temp_buffer_1.clear();
+        m_root_state->m_temp_buffer_1().clear();
 
         std::string_view group_path = group->get_full_path();
-        detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_1);
-        Parameter param = group->m_root_state->get_from_root(m_root_state->m_temp_buffer_1);
+        detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_1());
+        Parameter param = group->m_root_state->get_from_root(m_root_state->m_temp_buffer_1());
 
         // Look up gesture state
         bool is_in_gesture = false;
         m_root_state->m_index_rcu.read([&](const auto& idx) {
-            auto it = idx.find(m_root_state->m_temp_buffer_1);
+            auto it = idx.find(m_root_state->m_temp_buffer_1());
             if (it != idx.end()) {
                 is_in_gesture = it->second->m_metadata.m_in_gesture.load(std::memory_order_relaxed);
             }
@@ -173,7 +173,7 @@ StateGroup::StateGroup(State* root_state, StateGroup* parent, std::string_view n
     : m_root_state(root_state), m_parent(parent), m_name(name) {}
 
 StateGroup::~StateGroup() {
-    t_registered_states.erase(this);
+    t_registered_states().erase(this);
 }
 
 // Group management
@@ -229,7 +229,7 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
     m_root_state->ensure_thread_registered();
 
     // Use State's pre-allocated buffer
-    m_root_state->m_temp_buffer_1.clear();
+    m_root_state->m_temp_buffer_1().clear();
 
     // Build path iteratively by calculating depth first, then building from
     // root Count the depth to avoid recursion
@@ -266,11 +266,11 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
 
     // Build the path from root to leaf
     for (int i = 0; i < depth; i++) {
-        if (i > 0) { m_root_state->m_temp_buffer_1 += '.'; }
-        m_root_state->m_temp_buffer_1.append(components[i].data(), components[i].size());
+        if (i > 0) { m_root_state->m_temp_buffer_1() += '.'; }
+        m_root_state->m_temp_buffer_1().append(components[i].data(), components[i].size());
     }
 
-    return m_root_state->m_temp_buffer_1;
+    return m_root_state->m_temp_buffer_1();
 }
 
 // Helper for parameter resolution with paths
@@ -336,11 +336,11 @@ T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOC
         if (group == this) {
             // Parameter in this group, delegate to root state
             // Use State's pre-allocated buffer
-            m_root_state->m_temp_buffer_2.clear();
+            m_root_state->m_temp_buffer_2().clear();
 
             std::string_view group_path = get_full_path();
-            detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_2);
-            return m_root_state->get_from_root<T>(m_root_state->m_temp_buffer_2, allow_blocking);
+            detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_2());
+            return m_root_state->get_from_root<T>(m_root_state->m_temp_buffer_2(), allow_blocking);
         }
         // Parameter in a child group
         return group->get<T>(param_name, allow_blocking);
@@ -363,11 +363,11 @@ ParameterType StateGroup::get_parameter_type(std::string_view path) const
     if (group == this) {
         // Parameter in this group, delegate to root state
         // Use State's pre-allocated buffer
-        m_root_state->m_temp_buffer_3.clear();
+        m_root_state->m_temp_buffer_3().clear();
 
         std::string_view group_path = get_full_path();
-        detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_3);
-        return m_root_state->get_type_from_root(m_root_state->m_temp_buffer_3);
+        detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_3());
+        return m_root_state->get_type_from_root(m_root_state->m_temp_buffer_3());
     }
     // Parameter in a child group
     return group->get_parameter_type(param_name);
@@ -442,24 +442,24 @@ void StateGroup::set(std::string_view path,
     if (group == this) {
         // Parameter in this group, delegate to root state
         // Use State's pre-allocated buffer
-        m_root_state->m_temp_buffer_2.clear();
+        m_root_state->m_temp_buffer_2().clear();
 
         std::string_view group_path = get_full_path();
-        detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_2);
+        detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_2());
 
         // If not creating and the parameter doesn't exist, check using RCU
         if (!create) {
             bool parameter_exists = false;
             m_root_state->m_index_rcu.read([&](const auto& idx) {
-                parameter_exists = idx.find(m_root_state->m_temp_buffer_2) != idx.end();
+                parameter_exists = idx.find(m_root_state->m_temp_buffer_2()) != idx.end();
             });
 
             if (!parameter_exists) {
-                throw StateKeyNotFoundException(m_root_state->m_temp_buffer_2);
+                throw StateKeyNotFoundException(m_root_state->m_temp_buffer_2());
             }
         }
 
-        m_root_state->set_in_root(m_root_state->m_temp_buffer_2,
+        m_root_state->set_in_root(m_root_state->m_temp_buffer_2(),
                                   value,
                                   strategy,
                                   source);  // Pass the notify parameter
@@ -498,14 +498,14 @@ void StateGroup::set(std::string_view path,
     }
 
     // Then store the definition (need to construct the full path)
-    m_root_state->m_temp_buffer_3.clear();
+    m_root_state->m_temp_buffer_3().clear();
     std::string_view group_path = get_full_path();
-    detail::join_path(group_path, path, m_root_state->m_temp_buffer_3);
-    m_root_state->set_definition_in_root(m_root_state->m_temp_buffer_3, def);
+    detail::join_path(group_path, path, m_root_state->m_temp_buffer_3());
+    m_root_state->set_definition_in_root(m_root_state->m_temp_buffer_3(), def);
 }
 
 void StateGroup::ensure_thread_registered() {
-    if (t_registered_states.find(this) != t_registered_states.end()) [[likely]] {
+    if (t_registered_states().find(this) != t_registered_states().end()) [[likely]] {
         return;  // Already registered
     }
     // Register this thread with all RCU structures for this StateGroup
@@ -513,7 +513,7 @@ void StateGroup::ensure_thread_registered() {
     m_listeners_rcu.register_reader_thread();
     ensure_child_groups_registered();
     // Mark this StateGroup as registered for this thread
-    t_registered_states.insert(this);
+    t_registered_states().insert(this);
 }
 
 void StateGroup::ensure_child_groups_registered() {
