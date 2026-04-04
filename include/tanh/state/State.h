@@ -85,8 +85,8 @@ public:
      */
     template <typename T>
     void set_in_root(std::string_view key,
-                     T value,
-                     NotifyStrategies strategy = NotifyStrategies::all,
+                     const T& value,
+                     NotifyStrategies strategy = NotifyStrategies::All,
                      ParameterListener* source = nullptr);
 
     /**
@@ -96,7 +96,7 @@ public:
      */
     void set_in_root(std::string_view key,
                      const char* value,
-                     NotifyStrategies strategy = NotifyStrategies::all,
+                     NotifyStrategies strategy = NotifyStrategies::All,
                      ParameterListener* source = nullptr);
 
     /**
@@ -114,7 +114,7 @@ public:
      * @warning NOT real-time safe - performs JSON parsing and memory allocation
      */
     void update_from_json(const nlohmann::json& json_data,
-                          NotifyStrategies strategy = NotifyStrategies::none,
+                          NotifyStrategies strategy = NotifyStrategies::None,
                           ParameterListener* source = nullptr);
 
     /**

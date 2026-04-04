@@ -1,0 +1,4 @@
+# ASan ignorelist — skip instrumentation for third-party code with known issues.
+# See https://clang.llvm.org/docs/SanitizerSpecialCaseList.html
+[address]
+src:*/miniaudio.h

@@ -9,9 +9,9 @@ State::State(size_t max_string_size, size_t max_levels)
     , StateGroup(nullptr, nullptr, "")
     , m_index_rcu(IndexMap{}) {
     // Initialize the StateGroup with this as the root state
-    m_rootState = this;
+    m_root_state = this;
 
-    ensure_thread_registered();
+    State::ensure_thread_registered();
 }
 
 void State::ensure_thread_registered() {
@@ -50,7 +50,7 @@ void State::reserve_temporary_string_buffers() {
 
 template <typename T>
 void State::set_in_root(std::string_view key,
-                        T value,
+                        const T& value,
                         NotifyStrategies strategy,
                         ParameterListener* source) {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> ||
@@ -78,41 +78,40 @@ void State::set_in_root(std::string_view key,
             try {
                 if (value == "true" || value == "1" || value == "yes" || value == "on") {
                     d_value = 1.0;
-                } else if (value == "false" || value == "0" || value == "no" ||
-                           value == "off") {
+                } else if (value == "false" || value == "0" || value == "no" || value == "off") {
                     d_value = 0.0;
                 } else {
                     d_value = std::stod(value);
                 }
-            } catch (...) {
-                // Leave default value (0.0) if conversion fails
+            } catch (...) {  // NOLINT(bugprone-empty-catch) stod may fail on invalid input
+                             // default value (0.0) if conversion fails
             }
 
-            if (record->type == ParameterType::String) {
+            if (record->m_type == ParameterType::String) {
                 // Only String-typed params store string_value
                 {
-                    std::lock_guard<std::mutex> lock(m_storage_mutex);
-                    record->string_value = value;
+                    std::scoped_lock lock(m_storage_mutex);
+                    record->m_string_value = value;
                 }
                 // get_from_root reads atomic_double for String-typed numeric access
-                record->cache.atomic_double.store(d_value, std::memory_order_relaxed);
+                record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
             } else {
                 // Non-string param receiving a string value: cast to its native atomic
-                switch (record->type) {
+                switch (record->m_type) {
                     case ParameterType::Double:
-                        record->cache.atomic_double.store(d_value, std::memory_order_relaxed);
+                        record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
                         break;
                     case ParameterType::Float:
-                        record->cache.atomic_float.store(static_cast<float>(d_value),
-                                                         std::memory_order_relaxed);
+                        record->m_cache.m_atomic_float.store(static_cast<float>(d_value),
+                                                             std::memory_order_relaxed);
                         break;
                     case ParameterType::Int:
-                        record->cache.atomic_int.store(static_cast<int>(d_value),
-                                                       std::memory_order_relaxed);
+                        record->m_cache.m_atomic_int.store(static_cast<int>(d_value),
+                                                           std::memory_order_relaxed);
                         break;
                     case ParameterType::Bool:
-                        record->cache.atomic_bool.store(d_value != 0.0,
-                                                        std::memory_order_relaxed);
+                        record->m_cache.m_atomic_bool.store(d_value != 0.0,
+                                                            std::memory_order_relaxed);
                         break;
                     default: break;
                 }
@@ -120,32 +119,32 @@ void State::set_in_root(std::string_view key,
         } else {
             // Numeric params: skip RCU entirely, convert and write to the parameter's native-type
             // atomic. This handles cross-type sets (e.g., set<int> on a Double-typed param).
-            switch (record->type) {
+            switch (record->m_type) {
                 case ParameterType::Double:
-                    record->cache.atomic_double.store(static_cast<double>(value),
-                                                      std::memory_order_relaxed);
+                    record->m_cache.m_atomic_double.store(static_cast<double>(value),
+                                                          std::memory_order_relaxed);
                     break;
                 case ParameterType::Float:
-                    record->cache.atomic_float.store(static_cast<float>(value),
-                                                     std::memory_order_relaxed);
+                    record->m_cache.m_atomic_float.store(static_cast<float>(value),
+                                                         std::memory_order_relaxed);
                     break;
                 case ParameterType::Int:
-                    record->cache.atomic_int.store(static_cast<int>(value),
-                                                   std::memory_order_relaxed);
+                    record->m_cache.m_atomic_int.store(static_cast<int>(value),
+                                                       std::memory_order_relaxed);
                     break;
                 case ParameterType::Bool:
                     if constexpr (std::is_same_v<T, bool>) {
-                        record->cache.atomic_bool.store(value, std::memory_order_relaxed);
+                        record->m_cache.m_atomic_bool.store(value, std::memory_order_relaxed);
                     } else {
-                        record->cache.atomic_bool.store(value != T{0},
-                                                        std::memory_order_relaxed);
+                        record->m_cache.m_atomic_bool.store(value != T{0},
+                                                            std::memory_order_relaxed);
                     }
                     break;
                 case ParameterType::String:
                     // Numeric value to a string-typed param: store in the native numeric atomic
                     // (string_value is not updated — use set<string> for that)
-                    record->cache.atomic_double.store(static_cast<double>(value),
-                                                      std::memory_order_relaxed);
+                    record->m_cache.m_atomic_double.store(static_cast<double>(value),
+                                                          std::memory_order_relaxed);
                     break;
                 default: break;
             }
@@ -153,32 +152,32 @@ void State::set_in_root(std::string_view key,
     } else if (!parameter_exists) {
         // Parameter doesn't exist — create it under the storage mutex
         {
-            std::lock_guard<std::mutex> lock(m_storage_mutex);
+            std::scoped_lock lock(m_storage_mutex);
             auto new_record = std::make_unique<ParameterRecord>();
 
             if constexpr (std::is_same_v<T, double>) {
-                new_record->type = ParameterType::Double;
+                new_record->m_type = ParameterType::Double;
             } else if constexpr (std::is_same_v<T, float>) {
-                new_record->type = ParameterType::Float;
+                new_record->m_type = ParameterType::Float;
             } else if constexpr (std::is_same_v<T, int>) {
-                new_record->type = ParameterType::Int;
+                new_record->m_type = ParameterType::Int;
             } else if constexpr (std::is_same_v<T, bool>) {
-                new_record->type = ParameterType::Bool;
+                new_record->m_type = ParameterType::Bool;
             } else if constexpr (std::is_same_v<T, std::string>) {
-                new_record->type = ParameterType::String;
+                new_record->m_type = ParameterType::String;
             }
 
             // Populate the atomic cache with the native-type value
             if constexpr (std::is_same_v<T, double>) {
-                new_record->cache.atomic_double.store(value, std::memory_order_relaxed);
+                new_record->m_cache.m_atomic_double.store(value, std::memory_order_relaxed);
             } else if constexpr (std::is_same_v<T, float>) {
-                new_record->cache.atomic_float.store(value, std::memory_order_relaxed);
+                new_record->m_cache.m_atomic_float.store(value, std::memory_order_relaxed);
             } else if constexpr (std::is_same_v<T, int>) {
-                new_record->cache.atomic_int.store(value, std::memory_order_relaxed);
+                new_record->m_cache.m_atomic_int.store(value, std::memory_order_relaxed);
             } else if constexpr (std::is_same_v<T, bool>) {
-                new_record->cache.atomic_bool.store(value, std::memory_order_relaxed);
+                new_record->m_cache.m_atomic_bool.store(value, std::memory_order_relaxed);
             } else if constexpr (std::is_same_v<T, std::string>) {
-                new_record->string_value = value;
+                new_record->m_string_value = value;
                 // Only atomic_double is needed for String-typed params because
                 // get_from_root reads exclusively from atomic_double and casts to
                 // the requested type T on the fly via static_cast<T>.
@@ -192,10 +191,9 @@ void State::set_in_root(std::string_view key,
                     } else {
                         d_value = std::stod(value);
                     }
-                } catch (...) {
-                    // Leave default value (0.0) if conversion fails
+                } catch (...) {  // NOLINT(bugprone-empty-catch) stod may fail on invalid input
                 }
-                new_record->cache.atomic_double.store(d_value, std::memory_order_relaxed);
+                new_record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
             }
 
             record = new_record.get();
@@ -203,22 +201,19 @@ void State::set_in_root(std::string_view key,
         }
 
         // Publish the new entry in the lock-free index
-        m_index_rcu.update([&](IndexMap& idx) {
-            idx[std::string(key)] = record;
-        });
+        m_index_rcu.update([&](IndexMap& idx) { idx[std::string(key)] = record; });
     }
 
     // Handle notification
-    if (strategy != NotifyStrategies::none) {
+    if (strategy != NotifyStrategies::None) {
         // Copy the key before notifying — key may point into m_temp_buffer_2
         // which re-entrant set() calls from listeners would overwrite.
         std::string key_copy(key);
 
         Parameter param_obj(this, key_copy);
 
-        bool is_in_gesture = record
-            ? record->metadata.in_gesture.load(std::memory_order_relaxed)
-            : false;
+        bool is_in_gesture =
+            record ? record->m_metadata.m_in_gesture.load(std::memory_order_relaxed) : false;
 
         auto [group, param_name] = resolve_path(key_copy);
 
@@ -227,7 +222,11 @@ void State::set_in_root(std::string_view key,
         if (group) {
             group->notify_listeners(key_copy, param_obj, strategy, source, is_in_gesture);
         } else {
-            const_cast<State*>(this)->notify_listeners(key_copy, param_obj, strategy, source, is_in_gesture);
+            const_cast<State*>(this)->notify_listeners(key_copy,
+                                                       param_obj,
+                                                       strategy,
+                                                       source,
+                                                       is_in_gesture);
         }
     }
 }
@@ -254,7 +253,7 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
     m_index_rcu.read([&](const IndexMap& idx) {
         auto it = idx.find(key);
         if (it == idx.end()) { throw StateKeyNotFoundException(key); }
-        param_type = it->second->type;
+        param_type = it->second->m_type;
         record = it->second;
     });
 
@@ -262,21 +261,20 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
         TANH_NONBLOCKING_SCOPED_DISABLER
         switch (param_type) {
             case ParameterType::String: {
-                std::lock_guard<std::mutex> lock(m_storage_mutex);
-                return record->string_value;
+                std::scoped_lock lock(m_storage_mutex);
+                return record->m_string_value;
             }
             case ParameterType::Double:
                 return std::to_string(
-                    record->cache.atomic_double.load(std::memory_order_relaxed));
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
                 return std::to_string(
-                    record->cache.atomic_float.load(std::memory_order_relaxed));
+                    record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
-                return std::to_string(
-                    record->cache.atomic_int.load(std::memory_order_relaxed));
+                return std::to_string(record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return record->cache.atomic_bool.load(std::memory_order_relaxed) ? "true"
-                                                                                : "false";
+                return record->m_cache.m_atomic_bool.load(std::memory_order_relaxed) ? "true"
+                                                                                     : "false";
             default: return "";
         }
     } else {
@@ -284,20 +282,19 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
         switch (param_type) {
             case ParameterType::Double:
                 return static_cast<T>(
-                    record->cache.atomic_double.load(std::memory_order_relaxed));
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
                 return static_cast<T>(
-                    record->cache.atomic_float.load(std::memory_order_relaxed));
+                    record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
-                return static_cast<T>(
-                    record->cache.atomic_int.load(std::memory_order_relaxed));
+                return static_cast<T>(record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
                 return static_cast<T>(
-                    record->cache.atomic_bool.load(std::memory_order_relaxed));
+                    record->m_cache.m_atomic_bool.load(std::memory_order_relaxed));
             case ParameterType::String: {
                 // For string-typed params, convert from atomic_double
                 return static_cast<T>(
-                    record->cache.atomic_double.load(std::memory_order_relaxed));
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             }
             default: return T{};
         }
@@ -312,43 +309,37 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
                                         bool include_definitions) const {
     nlohmann::json root = nlohmann::json::array();
 
-    std::lock_guard<std::mutex> lock(m_storage_mutex);
+    std::scoped_lock lock(m_storage_mutex);
     for (const auto& [key, record] : m_storage) {
         // If group_prefix is non-empty, skip keys that don't start with it
         if (!group_prefix.empty() &&
-            (key.size() < group_prefix.size() ||
-             key.compare(0, group_prefix.size(), group_prefix) != 0)) {
+            (key.size() < group_prefix.size() || !key.starts_with(group_prefix))) {
             continue;
         }
 
         nlohmann::json param_obj = nlohmann::json::object();
         param_obj["key"] = key;
 
-        switch (record->type) {
+        switch (record->m_type) {
             case ParameterType::Double:
                 param_obj["value"] =
-                    record->cache.atomic_double.load(std::memory_order_relaxed);
+                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed);
                 break;
             case ParameterType::Float:
-                param_obj["value"] =
-                    record->cache.atomic_float.load(std::memory_order_relaxed);
+                param_obj["value"] = record->m_cache.m_atomic_float.load(std::memory_order_relaxed);
                 break;
             case ParameterType::Int:
-                param_obj["value"] =
-                    record->cache.atomic_int.load(std::memory_order_relaxed);
+                param_obj["value"] = record->m_cache.m_atomic_int.load(std::memory_order_relaxed);
                 break;
             case ParameterType::Bool:
-                param_obj["value"] =
-                    record->cache.atomic_bool.load(std::memory_order_relaxed);
+                param_obj["value"] = record->m_cache.m_atomic_bool.load(std::memory_order_relaxed);
                 break;
-            case ParameterType::String:
-                param_obj["value"] = record->string_value;
-                break;
+            case ParameterType::String: param_obj["value"] = record->m_string_value; break;
             default: break;
         }
 
-        if (include_definitions && record->definition.has_value()) {
-            const auto& def = record->definition.value();
+        if (include_definitions && record->m_definition.has_value()) {
+            const auto& def = record->m_definition.value();
             nlohmann::json def_obj = nlohmann::json::object();
 
             def_obj["name"] = def.m_name;
@@ -396,7 +387,7 @@ ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOC
     return m_index_rcu.read([&](const IndexMap& idx) -> ParameterType {
         auto it = idx.find(key);
         if (it == idx.end()) { throw StateKeyNotFoundException(key); }
-        return it->second->type;
+        return it->second->m_type;
     });
 }
 
@@ -408,7 +399,7 @@ void State::clear() {
 
     // Now safe to destroy the records — all existing ParameterHandles are now invalid
     {
-        std::lock_guard<std::mutex> lock(m_storage_mutex);
+        std::scoped_lock lock(m_storage_mutex);
         m_storage.clear();
     }
 
@@ -418,11 +409,10 @@ void State::clear() {
 
 bool State::is_empty() const TANH_NONBLOCKING_FUNCTION {
     // Check if parameters are empty
-    bool parametersEmpty =
-        m_index_rcu.read([](const IndexMap& idx) { return idx.empty(); });
+    bool parameters_empty = m_index_rcu.read([](const IndexMap& idx) { return idx.empty(); });
 
     // If parameters exist, it's not empty
-    if (!parametersEmpty) { return false; }
+    if (!parameters_empty) { return false; }
 
     // Use the base class to check if groups are empty
     return StateGroup::is_empty();
@@ -437,8 +427,8 @@ void State::update_from_json(const nlohmann::json& json_data,
 
     // Helper function to check if a parameter exists before updating
     auto check_parameter_exists = [this](std::string_view key) {
-        bool exists = m_index_rcu.read(
-            [&](const IndexMap& idx) { return idx.find(key) != idx.end(); });
+        bool exists =
+            m_index_rcu.read([&](const IndexMap& idx) { return idx.find(key) != idx.end(); });
         if (!exists) { throw StateKeyNotFoundException(key); }
     };
 
@@ -455,9 +445,9 @@ void State::update_from_json(const nlohmann::json& json_data,
                 path = key;
             } else {
                 // Use State's pre-allocated buffer
-                m_rootState->m_temp_buffer_0.clear();
-                detail::join_path(prefix, key, m_rootState->m_temp_buffer_0);
-                path = m_rootState->m_temp_buffer_0;
+                m_root_state->m_temp_buffer_0.clear();
+                detail::join_path(prefix, key, m_root_state->m_temp_buffer_0);
+                path = m_root_state->m_temp_buffer_0;
             }
 
             // Check if the value is a nested object
@@ -508,24 +498,24 @@ void State::set_definition_in_root(std::string_view key, const ParameterDefiniti
     ParameterRecord* record = nullptr;
     m_index_rcu.read([&](const IndexMap& idx) {
         auto it = idx.find(key);
-        if (it != idx.end()) record = it->second;
+        if (it != idx.end()) { record = it->second; }
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
-    std::lock_guard<std::mutex> lock(m_storage_mutex);
-    record->definition.emplace(def);
+    std::scoped_lock lock(m_storage_mutex);
+    record->m_definition.emplace(def);
 }
 
 std::optional<ParameterDefinition> State::get_definition_from_root(std::string_view key) const {
     ParameterRecord* record = nullptr;
     m_index_rcu.read([&](const IndexMap& idx) {
         auto it = idx.find(key);
-        if (it != idx.end()) record = it->second;
+        if (it != idx.end()) { record = it->second; }
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
-    std::lock_guard<std::mutex> lock(m_storage_mutex);
-    return record->definition;
+    std::scoped_lock lock(m_storage_mutex);
+    return record->m_definition;
 }
 
 // get_handle - returns a lightweight handle for per-sample real-time access
@@ -538,18 +528,23 @@ ParameterHandle<T> State::get_handle(std::string_view key) const {
         record = it->second;
     });
 
-    constexpr ParameterType expected_type = []() {
-        if constexpr (std::is_same_v<T, double>) return ParameterType::Double;
-        else if constexpr (std::is_same_v<T, float>) return ParameterType::Float;
-        else if constexpr (std::is_same_v<T, int>) return ParameterType::Int;
-        else if constexpr (std::is_same_v<T, bool>) return ParameterType::Bool;
+    constexpr ParameterType k_expected_type = []() {
+        if constexpr (std::is_same_v<T, double>) {
+            return ParameterType::Double;
+        } else if constexpr (std::is_same_v<T, float>) {
+            return ParameterType::Float;
+        } else if constexpr (std::is_same_v<T, int>) {
+            return ParameterType::Int;
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return ParameterType::Bool;
+        }
     }();
-    if (record->type != expected_type) {
+    if (record->m_type != k_expected_type) {
         throw std::invalid_argument(
             "ParameterHandle type mismatch: requested handle type does not match parameter type");
     }
 
-    return ParameterHandle<T>(&record->cache);
+    return ParameterHandle<T>(&record->m_cache);
 }
 
 // set_gesture - sets the gesture state for a parameter
@@ -557,29 +552,29 @@ void State::set_gesture(std::string_view key, bool gesture) {
     m_index_rcu.read([&](const IndexMap& idx) {
         auto it = idx.find(key);
         if (it != idx.end()) {
-            it->second->metadata.in_gesture.store(gesture, std::memory_order_relaxed);
+            it->second->m_metadata.m_in_gesture.store(gesture, std::memory_order_relaxed);
         }
     });
 }
 
 template void State::set_in_root(std::string_view key,
-                                 const double value,
+                                 const double& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const float value,
+                                 const float& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const int value,
+                                 const int& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const bool value,
+                                 const bool& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const std::string value,
+                                 const std::string& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 

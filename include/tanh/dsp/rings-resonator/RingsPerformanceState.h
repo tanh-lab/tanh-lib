@@ -32,18 +32,18 @@
 
 namespace thl::dsp::resonator {
 
-const int32_t kNumChords = 11;
+const int32_t k_num_chords = 11;
 
 struct RingsPerformanceState {
-    bool strum;
-    bool internal_exciter;
-    bool internal_strum;
-    bool internal_note;
+    bool m_strum;
+    bool m_internal_exciter;
+    bool m_internal_strum;
+    bool m_internal_note;
 
-    float tonic;
-    float note;
-    float fm;
-    int32_t chord;
+    float m_tonic;
+    float m_note;
+    float m_fm;
+    int32_t m_chord;
 };
 
 }  // namespace thl::dsp::resonator

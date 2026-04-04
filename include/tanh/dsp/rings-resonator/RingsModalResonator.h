@@ -37,15 +37,15 @@
 
 namespace thl::dsp::resonator {
 
-const int32_t kMaxModes = 64;
+const int32_t k_max_modes = 64;
 
 class RingsModalResonator {
 public:
     RingsModalResonator() {}
     ~RingsModalResonator() {}
 
-    void prepare(float sample_rate = kDefaultSampleRate);
-    void process(thl::dsp::audio::ConstAudioBufferView in,
+    void prepare(float sample_rate = k_default_sample_rate);
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out,
                  thl::dsp::audio::AudioBufferView aux);
 
@@ -73,13 +73,13 @@ public:
 
     inline void set_resolution(int32_t resolution) {
         resolution -= resolution & 1;  // Must be even!
-        m_resolution = std::min(resolution, kMaxModes);
+        m_resolution = std::min(resolution, k_max_modes);
         m_dirty = true;
     }
 
 private:
     int32_t compute_filters();
-    float m_sample_rate = kDefaultSampleRate;
+    float m_sample_rate = k_default_sample_rate;
     float m_frequency = 0.0f;
     float m_structure = 0.0f;
     float m_brightness = 0.0f;
@@ -87,11 +87,11 @@ private:
     float m_previous_position = 0.0f;
     float m_damping = 0.0f;
 
-    int32_t m_resolution = kMaxModes;
+    int32_t m_resolution = k_max_modes;
     int32_t m_num_modes = 0;
     bool m_dirty = true;
 
-    thl::dsp::filter::Svf m_f[kMaxModes];
+    thl::dsp::filter::Svf m_f[k_max_modes];
 
     RingsModalResonator(const RingsModalResonator&) = delete;
     RingsModalResonator& operator=(const RingsModalResonator&) = delete;

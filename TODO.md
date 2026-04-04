@@ -1,7 +1,11 @@
 TODOs
 
-- [ ] Fix the update from json method and the param to json method.
-- [ ] Add an in_gesture option to the state
-- [ ] How to register threads without beeing on them? For rcu and buffer registration! So that we don't have a single real-time violation on audio threads.
-- [ ] Think about the buffered strings implementation in the path resolution. Is there no more elegant way? At the moment when we set a new parameter in the state within a callback of another parameter, the string_view buffers get corrupted. Also we actually do not need any buffered string_views at all in the set method as it is not called from real-time contexts. So maybe we can have a non-buffered version of the path resolution for the set method, that fixes the nested call corruption issue. See the uncommented test in the state_tests.
-- [ ] Check that RCU still works after setting the min_active_period to current_period in the cleanup_safe_versions method (no more to UINT64_MAX).
+- Let ParameterHandle point to ParameterRecord.
+- Move Range from Parameter Definition to ParameterRecord
+- With RT-San fix the tests that throw exceptions (SmartHandle.ThrowsOnNonexistentParameter, StateTests.HandleNonExistentKey)
+- Properly disable HardwareTests on plattforms that are not supported
+- Add on_gesture_start and on_gesture_end callbacks for parameter_listners so it gets notified when the gesture starts and ends. 
+- The parameter listeners shall also have a notification strategy, so that we don't have to specify it every time we set a parameter only we need to specify the source (listener). It might be even better to not have the ability to specify the strategy on set, but only on listener registration. So when we set a parameter, the listeners get notified according the strategy of the source listener. When no source listener is specified, the default strategy is used (notify all that want to be notified). This simplifies the set method and makes the notification strategy more consistent.
+- Callback listeners shall have no option for notification strategy or in_gesture, they always get notified.
+- The ModulationMatrix shall also be able to modulate bools or ints or doubles
+- Check that RCU still works after setting the min_active_period to current_period in the cleanup_safe_versions method (no more to UINT64_MAX)

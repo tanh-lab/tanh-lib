@@ -44,9 +44,9 @@ using ::thl::dsp::utils::ParameterInterpolator;
 void RingsFmVoice::prepare(float sample_rate) {
     m_sample_rate = sample_rate;
 
-    thl::dsp::resonator::WarmDspFunctions();
-    m_sine_table = thl::dsp::resonator::SineTable();
-    m_fm_frequency_quantizer_table = thl::dsp::resonator::FmFrequencyQuantizerTable();
+    thl::dsp::resonator::warm_dsp_functions();
+    m_sine_table = thl::dsp::resonator::sine_table();
+    m_fm_frequency_quantizer_table = thl::dsp::resonator::fm_frequency_quantizer_table();
 
     set_frequency(220.0f / m_sample_rate);
     set_ratio(0.5f);
@@ -94,7 +94,7 @@ void RingsFmVoice::prepare_coefficients() {
     m_feedback = (m_feedback_amount - 0.5f) * 2.0f;
 }
 
-void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
+void RingsFmVoice::process(const thl::dsp::audio::ConstAudioBufferView& in,
                            thl::dsp::audio::AudioBufferView out,
                            thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
@@ -124,8 +124,14 @@ void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
 
         brightness_envelope *= 2.0f * amplitude_envelope * (2.0f - amplitude_envelope);
 
-        thl::dsp::utils::slope<float>(m_amplitude_envelope, amplitude_envelope, 0.05f, m_amplitude_decay);
-        thl::dsp::utils::slope<float>(m_brightness_envelope, brightness_envelope, 0.01f, m_brightness_decay);
+        thl::dsp::utils::slope<float>(m_amplitude_envelope,
+                                      amplitude_envelope,
+                                      0.05f,
+                                      m_amplitude_decay);
+        thl::dsp::utils::slope<float>(m_brightness_envelope,
+                                      brightness_envelope,
+                                      0.01f,
+                                      m_brightness_decay);
 
         // Compute envelopes.
         float brightness_value = brightness.next();

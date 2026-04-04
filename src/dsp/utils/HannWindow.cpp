@@ -1,10 +1,7 @@
 #include <tanh/dsp/utils/HannWindow.h>
+#include <tanh/core/Numbers.h>
 #include <cmath>
 #include <algorithm>  // For std::clamp
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 namespace thl::dsp::utils {
 
@@ -61,7 +58,7 @@ float HannWindow::process_at_position(float position) {
     position = std::clamp(position, 0.0f, 0.9999f);
 
     // Hann window formula: 0.5 * (1 - cos(2π * n/N))
-    return 0.5f * (1.0f - std::cos(2.0f * M_PI * position));
+    return 0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> * position));
 }
 
 bool HannWindow::is_active() const {

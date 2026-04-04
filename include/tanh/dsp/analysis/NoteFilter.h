@@ -35,10 +35,10 @@ namespace thl::dsp::analysis {
 
 class NoteFilter {
 public:
-    enum {
+    enum : std::uint8_t {
         N = 4  // Median filter order
     };
-    NoteFilter() {}
+    NoteFilter() = default;
     ~NoteFilter() {}
 
     void prepare(float sample_rate,
@@ -62,7 +62,7 @@ public:
 
     inline float process(float note, bool strum) {
         // If there is a sharp change, follow it instantly.
-        if (fabs(note - m_note) > 0.4f || strum) {
+        if (std::fabs(note - m_note) > 0.4f || strum) {
             m_stable_note = m_note = note;
             m_coefficient = m_fast_coefficient;
             m_stable_coefficient = m_slow_coefficient;
@@ -73,7 +73,8 @@ public:
             std::rotate(&m_previous_values[0], &m_previous_values[1], &m_previous_values[N]);
             m_previous_values[N - 1] = note;
             std::copy(&m_previous_values[0], &m_previous_values[N], &sorted_values[0]);
-            std::sort(&sorted_values[0], &sorted_values[N]);
+            std::sort(&sorted_values[0],
+                      &sorted_values[N]);  // NOLINT(clang-analyzer-security.ArrayBound)
             float median = 0.5f * (sorted_values[(N - 1) / 2] + sorted_values[N / 2]);
 
             // Adaptive lag processor.

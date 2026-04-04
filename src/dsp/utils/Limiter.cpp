@@ -1,6 +1,7 @@
 #include <tanh/dsp/utils/Limiter.h>
-#include <cmath>
 #include <algorithm>
+#include <array>
+#include <cmath>
 
 namespace thl::dsp::utils {
 
@@ -15,22 +16,22 @@ void LimiterImpl::prepare(const double& sample_rate,
     m_gain = 1.0f;
 }
 
-void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer) {
-    constexpr size_t kMaxChannels = 16;
+void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset) {
+    constexpr size_t k_max_channels = 16;
     const size_t num_samples = buffer.get_num_frames();
-    const size_t num_channels = std::min(buffer.get_num_channels(), kMaxChannels);
-    float* channel_ptrs[kMaxChannels];
+    const size_t num_channels = std::min(buffer.get_num_channels(), k_max_channels);
+    std::array<float*, k_max_channels> channel_ptrs;
     for (size_t ch = 0; ch < num_channels; ++ch) {
         channel_ptrs[ch] = buffer.get_write_pointer(ch);
     }
 
-    float threshold_db = get_parameter<float>(Threshold);
+    float threshold_db = get_parameter<float>(Threshold, modulation_offset);
     float threshold = std::pow(10.0f, threshold_db / 20.0f);
-    float attack_ms = std::max(get_parameter<float>(Attack), 0.01f);
-    float release_ms = std::max(get_parameter<float>(Release), 0.01f);
+    float attack_ms = std::max(get_parameter<float>(Attack, modulation_offset), 0.01f);
+    float release_ms = std::max(get_parameter<float>(Release, modulation_offset), 0.01f);
 
-    float attack_coeff = std::exp(-1.0 / (attack_ms * 0.001 * m_sample_rate));
-    float release_coeff = std::exp(-1.0 / (release_ms * 0.001 * m_sample_rate));
+    auto attack_coeff = static_cast<float>(std::exp(-1.0 / (attack_ms * 0.001 * m_sample_rate)));
+    auto release_coeff = static_cast<float>(std::exp(-1.0 / (release_ms * 0.001 * m_sample_rate)));
 
     for (size_t i = 0; i < num_samples; ++i) {
         float peak = 0.0f;

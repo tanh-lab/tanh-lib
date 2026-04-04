@@ -35,13 +35,13 @@ private:
     float read_interp(const float* buf, float delay) const;
 
     thl::dsp::audio::Buffer<float> m_buf;
-    int   m_window_size = 2048;
-    int   m_buf_size    = 4096;
-    int   m_write_pos   = 0;
-    float m_phase       = 0.0f;
-    float m_base_rate   = 1.0f;
-    float m_phase_inc   = 0.0f;
-    bool  m_pitch_up    = true;
+    int m_window_size = 2048;
+    int m_buf_size = 4096;
+    int m_write_pos = 0;
+    float m_phase = 0.0f;
+    float m_base_rate = 1.0f;
+    float m_phase_inc = 0.0f;
+    bool m_pitch_up = true;
 };
 
 }  // namespace thl::dsp::utils

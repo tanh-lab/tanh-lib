@@ -11,13 +11,15 @@ FetchContent_Declare(googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_PROGRESS TRUE
     GIT_SHALLOW TRUE
-    GIT_TAG v1.14.0)
+    GIT_TAG v1.14.0
+    SYSTEM)
 
 FetchContent_Declare(googlebenchmark
     GIT_REPOSITORY https://github.com/google/benchmark.git
     GIT_PROGRESS TRUE
     GIT_SHALLOW TRUE
-    GIT_TAG v1.9.1)
+    GIT_TAG v1.9.1
+    SYSTEM)
 
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
@@ -27,6 +29,12 @@ FetchContent_MakeAvailable(googletest googlebenchmark)
 
 # enable position independent code because otherwise the library cannot be linked into a shared library
 set_target_properties(gtest PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Suppress warnings from googletest source compilation
+target_compile_options(gtest PRIVATE -w)
+target_compile_options(gtest_main PRIVATE -w)
+target_compile_options(benchmark PRIVATE -w)
+target_compile_options(benchmark_main PRIVATE -w)
 
 # include Loads and runs CMake code from the file given. Loads and runs CMake code from the file given.
 include(GoogleTest)

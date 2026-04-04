@@ -44,7 +44,7 @@ using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
 
 void RingsString::prepare(bool enable_dispersion, float sample_rate) {
-    WarmDspFunctions();
+    warm_dsp_functions();
 
     m_sample_rate = sample_rate;
     m_enable_dispersion = enable_dispersion;
@@ -101,13 +101,12 @@ void RingsString::prepare_coefficients(float delay, float src_ratio, size_t size
     }
 
     m_fir_damping_filter.configure(damping_coefficient, brightness, size);
-    m_iir_damping_filter.set_f_q<Approximation::Accurate>(damping_f,
-                                                                                     0.5f);
-    m_damping_compensation_target = 1.0f - SvfShift(damping_cutoff);
+    m_iir_damping_filter.set_f_q<Approximation::Accurate>(damping_f, 0.5f);
+    m_damping_compensation_target = 1.0f - svf_shift(damping_cutoff);
 }
 
 template <bool enable_dispersion>
-void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
+void RingsString::process_internal(const thl::dsp::audio::ConstAudioBufferView& in,
                                    thl::dsp::audio::AudioBufferView out,
                                    thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
@@ -116,7 +115,7 @@ void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
     size_t size = in.get_num_frames();
 
     float delay = 1.0f / m_frequency;
-    thl::dsp::utils::constrain<float>(delay, 4.0f, kDelayLineSize - 4.0f);
+    thl::dsp::utils::constrain<float>(delay, 4.0f, k_delay_line_size - 4.0f);
 
     // Sample-rate conversion ratio.  When the required delay fits in the
     // buffer, src_ratio = 1 and we run at full rate.  For very low pitches
@@ -187,7 +186,7 @@ void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
                 float main_delay = delay - ap_delay;
                 if (ap_delay >= 4.0f && main_delay >= 4.0f) {
                     s = m_string.read_hermite(main_delay);
-                    s = m_stretch.process(s, ap_delay, ap_gain);
+                    s = m_stretch.process(s, static_cast<size_t>(ap_delay), ap_gain);
                 } else {
                     s = m_string.read_hermite(delay);
                 }
@@ -231,9 +230,9 @@ void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
     }
 }
 
-void RingsString::process(thl::dsp::audio::ConstAudioBufferView in,
-                          thl::dsp::audio::AudioBufferView out,
-                          thl::dsp::audio::AudioBufferView aux) {
+void RingsString::process(const thl::dsp::audio::ConstAudioBufferView& in,
+                          const thl::dsp::audio::AudioBufferView& out,
+                          const thl::dsp::audio::AudioBufferView& aux) {
     if (m_enable_dispersion) {
         process_internal<true>(in, out, aux);
     } else {

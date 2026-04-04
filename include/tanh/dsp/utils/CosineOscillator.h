@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
+#include <tanh/core/Numbers.h>
 
 namespace thl::dsp::utils {
 
-enum class CosineOscillatorMode {
+enum class CosineOscillatorMode : std::uint8_t {
     Approximate,
     Exact,
 };
@@ -16,7 +18,7 @@ public:
         if constexpr (mode == CosineOscillatorMode::Approximate) {
             init_approximate(frequency);
         } else {
-            m_iir_coefficient = 2.0f * std::cos(2.0f * static_cast<float>(M_PI) * frequency);
+            m_iir_coefficient = 2.0f * std::cos(2.0f * std::numbers::pi_v<float> * frequency);
             m_initial_amplitude = m_iir_coefficient * 0.25f;
         }
         start();

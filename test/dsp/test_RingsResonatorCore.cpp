@@ -22,23 +22,23 @@ namespace {
 
 thl::dsp::resonator::RingsPatch default_patch() {
     thl::dsp::resonator::RingsPatch patch{};
-    patch.structure = 0.5f;
-    patch.brightness = 0.5f;
-    patch.damping = 0.3f;
-    patch.position = 0.5f;
+    patch.m_structure = 0.5f;
+    patch.m_brightness = 0.5f;
+    patch.m_damping = 0.3f;
+    patch.m_position = 0.5f;
     return patch;
 }
 
 thl::dsp::resonator::RingsPerformanceState default_state() {
     thl::dsp::resonator::RingsPerformanceState state{};
-    state.strum = false;
-    state.internal_exciter = false;
-    state.internal_strum = false;
-    state.internal_note = false;
-    state.tonic = 12.0f;
-    state.note = 48.0f;
-    state.fm = 0.0f;
-    state.chord = 0;
+    state.m_strum = false;
+    state.m_internal_exciter = false;
+    state.m_internal_strum = false;
+    state.m_internal_note = false;
+    state.m_tonic = 12.0f;
+    state.m_note = 48.0f;
+    state.m_fm = 0.0f;
+    state.m_chord = 0;
     return state;
 }
 
@@ -48,28 +48,29 @@ class RingsResonatorModelTest : public ::testing::TestWithParam<rings::Resonator
 
 TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     rings::RingsVoiceManager part;
-    std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
+    std::memset(static_cast<void*>(&part), 0, sizeof(part));
+    std::array<uint16_t, thl::dsp::fx::RingsReverb::k_reverb_buffer_size> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(GetParam());
 
     auto patch = default_patch();
     auto state = default_state();
 
-    std::array<float, thl::dsp::resonator::kMaxBlockSize> in{};
-    std::array<float, thl::dsp::resonator::kMaxBlockSize> out{};
-    std::array<float, thl::dsp::resonator::kMaxBlockSize> aux{};
+    std::array<float, thl::dsp::resonator::k_max_block_size> in{};
+    std::array<float, thl::dsp::resonator::k_max_block_size> out{};
+    std::array<float, thl::dsp::resonator::k_max_block_size> aux{};
 
     for (int block = 0; block < 8; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), thl::dsp::resonator::kMaxBlockSize);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
+        thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
+                                                      thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
 
-    for (size_t i = 0; i < thl::dsp::resonator::kMaxBlockSize; ++i) {
+    for (size_t i = 0; i < thl::dsp::resonator::k_max_block_size; ++i) {
         EXPECT_TRUE(std::isfinite(out[i]));
         EXPECT_TRUE(std::isfinite(aux[i]));
     }
@@ -77,34 +78,36 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
 
 TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     rings::RingsVoiceManager part;
-    std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
+    std::memset(static_cast<void*>(&part), 0, sizeof(part));
+    std::array<uint16_t, thl::dsp::fx::RingsReverb::k_reverb_buffer_size> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(GetParam());
 
     auto patch = default_patch();
     auto state = default_state();
 
-    std::array<float, thl::dsp::resonator::kMaxBlockSize> silence{};
-    std::array<float, thl::dsp::resonator::kMaxBlockSize> in{};
-    std::array<float, thl::dsp::resonator::kMaxBlockSize> out{};
-    std::array<float, thl::dsp::resonator::kMaxBlockSize> aux{};
+    std::array<float, thl::dsp::resonator::k_max_block_size> silence{};
+    std::array<float, thl::dsp::resonator::k_max_block_size> in{};
+    std::array<float, thl::dsp::resonator::k_max_block_size> out{};
+    std::array<float, thl::dsp::resonator::k_max_block_size> aux{};
 
     for (int block = 0; block < 4; ++block) {
         std::fill(out.begin(), out.end(), 0.0f);
         std::fill(aux.begin(), aux.end(), 0.0f);
-        thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(), thl::dsp::resonator::kMaxBlockSize);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
+        thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
+                                                       thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, sil_view, out_view, aux_view);
     }
 
     in.fill(0.0f);
     in[0] = 1.0f;
     {
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), thl::dsp::resonator::kMaxBlockSize);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
+        thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
+                                                      thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
 
@@ -114,12 +117,15 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
         if (block > 0) {
             std::fill(out.begin(), out.end(), 0.0f);
             std::fill(aux.begin(), aux.end(), 0.0f);
-            thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(), thl::dsp::resonator::kMaxBlockSize);
-            thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::kMaxBlockSize);
-            thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::kMaxBlockSize);
+            thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
+                                                           thl::dsp::resonator::k_max_block_size);
+            thl::dsp::audio::AudioBufferView out_view(out.data(),
+                                                      thl::dsp::resonator::k_max_block_size);
+            thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+                                                      thl::dsp::resonator::k_max_block_size);
             part.process(state, patch, sil_view, out_view, aux_view);
         }
-        for (size_t i = 0; i < thl::dsp::resonator::kMaxBlockSize; ++i) {
+        for (size_t i = 0; i < thl::dsp::resonator::k_max_block_size; ++i) {
             max_abs = std::max(max_abs, std::max(std::abs(out[i]), std::abs(aux[i])));
             energy += out[i] * out[i] + aux[i] * aux[i];
             ASSERT_TRUE(std::isfinite(out[i]));
@@ -133,22 +139,22 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
 
 INSTANTIATE_TEST_SUITE_P(AllModels,
                          RingsResonatorModelTest,
-                         ::testing::Values(rings::RESONATOR_MODEL_MODAL,
-                                           rings::RESONATOR_MODEL_SYMPATHETIC_STRING,
-                                           rings::RESONATOR_MODEL_STRING,
-                                           rings::RESONATOR_MODEL_FM_VOICE,
-                                           rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED,
-                                           rings::RESONATOR_MODEL_STRING_AND_REVERB),
+                         ::testing::Values(rings::Modal,
+                                           rings::SympatheticString,
+                                           rings::String,
+                                           rings::FmVoice,
+                                           rings::SympatheticStringQuantized,
+                                           rings::StringAndReverb),
                          [](const ::testing::TestParamInfo<rings::ResonatorModel>& info) {
                              switch (info.param) {
-                                 case rings::RESONATOR_MODEL_MODAL: return "Modal";
-                                 case rings::RESONATOR_MODEL_SYMPATHETIC_STRING:
+                                 case rings::Modal: return "Modal";
+                                 case rings::SympatheticString:
                                      return "SympatheticString";
-                                 case rings::RESONATOR_MODEL_STRING: return "ModulatedString";
-                                 case rings::RESONATOR_MODEL_FM_VOICE: return "FMVoice";
-                                 case rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED:
+                                 case rings::String: return "ModulatedString";
+                                 case rings::FmVoice: return "FMVoice";
+                                 case rings::SympatheticStringQuantized:
                                      return "SympatheticStringQuantized";
-                                 case rings::RESONATOR_MODEL_STRING_AND_REVERB:
+                                 case rings::StringAndReverb:
                                      return "StringAndReverb";
                                  default: return "Unknown";
                              }
@@ -158,7 +164,7 @@ INSTANTIATE_TEST_SUITE_P(AllModels,
 
 static constexpr int kWarmUpBlocks = 4;
 static constexpr int kNumBlocks = 171;
-static constexpr size_t kFramesPerBlock = thl::dsp::resonator::kMaxBlockSize;
+static constexpr size_t kFramesPerBlock = thl::dsp::resonator::k_max_block_size;
 static constexpr size_t kTotalFrames = kNumBlocks * kFramesPerBlock;
 
 struct ReferenceModelInfo {
@@ -168,11 +174,11 @@ struct ReferenceModelInfo {
 
 float reference_tolerance(rings::ResonatorModel model) {
     switch (model) {
-        case rings::RESONATOR_MODEL_FM_VOICE:
+        case rings::FmVoice:
             // Empirically observed max deviation ~1.4e-2 after LUT replacement.
             return 2e-2f;
-        case rings::RESONATOR_MODEL_SYMPATHETIC_STRING:
-        case rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED:
+        case rings::SympatheticString:
+        case rings::SympatheticStringQuantized:
             // Sympathetic strings: 8 coupled delay lines amplify the
             // SemitonesToRatio LUT-vs-exp2 precision difference.
             // With 171 blocks the error accumulates to ~2.2e-3.
@@ -198,7 +204,7 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
 
     rings::RingsVoiceManager part;
     std::memset(&part, 0, sizeof(part));
-    std::array<uint16_t, thl::dsp::fx::RingsReverb::kReverbBufferSize> reverb_buffer{};
+    std::array<uint16_t, thl::dsp::fx::RingsReverb::k_reverb_buffer_size> reverb_buffer{};
     part.prepare(reverb_buffer.data());
     part.set_model(info.model);
 
@@ -242,22 +248,22 @@ INSTANTIATE_TEST_SUITE_P(
     AllModels,
     RingsReferenceOutputTest,
     ::testing::Values(
-        ReferenceModelInfo{rings::RESONATOR_MODEL_MODAL, "modal.bin"},
-        ReferenceModelInfo{rings::RESONATOR_MODEL_SYMPATHETIC_STRING, "sympathetic_string.bin"},
-        ReferenceModelInfo{rings::RESONATOR_MODEL_STRING, "modulated_string.bin"},
-        ReferenceModelInfo{rings::RESONATOR_MODEL_FM_VOICE, "fm_voice.bin"},
-        ReferenceModelInfo{rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED,
+        ReferenceModelInfo{rings::Modal, "modal.bin"},
+        ReferenceModelInfo{rings::SympatheticString, "sympathetic_string.bin"},
+        ReferenceModelInfo{rings::String, "modulated_string.bin"},
+        ReferenceModelInfo{rings::FmVoice, "fm_voice.bin"},
+        ReferenceModelInfo{rings::SympatheticStringQuantized,
                            "sympathetic_string_quantized.bin"},
-        ReferenceModelInfo{rings::RESONATOR_MODEL_STRING_AND_REVERB, "string_and_reverb.bin"}),
+        ReferenceModelInfo{rings::StringAndReverb, "string_and_reverb.bin"}),
     [](const ::testing::TestParamInfo<ReferenceModelInfo>& info) {
         switch (info.param.model) {
-            case rings::RESONATOR_MODEL_MODAL: return "Modal";
-            case rings::RESONATOR_MODEL_SYMPATHETIC_STRING: return "SympatheticString";
-            case rings::RESONATOR_MODEL_STRING: return "ModulatedString";
-            case rings::RESONATOR_MODEL_FM_VOICE: return "FMVoice";
-            case rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED:
+            case rings::Modal: return "Modal";
+            case rings::SympatheticString: return "SympatheticString";
+            case rings::String: return "ModulatedString";
+            case rings::FmVoice: return "FMVoice";
+            case rings::SympatheticStringQuantized:
                 return "SympatheticStringQuantized";
-            case rings::RESONATOR_MODEL_STRING_AND_REVERB: return "StringAndReverb";
+            case rings::StringAndReverb: return "StringAndReverb";
             default: return "Unknown";
         }
     });

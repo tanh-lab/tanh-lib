@@ -17,7 +17,7 @@ static void BM_SetDouble(benchmark::State& bm_state) {
     state.set("param", 0.0);
     double v = 0.0;
     for (auto _ : bm_state) {
-        state.set("param", v, NotifyStrategies::none);
+        state.set("param", v, NotifyStrategies::None);
         v += 0.001;
     }
 }
@@ -28,7 +28,7 @@ static void BM_SetFloat(benchmark::State& bm_state) {
     state.set("param", 0.0f);
     float v = 0.0f;
     for (auto _ : bm_state) {
-        state.set("param", v, NotifyStrategies::none);
+        state.set("param", v, NotifyStrategies::None);
         v += 0.001f;
     }
 }
@@ -39,7 +39,7 @@ static void BM_SetInt(benchmark::State& bm_state) {
     state.set("param", 0);
     int v = 0;
     for (auto _ : bm_state) {
-        state.set("param", v, NotifyStrategies::none);
+        state.set("param", v, NotifyStrategies::None);
         ++v;
     }
 }
@@ -50,7 +50,7 @@ static void BM_SetBool(benchmark::State& bm_state) {
     state.set("param", false);
     bool v = false;
     for (auto _ : bm_state) {
-        state.set("param", v, NotifyStrategies::none);
+        state.set("param", v, NotifyStrategies::None);
         v = !v;
     }
 }
@@ -60,7 +60,7 @@ static void BM_SetStringShort(benchmark::State& bm_state) {
     State state;
     state.set("param", "hello");
     for (auto _ : bm_state) {
-        state.set("param", "world", NotifyStrategies::none);
+        state.set("param", "world", NotifyStrategies::None);
     }
 }
 BENCHMARK(BM_SetStringShort);
@@ -70,7 +70,7 @@ static void BM_SetStringLong(benchmark::State& bm_state) {
     std::string long_str(1000, 'a');
     state.set("param", long_str);
     for (auto _ : bm_state) {
-        state.set("param", long_str, NotifyStrategies::none);
+        state.set("param", long_str, NotifyStrategies::None);
     }
 }
 BENCHMARK(BM_SetStringLong);
@@ -84,7 +84,7 @@ static void BM_SetDoubleWithNotify(benchmark::State& bm_state) {
     state.set("param", 0.0);
     double v = 0.0;
     for (auto _ : bm_state) {
-        state.set("param", v, NotifyStrategies::all);
+        state.set("param", v, NotifyStrategies::All);
         v += 0.001;
     }
 }
@@ -99,7 +99,7 @@ static void BM_SetDoubleWithListenerNotify(benchmark::State& bm_state) {
     });
     double v = 0.0;
     for (auto _ : bm_state) {
-        state.set("param", v, NotifyStrategies::all);
+        state.set("param", v, NotifyStrategies::All);
         v += 0.001;
     }
 }
@@ -172,7 +172,7 @@ static void BM_SetHierarchical_Depth1(benchmark::State& bm_state) {
     state.set("audio.volume", 0.5);
     double v = 0.0;
     for (auto _ : bm_state) {
-        state.set("audio.volume", v, NotifyStrategies::none);
+        state.set("audio.volume", v, NotifyStrategies::None);
         v += 0.001;
     }
 }
@@ -183,7 +183,7 @@ static void BM_SetHierarchical_Depth3(benchmark::State& bm_state) {
     state.set("audio.effects.reverb.mix", 0.5);
     double v = 0.0;
     for (auto _ : bm_state) {
-        state.set("audio.effects.reverb.mix", v, NotifyStrategies::none);
+        state.set("audio.effects.reverb.mix", v, NotifyStrategies::None);
         v += 0.001;
     }
 }
@@ -216,7 +216,7 @@ static void BM_SetInRoot(benchmark::State& bm_state) {
     state.set("volume", 0.0);
     double v = 0.0;
     for (auto _ : bm_state) {
-        state.set_in_root("volume", v, NotifyStrategies::none);
+        state.set_in_root("volume", v, NotifyStrategies::None);
         v += 0.001;
     }
 }
@@ -310,7 +310,7 @@ static void BM_SetWithManyParameters(benchmark::State& bm_state) {
     std::string target = "param_" + std::to_string(num_params - 1);
     double v = 0.0;
     for (auto _ : bm_state) {
-        state.set(target, v, NotifyStrategies::none);
+        state.set(target, v, NotifyStrategies::None);
         v += 0.001;
     }
 }
@@ -326,7 +326,7 @@ static void BM_UpdateFromJsonSimple(benchmark::State& bm_state) {
     state.set("muted", false);
     nlohmann::json update = {{"volume", 0.8}, {"muted", true}};
     for (auto _ : bm_state) {
-        state.update_from_json(update, NotifyStrategies::none);
+        state.update_from_json(update, NotifyStrategies::None);
     }
 }
 BENCHMARK(BM_UpdateFromJsonSimple);
@@ -339,7 +339,7 @@ static void BM_UpdateFromJsonNested(benchmark::State& bm_state) {
     nlohmann::json update = {
         {"audio", {{"effects", {{"reverb", {{"wet", 0.4}, {"dry", 0.6}, {"room_size", 0.8}}}}}}}};
     for (auto _ : bm_state) {
-        state.update_from_json(update, NotifyStrategies::none);
+        state.update_from_json(update, NotifyStrategies::None);
     }
 }
 BENCHMARK(BM_UpdateFromJsonNested);

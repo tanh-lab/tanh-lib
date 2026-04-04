@@ -20,7 +20,7 @@ enum RootNote {
     B,
 };
 
-enum ScaleMode { MAJOR, MINOR, PHRYGIAN };
+enum ScaleMode { Major, Minor, Phrygian };
 
 std::string note_number_to_note_name(int note_number);
 

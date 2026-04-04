@@ -53,12 +53,12 @@ public:
      * @brief Constructs the exception with the missing group name.
      * @param groupName The name of the group that was not found
      */
-    explicit StateGroupNotFoundException(std::string_view groupName)
-        : std::runtime_error("State group not found: " + std::string(groupName))
-        , m_groupName(groupName) {}
+    explicit StateGroupNotFoundException(std::string_view group_name)
+        : std::runtime_error("State group not found: " + std::string(group_name))
+        , m_group_name(group_name) {}
 
 private:
-    std::string m_groupName;
+    std::string m_group_name;
 };
 
 /**
@@ -245,8 +245,8 @@ public:
      */
     template <typename T>
     void set(std::string_view path,
-             T value,
-             NotifyStrategies strategy = NotifyStrategies::all,
+             const T& value,
+             NotifyStrategies strategy = NotifyStrategies::All,
              ParameterListener* source = nullptr,
              bool create = true);
 
@@ -257,7 +257,7 @@ public:
      */
     void set(std::string_view path,
              const char* value,
-             NotifyStrategies strategy = NotifyStrategies::all,
+             NotifyStrategies strategy = NotifyStrategies::All,
              ParameterListener* source = nullptr,
              bool create = true);
 
@@ -390,7 +390,7 @@ public:
      *
      * @note **REAL-TIME SAFE** - simple pointer access
      */
-    State* get_root_state() const { return m_rootState; }
+    State* get_root_state() const { return m_root_state; }
 
     /**
      * @brief Gets the full dot-separated path from the root to this group.
@@ -404,7 +404,7 @@ public:
     /**
      * @brief Constructs a StateGroup.
      *
-     * @param rootState Pointer to the root State object
+     * @param root_state Pointer to the root State object
      * @param parent Pointer to the parent group (nullptr for root)
      * @param name The name of this group
      *
@@ -413,7 +413,7 @@ public:
      *
      * @warning NOT real-time safe - initialization
      */
-    StateGroup(State* rootState, StateGroup* parent = nullptr, std::string_view name = "");
+    StateGroup(State* root_state, StateGroup* parent = nullptr, std::string_view name = "");
 
     /**
      * @brief Destroys the StateGroup.
@@ -441,7 +441,7 @@ private:
      */
     void set(std::string_view path,
              const ParameterDefinition& def,
-             NotifyStrategies strategy = NotifyStrategies::all,
+             NotifyStrategies strategy = NotifyStrategies::All,
              ParameterListener* source = nullptr,
              bool create = true);
 
@@ -462,7 +462,7 @@ private:
      */
     void notify_listeners(std::string_view path,
                           const Parameter& param,
-                          NotifyStrategies strategy = NotifyStrategies::all,
+                          NotifyStrategies strategy = NotifyStrategies::All,
                           ParameterListener* source = nullptr,
                           bool in_gesture = false) const;
 
@@ -490,7 +490,7 @@ private:
     std::pair<StateGroup*, std::string_view> resolve_path_create(std::string_view path);
 
     /// @brief Pointer to the root State object
-    State* m_rootState;
+    State* m_root_state;
     /// @brief Pointer to the parent group (nullptr for root)
     StateGroup* m_parent;
     /// @brief Name of this group
@@ -500,19 +500,20 @@ private:
      * @brief Listener data structure for RCU protection.
      */
     struct ListenerData {
-        std::vector<ParameterListener*> object_listeners;              ///< Object-based
-                                                                       ///< listeners
-        std::map<size_t, ParameterChangeCallback> callback_listeners;  ///< Callback-based listeners
-        size_t next_listener_id = 0;  ///< Next available listener ID
+        std::vector<ParameterListener*> m_object_listeners;              ///< Object-based
+                                                                         ///< listeners
+        std::map<size_t, ParameterChangeCallback> m_callback_listeners;  ///< Callback-based
+                                                                         ///< listeners
+        size_t m_next_listener_id = 0;  ///< Next available listener ID
 
         /// @brief Default constructor
         ListenerData() = default;
 
         /// @brief Copy constructor for RCU
         ListenerData(const ListenerData& other)
-            : object_listeners(other.object_listeners)
-            , callback_listeners(other.callback_listeners)
-            , next_listener_id(other.next_listener_id) {}
+            : m_object_listeners(other.m_object_listeners)
+            , m_callback_listeners(other.m_callback_listeners)
+            , m_next_listener_id(other.m_next_listener_id) {}
     };
 
     /// @brief RCU-protected listeners for lock-free notification dispatch

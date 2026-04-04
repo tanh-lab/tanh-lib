@@ -91,7 +91,10 @@ public:
     }
 
     template <FilterMode mode>
-    void process(thl::dsp::audio::ConstAudioBufferView in, thl::dsp::audio::AudioBufferView out, size_t stride, size_t num_iterations) {
+    void process(thl::dsp::audio::ConstAudioBufferView in,
+                 thl::dsp::audio::AudioBufferView out,
+                 size_t stride,
+                 size_t num_iterations) {
         const float* in_ptr = in.get_read_pointer(0);
         float* out_ptr = out.get_write_pointer(0);
         size_t size = num_iterations;
@@ -111,7 +114,9 @@ public:
         m_state_2 = state_2;
     }
 
-    void process_multimode(thl::dsp::audio::ConstAudioBufferView in, thl::dsp::audio::AudioBufferView out, float mode) {
+    void process_multimode(thl::dsp::audio::ConstAudioBufferView in,
+                           thl::dsp::audio::AudioBufferView out,
+                           float mode) {
         const float* in_ptr = in.get_read_pointer(0);
         float* out_ptr = out.get_write_pointer(0);
         size_t size = in.get_num_frames();
@@ -206,9 +211,9 @@ public:
     void set_f_q(float f, float resonance) {
         f = f < 0.497f ? f : 0.497f;
         if constexpr (approximation == Approximation::Exact) {
-            m_f = 2.0f * std::sin(detail::kPiF * f);
+            m_f = 2.0f * std::sin(detail::k_pi_f * f);
         } else {
-            m_f = 2.0f * detail::kPiF * f;
+            m_f = 2.0f * detail::k_pi_f * f;
         }
         m_damp = 1.0f / resonance;
     }
@@ -245,7 +250,9 @@ public:
         m_bp = bp;
     }
 
-    void split(thl::dsp::audio::ConstAudioBufferView in, thl::dsp::audio::AudioBufferView low, thl::dsp::audio::AudioBufferView high) {
+    void split(thl::dsp::audio::ConstAudioBufferView in,
+               thl::dsp::audio::AudioBufferView low,
+               thl::dsp::audio::AudioBufferView high) {
         const float* in_ptr = in.get_read_pointer(0);
         float* low_ptr = low.get_write_pointer(0);
         float* high_ptr = high.get_write_pointer(0);
@@ -266,7 +273,9 @@ public:
     }
 
     template <FilterMode mode>
-    void process(thl::dsp::audio::ConstAudioBufferView in, thl::dsp::audio::AudioBufferView out, size_t decimate) {
+    void process(thl::dsp::audio::ConstAudioBufferView in,
+                 thl::dsp::audio::AudioBufferView out,
+                 size_t decimate) {
         const float* in_ptr = in.get_read_pointer(0);
         float* out_ptr = out.get_write_pointer(0);
         size_t size = in.get_num_frames();
