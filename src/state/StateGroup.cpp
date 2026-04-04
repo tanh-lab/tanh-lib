@@ -525,7 +525,7 @@ void StateGroup::ensure_child_groups_registered() {
 // Template specializations for parameter definition types - forward to private
 // base implementation
 template <>
-void StateGroup::set<ParameterFloat>(std::string_view path,
+TANH_API void StateGroup::set<ParameterFloat>(std::string_view path,
                                      const ParameterFloat& value,
                                      NotifyStrategies strategy,
                                      ParameterListener* source,
@@ -534,7 +534,7 @@ void StateGroup::set<ParameterFloat>(std::string_view path,
 }
 
 template <>
-void StateGroup::set<ParameterInt>(std::string_view path,
+TANH_API void StateGroup::set<ParameterInt>(std::string_view path,
                                    const ParameterInt& value,
                                    NotifyStrategies strategy,
                                    ParameterListener* source,
@@ -543,7 +543,7 @@ void StateGroup::set<ParameterInt>(std::string_view path,
 }
 
 template <>
-void StateGroup::set<ParameterBool>(std::string_view path,
+TANH_API void StateGroup::set<ParameterBool>(std::string_view path,
                                     const ParameterBool& value,
                                     NotifyStrategies strategy,
                                     ParameterListener* source,
@@ -552,7 +552,7 @@ void StateGroup::set<ParameterBool>(std::string_view path,
 }
 
 template <>
-void StateGroup::set<ParameterChoice>(std::string_view path,
+TANH_API void StateGroup::set<ParameterChoice>(std::string_view path,
                                       const ParameterChoice& value,
                                       NotifyStrategies strategy,
                                       ParameterListener* source,
@@ -560,40 +560,40 @@ void StateGroup::set<ParameterChoice>(std::string_view path,
     set(path, static_cast<const ParameterDefinition&>(value), strategy, source, create);
 }
 
-template void StateGroup::set(std::string_view path,
+template TANH_API void StateGroup::set(std::string_view path,
                               const double& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
-template void StateGroup::set(std::string_view path,
+template TANH_API void StateGroup::set(std::string_view path,
                               const float& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
-template void StateGroup::set(std::string_view path,
+template TANH_API void StateGroup::set(std::string_view path,
                               const int& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
-template void StateGroup::set(std::string_view path,
+template TANH_API void StateGroup::set(std::string_view path,
                               const bool& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
-template void StateGroup::set(std::string_view path,
+template TANH_API void StateGroup::set(std::string_view path,
                               const std::string& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
 
-template double StateGroup::get(std::string_view path,
+template TANH_API double StateGroup::get(std::string_view path,
                                 bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template float StateGroup::get(std::string_view path,
+template TANH_API float StateGroup::get(std::string_view path,
                                bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template int StateGroup::get(std::string_view path,
+template TANH_API int StateGroup::get(std::string_view path,
                              bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template bool StateGroup::get(std::string_view path,
+template TANH_API bool StateGroup::get(std::string_view path,
                               bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template std::string StateGroup::get(std::string_view path,
+template TANH_API std::string StateGroup::get(std::string_view path,
                                      bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 }  // namespace thl

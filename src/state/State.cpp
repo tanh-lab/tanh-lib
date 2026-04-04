@@ -557,40 +557,40 @@ void State::set_gesture(std::string_view key, bool gesture) {
     });
 }
 
-template void State::set_in_root(std::string_view key,
+template TANH_API void State::set_in_root(std::string_view key,
                                  const double& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
-template void State::set_in_root(std::string_view key,
+template TANH_API void State::set_in_root(std::string_view key,
                                  const float& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
-template void State::set_in_root(std::string_view key,
+template TANH_API void State::set_in_root(std::string_view key,
                                  const int& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
-template void State::set_in_root(std::string_view key,
+template TANH_API void State::set_in_root(std::string_view key,
                                  const bool& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
-template void State::set_in_root(std::string_view key,
+template TANH_API void State::set_in_root(std::string_view key,
                                  const std::string& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 
-template double State::get_from_root(std::string_view key,
+template TANH_API double State::get_from_root(std::string_view key,
                                      bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template float State::get_from_root(std::string_view key,
+template TANH_API float State::get_from_root(std::string_view key,
                                     bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template int State::get_from_root(std::string_view key,
+template TANH_API int State::get_from_root(std::string_view key,
                                   bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template bool State::get_from_root(std::string_view key,
+template TANH_API bool State::get_from_root(std::string_view key,
                                    bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template std::string State::get_from_root(std::string_view key,
+template TANH_API std::string State::get_from_root(std::string_view key,
                                           bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 
-template ParameterHandle<double> State::get_handle(std::string_view key) const;
-template ParameterHandle<float> State::get_handle(std::string_view key) const;
-template ParameterHandle<int> State::get_handle(std::string_view key) const;
-template ParameterHandle<bool> State::get_handle(std::string_view key) const;
+template TANH_API ParameterHandle<double> State::get_handle(std::string_view key) const;
+template TANH_API ParameterHandle<float> State::get_handle(std::string_view key) const;
+template TANH_API ParameterHandle<int> State::get_handle(std::string_view key) const;
+template TANH_API ParameterHandle<bool> State::get_handle(std::string_view key) const;
 }  // namespace thl
