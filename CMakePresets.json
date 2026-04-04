@@ -31,18 +31,12 @@
     {
       "name": "windows-debug",
       "displayName": "Windows Debug",
-      "binaryDir": "${sourceDir}/build/windows/Debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
+      "binaryDir": "${sourceDir}/build/windows"
     },
     {
       "name": "windows-release",
       "displayName": "Windows Release",
-      "binaryDir": "${sourceDir}/build/windows/Release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
+      "binaryDir": "${sourceDir}/build/windows"
     },
     {
       "name": "desktop-debug-asan",

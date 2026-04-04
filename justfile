@@ -47,11 +47,11 @@ format-check:
 
 # Run clang-tidy on source files (check only)
 tidy:
-    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p build/desktop/Debug/
+    find src test -name "*.cpp" -o -name "*.mm" | xargs -P $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) -n 1 clang-tidy -p build/desktop/Debug/
 
 # Run clang-tidy and auto-fix where possible
 tidy-fix:
-    find src -name "*.cpp" -o -name "*.mm" | xargs clang-tidy -p build/desktop/Debug/ --fix
+    find src test -name "*.cpp" -o -name "*.mm" | xargs -P $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) -n 1 clang-tidy -p build/desktop/Debug/ --fix
 
 # Build desktop release
 build-release:
