@@ -133,6 +133,15 @@ void StateGroup::notify_parameter_change(std::string_view path) {
             }
         });
 
+        // Look up gesture state
+        bool is_in_gesture = false;
+        m_rootState->m_index_rcu.read([&](const auto& idx) {
+            auto it = idx.find(m_rootState->m_temp_buffer_1);
+            if (it != idx.end()) {
+                is_in_gesture = it->second->metadata.in_gesture.load(std::memory_order_relaxed);
+            }
+        });
+
         // Notify all listeners
         notify_listeners(path, param, NotifyStrategies::All, nullptr, is_in_gesture);
     } catch (const StateKeyNotFoundException&) {  // NOLINT(bugprone-empty-catch) key may not exist

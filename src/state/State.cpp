@@ -109,6 +109,10 @@ void State::set_in_root(std::string_view key,
                         record->m_cache.m_atomic_int.store(static_cast<int>(d_value),
                                                            std::memory_order_relaxed);
                         break;
+                    case ParameterType::Int:
+                        record->cache.atomic_int.store(static_cast<int>(d_value),
+                                                       std::memory_order_relaxed);
+                        break;
                     case ParameterType::Bool:
                         record->m_cache.m_atomic_bool.store(d_value != 0.0,
                                                             std::memory_order_relaxed);
