@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/audio-io/DataSource.h>
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBuffer.h>
 
 #include <cstddef>
@@ -19,7 +20,7 @@ namespace thl::audio_io {
  * This class has no mutable state, so multiple instances may be used
  * concurrently on different threads.
  */
-class AudioFileLoader {
+class TANH_API AudioFileLoader {
 public:
     AudioFileLoader() = default;
     ~AudioFileLoader() = default;

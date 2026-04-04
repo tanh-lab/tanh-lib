@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
 /**
@@ -10,7 +12,7 @@ namespace thl::dsp::utils {
  * of audio signals over time, particularly useful for synthesizers and
  * granular processing.
  */
-class ADSR {
+class TANH_API ADSR {
 public:
     /**
      * ADSR envelope state

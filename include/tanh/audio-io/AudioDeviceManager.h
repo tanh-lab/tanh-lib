@@ -2,6 +2,7 @@
 #include "AudioDeviceInfo.h"
 #include "AudioIODeviceCallback.h"
 #include <tanh/core/AtomicSharedPtr.h>
+#include <tanh/core/Exports.h>
 #include <tanh/core/Logger.h>
 #include <tanh/core/threading/RCU.h>
 #include <atomic>
@@ -51,18 +52,18 @@ enum class BluetoothProfile : std::uint8_t {
 };
 
 /// Convert a BluetoothProfile enum value to its string representation.
-const char* bluetooth_profile_to_string(BluetoothProfile profile);
+TANH_API const char* bluetooth_profile_to_string(BluetoothProfile profile);
 
 /// Parse a string into a BluetoothProfile. Returns A2DP for unrecognised values.
-BluetoothProfile bluetooth_profile_from_string(const std::string& str);
+TANH_API BluetoothProfile bluetooth_profile_from_string(const std::string& str);
 
 /// Returns the list of Bluetooth profiles supported on the current device/OS.
 /// On Android API ≤ 28 only A2DP is returned.
-std::vector<BluetoothProfile> get_supported_bluetooth_profiles();
+TANH_API std::vector<BluetoothProfile> get_supported_bluetooth_profiles();
 
 /// Returns true if a classic Bluetooth device (A2DP / HFP / SCO) is connected.
 /// BLE Audio devices are excluded — they don't need profile switching.
-bool is_classic_bluetooth_connected();
+TANH_API bool is_classic_bluetooth_connected();
 
 /**
  * @class AudioDeviceManager
@@ -129,7 +130,7 @@ bool is_classic_bluetooth_connected();
  * @see AudioIODeviceCallback
  * @see AudioDeviceInfo
  */
-class AudioDeviceManager {
+class TANH_API AudioDeviceManager {
 public:
     /**
      * @brief Identifies a device role for queries and internal routing.

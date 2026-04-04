@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
 enum RootNote {
@@ -22,8 +24,8 @@ enum RootNote {
 
 enum ScaleMode { Major, Minor, Phrygian };
 
-std::string note_number_to_note_name(int note_number);
+TANH_API std::string note_number_to_note_name(int note_number);
 
-int get_note_offset(int scale_note_index, ScaleMode mode);
+TANH_API int get_note_offset(int scale_note_index, ScaleMode mode);
 
 }  // namespace thl::dsp::utils

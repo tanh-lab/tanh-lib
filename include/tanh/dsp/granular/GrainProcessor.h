@@ -2,6 +2,7 @@
 
 #include <random>
 #include <vector>
+#include <tanh/core/Exports.h>
 #include <tanh/tanh.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
@@ -50,7 +51,7 @@ struct Grain {
     size_t m_sample_index;                   // Index of the sample in the audio data
 };
 
-class GrainProcessorImpl : public thl::dsp::BaseProcessor {
+class TANH_API GrainProcessorImpl : public thl::dsp::BaseProcessor {
 public:
     explicit GrainProcessorImpl(thl::dsp::audio::AudioDataStore& audio_store);
     ~GrainProcessorImpl() override;

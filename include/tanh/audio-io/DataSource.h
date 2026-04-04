@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 
+#include <tanh/core/Exports.h>
+
 namespace thl::audio_io {
 
 /**
@@ -17,7 +19,7 @@ namespace thl::audio_io {
  * or AudioFileLoader::load_data_source_from_memory.
  * The class is move-only.
  */
-class DataSource {
+class TANH_API DataSource {
 public:
     ~DataSource();
 

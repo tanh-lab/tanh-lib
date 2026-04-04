@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/utils/Allpass.h>
@@ -147,7 +148,7 @@ typedef thl::dsp::utils::Allpass<float, k_delay_line_size / 2> StiffnessAllpass;
 //   Hermite interpolation
 //     Fractional-sample delay reads use four-point Hermite interpolation for
 //     clean pitch accuracy across the full frequency range.
-class RingsString {
+class TANH_API RingsString {
 public:
     RingsString() {}
     ~RingsString() {}

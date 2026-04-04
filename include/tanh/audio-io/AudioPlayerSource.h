@@ -3,6 +3,7 @@
 #include <tanh/audio-io/AudioFileLoader.h>
 #include <tanh/audio-io/DataSource.h>
 #include <tanh/core/AtomicSharedPtr.h>
+#include <tanh/core/Exports.h>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -66,7 +67,7 @@ namespace thl {
  * @see AudioIODeviceCallback
  * @see AudioFileSink for the complementary recording class
  */
-class AudioPlayerSource : public AudioIODeviceCallback {
+class TANH_API AudioPlayerSource : public AudioIODeviceCallback {
 public:
     /**
      * @brief Callback type invoked when playback reaches the end of the file.

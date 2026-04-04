@@ -513,6 +513,14 @@ if(TANH_BUILD_AUDIO_IO)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
 endif()
 
+# Apply shared library export definitions to all components
+if(BUILD_SHARED_LIBS)
+    foreach(target ${TANH_BUILT_COMPONENTS})
+        target_compile_definitions(${target} PRIVATE TANH_BUILDING_SHARED)
+        target_compile_definitions(${target} PUBLIC TANH_SHARED)
+    endforeach()
+endif()
+
 # Apply common settings to all components
 
 foreach(target ${TANH_BUILT_COMPONENTS})

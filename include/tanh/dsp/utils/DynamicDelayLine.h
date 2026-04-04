@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBuffer.h>
 
 namespace thl::dsp::utils {
@@ -16,7 +17,7 @@ namespace thl::dsp::utils {
  *
  * Call prepare() before first use to allocate the buffer.
  */
-class DynamicDelayLine {
+class TANH_API DynamicDelayLine {
 public:
     DynamicDelayLine();
     ~DynamicDelayLine();

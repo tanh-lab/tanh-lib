@@ -1,11 +1,12 @@
 #pragma once
 
 #include <cstddef>
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 
 namespace thl::dsp::utils {
 
-class LimiterImpl : public BaseProcessor {
+class TANH_API LimiterImpl : public BaseProcessor {
 public:
     LimiterImpl();
     ~LimiterImpl() override;

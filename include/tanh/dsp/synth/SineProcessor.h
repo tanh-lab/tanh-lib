@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <vector>
+#include "tanh/core/Exports.h"
 #include "tanh/dsp/BaseProcessor.h"
 #include "tanh/dsp/utils/SmoothedValue.h"
 
@@ -9,7 +10,7 @@ namespace thl {
 namespace dsp {
 namespace synth {
 
-class SineProcessorImpl : public BaseProcessor {
+class TANH_API SineProcessorImpl : public BaseProcessor {
 public:
     SineProcessorImpl();
     ~SineProcessorImpl() override;

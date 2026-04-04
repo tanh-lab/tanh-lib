@@ -4,6 +4,8 @@
 #include <functional>
 #include <string>
 
+#include "tanh/core/Exports.h"
+
 /// @namespace thl::Logger
 /// @brief Unified logging facade with compile-time filtering, platform sinks,
 ///        file output, and optional callback forwarding.
@@ -57,10 +59,10 @@ struct LoggerConfig {
 /// Thread-safe.  Manages file stream lifecycle: closes the stream when
 /// @c file_path changes or @c file_enabled becomes false; keeps it open
 /// when the path is unchanged and the file sink stays enabled.
-void set_config(const LoggerConfig& config);
+TANH_API void set_config(const LoggerConfig& config);
 
 /// Return a snapshot of the current configuration.
-LoggerConfig get_config();
+TANH_API LoggerConfig get_config();
 
 /// @brief Register a synchronous log callback.
 ///
@@ -76,39 +78,42 @@ LoggerConfig get_config();
 ///       redirected to the default fallback sink.
 /// @note If the callback captures plugin/host-owned objects, call
 ///       clear_callback() before those objects are torn down.
-void set_callback(Callback cb);
+TANH_API void set_callback(Callback cb);
 
 /// Remove a previously registered callback.
-void clear_callback();
+TANH_API void clear_callback();
 
 /// Format a log record as a plain human-readable string:
 /// @c [level][source][group] message
-std::string format_plain(const LogRecord& record);
+TANH_API std::string format_plain(const LogRecord& record);
 
 /// Format a log record as a
 /// [logfmt](https://brandur.org/logfmt)-style string.
-std::string format_logfmt(const LogRecord& record);
+TANH_API std::string format_logfmt(const LogRecord& record);
 
 /// @name Core logging functions
 /// @{
 
 /// Log a message at the given @p level.
-void log(LogLevel level, const char* group, const char* message);
+TANH_API void log(LogLevel level, const char* group, const char* message);
 
 /// Log a message with an explicit @p source tag.
-void log_with_source(LogLevel level, const char* source, const char* group, const char* message);
+TANH_API void log_with_source(LogLevel level,
+                              const char* source,
+                              const char* group,
+                              const char* message);
 
 /// printf-style logging at the given @p level.
-void logf(LogLevel level, const char* group, const char* fmt, ...);
+TANH_API void logf(LogLevel level, const char* group, const char* fmt, ...);
 
 /// @}
 
 /// @name Convenience shorthands
 /// @{
-void error(const char* group, const char* message);
-void warning(const char* group, const char* message);
-void info(const char* group, const char* message);
-void debug(const char* group, const char* message);
+TANH_API void error(const char* group, const char* message);
+TANH_API void warning(const char* group, const char* message);
+TANH_API void info(const char* group, const char* message);
+TANH_API void debug(const char* group, const char* message);
 /// @}
 
 }  // namespace thl::Logger

@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 
@@ -86,7 +87,7 @@ struct VoiceGroup {
 //      or reverb (two variants each for formant and reverb).
 //   6. Output -- a limiter normalises the stereo pair; aux is inverted to
 //      prevent cancellation when summed externally.
-class RingsStringSynthPart {
+class TANH_API RingsStringSynthPart {
 public:
     RingsStringSynthPart() {}
     ~RingsStringSynthPart() {}

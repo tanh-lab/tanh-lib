@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
 /**
@@ -13,7 +15,7 @@ namespace thl::dsp::utils {
  *
  * Call prepare() before use.
  */
-class SineOscillator {
+class TANH_API SineOscillator {
 public:
     SineOscillator();
 

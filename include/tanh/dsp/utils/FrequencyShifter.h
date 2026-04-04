@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
 /**
@@ -17,7 +19,7 @@ namespace thl::dsp::utils {
  *
  * Call prepare() before use.
  */
-class FrequencyShifter {
+class TANH_API FrequencyShifter {
 public:
     FrequencyShifter();
 

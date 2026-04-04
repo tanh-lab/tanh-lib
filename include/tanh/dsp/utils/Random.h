@@ -2,9 +2,11 @@
 
 #include <cstdint>
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
-class Random {
+class TANH_API Random {
 public:
     static uint32_t state() { return m_rng_state; }
 

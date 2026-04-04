@@ -2,13 +2,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl::dsp::synth {
 
 enum class RingsPolyphonyMode { One, Two, Four };
 
-class RingsResonatorSynthProcessor {
+class TANH_API RingsResonatorSynthProcessor {
 public:
     enum Parameter {
         Frequency = 0,

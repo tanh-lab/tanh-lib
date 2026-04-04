@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBuffer.h>
 
 namespace thl::dsp::utils {
@@ -15,7 +16,7 @@ namespace thl::dsp::utils {
  *
  * Call prepare() before use.
  */
-class PitchShifter {
+class TANH_API PitchShifter {
 public:
     PitchShifter();
 

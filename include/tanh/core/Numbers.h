@@ -17,9 +17,13 @@ template <typename T>
 inline constexpr T inv_pi_v = static_cast<T>(0.31830988618379067154L);
 
 template <typename T>
+inline constexpr T e_v = static_cast<T>(2.71828182845904523536L);
+
+template <typename T>
 inline constexpr T ln2_v = static_cast<T>(0.69314718055994530942L);
 
 inline constexpr double pi = pi_v<double>;
+inline constexpr double e = e_v<double>;
 inline constexpr double inv_pi = inv_pi_v<double>;
 inline constexpr double ln2 = ln2_v<double>;
 

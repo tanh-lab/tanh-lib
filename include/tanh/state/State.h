@@ -31,7 +31,7 @@ namespace thl {
  * @see StateGroup for group-based parameter access
  * @see RCU for the underlying lock-free read mechanism
  */
-class State : public StateGroup {
+class TANH_API State : public StateGroup {
 public:
     /**
      * @brief Constructs a new State object.

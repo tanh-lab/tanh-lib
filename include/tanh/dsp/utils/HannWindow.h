@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
 /**
@@ -12,7 +14,7 @@ namespace thl::dsp::utils {
  * well-suited for grain envelopes in granular synthesis as it eliminates
  * discontinuities at the grain boundaries.
  */
-class HannWindow {
+class TANH_API HannWindow {
 public:
     /**
      * HannWindow envelope state

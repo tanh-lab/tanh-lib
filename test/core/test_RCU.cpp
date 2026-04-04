@@ -65,6 +65,7 @@ TEST(RCU, MapFunctionality) {
 
     // Start reader threads
     std::vector<std::thread> readers;
+    readers.reserve(4);
     for (int i = 0; i < 4; ++i) {
         readers.emplace_back([&]() {
             while (running.load()) {
@@ -123,6 +124,7 @@ TEST(RCU, VectorFunctionalityBig) {
 
     // Simulate notification threads (like audio callbacks)
     std::vector<std::thread> notifiers;
+    notifiers.reserve(3);
     for (int i = 0; i < 3; ++i) {
         notifiers.emplace_back([&]() {
             while (running.load()) {

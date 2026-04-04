@@ -15,10 +15,11 @@ namespace {
 
 inline float interpolate_ref(const std::array<float, 257>& table, float index, float size) {
     const float scaled = index * size;
-    const int32_t i = std::min(static_cast<int32_t>(scaled), static_cast<int32_t>(table.size()) - 2);
+    const int32_t i =
+        std::min(static_cast<int32_t>(scaled), static_cast<int32_t>(table.size()) - 2);
     const float frac = scaled - static_cast<float>(i);
     const float a = table[static_cast<size_t>(i)];
-    const float b = table[static_cast<size_t>(i + 1)];
+    const float b = table[static_cast<size_t>(i) + 1];
     return a + (b - a) * frac;
 }
 
@@ -34,7 +35,7 @@ std::array<float, 257> make_ref_4_decades() {
 std::array<float, 257> make_ref_svf_shift() {
     std::array<float, 257> table{};
     for (size_t i = 0; i < table.size(); ++i) {
-        const float semitones = static_cast<float>(i);
+        const auto semitones = static_cast<float>(i);
         const float ratio = std::exp2(semitones / 12.0f);
         table[i] = 2.0f * std::atan(1.0f / ratio) / (2.0f * rings::k_pi);
     }
@@ -68,42 +69,42 @@ std::array<float, 257> make_ref_stiffness() {
 
 std::array<float, 5121> make_ref_sine_table() {
     std::array<float, 5121> table{};
-    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    constexpr double k_two_pi = 2.0 * std::numbers::pi;
     for (size_t i = 0; i < table.size(); ++i) {
-        table[i] = static_cast<float>(std::sin(kTwoPi * static_cast<double>(i) / 4096.0));
+        table[i] = static_cast<float>(std::sin(k_two_pi * static_cast<double>(i) / 4096.0));
     }
     return table;
 }
 
 std::array<float, 129> make_ref_fm_quantizer() {
-    const double kRatios[] = {
+    const std::array<double, 23> k_ratios = {
         0.5,
         0.5 * std::exp2(16.0 / 1200.0),
-        std::sqrt(2.0) / 2.0,
+        std::numbers::sqrt2 / 2.0,
         std::numbers::pi / 4.0,
         1.0,
         1.0 * std::exp2(16.0 / 1200.0),
-        std::sqrt(2.0),
+        std::numbers::sqrt2,
         std::numbers::pi / 2.0,
         7.0 / 4.0,
         2.0,
         2.0 * std::exp2(16.0 / 1200.0),
         9.0 / 4.0,
         11.0 / 4.0,
-        2.0 * std::sqrt(2.0),
+        2.0 * std::numbers::sqrt2,
         3.0,
         std::numbers::pi,
-        std::sqrt(3.0) * 2.0,
+        std::numbers::sqrt3 * 2.0,
         4.0,
-        std::sqrt(2.0) * 3.0,
+        std::numbers::sqrt2 * 3.0,
         std::numbers::pi * 3.0 / 2.0,
         5.0,
-        std::sqrt(2.0) * 4.0,
+        std::numbers::sqrt2 * 4.0,
         8.0,
     };
 
     std::vector<double> scale;
-    for (double ratio : kRatios) {
+    for (double ratio : k_ratios) {
         const double semitones = 12.0 * std::log2(ratio);
         scale.push_back(semitones);
         scale.push_back(semitones);
@@ -151,7 +152,7 @@ TEST(RingsDspFunctions, FourDecadesMatchesOriginalLutTable) {
 TEST(RingsDspFunctions, SvfShiftMatchesOriginalLutTable) {
     const auto ref = make_ref_svf_shift();
     for (size_t i = 0; i < ref.size(); ++i) {
-        const float semitones = static_cast<float>(i);
+        const auto semitones = static_cast<float>(i);
         EXPECT_NEAR(rings::svf_shift(semitones), ref[i], 1e-6f) << "index " << i;
     }
 }
@@ -190,7 +191,7 @@ TEST(RingsDspFunctions, AnalyticFunctionsTrackInterpolatedLuts) {
 
     float max_svf_shift_diff = 0.0f;
     for (int i = 0; i <= 256; ++i) {
-        const float semitones = static_cast<float>(i);
+        const auto semitones = static_cast<float>(i);
         max_svf_shift_diff = std::max(
             max_svf_shift_diff,
             std::abs(rings::svf_shift(semitones) - interpolate_ref(svf_shift, semitones, 1.0f)));
