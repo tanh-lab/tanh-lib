@@ -1,10 +1,7 @@
 #include <tanh/dsp/utils/HannWindow.h>
+#include <tanh/core/Numbers.h>
 #include <cmath>
 #include <algorithm>  // For std::clamp
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 namespace thl::dsp::utils {
 
