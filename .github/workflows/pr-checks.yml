@@ -41,7 +41,7 @@ jobs:
         with:
           PRESET: ${{ matrix.preset }}
       - uses: tanh-lab/ci-actions/clang-tidy-check@main
-        if: ${{ matrix.name != 'Windows-x86_64' }}
+        if: ${{ matrix.name == 'Linux-x86_64' }}
         with:
           SOURCES: "src/"
           PRESET: ${{ matrix.preset }}
