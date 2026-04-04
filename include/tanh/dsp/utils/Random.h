@@ -29,7 +29,8 @@ public:
     }
 
 private:
-    static uint32_t m_rng_state;
+    // inline static avoids cross-DLL symbol dependency on MSVC (each DLL gets its own state copy)
+    static inline uint32_t m_rng_state = 0x21u;
     static uint32_t nlog2_16(uint16_t x);
 
     Random() = delete;

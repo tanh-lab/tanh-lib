@@ -190,15 +190,15 @@ ParameterHandle<T> Parameter::get_handle() const {
     return ParameterHandle<T>(m_cache_ptr);
 }
 
-template ParameterHandle<double> Parameter::get_handle<double>() const;
-template ParameterHandle<float> Parameter::get_handle<float>() const;
-template ParameterHandle<int> Parameter::get_handle<int>() const;
-template ParameterHandle<bool> Parameter::get_handle<bool>() const;
+template TANH_API ParameterHandle<double> Parameter::get_handle<double>() const;
+template TANH_API ParameterHandle<float> Parameter::get_handle<float>() const;
+template TANH_API ParameterHandle<int> Parameter::get_handle<int>() const;
+template TANH_API ParameterHandle<bool> Parameter::get_handle<bool>() const;
 
-template double Parameter::to<double>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template float Parameter::to<float>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template int Parameter::to<int>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template bool Parameter::to<bool>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template std::string Parameter::to<std::string>(bool allow_blocking) const
+template TANH_API double Parameter::to<double>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API float Parameter::to<float>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API int Parameter::to<int>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API bool Parameter::to<bool>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API std::string Parameter::to<std::string>(bool allow_blocking) const
     TANH_NONBLOCKING_FUNCTION;
 }  // namespace thl
