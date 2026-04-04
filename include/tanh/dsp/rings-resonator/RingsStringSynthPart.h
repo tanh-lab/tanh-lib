@@ -111,7 +111,9 @@ public:
     }
 
     inline void set_fx(FxType fx_type) {
-        if ((fx_type % 3) != (m_fx_type % 3)) { m_clear_fx = true; }
+        if ((static_cast<int>(fx_type) % 3) != (static_cast<int>(m_fx_type) % 3)) {
+            m_clear_fx = true;
+        }
         m_fx_type = fx_type;
     }
 
