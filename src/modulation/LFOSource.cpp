@@ -3,10 +3,6 @@
 #include <cmath>
 #include <tanh/core/Numbers.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 using namespace thl::modulation;
 
 void LFOSourceImpl::prepare(double sample_rate, size_t samples_per_block) {

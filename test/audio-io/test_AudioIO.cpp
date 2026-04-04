@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <tanh/core/Numbers.h>
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -273,12 +274,12 @@ public:
         ++processCallCount;
         if (!outputBuffer || numOutputChannels == 0) { return; }
 
-        double phaseIncrement = (2.0 * M_PI * frequency) / sampleRate;
+        double phaseIncrement = (2.0 * std::numbers::pi * frequency) / sampleRate;
 
         for (uint32_t frame = 0; frame < frameCount; ++frame) {
             float sample = static_cast<float>(std::sin(phase) * 0.3);
             phase += phaseIncrement;
-            if (phase >= 2.0 * M_PI) { phase -= 2.0 * M_PI; }
+            if (phase >= 2.0 * std::numbers::pi) { phase -= 2.0 * std::numbers::pi; }
 
             for (uint32_t ch = 0; ch < numOutputChannels; ++ch) {
                 outputBuffer[frame * numOutputChannels + ch] = sample;
@@ -304,7 +305,7 @@ TEST(HardwareTests, DISABLED_DeviceEnumeration) {
     for (const auto& device : inputs) {
         std::cout << "  - " << device.m_name << " (rates: ";
         for (size_t i = 0; i < device.m_sample_rates.size(); ++i) {
-            if (i > 0) std::cout << ", ";
+            if (i > 0) { std::cout << ", "; }
             std::cout << device.m_sample_rates[i];
         }
         std::cout << ")\n";
@@ -314,7 +315,7 @@ TEST(HardwareTests, DISABLED_DeviceEnumeration) {
     for (const auto& device : outputs) {
         std::cout << "  - " << device.m_name << " (rates: ";
         for (size_t i = 0; i < device.m_sample_rates.size(); ++i) {
-            if (i > 0) std::cout << ", ";
+            if (i > 0) { std::cout << ", "; }
             std::cout << device.m_sample_rates[i];
         }
         std::cout << ")\n";
@@ -988,7 +989,7 @@ namespace {
 
 std::vector<uint8_t> read_file_bytes(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) return {};
+    if (!file.is_open()) { return {}; }
     auto size = file.tellg();
     file.seekg(0, std::ios::beg);
     std::vector<uint8_t> bytes(static_cast<size_t>(size));

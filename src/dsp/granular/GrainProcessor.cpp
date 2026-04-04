@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <tanh/core/Numbers.h>
 #include <cstring>
 #include <utility>
 #include <iostream>
@@ -506,7 +507,7 @@ float GrainProcessorImpl::apply_temperature_ramp(float temperature) const {
     float ramp_factor = 1.0f;
     if (static_cast<float>(m_playback_elapsed_samples) < ramp_samples) {
         ramp_factor = std::sin((static_cast<float>(m_playback_elapsed_samples) / ramp_samples) *
-                               static_cast<float>(M_PI / 2.0));
+                               std::numbers::pi_v<float> / 2.0f);
     }
     // Blend between ramped and unramped: low temperature → ramp active, high →
     // ramp bypassed
