@@ -51,9 +51,6 @@
       "cacheVariables": {
         "TANH_WITH_ASAN": "ON",
         "TANH_WITH_USAN": "ON"
-      },
-      "environment": {
-        "LSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/asan_suppressions.txt"
       }
     },
     {
@@ -62,9 +59,6 @@
       "inherits": "desktop-debug",
       "cacheVariables": {
         "TANH_WITH_TSAN": "ON"
-      },
-      "environment": {
-        "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
       }
     },
     {
@@ -228,7 +222,10 @@
       "name": "desktop-debug-tsan",
       "configurePreset": "desktop-debug-tsan",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "environment": {
+        "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
+      }
     },
     {
       "name": "desktop-debug-msan",

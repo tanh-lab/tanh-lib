@@ -1,6 +1,4 @@
 #include "tanh/core.h"
-#include <stdexcept>
-#include <sstream>
 
 namespace thl::core {
 

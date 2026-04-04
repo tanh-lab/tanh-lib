@@ -16,7 +16,7 @@ namespace thl {
  * @enum DeviceNotificationType
  * @brief Types of device notification events.
  */
-enum class DeviceNotificationType {
+enum class DeviceNotificationType : std::uint8_t {
     Started,
     Stopped,
     Rerouted,
@@ -45,7 +45,7 @@ enum class DeviceNotificationType {
  *
  * @see AudioDeviceManager::setBluetoothProfile()
  */
-enum class BluetoothProfile {
+enum class BluetoothProfile : std::uint8_t {
     A2DP,  ///< Advanced Audio Distribution Profile — output-only, high quality.
     HFP    ///< Hands-Free Profile — bidirectional, low quality.
 };
@@ -134,7 +134,7 @@ public:
     /**
      * @brief Identifies a device role for queries and internal routing.
      */
-    enum class DeviceRole { Playback, Capture, Duplex };
+    enum class DeviceRole : std::uint8_t { Playback, Capture, Duplex };
 
     /**
      * @brief Callback type for device notification events.
