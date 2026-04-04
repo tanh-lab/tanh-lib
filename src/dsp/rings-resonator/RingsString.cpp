@@ -106,7 +106,7 @@ void RingsString::prepare_coefficients(float delay, float src_ratio, size_t size
 }
 
 template <bool enable_dispersion>
-void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
+void RingsString::process_internal(const thl::dsp::audio::ConstAudioBufferView& in,
                                    thl::dsp::audio::AudioBufferView out,
                                    thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
@@ -186,7 +186,7 @@ void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
                 float main_delay = delay - ap_delay;
                 if (ap_delay >= 4.0f && main_delay >= 4.0f) {
                     s = m_string.read_hermite(main_delay);
-                    s = m_stretch.process(s, ap_delay, ap_gain);
+                    s = m_stretch.process(s, static_cast<size_t>(ap_delay), ap_gain);
                 } else {
                     s = m_string.read_hermite(delay);
                 }
@@ -230,9 +230,9 @@ void RingsString::process_internal(thl::dsp::audio::ConstAudioBufferView in,
     }
 }
 
-void RingsString::process(thl::dsp::audio::ConstAudioBufferView in,
-                          thl::dsp::audio::AudioBufferView out,
-                          thl::dsp::audio::AudioBufferView aux) {
+void RingsString::process(const thl::dsp::audio::ConstAudioBufferView& in,
+                          const thl::dsp::audio::AudioBufferView& out,
+                          const thl::dsp::audio::AudioBufferView& aux) {
     if (m_enable_dispersion) {
         process_internal<true>(in, out, aux);
     } else {

@@ -94,7 +94,7 @@ void RingsFmVoice::prepare_coefficients() {
     m_feedback = (m_feedback_amount - 0.5f) * 2.0f;
 }
 
-void RingsFmVoice::process(thl::dsp::audio::ConstAudioBufferView in,
+void RingsFmVoice::process(const thl::dsp::audio::ConstAudioBufferView& in,
                            thl::dsp::audio::AudioBufferView out,
                            thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);

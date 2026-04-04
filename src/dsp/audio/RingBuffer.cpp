@@ -16,10 +16,12 @@ void RingBuffer::initialise_with_positions(size_t num_channels, size_t num_sampl
 
 void RingBuffer::clear_with_positions() {
     m_buffer.clear();
-    std::fill(m_read_pos.begin(), m_read_pos.end(), 0);
-    std::fill(m_write_pos.begin(), m_write_pos.end(), 0);
-    std::fill(m_is_full.begin(), m_is_full.end(), false);
-    std::fill(m_num_valid.begin(), m_num_valid.end(), 0);
+    std::ranges::fill(m_read_pos, 0);
+    std::ranges::fill(m_write_pos, 0);
+    std::fill(m_is_full.begin(), m_is_full.end(), false);  // NOLINT(modernize-use-ranges)
+                                                           // std::vector<bool> specialization
+                                                           // doesn't work with std::ranges::fill
+    std::ranges::fill(m_num_valid, 0);
 }
 
 void RingBuffer::push_sample(size_t channel, float sample) {

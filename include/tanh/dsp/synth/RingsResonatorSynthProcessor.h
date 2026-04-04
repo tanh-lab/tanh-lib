@@ -34,7 +34,7 @@ public:
     RingsResonatorSynthProcessor& operator=(RingsResonatorSynthProcessor&&) noexcept;
 
     void prepare(double sample_rate, int max_block_size);
-    void process(thl::dsp::audio::ConstAudioBufferView input,
+    void process(const thl::dsp::audio::ConstAudioBufferView& input,
                  thl::dsp::audio::AudioBufferView output);
     int get_latency() const;
 

@@ -160,9 +160,9 @@ public:
     // Process a block of `size` samples.  Excitation is read from `in`;
     // the primary string output is accumulated into `out` and a comb-
     // filtered pickup signal (position-dependent tap) into `aux`.
-    void process(thl::dsp::audio::ConstAudioBufferView in,
-                 thl::dsp::audio::AudioBufferView out,
-                 thl::dsp::audio::AudioBufferView aux);
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
+                 const thl::dsp::audio::AudioBufferView& out,
+                 const thl::dsp::audio::AudioBufferView& aux);
 
     inline void set_frequency(float frequency) { m_frequency = frequency; }
 
@@ -191,7 +191,7 @@ private:
     // path so the compiler can eliminate allpass / curved-bridge logic
     // when it is not needed.
     template <bool enable_dispersion>
-    void process_internal(thl::dsp::audio::ConstAudioBufferView in,
+    void process_internal(const thl::dsp::audio::ConstAudioBufferView& in,
                           thl::dsp::audio::AudioBufferView out,
                           thl::dsp::audio::AudioBufferView aux);
 

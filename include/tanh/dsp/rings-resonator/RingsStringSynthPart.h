@@ -96,7 +96,7 @@ public:
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
-                 thl::dsp::audio::ConstAudioBufferView in,
+                 const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out,
                  thl::dsp::audio::AudioBufferView aux);
 

@@ -61,7 +61,7 @@ float HannWindow::process_at_position(float position) {
     position = std::clamp(position, 0.0f, 0.9999f);
 
     // Hann window formula: 0.5 * (1 - cos(2π * n/N))
-    return 0.5f * (1.0f - std::cos(2.0f * M_PI * position));
+    return 0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> * position));
 }
 
 bool HannWindow::is_active() const {

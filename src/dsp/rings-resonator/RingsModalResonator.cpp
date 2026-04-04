@@ -43,7 +43,7 @@ using ::thl::dsp::utils::ParameterInterpolator;
 void RingsModalResonator::prepare(float sample_rate) {
     m_sample_rate = sample_rate;
 
-    for (int32_t i = 0; i < k_max_modes; ++i) { m_f[i].reset(); }
+    for (auto& i : m_f) { i.reset(); }
 
     set_frequency(220.0f / m_sample_rate);
     set_structure(0.25f);
@@ -95,7 +95,7 @@ int32_t RingsModalResonator::compute_filters() {
     return num_modes;
 }
 
-void RingsModalResonator::process(thl::dsp::audio::ConstAudioBufferView in,
+void RingsModalResonator::process(const thl::dsp::audio::ConstAudioBufferView& in,
                                   thl::dsp::audio::AudioBufferView out,
                                   thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);

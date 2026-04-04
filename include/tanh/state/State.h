@@ -85,7 +85,7 @@ public:
      */
     template <typename T>
     void set_in_root(std::string_view key,
-                     T value,
+                     const T& value,
                      NotifyStrategies strategy = NotifyStrategies::All,
                      ParameterListener* source = nullptr);
 

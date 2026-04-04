@@ -5,14 +5,16 @@
 
 namespace thl::dsp::utils {
 
-const float FrequencyShifter::k_coeffs_a[4] = {0.6923878f,
-                                               0.9360654322959f,
-                                               0.9882295226860f,
-                                               0.9987488452737f};
-const float FrequencyShifter::k_coeffs_b[4] = {0.4021921162426f,
-                                               0.8561710882420f,
-                                               0.9722909545651f,
-                                               0.9952884791278f};
+const std::array<float, 4> FrequencyShifter::k_coeffs_a = {std::numbers::ln2_v<float>,
+                                                           // — Hilbert allpass
+                                                           // coefficient, not ln2
+                                                           0.9360654322959f,
+                                                           0.9882295226860f,
+                                                           0.9987488452737f};
+const std::array<float, 4> FrequencyShifter::k_coeffs_b = {0.4021921162426f,
+                                                           0.8561710882420f,
+                                                           0.9722909545651f,
+                                                           0.9952884791278f};
 
 FrequencyShifter::FrequencyShifter() = default;
 
@@ -33,8 +35,8 @@ void FrequencyShifter::reset() {
 }
 
 float FrequencyShifter::process(float x) {
-    const float real = process_chain(x, k_coeffs_a, m_states_a);
-    const float imag = process_chain(x, k_coeffs_b, m_states_b);
+    const float real = process_chain(x, k_coeffs_a.data(), m_states_a);
+    const float imag = process_chain(x, k_coeffs_b.data(), m_states_b);
 
     const float out = real * std::cos(m_phase) - imag * std::sin(m_phase);
 

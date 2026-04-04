@@ -48,7 +48,7 @@ public:
     ~RingsFmVoice() {}
 
     void prepare(float sample_rate = thl::dsp::resonator::k_default_sample_rate);
-    void process(thl::dsp::audio::ConstAudioBufferView in,
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out,
                  thl::dsp::audio::AudioBufferView aux);
 

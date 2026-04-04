@@ -98,7 +98,7 @@ void write_to_stderr_fallback(std::uint32_t level,
                  message ? message : "");
 }
 
-std::string escape_logfmt_value(std::string value) {
+std::string escape_logfmt_value(const std::string& value) {
     std::string out;
     out.reserve(value.size());
     for (const char c : value) {
@@ -136,7 +136,7 @@ void append_logfmt_field(std::ostringstream& out, const char* key, const std::st
 }
 
 std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
-    std::time_t seconds = static_cast<std::time_t>(timestamp_ms / 1000);
+    auto seconds = static_cast<std::time_t>(timestamp_ms / 1000);
     int millis = static_cast<int>(timestamp_ms % 1000);
     if (millis < 0) {
         millis += 1000;
@@ -305,7 +305,7 @@ LoggerState& state() {
 
 bool emit_file(const LogRecord& record) {
     auto& s = state();
-    std::lock_guard<std::mutex> lock(s.m_file_mutex);
+    std::scoped_lock lock(s.m_file_mutex);
 
     if (s.m_file_path.empty()) { return false; }
 
@@ -378,7 +378,7 @@ void dispatch_record(const LogRecord& record) {
     std::size_t early_cap = 0;
     Callback callback_copy;
     {
-        std::lock_guard<std::mutex> lock(state().m_config_mutex);
+        std::scoped_lock lock(state().m_config_mutex);
         platform_on = state().m_platform_enabled;
         console_on = state().m_console_enabled;
         file_on = state().m_file_enabled;
@@ -406,7 +406,7 @@ void dispatch_record(const LogRecord& record) {
             any_sink_ran = true;
         } else if (early_cap > 0) {
             // File enabled but path not yet configured — buffer for later.
-            std::lock_guard<std::mutex> lock(state().m_config_mutex);
+            std::scoped_lock lock(state().m_config_mutex);
             if (state().m_early_file_buffer.size() < state().m_early_buffer_capacity) {
                 state().m_early_file_buffer.push_back(record);
                 any_sink_ran = true;
@@ -428,7 +428,7 @@ void dispatch_record(const LogRecord& record) {
             any_sink_ran = true;
         }
     } else if (callback_on && early_cap > 0) {
-        std::lock_guard<std::mutex> lock(state().m_config_mutex);
+        std::scoped_lock lock(state().m_config_mutex);
         if (!state().m_callback &&
             state().m_early_callback_buffer.size() < state().m_early_buffer_capacity) {
             state().m_early_callback_buffer.push_back(record);
@@ -451,7 +451,7 @@ void set_config(const LoggerConfig& config) {
 
     std::vector<LogRecord> file_buffered;
     {
-        std::lock_guard<std::mutex> lock(s.m_config_mutex);
+        std::scoped_lock lock(s.m_config_mutex);
         s.m_platform_enabled = config.m_platform_enabled;
         s.m_console_enabled = config.m_console_enabled;
         s.m_file_enabled = config.m_file_enabled;
@@ -465,7 +465,7 @@ void set_config(const LoggerConfig& config) {
     }
 
     {
-        std::lock_guard<std::mutex> lock(s.m_file_mutex);
+        std::scoped_lock lock(s.m_file_mutex);
         const bool path_changed = (s.m_file_path != config.m_file_path);
         if (path_changed || !config.m_file_enabled) {
             if (s.m_file_stream.is_open()) { s.m_file_stream.close(); }
@@ -481,7 +481,7 @@ LoggerConfig get_config() {
     auto& s = state();
     LoggerConfig config;
     {
-        std::lock_guard<std::mutex> lock(s.m_config_mutex);
+        std::scoped_lock lock(s.m_config_mutex);
         config.m_platform_enabled = s.m_platform_enabled;
         config.m_console_enabled = s.m_console_enabled;
         config.m_file_enabled = s.m_file_enabled;
@@ -489,7 +489,7 @@ LoggerConfig get_config() {
         config.m_early_buffer_capacity = s.m_early_buffer_capacity;
     }
     {
-        std::lock_guard<std::mutex> lock(s.m_file_mutex);
+        std::scoped_lock lock(s.m_file_mutex);
         config.m_file_path = s.m_file_path;
     }
     return config;
@@ -499,11 +499,11 @@ LoggerConfig get_config() {
 // Public API -- callback
 // ---------------------------------------------------------------------------
 
-void set_callback(Callback cb) {
+void set_callback(const Callback& cb) {
     std::vector<LogRecord> buffered;
     {
         auto& s = state();
-        std::lock_guard<std::mutex> lock(s.m_config_mutex);
+        std::scoped_lock lock(s.m_config_mutex);
         s.m_callback = cb;
         buffered.swap(s.m_early_callback_buffer);
     }
@@ -513,14 +513,15 @@ void set_callback(Callback cb) {
         for (const auto& record : buffered) {
             try {
                 cb(record);
-            } catch (...) {}
+            } catch (...) {}  // NOLINT(bugprone-empty-catch) don't let one callback crash the
+                              // logger
         }
     }
 }
 
 void clear_callback() {
     auto& s = state();
-    std::lock_guard<std::mutex> lock(s.m_config_mutex);
+    std::scoped_lock lock(s.m_config_mutex);
     s.m_callback = nullptr;
 }
 

@@ -10,9 +10,11 @@
 #include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
+#include <utility>
 
 namespace thl::dsp::synth {
 
@@ -21,11 +23,20 @@ struct RingsResonatorSynthProcessor::EngineState {
     RingsStringSynthPart m_string_synth;
     thl::dsp::resonator::RingsStrummer m_strummer;
 
-    uint16_t m_reverb_buffer[thl::dsp::fx::RingsReverb::k_reverb_buffer_size] = {};
+    std::array<uint16_t, thl::dsp::fx::RingsReverb::k_reverb_buffer_size> m_reverb_buffer = {};
 
-    thl::dsp::resonator::RingsPatch m_patch{0.5f, 0.5f, 0.5f, 0.5f};
-    thl::dsp::resonator::RingsPerformanceState
-        m_performance_state{false, false, false, false, 12.0f, 48.0f, 0.0f, 0};
+    thl::dsp::resonator::RingsPatch m_patch{.m_structure = 0.5f,
+                                            .m_brightness = 0.5f,
+                                            .m_damping = 0.5f,
+                                            .m_position = 0.5f};
+    thl::dsp::resonator::RingsPerformanceState m_performance_state{.m_strum = false,
+                                                                   .m_internal_exciter = false,
+                                                                   .m_internal_strum = false,
+                                                                   .m_internal_note = false,
+                                                                   .m_tonic = 12.0f,
+                                                                   .m_note = 48.0f,
+                                                                   .m_fm = 0.0f,
+                                                                   .m_chord = 0};
 
     float m_frequency = 440.0f;
     float m_odd_even_mix = 0.5f;
@@ -51,10 +62,10 @@ struct RingsResonatorSynthProcessor::EngineState {
 
     void prepare(double sample_rate, int max_block_size) {
         m_host_sample_rate = sample_rate;
-        float sr = static_cast<float>(sample_rate);
+        auto sr = static_cast<float>(sample_rate);
 
-        m_part.prepare(m_reverb_buffer, sr);
-        m_string_synth.prepare(m_reverb_buffer, sr);
+        m_part.prepare(m_reverb_buffer.data(), sr);
+        m_string_synth.prepare(m_reverb_buffer.data(), sr);
         m_strummer.prepare(0.01f, sr / k_block_size, sr);
 
         m_latency = static_cast<int>(k_block_size);
@@ -85,15 +96,15 @@ struct RingsResonatorSynthProcessor::EngineState {
         m_part.set_model(m_model);
         m_string_synth.set_fx(static_cast<FxType>(static_cast<int>(m_model)));
 
-        float in[k_block_size];
-        std::copy(input, input + k_block_size, in);
+        std::array<float, k_block_size> in;
+        std::copy(input, input + k_block_size, in.data());
 
-        float out[k_block_size] = {};
-        float aux[k_block_size] = {};
+        std::array<float, k_block_size> out = {};
+        std::array<float, k_block_size> aux = {};
 
-        thl::dsp::audio::ConstAudioBufferView in_view(in, k_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out, k_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux, k_block_size);
+        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), k_block_size);
+        thl::dsp::audio::AudioBufferView out_view(out.data(), k_block_size);
+        thl::dsp::audio::AudioBufferView aux_view(aux.data(), k_block_size);
 
         m_strummer.process(in_view, &m_performance_state);
 
@@ -125,7 +136,7 @@ void RingsResonatorSynthProcessor::prepare(double sample_rate, int max_block_siz
     m_engine->prepare(sample_rate, max_block_size);
 }
 
-void RingsResonatorSynthProcessor::process(thl::dsp::audio::ConstAudioBufferView input,
+void RingsResonatorSynthProcessor::process(const thl::dsp::audio::ConstAudioBufferView& input,
                                            thl::dsp::audio::AudioBufferView output) {
     const float* input_ptr = input.get_read_pointer(0);
     float* output_ptr = output.get_write_pointer(0);
@@ -153,9 +164,9 @@ void RingsResonatorSynthProcessor::process(thl::dsp::audio::ConstAudioBufferView
     e.m_dry_wet = dry_wet;
     e.m_model = static_cast<resonator::ResonatorModel>(model);
 
-    static constexpr int k_poly_voices[] = {1, 2, 4};
+    static constexpr std::array<int, 3> k_poly_voices = {1, 2, 4};
     int poly_index = std::clamp(polyphony, 0, 2);
-    e.m_polyphony_voices = k_poly_voices[poly_index];
+    e.m_polyphony_voices = k_poly_voices[static_cast<size_t>(poly_index)];
 
     e.m_frequency_smoother.set_target(e.m_frequency);
     e.m_structure_smoother.set_target(e.m_patch.m_structure);
@@ -177,13 +188,13 @@ void RingsResonatorSynthProcessor::process(thl::dsp::audio::ConstAudioBufferView
     for (int i = 0; i < num_samples; ++i) { e.m_input_fifo.push_sample(0, input_ptr[i]); }
 
     while (e.m_input_fifo.get_available_samples(0) >= k_block_size) {
-        float block_input[k_block_size];
-        float block_odd[k_block_size];
-        float block_even[k_block_size];
+        std::array<float, k_block_size> block_input;
+        std::array<float, k_block_size> block_odd;
+        std::array<float, k_block_size> block_even;
 
-        for (size_t j = 0; j < k_block_size; ++j) { block_input[j] = e.m_input_fifo.pop_sample(0); }
+        for (float& j : block_input) { j = e.m_input_fifo.pop_sample(0); }
 
-        e.render_block(block_input, block_odd, block_even);
+        e.render_block(block_input.data(), block_odd.data(), block_even.data());
 
         for (size_t j = 0; j < k_block_size; ++j) {
             e.m_output_fifo_odd.push_sample(0, block_odd[j]);
@@ -210,7 +221,7 @@ void RingsResonatorSynthProcessor::process(thl::dsp::audio::ConstAudioBufferView
 
     for (int i = 0; i < num_samples; ++i) {
         float dry = 0.0f;
-        if (static_cast<int>(e.m_dry_delay_line.get_available_samples(0)) > e.m_latency) {
+        if (std::cmp_greater(e.m_dry_delay_line.get_available_samples(0), e.m_latency)) {
             dry = e.m_dry_delay_line.pop_sample(0);
         }
         output_ptr[i] = output_ptr[i] * wet_gain + dry * dry_gain;

@@ -32,9 +32,9 @@ void StateGroup::clear() {
         // Collect keys to delete from storage under mutex
         std::vector<std::string> keys_to_delete;
         {
-            std::lock_guard<std::mutex> lock(m_root_state->m_storage_mutex);
+            std::scoped_lock lock(m_root_state->m_storage_mutex);
             for (const auto& [key, record] : m_root_state->m_storage) {
-                if (key.find(full_path) == 0) { keys_to_delete.push_back(key); }
+                if (key.starts_with(full_path)) { keys_to_delete.push_back(key); }
             }
         }
 
@@ -46,7 +46,7 @@ void StateGroup::clear() {
 
         // Now safe to destroy the records from storage
         {
-            std::lock_guard<std::mutex> lock(m_root_state->m_storage_mutex);
+            std::scoped_lock lock(m_root_state->m_storage_mutex);
             for (const auto& key : keys_to_delete) { m_root_state->m_storage.erase(key); }
         }
     }
@@ -81,16 +81,14 @@ bool StateGroup::is_empty() const TANH_NONBLOCKING_FUNCTION {
 void StateGroup::add_listener(ParameterListener* listener) {
     m_listeners_rcu.update([&](ListenerData& data) {
         // Check if listener already exists
-        auto it =
-            std::find(data.m_object_listeners.begin(), data.m_object_listeners.end(), listener);
+        auto it = std::ranges::find(data.m_object_listeners, listener);
         if (it == data.m_object_listeners.end()) { data.m_object_listeners.push_back(listener); }
     });
 }
 
 void StateGroup::remove_listener(ParameterListener* listener) {
     m_listeners_rcu.update([&](ListenerData& data) {
-        auto it =
-            std::find(data.m_object_listeners.begin(), data.m_object_listeners.end(), listener);
+        auto it = std::ranges::find(data.m_object_listeners, listener);
         if (it != data.m_object_listeners.end()) { data.m_object_listeners.erase(it); }
     });
 }
@@ -137,8 +135,7 @@ void StateGroup::notify_parameter_change(std::string_view path) {
 
         // Notify all listeners
         notify_listeners(path, param, NotifyStrategies::All, nullptr, is_in_gesture);
-    } catch (const StateKeyNotFoundException&) {
-        // Parameter not found, do nothing
+    } catch (const StateKeyNotFoundException&) {  // NOLINT(bugprone-empty-catch) key may not exist
     }
 }
 
@@ -247,7 +244,7 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
     // Use a fixed-size array with a reasonable maximum depth (compliant with
     // MSVC)
     constexpr int k_max_depth = 32;  // Compile-time constant
-    std::string_view components[k_max_depth];
+    std::array<std::string_view, k_max_depth> components;
 
     if (depth > k_max_depth) {
         // Fallback for extremely deep hierarchies - just return the name
@@ -349,7 +346,7 @@ T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOC
         return group->get<T>(param_name, allow_blocking);
     };
 
-    if (!allow_blocking) {
+    if (!allow_blocking) {  // NOLINT(bugprone-branch-clone)
         return getter_fn();
     } else {
         TANH_NONBLOCKING_SCOPED_DISABLER
@@ -380,7 +377,7 @@ Parameter StateGroup::get_parameter(std::string_view path) const {
     auto [group, param_name] = resolve_path(path);
     if (group == this) {
         // Parameter in this group
-        return Parameter(this, param_name, m_root_state);
+        return {this, param_name, m_root_state};
     }
     // Parameter in a child group
     return group->get_parameter(param_name);
@@ -423,7 +420,7 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
 // Parameter setters with path support
 template <typename T>
 void StateGroup::set(std::string_view path,
-                     T value,
+                     const T& value,
                      NotifyStrategies strategy,
                      ParameterListener* source,
                      bool create) {
@@ -529,7 +526,7 @@ void StateGroup::ensure_child_groups_registered() {
 // base implementation
 template <>
 void StateGroup::set<ParameterFloat>(std::string_view path,
-                                     ParameterFloat value,
+                                     const ParameterFloat& value,
                                      NotifyStrategies strategy,
                                      ParameterListener* source,
                                      bool create) {
@@ -538,7 +535,7 @@ void StateGroup::set<ParameterFloat>(std::string_view path,
 
 template <>
 void StateGroup::set<ParameterInt>(std::string_view path,
-                                   ParameterInt value,
+                                   const ParameterInt& value,
                                    NotifyStrategies strategy,
                                    ParameterListener* source,
                                    bool create) {
@@ -547,7 +544,7 @@ void StateGroup::set<ParameterInt>(std::string_view path,
 
 template <>
 void StateGroup::set<ParameterBool>(std::string_view path,
-                                    ParameterBool value,
+                                    const ParameterBool& value,
                                     NotifyStrategies strategy,
                                     ParameterListener* source,
                                     bool create) {
@@ -556,7 +553,7 @@ void StateGroup::set<ParameterBool>(std::string_view path,
 
 template <>
 void StateGroup::set<ParameterChoice>(std::string_view path,
-                                      ParameterChoice value,
+                                      const ParameterChoice& value,
                                       NotifyStrategies strategy,
                                       ParameterListener* source,
                                       bool create) {
@@ -564,27 +561,27 @@ void StateGroup::set<ParameterChoice>(std::string_view path,
 }
 
 template void StateGroup::set(std::string_view path,
-                              const double value,
+                              const double& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
 template void StateGroup::set(std::string_view path,
-                              const float value,
+                              const float& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
 template void StateGroup::set(std::string_view path,
-                              const int value,
+                              const int& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
 template void StateGroup::set(std::string_view path,
-                              const bool value,
+                              const bool& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);
 template void StateGroup::set(std::string_view path,
-                              const std::string value,
+                              const std::string& value,
                               NotifyStrategies strategy,
                               ParameterListener* source,
                               bool create);

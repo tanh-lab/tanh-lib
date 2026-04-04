@@ -42,7 +42,7 @@ T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
         switch (m_type) {
             case ParameterType::String: {
                 // Must read string_value from record under storage mutex
-                std::lock_guard<std::mutex> lock(m_state->m_storage_mutex);
+                std::scoped_lock lock(m_state->m_storage_mutex);
                 ParameterRecord* record = nullptr;
                 m_state->m_index_rcu.read([&](const auto& idx) {
                     auto it = idx.find(m_key);
@@ -106,7 +106,7 @@ bool Parameter::is_string() const TANH_NONBLOCKING_FUNCTION {
 
 // Object-oriented parameter access - renamed to get_from_root
 Parameter State::get_from_root(std::string_view key) const {
-    return Parameter(this, key);
+    return {this, key};
 }
 
 // Parameter notification method
@@ -157,7 +157,7 @@ std::string Parameter::get_path() const {
 }
 
 std::optional<ParameterDefinition> Parameter::get_definition() const {
-    std::lock_guard<std::mutex> lock(m_state->m_storage_mutex);
+    std::scoped_lock lock(m_state->m_storage_mutex);
     ParameterRecord* record = nullptr;
     m_state->m_index_rcu.read([&](const auto& idx) {
         auto it = idx.find(m_key);

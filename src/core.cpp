@@ -2,9 +2,7 @@
 #include <stdexcept>
 #include <sstream>
 
-namespace thl {
-
-namespace core {
+namespace thl::core {
 
 std::string get_version() {
 #ifdef TANH_VERSION
@@ -14,6 +12,4 @@ std::string get_version() {
 #endif
 }
 
-}  // namespace core
-
-}  // namespace thl
+}  // namespace thl::core

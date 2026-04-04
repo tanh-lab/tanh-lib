@@ -35,7 +35,7 @@ float PitchShifter::process(float x) {
 
     const float phase_a = m_phase;
     const float phase_b = std::fmod(m_phase + 0.5f, 1.0f);
-    const float n = static_cast<float>(m_window_size);
+    const auto n = static_cast<float>(m_window_size);
 
     const float delay_a = m_pitch_up ? (1.0f - phase_a) * n : phase_a * n;
     const float delay_b = m_pitch_up ? (1.0f - phase_b) * n : phase_b * n;

@@ -29,6 +29,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
@@ -76,7 +77,7 @@ public:
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
-                 thl::dsp::audio::ConstAudioBufferView in,
+                 const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out,
                  thl::dsp::audio::AudioBufferView aux);
 
@@ -183,7 +184,7 @@ private:
     thl::dsp::fx::RingsReverb m_reverb;
     thl::dsp::utils::SoftLimiter m_limiter;
 
-    static float m_model_gains[Last];
+    static std::array<float, Last> m_model_gains;
 
     RingsVoiceManager(const RingsVoiceManager&) = delete;
     RingsVoiceManager& operator=(const RingsVoiceManager&) = delete;

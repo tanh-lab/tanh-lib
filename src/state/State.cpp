@@ -50,7 +50,7 @@ void State::reserve_temporary_string_buffers() {
 
 template <typename T>
 void State::set_in_root(std::string_view key,
-                        T value,
+                        const T& value,
                         NotifyStrategies strategy,
                         ParameterListener* source) {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> ||
@@ -83,14 +83,14 @@ void State::set_in_root(std::string_view key,
                 } else {
                     d_value = std::stod(value);
                 }
-            } catch (...) {
-                // Leave default value (0.0) if conversion fails
+            } catch (...) {  // NOLINT(bugprone-empty-catch) stod may fail on invalid input
+                             // default value (0.0) if conversion fails
             }
 
             if (record->m_type == ParameterType::String) {
                 // Only String-typed params store string_value
                 {
-                    std::lock_guard<std::mutex> lock(m_storage_mutex);
+                    std::scoped_lock lock(m_storage_mutex);
                     record->m_string_value = value;
                 }
                 // get_from_root reads atomic_double for String-typed numeric access
@@ -152,7 +152,7 @@ void State::set_in_root(std::string_view key,
     } else if (!parameter_exists) {
         // Parameter doesn't exist — create it under the storage mutex
         {
-            std::lock_guard<std::mutex> lock(m_storage_mutex);
+            std::scoped_lock lock(m_storage_mutex);
             auto new_record = std::make_unique<ParameterRecord>();
 
             if constexpr (std::is_same_v<T, double>) {
@@ -191,8 +191,7 @@ void State::set_in_root(std::string_view key,
                     } else {
                         d_value = std::stod(value);
                     }
-                } catch (...) {
-                    // Leave default value (0.0) if conversion fails
+                } catch (...) {  // NOLINT(bugprone-empty-catch) stod may fail on invalid input
                 }
                 new_record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
             }
@@ -262,7 +261,7 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
         TANH_NONBLOCKING_SCOPED_DISABLER
         switch (param_type) {
             case ParameterType::String: {
-                std::lock_guard<std::mutex> lock(m_storage_mutex);
+                std::scoped_lock lock(m_storage_mutex);
                 return record->m_string_value;
             }
             case ParameterType::Double:
@@ -310,11 +309,11 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
                                         bool include_definitions) const {
     nlohmann::json root = nlohmann::json::array();
 
-    std::lock_guard<std::mutex> lock(m_storage_mutex);
+    std::scoped_lock lock(m_storage_mutex);
     for (const auto& [key, record] : m_storage) {
         // If group_prefix is non-empty, skip keys that don't start with it
-        if (!group_prefix.empty() && (key.size() < group_prefix.size() ||
-                                      key.compare(0, group_prefix.size(), group_prefix) != 0)) {
+        if (!group_prefix.empty() &&
+            (key.size() < group_prefix.size() || !key.starts_with(group_prefix))) {
             continue;
         }
 
@@ -400,7 +399,7 @@ void State::clear() {
 
     // Now safe to destroy the records — all existing ParameterHandles are now invalid
     {
-        std::lock_guard<std::mutex> lock(m_storage_mutex);
+        std::scoped_lock lock(m_storage_mutex);
         m_storage.clear();
     }
 
@@ -503,7 +502,7 @@ void State::set_definition_in_root(std::string_view key, const ParameterDefiniti
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
-    std::lock_guard<std::mutex> lock(m_storage_mutex);
+    std::scoped_lock lock(m_storage_mutex);
     record->m_definition.emplace(def);
 }
 
@@ -515,7 +514,7 @@ std::optional<ParameterDefinition> State::get_definition_from_root(std::string_v
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
-    std::lock_guard<std::mutex> lock(m_storage_mutex);
+    std::scoped_lock lock(m_storage_mutex);
     return record->m_definition;
 }
 
@@ -559,23 +558,23 @@ void State::set_gesture(std::string_view key, bool gesture) {
 }
 
 template void State::set_in_root(std::string_view key,
-                                 const double value,
+                                 const double& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const float value,
+                                 const float& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const int value,
+                                 const int& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const bool value,
+                                 const bool& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 template void State::set_in_root(std::string_view key,
-                                 const std::string value,
+                                 const std::string& value,
                                  NotifyStrategies strategy,
                                  ParameterListener* source);
 

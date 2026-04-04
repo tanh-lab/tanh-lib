@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 namespace thl::dsp::utils {
 
 /**
@@ -33,8 +35,8 @@ private:
 
     static float process_chain(float x, const float* coeffs, State* states);
 
-    static const float k_coeffs_a[4];
-    static const float k_coeffs_b[4];
+    static const std::array<float, 4> k_coeffs_a;
+    static const std::array<float, 4> k_coeffs_b;
 
     float m_sample_rate = 48000.0f;
     float m_phase = 0.0f;

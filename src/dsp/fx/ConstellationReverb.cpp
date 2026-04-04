@@ -1,6 +1,7 @@
 #include <tanh/dsp/fx/ConstellationReverb.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
@@ -28,7 +29,7 @@ static constexpr float k_delay_mod_depth = 3.0f;
 static constexpr float k_max_size = 4.0f;
 static constexpr float k_max_predelay_ms = 200.0f;
 
-static constexpr int k_base_input_ap[4] = {142, 107, 379, 277};
+static constexpr std::array<int, 4> k_base_input_ap = {142, 107, 379, 277};
 static constexpr int k_base_ap_a1 = 672;
 static constexpr int k_base_delay_a1 = 4453;
 static constexpr int k_base_ap_a2 = 1800;
@@ -38,8 +39,8 @@ static constexpr int k_base_delay_b1 = 4217;
 static constexpr int k_base_ap_b2 = 2656;
 static constexpr int k_base_delay_b2 = 3163;
 
-static constexpr int k_base_taps_l[7] = {266, 2974, 1913, 1996, 1990, 187, 1066};
-static constexpr int k_base_taps_r[7] = {353, 3627, 1228, 2673, 2111, 335, 121};
+static constexpr std::array<int, 7> k_base_taps_l = {266, 2974, 1913, 1996, 1990, 187, 1066};
+static constexpr std::array<int, 7> k_base_taps_r = {353, 3627, 1228, 2673, 2111, 335, 121};
 
 // ── Constructor / destructor ──────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ void ConstellationReverbImpl::prepare(const double& sample_rate,
     m_sample_rate = sample_rate;
     m_sr_ratio = static_cast<float>(sample_rate) / k_original_sr;
 
-    const float sr = static_cast<float>(sample_rate);
+    const auto sr = static_cast<float>(sample_rate);
     const float pi2 = 2.0f * std::numbers::pi_v<float>;
 
     m_damping_coeff = 1.0f - get_parameter<float>(Damping);
@@ -256,11 +257,12 @@ void ConstellationReverbImpl::allocate_buffers(float predelay_ms) {
     const int brown_headroom = static_cast<int>(std::ceil(3.0f * sr)) + 4;
 
     auto tank_buf = [&](int base, int max_tap, int headroom) -> size_t {
-        return static_cast<size_t>(std::ceil(std::max(base, max_tap) * sr * k_max_size)) +
+        return static_cast<size_t>(
+                   std::ceil(static_cast<float>(std::max(base, max_tap)) * sr * k_max_size)) +
                static_cast<size_t>(headroom) + 1;
     };
     auto input_buf = [&](int base) -> size_t {
-        return static_cast<size_t>(std::ceil(base * sr)) + 1;
+        return static_cast<size_t>(std::ceil(static_cast<float>(base) * sr)) + 1;
     };
 
     for (int i = 0; i < 4; ++i) { m_input_ap[i].prepare(input_buf(k_base_input_ap[i])); }
@@ -285,7 +287,7 @@ void ConstellationReverbImpl::allocate_buffers(float predelay_ms) {
 }
 
 void ConstellationReverbImpl::prepare_oscillators() {
-    const float sr = static_cast<float>(m_sample_rate);
+    const auto sr = static_cast<float>(m_sample_rate);
     const float exc = k_mod_excursion * m_sr_ratio;
 
     m_lfo_a.prepare(k_mod_rate_a, sr, exc);

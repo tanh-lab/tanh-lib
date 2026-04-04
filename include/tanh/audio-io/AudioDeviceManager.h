@@ -1,6 +1,7 @@
 #pragma once
 #include "AudioDeviceInfo.h"
 #include "AudioIODeviceCallback.h"
+#include <tanh/core/AtomicSharedPtr.h>
 #include <tanh/core/Logger.h>
 #include <tanh/core/threading/RCU.h>
 #include <atomic>
@@ -746,7 +747,7 @@ private:
     mutable std::atomic<bool> m_capture_audio_thread_registered{false};
     mutable std::atomic<bool> m_duplex_audio_thread_registered{false};
 
-    std::shared_ptr<DeviceNotificationCallback> m_notification_callback;
+    AtomicSharedPtr<DeviceNotificationCallback> m_notification_callback;
 };
 
 }  // namespace thl

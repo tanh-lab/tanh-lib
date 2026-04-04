@@ -47,7 +47,7 @@ float DynamicDelayLine::read(size_t delay) const {
 float DynamicDelayLine::read(float delay) const {
     const auto [i, f] = split_integral_fractional(delay);
     const float a = read_at(static_cast<size_t>(i));
-    const float b = read_at(static_cast<size_t>(i + 1));
+    const float b = read_at(static_cast<size_t>(i) + 1);
     return a + (b - a) * f;
 }
 
