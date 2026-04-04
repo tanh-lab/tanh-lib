@@ -558,36 +558,36 @@ void State::set_gesture(std::string_view key, bool gesture) {
 }
 
 template TANH_API void State::set_in_root(std::string_view key,
-                                 const double& value,
-                                 NotifyStrategies strategy,
-                                 ParameterListener* source);
+                                          const double& value,
+                                          NotifyStrategies strategy,
+                                          ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
-                                 const float& value,
-                                 NotifyStrategies strategy,
-                                 ParameterListener* source);
+                                          const float& value,
+                                          NotifyStrategies strategy,
+                                          ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
-                                 const int& value,
-                                 NotifyStrategies strategy,
-                                 ParameterListener* source);
+                                          const int& value,
+                                          NotifyStrategies strategy,
+                                          ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
-                                 const bool& value,
-                                 NotifyStrategies strategy,
-                                 ParameterListener* source);
+                                          const bool& value,
+                                          NotifyStrategies strategy,
+                                          ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
-                                 const std::string& value,
-                                 NotifyStrategies strategy,
-                                 ParameterListener* source);
+                                          const std::string& value,
+                                          NotifyStrategies strategy,
+                                          ParameterListener* source);
 
 template TANH_API double State::get_from_root(std::string_view key,
-                                     bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+                                              bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template TANH_API float State::get_from_root(std::string_view key,
-                                    bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+                                             bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template TANH_API int State::get_from_root(std::string_view key,
-                                  bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+                                           bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template TANH_API bool State::get_from_root(std::string_view key,
-                                   bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
-template TANH_API std::string State::get_from_root(std::string_view key,
-                                          bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+                                            bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API std::string State::get_from_root(std::string_view key, bool allow_blocking) const
+    TANH_NONBLOCKING_FUNCTION;
 
 template TANH_API ParameterHandle<double> State::get_handle(std::string_view key) const;
 template TANH_API ParameterHandle<float> State::get_handle(std::string_view key) const;
