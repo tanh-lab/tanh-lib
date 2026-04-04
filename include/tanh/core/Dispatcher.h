@@ -5,15 +5,17 @@
 #include <unordered_map>
 #include <vector>
 
+#include "tanh/core/Exports.h"
+
 namespace thl {
 
-class DispatcherListener {
+class TANH_API DispatcherListener {
 public:
     virtual void on_dispatch(const std::string& event, const std::string& data) = 0;
     virtual ~DispatcherListener() = default;
 };
 
-class Dispatcher {
+class TANH_API Dispatcher {
 public:
     /// Register a listener for a specific event.
     void add_listener(const std::string& event, DispatcherListener* listener);

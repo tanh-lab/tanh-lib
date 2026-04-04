@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBuffer.h>
 
 #include <cstddef>
@@ -7,7 +8,7 @@
 
 namespace thl::dsp::audio {
 
-class RingBuffer {
+class TANH_API RingBuffer {
 public:
     RingBuffer() = default;
 

@@ -7,6 +7,7 @@
 #include <variant>
 #include <vector>
 
+#include <tanh/core/Exports.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
@@ -42,7 +43,7 @@ struct ProcessingConfig {
     std::vector<ResolvedTarget*> m_active_targets;
 };
 
-class ModulationMatrix {
+class TANH_API ModulationMatrix {
 public:
     explicit ModulationMatrix(thl::State& state);
     ~ModulationMatrix() = default;

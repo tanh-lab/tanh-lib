@@ -17,6 +17,7 @@
 
 #include "Parameter.h"
 #include "path_helpers.h"
+#include "tanh/core/Exports.h"
 
 namespace thl {
 
@@ -24,7 +25,7 @@ namespace thl {
  * @class StateKeyNotFoundException
  * @brief Exception thrown when a parameter key is not found in the state.
  */
-class StateKeyNotFoundException : public std::runtime_error {
+class TANH_API StateKeyNotFoundException : public std::runtime_error {
 public:
     /**
      * @brief Constructs the exception with the missing key.
@@ -47,7 +48,7 @@ private:
  * @class StateGroupNotFoundException
  * @brief Exception thrown when a state group is not found.
  */
-class StateGroupNotFoundException : public std::runtime_error {
+class TANH_API StateGroupNotFoundException : public std::runtime_error {
 public:
     /**
      * @brief Constructs the exception with the missing group name.
@@ -70,7 +71,7 @@ private:
  * real-time safe. This exception enforces explicit acknowledgment of the
  * blocking nature by requiring allow_blocking=true for such operations.
  */
-class BlockingException : public std::runtime_error {
+class TANH_API BlockingException : public std::runtime_error {
 public:
     /**
      * @brief Constructs the exception with the parameter path.
@@ -103,7 +104,7 @@ class Parameter;
  * Implement this interface to receive callbacks when parameters are modified.
  * Listeners can be registered with StateGroup::add_listener().
  */
-class ParameterListener {
+class TANH_API ParameterListener {
 public:
     /**
      * @brief Constructs a ParameterListener.
@@ -161,7 +162,7 @@ using ParameterChangeCallback = std::function<void(std::string_view path, const 
  *
  * @see State for the root state container
  */
-class StateGroup {
+class TANH_API StateGroup {
 public:
     /**
      * @brief Creates a new child group.

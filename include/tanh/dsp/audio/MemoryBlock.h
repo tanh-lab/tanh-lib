@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -27,7 +28,7 @@ public:
     ~MemoryBlock() noexcept { std::free(m_data); }
 
     MemoryBlock(const MemoryBlock& other) : m_size(other.m_size) {
-        if (m_size > 0) {
+        if (m_size > 0 && other.m_data != nullptr) {
             void* data = std::malloc(sizeof(T) * m_size);
             if (data != nullptr) {
                 m_data = static_cast<T*>(data);
@@ -44,7 +45,7 @@ public:
             std::free(m_data);
             m_data = nullptr;
             m_size = other.m_size;
-            if (m_size > 0) {
+            if (m_size > 0 && other.m_data != nullptr) {
                 void* data = std::malloc(sizeof(T) * m_size);
                 if (data != nullptr) {
                     m_data = static_cast<T*>(data);
@@ -74,8 +75,14 @@ public:
         return *this;
     }
 
-    T& operator[](size_t index) { return m_data[index]; }
-    const T& operator[](size_t index) const { return m_data[index]; }
+    T& operator[](size_t index) {
+        assert(m_data != nullptr && "MemoryBlock: subscript on null data");
+        return m_data[index];
+    }
+    const T& operator[](size_t index) const {
+        assert(m_data != nullptr && "MemoryBlock: subscript on null data");
+        return m_data[index];
+    }
 
     T* data() { return m_data; }
     const T* data() const { return m_data; }

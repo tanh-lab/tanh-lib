@@ -121,10 +121,12 @@ public:
     // -- Sample access ----------------------------------------------------
 
     T get_sample(size_t channel, size_t sample_index) const {
+        if (m_channels == nullptr) { return T{}; }
         return m_channels[channel][sample_index];
     }
 
     void set_sample(size_t channel, size_t sample_index, T value) {
+        if (m_channels == nullptr) { return; }
         m_channels[channel][sample_index] = value;
     }
 

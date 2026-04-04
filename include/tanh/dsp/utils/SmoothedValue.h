@@ -3,9 +3,11 @@
 #include <cstddef>
 #include <algorithm>
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
-class SmoothedValue {
+class TANH_API SmoothedValue {
 public:
     SmoothedValue();
 

@@ -59,6 +59,8 @@ Enforced by `.clang-tidy`:
 
 Configured in `.clang-format` (Google-based): 100-char line limit, 4-space indent, K&R braces.
 
+When running clang-tidy, use multithreading via `run-clang-tidy` (or the `-j` flag) to parallelize across translation units.
+
 ## Real-Time Safety
 
 - `process()` methods are marked `TANH_NONBLOCKING_FUNCTION` and must not allocate or block

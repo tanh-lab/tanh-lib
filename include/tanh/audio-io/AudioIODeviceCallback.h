@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 
+#include <tanh/core/Exports.h>
+
 namespace thl {
 
 /**
@@ -56,7 +58,7 @@ namespace thl {
  * @see AudioDeviceManager::addDuplexCallback()
  * @see AudioDeviceManager::removeDuplexCallback()
  */
-class AudioIODeviceCallback {
+class TANH_API AudioIODeviceCallback {
 public:
     /**
      * @brief Virtual destructor for proper cleanup of derived classes.

@@ -1,13 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <tanh/core/Exports.h>
 #include <tanh/modulation/ModulationSource.h>
 
 namespace thl::modulation {
 
 enum class LFOWaveform { Sine = 0, Triangle, Saw, Square };
 
-class LFOSourceImpl : public ModulationSource {
+class TANH_API LFOSourceImpl : public ModulationSource {
 public:
     LFOSourceImpl() = default;
     ~LFOSourceImpl() override = default;

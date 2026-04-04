@@ -5,9 +5,11 @@
 #include <string>
 #include <vector>
 
+#include <tanh/core/Exports.h>
+
 namespace thl::modulation {
 
-class ModulationSource {
+class TANH_API ModulationSource {
 public:
     virtual ~ModulationSource() = default;
 

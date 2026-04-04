@@ -1,6 +1,7 @@
 #include "tanh/state/State.h"
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+#include <tanh/core/Numbers.h>
 #include <thread>
 #include <vector>
 #include <future>
@@ -18,8 +19,8 @@ TEST(StateTests, BasicParameterOperations) {
     EXPECT_TRUE(state.is_empty());
 
     // Test setting and getting parameters of different types
-    state.set("double_param", 3.14159);
-    state.set("float_param", 2.71828f);
+    state.set("double_param", std::numbers::pi);
+    state.set("float_param", std::numbers::e_v<float>);
     state.set("int_param", 42);
     state.set("bool_param", true);
     state.set("string_param", "hello world");                // Short string falls within SSO
@@ -32,8 +33,8 @@ TEST(StateTests, BasicParameterOperations) {
     EXPECT_FALSE(state.is_empty());
 
     // Test retrieving parameters with correct types
-    EXPECT_DOUBLE_EQ(3.14159, state.get<double>("double_param"));
-    EXPECT_FLOAT_EQ(2.71828f, state.get<float>("float_param"));
+    EXPECT_DOUBLE_EQ(std::numbers::pi, state.get<double>("double_param"));
+    EXPECT_FLOAT_EQ(std::numbers::e_v<float>, state.get<float>("float_param"));
     EXPECT_EQ(42, state.get<int>("int_param"));
     EXPECT_TRUE(state.get<bool>("bool_param"));
     EXPECT_EQ("hello world", state.get<std::string>("string_param", true));
@@ -249,7 +250,7 @@ TEST(StateTests, ParameterObjectTests) {
     State state;
 
     // Set parameters of different types
-    state.set("double_param", 3.14159);
+    state.set("double_param", std::numbers::pi);
     state.set("int_param", 42);
     state.set("bool_param", true);
     state.set("string_param", "hello world");
@@ -274,7 +275,7 @@ TEST(StateTests, ParameterObjectTests) {
     EXPECT_FALSE(string_param.is_bool());
 
     // Test conversion methods
-    EXPECT_DOUBLE_EQ(3.14159, double_param.to<double>());
+    EXPECT_DOUBLE_EQ(std::numbers::pi, double_param.to<double>());
     EXPECT_EQ(42, int_param.to<int>());
     EXPECT_TRUE(bool_param.to<bool>());
     EXPECT_EQ("hello world", string_param.to<std::string>(true));  // Allow
@@ -283,7 +284,7 @@ TEST(StateTests, ParameterObjectTests) {
                                                                    // conversion
 
     // Test cross-type conversions
-    EXPECT_FLOAT_EQ(3.14159f, double_param.to<float>());
+    EXPECT_FLOAT_EQ(std::numbers::pi_v<float>, double_param.to<float>());
     EXPECT_EQ(3, double_param.to<int>());
     EXPECT_TRUE(double_param.to<bool>());
 
@@ -349,23 +350,23 @@ TEST(StateTests, CreateParameterFlag) {
 class TestParameterListener : public ParameterListener {
 public:
     void on_parameter_changed(std::string_view path, const Parameter& param) override {
-        last_path = path;
+        m_last_path = path;
 
         // Store the value based on the parameter type
         switch (param.get_type()) {
-            case ParameterType::Double: last_value_double = param.to<double>(); break;
-            case ParameterType::Float: last_value_double = param.to<float>(); break;
-            case ParameterType::Int: last_value_double = param.to<int>(); break;
-            case ParameterType::Bool: last_value_double = param.to<bool>() ? 1.0 : 0.0; break;
-            default: last_value_double = 0.0; break;
+            case ParameterType::Double: m_last_value_double = param.to<double>(); break;
+            case ParameterType::Float: m_last_value_double = param.to<float>(); break;
+            case ParameterType::Int: m_last_value_double = param.to<int>(); break;
+            case ParameterType::Bool: m_last_value_double = param.to<bool>() ? 1.0 : 0.0; break;
+            default: m_last_value_double = 0.0; break;
         }
 
-        notification_count++;
+        m_notification_count++;
     }
 
-    std::string last_path;
-    double last_value_double = 0.0;
-    int notification_count = 0;
+    std::string m_last_path;
+    double m_last_value_double = 0.0;
+    int m_notification_count = 0;
 };
 
 // Test for parameter notification functionality
@@ -380,14 +381,14 @@ TEST(StateTests, ParameterNotification) {
     state.set("test.param", 42.0);
 
     // Verify the listener was notified
-    EXPECT_EQ(1, listener.notification_count);
-    EXPECT_EQ("test.param", listener.last_path);
+    EXPECT_EQ(1, listener.m_notification_count);
+    EXPECT_EQ("test.param", listener.m_last_path);
 
     // Test optional notification - should not notify
     state.set("test.param", 84.0, NotifyStrategies::None);
 
     // Verify no additional notification occurred
-    EXPECT_EQ(1, listener.notification_count);
+    EXPECT_EQ(1, listener.m_notification_count);
 
     // But value should be updated
     EXPECT_DOUBLE_EQ(84.0, state.get<double>("test.param"));
@@ -401,26 +402,26 @@ TEST(StateTests, ParameterNotification) {
     state.set("audio.volume", 0.75);
 
     // Root listener should be notified
-    EXPECT_EQ(2, listener.notification_count);
+    EXPECT_EQ(2, listener.m_notification_count);
     // Group listener should be notified
-    EXPECT_EQ(1, group_listener.notification_count);
-    EXPECT_EQ("audio.volume", group_listener.last_path);
+    EXPECT_EQ(1, group_listener.m_notification_count);
+    EXPECT_EQ("audio.volume", group_listener.m_last_path);
 
     // Test manual notification through Parameter object
     state.set("audio.bass", 0.5, NotifyStrategies::None);  // Set without
                                                            // notification
 
     // Verify no notification occurred
-    EXPECT_EQ(2, listener.notification_count);
-    EXPECT_EQ(1, group_listener.notification_count);
+    EXPECT_EQ(2, listener.m_notification_count);
+    EXPECT_EQ(1, group_listener.m_notification_count);
 
     // Manually notify
     Parameter param = state.get_parameter("audio.bass");
     param.notify();
 
     // Verify notifications occurred
-    EXPECT_EQ(3, listener.notification_count);
-    EXPECT_EQ(2, group_listener.notification_count);
+    EXPECT_EQ(3, listener.m_notification_count);
+    EXPECT_EQ(2, group_listener.m_notification_count);
 }
 
 TEST(StateTests, CallbackBasedNotifications) {
@@ -470,22 +471,22 @@ TEST(StateTests, ManualNotification) {
     state.set("manual.test", 42.0, NotifyStrategies::None);
 
     // Verify no notification occurred
-    EXPECT_EQ(0, listener.notification_count);
+    EXPECT_EQ(0, listener.m_notification_count);
 
     // Manually notify about the parameter
     state.notify_parameter_change("manual.test");
 
     // Verify notification occurred
-    EXPECT_EQ(1, listener.notification_count);
-    EXPECT_EQ("manual.test", listener.last_path);
-    EXPECT_DOUBLE_EQ(42.0, listener.last_value_double);
+    EXPECT_EQ(1, listener.m_notification_count);
+    EXPECT_EQ("manual.test", listener.m_last_path);
+    EXPECT_DOUBLE_EQ(42.0, listener.m_last_value_double);
 
     // Test direct Parameter notify method
     Parameter param = state.get_parameter("manual.test");
     param.notify();
 
     // Verify second notification
-    EXPECT_EQ(2, listener.notification_count);
+    EXPECT_EQ(2, listener.m_notification_count);
 }
 
 // =============================================================================
@@ -828,6 +829,7 @@ TEST(StateTests, ParameterDefinitionFloat) {
     auto def = param.get_definition();
 
     ASSERT_TRUE(def.has_value());
+    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     EXPECT_EQ("Volume", def->m_name);
     EXPECT_EQ(PluginParamType::ParamFloat, def->m_type);
     EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
@@ -838,6 +840,7 @@ TEST(StateTests, ParameterDefinitionFloat) {
     EXPECT_EQ(2, def->m_decimal_places);
     EXPECT_TRUE(def->m_automation);
     EXPECT_TRUE(def->m_modulation);
+    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 // Test basic ParameterInt definition
@@ -863,6 +866,7 @@ TEST(StateTests, ParameterDefinitionInt) {
     auto def = param.get_definition();
 
     ASSERT_TRUE(def.has_value());
+    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     EXPECT_EQ("Filter Cutoff", def->m_name);
     EXPECT_EQ(PluginParamType::ParamInt, def->m_type);
     EXPECT_EQ(20, def->m_range.min_int());
@@ -872,6 +876,7 @@ TEST(StateTests, ParameterDefinitionInt) {
     EXPECT_EQ(0, def->m_decimal_places);  // Int should have 0 decimal places
     EXPECT_TRUE(def->m_automation);
     EXPECT_TRUE(def->m_modulation);
+    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 // Test basic ParameterBool definition
@@ -896,6 +901,7 @@ TEST(StateTests, ParameterDefinitionBool) {
     auto def = param.get_definition();
 
     ASSERT_TRUE(def.has_value());
+    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     EXPECT_EQ("Bypass", def->m_name);
     EXPECT_EQ(PluginParamType::ParamBool, def->m_type);
     EXPECT_EQ(0, def->m_range.min_int());
@@ -904,6 +910,7 @@ TEST(StateTests, ParameterDefinitionBool) {
     EXPECT_EQ(0, def->m_decimal_places);
     EXPECT_TRUE(def->m_automation);
     EXPECT_FALSE(def->m_modulation);
+    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 // Test basic ParameterChoice definition
@@ -1065,6 +1072,7 @@ TEST(StateTests, MultipleParameterDefinitions) {
 
     // Check specific definition properties
     auto type_def = state.get_parameter("reverb.type").get_definition();
+    ASSERT_TRUE(type_def.has_value());
     EXPECT_EQ("Room Type", type_def->m_name);
     EXPECT_EQ(4, type_def->m_data.size());
     EXPECT_EQ("Medium", type_def->m_data[1]);
@@ -1141,16 +1149,19 @@ TEST(StateTests, AutomationModulationFlags) {
 
     // Check param1
     auto def1 = state.get_parameter("param1").get_definition();
+    ASSERT_TRUE(def1.has_value());
     EXPECT_TRUE(def1->m_automation);
     EXPECT_FALSE(def1->m_modulation);
 
     // Check param2
     auto def2 = state.get_parameter("param2").get_definition();
+    ASSERT_TRUE(def2.has_value());
     EXPECT_TRUE(def2->m_automation);
     EXPECT_TRUE(def2->m_modulation);
 
     // Check param3
     auto def3 = state.get_parameter("param3").get_definition();
+    ASSERT_TRUE(def3.has_value());
     EXPECT_FALSE(def3->m_automation);
     EXPECT_FALSE(def3->m_modulation);
 }
@@ -1178,25 +1189,30 @@ TEST(StateTests, SliderPolarityFlags) {
 
     // Check unipolar float (should default to Unipolar)
     auto def1 = state.get_parameter("unipolar_float").get_definition();
+    ASSERT_TRUE(def1.has_value());
     EXPECT_EQ(SliderPolarity::Unipolar, def1->m_slider_polarity);
 
     // Check bipolar float
     auto def2 = state.get_parameter("bipolar_float").get_definition();
+    ASSERT_TRUE(def2.has_value());
     EXPECT_EQ(SliderPolarity::Bipolar, def2->m_slider_polarity);
 
     // Check bipolar int
     auto def3 = state.get_parameter("bipolar_int").get_definition();
+    ASSERT_TRUE(def3.has_value());
     EXPECT_EQ(SliderPolarity::Bipolar, def3->m_slider_polarity);
 
     // Bool parameter (should default to Unipolar)
     state.set("bool_param", ParameterBool("Bool Param", false));
     auto def4 = state.get_parameter("bool_param").get_definition();
+    ASSERT_TRUE(def4.has_value());
     EXPECT_EQ(SliderPolarity::Unipolar, def4->m_slider_polarity);
 
     // Choice parameter (should default to Unipolar)
     std::vector<std::string> choices = {"A", "B", "C"};
     state.set("choice_param", ParameterChoice("Choice Param", choices, 0));
     auto def5 = state.get_parameter("choice_param").get_definition();
+    ASSERT_TRUE(def5.has_value());
     EXPECT_EQ(SliderPolarity::Unipolar, def5->m_slider_polarity);
 }
 
@@ -1518,7 +1534,7 @@ TEST(StateTests, GetStateDumpDefaultIncludesDefinitions) {
 TEST(StateTests, GetStateDumpPreservesAllValueTypes) {
     State state;
     state.set("f", 3.14f);
-    state.set("d", 2.71828);
+    state.set("d", std::numbers::e);
     state.set("i", 42);
     state.set("b", true);
     state.set("s", std::string("hello"));
@@ -1529,12 +1545,10 @@ TEST(StateTests, GetStateDumpPreservesAllValueTypes) {
     EXPECT_EQ(5, json.size());
 
     std::map<std::string, nlohmann::json> entries;
-    for (const auto& e : json) {
-        entries[e["key"]] = e["value"];
-    }
+    for (const auto& e : json) { entries[e["key"]] = e["value"]; }
 
     EXPECT_NEAR(3.14f, entries["f"].get<float>(), 0.001f);
-    EXPECT_NEAR(2.71828, entries["d"].get<double>(), 0.00001);
+    EXPECT_NEAR(std::numbers::e, entries["d"].get<double>(), 0.00001);
     EXPECT_EQ(42, entries["i"].get<int>());
     EXPECT_TRUE(entries["b"].get<bool>());
     EXPECT_EQ("hello", entries["s"].get<std::string>());
@@ -1565,8 +1579,9 @@ TEST(StateTests, GetStateDumpRoundTrip) {
 
 TEST(StateTests, GetStateDumpDefinitionValues) {
     State state;
-    state.set("synth.freq",
-              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f, 1, true, true));
+    state.set(
+        "synth.freq",
+        ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f, 1, true, true));
 
     // With definitions: verify actual values
     auto dump_with = state.get_state_dump(true);
@@ -1602,10 +1617,15 @@ TEST(StateTests, GetStateDumpDefinitionValues) {
 
 TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
     State state;
-    state.set("synth.model",
-              ParameterChoice("Model", {"Saw", "Square", "Sine"}, 0));
+    state.set("synth.model", ParameterChoice("Model", {"Saw", "Square", "Sine"}, 0));
     state.set("synth.pan",
-              ParameterFloat("Pan", Range(0.0f, 1.0f, 0.01f), 0.5f, 2, true, true, SliderPolarity::Bipolar));
+              ParameterFloat("Pan",
+                             Range(0.0f, 1.0f, 0.01f),
+                             0.5f,
+                             2,
+                             true,
+                             true,
+                             SliderPolarity::Bipolar));
 
     auto dump = state.get_state_dump(true);
     auto json = nlohmann::json::parse(dump);
@@ -1613,7 +1633,7 @@ TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
 
     // Find entries by key
     std::map<std::string, nlohmann::json> entries;
-    for (const auto& e : json) entries[e["key"]] = e;
+    for (const auto& e : json) { entries[e["key"]] = e; }
 
     // Choice param
     const auto& model_def = entries["synth.model"]["definition"];
@@ -1689,8 +1709,7 @@ TEST(StateTests, GetGroupStateDumpEmptyPrefixReturnsAll) {
 
 TEST(StateTests, GetGroupStateDumpWithDefinitions) {
     State state;
-    state.set("synth.osc.freq",
-              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.set("synth.osc.freq", ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
     state.set("synth.osc.vol", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
     state.set("mixer.vol", ParameterFloat("Mixer Vol", Range(0.0f, 1.0f, 0.01f), 0.5f));
 
@@ -1698,9 +1717,7 @@ TEST(StateTests, GetGroupStateDumpWithDefinitions) {
     auto json = nlohmann::json::parse(dump);
 
     EXPECT_EQ(2, json.size());
-    for (const auto& entry : json) {
-        EXPECT_TRUE(entry.contains("definition"));
-    }
+    for (const auto& entry : json) { EXPECT_TRUE(entry.contains("definition")); }
 }
 
 TEST(StateTests, GetGroupStateDumpWithoutDefinitions) {
@@ -1792,7 +1809,7 @@ TEST(StateTests, HandleStoreKeepsStateInSync) {
     // Handle sees the new value
     EXPECT_DOUBLE_EQ(3.0, handle.load());
 
-    // get_from_root also reads from the same atomic — state stays in sync
+    // get_from_root also reads from the same atomic -- state stays in sync
     EXPECT_DOUBLE_EQ(3.0, state.get_from_root<double>("gain"));
 }
 
@@ -1826,7 +1843,7 @@ TEST(StateTests, HandleSurvivesOtherParameterCreation) {
     auto handle = state.get_handle<double>("param_a");
     EXPECT_DOUBLE_EQ(1.0, handle.load());
 
-    // Create many more parameters — must not invalidate handle
+    // Create many more parameters -- must not invalidate handle
     for (int i = 0; i < 100; ++i) {
         state.set("param_" + std::to_string(i), static_cast<double>(i));
     }
@@ -1937,32 +1954,32 @@ TEST(StateTests, GestureFilterSkipsListenerDuringGesture) {
     class NoGestureListener : public ParameterListener {
     public:
         NoGestureListener() : ParameterListener(/* receives_during_gesture */ false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { count++; }
-        int count = 0;
+        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        int m_count = 0;
     };
 
-    TestParameterListener always_listener;   // default: receives_during_gesture = true
+    TestParameterListener always_listener;  // default: receives_during_gesture = true
     NoGestureListener filtered_listener;
 
     state.add_listener(&always_listener);
     state.add_listener(&filtered_listener);
 
-    // Normal set — both listeners fire
+    // Normal set -- both listeners fire
     state.set("test.param", 1.0f);
-    EXPECT_EQ(1, always_listener.notification_count);
-    EXPECT_EQ(1, filtered_listener.count);
+    EXPECT_EQ(1, always_listener.m_notification_count);
+    EXPECT_EQ(1, filtered_listener.m_count);
 
-    // Begin gesture, then set — only the always-listener fires
+    // Begin gesture, then set -- only the always-listener fires
     state.set_gesture("test.param", true);
     state.set("test.param", 2.0f);
-    EXPECT_EQ(2, always_listener.notification_count);
-    EXPECT_EQ(1, filtered_listener.count);  // still 1
+    EXPECT_EQ(2, always_listener.m_notification_count);
+    EXPECT_EQ(1, filtered_listener.m_count);  // still 1
 
-    // End gesture, then set — both fire again
+    // End gesture, then set -- both fire again
     state.set_gesture("test.param", false);
     state.set("test.param", 3.0f);
-    EXPECT_EQ(3, always_listener.notification_count);
-    EXPECT_EQ(2, filtered_listener.count);
+    EXPECT_EQ(3, always_listener.m_notification_count);
+    EXPECT_EQ(2, filtered_listener.m_count);
 }
 
 TEST(StateTests, GestureFilterWithGroupListeners) {
@@ -1972,8 +1989,8 @@ TEST(StateTests, GestureFilterWithGroupListeners) {
     class NoGestureListener : public ParameterListener {
     public:
         NoGestureListener() : ParameterListener(false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { count++; }
-        int count = 0;
+        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        int m_count = 0;
     };
 
     TestParameterListener root_listener;
@@ -1983,19 +2000,19 @@ TEST(StateTests, GestureFilterWithGroupListeners) {
     group->add_listener(&group_filtered);
 
     state.set("synth.cutoff", 0.5f);
-    EXPECT_EQ(1, root_listener.notification_count);
-    EXPECT_EQ(1, group_filtered.count);
+    EXPECT_EQ(1, root_listener.m_notification_count);
+    EXPECT_EQ(1, group_filtered.m_count);
 
     // Gesture active on this parameter
     state.set_gesture("synth.cutoff", true);
     state.set("synth.cutoff", 0.8f);
-    EXPECT_EQ(2, root_listener.notification_count);
-    EXPECT_EQ(1, group_filtered.count);  // skipped
+    EXPECT_EQ(2, root_listener.m_notification_count);
+    EXPECT_EQ(1, group_filtered.m_count);  // skipped
 
     state.set_gesture("synth.cutoff", false);
     state.set("synth.cutoff", 0.3f);
-    EXPECT_EQ(3, root_listener.notification_count);
-    EXPECT_EQ(2, group_filtered.count);  // fires again
+    EXPECT_EQ(3, root_listener.m_notification_count);
+    EXPECT_EQ(2, group_filtered.m_count);  // fires again
 }
 
 TEST(StateTests, GestureFilterIsPerParameter) {
@@ -2004,8 +2021,8 @@ TEST(StateTests, GestureFilterIsPerParameter) {
     class NoGestureListener : public ParameterListener {
     public:
         NoGestureListener() : ParameterListener(false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { count++; }
-        int count = 0;
+        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        int m_count = 0;
     };
 
     NoGestureListener filtered;
@@ -2013,20 +2030,20 @@ TEST(StateTests, GestureFilterIsPerParameter) {
 
     state.set("param.a", 1.0f);
     state.set("param.b", 1.0f);
-    EXPECT_EQ(2, filtered.count);
+    EXPECT_EQ(2, filtered.m_count);
 
     // Only param.a is in gesture
     state.set_gesture("param.a", true);
 
     state.set("param.a", 2.0f);
-    EXPECT_EQ(2, filtered.count);  // skipped
+    EXPECT_EQ(2, filtered.m_count);  // skipped
 
     state.set("param.b", 2.0f);
-    EXPECT_EQ(3, filtered.count);  // not in gesture — fires
+    EXPECT_EQ(3, filtered.m_count);  // not in gesture -- fires
 
     state.set_gesture("param.a", false);
     state.set("param.a", 3.0f);
-    EXPECT_EQ(4, filtered.count);  // fires again
+    EXPECT_EQ(4, filtered.m_count);  // fires again
 }
 
 TEST(StateTests, GestureValueStillUpdatedWhenListenerSkipped) {
@@ -2035,19 +2052,19 @@ TEST(StateTests, GestureValueStillUpdatedWhenListenerSkipped) {
     class NoGestureListener : public ParameterListener {
     public:
         NoGestureListener() : ParameterListener(false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { count++; }
-        int count = 0;
+        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        int m_count = 0;
     };
 
     NoGestureListener filtered;
     state.add_listener(&filtered);
 
     state.set("vol", 0.5f);
-    EXPECT_EQ(1, filtered.count);
+    EXPECT_EQ(1, filtered.m_count);
 
     state.set_gesture("vol", true);
     state.set("vol", 0.9f);
-    EXPECT_EQ(1, filtered.count);  // notification skipped
+    EXPECT_EQ(1, filtered.m_count);  // notification skipped
 
     // But the value IS updated
     EXPECT_FLOAT_EQ(0.9f, state.get<float>("vol"));
@@ -2061,13 +2078,14 @@ TEST(StateTests, GestureValueStillUpdatedWhenListenerSkipped) {
 TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
     State state;
 
-    // Create a listener that captures the path string_view and then calls set() on another parameter
+    // Create a listener that captures the path string_view and then calls set() on another
+    // parameter
     class NestedSetListener : public ParameterListener {
     public:
-        // Each invocation records a (before, after) pair in matched_pairs
+        // Each invocation records a (before, after) pair in m_matched_pairs
         struct PathPair {
-            std::string before;
-            std::string after;
+            std::string m_before;
+            std::string m_after;
         };
 
         void on_parameter_changed(std::string_view path, const Parameter& param) override {
@@ -2080,20 +2098,20 @@ TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
 
             // Now trigger a nested set() call which might invalidate the string_view
             if (path == "trigger.param1") {
-                state_ref->set("response.param1", 100.0);
-                state_ref->set("response.param2", 200.0);
-                state_ref->set("response.param3", 300.0);
+                m_state_ref->set("response.param1", 100.0);
+                m_state_ref->set("response.param2", 200.0);
+                m_state_ref->set("response.param3", 300.0);
             } else if (path == "trigger.deeply.nested.param") {
-                state_ref->set("response.deep.level1.param", 1.0);
-                state_ref->set("response.deep.level2.param", 2.0);
-                state_ref->set("response.deep.level3.param", 3.0);
+                m_state_ref->set("response.deep.level1.param", 1.0);
+                m_state_ref->set("response.deep.level2.param", 2.0);
+                m_state_ref->set("response.deep.level3.param", 3.0);
             }
 
             // Now try to access the original string_view - this is where it might be corrupted
             std::string path_copy_after(path);
 
             // Store matched pair for this invocation
-            matched_pairs.push_back({path_copy_immediate, path_copy_after});
+            m_matched_pairs.push_back({path_copy_immediate, path_copy_after});
 
             // Verify the string_view still points to valid data
             EXPECT_EQ(path_copy_immediate, path_copy_after)
@@ -2106,23 +2124,23 @@ TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
                 << "string_view size changed during nested set() call!";
         }
 
-        State* state_ref;
-        std::vector<PathPair> matched_pairs;
+        State* m_state_ref = nullptr;
+        std::vector<PathPair> m_matched_pairs;
     };
 
     NestedSetListener listener;
-    listener.state_ref = &state;
+    listener.m_state_ref = &state;
     state.add_listener(&listener);
 
     // Test 1: Simple nested set
     state.set("trigger.param1", 42.0);
 
     // trigger.param1 + 3 response params = 4 notifications
-    ASSERT_EQ(4, listener.matched_pairs.size());
+    ASSERT_EQ(4, listener.m_matched_pairs.size());
 
     // Verify every invocation's before/after match (string_view not corrupted)
-    for (size_t i = 0; i < listener.matched_pairs.size(); ++i) {
-        EXPECT_EQ(listener.matched_pairs[i].before, listener.matched_pairs[i].after)
+    for (size_t i = 0; i < listener.m_matched_pairs.size(); ++i) {
+        EXPECT_EQ(listener.m_matched_pairs[i].m_before, listener.m_matched_pairs[i].m_after)
             << "Path mismatch at invocation " << i;
     }
 
@@ -2130,14 +2148,14 @@ TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
     state.set("trigger.deeply.nested.param", 123.0);
 
     // Previous 4 + trigger.deeply.nested.param + 3 response.deep params = 8 total
-    ASSERT_EQ(8, listener.matched_pairs.size());
+    ASSERT_EQ(8, listener.m_matched_pairs.size());
 
     // Test 3: Multiple consecutive sets that trigger nested calls
     state.set("trigger.param1", 99.0);
 
     // Verify all invocations' before/after pairs match
-    for (size_t i = 0; i < listener.matched_pairs.size(); ++i) {
-        EXPECT_EQ(listener.matched_pairs[i].before, listener.matched_pairs[i].after)
+    for (size_t i = 0; i < listener.m_matched_pairs.size(); ++i) {
+        EXPECT_EQ(listener.m_matched_pairs[i].m_before, listener.m_matched_pairs[i].m_after)
             << "Path mismatch at invocation " << i;
     }
 
@@ -2155,8 +2173,8 @@ TEST(StateTests, StringViewInvalidationInCallbackListeners) {
     State state;
 
     struct PathPair {
-        std::string before;
-        std::string after;
+        std::string m_before;
+        std::string m_after;
     };
     std::vector<PathPair> matched_pairs;
 
@@ -2178,12 +2196,10 @@ TEST(StateTests, StringViewInvalidationInCallbackListeners) {
         matched_pairs.push_back({immediate_copy, after_copy});
 
         // Verify they match
-        EXPECT_EQ(immediate_copy, after_copy)
-            << "string_view corrupted in callback listener!";
+        EXPECT_EQ(immediate_copy, after_copy) << "string_view corrupted in callback listener!";
 
         // Verify pointer hasn't changed
-        EXPECT_EQ(view_ptr, path.data())
-            << "string_view pointer changed in callback listener!";
+        EXPECT_EQ(view_ptr, path.data()) << "string_view pointer changed in callback listener!";
     });
 
     // Trigger the callback
@@ -2194,7 +2210,7 @@ TEST(StateTests, StringViewInvalidationInCallbackListeners) {
 
     // Verify all invocations' before/after pairs match
     for (size_t i = 0; i < matched_pairs.size(); ++i) {
-        EXPECT_EQ(matched_pairs[i].before, matched_pairs[i].after)
+        EXPECT_EQ(matched_pairs[i].m_before, matched_pairs[i].m_after)
             << "Path mismatch at invocation " << i;
     }
 }
@@ -2212,45 +2228,42 @@ TEST(StateTests, StringViewInvalidationWithLongPaths) {
 
             // Only trigger nested sets for the original trigger path (exact prefix match)
             // to avoid infinite recursion from response paths also matching
-            if (path.substr(0, 5) == "very.") {
-                state_ref->set(
-                    "another.very.long.hierarchical.path.level1.level2.level3.param1", 1.0);
-                state_ref->set(
-                    "another.very.long.hierarchical.path.level1.level2.level3.param2", 2.0);
-                state_ref->set(
-                    "another.very.long.hierarchical.path.level1.level2.level3.param3", 3.0);
-                state_ref->set(
-                    "yet.another.extremely.long.path.with.many.nested.groups.param", 4.0);
+            if (path.starts_with("very.")) {
+                m_state_ref->set("another.very.long.hierarchical.path.level1.level2.level3.param1",
+                                 1.0);
+                m_state_ref->set("another.very.long.hierarchical.path.level1.level2.level3.param2",
+                                 2.0);
+                m_state_ref->set("another.very.long.hierarchical.path.level1.level2.level3.param3",
+                                 3.0);
+                m_state_ref->set("yet.another.extremely.long.path.with.many.nested.groups.param",
+                                 4.0);
             }
 
             // Verify string_view is still valid
             std::string path_after(path);
-            EXPECT_EQ(path_before, path_after)
-                << "Long path string_view was corrupted!";
-            EXPECT_EQ(ptr_before, path.data())
-                << "Long path string_view pointer changed!";
-            EXPECT_EQ(size_before, path.size())
-                << "Long path string_view size changed!";
+            EXPECT_EQ(path_before, path_after) << "Long path string_view was corrupted!";
+            EXPECT_EQ(ptr_before, path.data()) << "Long path string_view pointer changed!";
+            EXPECT_EQ(size_before, path.size()) << "Long path string_view size changed!";
 
-            paths.push_back(path_before);
+            m_paths.push_back(path_before);
         }
 
-        State* state_ref;
-        std::vector<std::string> paths;
+        State* m_state_ref = nullptr;
+        std::vector<std::string> m_paths;
     };
 
     LongPathListener listener;
-    listener.state_ref = &state;
+    listener.m_state_ref = &state;
     state.add_listener(&listener);
 
     // Create a very long parameter path
     state.set("very.long.hierarchical.path.with.multiple.levels.and.groups.final.param", 99.0);
 
     // Verify the listener received notifications with valid paths
-    // (paths vector is in DFS post-order due to recursion, so check by content)
-    ASSERT_GE(listener.paths.size(), 1);
+    // (m_paths vector is in DFS post-order due to recursion, so check by content)
+    ASSERT_GE(listener.m_paths.size(), 1);
     bool found_trigger = false;
-    for (const auto& p : listener.paths) {
+    for (const auto& p : listener.m_paths) {
         if (p == "very.long.hierarchical.path.with.multiple.levels.and.groups.final.param") {
             found_trigger = true;
         }
@@ -2272,43 +2285,43 @@ TEST(StateTests, StringViewInvalidationWithListenerChain) {
 
     class ChainListener : public ParameterListener {
     public:
-        explicit ChainListener(int id) : listener_id(id) {}
+        explicit ChainListener(int id) : m_listener_id(id) {}
 
         void on_parameter_changed(std::string_view path, const Parameter& param) override {
             std::string path_copy(path);
             const char* ptr = path.data();
 
             // Each listener in the chain triggers the next
-            if (path == "chain.step1" && listener_id == 1) {
-                state_ref->set("chain.step2", 2.0);
-            } else if (path == "chain.step2" && listener_id == 2) {
-                state_ref->set("chain.step3", 3.0);
-            } else if (path == "chain.step3" && listener_id == 3) {
-                state_ref->set("chain.step4", 4.0);
+            if (path == "chain.step1" && m_listener_id == 1) {
+                m_state_ref->set("chain.step2", 2.0);
+            } else if (path == "chain.step2" && m_listener_id == 2) {
+                m_state_ref->set("chain.step3", 3.0);
+            } else if (path == "chain.step3" && m_listener_id == 3) {
+                m_state_ref->set("chain.step4", 4.0);
             }
 
             // Verify string_view is still valid after potential nested calls
             std::string path_after(path);
             EXPECT_EQ(path_copy, path_after)
-                << "string_view corrupted in listener chain at listener " << listener_id;
+                << "string_view corrupted in listener chain at listener " << m_listener_id;
             EXPECT_EQ(ptr, path.data())
-                << "string_view pointer changed in listener chain at listener " << listener_id;
+                << "string_view pointer changed in listener chain at listener " << m_listener_id;
 
-            notifications.push_back(path_copy);
+            m_notifications.push_back(path_copy);
         }
 
-        State* state_ref;
-        int listener_id;
-        std::vector<std::string> notifications;
+        State* m_state_ref{nullptr};
+        int m_listener_id;
+        std::vector<std::string> m_notifications;
     };
 
     ChainListener listener1(1);
     ChainListener listener2(2);
     ChainListener listener3(3);
 
-    listener1.state_ref = &state;
-    listener2.state_ref = &state;
-    listener3.state_ref = &state;
+    listener1.m_state_ref = &state;
+    listener2.m_state_ref = &state;
+    listener3.m_state_ref = &state;
 
     state.add_listener(&listener1);
     state.add_listener(&listener2);
@@ -2318,9 +2331,9 @@ TEST(StateTests, StringViewInvalidationWithListenerChain) {
     state.set("chain.step1", 1.0);
 
     // All listeners should have received notifications
-    EXPECT_GE(listener1.notifications.size(), 1);
-    EXPECT_GE(listener2.notifications.size(), 1);
-    EXPECT_GE(listener3.notifications.size(), 1);
+    EXPECT_GE(listener1.m_notifications.size(), 1);
+    EXPECT_GE(listener2.m_notifications.size(), 1);
+    EXPECT_GE(listener3.m_notifications.size(), 1);
 
     // Verify the chain completed
     EXPECT_DOUBLE_EQ(1.0, state.get<double>("chain.step1"));
@@ -2335,8 +2348,8 @@ TEST(StateTests, StringViewInvalidationWithListenerChain) {
 
 TEST(StateTests, ThreadSafety) {
     State state;
-    const int NUM_THREADS = 10;
-    const int NUM_OPERATIONS = 1000;
+    const int k_num_threads = 10;
+    const int k_num_operations = 1000;
 
     // Set up some initial parameters
     state.set("counter", 0);
@@ -2361,7 +2374,8 @@ TEST(StateTests, ThreadSafety) {
                    &start_flag,
                    &ready_thread_count,
                    &operations_completed,
-                   &volume_increments](int id) {
+                   &volume_increments,
+                   k_num_operations](int id) {
         // Signal that thread is ready
         ready_thread_count.fetch_add(1);
 
@@ -2375,7 +2389,7 @@ TEST(StateTests, ThreadSafety) {
         // nested group created after initial thread creation
         state.ensure_thread_registered();
 
-        for (int i = 0; i < NUM_OPERATIONS; ++i) {
+        for (int i = 0; i < k_num_operations; ++i) {
             // Atomically increment the shared operation counter
             operations_completed.fetch_add(1, std::memory_order_relaxed);
 
@@ -2404,7 +2418,7 @@ TEST(StateTests, ThreadSafety) {
     };
 
     // Function for reader threads - made real-time safe
-    auto reader = [&state, &start_flag, &ready_thread_count](int id) {
+    auto reader = [&state, &start_flag, &ready_thread_count, k_num_operations](int id) {
         // Signal that thread is ready
         ready_thread_count.fetch_add(1);
 
@@ -2418,14 +2432,14 @@ TEST(StateTests, ThreadSafety) {
         // nested group created after initial thread creation
         state.ensure_thread_registered();
 
-        for (int i = 0; i < NUM_OPERATIONS; ++i) {
+        for (int i = 0; i < k_num_operations; ++i) {
             // Read various parameters - these are real-time safe operations
-            int counter = state.get<int>("counter");
-            double volume = state.get<double>("audio.volume");
-            int test_param = state.get<int>("nested.group.param");
+            auto counter = state.get<int>("counter");
+            auto volume = state.get<double>("audio.volume");
+            auto test_param = state.get<int>("nested.group.param");
 
             // String read is not real-time safe, but is necessary for the test
-            std::string str = state.get<std::string>("string_param", true);
+            auto str = state.get<std::string>("string_param", true);
 
             // Just to avoid compiler optimization
             EXPECT_GE(counter, 0);
@@ -2449,13 +2463,13 @@ TEST(StateTests, ThreadSafety) {
     std::vector<std::future<void>> write_threads;
     std::vector<std::future<bool>> read_threads;
 
-    for (int i = 0; i < NUM_THREADS; ++i) {
+    for (int i = 0; i < k_num_threads; ++i) {
         write_threads.push_back(std::async(std::launch::async, writer, i));
         read_threads.push_back(std::async(std::launch::async, reader, i));
     }
 
     // Wait for all threads to be ready
-    while (ready_thread_count.load() < NUM_THREADS * 2) {
+    while (ready_thread_count.load() < k_num_threads * 2) {
         // Small sleep here is acceptable as it's not in the real-time path
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -2473,14 +2487,14 @@ TEST(StateTests, ThreadSafety) {
     // real-time execution
     for (auto& f : read_threads) { EXPECT_TRUE(f.get()); }
 
-    // Check final state - we should have exactly NUM_THREADS * NUM_OPERATIONS
+    // Check final state - we should have exactly k_num_threads * k_num_operations
     // operations
-    EXPECT_EQ(NUM_THREADS * NUM_OPERATIONS, operations_completed.load());
+    EXPECT_EQ(k_num_threads * k_num_operations, operations_completed.load());
 
     // Make sure the parameters match our atomic tracking variables
     EXPECT_EQ(operations_completed.load(), state.get<int>("counter"));
 
-    double expected_volume = 0.5 + (NUM_THREADS * NUM_OPERATIONS * 0.001);
+    double expected_volume = 0.5 + (k_num_threads * k_num_operations * 0.001);
     EXPECT_DOUBLE_EQ(expected_volume, state.get<double>("audio.volume"));
 
     // String parameter should have been updated multiple times, but we can't

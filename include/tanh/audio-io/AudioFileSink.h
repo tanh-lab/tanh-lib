@@ -1,5 +1,6 @@
 #pragma once
 #include "AudioIODeviceCallback.h"
+#include <tanh/core/Exports.h>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -59,7 +60,7 @@ enum class AudioEncodingFormat { WAV, FLAC };
  * @see AudioIODeviceCallback
  * @see AudioPlayerSource for the complementary playback class
  */
-class AudioFileSink : public AudioIODeviceCallback {
+class TANH_API AudioFileSink : public AudioIODeviceCallback {
 public:
     /**
      * @brief Constructs an AudioFileSink in the closed state.

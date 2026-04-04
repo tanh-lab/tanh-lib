@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <array>
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
 #include <tanh/dsp/filter/DCBlocker.h>
@@ -67,7 +68,7 @@ struct PreparedVoiceParams {
     float m_filter_q;
 };
 
-class RingsVoiceManager {
+class TANH_API RingsVoiceManager {
 public:
     RingsVoiceManager() {}
     ~RingsVoiceManager() {}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
 
 namespace thl::dsp::utils {
@@ -14,7 +15,7 @@ namespace thl::dsp::utils {
  * Also exposes tap() to read internal delay-line values for reverb
  * output tap matrices.
  */
-class DynamicAllpass {
+class TANH_API DynamicAllpass {
 public:
     DynamicAllpass();
     ~DynamicAllpass();

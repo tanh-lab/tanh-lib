@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/filter/Svf.h>
@@ -39,7 +40,7 @@ namespace thl::dsp::resonator {
 
 const int32_t k_max_modes = 64;
 
-class RingsModalResonator {
+class TANH_API RingsModalResonator {
 public:
     RingsModalResonator() {}
     ~RingsModalResonator() {}

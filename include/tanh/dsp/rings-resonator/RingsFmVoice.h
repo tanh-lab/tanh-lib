@@ -30,6 +30,7 @@
 
 #include <algorithm>
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 
@@ -42,7 +43,7 @@ namespace thl::dsp::synth {
 
 using namespace thl::dsp::utils;
 
-class RingsFmVoice {
+class TANH_API RingsFmVoice {
 public:
     RingsFmVoice() {}
     ~RingsFmVoice() {}

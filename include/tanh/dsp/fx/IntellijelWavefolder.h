@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 
 namespace thl::dsp::fx {
@@ -20,7 +21,7 @@ namespace thl::dsp::fx {
  *   Symmetry  – DC offset before folding [-1, 1]; adds even harmonics
  *   JfetTone  – blend of JFET soft saturation [0 = clean, 1 = full]
  */
-class IntellijelWavefolderImpl : public thl::dsp::BaseProcessor {
+class TANH_API IntellijelWavefolderImpl : public thl::dsp::BaseProcessor {
 public:
     IntellijelWavefolderImpl();
     ~IntellijelWavefolderImpl() override;

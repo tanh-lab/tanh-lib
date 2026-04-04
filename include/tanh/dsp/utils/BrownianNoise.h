@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
+
 namespace thl::dsp::utils {
 
 /**
@@ -15,7 +17,7 @@ namespace thl::dsp::utils {
  *   rate     – impulse rate in Hz (controls how fast the value wanders)
  *   momentum – spring/damping strength [0, 1] (higher = stronger mean reversion)
  */
-class BrownianNoise {
+class TANH_API BrownianNoise {
 public:
     BrownianNoise();
 

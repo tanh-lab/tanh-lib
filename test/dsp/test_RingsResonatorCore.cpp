@@ -61,8 +61,8 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     std::array<float, thl::dsp::resonator::k_max_block_size> aux{};
 
     for (int block = 0; block < 8; ++block) {
-        std::fill(out.begin(), out.end(), 0.0f);
-        std::fill(aux.begin(), aux.end(), 0.0f);
+        std::ranges::fill(out, 0.0f);
+        std::ranges::fill(aux, 0.0f);
         thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
                                                       thl::dsp::resonator::k_max_block_size);
         thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
@@ -92,8 +92,8 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     std::array<float, thl::dsp::resonator::k_max_block_size> aux{};
 
     for (int block = 0; block < 4; ++block) {
-        std::fill(out.begin(), out.end(), 0.0f);
-        std::fill(aux.begin(), aux.end(), 0.0f);
+        std::ranges::fill(out, 0.0f);
+        std::ranges::fill(aux, 0.0f);
         thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
                                                        thl::dsp::resonator::k_max_block_size);
         thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
@@ -115,8 +115,8 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     float energy = 0.0f;
     for (int block = 0; block < 12; ++block) {
         if (block > 0) {
-            std::fill(out.begin(), out.end(), 0.0f);
-            std::fill(aux.begin(), aux.end(), 0.0f);
+            std::ranges::fill(out, 0.0f);
+            std::ranges::fill(aux, 0.0f);
             thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
                                                            thl::dsp::resonator::k_max_block_size);
             thl::dsp::audio::AudioBufferView out_view(out.data(),
@@ -126,7 +126,7 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
             part.process(state, patch, sil_view, out_view, aux_view);
         }
         for (size_t i = 0; i < thl::dsp::resonator::k_max_block_size; ++i) {
-            max_abs = std::max(max_abs, std::max(std::abs(out[i]), std::abs(aux[i])));
+            max_abs = std::max({max_abs, std::abs(out[i]), std::abs(aux[i])});
             energy += out[i] * out[i] + aux[i] * aux[i];
             ASSERT_TRUE(std::isfinite(out[i]));
             ASSERT_TRUE(std::isfinite(aux[i]));

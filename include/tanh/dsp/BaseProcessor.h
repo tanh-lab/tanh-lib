@@ -2,13 +2,14 @@
 
 #include <cstdint>
 #include <span>
+#include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl {
 namespace dsp {
 
-class BaseProcessor {
+class TANH_API BaseProcessor {
 public:
     virtual ~BaseProcessor() = default;
 

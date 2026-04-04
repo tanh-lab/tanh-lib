@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <array>
+
 #include "tanh/dsp/audio/RingBuffer.h"
 
 using namespace thl::dsp::audio;
@@ -35,9 +37,7 @@ TEST(RingBuffer, PushPopSingle) {
 TEST(RingBuffer, WrapAround) {
     RingBuffer rb;
     rb.initialise_with_positions(1, 4);
-    for (int i = 0; i < 4; ++i) {
-        rb.push_sample(0, static_cast<float>(i));
-    }
+    for (int i = 0; i < 4; ++i) { rb.push_sample(0, static_cast<float>(i)); }
     EXPECT_EQ(rb.get_available_samples(0), 4u);
     EXPECT_FLOAT_EQ(rb.pop_sample(0), 0.0f);
     EXPECT_FLOAT_EQ(rb.pop_sample(0), 1.0f);
@@ -53,11 +53,11 @@ TEST(RingBuffer, WrapAround) {
 TEST(RingBuffer, PushPopBlock) {
     RingBuffer rb;
     rb.initialise_with_positions(1, 16);
-    float in[4] = {1.0f, 2.0f, 3.0f, 4.0f};
-    rb.push_block(0, in, 4);
+    std::array<float, 4> in = {1.0f, 2.0f, 3.0f, 4.0f};
+    rb.push_block(0, in.data(), 4);
     EXPECT_EQ(rb.get_available_samples(0), 4u);
-    float out[4] = {};
-    rb.pop_block(0, out, 4);
+    std::array<float, 4> out = {};
+    rb.pop_block(0, out.data(), 4);
     EXPECT_FLOAT_EQ(out[0], 1.0f);
     EXPECT_FLOAT_EQ(out[3], 4.0f);
     EXPECT_EQ(rb.get_available_samples(0), 0u);
@@ -66,12 +66,12 @@ TEST(RingBuffer, PushPopBlock) {
 TEST(RingBuffer, PushBlockWrapAround) {
     RingBuffer rb;
     rb.initialise_with_positions(1, 4);
-    float in1[3] = {1, 2, 3};
-    rb.push_block(0, in1, 3);
+    std::array<float, 3> in1 = {1, 2, 3};
+    rb.push_block(0, in1.data(), 3);
     rb.pop_sample(0);
     rb.pop_sample(0);
-    float in2[3] = {10, 11, 12};
-    rb.push_block(0, in2, 3);
+    std::array<float, 3> in2 = {10, 11, 12};
+    rb.push_block(0, in2.data(), 3);
     EXPECT_EQ(rb.get_available_samples(0), 4u);
     EXPECT_FLOAT_EQ(rb.pop_sample(0), 3.0f);
     EXPECT_FLOAT_EQ(rb.pop_sample(0), 10.0f);
@@ -82,15 +82,13 @@ TEST(RingBuffer, PushBlockWrapAround) {
 TEST(RingBuffer, PopBlockWrapAround) {
     RingBuffer rb;
     rb.initialise_with_positions(1, 4);
-    for (int i = 0; i < 4; ++i) {
-        rb.push_sample(0, static_cast<float>(i));
-    }
+    for (int i = 0; i < 4; ++i) { rb.push_sample(0, static_cast<float>(i)); }
     rb.pop_sample(0);
     rb.pop_sample(0);
     rb.push_sample(0, 10.0f);
     rb.push_sample(0, 11.0f);
-    float out[4] = {};
-    rb.pop_block(0, out, 4);
+    std::array<float, 4> out = {};
+    rb.pop_block(0, out.data(), 4);
     EXPECT_FLOAT_EQ(out[0], 2.0f);
     EXPECT_FLOAT_EQ(out[1], 3.0f);
     EXPECT_FLOAT_EQ(out[2], 10.0f);

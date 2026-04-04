@@ -7,6 +7,7 @@
 
 #include "ParameterDefinitions.h"
 #include "path_helpers.h"
+#include "tanh/core/Exports.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl {
@@ -172,7 +173,7 @@ struct ParameterRecord {
  * @see State for the root state container
  * @see StateGroup for hierarchical parameter organization
  */
-class Parameter {
+class TANH_API Parameter {
 public:
     /**
      * @brief Converts the parameter value to the specified type.

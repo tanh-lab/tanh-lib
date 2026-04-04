@@ -2,6 +2,7 @@
 
 #include <array>
 
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/BrownianNoise.h>
 #include <tanh/dsp/utils/DynamicAllpass.h>
@@ -49,7 +50,7 @@ enum class ConstellationReverbChannelMode : int {
  *   FreqShiftModDepth  – brownian freq-mod depth in Hz
  *   ChannelModeParam   – ConstellationReverbChannelMode (int)
  */
-class ConstellationReverbImpl : public thl::dsp::BaseProcessor {
+class TANH_API ConstellationReverbImpl : public thl::dsp::BaseProcessor {
 public:
     ConstellationReverbImpl();
     ~ConstellationReverbImpl() override;
