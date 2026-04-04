@@ -6,7 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cmath>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 #include <vector>
 
 namespace rings = thl::dsp::resonator;

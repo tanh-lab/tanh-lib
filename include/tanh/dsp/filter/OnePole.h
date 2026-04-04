@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cmath>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 
 #include <tanh/dsp/DspTypes.h>
 

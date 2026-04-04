@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 
 using namespace thl::dsp::synth;
 

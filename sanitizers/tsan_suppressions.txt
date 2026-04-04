@@ -1,0 +1,3 @@
+# Suppress heap-use-after-free in miniaudio's resource manager.
+# This is a known issue in miniaudio 0.11.x and not in our code.
+race:ma_resource_manager_data_buffer_node_acquire
