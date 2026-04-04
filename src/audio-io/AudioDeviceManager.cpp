@@ -139,8 +139,8 @@ ma_bool32 enum_callback(ma_context* /*pContext*/,
 uint32_t AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(uint32_t buffer_size_in_frames,
                                                                    uint32_t sample_rate) {
     if (sample_rate == 0) { return buffer_size_in_frames; }
-    uint32_t max_frames = static_cast<uint32_t>(static_cast<float>(sample_rate) *
-                                                k_max_bluetooth_io_buffer_duration_seconds);
+    auto max_frames = static_cast<uint32_t>(static_cast<float>(sample_rate) *
+                                            k_max_bluetooth_io_buffer_duration_seconds);
     if (max_frames == 0) { max_frames = 1; }
     return (buffer_size_in_frames > max_frames) ? max_frames : buffer_size_in_frames;
 }
@@ -195,9 +195,7 @@ void AudioDeviceManager::populate_sample_rates(std::vector<AudioDeviceInfo>& dev
             for (ma_uint32 i = 0; i < device_info.nativeDataFormatCount; i++) {
                 uint32_t rate = device_info.nativeDataFormats[i].sampleRate;
                 if (rate > 0) {
-                    if (std::find(rates.begin(), rates.end(), rate) == rates.end()) {
-                        rates.push_back(rate);
-                    }
+                    if (std::ranges::find(rates, rate) == rates.end()) { rates.push_back(rate); }
                 }
             }
         }
@@ -214,7 +212,7 @@ void AudioDeviceManager::populate_sample_rates(std::vector<AudioDeviceInfo>& dev
             rates = k_default_sample_rates;
         }
 
-        std::sort(rates.begin(), rates.end());
+        std::ranges::sort(rates);
         info.m_sample_rates = std::move(rates);
     }
 }
@@ -239,7 +237,7 @@ std::vector<AudioDeviceInfo> AudioDeviceManager::enumerate_devices(DeviceType ty
 #endif
 
     std::vector<AudioDeviceInfo> devices;
-    EnumUserData user_data{&devices, to_ma_device_type(type)};
+    EnumUserData user_data{.m_devices = &devices, .m_target_type = to_ma_device_type(type)};
     ma_context_enumerate_devices(const_cast<ma_context*>(&m_impl->m_context),
                                  enum_callback,
                                  &user_data);
@@ -958,7 +956,7 @@ void AudioDeviceManager::remove_duplex_callback(AudioIODeviceCallback* callback)
 void AudioDeviceManager::set_device_notification_callback(DeviceNotificationCallback callback) {
     auto ptr =
         callback ? std::make_shared<DeviceNotificationCallback>(std::move(callback)) : nullptr;
-    std::atomic_store_explicit(&m_notification_callback, std::move(ptr), std::memory_order_release);
+    atomic_store(m_notification_callback, std::move(ptr));
 }
 
 void AudioDeviceManager::set_log_callback(LogCallback callback) {
@@ -1471,7 +1469,7 @@ void AudioDeviceManager::process_callbacks(DeviceRole role,
 
     // Zero output so callbacks can additively mix.
     if (output && output_channels > 0) {
-        std::memset(output, 0, frame_count * output_channels * sizeof(float));
+        std::memset(output, 0, static_cast<size_t>(frame_count) * output_channels * sizeof(float));
     }
 
     float* safe_output = output_channels > 0 ? output : nullptr;
@@ -1486,8 +1484,10 @@ void AudioDeviceManager::process_callbacks(DeviceRole role,
         uint32_t chunk =
             (max_chunk_size > 0) ? std::min(frames_remaining, max_chunk_size) : frames_remaining;
 
-        float* chunk_out = safe_output ? safe_output + offset * output_channels : nullptr;
-        const float* chunk_in = safe_input ? safe_input + offset * input_channels : nullptr;
+        float* chunk_out =
+            safe_output ? safe_output + static_cast<size_t>(offset) * output_channels : nullptr;
+        const float* chunk_in =
+            safe_input ? safe_input + static_cast<size_t>(offset) * input_channels : nullptr;
 
         callbacks->read([&](const auto& list) {
             for (auto* cb : list) {
@@ -1520,8 +1520,7 @@ void AudioDeviceManager::notification_callback(const void* p_notification_void) 
     auto* user_data = static_cast<DeviceUserData*>(p_notification->pDevice->pUserData);
     if (!user_data || !user_data->m_manager) { return; }
 
-    auto cb = std::atomic_load_explicit(&user_data->m_manager->m_notification_callback,
-                                        std::memory_order_acquire);
+    auto cb = atomic_load(user_data->m_manager->m_notification_callback);
     if (cb) { (*cb)(to_notification_type(p_notification->type)); }
 }
 

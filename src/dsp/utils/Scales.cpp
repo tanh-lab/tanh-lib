@@ -21,6 +21,7 @@ std::string note_number_to_note_name(int note_number) {
         case 9: note_name = "A"; break;
         case 10: note_name = "A#"; break;
         case 11: note_name = "B"; break;
+        default: note_name = ""; break;
     }
     return note_name;
 }

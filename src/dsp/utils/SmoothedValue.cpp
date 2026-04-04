@@ -2,14 +2,7 @@
 
 namespace thl::dsp::utils {
 
-SmoothedValue::SmoothedValue()
-    : m_current_value(0.0f)
-    , m_target_value(0.0f)
-    , m_step(0.0f)
-    , m_time_in_samples(0)
-    , m_samples_remaining(0)
-    , m_sample_rate(48000.0)
-    , m_smoothing_type(Linear) {}
+SmoothedValue::SmoothedValue() : m_smoothing_type(Linear) {}
 
 void SmoothedValue::reset(double sample_rate,
                           double time_in_seconds,

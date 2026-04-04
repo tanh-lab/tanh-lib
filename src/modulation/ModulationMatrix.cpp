@@ -14,7 +14,7 @@ ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {
 }
 
 SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key) {
-    std::lock_guard<std::mutex> lock(m_writer_mutex);
+    std::scoped_lock lock(m_writer_mutex);
 
     // Throws StateKeyNotFoundException if parameter doesn't exist
     auto handle = m_state.get_handle<float>(param_key);
@@ -27,7 +27,7 @@ SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key)
     }
 
     auto* target = ensure_target_locked(param_key);
-    return SmartHandle(handle, target);
+    return {handle, target};
 }
 
 ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id) {
@@ -41,7 +41,7 @@ ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id
 }
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
-    std::lock_guard<std::mutex> lock(m_writer_mutex);
+    std::scoped_lock lock(m_writer_mutex);
 
     m_sample_rate = sample_rate;
     m_samples_per_block = samples_per_block;
@@ -73,7 +73,7 @@ void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
 }
 
 void ModulationMatrix::add_source(const std::string_view id, ModulationSource* source) {
-    std::lock_guard<std::mutex> lock(m_writer_mutex);
+    std::scoped_lock lock(m_writer_mutex);
     auto it = m_sources.find(id);
     if (it != m_sources.end()) {
         it->second = source;
@@ -85,15 +85,11 @@ void ModulationMatrix::add_source(const std::string_view id, ModulationSource* s
 }
 
 void ModulationMatrix::remove_source(const std::string_view id) {
-    std::lock_guard<std::mutex> lock(m_writer_mutex);
+    std::scoped_lock lock(m_writer_mutex);
     m_sources.erase(std::string(id));
 
     // Remove user-facing routings that reference this source.
-    m_user_routings.erase(
-        std::remove_if(m_user_routings.begin(),
-                       m_user_routings.end(),
-                       [&](const ModulationRouting& r) { return r.m_source_id == id; }),
-        m_user_routings.end());
+    std::erase_if(m_user_routings, [&](const ModulationRouting& r) { return r.m_source_id == id; });
 
     rebuild_schedule_locked();
     // Block until all RT readers have finished with the old config that still
@@ -103,21 +99,17 @@ void ModulationMatrix::remove_source(const std::string_view id) {
 }
 
 void ModulationMatrix::add_routing(const ModulationRouting& routing) {
-    std::lock_guard<std::mutex> lock(m_writer_mutex);
+    std::scoped_lock lock(m_writer_mutex);
     m_user_routings.push_back(routing);
     rebuild_schedule_locked();
 }
 
 void ModulationMatrix::remove_routing(const std::string_view source_id,
                                       const std::string_view target_id) {
-    std::lock_guard<std::mutex> lock(m_writer_mutex);
-    m_user_routings.erase(std::remove_if(m_user_routings.begin(),
-                                         m_user_routings.end(),
-                                         [&](const ModulationRouting& r) {
-                                             return r.m_source_id == source_id &&
-                                                    r.m_target_id == target_id;
-                                         }),
-                          m_user_routings.end());
+    std::scoped_lock lock(m_writer_mutex);
+    std::erase_if(m_user_routings, [&](const ModulationRouting& r) {
+        return r.m_source_id == source_id && r.m_target_id == target_id;
+    });
     rebuild_schedule_locked();
 }
 
@@ -134,7 +126,7 @@ ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) {
 // ── Schedule rebuild (Tarjan SCC + topological sort) ──────────────────────────
 
 void ModulationMatrix::rebuild_schedule() {
-    std::lock_guard<std::mutex> lock(m_writer_mutex);
+    std::scoped_lock lock(m_writer_mutex);
     rebuild_schedule_locked();
 }
 
@@ -232,7 +224,7 @@ void ModulationMatrix::build_schedule_from_graph(
     std::stack<std::string> stack;
     std::vector<std::vector<std::string>> sccs;
 
-    std::function<void(const std::string)> strongconnect = [&](const std::string v) {
+    std::function<void(const std::string&)> strongconnect = [&](const std::string& v) {
         index[v] = index_counter;
         lowlink[v] = index_counter;
         ++index_counter;
@@ -277,7 +269,7 @@ void ModulationMatrix::build_schedule_from_graph(
 
         if (scc.size() == 1 && !self_loop) {
             auto src_it = m_sources.find(scc[0]);
-            if (src_it != m_sources.end()) { out_schedule.push_back(BulkStep{src_it->second}); }
+            if (src_it != m_sources.end()) { out_schedule.emplace_back(BulkStep{src_it->second}); }
         } else {
             CyclicStep step;
             step.m_sources.reserve(scc.size());
@@ -285,7 +277,7 @@ void ModulationMatrix::build_schedule_from_graph(
                 auto src_it = m_sources.find(id);
                 if (src_it != m_sources.end()) { step.m_sources.push_back(src_it->second); }
             }
-            out_schedule.push_back(std::move(step));
+            out_schedule.emplace_back(std::move(step));
         }
     }
 }

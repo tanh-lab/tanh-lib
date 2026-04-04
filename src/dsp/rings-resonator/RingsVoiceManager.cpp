@@ -28,6 +28,8 @@
 
 #include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
 
+#include <array>
+
 #include <tanh/dsp/utils/DspMath.h>
 
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
@@ -87,7 +89,8 @@ void RingsVoiceManager::configure_resonators() {
         case String:
         case SympatheticStringQuantized:
         case StringAndReverb: {
-            float lfo_frequencies[k_num_strings] = {0.5f, 0.4f, 0.35f, 0.23f, 0.211f, 0.2f, 0.171f};
+            std::array<float, k_num_strings> lfo_frequencies =
+                {0.5f, 0.4f, 0.35f, 0.23f, 0.211f, 0.2f, 0.171f};
             for (int32_t i = 0; i < k_num_strings; ++i) {
                 bool has_dispersion = m_model == String || m_model == StringAndReverb;
                 m_string[i].prepare(has_dispersion, m_sample_rate);
@@ -113,8 +116,8 @@ void RingsVoiceManager::configure_resonators() {
 #ifdef BRYAN_CHORDS
 
 // Chord table by Bryan Noll:
-float chords[k_max_polyphony][11][8] = {
-    {
+std::array<std::array<std::array<float, 8>, 11>, k_max_polyphony> chords = {{
+    {{
         {-12.0f, -0.01f, 0.0f, 0.01f, 0.02f, 11.98f, 11.99f, 12.0f},  // OCT
         {-12.0f, -5.0f, 0.0f, 6.99f, 7.0f, 11.99f, 12.0f, 19.0f},     // 5
         {-12.0f, -5.0f, 0.0f, 5.0f, 7.0f, 11.99f, 12.0f, 17.0f},      // sus4
@@ -125,9 +128,9 @@ float chords[k_max_polyphony][11][8] = {
         {-12.0f, -5.0f, 0.0f, 2.0f, 7.0f, 9.0f, 16.0f, 19.0f},        // 69
         {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.0f, 14.0f, 19.0f},       // M9
         {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.0f, 10.99f, 19.0f},      // M7
-        {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.99f, 12.0f, 19.0f}       // M
-    },
-    {
+        {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.99f, 12.0f, 19.0f},      // M
+    }},
+    {{
         {-12.0f, 0.0f, 0.01f, 12.0f},   // OCT
         {-12.0f, 6.99f, 7.0f, 12.0f},   // 5
         {-12.0f, 5.0f, 7.0f, 12.0f},    // sus4
@@ -139,79 +142,92 @@ float chords[k_max_polyphony][11][8] = {
         {-12.0f, 4.0f, 11.0f, 14.0f},   // M9
         {-12.0f, 4.0f, 7.0f, 11.0f},    // M7
         {-12.0f, 4.0f, 7.0f, 12.0f},    // M
-    },
-    {{0.0f, -12.0f},
-     {0.0f, 2.0f},
-     {0.0f, 3.0f},
-     {0.0f, 4.0f},
-     {0.0f, 5.0f},
-     {0.0f, 7.0f},
-     {0.0f, 9.0f},
-     {0.0f, 10.0f},
-     {0.0f, 11.0f},
-     {0.0f, 12.0f},
-     {-12.0f, 12.0f}},
-    {{0.0f, -12.0f},
-     {0.0f, 2.0f},
-     {0.0f, 3.0f},
-     {0.0f, 4.0f},
-     {0.0f, 5.0f},
-     {0.0f, 7.0f},
-     {0.0f, 9.0f},
-     {0.0f, 10.0f},
-     {0.0f, 11.0f},
-     {0.0f, 12.0f},
-     {-12.0f, 12.0f}}};
+    }},
+    {{
+        {0.0f, -12.0f},
+        {0.0f, 2.0f},
+        {0.0f, 3.0f},
+        {0.0f, 4.0f},
+        {0.0f, 5.0f},
+        {0.0f, 7.0f},
+        {0.0f, 9.0f},
+        {0.0f, 10.0f},
+        {0.0f, 11.0f},
+        {0.0f, 12.0f},
+        {-12.0f, 12.0f},
+    }},
+    {{
+        {0.0f, -12.0f},
+        {0.0f, 2.0f},
+        {0.0f, 3.0f},
+        {0.0f, 4.0f},
+        {0.0f, 5.0f},
+        {0.0f, 7.0f},
+        {0.0f, 9.0f},
+        {0.0f, 10.0f},
+        {0.0f, 11.0f},
+        {0.0f, 12.0f},
+        {-12.0f, 12.0f},
+    }},
+}};
 
 #else
 
 // Original chord table
-float chords[k_max_polyphony][11][8] = {{{-12.0f, 0.0f, 0.01f, 0.02f, 0.03f, 11.98f, 11.99f, 12.0f},
-                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 9.99f, 10.0f, 19.0f},
-                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 11.99f, 12.0f, 19.0f},
-                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 13.99f, 14.0f, 19.0f},
-                                         {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 16.99f, 17.0f, 19.0f},
-                                         {-12.0f, 0.0f, 6.98f, 6.99f, 7.0f, 12.00f, 18.99f, 19.0f},
-                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 16.99f, 17.0f, 19.0f},
-                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 13.99f, 14.0f, 19.0f},
-                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 11.99f, 12.0f, 19.0f},
-                                         {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 10.99f, 11.0f, 19.0f},
-                                         {-12.0f, 0.0f, 4.99f, 5.0f, 7.0f, 11.99f, 12.0f, 17.0f}},
-                                        {
-                                            {-12.0f, 0.0f, 0.01f, 12.0f},
-                                            {-12.0f, 3.0f, 7.0f, 10.0f},
-                                            {-12.0f, 3.0f, 7.0f, 12.0f},
-                                            {-12.0f, 3.0f, 7.0f, 14.0f},
-                                            {-12.0f, 3.0f, 7.0f, 17.0f},
-                                            {-12.0f, 7.0f, 12.0f, 19.0f},
-                                            {-12.0f, 4.0f, 7.0f, 17.0f},
-                                            {-12.0f, 4.0f, 7.0f, 14.0f},
-                                            {-12.0f, 4.0f, 7.0f, 12.0f},
-                                            {-12.0f, 4.0f, 7.0f, 11.0f},
-                                            {-12.0f, 5.0f, 7.0f, 12.0f},
-                                        },
-                                        {{0.0f, -12.0f},
-                                         {0.0f, 0.01f},
-                                         {0.0f, 2.0f},
-                                         {0.0f, 3.0f},
-                                         {0.0f, 4.0f},
-                                         {0.0f, 5.0f},
-                                         {0.0f, 7.0f},
-                                         {0.0f, 10.0f},
-                                         {0.0f, 11.0f},
-                                         {0.0f, 12.0f},
-                                         {-12.0f, 12.0f}},
-                                        {{0.0f, -12.0f},
-                                         {0.0f, 0.01f},
-                                         {0.0f, 2.0f},
-                                         {0.0f, 3.0f},
-                                         {0.0f, 4.0f},
-                                         {0.0f, 5.0f},
-                                         {0.0f, 7.0f},
-                                         {0.0f, 10.0f},
-                                         {0.0f, 11.0f},
-                                         {0.0f, 12.0f},
-                                         {-12.0f, 12.0f}}};
+std::array<std::array<std::array<float, 8>, 11>, k_max_polyphony> chords = {{
+    {{
+        {-12.0f, 0.0f, 0.01f, 0.02f, 0.03f, 11.98f, 11.99f, 12.0f},
+        {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 9.99f, 10.0f, 19.0f},
+        {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 11.99f, 12.0f, 19.0f},
+        {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 13.99f, 14.0f, 19.0f},
+        {-12.0f, 0.0f, 3.0f, 3.01f, 7.0f, 16.99f, 17.0f, 19.0f},
+        {-12.0f, 0.0f, 6.98f, 6.99f, 7.0f, 12.00f, 18.99f, 19.0f},
+        {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 16.99f, 17.0f, 19.0f},
+        {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 13.99f, 14.0f, 19.0f},
+        {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 11.99f, 12.0f, 19.0f},
+        {-12.0f, 0.0f, 3.99f, 4.0f, 7.0f, 10.99f, 11.0f, 19.0f},
+        {-12.0f, 0.0f, 4.99f, 5.0f, 7.0f, 11.99f, 12.0f, 17.0f},
+    }},
+    {{
+        {-12.0f, 0.0f, 0.01f, 12.0f},
+        {-12.0f, 3.0f, 7.0f, 10.0f},
+        {-12.0f, 3.0f, 7.0f, 12.0f},
+        {-12.0f, 3.0f, 7.0f, 14.0f},
+        {-12.0f, 3.0f, 7.0f, 17.0f},
+        {-12.0f, 7.0f, 12.0f, 19.0f},
+        {-12.0f, 4.0f, 7.0f, 17.0f},
+        {-12.0f, 4.0f, 7.0f, 14.0f},
+        {-12.0f, 4.0f, 7.0f, 12.0f},
+        {-12.0f, 4.0f, 7.0f, 11.0f},
+        {-12.0f, 5.0f, 7.0f, 12.0f},
+    }},
+    {{
+        {0.0f, -12.0f},
+        {0.0f, 0.01f},
+        {0.0f, 2.0f},
+        {0.0f, 3.0f},
+        {0.0f, 4.0f},
+        {0.0f, 5.0f},
+        {0.0f, 7.0f},
+        {0.0f, 10.0f},
+        {0.0f, 11.0f},
+        {0.0f, 12.0f},
+        {-12.0f, 12.0f},
+    }},
+    {{
+        {0.0f, -12.0f},
+        {0.0f, 0.01f},
+        {0.0f, 2.0f},
+        {0.0f, 3.0f},
+        {0.0f, 4.0f},
+        {0.0f, 5.0f},
+        {0.0f, 7.0f},
+        {0.0f, 10.0f},
+        {0.0f, 11.0f},
+        {0.0f, 12.0f},
+        {-12.0f, 12.0f},
+    }},
+}};
 
 #endif  // BRYAN_CHORDS
 
@@ -220,21 +236,21 @@ void RingsVoiceManager::compute_sympathetic_strings_notes(float tonic,
                                                           float parameter,
                                                           float* destination,
                                                           size_t num_strings) {
-    float notes[9] = {tonic,
-                      note - 12.0f,
-                      note - 7.01955f,
-                      note,
-                      note + 7.01955f,
-                      note + 12.0f,
-                      note + 19.01955f,
-                      note + 24.0f,
-                      note + 24.0f};
-    const float detunings[4] = {0.013f, 0.011f, 0.007f, 0.017f};
+    std::array<float, 9> notes = {tonic,
+                                  note - 12.0f,
+                                  note - 7.01955f,
+                                  note,
+                                  note + 7.01955f,
+                                  note + 12.0f,
+                                  note + 19.01955f,
+                                  note + 24.0f,
+                                  note + 24.0f};
+    const std::array<float, 4> detunings = {0.013f, 0.011f, 0.007f, 0.017f};
 
     if (parameter >= 2.0f) {
         // Quantized chords
-        int32_t chord_index = parameter - 2.0f;
-        const float* chord = chords[m_polyphony - 1][chord_index];
+        auto chord_index = static_cast<int32_t>(parameter - 2.0f);
+        const float* chord = chords[m_polyphony - 1][chord_index].data();
         for (size_t i = 0; i < num_strings; ++i) { destination[i] = chord[i] + note; }
         return;
     }
@@ -329,17 +345,18 @@ void RingsVoiceManager::render_string_voice(
     size_t size) {
     // Compute number of strings and frequency.
     int32_t num_strings = 1;
-    float frequencies[k_num_strings];
+    std::array<float, k_num_strings> frequencies{};
 
     if (m_model == SympatheticString || m_model == SympatheticStringQuantized) {
         num_strings = 2 * k_max_polyphony / m_polyphony;
-        float parameter =
-            m_model == SympatheticString ? patch.m_structure : 2.0f + performance_state.m_chord;
+        float parameter = m_model == SympatheticString
+                              ? patch.m_structure
+                              : 2.0f + static_cast<float>(performance_state.m_chord);
         compute_sympathetic_strings_notes(
             performance_state.m_tonic + performance_state.m_fm,
             performance_state.m_tonic + m_note[voice] + performance_state.m_fm,
             parameter,
-            frequencies,
+            frequencies.data(),
             num_strings);
         for (int32_t i = 0; i < num_strings; ++i) {
             frequencies[i] = semitones_to_ratio(frequencies[i] - 69.0f) * m_a3;
@@ -429,7 +446,7 @@ void RingsVoiceManager::render_string_voice(
     }
 }
 
-const int32_t k_ping_pattern[] = {1, 0, 2, 1, 0, 2, 1, 0};
+constexpr std::array<int32_t, 8> k_ping_pattern = {1, 0, 2, 1, 0, 2, 1, 0};
 
 void RingsVoiceManager::prepare_voice_params(
     const thl::dsp::resonator::RingsPerformanceState& performance_state,
@@ -454,7 +471,7 @@ void RingsVoiceManager::prepare_voice_params(
 
 void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                                 const thl::dsp::resonator::RingsPatch& patch,
-                                thl::dsp::audio::ConstAudioBufferView in,
+                                const thl::dsp::audio::ConstAudioBufferView& in,
                                 thl::dsp::audio::AudioBufferView out,
                                 thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
@@ -538,20 +555,20 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
         m_reverb.set_time(0.35f + 0.63f * patch.m_damping);
         m_reverb.set_input_gain(0.2f);
         m_reverb.set_lp(0.3f + patch.m_brightness * 0.6f);
-        float* stereo_ptrs[] = {out_ptr, aux_ptr};
-        thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs, 2, size);
+        std::array<float*, 2> stereo_ptrs = {out_ptr, aux_ptr};
+        thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs.data(), 2, size);
         m_reverb.process(stereo_view);
         for (size_t i = 0; i < size; ++i) { aux_ptr[i] = -aux_ptr[i]; }
     }
 
     // Apply limiter to string output.
-    float* limiter_ptrs[] = {out_ptr, aux_ptr};
-    thl::dsp::audio::AudioBufferView limiter_view(limiter_ptrs, 2, size);
+    std::array<float*, 2> limiter_ptrs = {out_ptr, aux_ptr};
+    thl::dsp::audio::AudioBufferView limiter_view(limiter_ptrs.data(), 2, size);
     m_limiter.process(limiter_view, m_model_gains[m_model]);
 }
 
 /* static */
-float RingsVoiceManager::m_model_gains[] = {
+std::array<float, Last> RingsVoiceManager::m_model_gains = {
     1.4f,  // Modal
     1.0f,  // SympatheticString
     1.4f,  // String

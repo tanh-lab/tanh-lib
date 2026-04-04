@@ -245,7 +245,7 @@ public:
      */
     template <typename T>
     void set(std::string_view path,
-             T value,
+             const T& value,
              NotifyStrategies strategy = NotifyStrategies::All,
              ParameterListener* source = nullptr,
              bool create = true);

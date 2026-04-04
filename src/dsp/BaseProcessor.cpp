@@ -2,19 +2,19 @@
 
 namespace thl::dsp {
 
-void BaseProcessor::process_modulated(thl::dsp::audio::AudioBufferView buffer)
+void BaseProcessor::process_modulated(const thl::dsp::audio::AudioBufferView& buffer)
     TANH_NONBLOCKING_FUNCTION {
     split_and_process(buffer, get_change_points());
 }
 
 // Caller-injected: uses externally supplied change points
-void BaseProcessor::process_modulated(thl::dsp::audio::AudioBufferView buffer,
+void BaseProcessor::process_modulated(const thl::dsp::audio::AudioBufferView& buffer,
                                       std::span<const uint32_t> change_points)
     TANH_NONBLOCKING_FUNCTION {
     split_and_process(buffer, change_points);
 }
 
-void BaseProcessor::split_and_process(thl::dsp::audio::AudioBufferView buffer,
+void BaseProcessor::split_and_process(const thl::dsp::audio::AudioBufferView& buffer,
                                       std::span<const uint32_t> change_points)
     TANH_NONBLOCKING_FUNCTION {
     if (change_points.empty()) {

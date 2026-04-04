@@ -30,6 +30,8 @@
 
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 
+#include <array>
+
 namespace thl::dsp::synth {
 
 using namespace std;
@@ -44,14 +46,14 @@ void RingsStringSynthPart::prepare(uint16_t* reverb_buffer, float sample_rate) {
     m_polyphony = 1;
     m_fx_type = Ensemble;
 
-    for (int32_t i = 0; i < k_string_synth_voices; ++i) { m_voice[i].prepare(); }
+    for (auto& voice : m_voice) { voice.prepare(); }
 
-    for (int32_t i = 0; i < k_max_string_synth_polyphony; ++i) {
-        m_group[i].m_tonic = 0.0f;
-        m_group[i].m_envelope.prepare();
+    for (auto& group : m_group) {
+        group.m_tonic = 0.0f;
+        group.m_envelope.prepare();
     }
 
-    for (int32_t i = 0; i < k_num_formants; ++i) { m_formant_filter[i].reset(); }
+    for (auto& filter : m_formant_filter) { filter.reset(); }
 
     m_limiter.prepare();
 
@@ -70,32 +72,35 @@ void RingsStringSynthPart::prepare(uint16_t* reverb_buffer, float sample_rate) {
                                     // the previous voice.
 }
 
+constexpr size_t k_num_harmonic_pairs = static_cast<size_t>(k_num_harmonics) * 2;
+
 const int32_t k_registration_table_size = 11;
-const float k_registrations[k_registration_table_size][k_num_harmonics * 2] = {
-    {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-    {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-    {1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f},
-    {1.0f, 0.1f, 0.0f, 0.0f, 1.0f, 0.0f},
-    {1.0f, 0.5f, 1.0f, 0.0f, 1.0f, 0.0f},
-    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-    {0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
-    {0.0f, 0.5f, 1.0f, 0.0f, 1.0f, 0.0f},
-    {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f},
-    {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f},
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-};
+const std::array<std::array<float, k_num_harmonic_pairs>, k_registration_table_size>
+    k_registrations = {{
+        {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 0.1f, 0.0f, 0.0f, 1.0f, 0.0f},
+        {1.0f, 0.5f, 1.0f, 0.0f, 1.0f, 0.0f},
+        {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+        {0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
+        {0.0f, 0.5f, 1.0f, 0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    }};
 
 void RingsStringSynthPart::compute_registration(float gain, float registration, float* amplitudes) {
     registration *= (k_registration_table_size - 1.001f);
     auto [registration_integral, registration_fractional] = split_integral_fractional(registration);
     float total = 0.0f;
-    for (int32_t i = 0; i < k_num_harmonics * 2; ++i) {
+    for (size_t i = 0; i < k_num_harmonic_pairs; ++i) {
         float a = k_registrations[registration_integral][i];
         float b = k_registrations[registration_integral + 1][i];
         amplitudes[i] = a + (b - a) * registration_fractional;
         total += amplitudes[i];
     }
-    for (int32_t i = 0; i < k_num_harmonics * 2; ++i) {
+    for (size_t i = 0; i < k_num_harmonic_pairs; ++i) {
         amplitudes[i] = gain * amplitudes[i] / total;
     }
 }
@@ -106,60 +111,62 @@ void RingsStringSynthPart::compute_registration(float gain, float registration, 
 // - more compact, leaving room for a bass
 // - more frequent note changes between adjacent chords.
 // - dropped fifth.
-const float k_chords[k_max_string_synth_polyphony][thl::dsp::resonator::k_num_chords]
-                    [k_max_chord_size] = {
-                        {
-                            {-12.0f, -0.01f, 0.0f, 0.01f, 0.02f, 11.99f, 12.0f, 24.0f},  // OCT
-                            {-12.0f, -5.01f, -5.0f, 0.0f, 7.0f, 12.0f, 19.0f, 24.0f},    // 5
-                            {-12.0f, -5.0f, 0.0f, 5.0f, 7.0f, 12.0f, 17.0f, 24.0f},      // sus4
-                            {-12.0f, -5.0f, 0.0f, 0.01f, 3.0f, 12.0f, 19.0f, 24.0f},     // m
-                            {-12.0f, -5.01f, -5.0f, 0.0f, 3.0f, 10.0f, 19.0f, 24.0f},    // m7
-                            {-12.0f, -5.0f, 0.0f, 3.0f, 10.0f, 14.0f, 19.0f, 24.0f},     // m9
-                            {-12.0f, -5.01f, -5.0f, 0.0f, 3.0f, 10.0f, 17.0f, 24.0f},    // m11
-                            {-12.0f, -5.0f, 0.0f, 2.0f, 9.0f, 16.0f, 19.0f, 24.0f},      // 69
-                            {-12.0f, -5.0f, 0.0f, 4.0f, 11.0f, 14.0f, 19.0f, 24.0f},     // M9
-                            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.0f, 19.0f, 24.0f},      // M7
-                            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 12.0f, 19.0f, 24.0f},      // M
-                        },
-                        {
-                            {-12.0f, -0.01f, 0.0f, 0.01f, 12.0f, 12.01f},  // OCT
-                            {-12.0f, -5.01f, -5.0f, 0.0f, 7.0f, 12.0f},    // 5
-                            {-12.0f, -5.0f, 0.0f, 5.0f, 7.0f, 12.0f},      // sus4
-                            {-12.0f, -5.0f, 0.0f, 0.01f, 3.0f, 12.0f},     // m
-                            {-12.0f, -5.01f, -5.0f, 0.0f, 3.0f, 10.0f},    // m7
-                            {-12.0f, -5.0f, 0.0f, 3.0f, 10.0f, 14.0f},     // m9
-                            {-12.0f, -5.0f, 0.0f, 3.0f, 10.0f, 17.0f},     // m11
-                            {-12.0f, -5.0f, 0.0f, 2.0f, 9.0f, 16.0f},      // 69
-                            {-12.0f, -5.0f, 0.0f, 4.0f, 11.0f, 14.0f},     // M9
-                            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.0f},      // M7
-                            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 12.0f},      // M
-                        },
-                        {
-                            {-12.0f, 0.0f, 0.01f, 12.0f},   // OCT
-                            {-12.0f, 6.99f, 7.0f, 12.0f},   // 5
-                            {-12.0f, 5.0f, 7.0f, 12.0f},    // sus4
-                            {-12.0f, 3.0f, 11.99f, 12.0f},  // m
-                            {-12.0f, 3.0f, 9.99f, 10.0f},   // m7
-                            {-12.0f, 3.0f, 10.0f, 14.0f},   // m9
-                            {-12.0f, 3.0f, 10.0f, 17.0f},   // m11
-                            {-12.0f, 2.0f, 9.0f, 16.0f},    // 69
-                            {-12.0f, 4.0f, 11.0f, 14.0f},   // M9
-                            {-12.0f, 4.0f, 7.0f, 11.0f},    // M7
-                            {-12.0f, 4.0f, 7.0f, 12.0f},    // M
-                        },
-                        {
-                            {0.0f, 0.01f, 12.0f},  // OCT
-                            {0.0f, 7.0f, 12.0f},   // 5
-                            {5.0f, 7.0f, 12.0f},   // sus4
-                            {0.0f, 3.0f, 12.0f},   // m
-                            {0.0f, 3.0f, 10.0f},   // m7
-                            {3.0f, 10.0f, 14.0f},  // m9
-                            {3.0f, 10.0f, 17.0f},  // m11
-                            {2.0f, 9.0f, 16.0f},   // 69
-                            {4.0f, 11.0f, 14.0f},  // M9
-                            {4.0f, 7.0f, 11.0f},   // M7
-                            {4.0f, 7.0f, 12.0f},   // M
-                        }};
+const std::array<std::array<std::array<float, k_max_chord_size>, thl::dsp::resonator::k_num_chords>,
+                 k_max_string_synth_polyphony>
+    k_chords = {{
+        {{
+            {-12.0f, -0.01f, 0.0f, 0.01f, 0.02f, 11.99f, 12.0f, 24.0f},  // OCT
+            {-12.0f, -5.01f, -5.0f, 0.0f, 7.0f, 12.0f, 19.0f, 24.0f},    // 5
+            {-12.0f, -5.0f, 0.0f, 5.0f, 7.0f, 12.0f, 17.0f, 24.0f},      // sus4
+            {-12.0f, -5.0f, 0.0f, 0.01f, 3.0f, 12.0f, 19.0f, 24.0f},     // m
+            {-12.0f, -5.01f, -5.0f, 0.0f, 3.0f, 10.0f, 19.0f, 24.0f},    // m7
+            {-12.0f, -5.0f, 0.0f, 3.0f, 10.0f, 14.0f, 19.0f, 24.0f},     // m9
+            {-12.0f, -5.01f, -5.0f, 0.0f, 3.0f, 10.0f, 17.0f, 24.0f},    // m11
+            {-12.0f, -5.0f, 0.0f, 2.0f, 9.0f, 16.0f, 19.0f, 24.0f},      // 69
+            {-12.0f, -5.0f, 0.0f, 4.0f, 11.0f, 14.0f, 19.0f, 24.0f},     // M9
+            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.0f, 19.0f, 24.0f},      // M7
+            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 12.0f, 19.0f, 24.0f},      // M
+        }},
+        {{
+            {-12.0f, -0.01f, 0.0f, 0.01f, 12.0f, 12.01f},  // OCT
+            {-12.0f, -5.01f, -5.0f, 0.0f, 7.0f, 12.0f},    // 5
+            {-12.0f, -5.0f, 0.0f, 5.0f, 7.0f, 12.0f},      // sus4
+            {-12.0f, -5.0f, 0.0f, 0.01f, 3.0f, 12.0f},     // m
+            {-12.0f, -5.01f, -5.0f, 0.0f, 3.0f, 10.0f},    // m7
+            {-12.0f, -5.0f, 0.0f, 3.0f, 10.0f, 14.0f},     // m9
+            {-12.0f, -5.0f, 0.0f, 3.0f, 10.0f, 17.0f},     // m11
+            {-12.0f, -5.0f, 0.0f, 2.0f, 9.0f, 16.0f},      // 69
+            {-12.0f, -5.0f, 0.0f, 4.0f, 11.0f, 14.0f},     // M9
+            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 11.0f},      // M7
+            {-12.0f, -5.0f, 0.0f, 4.0f, 7.0f, 12.0f},      // M
+        }},
+        {{
+            {-12.0f, 0.0f, 0.01f, 12.0f},   // OCT
+            {-12.0f, 6.99f, 7.0f, 12.0f},   // 5
+            {-12.0f, 5.0f, 7.0f, 12.0f},    // sus4
+            {-12.0f, 3.0f, 11.99f, 12.0f},  // m
+            {-12.0f, 3.0f, 9.99f, 10.0f},   // m7
+            {-12.0f, 3.0f, 10.0f, 14.0f},   // m9
+            {-12.0f, 3.0f, 10.0f, 17.0f},   // m11
+            {-12.0f, 2.0f, 9.0f, 16.0f},    // 69
+            {-12.0f, 4.0f, 11.0f, 14.0f},   // M9
+            {-12.0f, 4.0f, 7.0f, 11.0f},    // M7
+            {-12.0f, 4.0f, 7.0f, 12.0f},    // M
+        }},
+        {{
+            {0.0f, 0.01f, 12.0f},  // OCT
+            {0.0f, 7.0f, 12.0f},   // 5
+            {5.0f, 7.0f, 12.0f},   // sus4
+            {0.0f, 3.0f, 12.0f},   // m
+            {0.0f, 3.0f, 10.0f},   // m7
+            {3.0f, 10.0f, 14.0f},  // m9
+            {3.0f, 10.0f, 17.0f},  // m11
+            {2.0f, 9.0f, 16.0f},   // 69
+            {4.0f, 11.0f, 14.0f},  // M9
+            {4.0f, 7.0f, 11.0f},   // M7
+            {4.0f, 7.0f, 12.0f},   // M
+        }},
+    }};
 
 #else
 
@@ -167,60 +174,62 @@ const float k_chords[k_max_string_synth_polyphony][thl::dsp::resonator::k_num_ch
 // - wider, occupies more room in the spectrum.
 // - minimum number of note changes between adjacent chords.
 // - consistant with the chord table used for the sympathetic strings model.
-const float chords[k_max_string_synth_polyphony][thl::dsp::resonator::k_num_chords]
-                  [k_max_chord_size] = {
-                      {
-                          {-24.0f, -12.0f, 0.0f, 0.01f, 0.02f, 11.99f, 12.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 10.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 12.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 14.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 17.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 6.99f, 7.0f, 18.99f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 17.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 14.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 12.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 11.0f, 19.0f, 24.0f},
-                          {-24.0f, -12.0f, 0.0f, 5.0f, 7.0f, 12.0f, 17.0f, 24.0f},
-                      },
-                      {
-                          {-24.0f, -12.0f, 0.0f, 0.01f, 12.0f, 12.01f},
-                          {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 10.0f},
-                          {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 12.0f},
-                          {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 14.0f},
-                          {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 17.0f},
-                          {-24.0f, -12.0f, 0.0f, 6.99f, 12.0f, 19.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 17.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 14.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 12.0f},
-                          {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 11.0f},
-                          {-24.0f, -12.0f, 0.0f, 5.00f, 7.0f, 12.0f},
-                      },
-                      {
-                          {-12.0f, 0.0f, 0.01f, 12.0f},
-                          {-12.0f, 3.0f, 7.0f, 10.0f},
-                          {-12.0f, 3.0f, 7.0f, 12.0f},
-                          {-12.0f, 3.0f, 7.0f, 14.0f},
-                          {-12.0f, 3.0f, 7.0f, 17.0f},
-                          {-12.0f, 7.0f, 12.0f, 19.0f},
-                          {-12.0f, 4.0f, 7.0f, 17.0f},
-                          {-12.0f, 4.0f, 7.0f, 14.0f},
-                          {-12.0f, 4.0f, 7.0f, 12.0f},
-                          {-12.0f, 4.0f, 7.0f, 11.0f},
-                          {-12.0f, 5.0f, 7.0f, 12.0f},
-                      },
-                      {
-                          {0.0f, 0.01f, 12.0f},
-                          {0.0f, 3.0f, 10.0f},
-                          {0.0f, 3.0f, 7.0f},
-                          {0.0f, 3.0f, 14.0f},
-                          {0.0f, 3.0f, 17.0f},
-                          {0.0f, 7.0f, 19.0f},
-                          {0.0f, 4.0f, 17.0f},
-                          {0.0f, 4.0f, 14.0f},
-                          {0.0f, 4.0f, 7.0f},
-                          {0.0f, 4.0f, 11.0f},
-                          {0.0f, 5.0f, 7.0f},
-                      }};
+const std::array<std::array<std::array<float, k_max_chord_size>, thl::dsp::resonator::k_num_chords>,
+                 k_max_string_synth_polyphony>
+    chords = {{
+        {{
+            {-24.0f, -12.0f, 0.0f, 0.01f, 0.02f, 11.99f, 12.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 10.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 12.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 14.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 3.0f, 7.0f, 17.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 6.99f, 7.0f, 18.99f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 17.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 14.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 12.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 4.0f, 7.0f, 11.0f, 19.0f, 24.0f},
+            {-24.0f, -12.0f, 0.0f, 5.0f, 7.0f, 12.0f, 17.0f, 24.0f},
+        }},
+        {{
+            {-24.0f, -12.0f, 0.0f, 0.01f, 12.0f, 12.01f},
+            {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 10.0f},
+            {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 12.0f},
+            {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 14.0f},
+            {-24.0f, -12.0f, 0.0f, 3.00f, 7.0f, 17.0f},
+            {-24.0f, -12.0f, 0.0f, 6.99f, 12.0f, 19.0f},
+            {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 17.0f},
+            {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 14.0f},
+            {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 12.0f},
+            {-24.0f, -12.0f, 0.0f, 4.00f, 7.0f, 11.0f},
+            {-24.0f, -12.0f, 0.0f, 5.00f, 7.0f, 12.0f},
+        }},
+        {{
+            {-12.0f, 0.0f, 0.01f, 12.0f},
+            {-12.0f, 3.0f, 7.0f, 10.0f},
+            {-12.0f, 3.0f, 7.0f, 12.0f},
+            {-12.0f, 3.0f, 7.0f, 14.0f},
+            {-12.0f, 3.0f, 7.0f, 17.0f},
+            {-12.0f, 7.0f, 12.0f, 19.0f},
+            {-12.0f, 4.0f, 7.0f, 17.0f},
+            {-12.0f, 4.0f, 7.0f, 14.0f},
+            {-12.0f, 4.0f, 7.0f, 12.0f},
+            {-12.0f, 4.0f, 7.0f, 11.0f},
+            {-12.0f, 5.0f, 7.0f, 12.0f},
+        }},
+        {{
+            {0.0f, 0.01f, 12.0f},
+            {0.0f, 3.0f, 10.0f},
+            {0.0f, 3.0f, 7.0f},
+            {0.0f, 3.0f, 14.0f},
+            {0.0f, 3.0f, 17.0f},
+            {0.0f, 7.0f, 19.0f},
+            {0.0f, 4.0f, 17.0f},
+            {0.0f, 4.0f, 14.0f},
+            {0.0f, 4.0f, 7.0f},
+            {0.0f, 4.0f, 11.0f},
+            {0.0f, 5.0f, 7.0f},
+        }},
+    }};
 
 #endif  // BRYAN_CHORDS
 
@@ -252,13 +261,13 @@ void RingsStringSynthPart::process_envelopes(float shape, uint8_t* flags, float*
 }
 
 const int32_t k_formant_table_size = 5;
-const float k_formants[k_formant_table_size][k_num_formants] = {
+const std::array<std::array<float, k_num_formants>, k_formant_table_size> k_formants = {{
     {700, 1100, 2400},
     {500, 1300, 1700},
     {400, 2000, 2500},
     {600, 800, 2400},
     {300, 900, 2200},
-};
+}};
 
 void RingsStringSynthPart::process_formant_filter(float vowel,
                                                   float shift,
@@ -285,7 +294,7 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
         thl::dsp::audio::ConstAudioBufferView filter_in(m_filter_in_buffer, size);
         thl::dsp::audio::AudioBufferView filter_out(m_filter_out_buffer, size);
         m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(filter_in, filter_out);
-        const float pan = i * 0.3f + 0.2f;
+        const float pan = static_cast<float>(i) * 0.3f + 0.2f;
         for (size_t j = 0; j < size; ++j) {
             out_ptr[j] += m_filter_out_buffer[j] * pan * 0.5f;
             aux_ptr[j] += m_filter_out_buffer[j] * (1.0f - pan) * 0.5f;
@@ -301,7 +310,7 @@ struct ChordNote {
 void RingsStringSynthPart::process(
     const thl::dsp::resonator::RingsPerformanceState& performance_state,
     const thl::dsp::resonator::RingsPatch& patch,
-    thl::dsp::audio::ConstAudioBufferView in,
+    const thl::dsp::audio::ConstAudioBufferView& in,
     thl::dsp::audio::AudioBufferView out,
     thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
@@ -310,9 +319,9 @@ void RingsStringSynthPart::process(
     size_t size = in.get_num_frames();
 
     // Assign note to a voice.
-    uint8_t envelope_flags[k_max_string_synth_polyphony];
+    std::array<uint8_t, k_max_string_synth_polyphony> envelope_flags{};
 
-    fill(&envelope_flags[0], &envelope_flags[m_polyphony], 0);
+    fill(envelope_flags.begin(), envelope_flags.begin() + m_polyphony, 0);
     m_note_filter.process(performance_state.m_note, performance_state.m_strum);
     if (performance_state.m_strum) {
         m_group[m_active_group].m_tonic = m_note_filter.stable_note();
@@ -331,17 +340,17 @@ void RingsStringSynthPart::process(
     }
 
     // Process envelopes.
-    float envelope_values[k_max_string_synth_polyphony];
-    process_envelopes(patch.m_damping, envelope_flags, envelope_values);
+    std::array<float, k_max_string_synth_polyphony> envelope_values{};
+    process_envelopes(patch.m_damping, envelope_flags.data(), envelope_values.data());
 
     copy(&in_ptr[0], &in_ptr[size], &aux_ptr[0]);
     copy(&in_ptr[0], &in_ptr[size], &out_ptr[0]);
     int32_t chord_size = min(k_string_synth_voices / m_polyphony, k_max_chord_size);
     for (int32_t group = 0; group < m_polyphony; ++group) {
-        ChordNote notes[k_max_chord_size];
-        float harmonics[k_num_harmonics * 2];
+        std::array<ChordNote, k_max_chord_size> notes{};
+        std::array<float, k_num_harmonic_pairs> harmonics{};
 
-        compute_registration(envelope_values[group] * 0.25f, patch.m_brightness, harmonics);
+        compute_registration(envelope_values[group] * 0.25f, patch.m_brightness, harmonics.data());
 
         // Note enough polyphony for smooth transition between chords.
         for (int32_t i = 0; i < chord_size; ++i) {
@@ -357,23 +366,24 @@ void RingsStringSynthPart::process(
             note += performance_state.m_fm;
             note += notes[chord_note].m_note;
 
-            float amplitudes[k_num_harmonics * 2];
-            for (int32_t i = 0; i < k_num_harmonics * 2; ++i) {
+            std::array<float, k_num_harmonic_pairs> amplitudes{};
+            for (size_t i = 0; i < k_num_harmonic_pairs; ++i) {
                 amplitudes[i] = notes[chord_note].m_amplitude * harmonics[i];
             }
 
             // Fold truncated harmonics.
             size_t num_harmonics =
                 m_polyphony >= 2 && chord_note < 2 ? k_num_harmonics - 1 : k_num_harmonics;
-            for (int32_t i = num_harmonics; i < k_num_harmonics; ++i) {
-                amplitudes[2 * (num_harmonics - 1)] += amplitudes[2 * i];
-                amplitudes[2 * (num_harmonics - 1) + 1] += amplitudes[2 * i + 1];
+            for (auto i = static_cast<int32_t>(num_harmonics); i < k_num_harmonics; ++i) {
+                amplitudes[2 * (num_harmonics - 1)] += amplitudes[static_cast<size_t>(i) * 2];
+                amplitudes[2 * (num_harmonics - 1) + 1] +=
+                    amplitudes[static_cast<size_t>(i) * 2 + 1];
             }
 
             float frequency = semitones_to_ratio(note - 69.0f) * m_a3;
             m_voice[group * chord_size + chord_note].render(
                 frequency,
-                amplitudes,
+                amplitudes.data(),
                 num_harmonics,
                 (group + chord_note) & 1 ? out_ptr : aux_ptr,
                 size);
@@ -385,8 +395,8 @@ void RingsStringSynthPart::process(
         m_clear_fx = false;
     }
 
-    float* stereo_ptrs[] = {out_ptr, aux_ptr};
-    thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs, 2, size);
+    std::array<float*, 2> stereo_ptrs = {out_ptr, aux_ptr};
+    thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs.data(), 2, size);
 
     switch (m_fx_type) {
         case Formant:
