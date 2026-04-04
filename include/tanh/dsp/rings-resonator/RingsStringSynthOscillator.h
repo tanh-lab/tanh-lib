@@ -44,10 +44,10 @@ using ::thl::dsp::utils::ParameterInterpolator;
 //   DARK_SQUARE   -- low-pass filtered square (leaky integrator)
 //   TRIANGLE      -- integrated square (leaky integrator with tighter coeff)
 enum OscillatorShape {
-    OSCILLATOR_SHAPE_BRIGHT_SQUARE,
-    OSCILLATOR_SHAPE_SQUARE,
-    OSCILLATOR_SHAPE_DARK_SQUARE,
-    OSCILLATOR_SHAPE_TRIANGLE,
+    BrightSquare,
+    Square,
+    DarkSquare,
+    Triangle,
 };
 
 // Band-limited oscillator using the PolyBLEP (Polynomial Band-Limited stEP)
@@ -148,17 +148,17 @@ public:
             next_sample += phase < pw ? 0.0f : 1.0f;
             next_sample_saw += phase;
 
-            if (shape == OSCILLATOR_SHAPE_TRIANGLE) {
+            if (shape == Triangle) {
                 const float integrator_coefficient = increment * 0.125f;
                 this_sample = 64.0f * (this_sample - 0.5f);
                 filter_state += integrator_coefficient * (this_sample - filter_state);
                 sample = filter_state;
-            } else if (shape == OSCILLATOR_SHAPE_DARK_SQUARE) {
+            } else if (shape == DarkSquare) {
                 const float integrator_coefficient = increment * 2.0f;
                 this_sample = 4.0f * (this_sample - 0.5f);
                 filter_state += integrator_coefficient * (this_sample - filter_state);
                 sample = filter_state;
-            } else if (shape == OSCILLATOR_SHAPE_BRIGHT_SQUARE) {
+            } else if (shape == BrightSquare) {
                 const float integrator_coefficient = increment * 2.0f;
                 this_sample = 2.0f * this_sample - 1.0f;
                 filter_state += integrator_coefficient * (this_sample - filter_state);

@@ -10,25 +10,86 @@
       "name": "desktop-debug",
       "displayName": "Desktop Debug",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-desktop",
+      "binaryDir": "${sourceDir}/build/desktop/Debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
       }
     },
     {
       "name": "desktop-release",
       "displayName": "Desktop Release",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-desktop",
+      "binaryDir": "${sourceDir}/build/desktop/Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows Debug",
+      "binaryDir": "${sourceDir}/build/windows/Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows Release",
+      "binaryDir": "${sourceDir}/build/windows/Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "desktop-debug-asan",
+      "displayName": "Desktop Debug + ASan/UBSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_ASAN": "ON",
+        "TANH_WITH_USAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-tsan",
+      "displayName": "Desktop Debug + TSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_TSAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-msan",
+      "displayName": "Desktop Debug + MSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_MSAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-lsan",
+      "displayName": "Desktop Debug + LSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_LSAN": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug-rtsan",
+      "displayName": "Desktop Debug + RTSan",
+      "inherits": "desktop-debug",
+      "cacheVariables": {
+        "TANH_WITH_RTSAN": "ON"
       }
     },
     {
       "name": "ios-simulator-debug",
       "displayName": "iOS Simulator Debug",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-simulator",
+      "binaryDir": "${sourceDir}/build/ios-iphonesimulator/Debug",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "SIMULATOR",
@@ -39,7 +100,7 @@
       "name": "ios-simulator-release",
       "displayName": "iOS Simulator Release",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-simulator",
+      "binaryDir": "${sourceDir}/build/ios-iphonesimulator/Release",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "SIMULATOR",
@@ -50,7 +111,7 @@
       "name": "ios-device-debug",
       "displayName": "iOS Device Debug",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-device",
+      "binaryDir": "${sourceDir}/build/ios-iphoneos/Debug",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "DEVICE",
@@ -61,7 +122,7 @@
       "name": "ios-device-release",
       "displayName": "iOS Device Release",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build-ios-device",
+      "binaryDir": "${sourceDir}/build/ios-iphoneos/Release",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "DEVICE",
@@ -78,6 +139,41 @@
     {
       "name": "desktop-release",
       "configurePreset": "desktop-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "desktop-debug-asan",
+      "configurePreset": "desktop-debug-asan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-tsan",
+      "configurePreset": "desktop-debug-tsan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-msan",
+      "configurePreset": "desktop-debug-msan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-lsan",
+      "configurePreset": "desktop-debug-lsan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "desktop-debug-rtsan",
+      "configurePreset": "desktop-debug-rtsan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
       "configuration": "Release"
     },
     {
@@ -113,6 +209,51 @@
     {
       "name": "desktop-release",
       "configurePreset": "desktop-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-asan",
+      "configurePreset": "desktop-debug-asan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-tsan",
+      "configurePreset": "desktop-debug-tsan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true },
+      "environment": {
+        "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
+      }
+    },
+    {
+      "name": "desktop-debug-msan",
+      "configurePreset": "desktop-debug-msan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-lsan",
+      "configurePreset": "desktop-debug-lsan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "desktop-debug-rtsan",
+      "configurePreset": "desktop-debug-rtsan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
       "configuration": "Release",
       "output": { "outputOnFailure": true }
     },

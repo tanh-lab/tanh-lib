@@ -12,26 +12,26 @@ namespace thl::dsp::audio {
 /**
  * RT-safe single-buffered audio data storage with CAS state machine.
  *
- * Uses a three-state atomic (IDLE, READING, LOADING) to coordinate
+ * Uses a three-state atomic (Idle, Reading, Loading) to coordinate
  * between the RT thread and a loader thread with minimal memory overhead.
  *
- * RT thread:  CAS(IDLE→READING) to read, store(IDLE) when done.
+ * RT thread:  CAS(Idle→READING) to read, store(Idle) when done.
  *             If CAS fails (loader active), output silence for that block.
- * Loader:     Spin CAS(IDLE→LOADING), move data in, store(IDLE).
+ * Loader:     Spin CAS(Idle→Loading), move data in, store(Idle).
  */
 class AudioDataStore {
 public:
     AudioDataStore() = default;
 
     bool begin_read() {
-        int expected = IDLE;
+        int expected = Idle;
         return m_state.compare_exchange_strong(expected,
-                                               READING,
+                                               Reading,
                                                std::memory_order_acq_rel,
                                                std::memory_order_relaxed);
     }
 
-    void end_read() { m_state.store(IDLE, std::memory_order_release); }
+    void end_read() { m_state.store(Idle, std::memory_order_release); }
 
     const std::vector<AudioBuffer>& get_buffer() const { return m_buffer; }
 
@@ -44,11 +44,11 @@ public:
     }
 
     std::vector<AudioBuffer>& begin_load() {
-        // Spin until we can acquire LOADING state
+        // Spin until we can acquire Loading state
         while (true) {
-            int expected = IDLE;
+            int expected = Idle;
             if (m_state.compare_exchange_weak(expected,
-                                              LOADING,
+                                              Loading,
                                               std::memory_order_acq_rel,
                                               std::memory_order_relaxed)) {
                 break;
@@ -66,14 +66,14 @@ public:
         m_loaded.store(true, std::memory_order_relaxed);
         m_load_generation.fetch_add(1, std::memory_order_relaxed);
 
-        m_state.store(IDLE, std::memory_order_release);
+        m_state.store(Idle, std::memory_order_release);
     }
 
 private:
-    enum State { IDLE = 0, READING = 1, LOADING = 2 };
+    enum State { Idle = 0, Reading = 1, Loading = 2 };
 
     std::vector<AudioBuffer> m_buffer;
-    std::atomic<int> m_state{IDLE};
+    std::atomic<int> m_state{Idle};
     std::atomic<int> m_root_note{60};
     std::atomic<bool> m_loaded{false};
     std::atomic<uint32_t> m_load_generation{0};

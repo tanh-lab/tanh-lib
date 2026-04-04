@@ -21,13 +21,14 @@ std::string note_number_to_note_name(int note_number) {
         case 9: note_name = "A"; break;
         case 10: note_name = "A#"; break;
         case 11: note_name = "B"; break;
+        default: note_name = ""; break;
     }
     return note_name;
 }
 
-std::unordered_map<ScaleMode, std::vector<int>> scale_halfsteps = {{ScaleMode::MINOR, {2, 5}},
-                                                                   {ScaleMode::MAJOR, {3, 7}},
-                                                                   {ScaleMode::PHRYGIAN, {1, 5}}};
+std::unordered_map<ScaleMode, std::vector<int>> scale_halfsteps = {{ScaleMode::Minor, {2, 5}},
+                                                                   {ScaleMode::Major, {3, 7}},
+                                                                   {ScaleMode::Phrygian, {1, 5}}};
 
 int get_note_offset(int scale_note_index, ScaleMode mode) {
     int note_offset = 2 * scale_note_index;
@@ -37,7 +38,7 @@ int get_note_offset(int scale_note_index, ScaleMode mode) {
         // subtract one halfstep for each halfstep that was passed by this scale
         // note index
         for (int halfstep : halfsteps) {
-            if (scale_note_index < halfstep) break;
+            if (scale_note_index < halfstep) { break; }
             note_offset--;
         }
 

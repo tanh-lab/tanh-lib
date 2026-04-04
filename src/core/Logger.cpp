@@ -12,7 +12,6 @@
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)
@@ -50,15 +49,13 @@ bool should_log_compiled(std::uint32_t level) {
 FILE* stream_for_level(std::uint32_t level) {
     switch (clamp_level(level)) {
         case static_cast<std::uint32_t>(LogLevel::Error):
-        case static_cast<std::uint32_t>(LogLevel::Warning):
-            return stderr;
-        default:
-            return stdout;
+        case static_cast<std::uint32_t>(LogLevel::Warning): return stderr;
+        default: return stdout;
     }
 }
 
 std::atomic<bool>& shutdown_started_flag() {
-    static std::atomic<bool> flag {false};
+    static std::atomic<bool> flag{false};
     return flag;
 }
 
@@ -71,14 +68,13 @@ bool logging_shutdown_started() {
 }
 
 void ensure_shutdown_hook_installed() {
-    static const bool registered = []() {
+    static const bool k_registered = []() {
         shutdown_started_flag();
         std::atexit(mark_logging_shutdown);
         return true;
     }();
-    (void)registered;
+    (void)k_registered;
 }
-
 
 const char* level_name(std::uint32_t level) {
     switch (clamp_level(level)) {
@@ -102,7 +98,7 @@ void write_to_stderr_fallback(std::uint32_t level,
                  message ? message : "");
 }
 
-std::string escape_logfmt_value(std::string value) {
+std::string escape_logfmt_value(const std::string& value) {
     std::string out;
     out.reserve(value.size());
     for (const char c : value) {
@@ -119,17 +115,15 @@ std::string escape_logfmt_value(std::string value) {
 }
 
 bool needs_logfmt_quotes(const std::string& value) {
-    if (value.empty()) return true;
+    if (value.empty()) { return true; }
     for (const char c : value) {
-        if (c == ' ' || c == '=' || c == '"' || c == '\t') return true;
+        if (c == ' ' || c == '=' || c == '"' || c == '\t') { return true; }
     }
     return false;
 }
 
-void append_logfmt_field(std::ostringstream& out,
-                         const char* key,
-                         const std::string& rawValue) {
-    const std::string value = escape_logfmt_value(rawValue);
+void append_logfmt_field(std::ostringstream& out, const char* key, const std::string& raw_value) {
+    const std::string value = escape_logfmt_value(raw_value);
     out << key << '=';
     if (!needs_logfmt_quotes(value)) {
         out << value;
@@ -142,14 +136,14 @@ void append_logfmt_field(std::ostringstream& out,
 }
 
 std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
-    std::time_t seconds = static_cast<std::time_t>(timestamp_ms / 1000);
+    auto seconds = static_cast<std::time_t>(timestamp_ms / 1000);
     int millis = static_cast<int>(timestamp_ms % 1000);
     if (millis < 0) {
         millis += 1000;
         --seconds;
     }
 
-    std::tm tm_value {};
+    std::tm tm_value{};
 #if defined(THL_PLATFORM_WINDOWS)
     gmtime_s(&tm_value, &seconds);
 #else
@@ -157,25 +151,22 @@ std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
 #endif
 
     std::ostringstream out;
-    out << std::put_time(&tm_value, "%Y-%m-%dT%H:%M:%S")
-        << '.'
-        << std::setw(3) << std::setfill('0') << millis
-        << 'Z';
+    out << std::put_time(&tm_value, "%Y-%m-%dT%H:%M:%S") << '.' << std::setw(3) << std::setfill('0')
+        << millis << 'Z';
     return out.str();
 }
 
 void write_to_default_sink(const LogRecord& record) {
     try {
         const std::string line = format_plain(record);
-        FILE* out = stream_for_level(record.level);
+        FILE* out = stream_for_level(record.m_level);
         std::fprintf(out, "%s\n", line.c_str());
         std::fflush(out);
     } catch (...) {
-        write_to_stderr_fallback(
-            record.level,
-            record.source.empty() ? "native" : record.source.c_str(),
-            record.group.empty() ? "default" : record.group.c_str(),
-            record.message.c_str());
+        write_to_stderr_fallback(record.m_level,
+                                 record.m_source.empty() ? "native" : record.m_source.c_str(),
+                                 record.m_group.empty() ? "default" : record.m_group.c_str(),
+                                 record.m_message.c_str());
     }
 }
 
@@ -191,7 +182,7 @@ os_log_t platform_log_handle() {
 
 bool is_debugger_attached() {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
-    struct kinfo_proc info {};
+    struct kinfo_proc info{};
     size_t size = sizeof(info);
     sysctl(mib, 4, &info, &size, nullptr, 0);
     return (info.kp_proc.p_flag & P_TRACED) != 0;
@@ -199,23 +190,17 @@ bool is_debugger_attached() {
 #endif
 
 bool emit_platform(const LogRecord& record) {
-    const char* source =
-    record.source.empty() ? "native" : record.source.c_str();
-    const char* group =
-        record.group.empty() ? "default" : record.group.c_str();
-    const char* message = record.message.c_str();
+    const char* source = record.m_source.empty() ? "native" : record.m_source.c_str();
+    const char* group = record.m_group.empty() ? "default" : record.m_group.c_str();
+    const char* message = record.m_message.c_str();
 
 #if defined(THL_PLATFORM_ANDROID)
     int android_level = ANDROID_LOG_INFO;
-    switch (clamp_level(record.level)) {
-        case static_cast<std::uint32_t>(LogLevel::Error):
-            android_level = ANDROID_LOG_ERROR; break;
-        case static_cast<std::uint32_t>(LogLevel::Warning):
-            android_level = ANDROID_LOG_WARN; break;
-        case static_cast<std::uint32_t>(LogLevel::Info):
-            android_level = ANDROID_LOG_INFO; break;
-        case static_cast<std::uint32_t>(LogLevel::Debug):
-            android_level = ANDROID_LOG_DEBUG; break;
+    switch (clamp_level(record.m_level)) {
+        case static_cast<std::uint32_t>(LogLevel::Error): android_level = ANDROID_LOG_ERROR; break;
+        case static_cast<std::uint32_t>(LogLevel::Warning): android_level = ANDROID_LOG_WARN; break;
+        case static_cast<std::uint32_t>(LogLevel::Info): android_level = ANDROID_LOG_INFO; break;
+        case static_cast<std::uint32_t>(LogLevel::Debug): android_level = ANDROID_LOG_DEBUG; break;
         default: android_level = ANDROID_LOG_INFO; break;
     }
     __android_log_print(android_level, "thl", "[%s][%s] %s", source, group, message);
@@ -223,58 +208,57 @@ bool emit_platform(const LogRecord& record) {
 
 #elif defined(THL_PLATFORM_LINUX)
     int priority = LOG_INFO;
-    switch (clamp_level(record.level)) {
-        case static_cast<std::uint32_t>(LogLevel::Error):
-            priority = LOG_ERR; break;
-        case static_cast<std::uint32_t>(LogLevel::Warning):
-            priority = LOG_WARNING; break;
-        case static_cast<std::uint32_t>(LogLevel::Info):
-            priority = LOG_INFO; break;
-        case static_cast<std::uint32_t>(LogLevel::Debug):
-            priority = LOG_DEBUG; break;
+    switch (clamp_level(record.m_level)) {
+        case static_cast<std::uint32_t>(LogLevel::Error): priority = LOG_ERR; break;
+        case static_cast<std::uint32_t>(LogLevel::Warning): priority = LOG_WARNING; break;
+        case static_cast<std::uint32_t>(LogLevel::Info): priority = LOG_INFO; break;
+        case static_cast<std::uint32_t>(LogLevel::Debug): priority = LOG_DEBUG; break;
         default: priority = LOG_INFO; break;
     }
-    sd_journal_send(
-        "MESSAGE=[%s][%s] %s", source, group, message,
-        "PRIORITY=%i", priority,
-        "SYSLOG_IDENTIFIER=%s", "thl",
-        "THL_SOURCE=%s", source,
-        "THL_GROUP=%s", group,
-        NULL);
+    sd_journal_send("MESSAGE=[%s][%s] %s",
+                    source,
+                    group,
+                    message,
+                    "PRIORITY=%i",
+                    priority,
+                    "SYSLOG_IDENTIFIER=%s",
+                    "thl",
+                    "THL_SOURCE=%s",
+                    source,
+                    "THL_GROUP=%s",
+                    group,
+                    NULL);
 
-    // In the choc webkit on linux the console logs are automatically forwarded to the stdout/stderr of the process
+    // In the choc webkit on linux the console logs are automatically forwarded to the stdout/stderr
+    // of the process
     return true;
 
 #elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
     os_log_type_t type = OS_LOG_TYPE_INFO;
-    switch (clamp_level(record.level)) {
-        case static_cast<std::uint32_t>(LogLevel::Error):
-            type = OS_LOG_TYPE_ERROR; break;
-        case static_cast<std::uint32_t>(LogLevel::Warning):
-            type = OS_LOG_TYPE_DEFAULT; break;
-        case static_cast<std::uint32_t>(LogLevel::Info):
-            type = OS_LOG_TYPE_INFO; break;
-        case static_cast<std::uint32_t>(LogLevel::Debug):
-            type = OS_LOG_TYPE_DEBUG; break;
+    switch (clamp_level(record.m_level)) {
+        case static_cast<std::uint32_t>(LogLevel::Error): type = OS_LOG_TYPE_ERROR; break;
+        case static_cast<std::uint32_t>(LogLevel::Warning): type = OS_LOG_TYPE_DEFAULT; break;
+        case static_cast<std::uint32_t>(LogLevel::Info): type = OS_LOG_TYPE_INFO; break;
+        case static_cast<std::uint32_t>(LogLevel::Debug): type = OS_LOG_TYPE_DEBUG; break;
         default: type = OS_LOG_TYPE_INFO; break;
     }
 #if defined(THL_PLATFORM_MACOS)
     if (!is_debugger_attached()) {
         os_log_with_type(platform_log_handle(),
-                        type,
-                        "[%{public}s][%{public}s] %{public}s",
-                        source,
-                        group,
-                        message);
+                         type,
+                         "[%{public}s][%{public}s] %{public}s",
+                         source,
+                         group,
+                         message);
     }
     write_to_default_sink(record);
 #else
     os_log_with_type(platform_log_handle(),
-                    type,
-                    "[%{public}s][%{public}s] %{public}s",
-                    source,
-                    group,
-                    message);
+                     type,
+                     "[%{public}s][%{public}s] %{public}s",
+                     source,
+                     group,
+                     message);
 #endif
     return true;
 #else
@@ -288,25 +272,25 @@ bool emit_platform(const LogRecord& record) {
 // ---------------------------------------------------------------------------
 
 struct LoggerState {
-    std::atomic<std::uint64_t> next_seq {1};
+    std::atomic<std::uint64_t> m_next_seq{1};
 
     // Protects config booleans + callback + early buffers.
-    std::mutex config_mutex;
-    bool platform_enabled = true;
-    bool console_enabled = false;
-    bool file_enabled = true;
-    bool callback_enabled = true;
-    Callback callback;
+    std::mutex m_config_mutex;
+    bool m_platform_enabled = true;
+    bool m_console_enabled = false;
+    bool m_file_enabled = true;
+    bool m_callback_enabled = true;
+    Callback m_callback;
 
-    std::size_t early_buffer_capacity = 64;
-    std::vector<LogRecord> early_callback_buffer;
-    std::vector<LogRecord> early_file_buffer;
+    std::size_t m_early_buffer_capacity = 64;
+    std::vector<LogRecord> m_early_callback_buffer;
+    std::vector<LogRecord> m_early_file_buffer;
 
     // Protects file_path + file_stream.  Lock ordering: config_mutex
     // before file_mutex.
-    std::mutex file_mutex;
-    std::string file_path;
-    std::ofstream file_stream;
+    std::mutex m_file_mutex;
+    std::string m_file_path;
+    std::ofstream m_file_stream;
 };
 
 LoggerState& state() {
@@ -321,18 +305,17 @@ LoggerState& state() {
 
 bool emit_file(const LogRecord& record) {
     auto& s = state();
-    std::lock_guard<std::mutex> lock(s.file_mutex);
+    std::scoped_lock lock(s.m_file_mutex);
 
-    if (s.file_path.empty()) { return false; }
+    if (s.m_file_path.empty()) { return false; }
 
-    if (!s.file_stream.is_open()) {
-        s.file_stream.open(
-            s.file_path, std::ios::out | std::ios::trunc);
-        if (!s.file_stream.is_open()) { return false; }
+    if (!s.m_file_stream.is_open()) {
+        s.m_file_stream.open(s.m_file_path, std::ios::out | std::ios::trunc);
+        if (!s.m_file_stream.is_open()) { return false; }
     }
 
-    s.file_stream << format_logfmt(record) << '\n';
-    s.file_stream.flush();
+    s.m_file_stream << format_logfmt(record) << '\n';
+    s.m_file_stream.flush();
     return true;
 }
 
@@ -356,31 +339,26 @@ LogRecord make_record(std::uint32_t level,
                       const char* group,
                       const char* message) {
     LogRecord record;
-    record.seq =
-        state().next_seq.fetch_add(1, std::memory_order_relaxed);
+    record.m_seq = state().m_next_seq.fetch_add(1, std::memory_order_relaxed);
     const auto wall_now = std::chrono::system_clock::now();
     const auto mono_now = std::chrono::steady_clock::now();
-    record.timestamp_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            wall_now.time_since_epoch())
-            .count();
-    record.monotonic_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            mono_now.time_since_epoch())
-            .count();
-    record.level = clamp_level(level);
-    record.source = source ? source : "native";
-    record.group = group ? group : "default";
-    record.message = message ? message : "";
+    record.m_timestamp_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(wall_now.time_since_epoch()).count();
+    record.m_monotonic_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(mono_now.time_since_epoch()).count();
+    record.m_level = clamp_level(level);
+    record.m_source = source ? source : "native";
+    record.m_group = group ? group : "default";
+    record.m_message = message ? message : "";
     return record;
 }
 
 void dispatch_record(const LogRecord& record) {
     if (logging_shutdown_started()) {
-        write_to_stderr_fallback(record.level,
-                                 record.source.c_str(),
-                                 record.group.c_str(),
-                                 record.message.c_str());
+        write_to_stderr_fallback(record.m_level,
+                                 record.m_source.c_str(),
+                                 record.m_group.c_str(),
+                                 record.m_message.c_str());
         return;
     }
 
@@ -400,13 +378,13 @@ void dispatch_record(const LogRecord& record) {
     std::size_t early_cap = 0;
     Callback callback_copy;
     {
-        std::lock_guard<std::mutex> lock(state().config_mutex);
-        platform_on = state().platform_enabled;
-        console_on = state().console_enabled;
-        file_on = state().file_enabled;
-        callback_on = state().callback_enabled;
-        early_cap = state().early_buffer_capacity;
-        callback_copy = state().callback;
+        std::scoped_lock lock(state().m_config_mutex);
+        platform_on = state().m_platform_enabled;
+        console_on = state().m_console_enabled;
+        file_on = state().m_file_enabled;
+        callback_on = state().m_callback_enabled;
+        early_cap = state().m_early_buffer_capacity;
+        callback_copy = state().m_callback;
     }
 
     bool any_sink_ran = false;
@@ -428,9 +406,9 @@ void dispatch_record(const LogRecord& record) {
             any_sink_ran = true;
         } else if (early_cap > 0) {
             // File enabled but path not yet configured — buffer for later.
-            std::lock_guard<std::mutex> lock(state().config_mutex);
-            if (state().early_file_buffer.size() < state().early_buffer_capacity) {
-                state().early_file_buffer.push_back(record);
+            std::scoped_lock lock(state().m_config_mutex);
+            if (state().m_early_file_buffer.size() < state().m_early_buffer_capacity) {
+                state().m_early_file_buffer.push_back(record);
                 any_sink_ran = true;
             }
         }
@@ -443,25 +421,23 @@ void dispatch_record(const LogRecord& record) {
             callback_copy(record);
             any_sink_ran = true;
         } catch (...) {
-            write_to_stderr_fallback(
-                record.level,
-                record.source.c_str(),
-                record.group.c_str(),
-                record.message.c_str());
+            write_to_stderr_fallback(record.m_level,
+                                     record.m_source.c_str(),
+                                     record.m_group.c_str(),
+                                     record.m_message.c_str());
             any_sink_ran = true;
         }
     } else if (callback_on && early_cap > 0) {
-        std::lock_guard<std::mutex> lock(state().config_mutex);
-        if (!state().callback && state().early_callback_buffer.size() < state().early_buffer_capacity) {
-            state().early_callback_buffer.push_back(record);
+        std::scoped_lock lock(state().m_config_mutex);
+        if (!state().m_callback &&
+            state().m_early_callback_buffer.size() < state().m_early_buffer_capacity) {
+            state().m_early_callback_buffer.push_back(record);
             any_sink_ran = true;
         }
     }
 
     // 5. Last-resort fallback if every sink was disabled or failed.
-    if (!any_sink_ran) {
-        write_to_default_sink(record);
-    }
+    if (!any_sink_ran) { write_to_default_sink(record); }
 }
 
 }  // namespace
@@ -475,48 +451,46 @@ void set_config(const LoggerConfig& config) {
 
     std::vector<LogRecord> file_buffered;
     {
-        std::lock_guard<std::mutex> lock(s.config_mutex);
-        s.platform_enabled = config.platform_enabled;
-        s.console_enabled = config.console_enabled;
-        s.file_enabled = config.file_enabled;
-        s.callback_enabled = config.callback_enabled;
-        s.early_buffer_capacity = config.early_buffer_capacity;
+        std::scoped_lock lock(s.m_config_mutex);
+        s.m_platform_enabled = config.m_platform_enabled;
+        s.m_console_enabled = config.m_console_enabled;
+        s.m_file_enabled = config.m_file_enabled;
+        s.m_callback_enabled = config.m_callback_enabled;
+        s.m_early_buffer_capacity = config.m_early_buffer_capacity;
 
         // Drain the file early buffer when a path becomes available.
-        if (config.file_enabled && !config.file_path.empty()) {
-            file_buffered.swap(s.early_file_buffer);
+        if (config.m_file_enabled && !config.m_file_path.empty()) {
+            file_buffered.swap(s.m_early_file_buffer);
         }
     }
 
     {
-        std::lock_guard<std::mutex> lock(s.file_mutex);
-        const bool path_changed = (s.file_path != config.file_path);
-        if (path_changed || !config.file_enabled) {
-            if (s.file_stream.is_open()) { s.file_stream.close(); }
+        std::scoped_lock lock(s.m_file_mutex);
+        const bool path_changed = (s.m_file_path != config.m_file_path);
+        if (path_changed || !config.m_file_enabled) {
+            if (s.m_file_stream.is_open()) { s.m_file_stream.close(); }
         }
-        s.file_path = config.file_path;
+        s.m_file_path = config.m_file_path;
     }
 
     // Replay buffered records into the file sink now that the path is set.
-    for (const auto& record : file_buffered) {
-        emit_file(record);
-    }
+    for (const auto& record : file_buffered) { emit_file(record); }
 }
 
 LoggerConfig get_config() {
     auto& s = state();
     LoggerConfig config;
     {
-        std::lock_guard<std::mutex> lock(s.config_mutex);
-        config.platform_enabled = s.platform_enabled;
-        config.console_enabled = s.console_enabled;
-        config.file_enabled = s.file_enabled;
-        config.callback_enabled = s.callback_enabled;
-        config.early_buffer_capacity = s.early_buffer_capacity;
+        std::scoped_lock lock(s.m_config_mutex);
+        config.m_platform_enabled = s.m_platform_enabled;
+        config.m_console_enabled = s.m_console_enabled;
+        config.m_file_enabled = s.m_file_enabled;
+        config.m_callback_enabled = s.m_callback_enabled;
+        config.m_early_buffer_capacity = s.m_early_buffer_capacity;
     }
     {
-        std::lock_guard<std::mutex> lock(s.file_mutex);
-        config.file_path = s.file_path;
+        std::scoped_lock lock(s.m_file_mutex);
+        config.m_file_path = s.m_file_path;
     }
     return config;
 }
@@ -525,27 +499,30 @@ LoggerConfig get_config() {
 // Public API -- callback
 // ---------------------------------------------------------------------------
 
-void set_callback(Callback cb) {
+void set_callback(const Callback& cb) {
     std::vector<LogRecord> buffered;
     {
         auto& s = state();
-        std::lock_guard<std::mutex> lock(s.config_mutex);
-        s.callback = cb;
-        buffered.swap(s.early_callback_buffer);
+        std::scoped_lock lock(s.m_config_mutex);
+        s.m_callback = cb;
+        buffered.swap(s.m_early_callback_buffer);
     }
 
     if (cb && !buffered.empty()) {
         CallbackDispatchScope scope;
         for (const auto& record : buffered) {
-            try { cb(record); } catch (...) {}
+            try {
+                cb(record);
+            } catch (...) {}  // NOLINT(bugprone-empty-catch) don't let one callback crash the
+                              // logger
         }
     }
 }
 
 void clear_callback() {
     auto& s = state();
-    std::lock_guard<std::mutex> lock(s.config_mutex);
-    s.callback = nullptr;
+    std::scoped_lock lock(s.m_config_mutex);
+    s.m_callback = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -554,32 +531,23 @@ void clear_callback() {
 
 std::string format_plain(const LogRecord& record) {
     std::ostringstream out;
-    out << '[' << level_name(record.level) << "]["
-        << (record.source.empty() ? "native" : record.source) << "]["
-        << (record.group.empty() ? "default" : record.group) << "] "
-        << record.message;
+    out << '[' << level_name(record.m_level) << "]["
+        << (record.m_source.empty() ? "native" : record.m_source) << "]["
+        << (record.m_group.empty() ? "default" : record.m_group) << "] " << record.m_message;
     return out.str();
 }
 
 std::string format_logfmt(const LogRecord& record) {
     std::ostringstream out;
-    append_logfmt_field(
-        out, "time", format_iso8601_utc_ms(record.timestamp_ms));
+    append_logfmt_field(out, "time", format_iso8601_utc_ms(record.m_timestamp_ms));
     out << ' ';
-    out << "level=" << level_name(record.level)
-        << " seq=" << record.seq
-        << " ts_ms=" << record.timestamp_ms
-        << " mono_ns=" << record.monotonic_ns
-        << ' ';
-    append_logfmt_field(
-        out, "source",
-        record.source.empty() ? "native" : record.source);
+    out << "level=" << level_name(record.m_level) << " seq=" << record.m_seq
+        << " ts_ms=" << record.m_timestamp_ms << " mono_ns=" << record.m_monotonic_ns << ' ';
+    append_logfmt_field(out, "source", record.m_source.empty() ? "native" : record.m_source);
     out << ' ';
-    append_logfmt_field(
-        out, "group",
-        record.group.empty() ? "default" : record.group);
+    append_logfmt_field(out, "group", record.m_group.empty() ? "default" : record.m_group);
     out << ' ';
-    append_logfmt_field(out, "message", record.message);
+    append_logfmt_field(out, "message", record.m_message);
     return out.str();
 }
 
@@ -591,10 +559,7 @@ void log(LogLevel level, const char* group, const char* message) {
     log_with_source(level, "native", group, message);
 }
 
-void log_with_source(LogLevel level,
-                     const char* source,
-                     const char* group,
-                     const char* message) {
+void log_with_source(LogLevel level, const char* source, const char* group, const char* message) {
     const auto numeric_level = static_cast<std::uint32_t>(level);
     if (!should_log_compiled(numeric_level)) { return; }
 
@@ -605,30 +570,22 @@ void log_with_source(LogLevel level,
     }
 
     try {
-        dispatch_record(
-            make_record(numeric_level, source, group, message));
-    } catch (...) {
-        write_to_stderr_fallback(
-            numeric_level, source, group, message);
-    }
+        dispatch_record(make_record(numeric_level, source, group, message));
+    } catch (...) { write_to_stderr_fallback(numeric_level, source, group, message); }
 }
 
 void logf(LogLevel level, const char* group, const char* fmt, ...) {
-    if (!should_log_compiled(static_cast<std::uint32_t>(level))) {
-        return;
-    }
+    if (!should_log_compiled(static_cast<std::uint32_t>(level))) { return; }
 
     if (!fmt) {
         log(level, group, "");
         return;
     }
 
-    std::array<char, 1024> stack_buffer {};
+    std::array<char, 1024> stack_buffer{};
     va_list args;
     va_start(args, fmt);
-    const int written =
-        std::vsnprintf(
-            stack_buffer.data(), stack_buffer.size(), fmt, args);
+    const int written = std::vsnprintf(stack_buffer.data(), stack_buffer.size(), fmt, args);
     va_end(args);
 
     if (written < 0) {

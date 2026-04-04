@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.25)
 
 # ==============================================================================
 # Define the options for the tanh library
@@ -25,6 +25,7 @@ set(TANH_COMPONENTS Core State DSP AudioIO)
 option(TANH_BUILD_CORE "Build Core component" ON)
 option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
+option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 
 # ==============================================================================
@@ -118,6 +119,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# When using non-Apple Clang on macOS, CMake does not set the sysroot
+# automatically. Without it the compilation database lacks -isysroot and
+# tools like clang-tidy cannot find system headers (e.g. pthread.h).
+if(TANH_OPERATING_SYSTEM STREQUAL "macOS" AND NOT CMAKE_OSX_SYSROOT)
+    execute_process(
+        COMMAND xcrun --show-sdk-path
+        OUTPUT_VARIABLE _osx_sysroot
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(_osx_sysroot)
+        set(CMAKE_OSX_SYSROOT "${_osx_sysroot}" CACHE PATH "macOS SDK path" FORCE)
+    endif()
+endif()
+
 ## ==============================================================================
 # Fetch dependencies
 # ==============================================================================
@@ -206,6 +221,7 @@ if(TANH_BUILD_STATE)
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG v3.12.0
         GIT_SHALLOW TRUE
+        SYSTEM
     )
     FetchContent_MakeAvailable(nlohmann_json)
     
@@ -250,6 +266,7 @@ if(TANH_BUILD_DSP)
     endif()
 
     add_library(${PROJECT_NAME}_dsp
+        src/dsp/BaseProcessor.cpp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/Scales.cpp
@@ -340,6 +357,47 @@ if(TANH_BUILD_DSP)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
 endif()
 
+# Modulation component (depends on DSP and State)
+if(TANH_BUILD_MODULATION)
+    if(NOT TARGET ${PROJECT_NAME}_dsp)
+        message(FATAL_ERROR "Modulation component requires DSP component")
+    endif()
+    if(NOT TARGET ${PROJECT_NAME}_state)
+        message(FATAL_ERROR "Modulation component requires State component")
+    endif()
+
+    add_library(${PROJECT_NAME}_modulation
+        src/modulation/ModulationMatrix.cpp
+        src/modulation/LFOSource.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_modulation PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Modulation ALIAS ${PROJECT_NAME}_modulation)
+
+    target_include_directories(${PROJECT_NAME}_modulation
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_modulation
+        PUBLIC
+        ${PROJECT_NAME}_dsp
+        ${PROJECT_NAME}_state
+    )
+
+    target_compile_definitions(${PROJECT_NAME}_modulation
+        PUBLIC
+        -DTANH_MODULATION_ENABLED
+    )
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_modulation)
+endif()
+
 # AudioIO component (depends on Core)
 if(TANH_BUILD_AUDIO_IO)
     if(NOT TARGET ${PROJECT_NAME}_core)
@@ -351,11 +409,15 @@ if(TANH_BUILD_AUDIO_IO)
         GIT_REPOSITORY https://github.com/mackron/miniaudio.git
         GIT_TAG 0.11.24
         GIT_SHALLOW TRUE
+        SYSTEM
     )
     set(MINIAUDIO_NO_EXTRA_NODES ON CACHE BOOL "" FORCE)
     set(MINIAUDIO_NO_LIBVORBIS ON CACHE BOOL "" FORCE)
     set(MINIAUDIO_NO_LIBOPUS ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(miniaudio)
+
+    # Suppress warnings from miniaudio source compilation
+    target_compile_options(miniaudio PRIVATE -w)
 
     # On iOS, miniaudio.c includes AVFoundation which contains Objective-C
     # syntax. The FetchContent target compiles it as plain C, so we must
@@ -382,27 +444,27 @@ if(TANH_BUILD_AUDIO_IO)
 
 
     add_library(${PROJECT_NAME}_audio_io
-        src/audio_io/AudioDeviceManager.cpp
-        src/audio_io/AudioFileLoader.cpp
-        src/audio_io/AudioFileSink.cpp
-        src/audio_io/AudioPlayerSource.cpp
-        src/audio_io/DataSource.cpp
-        src/audio_io/miniaudio_impl.cpp
+        src/audio-io/AudioDeviceManager.cpp
+        src/audio-io/AudioFileLoader.cpp
+        src/audio-io/AudioFileSink.cpp
+        src/audio-io/AudioPlayerSource.cpp
+        src/audio-io/DataSource.cpp
+        src/audio-io/miniaudio_impl.cpp
     )
 
     if(TANH_OPERATING_SYSTEM STREQUAL "Android")
-        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio_io/AndroidAudioDevices.cpp)
+        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio-io/AndroidAudioDevices.cpp)
     endif()
 
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio_io/iOSAudioDevices.mm)
+        target_sources(${PROJECT_NAME}_audio_io PRIVATE src/audio-io/iOSAudioDevices.mm)
     endif()
 
     # On Apple platforms, miniaudio implementation includes Objective-C code
     # for CoreAudio/AVFoundation, so it must be compiled as Objective-C++
     if(APPLE)
         set_source_files_properties(
-            src/audio_io/miniaudio_impl.cpp
+            src/audio-io/miniaudio_impl.cpp
             PROPERTIES COMPILE_FLAGS "-x objective-c++"
         )
     endif()
@@ -518,14 +580,17 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_DSP)
         add_subdirectory(test/dsp)
     endif()
+    if (TANH_BUILD_MODULATION)
+        add_subdirectory(test/modulation)
+    endif()
     if (TANH_BUILD_AUDIO_IO)
-        add_subdirectory(test/audio_io)
+        add_subdirectory(test/audio-io)
     endif()
 
     # On iOS, test executables become .app bundles and need a bundle identifier
     # for simctl install/launch to work.
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        foreach(_test test_core test_state test_dsp test_audio_io)
+        foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state)
             if(TARGET ${_test})
                 # Bundle IDs must use hyphens, not underscores
                 string(REPLACE "_" "-" _bundle_suffix "${_test}")
@@ -548,7 +613,7 @@ if (TANH_WITH_TESTS)
 endif()
 
 if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-    add_subdirectory(examples/ios/audio_io)
+    add_subdirectory(examples/ios/audio-io)
 endif()
 
 

@@ -40,7 +40,7 @@
 
 namespace thl::dsp::resonator {
 
-const size_t kDelayLineSize = 4096;
+const size_t k_delay_line_size = 4096;
 
 // Three-tap FIR filter used in the KS feedback loop to model frequency-
 // dependent energy loss. The two coefficients, brightness and damping
@@ -108,8 +108,8 @@ private:
     RingsDampingFilter& operator=(const RingsDampingFilter&) = delete;
 };
 
-typedef thl::dsp::utils::DelayLine<float, kDelayLineSize> StringDelayLine;
-typedef thl::dsp::utils::Allpass<float, kDelayLineSize / 2> StiffnessAllpass;
+typedef thl::dsp::utils::DelayLine<float, k_delay_line_size> StringDelayLine;
+typedef thl::dsp::utils::Allpass<float, k_delay_line_size / 2> StiffnessAllpass;
 
 // Extended Karplus-Strong string model.
 //
@@ -155,14 +155,14 @@ public:
     // Initialise the string model.  `enable_dispersion` gates the allpass
     // stiffness path (and curved-bridge nonlinearity), when false, the
     // compiler eliminates that code entirely.
-    void prepare(bool enable_dispersion, float sample_rate = kDefaultSampleRate);
+    void prepare(bool enable_dispersion, float sample_rate = k_default_sample_rate);
 
     // Process a block of `size` samples.  Excitation is read from `in`;
     // the primary string output is accumulated into `out` and a comb-
     // filtered pickup signal (position-dependent tap) into `aux`.
-    void process(thl::dsp::audio::ConstAudioBufferView in,
-                 thl::dsp::audio::AudioBufferView out,
-                 thl::dsp::audio::AudioBufferView aux);
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
+                 const thl::dsp::audio::AudioBufferView& out,
+                 const thl::dsp::audio::AudioBufferView& aux);
 
     inline void set_frequency(float frequency) { m_frequency = frequency; }
 
@@ -191,11 +191,11 @@ private:
     // path so the compiler can eliminate allpass / curved-bridge logic
     // when it is not needed.
     template <bool enable_dispersion>
-    void process_internal(thl::dsp::audio::ConstAudioBufferView in,
+    void process_internal(const thl::dsp::audio::ConstAudioBufferView& in,
                           thl::dsp::audio::AudioBufferView out,
                           thl::dsp::audio::AudioBufferView aux);
 
-    float m_sample_rate = kDefaultSampleRate;
+    float m_sample_rate = k_default_sample_rate;
     float m_frequency = 0.0f;
     float m_dispersion = 0.0f;
     float m_brightness = 0.0f;

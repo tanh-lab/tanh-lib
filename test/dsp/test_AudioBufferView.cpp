@@ -2,6 +2,7 @@
 #include "tanh/dsp/audio/AudioBuffer.h"
 
 #include <utility>
+#include <vector>
 
 using namespace thl::dsp::audio;
 
@@ -182,4 +183,71 @@ TEST(AudioBufferView, BufferViewIntegration) {
     EXPECT_EQ(const_view.get_num_frames(), 4u);
     EXPECT_FLOAT_EQ(const_view.get_read_pointer(0)[0], 1.0f);
     EXPECT_FLOAT_EQ(const_view.get_read_pointer(1)[1], 3.0f);
+}
+
+TEST(AudioBufferView, SubBlockMono) {
+    std::vector<float> data(512, 0.0f);
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = static_cast<float>(i);
+    }
+
+    AudioBufferView view(data.data(), 512);
+
+    auto sub = view.sub_block(100, 50);
+    EXPECT_EQ(sub.get_num_frames(), 50u);
+    EXPECT_EQ(sub.get_num_channels(), 1u);
+
+    // Verify the sub_block points to the right data
+    EXPECT_FLOAT_EQ(sub.get_read_pointer(0)[0], 100.0f);
+    EXPECT_FLOAT_EQ(sub.get_read_pointer(0)[49], 149.0f);
+}
+
+TEST(AudioBufferView, SubBlockStereo) {
+    std::vector<float> left(512), right(512);
+    for (size_t i = 0; i < 512; ++i) {
+        left[i] = static_cast<float>(i);
+        right[i] = static_cast<float>(i + 1000);
+    }
+
+    float* channels[] = {left.data(), right.data()};
+    AudioBufferView view(channels, 2, 512);
+
+    auto sub = view.sub_block(200, 100);
+    EXPECT_EQ(sub.get_num_frames(), 100u);
+    EXPECT_EQ(sub.get_num_channels(), 2u);
+
+    EXPECT_FLOAT_EQ(sub.get_read_pointer(0)[0], 200.0f);
+    EXPECT_FLOAT_EQ(sub.get_read_pointer(0)[99], 299.0f);
+    EXPECT_FLOAT_EQ(sub.get_read_pointer(1)[0], 1200.0f);
+    EXPECT_FLOAT_EQ(sub.get_read_pointer(1)[99], 1299.0f);
+}
+
+TEST(AudioBufferView, SubBlockSpan) {
+    std::vector<float> data(512, 0.0f);
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = static_cast<float>(i);
+    }
+
+    AudioBufferView view(data.data(), 512);
+    auto sub = view.sub_block(10, 20);
+
+    auto span = sub[0];
+    EXPECT_EQ(span.size(), 20u);
+    EXPECT_FLOAT_EQ(span[0], 10.0f);
+    EXPECT_FLOAT_EQ(span[19], 29.0f);
+}
+
+TEST(AudioBufferView, SubBlockChained) {
+    std::vector<float> data(512, 0.0f);
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = static_cast<float>(i);
+    }
+
+    AudioBufferView view(data.data(), 512);
+    auto sub1 = view.sub_block(100, 200);
+    auto sub2 = sub1.sub_block(50, 50);
+
+    EXPECT_EQ(sub2.get_num_frames(), 50u);
+    EXPECT_FLOAT_EQ(sub2.get_read_pointer(0)[0], 150.0f);
+    EXPECT_FLOAT_EQ(sub2.get_read_pointer(0)[49], 199.0f);
 }

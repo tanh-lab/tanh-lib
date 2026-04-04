@@ -43,21 +43,21 @@ using ::thl::dsp::utils::ParameterInterpolator;
 void RingsModalResonator::prepare(float sample_rate) {
     m_sample_rate = sample_rate;
 
-    for (int32_t i = 0; i < kMaxModes; ++i) { m_f[i].reset(); }
+    for (auto& i : m_f) { i.reset(); }
 
     set_frequency(220.0f / m_sample_rate);
     set_structure(0.25f);
     set_brightness(0.5f);
     set_damping(0.3f);
     set_position(0.999f);
-    set_resolution(kMaxModes);
+    set_resolution(k_max_modes);
 }
 
 int32_t RingsModalResonator::compute_filters() {
-    float stiffness = Stiffness(m_structure);
+    float stiff = stiffness(m_structure);
     float harmonic = m_frequency;
     float stretch_factor = 1.0f;
-    float q = 500.0f * FourDecades(m_damping);
+    float q = 500.0f * four_decades(m_damping);
     float brightness_attenuation = 1.0f - m_structure;
     // Reduces the range of brightness when structure is very low, to prevent
     // clipping.
@@ -68,25 +68,23 @@ int32_t RingsModalResonator::compute_filters() {
     float q_loss = brightness * (2.0f - brightness) * 0.85f + 0.15f;
     float q_loss_damping_rate = m_structure * (2.0f - m_structure) * 0.1f;
     int32_t num_modes = 0;
-    for (int32_t i = 0; i < min(kMaxModes, m_resolution); ++i) {
+    for (int32_t i = 0; i < min(k_max_modes, m_resolution); ++i) {
         float partial_frequency = harmonic * stretch_factor;
         if (partial_frequency >= 0.49f) {
             partial_frequency = 0.49f;
         } else {
             num_modes = i + 1;
         }
-        m_f[i].set_f_q<Approximation::Fast>(
-            partial_frequency,
-            1.0f + partial_frequency * q);
-        stretch_factor += stiffness;
-        if (stiffness < 0.0f) {
+        m_f[i].set_f_q<Approximation::Fast>(partial_frequency, 1.0f + partial_frequency * q);
+        stretch_factor += stiff;
+        if (stiff < 0.0f) {
             // Make sure that the partials do not fold back into negative
             // frequencies.
-            stiffness *= 0.93f;
+            stiff *= 0.93f;
         } else {
             // This helps adding a few extra partials in the highest
             // frequencies.
-            stiffness *= 0.98f;
+            stiff *= 0.98f;
         }
         // This prevents the highest partials from decaying too fast.
         q_loss += q_loss_damping_rate * (1.0f - q_loss);
@@ -97,7 +95,7 @@ int32_t RingsModalResonator::compute_filters() {
     return num_modes;
 }
 
-void RingsModalResonator::process(thl::dsp::audio::ConstAudioBufferView in,
+void RingsModalResonator::process(const thl::dsp::audio::ConstAudioBufferView& in,
                                   thl::dsp::audio::AudioBufferView out,
                                   thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);

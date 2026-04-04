@@ -34,7 +34,7 @@ struct Range {
     int max_int() const { return static_cast<int>(m_max); }
     int step_int() const { return static_cast<int>(m_step); }
 
-    static Range Bool() { return {0.0f, 1.0f, 1.0f, 1.0f}; }
+    static Range boolean() { return {0.0f, 1.0f, 1.0f, 1.0f}; }
 };
 
 struct ParameterDefinition {
@@ -120,7 +120,7 @@ struct ParameterBool : public ParameterDefinition {
                   std::vector<std::string> data = {})
         : ParameterDefinition(std::move(name),
                               PluginParamType::ParamBool,
-                              Range::Bool(),
+                              Range::boolean(),
                               default_val ? 1.0f : 0.0f,
                               0,
                               automation,

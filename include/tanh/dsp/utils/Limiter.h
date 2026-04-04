@@ -13,7 +13,7 @@ public:
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
-    void process(thl::dsp::audio::AudioBufferView buffer) override;
+    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
     enum Parameter {
@@ -21,15 +21,13 @@ protected:
         Attack = 1,
         Release = 2,
 
-        NUM_PARAMETERS = 3
+        NumParameters = 3
     };
 
     template <typename T>
-    T get_parameter(Parameter parameter);
+    T get_parameter(Parameter parameter, uint32_t modulation_offset = 0);
 
-    virtual float get_parameter_float(Parameter parameter) = 0;
-    virtual bool get_parameter_bool(Parameter parameter) = 0;
-    virtual int get_parameter_int(Parameter parameter) = 0;
+    virtual float get_parameter_float(Parameter parameter, uint32_t modulation_offset = 0) = 0;
 
 private:
     double m_sample_rate = 48000.0;
@@ -41,16 +39,8 @@ private:
 };
 
 template <>
-inline float LimiterImpl::get_parameter<float>(Parameter p) {
-    return get_parameter_float(p);
-}
-template <>
-inline bool LimiterImpl::get_parameter<bool>(Parameter p) {
-    return get_parameter_bool(p);
-}
-template <>
-inline int LimiterImpl::get_parameter<int>(Parameter p) {
-    return get_parameter_int(p);
+inline float LimiterImpl::get_parameter<float>(Parameter p, uint32_t modulation_offset) {
+    return get_parameter_float(p, modulation_offset);
 }
 
 }  // namespace thl::dsp::utils

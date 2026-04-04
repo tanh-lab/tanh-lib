@@ -39,16 +39,16 @@ public:
     RingsReverb() {}
     ~RingsReverb() {}
 
-    void prepare(uint16_t* buffer, float sample_rate = thl::dsp::resonator::kDefaultSampleRate) {
+    void prepare(uint16_t* buffer, float sample_rate = thl::dsp::resonator::k_default_sample_rate) {
         m_engine.prepare(buffer);
-        m_engine.set_lfo_frequency(LFO_1, 0.5f / sample_rate);
-        m_engine.set_lfo_frequency(LFO_2, 0.3f / sample_rate);
-        m_rate_ratio = sample_rate / thl::dsp::resonator::kDefaultSampleRate;
+        m_engine.set_lfo_frequency(Lfo1, 0.5f / sample_rate);
+        m_engine.set_lfo_frequency(Lfo2, 0.3f / sample_rate);
+        m_rate_ratio = sample_rate / thl::dsp::resonator::k_default_sample_rate;
         m_lp = 0.7f;
         m_diffusion = 0.625f;
     }
 
-    static constexpr size_t kReverbBufferSize = 65536;
+    static constexpr size_t k_reverb_buffer_size = 65536;
 
     void process(thl::dsp::audio::AudioBufferView stereo) {
         float* left = stereo.get_write_pointer(0);
@@ -133,7 +133,7 @@ public:
 
             // Main reverb loop.
             c.load(apout);
-            c.interpolate(del2, 6261.0f * r, LFO_2, 50.0f * r, krt);
+            c.interpolate(del2, 6261.0f * r, Lfo2, 50.0f * r, krt);
             c.lp(lp_1, klp);
             c.read(dap1a, dap1a_tap, -kap);
             c.write_all_pass(dap1a, kap);
@@ -145,7 +145,7 @@ public:
             *left += (wet - *left) * amount;
 
             c.load(apout);
-            c.interpolate(del1, 4460.0f * r, LFO_1, 40.0f * r, krt);
+            c.interpolate(del1, 4460.0f * r, Lfo1, 40.0f * r, krt);
             c.lp(lp_2, klp);
             c.read(dap2a, dap2a_tap, kap);
             c.write_all_pass(dap2a, -kap);
@@ -177,7 +177,7 @@ public:
     inline void clear() { m_engine.clear(); }
 
 private:
-    typedef RingsFxEngine<65536, FORMAT_16_BIT> E;
+    typedef RingsFxEngine<65536, Format16Bit> E;
     E m_engine;
 
     float m_amount = 0.0f;

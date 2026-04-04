@@ -1,12 +1,8 @@
 #include "tanh/core.h"
-#include <stdexcept>
-#include <sstream>
 
-namespace thl {
+namespace thl::core {
 
-namespace core {
-
-std::string getVersion() {
+std::string get_version() {
 #ifdef TANH_VERSION
     return TANH_VERSION;
 #else
@@ -14,6 +10,4 @@ std::string getVersion() {
 #endif
 }
 
-}  // namespace core
-
-}  // namespace thl
+}  // namespace thl::core

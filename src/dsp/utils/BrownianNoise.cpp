@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 
 #include <tanh/dsp/utils/Random.h>
 
@@ -11,15 +11,15 @@ namespace thl::dsp::utils {
 BrownianNoise::BrownianNoise() = default;
 
 void BrownianNoise::prepare(float rate, float sample_rate, float momentum) {
-    m_rate         = rate;
-    m_sample_rate  = sample_rate;
-    m_momentum     = momentum;
+    m_rate = rate;
+    m_sample_rate = sample_rate;
+    m_momentum = momentum;
     m_smooth_coeff = calc_coeff(rate, sample_rate);
     reset();
 }
 
 void BrownianNoise::set_rate(float rate) {
-    m_rate         = rate;
+    m_rate = rate;
     m_smooth_coeff = calc_coeff(rate, m_sample_rate);
 }
 
@@ -28,10 +28,10 @@ void BrownianNoise::set_momentum(float momentum) {
 }
 
 void BrownianNoise::reset() {
-    m_value    = 0.0f;
+    m_value = 0.0f;
     m_velocity = 0.0f;
     m_smoothed = 0.0f;
-    m_phase    = 0.0f;
+    m_phase = 0.0f;
 }
 
 float BrownianNoise::process() {
@@ -43,7 +43,7 @@ float BrownianNoise::process() {
         m_velocity *= (1.0f - m_momentum * 0.5f);
     }
     m_value += m_velocity * (m_rate / m_sample_rate);
-    m_value  = std::tanh(m_value);
+    m_value = std::tanh(m_value);
     m_smoothed += m_smooth_coeff * (m_value - m_smoothed);
     return m_smoothed;
 }

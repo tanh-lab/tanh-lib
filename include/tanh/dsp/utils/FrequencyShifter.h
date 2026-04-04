@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 namespace thl::dsp::utils {
 
 /**
@@ -26,16 +28,19 @@ public:
     float process(float x);
 
 private:
-    struct State { float x1 = 0.0f; float y1 = 0.0f; };
+    struct State {
+        float m_x1 = 0.0f;
+        float m_y1 = 0.0f;
+    };
 
     static float process_chain(float x, const float* coeffs, State* states);
 
-    static const float COEFFS_A[4];
-    static const float COEFFS_B[4];
+    static const std::array<float, 4> k_coeffs_a;
+    static const std::array<float, 4> k_coeffs_b;
 
     float m_sample_rate = 48000.0f;
-    float m_phase       = 0.0f;
-    float m_phase_inc   = 0.0f;
+    float m_phase = 0.0f;
+    float m_phase_inc = 0.0f;
     State m_states_a[4];
     State m_states_b[4];
 };

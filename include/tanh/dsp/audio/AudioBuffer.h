@@ -100,6 +100,7 @@ public:
         return m_channels[channel] + sample_index;
     }
 
+    // NOLINTNEXTLINE(clang-analyzer-core.NullDereference)
     T* get_write_pointer(size_t channel) { return m_channels[channel]; }
 
     T* get_write_pointer(size_t channel, size_t sample_index) {
@@ -196,7 +197,7 @@ public:
 
 private:
     void malloc_channels() {
-        if (m_num_channels == 0) return;
+        if (m_num_channels == 0) { return; }
         void* channels = std::malloc(m_num_channels * sizeof(T*));
         if (channels != nullptr) {
             m_channels = static_cast<T**>(channels);

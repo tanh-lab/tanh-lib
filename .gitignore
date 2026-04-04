@@ -1,10 +1,8 @@
 build/
-build-ios/
-build-test/
 .DS_Store
 .cache/
 cmake-build*
-/build*
+*.local*
 
 # Generated test fixtures
 test/dsp/fixtures/*.bin

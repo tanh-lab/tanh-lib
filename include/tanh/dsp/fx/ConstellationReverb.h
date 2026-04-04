@@ -15,7 +15,7 @@ namespace thl::dsp::fx {
 enum class ConstellationReverbChannelMode : int {
     MonoToStereo = 0,  // Read ch0 as mono input  → stereo out on ch0+ch1
     StereoToStereo,    // Average ch0+ch1 as input → stereo out on ch0+ch1
-    NUM_CHANNEL_MODES
+    NumChannelModes
 };
 
 /**
@@ -58,7 +58,7 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
 
-    void process(thl::dsp::audio::AudioBufferView buffer) override;
+    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
     enum Parameter {
@@ -77,15 +77,15 @@ protected:
         FreqShiftDetune,
         FreqShiftModDepth,
         ChannelModeParam,
-        NUM_PARAMETERS
+        NumParameters
     };
 
     template <typename T>
-    T get_parameter(Parameter p);
+    T get_parameter(Parameter p, uint32_t modulation_offset = 0);
 
-    virtual float get_parameter_float(Parameter p) = 0;
-    virtual bool  get_parameter_bool(Parameter p)  = 0;
-    virtual int   get_parameter_int(Parameter p)   = 0;
+    virtual float get_parameter_float(Parameter p, uint32_t modulation_offset = 0) = 0;
+    virtual bool get_parameter_bool(Parameter p, uint32_t modulation_offset = 0) = 0;
+    virtual int get_parameter_int(Parameter p, uint32_t modulation_offset = 0) = 0;
 
 private:
     // ── Per-sample helpers ────────────────────────────────────────────────
@@ -95,7 +95,7 @@ private:
     // ── Allocation / initialisation ───────────────────────────────────────
     void allocate_buffers(float predelay_ms);
     void prepare_oscillators();
-    void apply_shimmer_pitch();
+    void apply_shimmer_pitch(uint32_t modulation_offset = 0);
 
     // ── Utility ───────────────────────────────────────────────────────────
     float sr_scale(int base) const;
@@ -107,22 +107,22 @@ private:
     std::array<utils::BrownianNoise*, 10> all_brownians();
 
     // ── Audio state ───────────────────────────────────────────────────────
-    double m_sample_rate   = 48000.0;
-    float  m_sr_ratio      = 1.0f;
-    float  m_hp_coeff      = 0.0f;
-    float  m_bw_coeff      = 0.9995f;
-    float  m_damping_coeff = 0.9995f;
-    float  m_predelay_len  = 0.0f;
+    double m_sample_rate = 48000.0;
+    float m_sr_ratio = 1.0f;
+    float m_hp_coeff = 0.0f;
+    float m_bw_coeff = 0.9995f;
+    float m_damping_coeff = 0.9995f;
+    float m_predelay_len = 0.0f;
 
     float m_hp_state = 0.0f;
     float m_bw_state = 0.0f;
-    float m_damp_a   = 0.0f;
-    float m_damp_b   = 0.0f;
+    float m_damp_a = 0.0f;
+    float m_damp_b = 0.0f;
 
-    float m_size          = 1.0f;
-    float m_target_size   = 1.0f;
-    float m_size_smooth   = 0.0f;
-    float m_freq_shift    = 0.0f;
+    float m_size = 1.0f;
+    float m_target_size = 1.0f;
+    float m_size_smooth = 0.0f;
+    float m_freq_shift = 0.0f;
     float m_target_fshift = 0.0f;
     float m_fshift_smooth = 0.0f;
 
@@ -131,35 +131,35 @@ private:
 
     // ── Cached per-block parameters (updated once per block in process()) ──
     // Avoids virtual dispatch inside the per-sample processing loop.
-    float  m_p_decay      = 0.85f;
-    bool   m_p_freeze     = false;
-    float  m_p_shimmer    = 0.0f;
-    float  m_p_shim_mod   = 0.0f;
-    float  m_p_fshift_hz  = 132.0f;
-    float  m_p_fshift_det = 0.2f;
-    float  m_p_fshift_mod = 40.0f;
+    float m_p_decay = 0.85f;
+    bool m_p_freeze = false;
+    float m_p_shimmer = 0.0f;
+    float m_p_shim_mod = 0.0f;
+    float m_p_fshift_hz = 132.0f;
+    float m_p_fshift_det = 0.2f;
+    float m_p_fshift_mod = 40.0f;
 
     // ── Input stage ───────────────────────────────────────────────────────
-    utils::DynamicAllpass   m_input_ap[4];
+    utils::DynamicAllpass m_input_ap[4];
     utils::DynamicDelayLine m_predelay;
 
     // ── Tank — half A ─────────────────────────────────────────────────────
-    utils::DynamicAllpass   m_ap_a1, m_ap_a2;
+    utils::DynamicAllpass m_ap_a1, m_ap_a2;
     utils::DynamicDelayLine m_delay_a1, m_delay_a2;
 
     // ── Tank — half B ─────────────────────────────────────────────────────
-    utils::DynamicAllpass   m_ap_b1, m_ap_b2;
+    utils::DynamicAllpass m_ap_b1, m_ap_b2;
     utils::DynamicDelayLine m_delay_b1, m_delay_b2;
 
     // ── LFOs ──────────────────────────────────────────────────────────────
     utils::SineOscillator m_lfo_a, m_lfo_b;
 
     // ── Brownian noise generators ─────────────────────────────────────────
-    utils::BrownianNoise m_brown_exc_a,    m_brown_exc_b;
+    utils::BrownianNoise m_brown_exc_a, m_brown_exc_b;
     utils::BrownianNoise m_brown_delay_a1, m_brown_delay_a2;
     utils::BrownianNoise m_brown_delay_b1, m_brown_delay_b2;
-    utils::BrownianNoise m_brown_ap_a2,    m_brown_ap_b2;
-    utils::BrownianNoise m_brown_shim_a,   m_brown_shim_b;
+    utils::BrownianNoise m_brown_ap_a2, m_brown_ap_b2;
+    utils::BrownianNoise m_brown_shim_a, m_brown_shim_b;
     utils::BrownianNoise m_brown_fshift_a, m_brown_fshift_b;
 
     // ── Shimmer ───────────────────────────────────────────────────────────
@@ -170,16 +170,17 @@ private:
 };
 
 template <>
-inline float ConstellationReverbImpl::get_parameter<float>(Parameter p) {
-    return get_parameter_float(p);
+inline float ConstellationReverbImpl::get_parameter<float>(Parameter p,
+                                                           uint32_t modulation_offset) {
+    return get_parameter_float(p, modulation_offset);
 }
 template <>
-inline bool ConstellationReverbImpl::get_parameter<bool>(Parameter p) {
-    return get_parameter_bool(p);
+inline bool ConstellationReverbImpl::get_parameter<bool>(Parameter p, uint32_t modulation_offset) {
+    return get_parameter_bool(p, modulation_offset);
 }
 template <>
-inline int ConstellationReverbImpl::get_parameter<int>(Parameter p) {
-    return get_parameter_int(p);
+inline int ConstellationReverbImpl::get_parameter<int>(Parameter p, uint32_t modulation_offset) {
+    return get_parameter_int(p, modulation_offset);
 }
 
 }  // namespace thl::dsp::fx

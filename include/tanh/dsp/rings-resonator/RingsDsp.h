@@ -35,19 +35,19 @@
 
 namespace thl::dsp::resonator {
 
-static constexpr float kDefaultSampleRate = 48000.0f;
-static constexpr size_t kMaxBlockSize = 24;
+static constexpr float k_default_sample_rate = 48000.0f;
+static constexpr size_t k_max_block_size = 24;
 
 enum ResonatorModel {
-    RESONATOR_MODEL_MODAL,
-    RESONATOR_MODEL_SYMPATHETIC_STRING,
-    RESONATOR_MODEL_STRING,
+    Modal,
+    SympatheticString,
+    String,
 
     // Bonus!
-    RESONATOR_MODEL_FM_VOICE,
-    RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED,
-    RESONATOR_MODEL_STRING_AND_REVERB,
-    RESONATOR_MODEL_LAST
+    FmVoice,
+    SympatheticStringQuantized,
+    StringAndReverb,
+    Last
 };
 
 }  // namespace thl::dsp::resonator

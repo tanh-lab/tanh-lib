@@ -98,7 +98,9 @@ public:
         }
     }
 
-    void clear() { std::memset(m_data, 0, sizeof(T) * m_size); }
+    void clear() {
+        if (m_data != nullptr) { std::memset(m_data, 0, sizeof(T) * m_size); }
+    }
 
     template <typename U = T, std::enable_if_t<std::is_trivially_copyable_v<U>, bool> = true>
     void swap_data(MemoryBlock& other) {

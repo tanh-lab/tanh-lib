@@ -42,11 +42,11 @@ public:
     RingsEnsemble() {}
     ~RingsEnsemble() {}
 
-    void prepare(uint16_t* buffer, float sample_rate = thl::dsp::resonator::kDefaultSampleRate) {
-        thl::dsp::resonator::WarmDspFunctions();
-        m_sine_table = thl::dsp::resonator::SineTable();
+    void prepare(uint16_t* buffer, float sample_rate = thl::dsp::resonator::k_default_sample_rate) {
+        thl::dsp::resonator::warm_dsp_functions();
+        m_sine_table = thl::dsp::resonator::sine_table();
         m_engine.prepare(buffer);
-        m_rate_ratio = sample_rate / thl::dsp::resonator::kDefaultSampleRate;
+        m_rate_ratio = sample_rate / thl::dsp::resonator::k_default_sample_rate;
         m_phase_1 = 0;
         m_phase_2 = 0;
     }
@@ -116,7 +116,7 @@ public:
     inline void set_depth(float depth) { m_depth = depth * 128.0f * m_rate_ratio; }
 
 private:
-    typedef RingsFxEngine<8192, FORMAT_16_BIT> E;
+    typedef RingsFxEngine<8192, Format16Bit> E;
     E m_engine;
 
     float m_amount = 0.0f;

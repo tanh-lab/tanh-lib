@@ -31,10 +31,10 @@
 namespace thl::dsp::resonator {
 
 struct RingsPatch {
-    float structure;
-    float brightness;
-    float damping;
-    float position;
+    float m_structure;
+    float m_brightness;
+    float m_damping;
+    float m_position;
 };
 
 }  // namespace thl::dsp::resonator

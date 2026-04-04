@@ -120,14 +120,12 @@ float ADSR::process() {
 
                 // Positive: weight by distance to target (1 - level)
                 // Negative: weight by distance from start (level), bowing the other way
-                float weight = m_attack_curve > 0.0f
-                    ? (1.0f - m_current_level)
-                    : (m_current_level + 0.01f);
+                float weight =
+                    m_attack_curve > 0.0f ? (1.0f - m_current_level) : (m_current_level + 0.01f);
 
                 // Apply blended increment between linear and exponential
                 float blended_increment =
-                    (1.0f - abs_curve) * linear_increment +
-                    abs_curve * exponential_target * weight;
+                    (1.0f - abs_curve) * linear_increment + abs_curve * exponential_target * weight;
                 m_current_level += blended_increment;
             } else {
                 // Simple linear attack (original behavior)
@@ -155,13 +153,15 @@ float ADSR::process() {
                 float total_range = std::max(1.0f - target_level, 0.001f);
 
                 // Calculate exponential decay factor
-                float exp_factor = (1.0f - std::exp(-(m_decay_rate * 5.0f))) / exponential_normalization;
+                float exp_factor =
+                    (1.0f - std::exp(-(m_decay_rate * 5.0f))) / exponential_normalization;
                 float linear_decay = m_decay_rate;
 
-                // Positive: weight by distance (fast start). Negative: weight by progress (fast end).
+                // Positive: weight by distance (fast start). Negative: weight by progress (fast
+                // end).
                 float weight = m_decay_curve > 0.0f
-                    ? distance
-                    : total_range * (1.0f - distance / total_range + 0.01f);
+                                   ? distance
+                                   : total_range * (1.0f - distance / total_range + 0.01f);
 
                 // Apply blended decrement between linear and exponential
                 float blended_decrement =
@@ -193,13 +193,16 @@ float ADSR::process() {
                 float safe_release_level = std::max(m_release_level, 0.001f);
 
                 // Calculate exponential decay factor
-                float exp_factor = (1.0f - std::exp(-(m_release_rate * 5.0f))) / exponential_normalization;
+                float exp_factor =
+                    (1.0f - std::exp(-(m_release_rate * 5.0f))) / exponential_normalization;
                 float linear_decay = m_release_rate;
 
-                // Positive: weight by current level (fast start). Negative: weight by progress (fast end).
+                // Positive: weight by current level (fast start). Negative: weight by progress
+                // (fast end).
                 float weight = m_release_curve > 0.0f
-                    ? m_current_level
-                    : safe_release_level * (1.0f - m_current_level / safe_release_level + 0.01f);
+                                   ? m_current_level
+                                   : safe_release_level *
+                                         (1.0f - m_current_level / safe_release_level + 0.01f);
 
                 // Apply blended decrement between linear and exponential
                 float blended_decrement =
