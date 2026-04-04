@@ -4,7 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 #include <numeric>
 #include <vector>
 
@@ -491,7 +491,7 @@ TEST(BufferDouble, BasicOperations) {
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 96000.0);
 
     buffer.set_sample(0, 0, std::numbers::pi);
-    EXPECT_DOUBLE_EQ(buffer.get_sample(0, 0), 3.14159);
+    EXPECT_DOUBLE_EQ(buffer.get_sample(0, 0), std::numbers::pi);
 
     buffer.clear();
     EXPECT_DOUBLE_EQ(buffer.get_sample(0, 0), 0.0);
