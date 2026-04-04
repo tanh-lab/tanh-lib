@@ -29,12 +29,31 @@
       }
     },
     {
+      "name": "windows-debug",
+      "displayName": "Windows Debug",
+      "binaryDir": "${sourceDir}/build/windows/Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows Release",
+      "binaryDir": "${sourceDir}/build/windows/Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "desktop-debug-asan",
       "displayName": "Desktop Debug + ASan/UBSan",
       "inherits": "desktop-debug",
       "cacheVariables": {
         "TANH_WITH_ASAN": "ON",
         "TANH_WITH_USAN": "ON"
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/asan_suppressions.txt"
       }
     },
     {
@@ -43,6 +62,9 @@
       "inherits": "desktop-debug",
       "cacheVariables": {
         "TANH_WITH_TSAN": "ON"
+      },
+      "environment": {
+        "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
       }
     },
     {
@@ -151,6 +173,16 @@
       "configuration": "Debug"
     },
     {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release"
+    },
+    {
       "name": "ios-simulator-debug",
       "configurePreset": "ios-simulator-debug",
       "configuration": "Debug"
@@ -214,6 +246,18 @@
       "name": "desktop-debug-rtsan",
       "configurePreset": "desktop-debug-rtsan",
       "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release",
       "output": { "outputOnFailure": true }
     },
     {

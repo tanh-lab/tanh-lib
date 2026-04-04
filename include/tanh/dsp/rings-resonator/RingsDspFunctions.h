@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 
 namespace thl::dsp::resonator {
 

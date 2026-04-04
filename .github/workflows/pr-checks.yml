@@ -5,12 +5,12 @@ on: [push]
 jobs:
   format:
     name: clang-format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
           - name: Linux-x86_64
-            os: ubuntu-latest
+            os: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
@@ -26,11 +26,14 @@ jobs:
       matrix:
         include:
           - name: Linux-x86_64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             preset: desktop-debug
           - name: macOS-arm64
-            os: macos-latest
+            os: macos-15
             preset: desktop-debug
+          - name: Windows-x86_64
+            os: windows-2025
+            preset: windows-debug
     steps:
       - uses: actions/checkout@v4
       - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
@@ -38,6 +41,7 @@ jobs:
         with:
           PRESET: ${{ matrix.preset }}
       - uses: tanh-lab/ci-actions/clang-tidy-check@main
+        if: ${{ matrix.name != 'Windows-x86_64' }}
         with:
           SOURCES: "src/"
           PRESET: ${{ matrix.preset }}
@@ -47,12 +51,12 @@ jobs:
 
   sanitizer-asan:
     name: ASan/UBSan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
           - name: Linux-x86_64
-            os: ubuntu-latest
+            os: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
@@ -65,12 +69,12 @@ jobs:
 
   sanitizer-tsan:
     name: TSan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
           - name: Linux-x86_64
-            os: ubuntu-latest
+            os: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
@@ -81,14 +85,32 @@ jobs:
         with:
           PRESET: desktop-debug-tsan
 
-  sanitizer-rtsan:
-    name: RTSan
-    runs-on: ubuntu-latest
+  sanitizer-lsan:
+    name: LSan
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
           - name: Linux-x86_64
-            os: ubuntu-latest
+            os: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
+      - uses: tanh-lab/ci-actions/cmake-build@main
+        with:
+          PRESET: desktop-debug-lsan
+      - uses: tanh-lab/ci-actions/cmake-test@main
+        with:
+          PRESET: desktop-debug-lsan
+
+  sanitizer-rtsan:
+    name: RTSan
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - name: Linux-x86_64
+            os: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
