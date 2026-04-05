@@ -445,9 +445,6 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
     }
 
     // --- Platform-specific buffer configuration ---
-    uint32_t const configured_periods = 1;
-    uint32_t const burst_size = 0;
-
 #if defined(THL_PLATFORM_IOS)
     // Bluetooth HFP/SCO delivers silent capture buffers when the
     // AVAudioSession IO buffer duration exceeds ~64 ms.  Clamp the
@@ -470,26 +467,24 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
     }
 #endif
 
+    auto const [configured_periods, burst_size] = [&]() -> std::pair<uint32_t, uint32_t> {
 #if defined(THL_PLATFORM_ANDROID)
-    {
         auto probe =
             configure_android_buffering(m_impl->m_context, dev_config, buffer_size_in_frames);
 
-        burst_size = probe.burstSize;
         dev_config.periodSizeInFrames = probe.periodSize;
-        configured_periods = probe.periods;
         dev_config.periods = probe.periods;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
                           "thl.audio_io.audio_device_manager",
                           "%s: probed burstSize=%u, configured periodSize=%u, periods=%u",
                           label,
-                          burst_size,
+                          probe.burstSize,
                           probe.periodSize,
                           probe.periods);
-    }
+
+        return {probe.periods, probe.burstSize};
 #elif defined(THL_PLATFORM_IOS) || defined(THL_PLATFORM_MACOS)
-    {
         auto probe = probe_core_audio_period(m_impl->m_context, dev_config, buffer_size_in_frames);
 
         if (probe.m_period_size > 0 && probe.m_period_size != buffer_size_in_frames) {
@@ -501,21 +496,23 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
                               buffer_size_in_frames);
         }
 
-        burst_size = probe.m_period_size;
         dev_config.periodSizeInFrames = probe.m_period_size;
-        configured_periods = (probe.m_periods > 0) ? probe.m_periods : 1;
-        dev_config.periods = configured_periods;
+        uint32_t const periods = (probe.m_periods > 0) ? probe.m_periods : 1;
+        dev_config.periods = periods;
 
         thl::Logger::logf(thl::Logger::LogLevel::Debug,
                           "thl.audio_io.audio_device_manager",
                           "%s: probed periodSize=%u, periods=%u",
                           label,
                           probe.m_period_size,
-                          configured_periods);
-    }
+                          periods);
+
+        return {periods, probe.m_period_size};
 #else
-    dev_config.periodSizeInFrames = buffer_size_in_frames;
+        dev_config.periodSizeInFrames = buffer_size_in_frames;
+        return {1, 0};
 #endif
+    }();
 
     // --- Open device ---
     if (ma_device_init(&m_impl->m_context, &dev_config, device) != MA_SUCCESS) { return false; }
