@@ -5,7 +5,7 @@
 #include <cstddef>
 #include "tanh/dsp/audio/AudioBufferView.h"
 #include <cstdint>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 #include <cmath>
 
 using namespace thl::dsp::synth;

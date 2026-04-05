@@ -5,7 +5,7 @@
 /// in C++20 mode.  Detect Apple Clang via __apple_build_version__ and
 /// provide a manual fallback.
 #if __has_include(<numbers>) && !defined(__apple_build_version__)
-#include <numbers>
+#include <numbers>  // IWYU pragma: export
 #else
 
 namespace std::numbers {  // NOLINT(cert-dcl58-cpp)

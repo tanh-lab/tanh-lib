@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 
 namespace thl::dsp::utils {
 

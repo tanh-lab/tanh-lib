@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 
 using namespace thl::modulation;
 
