@@ -6,7 +6,6 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 
-
 namespace thl::dsp {
 
 class TANH_API BaseProcessor {
@@ -35,5 +34,4 @@ private:
                            std::span<const uint32_t> change_points) TANH_NONBLOCKING_FUNCTION;
 };
 
-} // namespace thl::dsp
-
+}  // namespace thl::dsp

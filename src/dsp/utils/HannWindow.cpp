@@ -5,8 +5,7 @@
 
 namespace thl::dsp::utils {
 
-HannWindow::HannWindow()
-     {
+HannWindow::HannWindow() {
     // Default to a reasonable duration
     set_duration(100.0f);  // 100ms default
 }
