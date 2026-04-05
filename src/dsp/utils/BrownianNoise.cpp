@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <tanh/core/Numbers.h>
+#include <numbers>
 
 #include <tanh/dsp/utils/Random.h>
 

@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include <cstdint>
 
 namespace thl::dsp::fx {
 

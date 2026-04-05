@@ -29,6 +29,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
@@ -56,8 +57,8 @@ const size_t k_delay_line_size = 4096;
 // producing a warmer, darker decay.
 class RingsDampingFilter {
 public:
-    RingsDampingFilter() {}
-    ~RingsDampingFilter() {}
+    RingsDampingFilter() = default;
+    ~RingsDampingFilter() = default;
 
     void prepare() {
         m_x = 0.0f;
@@ -73,6 +74,9 @@ public:
         m_x_prev = 0.0f;
     }
 
+    RingsDampingFilter(const RingsDampingFilter&) = delete;
+    RingsDampingFilter& operator=(const RingsDampingFilter&) = delete;
+
     inline void configure(float damping, float brightness, size_t size) {
         if (!size) {
             m_damping = damping;
@@ -80,16 +84,16 @@ public:
             m_damping_increment = 0.0f;
             m_brightness_increment = 0.0f;
         } else {
-            float step = 1.0f / static_cast<float>(size);
+            const float step = 1.0f / static_cast<float>(size);
             m_damping_increment = (damping - m_damping) * step;
             m_brightness_increment = (brightness - m_brightness) * step;
         }
     }
 
     inline float process(float x) {
-        float h0 = (1.0f + m_brightness) * 0.5f;
-        float h1 = (1.0f - m_brightness) * 0.25f;
-        float y = m_damping * (h0 * m_x + h1 * (x + m_x_prev));
+        const float h0 = (1.0f + m_brightness) * 0.5f;
+        const float h1 = (1.0f - m_brightness) * 0.25f;
+        const float y = m_damping * (h0 * m_x + h1 * (x + m_x_prev));
         m_x_prev = m_x;
         m_x = x;
         m_brightness += m_brightness_increment;
@@ -104,13 +108,10 @@ private:
     float m_brightness_increment = 0.0f;
     float m_damping = 0.0f;
     float m_damping_increment = 0.0f;
-
-    RingsDampingFilter(const RingsDampingFilter&) = delete;
-    RingsDampingFilter& operator=(const RingsDampingFilter&) = delete;
 };
 
-typedef thl::dsp::utils::DelayLine<float, k_delay_line_size> StringDelayLine;
-typedef thl::dsp::utils::Allpass<float, k_delay_line_size / 2> StiffnessAllpass;
+using StringDelayLine = thl::dsp::utils::DelayLine<float, k_delay_line_size>;
+using StiffnessAllpass = thl::dsp::utils::Allpass<float, k_delay_line_size / 2>;
 
 // Extended Karplus-Strong string model.
 //
@@ -150,8 +151,8 @@ typedef thl::dsp::utils::Allpass<float, k_delay_line_size / 2> StiffnessAllpass;
 //     clean pitch accuracy across the full frequency range.
 class TANH_API RingsString {
 public:
-    RingsString() {}
-    ~RingsString() {}
+    RingsString() = default;
+    ~RingsString() = default;
 
     // Initialise the string model.  `enable_dispersion` gates the allpass
     // stiffness path (and curved-bridge nonlinearity), when false, the
@@ -180,6 +181,9 @@ public:
     inline void set_position(float position) { m_position = position; }
 
     inline StringDelayLine* mutable_string() { return &m_string; }
+
+    RingsString(const RingsString&) = delete;
+    RingsString& operator=(const RingsString&) = delete;
 
 private:
     // Compute per-block filter coefficients from the current parameter
@@ -213,8 +217,8 @@ private:
     float m_dispersion_noise = 0.0f;
 
     float m_src_phase = 0.0f;
-    float m_out_sample[2] = {};
-    float m_aux_sample[2] = {};
+    std::array<float, 2> m_out_sample = {};
+    std::array<float, 2> m_aux_sample = {};
 
     float m_curved_bridge = 0.0f;
     float m_noise_filter = 0.0f;
@@ -226,9 +230,6 @@ private:
     RingsDampingFilter m_fir_damping_filter;
     thl::dsp::filter::Svf m_iir_damping_filter;
     thl::dsp::filter::DCBlocker m_dc_blocker;
-
-    RingsString(const RingsString&) = delete;
-    RingsString& operator=(const RingsString&) = delete;
 };
 
 }  // namespace thl::dsp::resonator

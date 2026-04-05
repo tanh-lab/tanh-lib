@@ -1,7 +1,7 @@
 #include <tanh/dsp/utils/SineOscillator.h>
 
 #include <cmath>
-#include <tanh/core/Numbers.h>
+#include <numbers>
 
 namespace thl::dsp::utils {
 

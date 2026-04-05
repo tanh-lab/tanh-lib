@@ -1,6 +1,10 @@
 #include <tanh/audio-io/AudioFileSink.h>
 #include "miniaudio.h"
+#include <atomic>
 #include <cmath>
+#include <cstdint>
+#include <memory>
+#include <string>
 
 namespace thl {
 
@@ -31,10 +35,10 @@ bool AudioFileSink::open_file(const std::string& file_path,
                               AudioEncodingFormat format) {
     close_file();
 
-    ma_encoder_config config =
+    ma_encoder_config const config =
         ma_encoder_config_init(to_miniaudio_format(format), ma_format_f32, channels, sample_rate);
 
-    ma_result result = ma_encoder_init_file(file_path.c_str(), &config, &m_impl->m_encoder);
+    ma_result const result = ma_encoder_init_file(file_path.c_str(), &config, &m_impl->m_encoder);
 
     m_open = (result == MA_SUCCESS);
     m_impl->m_encoder_channels = m_open ? channels : 0;
@@ -80,7 +84,7 @@ void AudioFileSink::process(float* /*outputBuffer*/,
     float peak = 0.0f;
     const uint32_t total_samples = frame_count * num_input_channels;
     for (uint32_t i = 0; i < total_samples; ++i) {
-        float abs_val = std::fabs(input_buffer[i]);
+        float const abs_val = std::fabs(input_buffer[i]);
         if (abs_val > peak) { peak = abs_val; }
     }
     m_peak_level.store(peak, std::memory_order_release);

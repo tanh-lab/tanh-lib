@@ -28,6 +28,8 @@
 
 #pragma once
 
+#include <array>
+
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
@@ -89,8 +91,8 @@ struct VoiceGroup {
 //      prevent cancellation when summed externally.
 class TANH_API RingsStringSynthPart {
 public:
-    RingsStringSynthPart() {}
-    ~RingsStringSynthPart() {}
+    RingsStringSynthPart() = default;
+    ~RingsStringSynthPart() = default;
 
     void prepare(uint16_t* reverb_buffer,
                  float sample_rate = thl::dsp::resonator::k_default_sample_rate);
@@ -102,10 +104,10 @@ public:
                  thl::dsp::audio::AudioBufferView aux);
 
     inline void set_polyphony(int32_t polyphony) {
-        int32_t old_polyphony = m_polyphony;
+        const int32_t old_polyphony = m_polyphony;
         m_polyphony = std::min(polyphony, k_max_string_synth_polyphony);
         for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
-            m_group[i].m_tonic = m_group[0].m_tonic + i * 0.01f;
+            m_group[i].m_tonic = m_group[0].m_tonic + static_cast<float>(i) * 0.01f;
         }
         if (m_active_group >= m_polyphony) { m_active_group = 0; }
     }
@@ -116,6 +118,9 @@ public:
         }
         m_fx_type = fx_type;
     }
+
+    RingsStringSynthPart(const RingsStringSynthPart&) = delete;
+    RingsStringSynthPart& operator=(const RingsStringSynthPart&) = delete;
 
 private:
     // Run AD envelopes for each polyphonic group.  `shape` controls attack/
@@ -135,10 +140,10 @@ private:
                                 thl::dsp::audio::AudioBufferView out,
                                 thl::dsp::audio::AudioBufferView aux);
 
-    thl::dsp::synth::StringSynthVoice<k_num_harmonics> m_voice[k_string_synth_voices];
-    VoiceGroup m_group[k_max_string_synth_polyphony];
+    std::array<thl::dsp::synth::StringSynthVoice<k_num_harmonics>, k_string_synth_voices> m_voice;
+    std::array<VoiceGroup, k_max_string_synth_polyphony> m_group;
 
-    thl::dsp::filter::Svf m_formant_filter[k_num_formants];
+    std::array<thl::dsp::filter::Svf, k_num_formants> m_formant_filter;
     thl::dsp::fx::RingsEnsemble m_ensemble;
     thl::dsp::fx::RingsReverb m_reverb;
     thl::dsp::fx::RingsChorus m_chorus;
@@ -157,13 +162,10 @@ private:
 
     thl::dsp::analysis::NoteFilter m_note_filter;
 
-    float m_filter_in_buffer[thl::dsp::resonator::k_max_block_size];
-    float m_filter_out_buffer[thl::dsp::resonator::k_max_block_size];
+    std::array<float, thl::dsp::resonator::k_max_block_size> m_filter_in_buffer;
+    std::array<float, thl::dsp::resonator::k_max_block_size> m_filter_out_buffer;
 
     bool m_clear_fx = false;
-
-    RingsStringSynthPart(const RingsStringSynthPart&) = delete;
-    RingsStringSynthPart& operator=(const RingsStringSynthPart&) = delete;
 };
 
 }  // namespace thl::dsp::synth

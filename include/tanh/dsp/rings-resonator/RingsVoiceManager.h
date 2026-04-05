@@ -70,8 +70,8 @@ struct PreparedVoiceParams {
 
 class TANH_API RingsVoiceManager {
 public:
-    RingsVoiceManager() {}
-    ~RingsVoiceManager() {}
+    RingsVoiceManager() = default;
+    ~RingsVoiceManager() = default;
 
     void prepare(uint16_t* reverb_buffer,
                  float sample_rate = thl::dsp::resonator::k_default_sample_rate);
@@ -87,9 +87,11 @@ public:
 
     inline int32_t polyphony() const { return m_polyphony; }
     inline void set_polyphony(int32_t polyphony) {
-        int32_t old_polyphony = m_polyphony;
+        const int32_t old_polyphony = m_polyphony;
         m_polyphony = std::min(polyphony, k_max_polyphony);
-        for (int32_t i = old_polyphony; i < m_polyphony; ++i) { m_note[i] = m_note[0] + i * 0.05f; }
+        for (int32_t i = old_polyphony; i < m_polyphony; ++i) {
+            m_note[i] = m_note[0] + static_cast<float>(i) * 0.05f;
+        }
         m_dirty = true;
     }
 
@@ -100,6 +102,9 @@ public:
             m_dirty = true;
         }
     }
+
+    RingsVoiceManager(const RingsVoiceManager&) = delete;
+    RingsVoiceManager& operator=(const RingsVoiceManager&) = delete;
 
 private:
     void configure_resonators();
@@ -162,33 +167,30 @@ private:
     uint32_t m_step_counter = 0;
     int32_t m_polyphony = 1;
 
-    thl::dsp::resonator::RingsModalResonator m_resonator[k_max_polyphony];
-    thl::dsp::resonator::RingsString m_string[k_num_strings];
-    thl::dsp::utils::CosineOscillator m_lfo[k_num_strings];
-    RingsFmVoice m_fm_voice[k_max_polyphony];
+    std::array<thl::dsp::resonator::RingsModalResonator, k_max_polyphony> m_resonator;
+    std::array<thl::dsp::resonator::RingsString, k_num_strings> m_string;
+    std::array<thl::dsp::utils::CosineOscillator, k_num_strings> m_lfo;
+    std::array<RingsFmVoice, k_max_polyphony> m_fm_voice;
 
-    thl::dsp::filter::Svf m_excitation_filter[k_max_polyphony];
-    thl::dsp::filter::DCBlocker m_dc_blocker[k_max_polyphony];
-    thl::dsp::synth::Plucker m_plucker[k_max_polyphony];
+    std::array<thl::dsp::filter::Svf, k_max_polyphony> m_excitation_filter;
+    std::array<thl::dsp::filter::DCBlocker, k_max_polyphony> m_dc_blocker;
+    std::array<thl::dsp::synth::Plucker, k_max_polyphony> m_plucker;
 
-    float m_note[k_max_polyphony];
-    PreparedVoiceParams m_prepared[k_max_polyphony];
+    std::array<float, k_max_polyphony> m_note;
+    std::array<PreparedVoiceParams, k_max_polyphony> m_prepared;
     thl::dsp::analysis::NoteFilter m_note_filter;
 
-    float m_resonator_input[thl::dsp::resonator::k_max_block_size];
-    float m_sympathetic_resonator_input[thl::dsp::resonator::k_max_block_size];
-    float m_noise_burst_buffer[thl::dsp::resonator::k_max_block_size];
+    std::array<float, thl::dsp::resonator::k_max_block_size> m_resonator_input;
+    std::array<float, thl::dsp::resonator::k_max_block_size> m_sympathetic_resonator_input;
+    std::array<float, thl::dsp::resonator::k_max_block_size> m_noise_burst_buffer;
 
-    float m_out_buffer[thl::dsp::resonator::k_max_block_size];
-    float m_aux_buffer[thl::dsp::resonator::k_max_block_size];
+    std::array<float, thl::dsp::resonator::k_max_block_size> m_out_buffer;
+    std::array<float, thl::dsp::resonator::k_max_block_size> m_aux_buffer;
 
     thl::dsp::fx::RingsReverb m_reverb;
     thl::dsp::utils::SoftLimiter m_limiter;
 
     static std::array<float, Last> m_model_gains;
-
-    RingsVoiceManager(const RingsVoiceManager&) = delete;
-    RingsVoiceManager& operator=(const RingsVoiceManager&) = delete;
 };
 
 }  // namespace thl::dsp::synth

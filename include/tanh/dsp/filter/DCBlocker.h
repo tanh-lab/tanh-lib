@@ -20,7 +20,7 @@ public:
     }
 
     void process(thl::dsp::audio::AudioBufferView in_out) {
-        float* ptr = in_out.get_write_pointer(0);
+        float* ptr = in_out.get_write_pointer(0);  // NOLINT(misc-const-correctness)
         size_t size = in_out.get_num_frames();
         float x = m_x;
         float y = m_y;

@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <tanh/core/Numbers.h>
+#include <cstddef>
+#include <numbers>
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include <cstdint>
+#include <utility>
 
 #include <tanh/dsp/utils/DspMath.h>
 

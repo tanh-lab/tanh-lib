@@ -6,14 +6,14 @@
 
 #include <string>
 
-namespace thl {
+
 
 // Core utility functions available to all components
-namespace core {
+namespace thl::core {
 /**
  * @brief Get the library version
  */
 std::string get_version();
-}  // namespace core
+} // namespace thl::core
 
-}  // namespace thl
+

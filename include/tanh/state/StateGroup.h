@@ -511,10 +511,7 @@ private:
         ListenerData() = default;
 
         /// @brief Copy constructor for RCU
-        ListenerData(const ListenerData& other)
-            : m_object_listeners(other.m_object_listeners)
-            , m_callback_listeners(other.m_callback_listeners)
-            , m_next_listener_id(other.m_next_listener_id) {}
+        ListenerData(const ListenerData& other) = default;
     };
 
     /// @brief RCU-protected listeners for lock-free notification dispatch

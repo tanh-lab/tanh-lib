@@ -1,8 +1,17 @@
 #include <tanh/audio-io/AudioDeviceManager.h>
 #include "miniaudio.h"
+#include "tanh/audio-io/AudioDeviceInfo.h"
+#include "tanh/audio-io/AudioIODeviceCallback.h"
+#include "tanh/core/AtomicSharedPtr.h"
 #include "tanh/core/Logger.h"
+#include "tanh/core/threading/RCU.h"
 #include <algorithm>
+#include <cstdint>
+#include <atomic>
 #include <cstring>
+#include <string>
+#include <utility>
+#include <memory>
 #include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)
@@ -153,7 +162,7 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     m_impl->m_duplex_user_data.m_manager = this;
     m_impl->m_duplex_user_data.m_role = DeviceRole::Duplex;
 
-    ma_context_config ctx_config = ma_context_config_init();
+    ma_context_config const ctx_config = ma_context_config_init();
 
 #if defined(THL_PLATFORM_IOS)
     configure_ios_audio_session();
@@ -164,7 +173,7 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     configure_android_bluetooth_session();
 #endif
 
-    ma_result result = ma_context_init(nullptr, 0, &ctx_config, &m_impl->m_context);
+    ma_result const result = ma_context_init(nullptr, 0, &ctx_config, &m_impl->m_context);
     m_impl->m_context_initialised = (result == MA_SUCCESS);
 }
 
@@ -185,15 +194,16 @@ void AudioDeviceManager::populate_sample_rates(std::vector<AudioDeviceInfo>& dev
         ma_device_info device_info;
         ma_device_id device_id{};
         std::memcpy(&device_id, info.device_id_ptr(), sizeof(device_id));
-        ma_result result = ma_context_get_device_info(const_cast<ma_context*>(&m_impl->m_context),
-                                                      to_ma_device_type(info.m_device_type),
-                                                      &device_id,
-                                                      &device_info);
+        ma_result const result =
+            ma_context_get_device_info(const_cast<ma_context*>(&m_impl->m_context),
+                                       to_ma_device_type(info.m_device_type),
+                                       &device_id,
+                                       &device_info);
 
         std::vector<uint32_t> rates;
         if (result == MA_SUCCESS) {
             for (ma_uint32 i = 0; i < device_info.nativeDataFormatCount; i++) {
-                uint32_t rate = device_info.nativeDataFormats[i].sampleRate;
+                uint32_t const rate = device_info.nativeDataFormats[i].sampleRate;
                 if (rate > 0) {
                     if (std::ranges::find(rates, rate) == rates.end()) { rates.push_back(rate); }
                 }
@@ -376,7 +386,7 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
                                                uint32_t num_input_channels,
                                                uint32_t num_output_channels) {
     ma_device* device = nullptr;
-    DeviceUserData* user_data = nullptr;
+    DeviceUserData const* user_data = nullptr;
     ma_device_type device_type = ma_device_type_playback;
     const char* label = nullptr;
 
@@ -412,7 +422,7 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
         reinterpret_cast<ma_device_data_proc>(&AudioDeviceManager::data_callback);
     dev_config.notificationCallback =
         reinterpret_cast<ma_device_notification_proc>(&AudioDeviceManager::notification_callback);
-    dev_config.pUserData = user_data;
+    dev_config.pUserData = const_cast<DeviceUserData*>(user_data);
 #if defined(THL_PLATFORM_ANDROID)
     dev_config.aaudio.allowSetBufferCapacity = MA_TRUE;
     dev_config.aaudio.usage = ma_aaudio_usage_media;
@@ -435,8 +445,8 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
     }
 
     // --- Platform-specific buffer configuration ---
-    uint32_t configured_periods = 1;
-    uint32_t burst_size = 0;
+    uint32_t const configured_periods = 1;
+    uint32_t const burst_size = 0;
 
 #if defined(THL_PLATFORM_IOS)
     // Bluetooth HFP/SCO delivers silent capture buffers when the
@@ -790,7 +800,7 @@ bool AudioDeviceManager::start_playback() {
         return false;
     }
 
-    ma_result result = ma_device_start(&m_impl->m_playback_device);
+    ma_result const result = ma_device_start(&m_impl->m_playback_device);
     if (result != MA_SUCCESS) { return false; }
 
     m_playback_running.store(true, std::memory_order_relaxed);
@@ -820,7 +830,7 @@ bool AudioDeviceManager::start_capture() {
     m_impl->m_capture_total_frames.store(0, std::memory_order_relaxed);
     m_impl->m_capture_measured_rate.store(0, std::memory_order_relaxed);
 
-    ma_result result = ma_device_start(&m_impl->m_capture_device);
+    ma_result const result = ma_device_start(&m_impl->m_capture_device);
     if (result != MA_SUCCESS) { return false; }
 
     m_capture_running.store(true, std::memory_order_relaxed);
@@ -844,7 +854,7 @@ bool AudioDeviceManager::start_duplex() {
         return false;
     }
 
-    ma_result result = ma_device_start(&m_impl->m_duplex_device);
+    ma_result const result = ma_device_start(&m_impl->m_duplex_device);
     if (result != MA_SUCCESS) { return false; }
 
     m_duplex_running.store(true, std::memory_order_relaxed);
@@ -1178,15 +1188,17 @@ uint32_t AudioDeviceManager::get_buffer_size(DeviceRole role) const {
 uint32_t AudioDeviceManager::get_period_size() const {
     // Prefer the actual callback frame count resolved from the first callback.
     if (m_impl->m_playback_device_initialised) {
-        uint32_t actual = m_impl->m_playback_actual_period_size.load(std::memory_order_relaxed);
+        uint32_t const actual =
+            m_impl->m_playback_actual_period_size.load(std::memory_order_relaxed);
         return actual > 0 ? actual : m_impl->m_playback_prepared_period_size;
     }
     if (m_impl->m_duplex_device_initialised) {
-        uint32_t actual = m_impl->m_duplex_actual_period_size.load(std::memory_order_relaxed);
+        uint32_t const actual = m_impl->m_duplex_actual_period_size.load(std::memory_order_relaxed);
         return actual > 0 ? actual : m_impl->m_duplex_prepared_period_size;
     }
     if (m_impl->m_capture_device_initialised) {
-        uint32_t actual = m_impl->m_capture_actual_period_size.load(std::memory_order_relaxed);
+        uint32_t const actual =
+            m_impl->m_capture_actual_period_size.load(std::memory_order_relaxed);
         return actual > 0 ? actual : m_impl->m_capture_prepared_period_size;
     }
     return get_buffer_size();
@@ -1196,21 +1208,21 @@ uint32_t AudioDeviceManager::get_period_size(DeviceRole role) const {
     switch (role) {
         case DeviceRole::Playback:
             if (m_impl->m_playback_device_initialised) {
-                uint32_t actual =
+                uint32_t const actual =
                     m_impl->m_playback_actual_period_size.load(std::memory_order_relaxed);
                 return actual > 0 ? actual : m_impl->m_playback_prepared_period_size;
             }
             break;
         case DeviceRole::Capture:
             if (m_impl->m_capture_device_initialised) {
-                uint32_t actual =
+                uint32_t const actual =
                     m_impl->m_capture_actual_period_size.load(std::memory_order_relaxed);
                 return actual > 0 ? actual : m_impl->m_capture_prepared_period_size;
             }
             break;
         case DeviceRole::Duplex:
             if (m_impl->m_duplex_device_initialised) {
-                uint32_t actual =
+                uint32_t const actual =
                     m_impl->m_duplex_actual_period_size.load(std::memory_order_relaxed);
                 return actual > 0 ? actual : m_impl->m_duplex_prepared_period_size;
             }
@@ -1338,7 +1350,7 @@ void AudioDeviceManager::process_callbacks(DeviceRole role,
     if (!device) { return; }
 
     // Select per-role state.
-    RCU<std::vector<AudioIODeviceCallback*>>* callbacks = nullptr;
+    RCU<std::vector<AudioIODeviceCallback*>> const* callbacks = nullptr;
     std::atomic<bool>* audio_thread_registered = nullptr;
     uint32_t max_chunk_size = 0;
     std::atomic<uint32_t>* actual_period_size = nullptr;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -14,7 +15,7 @@ public:
     DelayLine() = default;
 
     void prepare() {
-        std::fill(&m_line[0], &m_line[max_delay], T(0));
+        m_line.fill(T(0));
         m_delay = 1;
         m_write_ptr = 0;
     }
@@ -59,13 +60,13 @@ public:
         return static_cast<T>((((a * f) - b_neg) * f + c) * f + x0);
     }
 
+    DelayLine(const DelayLine&) = delete;
+    DelayLine& operator=(const DelayLine&) = delete;
+
 private:
     size_t m_write_ptr = 0;
     size_t m_delay = 1;
-    T m_line[max_delay]{};
-
-    DelayLine(const DelayLine&) = delete;
-    DelayLine& operator=(const DelayLine&) = delete;
+    std::array<T, max_delay> m_line{};
 };
 
 }  // namespace thl::dsp::utils

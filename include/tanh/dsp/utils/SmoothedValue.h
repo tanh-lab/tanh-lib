@@ -35,7 +35,7 @@ private:
 
     double m_sample_rate = 48000.0;
 
-    ValueSmoothingType m_smoothing_type;
+    ValueSmoothingType m_smoothing_type{Linear};
 };
 
 }  // namespace thl::dsp::utils

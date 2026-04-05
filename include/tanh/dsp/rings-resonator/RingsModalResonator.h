@@ -29,6 +29,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
@@ -42,8 +43,8 @@ const int32_t k_max_modes = 64;
 
 class TANH_API RingsModalResonator {
 public:
-    RingsModalResonator() {}
-    ~RingsModalResonator() {}
+    RingsModalResonator() = default;
+    ~RingsModalResonator() = default;
 
     void prepare(float sample_rate = k_default_sample_rate);
     void process(const thl::dsp::audio::ConstAudioBufferView& in,
@@ -78,6 +79,9 @@ public:
         m_dirty = true;
     }
 
+    RingsModalResonator(const RingsModalResonator&) = delete;
+    RingsModalResonator& operator=(const RingsModalResonator&) = delete;
+
 private:
     int32_t compute_filters();
     float m_sample_rate = k_default_sample_rate;
@@ -92,10 +96,7 @@ private:
     int32_t m_num_modes = 0;
     bool m_dirty = true;
 
-    thl::dsp::filter::Svf m_f[k_max_modes];
-
-    RingsModalResonator(const RingsModalResonator&) = delete;
-    RingsModalResonator& operator=(const RingsModalResonator&) = delete;
+    std::array<thl::dsp::filter::Svf, k_max_modes> m_f;
 };
 
 }  // namespace thl::dsp::resonator

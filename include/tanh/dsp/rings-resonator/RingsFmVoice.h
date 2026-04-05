@@ -45,8 +45,8 @@ using namespace thl::dsp::utils;
 
 class TANH_API RingsFmVoice {
 public:
-    RingsFmVoice() {}
-    ~RingsFmVoice() {}
+    RingsFmVoice() = default;
+    ~RingsFmVoice() = default;
 
     void prepare(float sample_rate = thl::dsp::resonator::k_default_sample_rate);
     void process(const thl::dsp::audio::ConstAudioBufferView& in,
@@ -72,12 +72,15 @@ public:
 
     inline float sine_fm(uint32_t phase, float fm) const {
         phase += (static_cast<uint32_t>((fm + 4.0f) * 536870912.0f)) << 3;
-        uint32_t integral = phase >> 20;
-        float fractional = static_cast<float>(phase << 12) / 4294967296.0f;
-        float a = m_sine_table[integral];
-        float b = m_sine_table[integral + 1];
+        const uint32_t integral = phase >> 20;
+        const float fractional = static_cast<float>(phase << 12) / 4294967296.0f;
+        const float a = m_sine_table[integral];
+        const float b = m_sine_table[integral + 1];
         return a + (b - a) * fractional;
     }
+
+    RingsFmVoice(const RingsFmVoice&) = delete;
+    RingsFmVoice& operator=(const RingsFmVoice&) = delete;
 
 private:
     void prepare_coefficients();
@@ -113,9 +116,6 @@ private:
     const float* m_fm_frequency_quantizer_table = nullptr;
 
     thl::dsp::analysis::Follower m_follower;
-
-    RingsFmVoice(const RingsFmVoice&) = delete;
-    RingsFmVoice& operator=(const RingsFmVoice&) = delete;
 };
 
 }  // namespace thl::dsp::synth

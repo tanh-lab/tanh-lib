@@ -8,7 +8,7 @@ namespace thl::dsp::utils {
 
 inline float interpolate(const float* table, float index, float size) {
     index *= size;
-    const int32_t index_integral = static_cast<int32_t>(index);
+    const auto index_integral = static_cast<int32_t>(index);
     const float index_fractional = index - static_cast<float>(index_integral);
     const float a = table[index_integral];
     const float b = table[index_integral + 1];
@@ -18,7 +18,7 @@ inline float interpolate(const float* table, float index, float size) {
 inline float interpolate_wrap(const float* table, float index, float size) {
     index -= static_cast<float>(static_cast<int32_t>(index));
     index *= size;
-    const int32_t index_integral = static_cast<int32_t>(index);
+    const auto index_integral = static_cast<int32_t>(index);
     const float index_fractional = index - static_cast<float>(index_integral);
     const float a = table[index_integral];
     const float b = table[index_integral + 1];
@@ -96,8 +96,8 @@ struct IntegralFractional {
 };
 
 inline IntegralFractional split_integral_fractional(float x) {
-    int32_t i = static_cast<int32_t>(x);
-    return {i, x - static_cast<float>(i)};
+    auto i = static_cast<int32_t>(x);
+    return {.m_integral = i, .m_fractional = x - static_cast<float>(i)};
 }
 
 }  // namespace thl::dsp::utils

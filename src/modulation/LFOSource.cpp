@@ -1,7 +1,9 @@
 #include "tanh/modulation/LFOSource.h"
 
 #include <cmath>
-#include <tanh/core/Numbers.h>
+#include <cstddef>
+#include <cstdint>
+#include <numbers>
 
 using namespace thl::modulation;
 
@@ -16,7 +18,7 @@ void LFOSourceImpl::process(size_t num_samples) {
     m_change_points.clear();
 
     for (size_t i = 0; i < num_samples; ++i) {
-        float freq = get_parameter<float>(Frequency, static_cast<uint32_t>(i));
+        float const freq = get_parameter<float>(Frequency, static_cast<uint32_t>(i));
 
         m_phase_increment = static_cast<float>(freq / m_sample_rate);
 
@@ -39,7 +41,7 @@ void LFOSourceImpl::process(size_t num_samples) {
 }
 
 void LFOSourceImpl::process_single(float* out, uint32_t sample_index) {
-    float freq = get_parameter<float>(Frequency, sample_index);
+    float const freq = get_parameter<float>(Frequency, sample_index);
     auto waveform = static_cast<LFOWaveform>(get_parameter<int>(Waveform, sample_index));
     auto decimation = static_cast<uint32_t>(get_parameter<int>(Decimation, sample_index));
 

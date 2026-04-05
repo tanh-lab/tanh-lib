@@ -1,7 +1,8 @@
 #include <tanh/dsp/utils/FrequencyShifter.h>
 
+#include <array>
 #include <cmath>
-#include <tanh/core/Numbers.h>
+#include <numbers>
 
 namespace thl::dsp::utils {
 
@@ -35,8 +36,8 @@ void FrequencyShifter::reset() {
 }
 
 float FrequencyShifter::process(float x) {
-    const float real = process_chain(x, k_coeffs_a.data(), m_states_a);
-    const float imag = process_chain(x, k_coeffs_b.data(), m_states_b);
+    const float real = process_chain(x, k_coeffs_a.data(), m_states_a.data());
+    const float imag = process_chain(x, k_coeffs_b.data(), m_states_b.data());
 
     const float out = real * std::cos(m_phase) - imag * std::sin(m_phase);
 

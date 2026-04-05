@@ -28,7 +28,9 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <utility>
 
 namespace thl::dsp::utils {
 
@@ -38,12 +40,12 @@ enum EnvelopeFlags { RisingEdge = 1, FallingEdge = 2, Gate = 4 };
 
 class StringSynthEnvelope {
 public:
-    StringSynthEnvelope() {}
-    ~StringSynthEnvelope() {}
+    StringSynthEnvelope() = default;
+    ~StringSynthEnvelope() = default;
 
     void prepare() {
         set_ad(0.1f, 0.001f);
-        m_segment = m_num_segments;
+        m_segment = static_cast<int16_t>(m_num_segments);
         m_phase = 0.0f;
         m_start_value = 0.0f;
         m_value = 0.0f;
@@ -51,26 +53,27 @@ public:
 
     inline float process(uint8_t flags) {
         if (flags & RisingEdge) {
-            m_start_value = m_segment == m_num_segments ? m_level[0] : m_value;
+            m_start_value = std::cmp_equal(m_segment, m_num_segments) ? m_level[0] : m_value;
             m_segment = 0;
             m_phase = 0.0f;
         } else if (flags & FallingEdge && m_sustain_point) {
             m_start_value = m_value;
-            m_segment = m_sustain_point;
+            m_segment = static_cast<int16_t>(m_sustain_point);
             m_phase = 0.0f;
         } else if (m_phase >= 1.0f) {
-            m_start_value = m_level[m_segment + 1];
+            m_start_value = m_level[static_cast<size_t>(m_segment) + 1];
             ++m_segment;
             m_phase = 0.0f;
         }
 
-        bool done = m_segment == m_num_segments;
-        bool sustained = m_sustain_point && m_segment == m_sustain_point && flags & Gate;
+        const bool done = std::cmp_equal(m_segment, m_num_segments);
+        const bool sustained =
+            m_sustain_point && std::cmp_equal(m_segment, m_sustain_point) && flags & Gate;
 
         float phase_increment = 0.0f;
-        if (!sustained && !done) { phase_increment = m_rate[m_segment]; }
+        if (!sustained && !done) { phase_increment = m_rate[static_cast<size_t>(m_segment)]; }
         float t = m_phase;
-        if (m_shape[m_segment] == Quartic) {
+        if (m_shape[static_cast<size_t>(m_segment)] == Quartic) {
             t = 1.0f - t;
             t *= t;
             t *= t;
@@ -78,7 +81,7 @@ public:
         }
 
         m_phase += phase_increment;
-        m_value = m_start_value + (m_level[m_segment + 1] - m_start_value) * t;
+        m_value = m_start_value + (m_level[static_cast<size_t>(m_segment) + 1] - m_start_value) * t;
         return m_value;
     }
 
@@ -112,10 +115,13 @@ public:
         m_shape[1] = Linear;
     }
 
+    StringSynthEnvelope(const StringSynthEnvelope&) = delete;
+    StringSynthEnvelope& operator=(const StringSynthEnvelope&) = delete;
+
 private:
-    float m_level[4] = {};
-    float m_rate[4] = {};
-    EnvelopeShape m_shape[4] = {};
+    std::array<float, 4> m_level = {};
+    std::array<float, 4> m_rate = {};
+    std::array<EnvelopeShape, 4> m_shape = {};
 
     int16_t m_segment = 0;
     float m_start_value = 0.0f;
@@ -124,9 +130,6 @@ private:
 
     uint16_t m_num_segments = 0;
     uint16_t m_sustain_point = 0;
-
-    StringSynthEnvelope(const StringSynthEnvelope&) = delete;
-    StringSynthEnvelope& operator=(const StringSynthEnvelope&) = delete;
 };
 
 }  // namespace thl::dsp::utils

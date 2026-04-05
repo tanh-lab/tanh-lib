@@ -1,4 +1,5 @@
 #include <tanh/dsp/utils/Random.h>
+#include <cstdint>
 
 namespace thl::dsp::utils {
 

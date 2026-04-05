@@ -43,8 +43,8 @@ private:
     float m_sample_rate = 48000.0f;
     float m_phase = 0.0f;
     float m_phase_inc = 0.0f;
-    State m_states_a[4];
-    State m_states_b[4];
+    std::array<State, 4> m_states_a;
+    std::array<State, 4> m_states_b;
 };
 
 }  // namespace thl::dsp::utils

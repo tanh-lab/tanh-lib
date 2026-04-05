@@ -29,6 +29,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/DspMath.h>
@@ -37,38 +38,38 @@ namespace thl::dsp::utils {
 
 class SoftLimiter {
 public:
-    SoftLimiter() {}
-    ~SoftLimiter() {}
+    SoftLimiter() = default;
+    ~SoftLimiter() = default;
 
     void prepare() { m_peak = 0.5f; }
 
     void process(thl::dsp::audio::AudioBufferView stereo, float pre_gain) {
-        float* l = stereo.get_write_pointer(0);
-        float* r = stereo.get_write_pointer(1);
+        float* l = stereo.get_write_pointer(0);  // NOLINT(misc-const-correctness)
+        float* r = stereo.get_write_pointer(1);  // NOLINT(misc-const-correctness)
         size_t size = stereo.get_num_frames();
         while (size--) {
-            float l_pre = *l * pre_gain;
-            float r_pre = *r * pre_gain;
+            const float l_pre = *l * pre_gain;
+            const float r_pre = *r * pre_gain;
 
-            float l_peak = fabs(l_pre);
-            float r_peak = fabs(r_pre);
-            float s_peak = fabs(r_pre - l_pre);
+            const float l_peak = std::fabs(l_pre);
+            const float r_peak = std::fabs(r_pre);
+            const float s_peak = std::fabs(r_pre - l_pre);
 
-            float peak = std::max(std::max(l_peak, r_peak), s_peak);
+            const float peak = std::max({l_peak, r_peak, s_peak});
             thl::dsp::utils::slope<float>(m_peak, peak, 0.05f, 0.00002f);
 
             // Clamp to 8Vpp, clipping softly towards 10Vpp
-            float gain = (m_peak <= 1.0f ? 1.0f : 1.0f / m_peak);
+            const float gain = (m_peak <= 1.0f ? 1.0f : 1.0f / m_peak);
             *l++ = soft_limit(l_pre * gain * 0.8f);
             *r++ = soft_limit(r_pre * gain * 0.8f);
         }
     }
 
-private:
-    float m_peak = 0.5f;
-
     SoftLimiter(const SoftLimiter&) = delete;
     SoftLimiter& operator=(const SoftLimiter&) = delete;
+
+private:
+    float m_peak = 0.5f;
 };
 
 }  // namespace thl::dsp::utils

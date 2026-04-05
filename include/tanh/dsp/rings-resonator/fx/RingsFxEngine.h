@@ -29,6 +29,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
@@ -46,7 +47,7 @@ struct DataType {};
 
 template <>
 struct DataType<Format12Bit> {
-    typedef uint16_t T;
+    using T = uint16_t;
 
     static inline float decompress(T value) {
         return static_cast<float>(static_cast<int16_t>(value)) / 4096.0f;
@@ -60,7 +61,7 @@ struct DataType<Format12Bit> {
 
 template <>
 struct DataType<Format16Bit> {
-    typedef uint16_t T;
+    using T = uint16_t;
 
     static inline float decompress(T value) {
         return static_cast<float>(static_cast<int16_t>(value)) / 32768.0f;
@@ -74,7 +75,7 @@ struct DataType<Format16Bit> {
 
 template <>
 struct DataType<Format32Bit> {
-    typedef float T;
+    using T = float;
 
     static inline float decompress(T value) {
         return value;
@@ -87,9 +88,9 @@ struct DataType<Format32Bit> {
 template <size_t size, Format format = Format12Bit>
 class RingsFxEngine {
 public:
-    typedef typename DataType<format>::T T;
-    RingsFxEngine() {}
-    ~RingsFxEngine() {}
+    using T = typename DataType<format>::T;
+    RingsFxEngine() = default;
+    ~RingsFxEngine() = default;
 
     void prepare(T* buffer) {
         m_buffer = buffer;
@@ -105,7 +106,7 @@ public:
 
     template <int32_t l, typename T = Empty>
     struct Reserve {
-        typedef T Tail;
+        using Tail = T;
         enum { Length = l };
     };
 
@@ -126,8 +127,8 @@ public:
         friend class RingsFxEngine;
 
     public:
-        Context() {}
-        ~Context() {}
+        Context() = default;
+        ~Context() = default;
 
         inline void load(float value) { m_accumulator = value; }
 
@@ -143,9 +144,9 @@ public:
         }
 
         template <typename D>
-        inline void write(D& d, int32_t offset, float scale) {
+        inline void write(D& /*d*/, int32_t offset, float scale) {
             static_assert((D::Base + D::Length <= size), "delay_memory_full");
-            T w = DataType<format>::compress(m_accumulator);
+            const T w = DataType<format>::compress(m_accumulator);
             if (offset == -1) {
                 m_buffer[(m_write_ptr + D::Base + D::Length - 1) & Mask] = w;
             } else {
@@ -171,7 +172,7 @@ public:
         }
 
         template <typename D>
-        inline void read(D& d, int32_t offset, float scale) {
+        inline void read(D& /*d*/, int32_t offset, float scale) {
             static_assert((D::Base + D::Length <= size), "delay_memory_full");
             T r;
             if (offset == -1) {
@@ -179,7 +180,7 @@ public:
             } else {
                 r = m_buffer[(m_write_ptr + D::Base + offset) & Mask];
             }
-            float r_f = DataType<format>::decompress(r);
+            const float r_f = DataType<format>::decompress(r);
             m_previous_read = r_f;
             m_accumulator += r_f * scale;
         }
@@ -200,43 +201,47 @@ public:
         }
 
         template <typename D>
-        inline void interpolate(D& d, float offset, float scale) {
+        inline void interpolate(D& /*d*/, float offset, float scale) {
             static_assert((D::Base + D::Length <= size), "delay_memory_full");
             auto [offset_integral, offset_fractional] =
                 thl::dsp::utils::split_integral_fractional(offset);
-            float a = DataType<format>::decompress(
+            const float a = DataType<format>::decompress(
                 m_buffer[(m_write_ptr + offset_integral + D::Base) & Mask]);
-            float b = DataType<format>::decompress(
+            const float b = DataType<format>::decompress(
                 m_buffer[(m_write_ptr + offset_integral + D::Base + 1) & Mask]);
-            float x = a + (b - a) * offset_fractional;
+            const float x = a + (b - a) * offset_fractional;
             m_previous_read = x;
             m_accumulator += x * scale;
         }
 
         template <typename D>
-        inline void interpolate(D& d, float offset, LFOIndex index, float amplitude, float scale) {
+        inline void interpolate(D& /*d*/,
+                                float offset,
+                                LFOIndex index,
+                                float amplitude,
+                                float scale) {
             static_assert((D::Base + D::Length <= size), "delay_memory_full");
             offset += amplitude * m_lfo_value[index];
             auto [offset_integral, offset_fractional] =
                 thl::dsp::utils::split_integral_fractional(offset);
-            float a = DataType<format>::decompress(
+            const float a = DataType<format>::decompress(
                 m_buffer[(m_write_ptr + offset_integral + D::Base) & Mask]);
-            float b = DataType<format>::decompress(
+            const float b = DataType<format>::decompress(
                 m_buffer[(m_write_ptr + offset_integral + D::Base + 1) & Mask]);
-            float x = a + (b - a) * offset_fractional;
+            const float x = a + (b - a) * offset_fractional;
             m_previous_read = x;
             m_accumulator += x * scale;
         }
 
+        Context(const Context&) = delete;
+        Context& operator=(const Context&) = delete;
+
     private:
         float m_accumulator = 0.0f;
         float m_previous_read = 0.0f;
-        float m_lfo_value[2] = {};
+        std::array<float, 2> m_lfo_value = {};
         T* m_buffer = nullptr;
         int32_t m_write_ptr = 0;
-
-        Context(const Context&) = delete;
-        Context& operator=(const Context&) = delete;
     };
 
     inline void set_lfo_frequency(LFOIndex index, float frequency) {
@@ -260,15 +265,15 @@ public:
         }
     }
 
+    RingsFxEngine(const RingsFxEngine&) = delete;
+    RingsFxEngine& operator=(const RingsFxEngine&) = delete;
+
 private:
     enum { Mask = size - 1 };
 
     int32_t m_write_ptr = 0;
     T* m_buffer = nullptr;
-    thl::dsp::utils::CosineOscillator m_lfo[2];
-
-    RingsFxEngine(const RingsFxEngine&) = delete;
-    RingsFxEngine& operator=(const RingsFxEngine&) = delete;
+    std::array<thl::dsp::utils::CosineOscillator, 2> m_lfo;
 };
 
 }  // namespace thl::dsp::fx

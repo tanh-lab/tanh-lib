@@ -109,7 +109,8 @@ public:
         if (m_data != nullptr) { std::memset(m_data, 0, sizeof(T) * m_size); }
     }
 
-    template <typename U = T, std::enable_if_t<std::is_trivially_copyable_v<U>, bool> = true>
+    template <typename U = T>
+        requires(std::is_trivially_copyable_v<U>)
     void swap_data(MemoryBlock& other) {
         if (this != &other) {
             if (m_size == other.m_size) {

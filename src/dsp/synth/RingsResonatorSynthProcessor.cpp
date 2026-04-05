@@ -14,7 +14,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <utility>
+#include "tanh/dsp/rings-resonator/RingsPatch.h"
+#include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
+#include "tanh/dsp/rings-resonator/RingsDsp.h"
 
 namespace thl::dsp::synth {
 
@@ -86,7 +90,7 @@ struct RingsResonatorSynthProcessor::EngineState {
     }
 
     void render_block(const float* input, float* out_odd, float* out_even) {
-        float midi_note = 12.0f * std::log2(m_frequency / 27.5f);
+        float const midi_note = 12.0f * std::log2(m_frequency / 27.5f);
         m_performance_state.m_note = midi_note;
 
         if (m_part.polyphony() != m_polyphony_voices) {
@@ -102,9 +106,9 @@ struct RingsResonatorSynthProcessor::EngineState {
         std::array<float, k_block_size> out = {};
         std::array<float, k_block_size> aux = {};
 
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), k_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), k_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), k_block_size);
+        thl::dsp::audio::ConstAudioBufferView const in_view(in.data(), k_block_size);
+        thl::dsp::audio::AudioBufferView const out_view(out.data(), k_block_size);
+        thl::dsp::audio::AudioBufferView const aux_view(aux.data(), k_block_size);
 
         m_strummer.process(in_view, &m_performance_state);
 
@@ -140,20 +144,20 @@ void RingsResonatorSynthProcessor::process(const thl::dsp::audio::ConstAudioBuff
                                            thl::dsp::audio::AudioBufferView output) {
     const float* input_ptr = input.get_read_pointer(0);
     float* output_ptr = output.get_write_pointer(0);
-    int num_samples = static_cast<int>(input.get_num_frames());
+    int const num_samples = static_cast<int>(input.get_num_frames());
 
     auto& e = *m_engine;
 
-    float frequency = get_parameter_float(Parameter::Frequency);
-    float structure = get_parameter_float(Parameter::Structure);
-    float brightness = get_parameter_float(Parameter::Brightness);
-    float damping = get_parameter_float(Parameter::Damping);
-    float position = get_parameter_float(Parameter::Position);
+    float const frequency = get_parameter_float(Parameter::Frequency);
+    float const structure = get_parameter_float(Parameter::Structure);
+    float const brightness = get_parameter_float(Parameter::Brightness);
+    float const damping = get_parameter_float(Parameter::Damping);
+    float const position = get_parameter_float(Parameter::Position);
     float odd_even_mix = get_parameter_float(Parameter::OddEvenMix);
     odd_even_mix = 0.05f + std::clamp(odd_even_mix, 0.0f, 1.0f) * 0.9f;
-    float dry_wet = get_parameter_float(Parameter::DryWet);
-    int model = get_parameter_int(Parameter::Model);
-    int polyphony = get_parameter_int(Parameter::Polyphony);
+    float const dry_wet = get_parameter_float(Parameter::DryWet);
+    int const model = get_parameter_int(Parameter::Model);
+    int const polyphony = get_parameter_int(Parameter::Polyphony);
 
     e.m_frequency = frequency;
     e.m_patch.m_structure = structure;
@@ -165,7 +169,7 @@ void RingsResonatorSynthProcessor::process(const thl::dsp::audio::ConstAudioBuff
     e.m_model = static_cast<resonator::ResonatorModel>(model);
 
     static constexpr std::array<int, 3> k_poly_voices = {1, 2, 4};
-    int poly_index = std::clamp(polyphony, 0, 2);
+    int const poly_index = std::clamp(polyphony, 0, 2);
     e.m_polyphony_voices = k_poly_voices[static_cast<size_t>(poly_index)];
 
     e.m_frequency_smoother.set_target(e.m_frequency);

@@ -29,6 +29,8 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/filter/Svf.h>
@@ -40,8 +42,8 @@ using namespace thl::dsp::filter;
 
 class Follower {
 public:
-    Follower() {}
-    ~Follower() {}
+    Follower() = default;
+    ~Follower() = default;
 
     void prepare(float low, float low_mid, float mid_high) {
         m_low_mid_filter.reset();
@@ -58,13 +60,13 @@ public:
         m_attack[2] = sqrt(mid_high * 0.5f);
         m_decay[2] = sqrt(mid_high * low_mid);
 
-        std::fill(&m_detector[0], &m_detector[3], 0.0f);
+        m_detector.fill(0.0f);
 
         m_centroid = 0.0f;
     }
 
     void process(float sample, float* envelope, float* centroid) {
-        float bands[3] = {0.0f, 0.0f, 0.0f};
+        std::array<float, 3> bands = {0.0f, 0.0f, 0.0f};
 
         bands[2] = m_mid_high_filter.process<thl::dsp::filter::FilterMode::HighPass>(sample);
         bands[1] = m_low_mid_filter.process<thl::dsp::filter::FilterMode::HighPass>(
@@ -75,32 +77,35 @@ public:
         float total = 0.0f;
         float frequency = 0.0f;
         for (int32_t i = 0; i < 3; ++i) {
-            thl::dsp::utils::slope<float>(m_detector[i], fabs(bands[i]), m_attack[i], m_decay[i]);
+            thl::dsp::utils::slope<float>(m_detector[i],
+                                          std::fabs(bands[i]),
+                                          m_attack[i],
+                                          m_decay[i]);
             weighted += m_detector[i] * frequency;
             total += m_detector[i];
             frequency += 0.5f;
         }
 
-        float error = weighted / (total + 0.001f) - m_centroid;
-        float coefficient = error > 0.0f ? 0.05f : 0.001f;
+        const float error = weighted / (total + 0.001f) - m_centroid;
+        const float coefficient = error > 0.0f ? 0.05f : 0.001f;
         m_centroid += error * coefficient;
 
         *envelope = total;
         *centroid = m_centroid;
     }
 
+    Follower(const Follower&) = delete;
+    Follower& operator=(const Follower&) = delete;
+
 private:
     NaiveSvf m_low_mid_filter;
     NaiveSvf m_mid_high_filter;
 
-    float m_attack[3] = {};
-    float m_decay[3] = {};
-    float m_detector[3] = {};
+    std::array<float, 3> m_attack = {};
+    std::array<float, 3> m_decay = {};
+    std::array<float, 3> m_detector = {};
 
     float m_centroid = 0.0f;
-
-    Follower(const Follower&) = delete;
-    Follower& operator=(const Follower&) = delete;
 };
 
 }  // namespace thl::dsp::analysis

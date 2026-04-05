@@ -30,7 +30,17 @@
 
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstddef>
+#include "tanh/dsp/utils/DspMath.h"
+#include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/dsp/DspTypes.h"
+#include "tanh/dsp/filter/OnePole.h"
+#include "tanh/dsp/rings-resonator/RingsPatch.h"
+#include "tanh/dsp/utils/StringSynthEnvelope.h"
 
 namespace thl::dsp::synth {
 
@@ -95,8 +105,8 @@ void RingsStringSynthPart::compute_registration(float gain, float registration, 
     auto [registration_integral, registration_fractional] = split_integral_fractional(registration);
     float total = 0.0f;
     for (size_t i = 0; i < k_num_harmonic_pairs; ++i) {
-        float a = k_registrations[registration_integral][i];
-        float b = k_registrations[registration_integral + 1][i];
+        float const a = k_registrations[registration_integral][i];
+        float const b = k_registrations[registration_integral + 1][i];
         amplitudes[i] = a + (b - a) * registration_fractional;
         total += amplitudes[i];
     }
@@ -234,7 +244,7 @@ const std::array<std::array<std::array<float, k_max_chord_size>, thl::dsp::reson
 #endif  // BRYAN_CHORDS
 
 void RingsStringSynthPart::process_envelopes(float shape, uint8_t* flags, float* values) {
-    float decay = shape;
+    float const decay = shape;
     float attack = 0.0f;
     if (shape < 0.5f) {
         attack = 0.0f;
@@ -243,19 +253,19 @@ void RingsStringSynthPart::process_envelopes(float shape, uint8_t* flags, float*
     }
 
     // Convert the arbitrary values to actual units.
-    float period = m_sample_rate / thl::dsp::resonator::k_max_block_size;
-    float attack_time = semitones_to_ratio(attack * 96.0f) * 0.005f * period;
+    float const period = m_sample_rate / thl::dsp::resonator::k_max_block_size;
+    float const attack_time = semitones_to_ratio(attack * 96.0f) * 0.005f * period;
     // float decay_time = semitones_to_ratio(decay * 96.0f) * 0.125f * period;
-    float decay_time = semitones_to_ratio(decay * 84.0f) * 0.180f * period;
-    float attack_rate = 1.0f / attack_time;
-    float decay_rate = 1.0f / decay_time;
+    float const decay_time = semitones_to_ratio(decay * 84.0f) * 0.180f * period;
+    float const attack_rate = 1.0f / attack_time;
+    float const decay_rate = 1.0f / decay_time;
 
     for (int32_t i = 0; i < m_polyphony; ++i) {
         float drone = shape < 0.98f ? 0.0f : (shape - 0.98f) * 55.0f;
         if (drone >= 1.0f) { drone = 1.0f; }
 
         m_group[i].m_envelope.set_ad(attack_rate, decay_rate);
-        float value = m_group[i].m_envelope.process(flags[i]);
+        float const value = m_group[i].m_envelope.process(flags[i]);
         values[i] = value + (1.0f - value) * drone;
     }
 }
@@ -276,7 +286,7 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
                                                   thl::dsp::audio::AudioBufferView aux) {
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
-    size_t size = out.get_num_frames();
+    size_t const size = out.get_num_frames();
 
     for (size_t i = 0; i < size; ++i) { m_filter_in_buffer[i] = out_ptr[i] + aux_ptr[i]; }
     fill(&out_ptr[0], &out_ptr[size], 0.0f);
@@ -286,13 +296,13 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
     auto [vowel_integral, vowel_fractional] = split_integral_fractional(vowel);
 
     for (int32_t i = 0; i < k_num_formants; ++i) {
-        float a = k_formants[vowel_integral][i];
-        float b = k_formants[vowel_integral + 1][i];
+        float const a = k_formants[vowel_integral][i];
+        float const b = k_formants[vowel_integral + 1][i];
         float f = a + (b - a) * vowel_fractional;
         f *= shift;
         m_formant_filter[i].set_f_q<Approximation::Dirty>(f / m_sample_rate, resonance);
-        thl::dsp::audio::ConstAudioBufferView filter_in(m_filter_in_buffer, size);
-        thl::dsp::audio::AudioBufferView filter_out(m_filter_out_buffer, size);
+        thl::dsp::audio::ConstAudioBufferView const filter_in(m_filter_in_buffer.data(), size);
+        thl::dsp::audio::AudioBufferView const filter_out(m_filter_out_buffer.data(), size);
         m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(filter_in, filter_out);
         const float pan = static_cast<float>(i) * 0.3f + 0.2f;
         for (size_t j = 0; j < size; ++j) {
@@ -316,7 +326,7 @@ void RingsStringSynthPart::process(
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
-    size_t size = in.get_num_frames();
+    size_t const size = in.get_num_frames();
 
     // Assign note to a voice.
     std::array<uint8_t, k_max_string_synth_polyphony> envelope_flags{};
@@ -345,7 +355,7 @@ void RingsStringSynthPart::process(
 
     copy(&in_ptr[0], &in_ptr[size], &aux_ptr[0]);
     copy(&in_ptr[0], &in_ptr[size], &out_ptr[0]);
-    int32_t chord_size = min(k_string_synth_voices / m_polyphony, k_max_chord_size);
+    int32_t const chord_size = min(k_string_synth_voices / m_polyphony, k_max_chord_size);
     for (int32_t group = 0; group < m_polyphony; ++group) {
         std::array<ChordNote, k_max_chord_size> notes{};
         std::array<float, k_num_harmonic_pairs> harmonics{};
@@ -354,7 +364,7 @@ void RingsStringSynthPart::process(
 
         // Note enough polyphony for smooth transition between chords.
         for (int32_t i = 0; i < chord_size; ++i) {
-            float n = k_chords[m_polyphony - 1][m_group[group].m_chord][i];
+            float const n = k_chords[m_polyphony - 1][m_group[group].m_chord][i];
             notes[i].m_note = n;
             notes[i].m_amplitude = n >= 0.0f && n <= 17.0f ? 1.0f : 0.7f;
         }
@@ -372,7 +382,7 @@ void RingsStringSynthPart::process(
             }
 
             // Fold truncated harmonics.
-            size_t num_harmonics =
+            size_t const num_harmonics =
                 m_polyphony >= 2 && chord_note < 2 ? k_num_harmonics - 1 : k_num_harmonics;
             for (auto i = static_cast<int32_t>(num_harmonics); i < k_num_harmonics; ++i) {
                 amplitudes[2 * (num_harmonics - 1)] += amplitudes[static_cast<size_t>(i) * 2];
@@ -380,7 +390,7 @@ void RingsStringSynthPart::process(
                     amplitudes[static_cast<size_t>(i) * 2 + 1];
             }
 
-            float frequency = semitones_to_ratio(note - 69.0f) * m_a3;
+            float const frequency = semitones_to_ratio(note - 69.0f) * m_a3;
             m_voice[group * chord_size + chord_note].render(
                 frequency,
                 amplitudes.data(),
@@ -396,7 +406,7 @@ void RingsStringSynthPart::process(
     }
 
     std::array<float*, 2> stereo_ptrs = {out_ptr, aux_ptr};
-    thl::dsp::audio::AudioBufferView stereo_view(stereo_ptrs.data(), 2, size);
+    thl::dsp::audio::AudioBufferView const stereo_view(stereo_ptrs.data(), 2, size);
 
     switch (m_fx_type) {
         case FxType::Formant:

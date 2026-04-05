@@ -6,7 +6,7 @@
 
 namespace thl::dsp::utils {
 
-enum class CosineOscillatorMode : std::uint8_t {
+enum class CosineOscillatorMode {
     Approximate,
     Exact,
 };

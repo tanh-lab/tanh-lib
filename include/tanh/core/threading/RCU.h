@@ -72,11 +72,11 @@ public:
         // Clean up ALL reader nodes - both live and dead
         // We must remove ourselves from the thread-local state first to prevent
         // threads from accessing a destroyed RCU instance
-        std::lock_guard<std::mutex> lock(m_writer_mutex);
+        const std::scoped_lock lock(m_writer_mutex);
 
-        ReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
+        const ReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
-            ReaderNode* next = current->m_next.load(std::memory_order_relaxed);
+            const ReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
             // Remove from thread-local state if the node is still tracked there
             // Note: For live threads, the node ownership is in
@@ -123,6 +123,7 @@ public:
      * ```
      */
     template <typename Func>
+    // NOLINTNEXTLINE(misc-no-recursion)
     auto read(Func&& read_func) const -> decltype(read_func(std::declval<const T&>())) {
         // Auto-register thread if not already registered (not real-time safe
         // not registered already) Make sure to register before calling first
@@ -137,7 +138,7 @@ public:
             ~ReadGuard() { m_rcu->rcu_read_unlock(); }
         };
 
-        ReadGuard guard(this);
+        const ReadGuard guard(this);
 
         // Load current data pointer (guaranteed valid during read section)
         const T* data = m_data_ptr.load(std::memory_order_acquire);
@@ -166,7 +167,7 @@ public:
      */
     template <typename Func>
     void update(Func&& update_func) {
-        std::lock_guard<std::mutex> lock(m_writer_mutex);
+        const std::scoped_lock lock(m_writer_mutex);
 
         // Load current data
         const T* old_data = m_data_ptr.load(std::memory_order_acquire);
@@ -182,7 +183,7 @@ public:
 
         // Retire old version with current grace period
         // Note: At 1 billion updates/sec, takes 584 years to overflow uint64_t
-        uint64_t retire_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel);
+        const uint64_t retire_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel);
         m_retired_list.push_back({const_cast<T*>(old_data), retire_period});
 
         // ═══════════════════════════════════════════════════
@@ -246,7 +247,7 @@ public:
     void register_reader_thread() const {
         if (!t_rcu_state.get_node(this)) {
             // Serialize with cleanup and count
-            std::lock_guard<std::mutex> lock(m_writer_mutex);
+            const std::scoped_lock lock(m_writer_mutex);
 
             // Allocate node on heap so it persists beyond thread lifetime
             auto node = std::make_unique<ReaderNode>();
@@ -266,7 +267,7 @@ public:
 
     unsigned int get_reader_count() const {
         // Serialize with cleanup and registration
-        std::lock_guard<std::mutex> lock(m_writer_mutex);
+        const std::scoped_lock lock(m_writer_mutex);
         unsigned int count = 0;
         ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
@@ -277,7 +278,7 @@ public:
     }
 
     void synchronize() {
-        std::lock_guard<std::mutex> lock(m_writer_mutex);
+        const std::scoped_lock lock(m_writer_mutex);
         synchronize_rcu();
     }
 
@@ -344,7 +345,7 @@ private:
     // RCU operations
     void rcu_read_lock() const {
         if (auto* node = t_rcu_state.get_node(this)) {
-            uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
+            const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
             node->m_read_generation.store(current_period, std::memory_order_release);
         }
     }
@@ -368,15 +369,16 @@ private:
 
         // Get current grace period - we can never delete data from current or
         // previous period
-        uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
+        const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
 
         // Find minimum period any active reader is in
         uint64_t min_active_period = current_period;
 
-        ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
+        const ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
             if (!node->m_is_dead.load(std::memory_order_acquire)) {
-                uint64_t reader_period = node->m_read_generation.load(std::memory_order_acquire);
+                const uint64_t reader_period =
+                    node->m_read_generation.load(std::memory_order_acquire);
 
                 if (reader_period != 0) {
                     // Active reader - consider its period
@@ -406,16 +408,16 @@ private:
      */
     void synchronize_rcu() {
         // Start new grace period
-        uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
+        const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
 
         // Wait for all live readers to finish their read sections
-        ReaderNode* current = m_reader_head.load(std::memory_order_acquire);
+        const ReaderNode* current = m_reader_head.load(std::memory_order_acquire);
         while (current != nullptr) {
             // Skip dead nodes - they can't be in read sections
             if (!current->m_is_dead.load(std::memory_order_acquire)) {
                 // Wait for the reader to exit its read section
                 while (true) {
-                    uint64_t reader_period =
+                    const uint64_t reader_period =
                         current->m_read_generation.load(std::memory_order_acquire);
                     if (reader_period == 0) {
                         break;  // Truly idle - not reading and not starting
@@ -438,7 +440,8 @@ private:
         std::vector<ReaderNode*> live_nodes;
         std::vector<std::unique_ptr<ReaderNode>> dead_nodes;
 
-        ReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
+        ReaderNode* current =  // NOLINT(misc-const-correctness)
+            m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
             ReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 

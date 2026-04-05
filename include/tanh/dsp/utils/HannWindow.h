@@ -82,10 +82,10 @@ public:
     State get_state() const;
 
 private:
-    State m_state;
-    float m_sample_rate;
-    float m_duration_samples;
-    float m_current_sample;
+    State m_state{State::IDLE};
+    float m_sample_rate{44100.0f};
+    float m_duration_samples{0.0f};
+    float m_current_sample{0.0f};
 };
 
 }  // namespace thl::dsp::utils

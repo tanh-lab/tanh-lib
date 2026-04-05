@@ -29,6 +29,9 @@
 #include <tanh/dsp/rings-resonator/RingsFmVoice.h>
 
 #include <cmath>
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include <cstddef>
+#include <cstdint>
 
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/ParameterInterpolator.h>
@@ -81,13 +84,13 @@ void RingsFmVoice::prepare(float sample_rate) {
 
 void RingsFmVoice::prepare_coefficients() {
     m_envelope_amount = m_damping < 0.9f ? 1.0f : (1.0f - m_damping) * 10.0f;
-    float amplitude_rt60 = 0.1f * semitones_to_ratio(m_damping * 96.0f) * m_sample_rate;
+    float const amplitude_rt60 = 0.1f * semitones_to_ratio(m_damping * 96.0f) * m_sample_rate;
     m_amplitude_decay = 1.0f - powf(0.001f, 1.0f / amplitude_rt60);
 
-    float brightness_rt60 = 0.1f * semitones_to_ratio(m_damping * 84.0f) * m_sample_rate;
+    float const brightness_rt60 = 0.1f * semitones_to_ratio(m_damping * 84.0f) * m_sample_rate;
     m_brightness_decay = 1.0f - powf(0.001f, 1.0f / brightness_rt60);
 
-    float ratio = interpolate(m_fm_frequency_quantizer_table, m_ratio, 128.0f);
+    float const ratio = interpolate(m_fm_frequency_quantizer_table, m_ratio, 128.0f);
     m_modulator_frequency = m_carrier_frequency * semitones_to_ratio(ratio);
     if (m_modulator_frequency > 0.5f) { m_modulator_frequency = 0.5f; }
 
@@ -97,10 +100,10 @@ void RingsFmVoice::prepare_coefficients() {
 void RingsFmVoice::process(const thl::dsp::audio::ConstAudioBufferView& in,
                            thl::dsp::audio::AudioBufferView out,
                            thl::dsp::audio::AudioBufferView aux) {
-    const float* in_ptr = in.get_read_pointer(0);
-    float* out_ptr = out.get_write_pointer(0);
-    float* aux_ptr = aux.get_write_pointer(0);
-    size_t size = in.get_num_frames();
+    const float* const in_ptr = in.get_read_pointer(0);
+    float* const out_ptr = out.get_write_pointer(0);
+    float* const aux_ptr = aux.get_write_pointer(0);
+    const size_t size = in.get_num_frames();
 
     prepare_coefficients();
 
@@ -117,10 +120,10 @@ void RingsFmVoice::process(const thl::dsp::audio::ConstAudioBufferView& in,
     uint32_t modulator_phase = m_modulator_phase;
     float previous_sample = m_previous_sample;
 
-    while (size--) {
+    for (size_t i = 0; i < size; ++i) {
         // Envelope follower and internal envelope.
         float amplitude_envelope, brightness_envelope;
-        m_follower.process(*in_ptr++, &amplitude_envelope, &brightness_envelope);
+        m_follower.process(in_ptr[i], &amplitude_envelope, &brightness_envelope);
 
         brightness_envelope *= 2.0f * amplitude_envelope * (2.0f - amplitude_envelope);
 
@@ -136,30 +139,30 @@ void RingsFmVoice::process(const thl::dsp::audio::ConstAudioBufferView& in,
         // Compute envelopes.
         float brightness_value = brightness.next();
         brightness_value *= brightness_value;
-        float fm_amount_min = brightness_value < 0.5f ? 0.0f : brightness_value * 2.0f - 1.0f;
-        float fm_amount_max = brightness_value < 0.5f ? 2.0f * brightness_value : 1.0f;
-        float fm_envelope = 0.5f + m_envelope_amount * (m_brightness_envelope - 0.5f);
-        float fm_amount = (fm_amount_min + fm_amount_max * fm_envelope) * 2.0f;
+        float const fm_amount_min = brightness_value < 0.5f ? 0.0f : brightness_value * 2.0f - 1.0f;
+        float const fm_amount_max = brightness_value < 0.5f ? 2.0f * brightness_value : 1.0f;
+        float const fm_envelope = 0.5f + m_envelope_amount * (m_brightness_envelope - 0.5f);
+        float const fm_amount = (fm_amount_min + fm_amount_max * fm_envelope) * 2.0f;
         thl::dsp::utils::slew(m_fm_amount, fm_amount, 0.005f + fm_amount_max * 0.015f);
 
         // FM synthesis in itself
-        float phase_feedback = m_feedback < 0.0f ? 0.5f * m_feedback * m_feedback : 0.0f;
+        float const phase_feedback = m_feedback < 0.0f ? 0.5f * m_feedback * m_feedback : 0.0f;
         modulator_phase += static_cast<uint32_t>(4294967296.0f * modulator_increment.next() *
                                                  (1.0f + previous_sample * phase_feedback));
         carrier_phase += static_cast<uint32_t>(4294967296.0f * carrier_increment.next());
 
-        float feedback = feedback_amount.next();
-        float modulator_fb = feedback > 0.0f ? 0.25f * feedback * feedback : 0.0f;
-        float modulator = sine_fm(modulator_phase, modulator_fb * previous_sample);
-        float carrier = sine_fm(carrier_phase, m_fm_amount * modulator);
+        float const feedback = feedback_amount.next();
+        float const modulator_fb = feedback > 0.0f ? 0.25f * feedback * feedback : 0.0f;
+        float const modulator = sine_fm(modulator_phase, modulator_fb * previous_sample);
+        float const carrier = sine_fm(carrier_phase, m_fm_amount * modulator);
         thl::dsp::utils::one_pole(previous_sample, carrier, 0.1f);
 
         // Compute amplitude envelope.
-        float gain = 1.0f + m_envelope_amount * (m_amplitude_envelope - 1.0f);
+        float const gain = 1.0f + m_envelope_amount * (m_amplitude_envelope - 1.0f);
         thl::dsp::utils::one_pole(m_gain, gain, 0.005f + 0.045f * m_fm_amount);
 
-        *out_ptr++ = (carrier + 0.5f * modulator) * m_gain;
-        *aux_ptr++ = 0.5f * modulator * m_gain;
+        out_ptr[i] = (carrier + 0.5f * modulator) * m_gain;
+        aux_ptr[i] = 0.5f * modulator * m_gain;
     }
     m_carrier_phase = carrier_phase;
     m_modulator_phase = modulator_phase;

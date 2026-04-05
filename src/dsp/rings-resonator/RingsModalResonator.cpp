@@ -28,11 +28,16 @@
 
 #include <tanh/dsp/rings-resonator/RingsModalResonator.h>
 
-#include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
 #include <tanh/dsp/utils/ParameterInterpolator.h>
 
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
+#include <cstdint>
+#include <algorithm>
+#include "tanh/dsp/DspTypes.h"
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include <cstddef>
+#include "tanh/dsp/filter/OnePole.h"
 
 namespace thl::dsp::resonator {
 
@@ -64,9 +69,9 @@ int32_t RingsModalResonator::compute_filters() {
     brightness_attenuation *= brightness_attenuation;
     brightness_attenuation *= brightness_attenuation;
     brightness_attenuation *= brightness_attenuation;
-    float brightness = m_brightness * (1.0f - 0.2f * brightness_attenuation);
+    float const brightness = m_brightness * (1.0f - 0.2f * brightness_attenuation);
     float q_loss = brightness * (2.0f - brightness) * 0.85f + 0.15f;
-    float q_loss_damping_rate = m_structure * (2.0f - m_structure) * 0.1f;
+    float const q_loss_damping_rate = m_structure * (2.0f - m_structure) * 0.1f;
     int32_t num_modes = 0;
     for (int32_t i = 0; i < min(k_max_modes, m_resolution); ++i) {
         float partial_frequency = harmonic * stretch_factor;
@@ -99,22 +104,22 @@ void RingsModalResonator::process(const thl::dsp::audio::ConstAudioBufferView& i
                                   thl::dsp::audio::AudioBufferView out,
                                   thl::dsp::audio::AudioBufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
-    float* out_ptr = out.get_write_pointer(0);
-    float* aux_ptr = aux.get_write_pointer(0);
+    float* out_ptr = out.get_write_pointer(0);  // NOLINT(misc-const-correctness)
+    float* aux_ptr = aux.get_write_pointer(0);  // NOLINT(misc-const-correctness)
     size_t size = in.get_num_frames();
 
     if (m_dirty) {
         m_num_modes = compute_filters();
         m_dirty = false;
     }
-    int32_t num_modes = m_num_modes;
+    int32_t const num_modes = m_num_modes;
 
     ParameterInterpolator position(m_previous_position, m_position, size);
     while (size--) {
         CosineOscillator amplitudes;
         amplitudes.prepare<thl::dsp::utils::CosineOscillatorMode::Approximate>(position.next());
 
-        float input = *in_ptr++ * 0.125f;
+        float const input = *in_ptr++ * 0.125f;
         float odd = 0.0f;
         float even = 0.0f;
         amplitudes.start();

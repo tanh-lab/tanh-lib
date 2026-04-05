@@ -3,11 +3,14 @@ Checks: >
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   performance-*,
+  -performance-enum-size,
   modernize-*,
   -modernize-use-trailing-return-type,
   -modernize-use-nodiscard,
-  readability-identifier-naming
-HeaderFilterRegex: "^.*/(?:src|include|examples)/.*"
+  readability-identifier-naming,
+  misc-*,
+  -misc-non-private-member-variables-in-classes
+HeaderFilterRegex: "^.*/(src|include|examples)/.*"
 
 CheckOptions:
   # Classes/structs/enums/unions: PascalCase
