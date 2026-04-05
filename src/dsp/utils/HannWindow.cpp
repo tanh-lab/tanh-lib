@@ -1,7 +1,7 @@
 #include <tanh/dsp/utils/HannWindow.h>
 #include <cmath>
 #include <algorithm>  // For std::clamp
-#include <numbers>
+#include <tanh/core/Numbers.h>
 
 namespace thl::dsp::utils {
 

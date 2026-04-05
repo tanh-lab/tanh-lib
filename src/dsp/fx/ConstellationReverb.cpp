@@ -4,7 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <numbers>
+#include <tanh/core/Numbers.h>
 #include "tanh/dsp/audio/AudioBufferView.h"
 #include <cstdint>
 #include <utility>
