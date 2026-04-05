@@ -177,9 +177,9 @@ private:
 
     // Parameters
     float m_attack_time{10.0f};    // Attack time in milliseconds
-    float m_decay_time{100.0f};     // Decay time in milliseconds
-    float m_sustain_level{0.7f};  // Sustain level (0.0-1.0)
-    float m_release_time{500.0f};   // Release time in milliseconds
+    float m_decay_time{100.0f};    // Decay time in milliseconds
+    float m_sustain_level{0.7f};   // Sustain level (0.0-1.0)
+    float m_release_time{500.0f};  // Release time in milliseconds
 
     // Curve blending parameters (0.0 = linear, 1.0 = exponential)
     float m_attack_curve{0.0f};   // Attack curve shape (0.0-1.0)
@@ -187,13 +187,13 @@ private:
     float m_release_curve{0.0f};  // Release curve shape (0.0-1.0)
 
     // Runtime state
-    State m_state{State::IDLE};          // Current envelope state
-    float m_current_level{0.0f};  // Current output level (0.0-1.0)
-    float m_attack_rate{0.0f};    // Rate of increase during attack phase
-    float m_decay_rate{0.0f};     // Rate of decrease during decay phase
-    float m_release_rate{0.0f};   // Rate of decrease during release phase
-    float m_release_level{0.0f};  // Level at which release phase began
-    float m_sample_rate{44100.0f};    // Sample rate for timing calculations
+    State m_state{State::IDLE};     // Current envelope state
+    float m_current_level{0.0f};    // Current output level (0.0-1.0)
+    float m_attack_rate{0.0f};      // Rate of increase during attack phase
+    float m_decay_rate{0.0f};       // Rate of decrease during decay phase
+    float m_release_rate{0.0f};     // Rate of decrease during release phase
+    float m_release_level{0.0f};    // Level at which release phase began
+    float m_sample_rate{44100.0f};  // Sample rate for timing calculations
 };
 
 }  // namespace thl::dsp::utils

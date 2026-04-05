@@ -6,8 +6,6 @@
 #include "tanh/dsp/BaseProcessor.h"
 #include "tanh/dsp/utils/SmoothedValue.h"
 
-
-
 namespace thl::dsp::synth {
 
 class TANH_API SineProcessorImpl : public BaseProcessor {
@@ -51,6 +49,4 @@ inline float SineProcessorImpl::get_parameter<float>(Parameter p, uint32_t modul
     return get_parameter_float(p, modulation_offset);
 }
 
-} // namespace thl::dsp::synth
-
-
+}  // namespace thl::dsp::synth

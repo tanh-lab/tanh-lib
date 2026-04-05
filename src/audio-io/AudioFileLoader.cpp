@@ -122,9 +122,9 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
     while (true) {
         ma_uint64 frames_read = 0;
         ma_result const result = ma_data_source_read_pcm_frames(&impl.m_data_source,
-                                                          chunk.data(),
-                                                          k_read_chunk_frames,
-                                                          &frames_read);
+                                                                chunk.data(),
+                                                                k_read_chunk_frames,
+                                                                &frames_read);
 
         if (frames_read > 0) {
             interleaved.insert(interleaved.end(),
@@ -148,7 +148,7 @@ dsp::audio::AudioBuffer AudioFileLoader::load_from_file(const std::string& file_
 
     DataSource::Impl impl;
     uint32_t const flags = MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE |
-                     MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT;
+                           MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT;
 
     if (!init_resource_manager_data_source(impl,
                                            file_path,
@@ -194,7 +194,7 @@ DataSource AudioFileLoader::load_data_source_from_file(const std::string& file_p
     if (file_path.empty()) { return DataSource(std::move(impl)); }
 
     uint32_t const flags = MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM |
-                     MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT;
+                           MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT;
 
     if (!init_resource_manager_data_source(*impl,
                                            file_path,

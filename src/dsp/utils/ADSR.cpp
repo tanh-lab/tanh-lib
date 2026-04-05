@@ -4,8 +4,7 @@
 
 namespace thl::dsp::utils {
 
-ADSR::ADSR()
-     {
+ADSR::ADSR() {
     // Calculate initial rates
     update_rates();
 }
@@ -146,8 +145,8 @@ float ADSR::process() {
                 // Positive: weight by distance (fast start). Negative: weight by progress (fast
                 // end).
                 float const weight = m_decay_curve > 0.0f
-                                   ? distance
-                                   : total_range * (1.0f - distance / total_range + 0.01f);
+                                         ? distance
+                                         : total_range * (1.0f - distance / total_range + 0.01f);
 
                 // Apply blended decrement between linear and exponential
                 float const blended_decrement =
@@ -185,10 +184,11 @@ float ADSR::process() {
 
                 // Positive: weight by current level (fast start). Negative: weight by progress
                 // (fast end).
-                float const weight = m_release_curve > 0.0f
-                                   ? m_current_level
-                                   : safe_release_level *
-                                         (1.0f - m_current_level / safe_release_level + 0.01f);
+                float const weight =
+                    m_release_curve > 0.0f
+                        ? m_current_level
+                        : safe_release_level *
+                              (1.0f - m_current_level / safe_release_level + 0.01f);
 
                 // Apply blended decrement between linear and exponential
                 float const blended_decrement =
