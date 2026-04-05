@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cstring>
 #include <tanh/core/Numbers.h>
-#include <numeric>
 #include <vector>
 
 using namespace thl::dsp::audio;

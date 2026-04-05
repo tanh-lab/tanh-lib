@@ -1,6 +1,17 @@
 #include <tanh/state/Parameter.h>
 #include <tanh/state/State.h>
 #include <tanh/utils/RealtimeSanitizer.h>
+#include <string_view>
+#include <cstddef>
+#include "tanh/state/path_helpers.h"
+#include "tanh/state/StateGroup.h"
+#include <mutex>
+#include <string>
+#include <atomic>
+#include <optional>
+#include "tanh/state/ParameterDefinitions.h"
+#include <stdexcept>
+#include "tanh/core/Exports.h"
 
 namespace thl {
 
@@ -17,8 +28,8 @@ Parameter::Parameter(const State* state, std::string_view key) : m_state(state),
 
 Parameter::Parameter(const StateGroup* group, std::string_view key, const State* root_state)
     : m_state(root_state) {
-    std::string_view group_path = group->get_full_path();
-    size_t required_size = detail::join_path_size(group_path, key);
+    std::string_view const group_path = group->get_full_path();
+    size_t const required_size = detail::join_path_size(group_path, key);
     m_key.reserve(required_size);
     detail::join_path(group_path, key, m_key);
 
@@ -42,8 +53,8 @@ T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
         switch (m_type) {
             case ParameterType::String: {
                 // Must read string_value from record under storage mutex
-                std::scoped_lock lock(m_state->m_storage_mutex);
-                ParameterRecord* record = nullptr;
+                std::scoped_lock const lock(m_state->m_storage_mutex);
+                ParameterRecord const* record = nullptr;
                 m_state->m_index_rcu.read([&](const auto& idx) {
                     auto it = idx.find(m_key);
                     if (it != idx.end()) { record = it->second; }
@@ -113,9 +124,9 @@ Parameter State::get_from_root(std::string_view key) const {
 void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) const {
     // Check if this parameter belongs to a group by looking for dots in the
     // path
-    std::string path = m_key;
+    std::string const path = m_key;
     std::string root_segment = path;
-    size_t first_dot = path.find('.');
+    size_t const first_dot = path.find('.');
 
     // Look up gesture state
     bool is_in_gesture = false;
@@ -157,7 +168,7 @@ std::string Parameter::get_path() const {
 }
 
 std::optional<ParameterDefinition> Parameter::get_definition() const {
-    std::scoped_lock lock(m_state->m_storage_mutex);
+    std::scoped_lock const lock(m_state->m_storage_mutex);
     ParameterRecord* record = nullptr;
     m_state->m_index_rcu.read([&](const auto& idx) {
         auto it = idx.find(m_key);

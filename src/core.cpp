@@ -1,4 +1,5 @@
 #include "tanh/core.h"
+#include <string>
 
 namespace thl::core {
 

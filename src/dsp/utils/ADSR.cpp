@@ -5,21 +5,7 @@
 namespace thl::dsp::utils {
 
 ADSR::ADSR()
-    : m_attack_time(10.0f)
-    , m_decay_time(100.0f)
-    , m_sustain_level(0.7f)
-    , m_release_time(500.0f)
-    , m_attack_curve(0.0f)
-    ,  // Default to linear curves
-    m_decay_curve(0.0f)
-    , m_release_curve(0.0f)
-    , m_state(State::IDLE)
-    , m_current_level(0.0f)
-    , m_attack_rate(0.0f)
-    , m_decay_rate(0.0f)
-    , m_release_rate(0.0f)
-    , m_release_level(0.0f)
-    , m_sample_rate(44100.0f) {
+     {
     // Calculate initial rates
     update_rates();
 }
@@ -103,7 +89,7 @@ void ADSR::reset() {
 }
 
 float ADSR::process() {
-    float exponential_normalization = 1.0f - std::exp(-5.f);
+    float const exponential_normalization = 1.0f - std::exp(-5.f);
     switch (m_state) {
         case State::IDLE: break;
 
@@ -111,20 +97,20 @@ float ADSR::process() {
             // Apply blended curve for attack phase
             // Positive: fast start, slow finish. Negative: slow start, fast finish.
             if (std::abs(m_attack_curve) > 0.01f) {
-                float abs_curve = std::abs(m_attack_curve);
+                float const abs_curve = std::abs(m_attack_curve);
 
                 // Calculate exponential curve
-                float exponential_target =
+                float const exponential_target =
                     (1.00f - std::exp(-(m_attack_rate * 5.0f))) / exponential_normalization;
-                float linear_increment = m_attack_rate;
+                float const linear_increment = m_attack_rate;
 
                 // Positive: weight by distance to target (1 - level)
                 // Negative: weight by distance from start (level), bowing the other way
-                float weight =
+                float const weight =
                     m_attack_curve > 0.0f ? (1.0f - m_current_level) : (m_current_level + 0.01f);
 
                 // Apply blended increment between linear and exponential
-                float blended_increment =
+                float const blended_increment =
                     (1.0f - abs_curve) * linear_increment + abs_curve * exponential_target * weight;
                 m_current_level += blended_increment;
             } else {
@@ -144,27 +130,27 @@ float ADSR::process() {
             // Apply blended curve for decay phase
             // Positive: fast drop, slow tail. Negative: slow drop, fast tail.
             if (std::abs(m_decay_curve) > 0.01f) {
-                float abs_curve = std::abs(m_decay_curve);
+                float const abs_curve = std::abs(m_decay_curve);
 
                 // Calculate the target level and distance from current to
                 // target
-                float target_level = m_sustain_level;
-                float distance = m_current_level - target_level;
-                float total_range = std::max(1.0f - target_level, 0.001f);
+                float const target_level = m_sustain_level;
+                float const distance = m_current_level - target_level;
+                float const total_range = std::max(1.0f - target_level, 0.001f);
 
                 // Calculate exponential decay factor
-                float exp_factor =
+                float const exp_factor =
                     (1.0f - std::exp(-(m_decay_rate * 5.0f))) / exponential_normalization;
-                float linear_decay = m_decay_rate;
+                float const linear_decay = m_decay_rate;
 
                 // Positive: weight by distance (fast start). Negative: weight by progress (fast
                 // end).
-                float weight = m_decay_curve > 0.0f
+                float const weight = m_decay_curve > 0.0f
                                    ? distance
                                    : total_range * (1.0f - distance / total_range + 0.01f);
 
                 // Apply blended decrement between linear and exponential
-                float blended_decrement =
+                float const blended_decrement =
                     (1.0f - abs_curve) * linear_decay + abs_curve * exp_factor * weight;
                 m_current_level -= blended_decrement;
             } else {
@@ -189,23 +175,23 @@ float ADSR::process() {
             // Apply blended curve for release phase
             // Positive: fast drop, slow tail. Negative: slow drop, fast tail.
             if (std::abs(m_release_curve) > 0.01f) {
-                float abs_curve = std::abs(m_release_curve);
-                float safe_release_level = std::max(m_release_level, 0.001f);
+                float const abs_curve = std::abs(m_release_curve);
+                float const safe_release_level = std::max(m_release_level, 0.001f);
 
                 // Calculate exponential decay factor
-                float exp_factor =
+                float const exp_factor =
                     (1.0f - std::exp(-(m_release_rate * 5.0f))) / exponential_normalization;
-                float linear_decay = m_release_rate;
+                float const linear_decay = m_release_rate;
 
                 // Positive: weight by current level (fast start). Negative: weight by progress
                 // (fast end).
-                float weight = m_release_curve > 0.0f
+                float const weight = m_release_curve > 0.0f
                                    ? m_current_level
                                    : safe_release_level *
                                          (1.0f - m_current_level / safe_release_level + 0.01f);
 
                 // Apply blended decrement between linear and exponential
-                float blended_decrement =
+                float const blended_decrement =
                     (1.0f - abs_curve) * linear_decay + abs_curve * exp_factor * weight;
                 m_current_level -= blended_decrement;
             } else {
@@ -257,7 +243,7 @@ void ADSR::update_rates() {
     // Calculate attack rate per sample
     if (m_attack_time > 0.0f) {
         // Convert ms to seconds and calculate samples
-        float attack_samples = (m_attack_time / 1000.0f) * m_sample_rate;
+        float const attack_samples = (m_attack_time / 1000.0f) * m_sample_rate;
         m_attack_rate = 1.0f / attack_samples;
     } else {
         m_attack_rate = 1.0f;  // Instant attack
@@ -265,7 +251,7 @@ void ADSR::update_rates() {
 
     // Calculate decay rate per sample
     if (m_decay_time > 0.0f) {
-        float decay_samples = (m_decay_time / 1000.0f) * m_sample_rate;
+        float const decay_samples = (m_decay_time / 1000.0f) * m_sample_rate;
         m_decay_rate = (1.0f - m_sustain_level) / decay_samples;
     } else {
         m_decay_rate = 1.0f;  // Instant decay
@@ -273,7 +259,7 @@ void ADSR::update_rates() {
 
     // Calculate release rate per sample
     if (m_release_time > 0.0f) {
-        float release_samples = (m_release_time / 1000.0f) * m_sample_rate;
+        float const release_samples = (m_release_time / 1000.0f) * m_sample_rate;
         m_release_rate = 1.0f / release_samples;
     } else {
         m_release_rate = 1.0f;  // Instant release

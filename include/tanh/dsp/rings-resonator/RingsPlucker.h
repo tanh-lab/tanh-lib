@@ -39,8 +39,8 @@ namespace thl::dsp::synth {
 
 class Plucker {
 public:
-    Plucker() {}
-    ~Plucker() {}
+    Plucker() = default;
+    ~Plucker() = default;
 
     void prepare() {
         m_svf.reset();
@@ -50,7 +50,7 @@ public:
     }
 
     void trigger(float frequency, float cutoff, float position) {
-        float ratio = position * 0.9f + 0.05f;
+        const float ratio = position * 0.9f + 0.05f;
         float comb_period = 1.0f / frequency * ratio;
         m_remaining_samples = static_cast<size_t>(comb_period);
         while (comb_period >= 255.0f) { comb_period *= 0.5f; }
@@ -61,7 +61,7 @@ public:
 
     void process(thl::dsp::audio::AudioBufferView out) {
         float* out_ptr = out.get_write_pointer(0);
-        size_t size = out.get_num_frames();
+        const size_t size = out.get_num_frames();
         const float comb_gain = m_comb_filter_gain;
         const float comb_delay = m_comb_filter_period;
         for (size_t i = 0; i < size; ++i) {
@@ -73,11 +73,14 @@ public:
             out_ptr[i] = in + comb_gain * m_comb_filter.read(comb_delay);
             m_comb_filter.write(out_ptr[i]);
         }
-        thl::dsp::audio::AudioBufferView out_view(out_ptr, size);
+        const thl::dsp::audio::AudioBufferView out_view(out_ptr, size);
         m_svf.process<thl::dsp::filter::FilterMode::LowPass>(
             thl::dsp::audio::ConstAudioBufferView(out_ptr, size),
             out_view);
     }
+
+    Plucker(const Plucker&) = delete;
+    Plucker& operator=(const Plucker&) = delete;
 
 private:
     thl::dsp::filter::Svf m_svf;
@@ -85,9 +88,6 @@ private:
     size_t m_remaining_samples = 0;
     float m_comb_filter_period = 0.0f;
     float m_comb_filter_gain = 0.0f;
-
-    Plucker(const Plucker&) = delete;
-    Plucker& operator=(const Plucker&) = delete;
 };
 
 }  // namespace thl::dsp::synth

@@ -54,11 +54,11 @@ public:
         other.m_channels = nullptr;
     }
 
-    ~Buffer() { std::free(m_channels); }
+    ~Buffer() { std::free(static_cast<void*>(m_channels)); }
 
     Buffer& operator=(const Buffer& other) {
         if (this != &other) {
-            std::free(m_channels);
+            std::free(static_cast<void*>(m_channels));
             m_channels = nullptr;
             m_num_channels = other.m_num_channels;
             m_size = other.m_size;
@@ -71,7 +71,7 @@ public:
 
     Buffer& operator=(Buffer&& other) noexcept {
         if (this != &other) {
-            std::free(m_channels);
+            std::free(static_cast<void*>(m_channels));
             m_num_channels = other.m_num_channels;
             m_size = other.m_size;
             m_sample_rate = other.m_sample_rate;
@@ -137,7 +137,7 @@ public:
         m_size = num_frames;
         m_sample_rate = sample_rate;
         m_data.resize(num_channels * num_frames);
-        std::free(m_channels);
+        std::free(static_cast<void*>(m_channels));
         m_channels = nullptr;
         malloc_channels();
     }
@@ -146,7 +146,7 @@ public:
         m_num_channels = num_channels;
         m_size = num_frames;
         m_data.resize(num_channels * num_frames);
-        std::free(m_channels);
+        std::free(static_cast<void*>(m_channels));
         m_channels = nullptr;
         malloc_channels();
     }
@@ -222,8 +222,8 @@ using AudioBuffer = Buffer<float>;
 
 /// Copy planar buffer to an interleaved float vector.
 inline std::vector<float> to_interleaved(const AudioBuffer& buffer) {
-    size_t num_channels = buffer.get_num_channels();
-    size_t num_frames = buffer.get_num_frames();
+    const size_t num_channels = buffer.get_num_channels();
+    const size_t num_frames = buffer.get_num_frames();
     std::vector<float> interleaved(num_frames * num_channels);
     for (size_t ch = 0; ch < num_channels; ++ch) {
         const float* src = buffer.get_read_pointer(ch);

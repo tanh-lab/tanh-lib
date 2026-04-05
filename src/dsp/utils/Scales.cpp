@@ -26,18 +26,20 @@ std::string note_number_to_note_name(int note_number) {
     return note_name;
 }
 
+namespace {
 std::unordered_map<ScaleMode, std::vector<int>> scale_halfsteps = {{ScaleMode::Minor, {2, 5}},
                                                                    {ScaleMode::Major, {3, 7}},
                                                                    {ScaleMode::Phrygian, {1, 5}}};
+}  // namespace
 
 int get_note_offset(int scale_note_index, ScaleMode mode) {
     int note_offset = 2 * scale_note_index;
-    std::vector<int>& halfsteps = scale_halfsteps[mode];
+    std::vector<int> const& halfsteps = scale_halfsteps[mode];
 
     while (scale_note_index >= 0) {
         // subtract one halfstep for each halfstep that was passed by this scale
         // note index
-        for (int halfstep : halfsteps) {
+        for (int const halfstep : halfsteps) {
             if (scale_note_index < halfstep) { break; }
             note_offset--;
         }

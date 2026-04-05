@@ -29,6 +29,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/filter/Svf.h>
@@ -42,8 +43,8 @@ using namespace thl::dsp::filter;
 
 class ZScorer {
 public:
-    ZScorer() {}
-    ~ZScorer() {}
+    ZScorer() = default;
+    ~ZScorer() = default;
 
     void prepare(float cutoff) {
         m_coefficient = cutoff;
@@ -56,18 +57,21 @@ public:
     }
 
     inline bool test(float sample, float threshold) {
-        float value = update(sample);
+        const float value = update(sample);
         return value > thl::dsp::utils::sqrt(m_variance) * threshold;
     }
 
     inline bool test(float sample, float threshold, float absolute_threshold) {
-        float value = update(sample);
+        const float value = update(sample);
         return value > thl::dsp::utils::sqrt(m_variance) * threshold && value > absolute_threshold;
     }
 
+    ZScorer(const ZScorer&) = delete;
+    ZScorer& operator=(const ZScorer&) = delete;
+
 private:
     inline float update(float sample) {
-        float centered = sample - m_mean;
+        const float centered = sample - m_mean;
         m_mean += m_coefficient * centered;
         m_variance += m_coefficient * (centered * centered - m_variance);
         return centered;
@@ -76,15 +80,12 @@ private:
     float m_coefficient = 0.0f;
     float m_mean = 0.0f;
     float m_variance = 0.0f;
-
-    ZScorer(const ZScorer&) = delete;
-    ZScorer& operator=(const ZScorer&) = delete;
 };
 
 class Compressor {
 public:
-    Compressor() {}
-    ~Compressor() {}
+    Compressor() = default;
+    ~Compressor() = default;
 
     void prepare(float attack, float decay, float max_gain) {
         m_attack = attack;
@@ -102,23 +103,23 @@ public:
         m_level = level;
     }
 
+    Compressor(const Compressor&) = delete;
+    Compressor& operator=(const Compressor&) = delete;
+
 private:
     float m_attack = 0.0f;
     float m_decay = 0.0f;
     float m_level = 0.0f;
     float m_skew = 0.0f;
-
-    Compressor(const Compressor&) = delete;
-    Compressor& operator=(const Compressor&) = delete;
 };
 
 class OnsetDetector {
 public:
-    OnsetDetector() {}
-    ~OnsetDetector() {}
+    OnsetDetector() = default;
+    ~OnsetDetector() = default;
 
     void prepare(float low, float low_mid, float mid_high, float decimated_sr, float ioi_time) {
-        float ioi_f = 1.0f / (ioi_time * decimated_sr);
+        const float ioi_f = 1.0f / (ioi_time * decimated_sr);
         m_compressor.prepare(ioi_f * 10.0f, ioi_f * 0.05f, 40.0f);
 
         m_low_mid_filter.reset();
@@ -135,8 +136,8 @@ public:
         m_attack[2] = low_mid;
         m_decay[2] = low * 0.25f;
 
-        fill(&m_envelope[0], &m_envelope[3], 0.0f);
-        fill(&m_energy[0], &m_energy[3], 0.0f);
+        m_envelope.fill(0.0f);
+        m_energy.fill(0.0f);
 
         m_z_df.prepare(ioi_f * 0.05f);
 
@@ -148,29 +149,29 @@ public:
         m_onset_df = 0.0f;
     }
 
-    bool process(thl::dsp::audio::ConstAudioBufferView samples) {
+    bool process(const thl::dsp::audio::ConstAudioBufferView& samples) {
         const float* samples_ptr = samples.get_read_pointer(0);
-        size_t size = samples.get_num_frames();
+        const size_t size = samples.get_num_frames();
         // Automatic gain control.
-        m_compressor.process(samples_ptr, m_bands[0], size);
+        m_compressor.process(samples_ptr, m_bands[0].data(), size);
 
         // Quick and dirty filter bank - split the signal in three bands.
-        m_mid_high_filter.split(thl::dsp::audio::ConstAudioBufferView(m_bands[0], size),
-                                thl::dsp::audio::AudioBufferView(m_bands[1], size),
-                                thl::dsp::audio::AudioBufferView(m_bands[2], size));
-        m_low_mid_filter.split(thl::dsp::audio::ConstAudioBufferView(m_bands[1], size),
-                               thl::dsp::audio::AudioBufferView(m_bands[0], size),
-                               thl::dsp::audio::AudioBufferView(m_bands[1], size));
+        m_mid_high_filter.split(thl::dsp::audio::ConstAudioBufferView(m_bands[0].data(), size),
+                                thl::dsp::audio::AudioBufferView(m_bands[1].data(), size),
+                                thl::dsp::audio::AudioBufferView(m_bands[2].data(), size));
+        m_low_mid_filter.split(thl::dsp::audio::ConstAudioBufferView(m_bands[1].data(), size),
+                               thl::dsp::audio::AudioBufferView(m_bands[0].data(), size),
+                               thl::dsp::audio::AudioBufferView(m_bands[1].data(), size));
 
         // Compute low-pass energy and onset detection function
         // (derivative of energy) in each band.
         float onset_df = 0.0f;
         float total_energy = 0.0f;
         for (int32_t i = 0; i < 3; ++i) {
-            float* s = m_bands[i];
+            const float* const s = m_bands[i].data();
             float energy = 0.0f;
             float envelope = m_envelope[i];
-            size_t increment = 4 >> i;
+            const size_t increment = 4 >> i;
             for (size_t j = 0; j < size; j += increment) {
                 thl::dsp::utils::slope<float>(envelope, s[j] * s[j], m_attack[i], m_decay[i]);
                 energy += envelope;
@@ -178,17 +179,17 @@ public:
             energy = thl::dsp::utils::sqrt(energy) * float(increment);
             m_envelope[i] = envelope;
 
-            float derivative = energy - m_energy[i];
+            const float derivative = energy - m_energy[i];
             onset_df += derivative + fabs(derivative);
             m_energy[i] = energy;
             total_energy += energy;
         }
 
         m_onset_df += 0.05f * (onset_df - m_onset_df);
-        bool outlier_in_df = m_z_df.test(m_onset_df, 1.0f, 0.01f);
-        bool exceeds_energy_threshold = total_energy >= m_inhibit_threshold;
-        bool not_inhibited = !m_inhibit_counter;
-        bool has_onset = outlier_in_df && exceeds_energy_threshold && not_inhibited;
+        const bool outlier_in_df = m_z_df.test(m_onset_df, 1.0f, 0.01f);
+        const bool exceeds_energy_threshold = total_energy >= m_inhibit_threshold;
+        const bool not_inhibited = !m_inhibit_counter;
+        const bool has_onset = outlier_in_df && exceeds_energy_threshold && not_inhibited;
 
         if (has_onset) {
             m_inhibit_threshold = total_energy * 1.5f;
@@ -200,18 +201,21 @@ public:
         return has_onset;
     }
 
+    OnsetDetector(const OnsetDetector&) = delete;
+    OnsetDetector& operator=(const OnsetDetector&) = delete;
+
 private:
     Compressor m_compressor;
     NaiveSvf m_low_mid_filter;
     NaiveSvf m_mid_high_filter;
 
-    float m_attack[3] = {};
-    float m_decay[3] = {};
-    float m_energy[3] = {};
-    float m_envelope[3] = {};
+    std::array<float, 3> m_attack = {};
+    std::array<float, 3> m_decay = {};
+    std::array<float, 3> m_energy = {};
+    std::array<float, 3> m_envelope = {};
     float m_onset_df = 0.0f;
 
-    float m_bands[3][32] = {};
+    std::array<std::array<float, 32>, 3> m_bands = {};
 
     ZScorer m_z_df;
 
@@ -219,9 +223,6 @@ private:
     float m_inhibit_decay = 0.0f;
     int32_t m_inhibit_time = 0;
     int32_t m_inhibit_counter = 0;
-
-    OnsetDetector(const OnsetDetector&) = delete;
-    OnsetDetector& operator=(const OnsetDetector&) = delete;
 };
 
 }  // namespace thl::dsp::analysis

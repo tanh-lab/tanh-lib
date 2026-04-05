@@ -71,8 +71,11 @@ enum OscillatorShape {
 // (~12 kHz) to avoid audible aliasing at the top of the range.
 class StringSynthOscillator {
 public:
-    StringSynthOscillator() {}
-    ~StringSynthOscillator() {}
+    StringSynthOscillator() = default;
+    ~StringSynthOscillator() = default;
+
+    StringSynthOscillator(const StringSynthOscillator&) = delete;
+    StringSynthOscillator& operator=(const StringSynthOscillator&) = delete;
 
     inline void prepare() {
         m_phase = 0.0f;
@@ -121,23 +124,23 @@ public:
             next_sample = 0.0f;
             next_sample_saw = 0.0f;
 
-            float increment = interpolate_pitch ? phase_increment.next() : target_increment;
+            const float increment = interpolate_pitch ? phase_increment.next() : target_increment;
             phase += increment;
 
             float sample = 0.0f;
             const float pw = 0.5f;
 
             if (!high && phase >= pw) {
-                float t = (phase - pw) / increment;
+                const float t = (phase - pw) / increment;
                 this_sample += this_blep_sample(t);
                 next_sample += next_blep_sample(t);
                 high = true;
             }
             if (phase >= 1.0f) {
                 phase -= 1.0f;
-                float t = phase / increment;
-                float a = this_blep_sample(t);
-                float b = next_blep_sample(t);
+                const float t = phase / increment;
+                const float a = this_blep_sample(t);
+                const float b = next_blep_sample(t);
                 this_sample -= a;
                 next_sample -= b;
                 this_sample_saw -= a;
@@ -196,9 +199,6 @@ private:
     float m_filter_state = 0.0f;
     float m_gain = 0.0f;
     float m_gain_saw = 0.0f;
-
-    StringSynthOscillator(const StringSynthOscillator&) = delete;
-    StringSynthOscillator& operator=(const StringSynthOscillator&) = delete;
 };
 
 }  // namespace thl::dsp::synth

@@ -31,14 +31,16 @@ public:
         , m_num_channels(buffer.get_num_channels())
         , m_num_frames(buffer.get_num_frames()) {}
 
-    template <typename U = T, typename = std::enable_if_t<std::is_const_v<U>>>
+    template <typename U = T>
+        requires(std::is_const_v<U>)
     BasicAudioBufferView(const Buffer<std::remove_const_t<T>>& buffer)
         : m_channels(reinterpret_cast<const float* const*>(buffer.get_array_of_read_pointers()))
         , m_num_channels(buffer.get_num_channels())
         , m_num_frames(buffer.get_num_frames()) {}
 
     // Implicit conversion: mutable view -> const view
-    template <typename U = T, typename = std::enable_if_t<std::is_const_v<U>>>
+    template <typename U = T>
+        requires(std::is_const_v<U>)
     BasicAudioBufferView(const BasicAudioBufferView<float>& other)
         : m_frame_offset(other.get_frame_offset())
         , m_num_channels(other.get_num_channels())
@@ -100,7 +102,8 @@ public:
 
     const T* get_read_pointer(size_t channel) const { return m_channels[channel] + m_frame_offset; }
 
-    template <typename U = T, typename = std::enable_if_t<!std::is_const_v<U>>>
+    template <typename U = T>
+        requires(!std::is_const_v<U>)
     T* get_write_pointer(size_t channel) {
         return m_channels[channel] + m_frame_offset;
     }

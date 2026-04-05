@@ -1,14 +1,17 @@
+#include <sys/syslog.h>
 #include <tanh/core/Logger.h>
 
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cstdarg>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
+#include <ios>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -305,7 +308,7 @@ LoggerState& state() {
 
 bool emit_file(const LogRecord& record) {
     auto& s = state();
-    std::scoped_lock lock(s.m_file_mutex);
+    std::scoped_lock const lock(s.m_file_mutex);
 
     if (s.m_file_path.empty()) { return false; }
 
@@ -378,7 +381,7 @@ void dispatch_record(const LogRecord& record) {
     std::size_t early_cap = 0;
     Callback callback_copy;
     {
-        std::scoped_lock lock(state().m_config_mutex);
+        std::scoped_lock const lock(state().m_config_mutex);
         platform_on = state().m_platform_enabled;
         console_on = state().m_console_enabled;
         file_on = state().m_file_enabled;
@@ -406,7 +409,7 @@ void dispatch_record(const LogRecord& record) {
             any_sink_ran = true;
         } else if (early_cap > 0) {
             // File enabled but path not yet configured — buffer for later.
-            std::scoped_lock lock(state().m_config_mutex);
+            std::scoped_lock const lock(state().m_config_mutex);
             if (state().m_early_file_buffer.size() < state().m_early_buffer_capacity) {
                 state().m_early_file_buffer.push_back(record);
                 any_sink_ran = true;
@@ -417,7 +420,7 @@ void dispatch_record(const LogRecord& record) {
     // 4. Callback sink (gated by callback_enabled + re-entrancy guard).
     if (callback_copy && callback_on) {
         try {
-            CallbackDispatchScope scope;
+            CallbackDispatchScope const scope;
             callback_copy(record);
             any_sink_ran = true;
         } catch (...) {
@@ -428,7 +431,7 @@ void dispatch_record(const LogRecord& record) {
             any_sink_ran = true;
         }
     } else if (callback_on && early_cap > 0) {
-        std::scoped_lock lock(state().m_config_mutex);
+        std::scoped_lock const lock(state().m_config_mutex);
         if (!state().m_callback &&
             state().m_early_callback_buffer.size() < state().m_early_buffer_capacity) {
             state().m_early_callback_buffer.push_back(record);
@@ -451,7 +454,7 @@ void set_config(const LoggerConfig& config) {
 
     std::vector<LogRecord> file_buffered;
     {
-        std::scoped_lock lock(s.m_config_mutex);
+        std::scoped_lock const lock(s.m_config_mutex);
         s.m_platform_enabled = config.m_platform_enabled;
         s.m_console_enabled = config.m_console_enabled;
         s.m_file_enabled = config.m_file_enabled;
@@ -465,7 +468,7 @@ void set_config(const LoggerConfig& config) {
     }
 
     {
-        std::scoped_lock lock(s.m_file_mutex);
+        std::scoped_lock const lock(s.m_file_mutex);
         const bool path_changed = (s.m_file_path != config.m_file_path);
         if (path_changed || !config.m_file_enabled) {
             if (s.m_file_stream.is_open()) { s.m_file_stream.close(); }
@@ -481,7 +484,7 @@ LoggerConfig get_config() {
     auto& s = state();
     LoggerConfig config;
     {
-        std::scoped_lock lock(s.m_config_mutex);
+        std::scoped_lock const lock(s.m_config_mutex);
         config.m_platform_enabled = s.m_platform_enabled;
         config.m_console_enabled = s.m_console_enabled;
         config.m_file_enabled = s.m_file_enabled;
@@ -489,7 +492,7 @@ LoggerConfig get_config() {
         config.m_early_buffer_capacity = s.m_early_buffer_capacity;
     }
     {
-        std::scoped_lock lock(s.m_file_mutex);
+        std::scoped_lock const lock(s.m_file_mutex);
         config.m_file_path = s.m_file_path;
     }
     return config;
@@ -499,17 +502,18 @@ LoggerConfig get_config() {
 // Public API -- callback
 // ---------------------------------------------------------------------------
 
+namespace {
 void set_callback(const Callback& cb) {
     std::vector<LogRecord> buffered;
     {
         auto& s = state();
-        std::scoped_lock lock(s.m_config_mutex);
+        std::scoped_lock const lock(s.m_config_mutex);
         s.m_callback = cb;
         buffered.swap(s.m_early_callback_buffer);
     }
 
     if (cb && !buffered.empty()) {
-        CallbackDispatchScope scope;
+        CallbackDispatchScope const scope;
         for (const auto& record : buffered) {
             try {
                 cb(record);
@@ -518,10 +522,11 @@ void set_callback(const Callback& cb) {
         }
     }
 }
+}  // namespace
 
 void clear_callback() {
     auto& s = state();
-    std::scoped_lock lock(s.m_config_mutex);
+    std::scoped_lock const lock(s.m_config_mutex);
     s.m_callback = nullptr;
 }
 

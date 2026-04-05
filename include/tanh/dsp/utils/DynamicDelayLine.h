@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBuffer.h>
@@ -39,6 +38,9 @@ public:
     float tap(float offset) const;
     float tap(size_t offset) const;
 
+    DynamicDelayLine(const DynamicDelayLine&) = delete;
+    DynamicDelayLine& operator=(const DynamicDelayLine&) = delete;
+
 private:
     float read_at(size_t delay) const;
 
@@ -46,9 +48,6 @@ private:
     size_t m_max_delay = 1;
     size_t m_write_ptr = 0;
     size_t m_delay = 1;
-
-    DynamicDelayLine(const DynamicDelayLine&) = delete;
-    DynamicDelayLine& operator=(const DynamicDelayLine&) = delete;
 };
 
 }  // namespace thl::dsp::utils

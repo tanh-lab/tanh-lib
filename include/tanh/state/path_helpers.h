@@ -5,13 +5,11 @@
 #include <string_view>
 #include <utility>
 
-namespace thl {
-
-namespace detail {
+namespace thl::detail {
 // Split a path into the first component and the rest
 // Example: "audio.effects.reverb" -> {"audio", "effects.reverb"}
 inline std::pair<std::string_view, std::string_view> split_path(std::string_view path) {
-    size_t pos = path.find('.');
+    const size_t pos = path.find('.');
     if (pos == std::string::npos) { return {path, ""}; }
     return {path.substr(0, pos), path.substr(pos + 1)};
 }
@@ -42,6 +40,4 @@ constexpr size_t join_path_size(std::string_view parent, std::string_view child)
     return parent.size() + 1 + child.size();  // +1 for dot
 }
 
-}  // namespace detail
-
-}  // namespace thl
+}  // namespace thl::detail

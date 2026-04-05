@@ -1,5 +1,14 @@
 #include <tanh/audio-io/AudioPlayerSource.h>
+#include <cstdint>
+#include <atomic>
+#include <algorithm>
 #include <cstring>
+#include <string>
+#include <mutex>
+#include "tanh/core/AtomicSharedPtr.h"
+#include <memory>
+#include "tanh/audio-io/DataSource.h"
+#include <utility>
 
 namespace thl {
 
@@ -14,7 +23,7 @@ bool AudioPlayerSource::load_file(const std::string& file_path,
                                   uint32_t output_sample_rate) {
     if (file_path.empty() || output_channels == 0 || output_sample_rate == 0) { return false; }
 
-    std::scoped_lock lock(m_state_mutex);
+    std::scoped_lock const lock(m_state_mutex);
     m_playing.store(false, std::memory_order_release);
     atomic_store(m_data_source, std::shared_ptr<audio_io::DataSource>(nullptr));
     m_loaded.store(false, std::memory_order_release);
@@ -25,7 +34,7 @@ bool AudioPlayerSource::load_file(const std::string& file_path,
     m_channels = output_channels;
     m_sample_rate = output_sample_rate;
 
-    bool loaded = rebuild_data_source(m_channels, m_sample_rate, 0);
+    bool const loaded = rebuild_data_source(m_channels, m_sample_rate, 0);
     m_loaded.store(loaded, std::memory_order_release);
     if (!loaded) {
         m_file_path.clear();
@@ -43,7 +52,7 @@ bool AudioPlayerSource::load_from_memory(const void* data,
         return false;
     }
 
-    std::scoped_lock lock(m_state_mutex);
+    std::scoped_lock const lock(m_state_mutex);
     m_playing.store(false, std::memory_order_release);
     atomic_store(m_data_source, std::shared_ptr<audio_io::DataSource>(nullptr));
     m_loaded.store(false, std::memory_order_release);
@@ -54,7 +63,7 @@ bool AudioPlayerSource::load_from_memory(const void* data,
     m_channels = output_channels;
     m_sample_rate = output_sample_rate;
 
-    bool loaded = rebuild_data_source(m_channels, m_sample_rate, 0);
+    bool const loaded = rebuild_data_source(m_channels, m_sample_rate, 0);
     m_loaded.store(loaded, std::memory_order_release);
     if (!loaded) {
         m_memory_data = nullptr;
@@ -68,7 +77,7 @@ bool AudioPlayerSource::load_from_memory(const void* data,
 void AudioPlayerSource::unload_file() {
     m_playing.store(false, std::memory_order_release);
 
-    std::scoped_lock lock(m_state_mutex);
+    std::scoped_lock const lock(m_state_mutex);
     atomic_store(m_data_source, std::shared_ptr<audio_io::DataSource>(nullptr));
     m_loaded.store(false, std::memory_order_release);
     m_channels = 0;
@@ -129,7 +138,7 @@ void AudioPlayerSource::set_finished_callback(FinishedCallback callback) {
 void AudioPlayerSource::prepare_to_play(uint32_t sample_rate, uint32_t /*bufferSize*/) {
     if (sample_rate == 0) { return; }
 
-    std::scoped_lock lock(m_state_mutex);
+    std::scoped_lock const lock(m_state_mutex);
     if (!m_loaded.load(std::memory_order_acquire)) { return; }
     if (m_file_path.empty() && m_memory_data == nullptr) { return; }
 
@@ -139,7 +148,7 @@ void AudioPlayerSource::prepare_to_play(uint32_t sample_rate, uint32_t /*bufferS
         initial_frame = ds->get_cursor();
     }
 
-    bool was_playing = m_playing.load(std::memory_order_acquire);
+    bool const was_playing = m_playing.load(std::memory_order_acquire);
     m_playing.store(false, std::memory_order_release);
 
     if (rebuild_data_source(m_channels, sample_rate, initial_frame)) {
@@ -163,7 +172,7 @@ void AudioPlayerSource::process(float* output_buffer,
 
     if (num_output_channels != ds->get_channel_count()) { return; }
 
-    uint64_t frames_read = ds->read_pcm_frames(output_buffer, frame_count);
+    uint64_t const frames_read = ds->read_pcm_frames(output_buffer, frame_count);
 
     if (frames_read < frame_count) {
         std::memset(output_buffer + frames_read * num_output_channels,
@@ -172,7 +181,7 @@ void AudioPlayerSource::process(float* output_buffer,
     }
 
     // --- Micro fade-in (applied after every play()) ---
-    uint32_t fade_in = m_fade_in_remaining.load(std::memory_order_acquire);
+    uint32_t const fade_in = m_fade_in_remaining.load(std::memory_order_acquire);
     if (fade_in > 0) {
         const uint32_t fade_start = k_fade_samples - fade_in;
         const uint32_t to_fade = std::min(fade_in, static_cast<uint32_t>(frames_read));

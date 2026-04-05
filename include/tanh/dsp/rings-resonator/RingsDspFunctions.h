@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <tanh/core/Numbers.h>
 
 namespace thl::dsp::resonator {
@@ -28,7 +29,7 @@ inline float stiffness(float structure) {
     } else if (structure < 0.3f) {
         return 0.0f;
     } else if (structure < 0.9f) {
-        float g = (structure - 0.3f) / 0.6f;
+        const float g = (structure - 0.3f) / 0.6f;
         return 0.01f * std::pow(10.0f, g * 2.005f) - 0.01f;
     } else {
         float g = (structure - 0.9f) * 10.0f;
@@ -47,7 +48,7 @@ inline float four_decades(float x) {
 // SVF delay compensation: cutoff_semitones is used as a direct table
 // index (size=1.0f in the original Interpolate call).
 inline float svf_shift(float cutoff_semitones) {
-    float ratio = std::exp2(cutoff_semitones / 12.0f);
+    const float ratio = std::exp2(cutoff_semitones / 12.0f);
     return std::atan(1.0f / ratio) * k_one_over_pi;
 }
 
@@ -64,23 +65,23 @@ inline std::array<float, 5121> make_sine_table() {
 
 inline std::array<float, 129> make_fm_frequency_quantizer_table() {
     const double k_detune16_cents = std::exp2(16.0 / 1200.0);
-    const double k_ratios[] = {
+    const std::array<double, 23> k_ratios = {
         0.5,
         0.5 * k_detune16_cents,
         0.7071067811865476,  // sqrt(2)/2
         0.7853981633974483,  // pi/4
         1.0,
         1.0 * k_detune16_cents,
-        1.4142135623730951,  // sqrt(2)
-        1.5707963267948966,  // pi/2
-        1.75,                // 7/4
+        std::numbers::sqrt2,  // sqrt(2)
+        1.5707963267948966,   // pi/2
+        1.75,                 // 7/4
         2.0,
         2.0 * k_detune16_cents,
         2.25,                // 9/4
         2.75,                // 11/4
         2.8284271247461903,  // 2*sqrt(2)
         3.0,
-        3.141592653589793,   // pi
+        std::numbers::pi,    // pi
         3.4641016151377544,  // sqrt(3)*2
         4.0,
         4.242640687119285,  // sqrt(2)*3
@@ -92,8 +93,8 @@ inline std::array<float, 129> make_fm_frequency_quantizer_table() {
 
     std::array<double, 129> scale{};
     size_t len = 0;
-    for (double r : k_ratios) {
-        double semitones = 12.0 * std::log2(r);
+    for (const double r : k_ratios) {
+        const double semitones = 12.0 * std::log2(r);
         scale[len++] = semitones;
         scale[len++] = semitones;
         scale[len++] = semitones;
@@ -106,7 +107,7 @@ inline std::array<float, 129> make_fm_frequency_quantizer_table() {
         size_t max_index = 0;
         double max_diff = -1.0;
         for (size_t i = 0; i + 1 < len; ++i) {
-            double diff = scale[i + 1] - scale[i];
+            const double diff = scale[i + 1] - scale[i];
             if (diff > max_diff) {
                 max_diff = diff;
                 max_index = i;

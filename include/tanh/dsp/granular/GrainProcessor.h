@@ -3,8 +3,10 @@
 #include <random>
 #include <vector>
 #include <tanh/core/Exports.h>
-#include <tanh/tanh.h>
+#include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
+#include <tanh/dsp/utils/ADSR.h>
+#include <tanh/dsp/utils/HannWindow.h>
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
 
 namespace thl::dsp::granular {
@@ -102,15 +104,20 @@ protected:
         NumParameters
     };
 
+private:
     thl::dsp::utils::ADSR m_envelope;
     thl::dsp::audio::AudioDataStore& m_audio_store;
 
-private:
     struct SampleRegion {
+        SampleRegion(size_t start, size_t end, size_t loop_point)
+            : m_start(start), m_end(end), m_loop_point(loop_point) {}
+        size_t size() const { return m_end - m_start; }
+
+    private:
         size_t m_start;
         size_t m_end;
         size_t m_loop_point;
-        size_t size() const { return m_end - m_start; }
+        friend class GrainProcessorImpl;
     };
 
     // Template wrapper for get_parameter
@@ -126,17 +133,17 @@ private:
 
     // Grain management
     std::vector<Grain> m_grains;
-    size_t m_max_grains;
-    size_t m_next_grain_time;
-    size_t m_min_grain_interval;
-    size_t m_sequential_position;
+    size_t m_max_grains{k_max_grains};
+    size_t m_next_grain_time{0};
+    size_t m_min_grain_interval{100};
+    size_t m_sequential_position{0};
 
     // Random number generation for grain parameters
     std::mt19937 m_random_generator;
     std::uniform_real_distribution<float> m_uni_dist;
 
     // Envelope
-    bool m_last_playing_state;
+    bool m_last_playing_state{false};
     size_t m_playback_elapsed_samples{0};
     float m_last_envelope_attack{-1.0f};
     float m_last_envelope_decay{-1.0f};
@@ -148,7 +155,7 @@ private:
     void update_envelope_if_needed(uint32_t modulation_offset);
 
     // Sample index management
-    size_t m_current_sample_index;
+    size_t m_current_sample_index{0};
 
     // Grain generation and management
     void trigger_grain(const size_t sample_index, uint32_t modulation_offset);

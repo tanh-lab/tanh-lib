@@ -1,7 +1,8 @@
 #include <tanh/dsp/utils/PitchShifter.h>
 
 #include <cmath>
-#include <tanh/core/Numbers.h>
+#include <cstddef>
+#include <numbers>
 
 namespace thl::dsp::utils {
 

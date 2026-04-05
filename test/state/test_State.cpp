@@ -829,7 +829,6 @@ TEST(StateTests, ParameterDefinitionFloat) {
     auto def = param.get_definition();
 
     ASSERT_TRUE(def.has_value());
-    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     EXPECT_EQ("Volume", def->m_name);
     EXPECT_EQ(PluginParamType::ParamFloat, def->m_type);
     EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
@@ -840,7 +839,6 @@ TEST(StateTests, ParameterDefinitionFloat) {
     EXPECT_EQ(2, def->m_decimal_places);
     EXPECT_TRUE(def->m_automation);
     EXPECT_TRUE(def->m_modulation);
-    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 // Test basic ParameterInt definition
@@ -866,7 +864,6 @@ TEST(StateTests, ParameterDefinitionInt) {
     auto def = param.get_definition();
 
     ASSERT_TRUE(def.has_value());
-    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     EXPECT_EQ("Filter Cutoff", def->m_name);
     EXPECT_EQ(PluginParamType::ParamInt, def->m_type);
     EXPECT_EQ(20, def->m_range.min_int());
@@ -876,7 +873,6 @@ TEST(StateTests, ParameterDefinitionInt) {
     EXPECT_EQ(0, def->m_decimal_places);  // Int should have 0 decimal places
     EXPECT_TRUE(def->m_automation);
     EXPECT_TRUE(def->m_modulation);
-    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 // Test basic ParameterBool definition
@@ -901,7 +897,6 @@ TEST(StateTests, ParameterDefinitionBool) {
     auto def = param.get_definition();
 
     ASSERT_TRUE(def.has_value());
-    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     EXPECT_EQ("Bypass", def->m_name);
     EXPECT_EQ(PluginParamType::ParamBool, def->m_type);
     EXPECT_EQ(0, def->m_range.min_int());
@@ -910,7 +905,6 @@ TEST(StateTests, ParameterDefinitionBool) {
     EXPECT_EQ(0, def->m_decimal_places);
     EXPECT_TRUE(def->m_automation);
     EXPECT_FALSE(def->m_modulation);
-    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 // Test basic ParameterChoice definition

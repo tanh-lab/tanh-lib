@@ -1,8 +1,11 @@
 #include "tanh/dsp/utils/SmoothedValue.h"
+#include <cassert>
+#include <cstddef>
+#include <algorithm>
 
 namespace thl::dsp::utils {
 
-SmoothedValue::SmoothedValue() : m_smoothing_type(Linear) {}
+SmoothedValue::SmoothedValue() = default;
 
 void SmoothedValue::reset(double sample_rate,
                           double time_in_seconds,
@@ -46,7 +49,7 @@ float SmoothedValue::get_smoothed_value(std::size_t num_samples) {
         return m_current_value;
     }
 
-    std::size_t steps_to_apply = std::min(num_samples, m_samples_remaining);
+    std::size_t const steps_to_apply = std::min(num_samples, m_samples_remaining);
 
     if (m_smoothing_type == Linear) {
         m_current_value += m_step * static_cast<float>(steps_to_apply);

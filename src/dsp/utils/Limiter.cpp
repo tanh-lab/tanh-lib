@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include <cstdint>
 
 namespace thl::dsp::utils {
 
@@ -25,10 +28,10 @@ void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modu
         channel_ptrs[ch] = buffer.get_write_pointer(ch);
     }
 
-    float threshold_db = get_parameter<float>(Threshold, modulation_offset);
-    float threshold = std::pow(10.0f, threshold_db / 20.0f);
-    float attack_ms = std::max(get_parameter<float>(Attack, modulation_offset), 0.01f);
-    float release_ms = std::max(get_parameter<float>(Release, modulation_offset), 0.01f);
+    float const threshold_db = get_parameter<float>(Threshold, modulation_offset);
+    float const threshold = std::pow(10.0f, threshold_db / 20.0f);
+    float const attack_ms = std::max(get_parameter<float>(Attack, modulation_offset), 0.01f);
+    float const release_ms = std::max(get_parameter<float>(Release, modulation_offset), 0.01f);
 
     auto attack_coeff = static_cast<float>(std::exp(-1.0 / (attack_ms * 0.001 * m_sample_rate)));
     auto release_coeff = static_cast<float>(std::exp(-1.0 / (release_ms * 0.001 * m_sample_rate)));
@@ -39,7 +42,7 @@ void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modu
             peak = std::max(peak, std::fabs(channel_ptrs[ch][i]));
         }
 
-        float target_gain = (peak > threshold) ? threshold / peak : 1.0f;
+        float const target_gain = (peak > threshold) ? threshold / peak : 1.0f;
 
         if (target_gain < m_gain) {
             m_gain = attack_coeff * m_gain + (1.0f - attack_coeff) * target_gain;

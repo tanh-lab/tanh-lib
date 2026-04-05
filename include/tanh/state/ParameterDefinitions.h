@@ -136,15 +136,20 @@ struct ParameterChoice : public ParameterDefinition {
                     bool automation = true,
                     bool modulation = true,
                     SliderPolarity slider_polarity = SliderPolarity::Unipolar)
-        : ParameterDefinition(std::move(name),
+        : ParameterDefinition{std::move(name),
                               PluginParamType::ParamChoice,
-                              Range(0, static_cast<int>(choices.size()) - 1, 1),
+                              make_range(choices),
                               static_cast<float>(default_val),
                               0,
                               automation,
                               modulation,
                               std::move(choices),
-                              slider_polarity) {}
+                              slider_polarity} {}
+
+private:
+    static Range make_range(const std::vector<std::string>& choices) {
+        return {0, static_cast<int>(choices.size()) - 1, 1};
+    }
 };
 
 }  // namespace thl

@@ -1,4 +1,8 @@
 #include <tanh/dsp/BaseProcessor.h>
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/utils/RealtimeSanitizer.h"
+#include <span>
+#include <cstdint>
 
 namespace thl::dsp {
 
@@ -23,7 +27,7 @@ void BaseProcessor::split_and_process(const thl::dsp::audio::AudioBufferView& bu
     }
     uint32_t pos = 0;
     const auto total = static_cast<uint32_t>(buffer.get_num_frames());
-    for (uint32_t cp : change_points) {
+    for (uint32_t const cp : change_points) {
         if (cp <= pos || cp >= total) { continue; }
         process(buffer.sub_block(pos, cp - pos), pos);
         pos = cp;

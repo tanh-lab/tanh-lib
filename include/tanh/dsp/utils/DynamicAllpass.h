@@ -32,11 +32,11 @@ public:
     DynamicDelayLine& line();
     const DynamicDelayLine& line() const;
 
-private:
-    DynamicDelayLine m_line;
-
     DynamicAllpass(const DynamicAllpass&) = delete;
     DynamicAllpass& operator=(const DynamicAllpass&) = delete;
+
+private:
+    DynamicDelayLine m_line;
 };
 
 }  // namespace thl::dsp::utils

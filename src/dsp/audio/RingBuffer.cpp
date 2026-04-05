@@ -38,7 +38,7 @@ void RingBuffer::push_sample(size_t channel, float sample) {
 
 float RingBuffer::pop_sample(size_t channel) {
     const size_t capacity = m_buffer.get_num_frames();
-    float sample = m_buffer.get_read_pointer(channel)[m_read_pos[channel]];
+    float const sample = m_buffer.get_read_pointer(channel)[m_read_pos[channel]];
     m_read_pos[channel] = (m_read_pos[channel] + 1) % capacity;
     m_is_full[channel] = false;
     return sample;
@@ -71,13 +71,13 @@ void RingBuffer::pop_block(size_t channel, float* data, size_t count) {
 
 float RingBuffer::get_future_sample(size_t channel, size_t offset) const {
     const size_t capacity = m_buffer.get_num_frames();
-    size_t pos = (m_read_pos[channel] + offset) % capacity;
+    size_t const pos = (m_read_pos[channel] + offset) % capacity;
     return m_buffer.get_read_pointer(channel)[pos];
 }
 
 float RingBuffer::get_past_sample(size_t channel, size_t offset) const {
     const size_t capacity = m_buffer.get_num_frames();
-    size_t pos = (m_read_pos[channel] + capacity - offset) % capacity;
+    size_t const pos = (m_read_pos[channel] + capacity - offset) % capacity;
     return m_buffer.get_read_pointer(channel)[pos];
 }
 

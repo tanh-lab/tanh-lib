@@ -1,7 +1,25 @@
 #include "tanh/state/StateGroup.h"
+#include <vector>
+#include <memory>
+#include <string_view>
+#include <string>
+#include <mutex>
+#include <algorithm>
+#include <cstddef>
+#include <utility>
+#include <atomic>
+#include "tanh/state/Parameter.h"
+#include <array>
+#include <map>
+#include "tanh/state/ParameterDefinitions.h"
+#include "tanh/core/Exports.h"
 #include "tanh/state/State.h"
+#include "tanh/utils/RealtimeSanitizer.h"
+#include "tanh/state/path_helpers.h"
 
 namespace thl {
+
+// NOLINTBEGIN(misc-no-recursion)
 
 // StateGroup state management methods
 void StateGroup::clear_groups() {
@@ -27,12 +45,12 @@ void StateGroup::clear() {
         m_root_state->clear();
     } else {
         // Get the full path once to avoid repeated calls
-        std::string_view full_path = get_full_path();
+        std::string_view const full_path = get_full_path();
 
         // Collect keys to delete from storage under mutex
         std::vector<std::string> keys_to_delete;
         {
-            std::scoped_lock lock(m_root_state->m_storage_mutex);
+            std::scoped_lock const lock(m_root_state->m_storage_mutex);
             for (const auto& [key, record] : m_root_state->m_storage) {
                 if (key.starts_with(full_path)) { keys_to_delete.push_back(key); }
             }
@@ -46,7 +64,7 @@ void StateGroup::clear() {
 
         // Now safe to destroy the records from storage
         {
-            std::scoped_lock lock(m_root_state->m_storage_mutex);
+            std::scoped_lock const lock(m_root_state->m_storage_mutex);
             for (const auto& key : keys_to_delete) { m_root_state->m_storage.erase(key); }
         }
     }
@@ -120,9 +138,9 @@ void StateGroup::notify_parameter_change(std::string_view path) {
         // Use State's pre-allocated buffer
         m_root_state->m_temp_buffer_1().clear();
 
-        std::string_view group_path = group->get_full_path();
+        std::string_view const group_path = group->get_full_path();
         detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_1());
-        Parameter param = group->m_root_state->get_from_root(m_root_state->m_temp_buffer_1());
+        Parameter const param = group->m_root_state->get_from_root(m_root_state->m_temp_buffer_1());
 
         // Look up gesture state
         bool is_in_gesture = false;
@@ -338,7 +356,7 @@ T StateGroup::get(std::string_view path, bool allow_blocking) const TANH_NONBLOC
             // Use State's pre-allocated buffer
             m_root_state->m_temp_buffer_2().clear();
 
-            std::string_view group_path = get_full_path();
+            std::string_view const group_path = get_full_path();
             detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_2());
             return m_root_state->get_from_root<T>(m_root_state->m_temp_buffer_2(), allow_blocking);
         }
@@ -365,7 +383,7 @@ ParameterType StateGroup::get_parameter_type(std::string_view path) const
         // Use State's pre-allocated buffer
         m_root_state->m_temp_buffer_3().clear();
 
-        std::string_view group_path = get_full_path();
+        std::string_view const group_path = get_full_path();
         detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_3());
         return m_root_state->get_type_from_root(m_root_state->m_temp_buffer_3());
     }
@@ -444,7 +462,7 @@ void StateGroup::set(std::string_view path,
         // Use State's pre-allocated buffer
         m_root_state->m_temp_buffer_2().clear();
 
-        std::string_view group_path = get_full_path();
+        std::string_view const group_path = get_full_path();
         detail::join_path(group_path, param_name, m_root_state->m_temp_buffer_2());
 
         // If not creating and the parameter doesn't exist, check using RCU
@@ -499,7 +517,7 @@ void StateGroup::set(std::string_view path,
 
     // Then store the definition (need to construct the full path)
     m_root_state->m_temp_buffer_3().clear();
-    std::string_view group_path = get_full_path();
+    std::string_view const group_path = get_full_path();
     detail::join_path(group_path, path, m_root_state->m_temp_buffer_3());
     m_root_state->set_definition_in_root(m_root_state->m_temp_buffer_3(), def);
 }
@@ -596,4 +614,6 @@ template TANH_API bool StateGroup::get(std::string_view path,
                                        bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template TANH_API std::string StateGroup::get(std::string_view path,
                                               bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+// NOLINTEND(misc-no-recursion)
+
 }  // namespace thl

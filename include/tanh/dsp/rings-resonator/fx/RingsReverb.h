@@ -36,8 +36,8 @@ namespace thl::dsp::fx {
 
 class RingsReverb {
 public:
-    RingsReverb() {}
-    ~RingsReverb() {}
+    RingsReverb() = default;
+    ~RingsReverb() = default;
 
     void prepare(uint16_t* buffer, float sample_rate = thl::dsp::resonator::k_default_sample_rate) {
         m_engine.prepare(buffer);
@@ -63,7 +63,7 @@ public:
         // Reserve sizes are doubled vs original 48kHz values to accommodate up
         // to 96kHz. Runtime tap offsets are scaled by m_rate_ratio so that the
         // actual delay times (in seconds) remain constant across sample rates.
-        typedef E::Reserve<
+        using Memory = E::Reserve<
             300,
             E::Reserve<
                 428,
@@ -78,8 +78,7 @@ public:
                                 E::Reserve<
                                     9002,
                                     E::Reserve<5050,
-                                               E::Reserve<4394, E::Reserve<12624> > > > > > > > > >
-            Memory;
+                                               E::Reserve<4394, E::Reserve<12624> > > > > > > > > >;
         E::DelayLine<Memory, 0> ap1;
         E::DelayLine<Memory, 1> ap2;
         E::DelayLine<Memory, 2> ap3;
@@ -101,14 +100,14 @@ public:
 
         // Scaled allpass tap offsets.  Original TAIL reads at length-1; we
         // preserve those base offsets and scale by rate ratio.
-        const int32_t ap1_tap = static_cast<int32_t>(149.0f * r);
-        const int32_t ap2_tap = static_cast<int32_t>(213.0f * r);
-        const int32_t ap3_tap = static_cast<int32_t>(318.0f * r);
-        const int32_t ap4_tap = static_cast<int32_t>(526.0f * r);
-        const int32_t dap1a_tap = static_cast<int32_t>(2181.0f * r);
-        const int32_t dap1b_tap = static_cast<int32_t>(2689.0f * r);
-        const int32_t dap2a_tap = static_cast<int32_t>(2524.0f * r);
-        const int32_t dap2b_tap = static_cast<int32_t>(2196.0f * r);
+        const auto ap1_tap = static_cast<int32_t>(149.0f * r);
+        const auto ap2_tap = static_cast<int32_t>(213.0f * r);
+        const auto ap3_tap = static_cast<int32_t>(318.0f * r);
+        const auto ap4_tap = static_cast<int32_t>(526.0f * r);
+        const auto dap1a_tap = static_cast<int32_t>(2181.0f * r);
+        const auto dap1b_tap = static_cast<int32_t>(2689.0f * r);
+        const auto dap2a_tap = static_cast<int32_t>(2524.0f * r);
+        const auto dap2b_tap = static_cast<int32_t>(2196.0f * r);
 
         float lp_1 = m_lp_decay_1;
         float lp_2 = m_lp_decay_2;
@@ -176,8 +175,11 @@ public:
 
     inline void clear() { m_engine.clear(); }
 
+    RingsReverb(const RingsReverb&) = delete;
+    RingsReverb& operator=(const RingsReverb&) = delete;
+
 private:
-    typedef RingsFxEngine<65536, Format16Bit> E;
+    using E = RingsFxEngine<65536, Format16Bit>;
     E m_engine;
 
     float m_amount = 0.0f;
@@ -189,9 +191,6 @@ private:
 
     float m_lp_decay_1 = 0.0f;
     float m_lp_decay_2 = 0.0f;
-
-    RingsReverb(const RingsReverb&) = delete;
-    RingsReverb& operator=(const RingsReverb&) = delete;
 };
 
 }  // namespace thl::dsp::fx

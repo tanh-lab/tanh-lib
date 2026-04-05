@@ -1,8 +1,14 @@
 #include <tanh/audio-io/AudioFileLoader.h>
 #include <tanh/core/Logger.h>
 #include "DataSourceImpl.h"
+#include "tanh/dsp/audio/AudioBuffer.h"
+#include "tanh/audio-io/DataSource.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <string>
+#include <memory>
+#include <utility>
 #include <vector>
 
 namespace thl::audio_io {
@@ -24,7 +30,7 @@ dsp::audio::AudioBuffer decode_with_decoder(ma_decoder& decoder, double /*target
     std::vector<float> chunk(k_read_chunk_frames * channels);
     while (true) {
         ma_uint64 frames_read = 0;
-        ma_result result =
+        ma_result const result =
             ma_decoder_read_pcm_frames(&decoder, chunk.data(), k_read_chunk_frames, &frames_read);
 
         if (frames_read > 0) {
@@ -40,7 +46,7 @@ dsp::audio::AudioBuffer decode_with_decoder(ma_decoder& decoder, double /*target
 
     if (interleaved.empty() || channels == 0) { return {}; }
 
-    size_t num_frames = interleaved.size() / channels;
+    size_t const num_frames = interleaved.size() / channels;
 
     return dsp::audio::from_interleaved(interleaved.data(), channels, num_frames, sample_rate);
 }
@@ -115,7 +121,7 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
     std::vector<float> chunk(k_read_chunk_frames * channels);
     while (true) {
         ma_uint64 frames_read = 0;
-        ma_result result = ma_data_source_read_pcm_frames(&impl.m_data_source,
+        ma_result const result = ma_data_source_read_pcm_frames(&impl.m_data_source,
                                                           chunk.data(),
                                                           k_read_chunk_frames,
                                                           &frames_read);
@@ -131,7 +137,7 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
 
     if (interleaved.empty()) { return {}; }
 
-    size_t num_frames = interleaved.size() / channels;
+    size_t const num_frames = interleaved.size() / channels;
     return dsp::audio::from_interleaved(interleaved.data(), channels, num_frames, sample_rate);
 }
 
@@ -141,7 +147,7 @@ dsp::audio::AudioBuffer AudioFileLoader::load_from_file(const std::string& file_
     if (file_path.empty()) { return {}; }
 
     DataSource::Impl impl;
-    uint32_t flags = MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE |
+    uint32_t const flags = MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE |
                      MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT;
 
     if (!init_resource_manager_data_source(impl,
@@ -161,13 +167,13 @@ dsp::audio::AudioBuffer AudioFileLoader::load_from_memory(const void* data,
                                                           uint32_t target_channels) {
     if (data == nullptr || size == 0) { return {}; }
 
-    ma_decoder_config config = ma_decoder_config_init(
+    ma_decoder_config const config = ma_decoder_config_init(
         ma_format_f32,
         target_channels > 0 ? target_channels : 0,
         target_sample_rate > 0.0 ? static_cast<ma_uint32>(target_sample_rate) : 0);
 
     ma_decoder decoder;
-    ma_result result = ma_decoder_init_memory(data, size, &config, &decoder);
+    ma_result const result = ma_decoder_init_memory(data, size, &config, &decoder);
 
     if (result != MA_SUCCESS) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
@@ -187,7 +193,7 @@ DataSource AudioFileLoader::load_data_source_from_file(const std::string& file_p
 
     if (file_path.empty()) { return DataSource(std::move(impl)); }
 
-    uint32_t flags = MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM |
+    uint32_t const flags = MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM |
                      MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT;
 
     if (!init_resource_manager_data_source(*impl,
@@ -209,12 +215,12 @@ DataSource AudioFileLoader::load_data_source_from_memory(const void* data,
 
     if (data == nullptr || size == 0) { return DataSource(std::move(impl)); }
 
-    ma_decoder_config config = ma_decoder_config_init(
+    ma_decoder_config const config = ma_decoder_config_init(
         ma_format_f32,
         target_channels > 0 ? target_channels : 0,
         target_sample_rate > 0.0 ? static_cast<ma_uint32>(target_sample_rate) : 0);
 
-    ma_result result = ma_decoder_init_memory(data, size, &config, &impl->m_decoder);
+    ma_result const result = ma_decoder_init_memory(data, size, &config, &impl->m_decoder);
     if (result != MA_SUCCESS) {
         thl::Logger::logf(thl::Logger::LogLevel::Error,
                           "thl.audio_io.audio_file_loader",

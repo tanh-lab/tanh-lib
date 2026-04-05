@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <array>
-#include <tanh/core/Numbers.h>
+#include <cstddef>
+#include "tanh/dsp/audio/AudioBufferView.h"
+#include <cstdint>
+#include <numbers>
+#include <cmath>
 
 using namespace thl::dsp::synth;
 

@@ -29,7 +29,7 @@ public:
     // Read the parameter value at a given sample offset.
     // If a modulation target is attached, returns base + modulation.
     float load(uint32_t modulation_offset = 0) const TANH_NONBLOCKING_FUNCTION {
-        float base = m_handle.load();
+        const float base = m_handle.load();
         if (m_target && modulation_offset < m_target->m_modulation_buffer.size()) {
             return base + m_target->m_modulation_buffer[modulation_offset];
         }
@@ -76,9 +76,9 @@ inline void collect_change_points(std::span<const SmartHandle> handles,
     target_buffer.clear();
     for (auto& h : handles) {
         if (auto* cp = h.change_points()) {
-            for (uint32_t v : *cp) {
+            for (const uint32_t v : *cp) {
                 bool cb_in_target_buffer = false;
-                for (uint32_t t : target_buffer) {
+                for (const uint32_t t : target_buffer) {
                     if (v == t) {
                         cb_in_target_buffer = true;
                         break;
@@ -93,7 +93,7 @@ inline void collect_change_points(std::span<const SmartHandle> handles,
             }
         }
     }
-    std::sort(target_buffer.begin(), target_buffer.end());
+    std::ranges::sort(target_buffer);
 }
 
 // Overload: collect change points from explicit span lists.
@@ -101,7 +101,7 @@ inline std::vector<uint32_t> collect_change_points(
     std::initializer_list<std::span<const uint32_t>> target_change_point_lists) {
     uint32_t max_sample = 0;
     for (auto& list : target_change_point_lists) {
-        for (uint32_t cp : list) {
+        for (const uint32_t cp : list) {
             if (cp > max_sample) { max_sample = cp; }
         }
     }
@@ -118,7 +118,7 @@ inline std::vector<uint32_t> collect_change_points(
 
     std::vector<bool> flags(max_sample + 1, false);
     for (auto& list : target_change_point_lists) {
-        for (uint32_t cp : list) { flags[cp] = true; }
+        for (const uint32_t cp : list) { flags[cp] = true; }
     }
 
     std::vector<uint32_t> result;

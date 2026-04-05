@@ -23,11 +23,11 @@ public:
     DelayLine<T, max_delay>& line() { return m_line; }
     const DelayLine<T, max_delay>& line() const { return m_line; }
 
-private:
-    DelayLine<T, max_delay> m_line;
-
     Allpass(const Allpass&) = delete;
     Allpass& operator=(const Allpass&) = delete;
+
+private:
+    DelayLine<T, max_delay> m_line;
 };
 
 }  // namespace thl::dsp::utils

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -31,8 +32,11 @@ struct ResolvedTarget {
     }
 
     void clear_per_block() {
-        std::fill(m_modulation_buffer.begin(), m_modulation_buffer.end(), 0.0f);
-        std::fill(m_change_point_flags.begin(), m_change_point_flags.end(), false);
+        std::ranges::fill(m_modulation_buffer, 0.0f);
+        std::fill(  // NOLINT(modernize-use-ranges)
+            m_change_point_flags.begin(),
+            m_change_point_flags.end(),
+            false);
         m_change_points.clear();
     }
 

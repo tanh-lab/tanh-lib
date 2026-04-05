@@ -1,4 +1,5 @@
 #include <tanh/dsp/utils/DynamicAllpass.h>
+#include <cstddef>
 
 namespace thl::dsp::utils {
 

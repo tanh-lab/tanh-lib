@@ -62,64 +62,62 @@ public:
 
     template <FilterMode mode>
     float process(float in) {
-        float hp = (in - m_r * m_state_1 - m_g * m_state_1 - m_state_2) * m_h;
-        float bp = m_g * hp + m_state_1;
+        const float hp = (in - m_r * m_state_1 - m_g * m_state_1 - m_state_2) * m_h;
+        const float bp = m_g * hp + m_state_1;
         m_state_1 = m_g * hp + bp;
-        float lp = m_g * bp + m_state_2;
+        const float lp = m_g * bp + m_state_2;
         m_state_2 = m_g * bp + lp;
         return select<mode>(hp, bp, lp);
     }
 
     template <FilterMode mode>
-    void process(thl::dsp::audio::ConstAudioBufferView in, thl::dsp::audio::AudioBufferView out) {
-        const float* in_ptr = in.get_read_pointer(0);
-        float* out_ptr = out.get_write_pointer(0);
-        size_t size = in.get_num_frames();
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
+                 thl::dsp::audio::AudioBufferView out) {
+        const float* const in_ptr = in.get_read_pointer(0);
+        float* const out_ptr = out.get_write_pointer(0);
+        const size_t size = in.get_num_frames();
         float state_1 = m_state_1;
         float state_2 = m_state_2;
-        while (size--) {
-            float hp = (*in_ptr - m_r * state_1 - m_g * state_1 - state_2) * m_h;
-            float bp = m_g * hp + state_1;
+        for (size_t i = 0; i < size; ++i) {
+            const float hp = (in_ptr[i] - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            const float bp = m_g * hp + state_1;
             state_1 = m_g * hp + bp;
-            float lp = m_g * bp + state_2;
+            const float lp = m_g * bp + state_2;
             state_2 = m_g * bp + lp;
-            *out_ptr++ = select<mode>(hp, bp, lp);
-            ++in_ptr;
+            out_ptr[i] = select<mode>(hp, bp, lp);
         }
         m_state_1 = state_1;
         m_state_2 = state_2;
     }
 
     template <FilterMode mode>
-    void process(thl::dsp::audio::ConstAudioBufferView in,
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out,
                  size_t stride,
                  size_t num_iterations) {
-        const float* in_ptr = in.get_read_pointer(0);
-        float* out_ptr = out.get_write_pointer(0);
-        size_t size = num_iterations;
+        const float* const in_ptr = in.get_read_pointer(0);
+        float* const out_ptr = out.get_write_pointer(0);
         float state_1 = m_state_1;
         float state_2 = m_state_2;
-        while (size--) {
-            float hp = (*in_ptr - m_r * state_1 - m_g * state_1 - state_2) * m_h;
-            float bp = m_g * hp + state_1;
+        for (size_t i = 0; i < num_iterations; ++i) {
+            const size_t idx = i * stride;
+            const float hp = (in_ptr[idx] - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            const float bp = m_g * hp + state_1;
             state_1 = m_g * hp + bp;
-            float lp = m_g * bp + state_2;
+            const float lp = m_g * bp + state_2;
             state_2 = m_g * bp + lp;
-            *out_ptr = select<mode>(hp, bp, lp);
-            out_ptr += stride;
-            in_ptr += stride;
+            out_ptr[idx] = select<mode>(hp, bp, lp);
         }
         m_state_1 = state_1;
         m_state_2 = state_2;
     }
 
-    void process_multimode(thl::dsp::audio::ConstAudioBufferView in,
+    void process_multimode(const thl::dsp::audio::ConstAudioBufferView& in,
                            thl::dsp::audio::AudioBufferView out,
                            float mode) {
-        const float* in_ptr = in.get_read_pointer(0);
-        float* out_ptr = out.get_write_pointer(0);
-        size_t size = in.get_num_frames();
+        const float* const in_ptr = in.get_read_pointer(0);
+        float* const out_ptr = out.get_write_pointer(0);
+        const size_t size = in.get_num_frames();
         float state_1 = m_state_1;
         float state_2 = m_state_2;
 
@@ -128,41 +126,39 @@ public:
         const float lp_gain = mode < 0.5f ? 1.0f - mode * 2.0f : 0.0f;
         const float bp_gain = mode < 0.5f ? 0.0f : mode * 2.0f - 1.0f;
 
-        while (size--) {
-            float hp = (*in_ptr - m_r * state_1 - m_g * state_1 - state_2) * m_h;
-            float bp = m_g * hp + state_1;
+        for (size_t i = 0; i < size; ++i) {
+            const float hp = (in_ptr[i] - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            const float bp = m_g * hp + state_1;
             state_1 = m_g * hp + bp;
-            float lp = m_g * bp + state_2;
+            const float lp = m_g * bp + state_2;
             state_2 = m_g * bp + lp;
-            *out_ptr++ = hp_gain * hp + bp_gain * bp + lp_gain * lp;
-            ++in_ptr;
+            out_ptr[i] = hp_gain * hp + bp_gain * bp + lp_gain * lp;
         }
         m_state_1 = state_1;
         m_state_2 = state_2;
     }
 
     template <FilterMode mode>
-    void process(thl::dsp::audio::ConstAudioBufferView in,
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out_1,
                  thl::dsp::audio::AudioBufferView out_2,
                  float gain_1,
                  float gain_2) {
-        const float* in_ptr = in.get_read_pointer(0);
-        float* out_1_ptr = out_1.get_write_pointer(0);
-        float* out_2_ptr = out_2.get_write_pointer(0);
-        size_t size = in.get_num_frames();
+        const float* const in_ptr = in.get_read_pointer(0);
+        float* const out_1_ptr = out_1.get_write_pointer(0);
+        float* const out_2_ptr = out_2.get_write_pointer(0);
+        const size_t size = in.get_num_frames();
         float state_1 = m_state_1;
         float state_2 = m_state_2;
-        while (size--) {
-            float hp = (*in_ptr - m_r * state_1 - m_g * state_1 - state_2) * m_h;
-            float bp = m_g * hp + state_1;
+        for (size_t i = 0; i < size; ++i) {
+            const float hp = (in_ptr[i] - m_r * state_1 - m_g * state_1 - state_2) * m_h;
+            const float bp = m_g * hp + state_1;
             state_1 = m_g * hp + bp;
-            float lp = m_g * bp + state_2;
+            const float lp = m_g * bp + state_2;
             state_2 = m_g * bp + lp;
             const float value = select<mode>(hp, bp, lp);
-            *out_1_ptr++ += value * gain_1;
-            *out_2_ptr++ += value * gain_2;
-            ++in_ptr;
+            out_1_ptr[i] += value * gain_1;
+            out_2_ptr[i] += value * gain_2;
         }
         m_state_1 = state_1;
         m_state_2 = state_2;
@@ -232,66 +228,68 @@ public:
     float bp() const { return m_bp; }
 
     template <FilterMode mode>
-    void process(thl::dsp::audio::ConstAudioBufferView in, thl::dsp::audio::AudioBufferView out) {
-        const float* in_ptr = in.get_read_pointer(0);
-        float* out_ptr = out.get_write_pointer(0);
-        size_t size = in.get_num_frames();
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
+                 thl::dsp::audio::AudioBufferView out) {
+        const float* const in_ptr = in.get_read_pointer(0);
+        float* const out_ptr = out.get_write_pointer(0);
+        const size_t size = in.get_num_frames();
         float lp = m_lp;
         float bp = m_bp;
-        while (size--) {
+        for (size_t i = 0; i < size; ++i) {
             const float bp_normalized = bp * m_damp;
-            const float notch = *in_ptr++ - bp_normalized;
+            const float notch = in_ptr[i] - bp_normalized;
             lp += m_f * bp;
             const float hp = notch - lp;
             bp += m_f * hp;
-            *out_ptr++ = select<mode>(hp, bp, bp_normalized, lp);
+            out_ptr[i] = select<mode>(hp, bp, bp_normalized, lp);
         }
         m_lp = lp;
         m_bp = bp;
     }
 
-    void split(thl::dsp::audio::ConstAudioBufferView in,
+    void split(const thl::dsp::audio::ConstAudioBufferView& in,
                thl::dsp::audio::AudioBufferView low,
                thl::dsp::audio::AudioBufferView high) {
-        const float* in_ptr = in.get_read_pointer(0);
-        float* low_ptr = low.get_write_pointer(0);
-        float* high_ptr = high.get_write_pointer(0);
-        size_t size = in.get_num_frames();
+        const float* const in_ptr = in.get_read_pointer(0);
+        float* const low_ptr = low.get_write_pointer(0);
+        float* const high_ptr = high.get_write_pointer(0);
+        const size_t size = in.get_num_frames();
         float lp = m_lp;
         float bp = m_bp;
-        while (size--) {
+        for (size_t i = 0; i < size; ++i) {
             const float bp_normalized = bp * m_damp;
-            const float notch = *in_ptr++ - bp_normalized;
+            const float notch = in_ptr[i] - bp_normalized;
             lp += m_f * bp;
             const float hp = notch - lp;
             bp += m_f * hp;
-            *low_ptr++ = lp;
-            *high_ptr++ = hp;
+            low_ptr[i] = lp;
+            high_ptr[i] = hp;
         }
         m_lp = lp;
         m_bp = bp;
     }
 
     template <FilterMode mode>
-    void process(thl::dsp::audio::ConstAudioBufferView in,
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out,
                  size_t decimate) {
-        const float* in_ptr = in.get_read_pointer(0);
-        float* out_ptr = out.get_write_pointer(0);
-        size_t size = in.get_num_frames();
+        const float* const in_ptr = in.get_read_pointer(0);
+        float* const out_ptr = out.get_write_pointer(0);
+        const size_t size = in.get_num_frames();
         float lp = m_lp;
         float bp = m_bp;
         size_t n = decimate - 1;
-        while (size--) {
+        size_t out_idx = 0;
+        for (size_t i = 0; i < size; ++i) {
             const float bp_normalized = bp * m_damp;
-            const float notch = *in_ptr++ - bp_normalized;
+            const float notch = in_ptr[i] - bp_normalized;
             lp += m_f * bp;
             const float hp = notch - lp;
             bp += m_f * hp;
 
             ++n;
             if (n == decimate) {
-                *out_ptr++ = select<mode>(hp, bp, bp_normalized, lp);
+                out_ptr[out_idx++] = select<mode>(hp, bp, bp_normalized, lp);
                 n = 0;
             }
         }

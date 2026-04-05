@@ -1,16 +1,12 @@
 #include <tanh/dsp/utils/HannWindow.h>
-#include <tanh/core/Numbers.h>
 #include <cmath>
 #include <algorithm>  // For std::clamp
+#include <numbers>
 
 namespace thl::dsp::utils {
 
 HannWindow::HannWindow()
-    : m_state(State::IDLE)
-    , m_sample_rate(44100.0f)
-    ,  // Default sample rate
-    m_duration_samples(0.0f)
-    , m_current_sample(0.0f) {
+     {
     // Default to a reasonable duration
     set_duration(100.0f);  // 100ms default
 }
@@ -38,7 +34,7 @@ float HannWindow::process() {
     if (m_state != State::ACTIVE || m_duration_samples <= 0.0f) { return 0.0f; }
 
     // Calculate normalized position in the window (0.0 - 1.0)
-    float position = m_current_sample / m_duration_samples;
+    float const position = m_current_sample / m_duration_samples;
 
     // Check if we've reached the end
     if (position >= 1.0f) {

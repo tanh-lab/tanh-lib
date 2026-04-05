@@ -1,5 +1,22 @@
 #include "tanh/state/State.h"
 #include <tanh/core/Logger.h>
+#include <cstddef>
+#include "tanh/state/StateGroup.h"
+#include "tanh/state/Parameter.h"
+#include <mutex>
+#include <atomic>
+#include <memory>
+#include <utility>
+#include "tanh/utils/RealtimeSanitizer.h"
+#include <string>
+#include <nlohmann/json_fwd.hpp>
+#include "tanh/state/ParameterDefinitions.h"
+#include <functional>
+#include "tanh/state/path_helpers.h"
+#include <exception>
+#include <optional>
+#include <stdexcept>
+#include "tanh/core/Exports.h"
 
 namespace thl {
 
@@ -90,7 +107,7 @@ void State::set_in_root(std::string_view key,
             if (record->m_type == ParameterType::String) {
                 // Only String-typed params store string_value
                 {
-                    std::scoped_lock lock(m_storage_mutex);
+                    std::scoped_lock const lock(m_storage_mutex);
                     record->m_string_value = value;
                 }
                 // get_from_root reads atomic_double for String-typed numeric access
@@ -152,7 +169,7 @@ void State::set_in_root(std::string_view key,
     } else if (!parameter_exists) {
         // Parameter doesn't exist — create it under the storage mutex
         {
-            std::scoped_lock lock(m_storage_mutex);
+            std::scoped_lock const lock(m_storage_mutex);
             auto new_record = std::make_unique<ParameterRecord>();
 
             if constexpr (std::is_same_v<T, double>) {
@@ -208,11 +225,11 @@ void State::set_in_root(std::string_view key,
     if (strategy != NotifyStrategies::None) {
         // Copy the key before notifying — key may point into m_temp_buffer_2
         // which re-entrant set() calls from listeners would overwrite.
-        std::string key_copy(key);
+        std::string const key_copy(key);
 
-        Parameter param_obj(this, key_copy);
+        Parameter const param_obj(this, key_copy);
 
-        bool is_in_gesture =
+        bool const is_in_gesture =
             record ? record->m_metadata.m_in_gesture.load(std::memory_order_relaxed) : false;
 
         auto [group, param_name] = resolve_path(key_copy);
@@ -261,7 +278,7 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
         TANH_NONBLOCKING_SCOPED_DISABLER
         switch (param_type) {
             case ParameterType::String: {
-                std::scoped_lock lock(m_storage_mutex);
+                std::scoped_lock const lock(m_storage_mutex);
                 return record->m_string_value;
             }
             case ParameterType::Double:
@@ -309,7 +326,7 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
                                         bool include_definitions) const {
     nlohmann::json root = nlohmann::json::array();
 
-    std::scoped_lock lock(m_storage_mutex);
+    std::scoped_lock const lock(m_storage_mutex);
     for (const auto& [key, record] : m_storage) {
         // If group_prefix is non-empty, skip keys that don't start with it
         if (!group_prefix.empty() &&
@@ -399,7 +416,7 @@ void State::clear() {
 
     // Now safe to destroy the records — all existing ParameterHandles are now invalid
     {
-        std::scoped_lock lock(m_storage_mutex);
+        std::scoped_lock const lock(m_storage_mutex);
         m_storage.clear();
     }
 
@@ -409,7 +426,7 @@ void State::clear() {
 
 bool State::is_empty() const TANH_NONBLOCKING_FUNCTION {
     // Check if parameters are empty
-    bool parameters_empty = m_index_rcu.read([](const IndexMap& idx) { return idx.empty(); });
+    bool const parameters_empty = m_index_rcu.read([](const IndexMap& idx) { return idx.empty(); });
 
     // If parameters exist, it's not empty
     if (!parameters_empty) { return false; }
@@ -427,7 +444,7 @@ void State::update_from_json(const nlohmann::json& json_data,
 
     // Helper function to check if a parameter exists before updating
     auto check_parameter_exists = [this](std::string_view key) {
-        bool exists =
+        bool const exists =
             m_index_rcu.read([&](const IndexMap& idx) { return idx.find(key) != idx.end(); });
         if (!exists) { throw StateKeyNotFoundException(key); }
     };
@@ -502,7 +519,7 @@ void State::set_definition_in_root(std::string_view key, const ParameterDefiniti
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
-    std::scoped_lock lock(m_storage_mutex);
+    std::scoped_lock const lock(m_storage_mutex);
     record->m_definition.emplace(def);
 }
 
@@ -514,7 +531,7 @@ std::optional<ParameterDefinition> State::get_definition_from_root(std::string_v
     });
     if (!record) { throw StateKeyNotFoundException(key); }
 
-    std::scoped_lock lock(m_storage_mutex);
+    std::scoped_lock const lock(m_storage_mutex);
     return record->m_definition;
 }
 

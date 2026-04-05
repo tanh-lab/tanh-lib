@@ -141,7 +141,7 @@ private:
     float m_p_fshift_mod = 40.0f;
 
     // ── Input stage ───────────────────────────────────────────────────────
-    utils::DynamicAllpass m_input_ap[4];
+    std::array<utils::DynamicAllpass, 4> m_input_ap;
     utils::DynamicDelayLine m_predelay;
 
     // ── Tank — half A ─────────────────────────────────────────────────────

@@ -1,11 +1,25 @@
 #include "tanh/modulation/ModulationMatrix.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <mutex>
 #include <stack>
 #include <stdexcept>
+#include <string_view>
+#include <string>
+#include <variant>
+#include <vector>
+#include <unordered_map>
+#include <utility>
 
+#include "tanh/modulation/SmartHandle.h"
+#include "tanh/modulation/ResolvedTarget.h"
+#include "tanh/modulation/ModulationRouting.h"
+#include "tanh/modulation/ResolvedRouting.h"
 #include "tanh/state/State.h"
+#include "tanh/utils/RealtimeSanitizer.h"
 
 using namespace thl::modulation;
 
@@ -14,7 +28,7 @@ ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {
 }
 
 SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key) {
-    std::scoped_lock lock(m_writer_mutex);
+    std::scoped_lock const lock(m_writer_mutex);
 
     // Throws StateKeyNotFoundException if parameter doesn't exist
     auto handle = m_state.get_handle<float>(param_key);
@@ -41,7 +55,7 @@ ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id
 }
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
-    std::scoped_lock lock(m_writer_mutex);
+    std::scoped_lock const lock(m_writer_mutex);
 
     m_sample_rate = sample_rate;
     m_samples_per_block = samples_per_block;
@@ -73,7 +87,7 @@ void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
 }
 
 void ModulationMatrix::add_source(const std::string_view id, ModulationSource* source) {
-    std::scoped_lock lock(m_writer_mutex);
+    std::scoped_lock const lock(m_writer_mutex);
     auto it = m_sources.find(id);
     if (it != m_sources.end()) {
         it->second = source;
@@ -85,7 +99,7 @@ void ModulationMatrix::add_source(const std::string_view id, ModulationSource* s
 }
 
 void ModulationMatrix::remove_source(const std::string_view id) {
-    std::scoped_lock lock(m_writer_mutex);
+    std::scoped_lock const lock(m_writer_mutex);
     m_sources.erase(std::string(id));
 
     // Remove user-facing routings that reference this source.
@@ -99,14 +113,14 @@ void ModulationMatrix::remove_source(const std::string_view id) {
 }
 
 void ModulationMatrix::add_routing(const ModulationRouting& routing) {
-    std::scoped_lock lock(m_writer_mutex);
+    std::scoped_lock const lock(m_writer_mutex);
     m_user_routings.push_back(routing);
     rebuild_schedule_locked();
 }
 
 void ModulationMatrix::remove_routing(const std::string_view source_id,
                                       const std::string_view target_id) {
-    std::scoped_lock lock(m_writer_mutex);
+    std::scoped_lock const lock(m_writer_mutex);
     std::erase_if(m_user_routings, [&](const ModulationRouting& r) {
         return r.m_source_id == source_id && r.m_target_id == target_id;
     });
@@ -126,7 +140,7 @@ ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) {
 // ── Schedule rebuild (Tarjan SCC + topological sort) ──────────────────────────
 
 void ModulationMatrix::rebuild_schedule() {
-    std::scoped_lock lock(m_writer_mutex);
+    std::scoped_lock const lock(m_writer_mutex);
     rebuild_schedule_locked();
 }
 
@@ -265,7 +279,7 @@ void ModulationMatrix::build_schedule_from_graph(
     // Each SCC with multiple nodes or a self-edge → CyclicStep.
     for (auto& scc : sccs) {
         auto self_it = has_self_edge.find(scc[0]);
-        bool self_loop = self_it != has_self_edge.end() && self_it->second;
+        bool const self_loop = self_it != has_self_edge.end() && self_it->second;
 
         if (scc.size() == 1 && !self_loop) {
             auto src_it = m_sources.find(scc[0]);
@@ -298,7 +312,7 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
             routing->m_target->m_modulation_buffer[i] += src_output[i] * routing->m_depth;
         }
 
-        for (uint32_t cp : source->get_change_points()) {
+        for (uint32_t const cp : source->get_change_points()) {
             if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
         }
 
@@ -337,7 +351,7 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
         if (it == config.m_routings_by_source.end()) { continue; }
 
         for (auto* routing : it->second) {
-            for (uint32_t cp : source->get_change_points()) {
+            for (uint32_t const cp : source->get_change_points()) {
                 if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
             }
             apply_routing_change_points(*routing, num_samples);

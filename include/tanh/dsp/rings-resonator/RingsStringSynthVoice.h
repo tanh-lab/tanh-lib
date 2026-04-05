@@ -28,6 +28,8 @@
 
 #pragma once
 
+#include <array>
+
 #include <tanh/dsp/rings-resonator/RingsStringSynthOscillator.h>
 
 namespace thl::dsp::synth {
@@ -35,8 +37,8 @@ namespace thl::dsp::synth {
 template <size_t num_harmonics>
 class StringSynthVoice {
 public:
-    StringSynthVoice() {}
-    ~StringSynthVoice() {}
+    StringSynthVoice() = default;
+    ~StringSynthVoice() = default;
 
     void prepare() {
         for (size_t i = 0; i < num_harmonics; ++i) { m_oscillator[i].prepare(); }
@@ -65,10 +67,11 @@ public:
         }
     }
 
-private:
-    StringSynthOscillator m_oscillator[num_harmonics];
     StringSynthVoice(const StringSynthVoice&) = delete;
     StringSynthVoice& operator=(const StringSynthVoice&) = delete;
+
+private:
+    std::array<StringSynthOscillator, num_harmonics> m_oscillator;
 };
 
 }  // namespace thl::dsp::synth

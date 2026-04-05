@@ -32,12 +32,14 @@
 #include <tanh/dsp/analysis/OnsetDetector.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
 
+#include <cmath>
+
 namespace thl::dsp::resonator {
 
 class RingsStrummer {
 public:
-    RingsStrummer() {}
-    ~RingsStrummer() {}
+    RingsStrummer() = default;
+    ~RingsStrummer() = default;
 
     void prepare(float ioi, float decimated_sr, float sample_rate) {
         m_onset_detector.prepare(8.0f / sample_rate,
@@ -50,15 +52,15 @@ public:
         m_previous_note = 69.0f;
     }
 
-    void process(thl::dsp::audio::ConstAudioBufferView in,
+    void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  RingsPerformanceState* performance_state) {
-        bool has_onset = in.get_num_frames() > 0 && m_onset_detector.process(in);
-        bool note_changed = fabs(performance_state->m_note - m_previous_note) > 0.4f;
+        const bool has_onset = in.get_num_frames() > 0 && m_onset_detector.process(in);
+        const bool note_changed = std::fabs(performance_state->m_note - m_previous_note) > 0.4f;
 
         int32_t inhibit_timer = m_inhibit_timer;
         if (performance_state->m_internal_strum) {
-            bool has_external_note_cv = !performance_state->m_internal_note;
-            bool has_external_exciter = !performance_state->m_internal_exciter;
+            const bool has_external_note_cv = !performance_state->m_internal_note;
+            const bool has_external_exciter = !performance_state->m_internal_exciter;
             if (has_external_note_cv) {
                 performance_state->m_strum = note_changed;
             } else if (has_external_exciter) {
@@ -81,15 +83,15 @@ public:
         m_previous_note = performance_state->m_note;
     }
 
+    RingsStrummer(const RingsStrummer&) = delete;
+    RingsStrummer& operator=(const RingsStrummer&) = delete;
+
 private:
     float m_previous_note = 69.0f;
     int32_t m_inhibit_counter = 0;
     int32_t m_inhibit_timer = 0;
 
     thl::dsp::analysis::OnsetDetector m_onset_detector;
-
-    RingsStrummer(const RingsStrummer&) = delete;
-    RingsStrummer& operator=(const RingsStrummer&) = delete;
 };
 
 }  // namespace thl::dsp::resonator

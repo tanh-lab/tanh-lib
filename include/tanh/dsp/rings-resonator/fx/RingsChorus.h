@@ -39,8 +39,8 @@ namespace thl::dsp::fx {
 
 class RingsChorus {
 public:
-    RingsChorus() {}
-    ~RingsChorus() {}
+    RingsChorus() = default;
+    ~RingsChorus() = default;
 
     void prepare(uint16_t* buffer, float sample_rate = thl::dsp::resonator::k_default_sample_rate) {
         thl::dsp::resonator::warm_dsp_functions();
@@ -55,7 +55,7 @@ public:
         float* left = stereo.get_write_pointer(0);
         float* right = stereo.get_write_pointer(1);
         size_t size = stereo.get_num_frames();
-        typedef E::Reserve<4095> Memory;
+        using Memory = E::Reserve<4095>;
         E::DelayLine<Memory, 0> line;
         E::Context c;
 
@@ -63,17 +63,19 @@ public:
 
         while (size--) {
             m_engine.start(&c);
-            float dry_amount = 1.0f - m_amount * 0.5f;
+            const float dry_amount = 1.0f - m_amount * 0.5f;
 
             // Update LFO (scale phase increments inversely with sample rate).
             m_phase_1 += 4.17e-06f / r;
             if (m_phase_1 >= 1.0f) { m_phase_1 -= 1.0f; }
             m_phase_2 += 5.417e-06f / r;
             if (m_phase_2 >= 1.0f) { m_phase_2 -= 1.0f; }
-            float sin_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1, 4096.0f);
-            float cos_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1 + 0.25f, 4096.0f);
-            float sin_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2, 4096.0f);
-            float cos_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2 + 0.25f, 4096.0f);
+            const float sin_1 = thl::dsp::utils::interpolate(m_sine_table, m_phase_1, 4096.0f);
+            const float cos_1 =
+                thl::dsp::utils::interpolate(m_sine_table, m_phase_1 + 0.25f, 4096.0f);
+            const float sin_2 = thl::dsp::utils::interpolate(m_sine_table, m_phase_2, 4096.0f);
+            const float cos_2 =
+                thl::dsp::utils::interpolate(m_sine_table, m_phase_2 + 0.25f, 4096.0f);
 
             float wet;
 
@@ -100,8 +102,11 @@ public:
 
     inline void set_depth(float depth) { m_depth = depth * 384.0f * m_rate_ratio; }
 
+    RingsChorus(const RingsChorus&) = delete;
+    RingsChorus& operator=(const RingsChorus&) = delete;
+
 private:
-    typedef RingsFxEngine<4096, Format16Bit> E;
+    using E = RingsFxEngine<4096, Format16Bit>;
     E m_engine;
 
     float m_amount = 0.0f;
@@ -111,9 +116,6 @@ private:
 
     float m_phase_1 = 0.0f;
     float m_phase_2 = 0.0f;
-
-    RingsChorus(const RingsChorus&) = delete;
-    RingsChorus& operator=(const RingsChorus&) = delete;
 };
 
 }  // namespace thl::dsp::fx
