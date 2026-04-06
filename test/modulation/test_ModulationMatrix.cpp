@@ -17,6 +17,11 @@ using namespace thl::modulation;
 static constexpr double k_sample_rate = 48000.0;
 static constexpr size_t k_block_size = 512;
 
+// Helper: creates a modulatable float ParameterDefinition for modulation tests.
+static thl::ParameterFloat modulatable_float(float default_value = 0.0f) {
+    return thl::ParameterFloat("", thl::Range(), default_value, 2, false, true);
+}
+
 // Concrete LFOSourceImpl for tests — provides parameter values directly.
 class TestLFOSource : public LFOSourceImpl {
 public:
@@ -150,7 +155,7 @@ TEST(LFOSource, ProcessSingleMatchesBulk) {
 
 TEST(ModulationMatrix, SingleSourceSingleTarget) {
     thl::State state;
-    state.set("freq", 0.0f);
+    state.create("freq", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
     TestLFOSource lfo;
     lfo.m_frequency = 1.0f;
@@ -182,7 +187,7 @@ TEST(ModulationMatrix, SingleSourceSingleTarget) {
 
 TEST(ModulationMatrix, MultipleSourcesSameTarget) {
     thl::State state;
-    state.set("freq", 0.0f);
+    state.create("freq", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
 
     TestLFOSource lfo1;
@@ -216,7 +221,7 @@ TEST(ModulationMatrix, MultipleSourcesSameTarget) {
 
 TEST(ModulationMatrix, RemoveRouting) {
     thl::State state;
-    state.set("freq", 0.0f);
+    state.create("freq", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
     TestLFOSource lfo;
     lfo.m_frequency = 1.0f;
@@ -253,7 +258,7 @@ TEST(ModulationMatrix, RemoveRouting) {
 
 TEST(ModulationMatrix, PerRoutingDecimation) {
     thl::State state;
-    state.set("freq", 0.0f);
+    state.create("freq", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
     TestLFOSource lfo;
     lfo.m_frequency = 10.0f;
@@ -401,8 +406,8 @@ TEST(CyclicModulation, SelfEdgeCreatesCyclicStep) {
 
 TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
     thl::State state;
-    state.set("param_a", 0.0f);
-    state.set("param_b", 0.0f);
+    state.create("param_a", modulatable_float(0.0f));
+    state.create("param_b", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
 
     TestModSource src1({"param_a"});
@@ -441,9 +446,9 @@ TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
 
 TEST(CyclicModulation, MixedBulkAndCyclicSchedule) {
     thl::State state;
-    state.set("plain_target", 0.0f);
-    state.set("cyc_param_a", 0.0f);
-    state.set("cyc_param_b", 0.0f);
+    state.create("plain_target", modulatable_float(0.0f));
+    state.create("cyc_param_a", modulatable_float(0.0f));
+    state.create("cyc_param_b", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
 
     // Independent source (no parameter keys, routes to a plain target)
@@ -530,8 +535,8 @@ TEST(CyclicModulation, DependencyChainIsTopologicallyOrdered) {
 
 TEST(CyclicModulation, CyclicSourcesRecordChangePoints) {
     thl::State state;
-    state.set("param_a", 0.0f);
-    state.set("param_b", 0.0f);
+    state.create("param_a", modulatable_float(0.0f));
+    state.create("param_b", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
 
     TestModSource src1({"param_a"});
@@ -639,7 +644,7 @@ TEST(SmartHandle, LoadWithoutModulation) {
 
 TEST(SmartHandle, GetSmartHandleFromState) {
     thl::State state;
-    state.set("freq", 440.0f);
+    state.create("freq", modulatable_float(440.0f));
     ModulationMatrix matrix(state);
 
     auto handle = matrix.get_smart_handle("freq");
@@ -661,14 +666,13 @@ TEST(SmartHandle, GetSmartHandleFromState) {
 
 TEST(SmartHandle, ThrowsOnNonModulatableParameter) {
     thl::State state;
-    state.set("gain", 1.0f);
-    state.set_definition_in_root("gain",
-                                 thl::ParameterFloat("Gain",
-                                                     {0.0f, 1.0f},
-                                                     1.0f,
-                                                     2,
-                                                     /* automation */ true,
-                                                     /* modulation */ false));
+    state.create("gain",
+                 thl::ParameterFloat("Gain",
+                                     {0.0f, 1.0f},
+                                     1.0f,
+                                     2,
+                                     /* automation */ true,
+                                     /* modulation */ false));
     ModulationMatrix matrix(state);
 
     EXPECT_THROW(matrix.get_smart_handle("gain"), std::invalid_argument);
@@ -676,7 +680,7 @@ TEST(SmartHandle, ThrowsOnNonModulatableParameter) {
 
 TEST(SmartHandle, ModulationOffsetReadsBuffer) {
     thl::State state;
-    state.set("freq", 440.0f);
+    state.create("freq", modulatable_float(440.0f));
     ModulationMatrix matrix(state);
 
     TestLFOSource lfo;
@@ -701,7 +705,7 @@ TEST(SmartHandle, ModulationOffsetReadsBuffer) {
 
 TEST(SmartHandle, ChangePointsPopulatedAfterProcess) {
     thl::State state;
-    state.set("freq", 440.0f);
+    state.create("freq", modulatable_float(440.0f));
     ModulationMatrix matrix(state);
 
     TestLFOSource lfo;
@@ -721,8 +725,8 @@ TEST(SmartHandle, ChangePointsPopulatedAfterProcess) {
 
 TEST(SmartHandle, CollectChangePointsFromHandles) {
     thl::State state;
-    state.set("a", 1.0f);
-    state.set("b", 2.0f);
+    state.create("a", modulatable_float(1.0f));
+    state.create("b", modulatable_float(2.0f));
     ModulationMatrix matrix(state);
 
     TestLFOSource lfo;
@@ -757,7 +761,7 @@ TEST(SmartHandle, CollectChangePointsFromHandles) {
 
 TEST(SmartHandle, UnmodulatedReadsBaseDirectly) {
     thl::State state;
-    state.set("freq", 440.0f);
+    state.create("freq", modulatable_float(440.0f));
     ModulationMatrix matrix(state);
 
     // get_smart_handle with no routing — reads base value
@@ -872,9 +876,9 @@ private:
 TEST(Integration, LFOModulatesLimiterThreshold) {
     // Setup
     thl::State state;
-    state.set(LimiterID::k_attack, LimiterID::k_attack_default);
-    state.set(LimiterID::k_release, LimiterID::k_release_default);
-    state.set(LimiterID::k_threshold, LimiterID::k_threshold_default);
+    state.create(LimiterID::k_attack, modulatable_float(LimiterID::k_attack_default));
+    state.create(LimiterID::k_release, modulatable_float(LimiterID::k_release_default));
+    state.create(LimiterID::k_threshold, modulatable_float(LimiterID::k_threshold_default));
     ModulationMatrix mmatrix(state);
     TestLFOSource lfo1;
     lfo1.m_frequency = 1000.0f;  // 10 Hz LFO
@@ -917,4 +921,80 @@ TEST(Integration, LFOModulatesLimiterThreshold) {
         }
     }
     EXPECT_TRUE(has_nonzero);
+}
+
+// =============================================================================
+// SmartHandle metadata accessor tests (Phase 6)
+// =============================================================================
+
+TEST(SmartHandle, DefAccessor) {
+    thl::State state;
+    state.create(
+        "freq",
+        thl::ParameterFloat("Frequency", thl::Range(20.0f, 20000.0f), 440.0f, 1, false, true));
+
+    ModulationMatrix matrix(state);
+    matrix.prepare(k_sample_rate, k_block_size);
+    auto handle = matrix.get_smart_handle("freq");
+
+    EXPECT_EQ("Frequency", handle.def().m_name);
+    EXPECT_EQ(thl::ParameterType::Float, handle.def().m_type);
+    EXPECT_EQ(1u, handle.def().m_decimal_places);
+}
+
+TEST(SmartHandle, RangeAccessor) {
+    thl::State state;
+    state.create("gain", modulatable_float(0.5f));
+
+    ModulationMatrix matrix(state);
+    matrix.prepare(k_sample_rate, k_block_size);
+    auto handle = matrix.get_smart_handle("gain");
+
+    EXPECT_FLOAT_EQ(0.0f, handle.range().m_min);
+    EXPECT_FLOAT_EQ(1.0f, handle.range().m_max);
+}
+
+TEST(SmartHandle, KeyAccessor) {
+    thl::State state;
+    state.create("synth.cutoff", modulatable_float(1000.0f));
+
+    ModulationMatrix matrix(state);
+    matrix.prepare(k_sample_rate, k_block_size);
+    auto handle = matrix.get_smart_handle("synth.cutoff");
+
+    EXPECT_EQ("synth.cutoff", handle.key());
+}
+
+TEST(SmartHandle, LoadNormalized) {
+    thl::State state;
+    state.create("pan", thl::ParameterFloat("Pan", thl::Range(-1.0f, 1.0f), 0.0f, 2, false, true));
+
+    ModulationMatrix matrix(state);
+    matrix.prepare(k_sample_rate, k_block_size);
+    auto handle = matrix.get_smart_handle("pan");
+
+    // pan = 0.0 in [-1, 1] → normalized = 0.5
+    EXPECT_FLOAT_EQ(0.5f, handle.load_normalized());
+
+    // Change to max → normalized = 1.0
+    state.set("pan", 1.0f);
+    EXPECT_FLOAT_EQ(1.0f, handle.load_normalized());
+
+    // Change to min → normalized = 0.0
+    state.set("pan", -1.0f);
+    EXPECT_FLOAT_EQ(0.0f, handle.load_normalized());
+}
+
+TEST(SmartHandle, DisplayFormattingViaSmartHandle) {
+    thl::State state;
+    state.create(
+        "freq",
+        thl::ParameterFloat("Frequency", thl::Range(20.0f, 20000.0f), 440.0f, 1, false, true));
+
+    ModulationMatrix matrix(state);
+    matrix.prepare(k_sample_rate, k_block_size);
+    auto handle = matrix.get_smart_handle("freq");
+
+    ASSERT_TRUE(handle.def().m_value_to_text);
+    EXPECT_EQ("440.0", handle.def().m_value_to_text(handle.load()));
 }

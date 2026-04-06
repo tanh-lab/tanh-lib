@@ -1,147 +1,123 @@
 #include <tanh/state/Parameter.h>
 #include <tanh/state/State.h>
 #include <tanh/utils/RealtimeSanitizer.h>
-#include <string_view>
 #include <cstddef>
-#include "tanh/state/path_helpers.h"
+#include <string_view>
 #include "tanh/state/StateGroup.h"
 #include <mutex>
 #include <string>
 #include <atomic>
-#include <optional>
 #include "tanh/state/ParameterDefinitions.h"
-#include <stdexcept>
+#include <cstdint>
 #include "tanh/core/Exports.h"
+#include "tanh/state/Exceptions.h"
+#include "tanh/state/ParameterListener.h"
 
 namespace thl {
 
-// Parameter class implementation
-Parameter::Parameter(const State* state, std::string_view key) : m_state(state), m_key(key) {
-    state->m_index_rcu.read([&](const auto& idx) {
-        auto it = idx.find(key);
-        if (it != idx.end()) {
-            m_cache_ptr = &it->second->m_cache;
-            m_type = it->second->m_type;
-        }
-    });
-}
-
-Parameter::Parameter(const StateGroup* group, std::string_view key, const State* root_state)
-    : m_state(root_state) {
-    std::string_view const group_path = group->get_full_path();
-    size_t const required_size = detail::join_path_size(group_path, key);
-    m_key.reserve(required_size);
-    detail::join_path(group_path, key, m_key);
-
-    root_state->m_index_rcu.read([&](const auto& idx) {
-        auto it = idx.find(m_key);
-        if (it != idx.end()) {
-            m_cache_ptr = &it->second->m_cache;
-            m_type = it->second->m_type;
-        }
-    });
-}
+// Parameter constructor
+Parameter::Parameter(const State* state, ParameterRecord* record)
+    : m_state(state), m_record(record) {}
 
 // Parameter conversion methods
 template <typename T>
 T Parameter::to(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
-    if (!m_cache_ptr) { throw StateKeyNotFoundException(m_key); }
-
     if constexpr (std::is_same_v<T, std::string>) {
-        if (!allow_blocking) { throw BlockingException(m_key); }
+        if (!allow_blocking) { throw BlockingException(m_record->m_key); }
         TANH_NONBLOCKING_SCOPED_DISABLER
-        switch (m_type) {
+        switch (m_record->m_def.m_type) {
             case ParameterType::String: {
-                // Must read string_value from record under storage mutex
                 std::scoped_lock const lock(m_state->m_storage_mutex);
-                ParameterRecord const* record = nullptr;
-                m_state->m_index_rcu.read([&](const auto& idx) {
-                    auto it = idx.find(m_key);
-                    if (it != idx.end()) { record = it->second; }
-                });
-                return record ? record->m_string_value : "";
+                return m_record->m_string_value;
             }
             case ParameterType::Double:
-                return std::to_string(m_cache_ptr->m_atomic_double.load(std::memory_order_relaxed));
+                return std::to_string(
+                    m_record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
-                return std::to_string(m_cache_ptr->m_atomic_float.load(std::memory_order_relaxed));
+                return std::to_string(
+                    m_record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
-                return std::to_string(m_cache_ptr->m_atomic_int.load(std::memory_order_relaxed));
+                return std::to_string(
+                    m_record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return m_cache_ptr->m_atomic_bool.load(std::memory_order_relaxed) ? "true"
-                                                                                  : "false";
+                return m_record->m_cache.m_atomic_bool.load(std::memory_order_relaxed) ? "true"
+                                                                                       : "false";
             default: return "";
         }
     } else {
-        // Numeric types: load from native atomic and static_cast — no RCU needed
-        switch (m_type) {
+        switch (m_record->m_def.m_type) {
             case ParameterType::Double:
-                return static_cast<T>(m_cache_ptr->m_atomic_double.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    m_record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             case ParameterType::Float:
-                return static_cast<T>(m_cache_ptr->m_atomic_float.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    m_record->m_cache.m_atomic_float.load(std::memory_order_relaxed));
             case ParameterType::Int:
-                return static_cast<T>(m_cache_ptr->m_atomic_int.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    m_record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
             case ParameterType::Bool:
-                return static_cast<T>(m_cache_ptr->m_atomic_bool.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    m_record->m_cache.m_atomic_bool.load(std::memory_order_relaxed));
             case ParameterType::String:
-                return static_cast<T>(m_cache_ptr->m_atomic_double.load(std::memory_order_relaxed));
+                return static_cast<T>(
+                    m_record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
             default: return T{};
         }
     }
 }
 
-// Parameter type checking — uses cached m_type, no RCU read needed
+// Parameter type checking — reads from immutable m_def
 ParameterType Parameter::get_type() const TANH_NONBLOCKING_FUNCTION {
-    return m_type;
+    return m_record->m_def.m_type;
 }
 
 bool Parameter::is_double() const TANH_NONBLOCKING_FUNCTION {
-    return m_type == ParameterType::Double;
+    return m_record->m_def.m_type == ParameterType::Double;
 }
 
 bool Parameter::is_float() const TANH_NONBLOCKING_FUNCTION {
-    return m_type == ParameterType::Float;
+    return m_record->m_def.m_type == ParameterType::Float;
 }
 
 bool Parameter::is_int() const TANH_NONBLOCKING_FUNCTION {
-    return m_type == ParameterType::Int;
+    return m_record->m_def.m_type == ParameterType::Int;
 }
 
 bool Parameter::is_bool() const TANH_NONBLOCKING_FUNCTION {
-    return m_type == ParameterType::Bool;
+    return m_record->m_def.m_type == ParameterType::Bool;
 }
 
 bool Parameter::is_string() const TANH_NONBLOCKING_FUNCTION {
-    return m_type == ParameterType::String;
+    return m_record->m_def.m_type == ParameterType::String;
 }
 
-// Object-oriented parameter access - renamed to get_from_root
-Parameter State::get_from_root(std::string_view key) const {
-    return {this, key};
+// Metadata accessors — forward to immutable m_def
+std::string_view Parameter::key() const TANH_NONBLOCKING_FUNCTION {
+    return m_record->m_key;
+}
+
+const ParameterDefinition& Parameter::def() const TANH_NONBLOCKING_FUNCTION {
+    return m_record->m_def;
+}
+
+const Range& Parameter::range() const TANH_NONBLOCKING_FUNCTION {
+    return m_record->m_def.m_range;
+}
+
+uint32_t Parameter::id() const TANH_NONBLOCKING_FUNCTION {
+    return m_record->m_def.m_id;
 }
 
 // Parameter notification method
-void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) const {
-    // Check if this parameter belongs to a group by looking for dots in the
-    // path
-    std::string const path = m_key;
-    std::string root_segment = path;
-    size_t const first_dot = path.find('.');
+void Parameter::notify(ParameterListener* source) const {
+    std::string_view const param_key = m_record->m_key;
+    std::string const key_copy(param_key);
 
-    // Look up gesture state
-    bool is_in_gesture = false;
-    m_state->m_index_rcu.read([&](const auto& idx) {
-        auto it = idx.find(m_key);
-        if (it != idx.end()) {
-            is_in_gesture = it->second->m_metadata.m_in_gesture.load(std::memory_order_relaxed);
-        }
-    });
+    size_t const first_dot = key_copy.find('.');
 
     if (first_dot != std::string::npos) {
-        root_segment = path.substr(0, first_dot);
+        std::string root_segment = key_copy.substr(0, first_dot);
 
-        // If this parameter belongs to a StateGroup, notify through that group
-        // using RCU
         auto* state = const_cast<State*>(m_state);
         StateGroup* found_group = nullptr;
 
@@ -151,37 +127,17 @@ void Parameter::notify(NotifyStrategies strategy, ParameterListener* source) con
         });
 
         if (found_group) {
-            // This will notify both the group listener and propagate up to the
-            // root
-            found_group->notify_listeners(path, *this, strategy, source, is_in_gesture);
+            found_group->notify_listeners(*this, source);
             return;
         }
     }
 
-    // Otherwise notify directly from State
-    const_cast<State*>(m_state)->notify_listeners(path, *this, strategy, source, is_in_gesture);
+    const_cast<State*>(m_state)->notify_listeners(*this, source);
 }
 
-// Get full path for this parameter
-std::string Parameter::get_path() const {
-    return m_key;
-}
-
-std::optional<ParameterDefinition> Parameter::get_definition() const {
-    std::scoped_lock const lock(m_state->m_storage_mutex);
-    ParameterRecord* record = nullptr;
-    m_state->m_index_rcu.read([&](const auto& idx) {
-        auto it = idx.find(m_key);
-        if (it != idx.end()) { record = it->second; }
-    });
-    if (!record) { return std::nullopt; }
-    return record->m_definition;
-}
-
+// ParameterHandle from Parameter
 template <typename T>
 ParameterHandle<T> Parameter::get_handle() const {
-    if (!m_cache_ptr) { throw StateKeyNotFoundException(m_key); }
-
     constexpr ParameterType k_expected_type = []() {
         if constexpr (std::is_same_v<T, double>) {
             return ParameterType::Double;
@@ -193,12 +149,11 @@ ParameterHandle<T> Parameter::get_handle() const {
             return ParameterType::Bool;
         }
     }();
-    if (m_type != k_expected_type) {
-        throw std::invalid_argument(
-            "ParameterHandle type mismatch: requested handle type does not match parameter type");
+    if (m_record->m_def.m_type != k_expected_type) {
+        throw ParameterTypeMismatchException(k_expected_type, m_record->m_def.m_type);
     }
 
-    return ParameterHandle<T>(m_cache_ptr);
+    return ParameterHandle<T>(m_record);
 }
 
 template TANH_API ParameterHandle<double> Parameter::get_handle<double>() const;

@@ -33,9 +33,8 @@ SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key)
     // Throws StateKeyNotFoundException if parameter doesn't exist
     auto handle = m_state.get_handle<float>(param_key);
 
-    // Check modulation flag if a definition exists
-    auto def = m_state.get_definition_from_root(param_key);
-    if (def.has_value() && !def->m_modulation) {
+    // Check modulation flag
+    if (!m_state.is_modulatable(param_key)) {
         throw std::invalid_argument("Parameter '" + std::string(param_key) +
                                     "' has modulation disabled");
     }

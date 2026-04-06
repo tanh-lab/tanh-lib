@@ -18,16 +18,16 @@ TEST(StateTests, BasicParameterOperations) {
     // Test empty state
     EXPECT_TRUE(state.is_empty());
 
-    // Test setting and getting parameters of different types
-    state.set("double_param", std::numbers::pi);
-    state.set("float_param", std::numbers::e_v<float>);
-    state.set("int_param", 42);
-    state.set("bool_param", true);
-    state.set("string_param", "hello world");                // Short string falls within SSO
-                                                             // buffer
-    state.set("string_param_long", std::string(1000, 'a'));  // Long string
-                                                             // exceeds SSO
-                                                             // buffer
+    // Test creating and getting parameters of different types
+    state.create("double_param", std::numbers::pi);
+    state.create("float_param", std::numbers::e_v<float>);
+    state.create("int_param", 42);
+    state.create("bool_param", true);
+    state.create("string_param", "hello world");                // Short string falls within SSO
+                                                                // buffer
+    state.create("string_param_long", std::string(1000, 'a'));  // Long string
+                                                                // exceeds SSO
+                                                                // buffer
 
     // Test that the state is no longer empty
     EXPECT_FALSE(state.is_empty());
@@ -64,8 +64,8 @@ TEST(StateTests, AutoGroupCreation) {
     EXPECT_TRUE(state.is_empty());
     EXPECT_FALSE(state.has_group("audio"));
 
-    // Set a parameter with a hierarchical path
-    state.set("audio.mixer.volume", 0.75);
+    // Create a parameter with a hierarchical path
+    state.create("audio.mixer.volume", 0.75);
 
     // Check that the groups were automatically created
     EXPECT_TRUE(state.has_group("audio"));
@@ -108,8 +108,8 @@ TEST(StateTests, AutoGroupCreation) {
         StateGroupNotFoundException);
 #endif
 
-    // Set another parameter in a different hierarchy
-    state.set("audio.effects.reverb.size", 0.5);
+    // Create another parameter in a different hierarchy
+    state.create("audio.effects.reverb.size", 0.5);
 
     // Verify the new groups were created
     EXPECT_TRUE(audio_group->has_group("effects"));
@@ -122,7 +122,7 @@ TEST(StateTests, AutoGroupCreation) {
     EXPECT_DOUBLE_EQ(0.5, state.get<double>("audio.effects.reverb.size"));
 
     // Test multi-level paths being created in one go
-    state.set("visual.display.brightness.level", 85);
+    state.create("visual.display.brightness.level", 85);
 
     // Verify all groups were created
     EXPECT_TRUE(state.has_group("visual"));
@@ -161,16 +161,16 @@ TEST(StateTests, HierarchicalStructure) {
     EXPECT_EQ("audio.effects", effects_group->get_full_path());
     EXPECT_EQ("audio.effects.reverb", reverb_group->get_full_path());
 
-    // Test setting parameters at different levels
-    state.set("global", 1.0);
-    audio_group->set("volume", 0.8);
-    effects_group->set("enabled", true);
-    reverb_group->set("mix", 0.3f);
-    reverb_group->set("room_size", 0.7f);
+    // Test creating parameters at different levels
+    state.create("global", 1.0);
+    audio_group->create("volume", 0.8);
+    effects_group->create("enabled", true);
+    reverb_group->create("mix", 0.3f);
+    reverb_group->create("room_size", 0.7f);
 
-    // Test setting parameters with paths
-    state.set("audio.effects.delay.time", 500);
-    state.set("audio.effects.delay.feedback", 0.4f);
+    // Test creating parameters with paths
+    state.create("audio.effects.delay.time", 500);
+    state.create("audio.effects.delay.feedback", 0.4f);
 
     // Test getting parameters with paths
     EXPECT_DOUBLE_EQ(1.0, state.get<double>("global"));
@@ -206,8 +206,8 @@ TEST(StateTests, HierarchicalStructure) {
 TEST(StateTests, TypeConversions) {
     State state;
 
-    // Set parameters of different types
-    state.set("number", 42.5);
+    // Create parameters of different types
+    state.create("number", 42.5);
 
     // Test numeric type conversions
     EXPECT_DOUBLE_EQ(42.5, state.get<double>("number"));
@@ -216,9 +216,9 @@ TEST(StateTests, TypeConversions) {
     EXPECT_TRUE(state.get<bool>("number"));
 
     // Test string conversions
-    state.set("string_true", "true");
-    state.set("string_one", "1");
-    state.set("string_number", "123.45");
+    state.create("string_true", "true");
+    state.create("string_one", "1");
+    state.create("string_number", "123.45");
 
     EXPECT_TRUE(state.get<bool>("string_true"));
     EXPECT_TRUE(state.get<bool>("string_one"));
@@ -227,15 +227,15 @@ TEST(StateTests, TypeConversions) {
     EXPECT_EQ(123, state.get<int>("string_number"));
 
     // Test invalid conversions
-    state.set("invalid_number", "not a number");
+    state.create("invalid_number", "not a number");
     EXPECT_DOUBLE_EQ(0.0, state.get<double>("invalid_number"));
     EXPECT_FLOAT_EQ(0.0f, state.get<float>("invalid_number"));
     EXPECT_EQ(0, state.get<int>("invalid_number"));
     EXPECT_FALSE(state.get<bool>("invalid_number"));
 
     // Test bool to other types
-    state.set("bool_true", true);
-    state.set("bool_false", false);
+    state.create("bool_true", true);
+    state.create("bool_false", false);
 
     EXPECT_DOUBLE_EQ(1.0, state.get<double>("bool_true"));
     EXPECT_DOUBLE_EQ(0.0, state.get<double>("bool_false"));
@@ -249,11 +249,11 @@ TEST(StateTests, TypeConversions) {
 TEST(StateTests, ParameterObjectTests) {
     State state;
 
-    // Set parameters of different types
-    state.set("double_param", std::numbers::pi);
-    state.set("int_param", 42);
-    state.set("bool_param", true);
-    state.set("string_param", "hello world");
+    // Create parameters of different types
+    state.create("double_param", std::numbers::pi);
+    state.create("int_param", 42);
+    state.create("bool_param", true);
+    state.create("string_param", "hello world");
 
     // Get parameter objects
     Parameter double_param = state.get_parameter("double_param");
@@ -292,53 +292,50 @@ TEST(StateTests, ParameterObjectTests) {
     EXPECT_TRUE(int_param.to<bool>());
 }
 
-// Test for the create parameter in set() method
+// Test for create/set separation
 TEST(StateTests, CreateParameterFlag) {
     State state;
 
-    // Test with create=true (default behavior)
-    // This should create the parameter if it doesn't exist
-    state.set("audio.volume", 0.75, NotifyStrategies::All, nullptr, true);
+    // Test create() - creates the parameter
+    state.create("audio.volume", 0.75);
     EXPECT_DOUBLE_EQ(0.75, state.get<double>("audio.volume"));
     EXPECT_TRUE(state.has_group("audio"));
 
-    // Update an existing parameter with create=false
+    // Update an existing parameter with set()
     // This should work since the parameter already exists
-    state.set("audio.volume", 0.5, NotifyStrategies::All, nullptr, false);
+    state.set("audio.volume", 0.5);
     EXPECT_DOUBLE_EQ(0.5, state.get<double>("audio.volume"));
 
-    // Test with create=false on a non-existent parameter
-    // This should throw StateKeyNotFoundException
-    EXPECT_THROW(
-        { state.set("nonexistent.parameter", 100, NotifyStrategies::All, nullptr, false); },
-        StateGroupNotFoundException);
+    // Test set() on a non-existent parameter
+    // This should throw StateGroupNotFoundException since the group doesn't exist
+    EXPECT_THROW({ state.set("nonexistent.parameter", 100); }, StateGroupNotFoundException);
 
-    // Test deep nesting with create=true
-    state.set("visual.display.brightness", 85, NotifyStrategies::All, nullptr, true);
+    // Test deep nesting with create()
+    state.create("visual.display.brightness", 85);
     EXPECT_EQ(85, state.get<int>("visual.display.brightness"));
 
-    // Test with create=false on a non-existent nested parameter
+    // Test set() on a non-existent nested parameter (group exists but key doesn't)
     EXPECT_THROW(
         {
             // "color" doesn't exist under visual.display
-            state.set("visual.display.color", "blue", NotifyStrategies::All, nullptr, false);
+            state.set("visual.display.color", "blue");
         },
         StateKeyNotFoundException);
 
-    // Test with create=false on a non-existent group
+    // Test set() on a non-existent group
     EXPECT_THROW(
         {
             // "effects" doesn't exist under audio
-            state.set("audio.effects.reverb", 0.3, NotifyStrategies::All, nullptr, false);
+            state.set("audio.effects.reverb", 0.3);
         },
         StateGroupNotFoundException);
 
-    // Create that missing group and then test again
-    state.set("audio.effects.reverb", 0.3, NotifyStrategies::All, nullptr, true);
+    // Create that missing group and parameter
+    state.create("audio.effects.reverb", 0.3);
     EXPECT_DOUBLE_EQ(0.3, state.get<double>("audio.effects.reverb"));
 
-    // Now it should work with create=false since it exists
-    state.set("audio.effects.reverb", 0.4, NotifyStrategies::All, nullptr, false);
+    // Now it should work with set() since it exists
+    state.set("audio.effects.reverb", 0.4);
     EXPECT_DOUBLE_EQ(0.4, state.get<double>("audio.effects.reverb"));
 }
 
@@ -349,8 +346,8 @@ TEST(StateTests, CreateParameterFlag) {
 // Test class for parameter notifications
 class TestParameterListener : public ParameterListener {
 public:
-    void on_parameter_changed(std::string_view path, const Parameter& param) override {
-        m_last_path = path;
+    void on_parameter_changed(const Parameter& param) override {
+        m_last_path = param.key();
 
         // Store the value based on the parameter type
         switch (param.get_type()) {
@@ -377,20 +374,20 @@ TEST(StateTests, ParameterNotification) {
     // Register the listener
     state.add_listener(&listener);
 
-    // Set a parameter - this should trigger notification
-    state.set("test.param", 42.0);
+    // Create a parameter - this should trigger notification
+    state.create("test.param", 42.0);
 
     // Verify the listener was notified
     EXPECT_EQ(1, listener.m_notification_count);
     EXPECT_EQ("test.param", listener.m_last_path);
 
-    // Test optional notification - should not notify
-    state.set("test.param", 84.0, NotifyStrategies::None);
+    // Update the parameter - set() now always notifies
+    state.set("test.param", 84.0);
 
-    // Verify no additional notification occurred
-    EXPECT_EQ(1, listener.m_notification_count);
+    // Verify notification occurred (set() always notifies now)
+    EXPECT_EQ(2, listener.m_notification_count);
 
-    // But value should be updated
+    // Value should be updated
     EXPECT_DOUBLE_EQ(84.0, state.get<double>("test.param"));
 
     // Test hierarchical notifications
@@ -398,30 +395,29 @@ TEST(StateTests, ParameterNotification) {
     TestParameterListener group_listener;
     audio_group->add_listener(&group_listener);
 
-    // Set parameter in audio group
-    state.set("audio.volume", 0.75);
+    // Create parameter in audio group
+    state.create("audio.volume", 0.75);
 
     // Root listener should be notified
-    EXPECT_EQ(2, listener.m_notification_count);
+    EXPECT_EQ(3, listener.m_notification_count);
     // Group listener should be notified
     EXPECT_EQ(1, group_listener.m_notification_count);
     EXPECT_EQ("audio.volume", group_listener.m_last_path);
 
-    // Test manual notification through Parameter object
-    state.set("audio.bass", 0.5, NotifyStrategies::None);  // Set without
-                                                           // notification
+    // Create another parameter (creation always notifies)
+    state.create("audio.bass", 0.5);
 
-    // Verify no notification occurred
-    EXPECT_EQ(2, listener.m_notification_count);
-    EXPECT_EQ(1, group_listener.m_notification_count);
+    // Both listeners should be notified
+    EXPECT_EQ(4, listener.m_notification_count);
+    EXPECT_EQ(2, group_listener.m_notification_count);
 
     // Manually notify
     Parameter param = state.get_parameter("audio.bass");
     param.notify();
 
     // Verify notifications occurred
-    EXPECT_EQ(3, listener.m_notification_count);
-    EXPECT_EQ(2, group_listener.m_notification_count);
+    EXPECT_EQ(5, listener.m_notification_count);
+    EXPECT_EQ(3, group_listener.m_notification_count);
 }
 
 TEST(StateTests, CallbackBasedNotifications) {
@@ -432,15 +428,15 @@ TEST(StateTests, CallbackBasedNotifications) {
     double last_value = 0.0;
 
     // Add a callback listener
-    size_t listener_id =
-        state.add_callback_listener([&](std::string_view path, const Parameter& param) {
-            callback_count++;
-            last_path = path;
-            last_value = param.to<double>();
-        });
+    CallbackListener cb([&](const Parameter& param) {
+        callback_count++;
+        last_path = param.key();
+        last_value = param.to<double>();
+    });
+    state.add_listener(&cb);
 
-    // Set parameter
-    state.set("test.callback.param", 123.0);
+    // Create parameter
+    state.create("test.callback.param", 123.0);
 
     // Verify callback was invoked
     EXPECT_EQ(1, callback_count);
@@ -448,7 +444,7 @@ TEST(StateTests, CallbackBasedNotifications) {
     EXPECT_DOUBLE_EQ(123.0, last_value);
 
     // Remove callback listener
-    state.remove_callback_listener(listener_id);
+    state.remove_listener(&cb);
 
     // Set parameter again
     state.set("test.callback.param", 456.0);
@@ -467,17 +463,17 @@ TEST(StateTests, ManualNotification) {
     // Register listener
     state.add_listener(&listener);
 
-    // Set a parameter without notification
-    state.set("manual.test", 42.0, NotifyStrategies::None);
+    // Create a parameter (creation always notifies now)
+    state.create("manual.test", 42.0);
 
-    // Verify no notification occurred
-    EXPECT_EQ(0, listener.m_notification_count);
+    // Verify notification occurred from create
+    EXPECT_EQ(1, listener.m_notification_count);
 
     // Manually notify about the parameter
     state.notify_parameter_change("manual.test");
 
-    // Verify notification occurred
-    EXPECT_EQ(1, listener.m_notification_count);
+    // Verify second notification occurred
+    EXPECT_EQ(2, listener.m_notification_count);
     EXPECT_EQ("manual.test", listener.m_last_path);
     EXPECT_DOUBLE_EQ(42.0, listener.m_last_value_double);
 
@@ -485,8 +481,8 @@ TEST(StateTests, ManualNotification) {
     Parameter param = state.get_parameter("manual.test");
     param.notify();
 
-    // Verify second notification
-    EXPECT_EQ(2, listener.m_notification_count);
+    // Verify third notification
+    EXPECT_EQ(3, listener.m_notification_count);
 }
 
 // =============================================================================
@@ -502,8 +498,8 @@ TEST(StateTests, GetParametersMethod) {
     EXPECT_TRUE(empty_params.empty());
 
     // Add parameters at root level
-    state.set("root_param1", 42);
-    state.set("root_param2", "root value");
+    state.create("root_param1", 42);
+    state.create("root_param2", "root value");
 
     // Check root parameters
     std::map<std::string, Parameter> root_params = state.get_parameters();
@@ -524,8 +520,8 @@ TEST(StateTests, GetParametersMethod) {
 
     // Create a nested structure with parameters
     StateGroup* audio_group = state.create_group("audio");
-    audio_group->set("volume", 0.8);
-    audio_group->set("muted", false);
+    audio_group->create("volume", 0.8);
+    audio_group->create("muted", false);
 
     // Check that root level parameters still match
     root_params = state.get_parameters();
@@ -545,9 +541,9 @@ TEST(StateTests, GetParametersMethod) {
 
     // Create a deeper nested structure
     StateGroup* effects_group = audio_group->create_group("effects");
-    effects_group->set("reverb", 0.5);
-    effects_group->set("delay", 0.3);
-    effects_group->set("chorus", 0.2);
+    effects_group->create("reverb", 0.5);
+    effects_group->create("delay", 0.3);
+    effects_group->create("chorus", 0.2);
 
     // Check effects group parameters
     std::map<std::string, Parameter> effects_params = effects_group->get_parameters();
@@ -564,8 +560,8 @@ TEST(StateTests, GetParametersMethod) {
 
     // Add another group with parameters
     StateGroup* visual_group = state.create_group("visual");
-    visual_group->set("brightness", 75);
-    visual_group->set("contrast", 100);
+    visual_group->create("brightness", 75);
+    visual_group->create("contrast", 100);
 
     // Check visual group parameters
     std::map<std::string, Parameter> visual_params = visual_group->get_parameters();
@@ -593,10 +589,10 @@ TEST(StateTests, GetParametersEdgeCases) {
     State state;
 
     // Create a deep hierarchy with parameters at multiple levels
-    state.set("a.b.c.d.param1", 1);
-    state.set("a.b.c.param2", 2);
-    state.set("a.b.param3", 3);
-    state.set("a.param4", 4);
+    state.create("a.b.c.d.param1", 1);
+    state.create("a.b.c.param2", 2);
+    state.create("a.b.param3", 3);
+    state.create("a.param4", 4);
 
     // Get the groups
     StateGroup* group_a = state.get_group("a");
@@ -616,9 +612,9 @@ TEST(StateTests, GetParametersEdgeCases) {
     EXPECT_EQ(1, params_d.size());  // Only param1
 
     // Test with special characters in parameter names
-    state.set("special.param-with-dashes", 1);
-    state.set("special.param_with_underscores", 2);
-    state.set("special.param.with.dots", 3);  // This creates a deeper hierarchy
+    state.create("special.param-with-dashes", 1);
+    state.create("special.param_with_underscores", 2);
+    state.create("special.param.with.dots", 3);  // This creates a deeper hierarchy
 
     StateGroup* special_group = state.get_group("special");
     std::map<std::string, Parameter> special_params = special_group->get_parameters();
@@ -629,7 +625,7 @@ TEST(StateTests, GetParametersEdgeCases) {
 
     // Test with empty group (no direct parameters)
     StateGroup* empty_parent = state.create_group("empty_parent");
-    empty_parent->create_group("child")->set("param", 100);
+    empty_parent->create_group("child")->create("param", 100);
 
     std::map<std::string, Parameter> empty_parent_params = empty_parent->get_parameters();
     EXPECT_EQ(1, empty_parent_params.size());  // Contains only the child
@@ -646,14 +642,14 @@ TEST(StateTests, UpdateFromJson) {
     State state;
 
     // Set up initial state
-    state.set("volume", 0.5);
-    state.set("muted", false);
-    state.set("name", "default device");
+    state.create("volume", 0.5);
+    state.create("muted", false);
+    state.create("name", "default device");
 
     // Create a group for EQ settings
     StateGroup* eq = state.create_group("eq");
-    eq->set("bass", 5);
-    eq->set("treble", 3);
+    eq->create("bass", 5);
+    eq->create("treble", 3);
 
     // Basic JSON update
     nlohmann::json simple_update = {{"volume", 0.8}, {"muted", true}};
@@ -689,7 +685,7 @@ TEST(StateTests, UpdateFromJsonNonExistentKey) {
     State state;
 
     // Set up initial state
-    state.set("volume", 0.5);
+    state.create("volume", 0.5);
 
     // JSON with non-existent key
     nlohmann::json invalid_update = {{"volume", 0.8}, {"non_existent", 42}};
@@ -721,9 +717,9 @@ TEST(StateTests, UpdateFromJsonDeepNesting) {
     StateGroup* effects = audio->create_group("effects");
     StateGroup* reverb = effects->create_group("reverb");
 
-    reverb->set("wet", 0.3);
-    reverb->set("dry", 0.7);
-    reverb->set("room_size", 0.5);
+    reverb->create("wet", 0.3);
+    reverb->create("dry", 0.7);
+    reverb->create("room_size", 0.5);
 
     // Create a JSON with deep nesting
     nlohmann::json deep_update = {
@@ -743,9 +739,9 @@ TEST(StateTests, UpdateFromJsonNumericTypes) {
     State state;
 
     // Set up parameters of different types
-    state.set("double_value", 1.0);
-    state.set("int_value", 1);
-    state.set("bool_value", false);
+    state.create("double_value", 1.0);
+    state.create("int_value", 1);
+    state.create("bool_value", false);
 
     // Update with numeric literals of different types
     nlohmann::json numeric_update = {
@@ -818,27 +814,26 @@ TEST(StateTests, ParameterDefinitionFloat) {
                               true   // modulation
     );
 
-    // Set the parameter with definition
-    state.set("audio.volume", volume_def);
+    // Create the parameter with definition
+    state.create("audio.volume", volume_def);
 
     // Verify the value was set correctly
     EXPECT_FLOAT_EQ(0.75f, state.get<float>("audio.volume"));
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("audio.volume");
-    auto def = param.get_definition();
+    const auto& def = param.def();
 
-    ASSERT_TRUE(def.has_value());
-    EXPECT_EQ("Volume", def->m_name);
-    EXPECT_EQ(PluginParamType::ParamFloat, def->m_type);
-    EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
-    EXPECT_FLOAT_EQ(1.0f, def->m_range.m_max);
-    EXPECT_FLOAT_EQ(0.01f, def->m_range.m_step);
-    EXPECT_FLOAT_EQ(1.0f, def->m_range.m_skew);
-    EXPECT_FLOAT_EQ(0.75f, def->m_default_value);
-    EXPECT_EQ(2, def->m_decimal_places);
-    EXPECT_TRUE(def->m_automation);
-    EXPECT_TRUE(def->m_modulation);
+    EXPECT_EQ("Volume", def.m_name);
+    EXPECT_EQ(ParameterType::Float, def.m_type);
+    EXPECT_FLOAT_EQ(0.0f, def.m_range.m_min);
+    EXPECT_FLOAT_EQ(1.0f, def.m_range.m_max);
+    EXPECT_FLOAT_EQ(0.01f, def.m_range.m_step);
+    EXPECT_FLOAT_EQ(1.0f, def.m_range.m_skew);
+    EXPECT_FLOAT_EQ(0.75f, def.m_default_value);
+    EXPECT_EQ(2, def.m_decimal_places);
+    EXPECT_TRUE(def.is_automatable());
+    EXPECT_TRUE(def.is_modulatable());
 }
 
 // Test basic ParameterInt definition
@@ -853,26 +848,25 @@ TEST(StateTests, ParameterDefinitionInt) {
                                    true   // modulation
     );
 
-    // Set the parameter with definition
-    state.set("synth.filter.cutoff", filter_cutoff_def);
+    // Create the parameter with definition
+    state.create("synth.filter.cutoff", filter_cutoff_def);
 
     // Verify the value was set correctly
     EXPECT_EQ(1000, state.get<int>("synth.filter.cutoff"));
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("synth.filter.cutoff");
-    auto def = param.get_definition();
+    const auto& def = param.def();
 
-    ASSERT_TRUE(def.has_value());
-    EXPECT_EQ("Filter Cutoff", def->m_name);
-    EXPECT_EQ(PluginParamType::ParamInt, def->m_type);
-    EXPECT_EQ(20, def->m_range.min_int());
-    EXPECT_EQ(20000, def->m_range.max_int());
-    EXPECT_EQ(1, def->m_range.step_int());
-    EXPECT_EQ(1000, def->as_int());
-    EXPECT_EQ(0, def->m_decimal_places);  // Int should have 0 decimal places
-    EXPECT_TRUE(def->m_automation);
-    EXPECT_TRUE(def->m_modulation);
+    EXPECT_EQ("Filter Cutoff", def.m_name);
+    EXPECT_EQ(ParameterType::Int, def.m_type);
+    EXPECT_EQ(20, def.m_range.min_int());
+    EXPECT_EQ(20000, def.m_range.max_int());
+    EXPECT_EQ(1, def.m_range.step_int());
+    EXPECT_EQ(1000, def.as_int());
+    EXPECT_EQ(0, def.m_decimal_places);  // Int should have 0 decimal places
+    EXPECT_TRUE(def.is_automatable());
+    EXPECT_TRUE(def.is_modulatable());
 }
 
 // Test basic ParameterBool definition
@@ -886,25 +880,24 @@ TEST(StateTests, ParameterDefinitionBool) {
                              false   // modulation (typically off for bools)
     );
 
-    // Set the parameter with definition
-    state.set("effects.reverb.bypass", bypass_def);
+    // Create the parameter with definition
+    state.create("effects.reverb.bypass", bypass_def);
 
     // Verify the value was set correctly
     EXPECT_FALSE(state.get<bool>("effects.reverb.bypass"));
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("effects.reverb.bypass");
-    auto def = param.get_definition();
+    const auto& def = param.def();
 
-    ASSERT_TRUE(def.has_value());
-    EXPECT_EQ("Bypass", def->m_name);
-    EXPECT_EQ(PluginParamType::ParamBool, def->m_type);
-    EXPECT_EQ(0, def->m_range.min_int());
-    EXPECT_EQ(1, def->m_range.max_int());
-    EXPECT_FALSE(def->as_bool());
-    EXPECT_EQ(0, def->m_decimal_places);
-    EXPECT_TRUE(def->m_automation);
-    EXPECT_FALSE(def->m_modulation);
+    EXPECT_EQ("Bypass", def.m_name);
+    EXPECT_EQ(ParameterType::Bool, def.m_type);
+    EXPECT_EQ(0, def.m_range.min_int());
+    EXPECT_EQ(1, def.m_range.max_int());
+    EXPECT_FALSE(def.as_bool());
+    EXPECT_EQ(0, def.m_decimal_places);
+    EXPECT_TRUE(def.is_automatable());
+    EXPECT_FALSE(def.is_modulatable());
 }
 
 // Test basic ParameterChoice definition
@@ -920,30 +913,29 @@ TEST(StateTests, ParameterDefinitionChoice) {
                                  false  // modulation
     );
 
-    // Set the parameter with definition
-    state.set("oscillator.waveform", waveform_def);
+    // Create the parameter with definition
+    state.create("oscillator.waveform", waveform_def);
 
     // Verify the value was set correctly (as int index)
     EXPECT_EQ(0, state.get<int>("oscillator.waveform"));
 
     // Get the parameter and check its definition
     Parameter param = state.get_parameter("oscillator.waveform");
-    auto def = param.get_definition();
+    const auto& def = param.def();
 
-    ASSERT_TRUE(def.has_value());
-    EXPECT_EQ("Waveform", def->m_name);
-    EXPECT_EQ(PluginParamType::ParamChoice, def->m_type);
-    EXPECT_EQ(0, def->m_range.min_int());
-    EXPECT_EQ(3, def->m_range.max_int());  // 4 choices: 0-3
-    EXPECT_EQ(1, def->m_range.step_int());
-    EXPECT_EQ(0, def->as_int());
-    EXPECT_EQ(4, def->m_data.size());
-    EXPECT_EQ("Sine", def->m_data[0]);
-    EXPECT_EQ("Saw", def->m_data[1]);
-    EXPECT_EQ("Square", def->m_data[2]);
-    EXPECT_EQ("Triangle", def->m_data[3]);
-    EXPECT_TRUE(def->m_automation);
-    EXPECT_FALSE(def->m_modulation);
+    EXPECT_EQ("Waveform", def.m_name);
+    EXPECT_EQ(ParameterType::Int, def.m_type);
+    EXPECT_EQ(0, def.m_range.min_int());
+    EXPECT_EQ(3, def.m_range.max_int());  // 4 choices: 0-3
+    EXPECT_EQ(1, def.m_range.step_int());
+    EXPECT_EQ(0, def.as_int());
+    EXPECT_EQ(4, def.m_choices.size());
+    EXPECT_EQ("Sine", def.m_choices[0]);
+    EXPECT_EQ("Saw", def.m_choices[1]);
+    EXPECT_EQ("Square", def.m_choices[2]);
+    EXPECT_EQ("Triangle", def.m_choices[3]);
+    EXPECT_TRUE(def.is_automatable());
+    EXPECT_FALSE(def.is_modulatable());
 }
 
 // Test type conversions in ParameterDefinition
@@ -987,7 +979,7 @@ TEST(StateTests, ParameterDefinitionPersistence) {
     // Create and set a parameter with definition
     ParameterFloat gain_def("Gain", Range(0.0f, 2.0f, 0.01f, 1.0f), 1.0f, 2, true, true);
 
-    state.set("gain", gain_def);
+    state.create("gain", gain_def);
 
     // Verify initial value
     EXPECT_FLOAT_EQ(1.0f, state.get<float>("gain"));
@@ -1000,41 +992,29 @@ TEST(StateTests, ParameterDefinitionPersistence) {
 
     // Verify the definition is still present and unchanged
     Parameter param = state.get_parameter("gain");
-    auto def = param.get_definition();
+    const auto& def = param.def();
 
-    ASSERT_TRUE(def.has_value());
-    EXPECT_EQ("Gain", def->m_name);
-    EXPECT_FLOAT_EQ(1.0f, def->m_default_value);  // Default should still be 1.0
-    EXPECT_FLOAT_EQ(0.0f, def->m_range.m_min);
-    EXPECT_FLOAT_EQ(2.0f, def->m_range.m_max);
+    EXPECT_EQ("Gain", def.m_name);
+    EXPECT_FLOAT_EQ(1.0f, def.m_default_value);  // Default should still be 1.0
+    EXPECT_FLOAT_EQ(0.0f, def.m_range.m_min);
+    EXPECT_FLOAT_EQ(2.0f, def.m_range.m_max);
 }
 
-// Test updating parameter with new definition
-TEST(StateTests, UpdateParameterDefinition) {
+// Test that create() throws on duplicate key
+TEST(StateTests, CreateThrowsOnDuplicateKey) {
     State state;
 
-    // Set initial parameter with definition
-    state.set("param", ParameterFloat("Initial", Range(0.0f, 1.0f), 0.5f, 2));
+    // Create initial parameter with definition
+    state.create("param", ParameterFloat("Initial", Range(0.0f, 1.0f), 0.5f, 2));
 
-    // Verify initial definition
-    auto def1 = state.get_parameter("param").get_definition();
-    ASSERT_TRUE(def1.has_value());
-    EXPECT_EQ("Initial", def1->m_name);
-    EXPECT_FLOAT_EQ(0.5f, def1->m_default_value);
+    // Attempting to create again should throw
+    EXPECT_THROW(state.create("param", ParameterFloat("Updated", Range(0.0f, 10.0f), 5.0f, 3)),
+                 ParameterAlreadyExistsException);
 
-    // Update with new definition
-    state.set("param", ParameterFloat("Updated", Range(0.0f, 10.0f), 5.0f, 3));
-
-    // Verify updated definition
-    auto def2 = state.get_parameter("param").get_definition();
-    ASSERT_TRUE(def2.has_value());
-    EXPECT_EQ("Updated", def2->m_name);
-    EXPECT_FLOAT_EQ(5.0f, def2->m_default_value);
-    EXPECT_FLOAT_EQ(10.0f, def2->m_range.m_max);
-    EXPECT_EQ(3, def2->m_decimal_places);
-
-    // Value should be updated to new default
-    EXPECT_FLOAT_EQ(5.0f, state.get<float>("param"));
+    // Original definition is preserved
+    const auto& def = state.get_parameter("param").def();
+    EXPECT_EQ("Initial", def.m_name);
+    EXPECT_FLOAT_EQ(0.5f, def.m_default_value);
 }
 
 // Test multiple parameters with definitions
@@ -1042,13 +1022,13 @@ TEST(StateTests, MultipleParameterDefinitions) {
     State state;
 
     // Create a complex audio effect with multiple parameters
-    state.set("reverb.dry_wet", ParameterFloat("Dry/Wet", Range(0.0f, 1.0f), 0.3f, 2));
-    state.set("reverb.room_size", ParameterFloat("Room Size", Range(0.0f, 1.0f), 0.5f, 2));
-    state.set("reverb.damping", ParameterFloat("Damping", Range(0.0f, 1.0f), 0.5f, 2));
-    state.set("reverb.enabled", ParameterBool("Enabled", true));
+    state.create("reverb.dry_wet", ParameterFloat("Dry/Wet", Range(0.0f, 1.0f), 0.3f, 2));
+    state.create("reverb.room_size", ParameterFloat("Room Size", Range(0.0f, 1.0f), 0.5f, 2));
+    state.create("reverb.damping", ParameterFloat("Damping", Range(0.0f, 1.0f), 0.5f, 2));
+    state.create("reverb.enabled", ParameterBool("Enabled", true));
 
     std::vector<std::string> room_types = {"Small", "Medium", "Large", "Hall"};
-    state.set("reverb.type", ParameterChoice("Room Type", room_types, 1));
+    state.create("reverb.type", ParameterChoice("Room Type", room_types, 1));
 
     // Verify all values
     EXPECT_FLOAT_EQ(0.3f, state.get<float>("reverb.dry_wet"));
@@ -1057,36 +1037,35 @@ TEST(StateTests, MultipleParameterDefinitions) {
     EXPECT_TRUE(state.get<bool>("reverb.enabled"));
     EXPECT_EQ(1, state.get<int>("reverb.type"));
 
-    // Verify all definitions exist
-    EXPECT_TRUE(state.get_parameter("reverb.dry_wet").get_definition().has_value());
-    EXPECT_TRUE(state.get_parameter("reverb.room_size").get_definition().has_value());
-    EXPECT_TRUE(state.get_parameter("reverb.damping").get_definition().has_value());
-    EXPECT_TRUE(state.get_parameter("reverb.enabled").get_definition().has_value());
-    EXPECT_TRUE(state.get_parameter("reverb.type").get_definition().has_value());
+    // Verify all definitions exist (every parameter has a definition now)
+    EXPECT_EQ("Dry/Wet", state.get_parameter("reverb.dry_wet").def().m_name);
+    EXPECT_EQ("Room Size", state.get_parameter("reverb.room_size").def().m_name);
+    EXPECT_EQ("Damping", state.get_parameter("reverb.damping").def().m_name);
+    EXPECT_EQ("Enabled", state.get_parameter("reverb.enabled").def().m_name);
+    EXPECT_EQ("Room Type", state.get_parameter("reverb.type").def().m_name);
 
     // Check specific definition properties
-    auto type_def = state.get_parameter("reverb.type").get_definition();
-    ASSERT_TRUE(type_def.has_value());
-    EXPECT_EQ("Room Type", type_def->m_name);
-    EXPECT_EQ(4, type_def->m_data.size());
-    EXPECT_EQ("Medium", type_def->m_data[1]);
+    const auto& type_def = state.get_parameter("reverb.type").def();
+    EXPECT_EQ("Room Type", type_def.m_name);
+    EXPECT_EQ(4, type_def.m_choices.size());
+    EXPECT_EQ("Medium", type_def.m_choices[1]);
 }
 
-// Test parameter without definition
-TEST(StateTests, ParameterWithoutDefinition) {
+// Test parameter with default definition (value-created)
+TEST(StateTests, ParameterWithDefaultDefinition) {
     State state;
 
-    // Set a parameter without a definition (old style)
-    state.set("simple.param", 42.0);
+    // Create a parameter with just a value (no explicit definition)
+    state.create("simple.param", 42.0);
 
     // Verify the value is set
     EXPECT_DOUBLE_EQ(42.0, state.get<double>("simple.param"));
 
-    // Verify no definition exists
+    // Value-created parameters have a default definition with empty name
     Parameter param = state.get_parameter("simple.param");
-    auto def = param.get_definition();
-
-    EXPECT_FALSE(def.has_value());
+    const auto& def = param.def();
+    EXPECT_TRUE(def.m_name.empty());
+    EXPECT_EQ(ParameterType::Double, def.m_type);
 }
 
 // Test choice parameter with actual usage
@@ -1101,31 +1080,29 @@ TEST(StateTests, ChoiceParameterUsage) {
                                     0  // Default to Low Pass
     );
 
-    state.set("filter.type", filter_type_def);
+    state.create("filter.type", filter_type_def);
 
     // Get the definition
-    auto def = state.get_parameter("filter.type").get_definition();
-    ASSERT_TRUE(def.has_value());
+    const auto& def = state.get_parameter("filter.type").def();
 
     // Verify range is correct
-    EXPECT_EQ(0, def->m_range.min_int());
-    EXPECT_EQ(3, def->m_range.max_int());
+    EXPECT_EQ(0, def.m_range.min_int());
+    EXPECT_EQ(3, def.m_range.max_int());
 
     // Verify choices
-    EXPECT_EQ(4, def->m_data.size());
-    EXPECT_EQ("Low Pass", def->m_data[0]);
-    EXPECT_EQ("High Pass", def->m_data[1]);
-    EXPECT_EQ("Band Pass", def->m_data[2]);
-    EXPECT_EQ("Notch", def->m_data[3]);
+    EXPECT_EQ(4, def.m_choices.size());
+    EXPECT_EQ("Low Pass", def.m_choices[0]);
+    EXPECT_EQ("High Pass", def.m_choices[1]);
+    EXPECT_EQ("Band Pass", def.m_choices[2]);
+    EXPECT_EQ("Notch", def.m_choices[3]);
 
     // Change the value
     state.set("filter.type", 2);  // Select Band Pass
     EXPECT_EQ(2, state.get<int>("filter.type"));
 
     // Definition should still be intact
-    auto def2 = state.get_parameter("filter.type").get_definition();
-    ASSERT_TRUE(def2.has_value());
-    EXPECT_EQ("Band Pass", def2->m_data[2]);
+    const auto& def2 = state.get_parameter("filter.type").def();
+    EXPECT_EQ("Band Pass", def2.m_choices[2]);
 }
 
 // Test automation and modulation flags
@@ -1133,31 +1110,28 @@ TEST(StateTests, AutomationModulationFlags) {
     State state;
 
     // Parameter with automation but no modulation
-    state.set("param1", ParameterFloat("Param 1", Range(0.0f, 1.0f), 0.5f, 2, true, false));
+    state.create("param1", ParameterFloat("Param 1", Range(0.0f, 1.0f), 0.5f, 2, true, false));
 
     // Parameter with both
-    state.set("param2", ParameterFloat("Param 2", Range(0.0f, 1.0f), 0.5f, 2, true, true));
+    state.create("param2", ParameterFloat("Param 2", Range(0.0f, 1.0f), 0.5f, 2, true, true));
 
     // Parameter with neither
-    state.set("param3", ParameterFloat("Param 3", Range(0.0f, 1.0f), 0.5f, 2, false, false));
+    state.create("param3", ParameterFloat("Param 3", Range(0.0f, 1.0f), 0.5f, 2, false, false));
 
     // Check param1
-    auto def1 = state.get_parameter("param1").get_definition();
-    ASSERT_TRUE(def1.has_value());
-    EXPECT_TRUE(def1->m_automation);
-    EXPECT_FALSE(def1->m_modulation);
+    const auto& def1 = state.get_parameter("param1").def();
+    EXPECT_TRUE(def1.is_automatable());
+    EXPECT_FALSE(def1.is_modulatable());
 
     // Check param2
-    auto def2 = state.get_parameter("param2").get_definition();
-    ASSERT_TRUE(def2.has_value());
-    EXPECT_TRUE(def2->m_automation);
-    EXPECT_TRUE(def2->m_modulation);
+    const auto& def2 = state.get_parameter("param2").def();
+    EXPECT_TRUE(def2.is_automatable());
+    EXPECT_TRUE(def2.is_modulatable());
 
     // Check param3
-    auto def3 = state.get_parameter("param3").get_definition();
-    ASSERT_TRUE(def3.has_value());
-    EXPECT_FALSE(def3->m_automation);
-    EXPECT_FALSE(def3->m_modulation);
+    const auto& def3 = state.get_parameter("param3").def();
+    EXPECT_FALSE(def3.is_automatable());
+    EXPECT_FALSE(def3.is_modulatable());
 }
 
 // Test slider polarity
@@ -1165,49 +1139,45 @@ TEST(StateTests, SliderPolarityFlags) {
     State state;
 
     // Float parameter with unipolar polarity (default)
-    state.set("unipolar_float", ParameterFloat("Unipolar Float", Range(0.0f, 1.0f), 0.5f));
+    state.create("unipolar_float", ParameterFloat("Unipolar Float", Range(0.0f, 1.0f), 0.5f));
 
     // Float parameter with bipolar polarity (explicit)
-    state.set("bipolar_float",
-              ParameterFloat("Bipolar Float",
-                             Range(-1.0f, 1.0f),
-                             0.0f,
-                             2,
-                             true,
-                             true,
-                             SliderPolarity::Bipolar));
+    state.create("bipolar_float",
+                 ParameterFloat("Bipolar Float",
+                                Range(-1.0f, 1.0f),
+                                0.0f,
+                                2,
+                                true,
+                                true,
+                                SliderPolarity::Bipolar));
 
     // Int parameter with bipolar polarity
-    state.set("bipolar_int",
-              ParameterInt("Bipolar Int", Range(-12, 12), 0, true, true, SliderPolarity::Bipolar));
+    state.create(
+        "bipolar_int",
+        ParameterInt("Bipolar Int", Range(-12, 12), 0, true, true, SliderPolarity::Bipolar));
 
     // Check unipolar float (should default to Unipolar)
-    auto def1 = state.get_parameter("unipolar_float").get_definition();
-    ASSERT_TRUE(def1.has_value());
-    EXPECT_EQ(SliderPolarity::Unipolar, def1->m_slider_polarity);
+    const auto& def1 = state.get_parameter("unipolar_float").def();
+    EXPECT_EQ(SliderPolarity::Unipolar, def1.m_polarity);
 
     // Check bipolar float
-    auto def2 = state.get_parameter("bipolar_float").get_definition();
-    ASSERT_TRUE(def2.has_value());
-    EXPECT_EQ(SliderPolarity::Bipolar, def2->m_slider_polarity);
+    const auto& def2 = state.get_parameter("bipolar_float").def();
+    EXPECT_EQ(SliderPolarity::Bipolar, def2.m_polarity);
 
     // Check bipolar int
-    auto def3 = state.get_parameter("bipolar_int").get_definition();
-    ASSERT_TRUE(def3.has_value());
-    EXPECT_EQ(SliderPolarity::Bipolar, def3->m_slider_polarity);
+    const auto& def3 = state.get_parameter("bipolar_int").def();
+    EXPECT_EQ(SliderPolarity::Bipolar, def3.m_polarity);
 
     // Bool parameter (should default to Unipolar)
-    state.set("bool_param", ParameterBool("Bool Param", false));
-    auto def4 = state.get_parameter("bool_param").get_definition();
-    ASSERT_TRUE(def4.has_value());
-    EXPECT_EQ(SliderPolarity::Unipolar, def4->m_slider_polarity);
+    state.create("bool_param", ParameterBool("Bool Param", false));
+    const auto& def4 = state.get_parameter("bool_param").def();
+    EXPECT_EQ(SliderPolarity::Unipolar, def4.m_polarity);
 
     // Choice parameter (should default to Unipolar)
     std::vector<std::string> choices = {"A", "B", "C"};
-    state.set("choice_param", ParameterChoice("Choice Param", choices, 0));
-    auto def5 = state.get_parameter("choice_param").get_definition();
-    ASSERT_TRUE(def5.has_value());
-    EXPECT_EQ(SliderPolarity::Unipolar, def5->m_slider_polarity);
+    state.create("choice_param", ParameterChoice("Choice Param", choices, 0));
+    const auto& def5 = state.get_parameter("choice_param").def();
+    EXPECT_EQ(SliderPolarity::Unipolar, def5.m_polarity);
 }
 
 // Test data field for all parameter types
@@ -1216,64 +1186,60 @@ TEST(StateTests, ParameterRecordField) {
 
     // Float parameter with custom data
     std::vector<std::string> float_data = {"unit:dB", "display:log"};
-    state.set("gain_db",
-              ParameterFloat("Gain",
-                             Range(-60.0f, 12.0f),
-                             0.0f,
-                             2,
-                             true,
-                             true,
-                             SliderPolarity::Bipolar,
-                             float_data));
+    state.create("gain_db",
+                 ParameterFloat("Gain",
+                                Range(-60.0f, 12.0f),
+                                0.0f,
+                                2,
+                                true,
+                                true,
+                                SliderPolarity::Bipolar,
+                                float_data));
 
     // Int parameter with custom data
     std::vector<std::string> int_data = {"midi:cc1", "channel:1"};
-    state.set("midi_value",
-              ParameterInt("MIDI Value",
-                           Range(0, 127),
-                           64,
-                           true,
-                           true,
-                           SliderPolarity::Unipolar,
-                           int_data));
+    state.create("midi_value",
+                 ParameterInt("MIDI Value",
+                              Range(0, 127),
+                              64,
+                              true,
+                              true,
+                              SliderPolarity::Unipolar,
+                              int_data));
 
     // Bool parameter with custom data
     std::vector<std::string> bool_data = {"shortcut:space", "icon:play"};
-    state.set("play_state",
-              ParameterBool("Play", false, true, false, SliderPolarity::Unipolar, bool_data));
+    state.create("play_state",
+                 ParameterBool("Play", false, true, false, SliderPolarity::Unipolar, bool_data));
 
     // Verify float parameter data
-    auto float_def = state.get_parameter("gain_db").get_definition();
-    ASSERT_TRUE(float_def.has_value());
-    EXPECT_EQ(2, float_def->m_data.size());
-    EXPECT_EQ("unit:dB", float_def->m_data[0]);
-    EXPECT_EQ("display:log", float_def->m_data[1]);
-    EXPECT_EQ(SliderPolarity::Bipolar, float_def->m_slider_polarity);
+    const auto& float_def = state.get_parameter("gain_db").def();
+    EXPECT_EQ(2, float_def.m_choices.size());
+    EXPECT_EQ("unit:dB", float_def.m_choices[0]);
+    EXPECT_EQ("display:log", float_def.m_choices[1]);
+    EXPECT_EQ(SliderPolarity::Bipolar, float_def.m_polarity);
 
     // Verify int parameter data
-    auto int_def = state.get_parameter("midi_value").get_definition();
-    ASSERT_TRUE(int_def.has_value());
-    EXPECT_EQ(2, int_def->m_data.size());
-    EXPECT_EQ("midi:cc1", int_def->m_data[0]);
-    EXPECT_EQ("channel:1", int_def->m_data[1]);
+    const auto& int_def = state.get_parameter("midi_value").def();
+    EXPECT_EQ(2, int_def.m_choices.size());
+    EXPECT_EQ("midi:cc1", int_def.m_choices[0]);
+    EXPECT_EQ("channel:1", int_def.m_choices[1]);
 
     // Verify bool parameter data
-    auto bool_def = state.get_parameter("play_state").get_definition();
-    ASSERT_TRUE(bool_def.has_value());
-    EXPECT_EQ(2, bool_def->m_data.size());
-    EXPECT_EQ("shortcut:space", bool_def->m_data[0]);
-    EXPECT_EQ("icon:play", bool_def->m_data[1]);
+    const auto& bool_def = state.get_parameter("play_state").def();
+    EXPECT_EQ(2, bool_def.m_choices.size());
+    EXPECT_EQ("shortcut:space", bool_def.m_choices[0]);
+    EXPECT_EQ("icon:play", bool_def.m_choices[1]);
 
     // Choice parameter already uses data for choices - verify it still works
     std::vector<std::string> waveforms = {"Sine", "Saw", "Square"};
-    state.set("waveform", ParameterChoice("Waveform", waveforms, 0));
+    state.create("waveform", ParameterChoice("Waveform", waveforms, 0));
 
-    auto choice_def = state.get_parameter("waveform").get_definition();
-    ASSERT_TRUE(choice_def.has_value());
-    EXPECT_EQ(3, choice_def->m_data.size());
-    EXPECT_EQ("Sine", choice_def->m_data[0]);
-    EXPECT_EQ("Saw", choice_def->m_data[1]);
-    EXPECT_EQ("Square", choice_def->m_data[2]);
+    const auto& choice_def = state.get_parameter("waveform").def();
+    EXPECT_EQ(3, choice_def.m_choices.size());
+    EXPECT_EQ("Sine", choice_def.m_choices[0]);
+    EXPECT_EQ("Saw", choice_def.m_choices[1]);
+    EXPECT_EQ("Square", choice_def.m_choices[2]);
 }
 
 // =============================================================================
@@ -1296,16 +1262,16 @@ TEST(StateTests, StateDumpWithDefinitions) {
     State state;
 
     // Create parameters with definitions
-    state.set("synth.volume",
-              ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f, 1.0f), 0.75f, 2, true, true));
-    state.set("synth.pitch", ParameterInt("Pitch", Range(-12, 12, 1), 0, true, false));
-    state.set("synth.enabled", ParameterBool("Enabled", true, true, false));
+    state.create("synth.volume",
+                 ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f, 1.0f), 0.75f, 2, true, true));
+    state.create("synth.pitch", ParameterInt("Pitch", Range(-12, 12, 1), 0, true, false));
+    state.create("synth.enabled", ParameterBool("Enabled", true, true, false));
 
     std::vector<std::string> waveforms = {"Sine", "Saw", "Square"};
-    state.set("synth.waveform", ParameterChoice("Waveform", waveforms, 1, true, false));
+    state.create("synth.waveform", ParameterChoice("Waveform", waveforms, 1, true, false));
 
-    // Create a parameter without definition
-    state.set("synth.internal_state", 42);
+    // Create a parameter without named definition (value-created)
+    state.create("synth.internal_state", 42);
 
     // Get state dump
     std::string dump = state.get_state_dump();
@@ -1400,7 +1366,7 @@ TEST(StateTests, StateDumpWithDefinitions) {
             // Check value
             EXPECT_EQ(42, param_obj["value"].get<int>());
 
-            // Should NOT have definition
+            // Should NOT have definition (empty name = no definition in dump)
             EXPECT_FALSE(param_obj.contains("definition"));
         }
     }
@@ -1411,11 +1377,11 @@ TEST(StateTests, StateDumpMixedParameters) {
     State state;
 
     // Some with definitions
-    state.set("audio.gain", ParameterFloat("Gain", Range(0.0f, 2.0f), 1.0f, 2));
+    state.create("audio.gain", ParameterFloat("Gain", Range(0.0f, 2.0f), 1.0f, 2));
 
     // Some without
-    state.set("audio.sample_rate", 44100);
-    state.set("audio.buffer_size", 512);
+    state.create("audio.sample_rate", 44100);
+    state.create("audio.buffer_size", 512);
 
     // Get dump
     std::string dump = state.get_state_dump();
@@ -1446,15 +1412,15 @@ TEST(StateTests, SliderPolarityInJsonDump) {
     State state;
 
     // Create parameters with different polarities
-    state.set("unipolar_param", ParameterFloat("Unipolar", Range(0.0f, 1.0f), 0.5f));
-    state.set("bipolar_param",
-              ParameterFloat("Bipolar",
-                             Range(-1.0f, 1.0f),
-                             0.0f,
-                             2,
-                             true,
-                             true,
-                             SliderPolarity::Bipolar));
+    state.create("unipolar_param", ParameterFloat("Unipolar", Range(0.0f, 1.0f), 0.5f));
+    state.create("bipolar_param",
+                 ParameterFloat("Bipolar",
+                                Range(-1.0f, 1.0f),
+                                0.0f,
+                                2,
+                                true,
+                                true,
+                                SliderPolarity::Bipolar));
 
     // Get state dump
     std::string dump = state.get_state_dump();
@@ -1478,11 +1444,11 @@ TEST(StateTests, SliderPolarityInJsonDump) {
 
 TEST(StateTests, GetStateDumpWithDefinitions) {
     State state;
-    state.set("synth.osc.frequency",
-              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f));
-    state.set("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
-    state.set("synth.filter.cutoff",
-              ParameterFloat("Cutoff", Range(20.0f, 20000.0f, 1.0f), 1000.0f));
+    state.create("synth.osc.frequency",
+                 ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f));
+    state.create("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
+    state.create("synth.filter.cutoff",
+                 ParameterFloat("Cutoff", Range(20.0f, 20000.0f, 1.0f), 1000.0f));
 
     auto dump = state.get_state_dump(true);
     auto json = nlohmann::json::parse(dump);
@@ -1501,9 +1467,9 @@ TEST(StateTests, GetStateDumpWithDefinitions) {
 
 TEST(StateTests, GetStateDumpWithoutDefinitions) {
     State state;
-    state.set("synth.osc.frequency",
-              ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
-    state.set("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
+    state.create("synth.osc.frequency",
+                 ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.create("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
 
     auto dump = state.get_state_dump(false);
     auto json = nlohmann::json::parse(dump);
@@ -1518,7 +1484,7 @@ TEST(StateTests, GetStateDumpWithoutDefinitions) {
 
 TEST(StateTests, GetStateDumpDefaultIncludesDefinitions) {
     State state;
-    state.set("param", ParameterFloat("Param", Range(0.0f, 1.0f, 0.01f), 0.5f));
+    state.create("param", ParameterFloat("Param", Range(0.0f, 1.0f, 0.01f), 0.5f));
 
     auto dump = state.get_state_dump();  // no arg = include definitions
     auto json = nlohmann::json::parse(dump);
@@ -1527,11 +1493,11 @@ TEST(StateTests, GetStateDumpDefaultIncludesDefinitions) {
 
 TEST(StateTests, GetStateDumpPreservesAllValueTypes) {
     State state;
-    state.set("f", 3.14f);
-    state.set("d", std::numbers::e);
-    state.set("i", 42);
-    state.set("b", true);
-    state.set("s", std::string("hello"));
+    state.create("f", 3.14f);
+    state.create("d", std::numbers::e);
+    state.create("i", 42);
+    state.create("b", true);
+    state.create("s", std::string("hello"));
 
     auto dump = state.get_state_dump(false);
     auto json = nlohmann::json::parse(dump);
@@ -1550,9 +1516,9 @@ TEST(StateTests, GetStateDumpPreservesAllValueTypes) {
 
 TEST(StateTests, GetStateDumpRoundTrip) {
     State state;
-    state.set("synth.freq", 440.0f);
-    state.set("synth.vol", 0.8f);
-    state.set("mixer.vol", 0.5f);
+    state.create("synth.freq", 440.0f);
+    state.create("synth.vol", 0.8f);
+    state.create("mixer.vol", 0.5f);
 
     auto dump = state.get_state_dump(false);
     auto json = nlohmann::json::parse(dump);
@@ -1563,7 +1529,7 @@ TEST(StateTests, GetStateDumpRoundTrip) {
     for (const auto& entry : json) {
         std::string key = entry["key"];
         float value = entry["value"];
-        state.set(key, value);
+        state.create(key, value);
     }
 
     EXPECT_FLOAT_EQ(440.0f, state.get<float>("synth.freq"));
@@ -1573,7 +1539,7 @@ TEST(StateTests, GetStateDumpRoundTrip) {
 
 TEST(StateTests, GetStateDumpDefinitionValues) {
     State state;
-    state.set(
+    state.create(
         "synth.freq",
         ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f, 1, true, true));
 
@@ -1611,15 +1577,15 @@ TEST(StateTests, GetStateDumpDefinitionValues) {
 
 TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
     State state;
-    state.set("synth.model", ParameterChoice("Model", {"Saw", "Square", "Sine"}, 0));
-    state.set("synth.pan",
-              ParameterFloat("Pan",
-                             Range(0.0f, 1.0f, 0.01f),
-                             0.5f,
-                             2,
-                             true,
-                             true,
-                             SliderPolarity::Bipolar));
+    state.create("synth.model", ParameterChoice("Model", {"Saw", "Square", "Sine"}, 0));
+    state.create("synth.pan",
+                 ParameterFloat("Pan",
+                                Range(0.0f, 1.0f, 0.01f),
+                                0.5f,
+                                2,
+                                true,
+                                true,
+                                SliderPolarity::Bipolar));
 
     auto dump = state.get_state_dump(true);
     auto json = nlohmann::json::parse(dump);
@@ -1647,11 +1613,11 @@ TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
 
 TEST(StateTests, GetGroupStateDump) {
     State state;
-    state.set("engine0.grain0.volume", 1.0f);
-    state.set("engine0.grain0.size", 0.5f);
-    state.set("engine0.grain1.volume", 0.8f);
-    state.set("engine1.grain0.volume", 0.7f);
-    state.set("mixer.volume", 0.9f);
+    state.create("engine0.grain0.volume", 1.0f);
+    state.create("engine0.grain0.size", 0.5f);
+    state.create("engine0.grain1.volume", 0.8f);
+    state.create("engine1.grain0.volume", 0.7f);
+    state.create("mixer.volume", 0.9f);
 
     auto dump = state.get_group_state_dump("engine0", false);
     auto json = nlohmann::json::parse(dump);
@@ -1665,10 +1631,10 @@ TEST(StateTests, GetGroupStateDump) {
 
 TEST(StateTests, GetGroupStateDumpDeepPrefix) {
     State state;
-    state.set("engine0.grain0.volume", 1.0f);
-    state.set("engine0.grain0.size", 0.5f);
-    state.set("engine0.grain1.volume", 0.8f);
-    state.set("engine1.grain0.volume", 0.7f);
+    state.create("engine0.grain0.volume", 1.0f);
+    state.create("engine0.grain0.size", 0.5f);
+    state.create("engine0.grain1.volume", 0.8f);
+    state.create("engine1.grain0.volume", 0.7f);
 
     auto dump = state.get_group_state_dump("engine0.grain0", false);
     auto json = nlohmann::json::parse(dump);
@@ -1682,7 +1648,7 @@ TEST(StateTests, GetGroupStateDumpDeepPrefix) {
 
 TEST(StateTests, GetGroupStateDumpNoMatch) {
     State state;
-    state.set("engine0.volume", 1.0f);
+    state.create("engine0.volume", 1.0f);
 
     auto dump = state.get_group_state_dump("nonexistent", false);
     auto json = nlohmann::json::parse(dump);
@@ -1692,8 +1658,8 @@ TEST(StateTests, GetGroupStateDumpNoMatch) {
 
 TEST(StateTests, GetGroupStateDumpEmptyPrefixReturnsAll) {
     State state;
-    state.set("a.b", 1.0f);
-    state.set("c.d", 2.0f);
+    state.create("a.b", 1.0f);
+    state.create("c.d", 2.0f);
 
     auto all_dump = state.get_state_dump(false);
     auto group_dump = state.get_group_state_dump("", false);
@@ -1703,9 +1669,10 @@ TEST(StateTests, GetGroupStateDumpEmptyPrefixReturnsAll) {
 
 TEST(StateTests, GetGroupStateDumpWithDefinitions) {
     State state;
-    state.set("synth.osc.freq", ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
-    state.set("synth.osc.vol", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
-    state.set("mixer.vol", ParameterFloat("Mixer Vol", Range(0.0f, 1.0f, 0.01f), 0.5f));
+    state.create("synth.osc.freq",
+                 ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.create("synth.osc.vol", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
+    state.create("mixer.vol", ParameterFloat("Mixer Vol", Range(0.0f, 1.0f, 0.01f), 0.5f));
 
     auto dump = state.get_group_state_dump("synth", true);
     auto json = nlohmann::json::parse(dump);
@@ -1716,7 +1683,7 @@ TEST(StateTests, GetGroupStateDumpWithDefinitions) {
 
 TEST(StateTests, GetGroupStateDumpWithoutDefinitions) {
     State state;
-    state.set("synth.freq", ParameterFloat("Freq", Range(0.0f, 1.0f, 0.01f), 0.5f));
+    state.create("synth.freq", ParameterFloat("Freq", Range(0.0f, 1.0f, 0.01f), 0.5f));
 
     auto dump = state.get_group_state_dump("synth", false);
     auto json = nlohmann::json::parse(dump);
@@ -1727,8 +1694,8 @@ TEST(StateTests, GetGroupStateDumpWithoutDefinitions) {
 
 TEST(StateTests, GetGroupStateDumpPrefixBoundary) {
     State state;
-    state.set("engine0.volume", 1.0f);
-    state.set("engine0_extra.volume", 0.5f);
+    state.create("engine0.volume", 1.0f);
+    state.create("engine0_extra.volume", 0.5f);
 
     auto dump = state.get_group_state_dump("engine0.", false);
     auto json = nlohmann::json::parse(dump);
@@ -1753,7 +1720,7 @@ TEST(StateTests, HandleDefaultConstructor) {
 
 TEST(StateTests, HandleBasicLoadStore) {
     State state;
-    state.set("volume", 0.75);
+    state.create("volume", 0.75);
 
     auto handle = state.get_handle<double>("volume");
     EXPECT_TRUE(handle.is_valid());
@@ -1765,10 +1732,10 @@ TEST(StateTests, HandleBasicLoadStore) {
 
 TEST(StateTests, HandleAllNumericTypes) {
     State state;
-    state.set("d_param", 3.14);
-    state.set("f_param", 2.71f);
-    state.set("i_param", 42);
-    state.set("b_param", true);
+    state.create("d_param", 3.14);
+    state.create("f_param", 2.71f);
+    state.create("i_param", 42);
+    state.create("b_param", true);
 
     auto dh = state.get_handle<double>("d_param");
     auto fh = state.get_handle<float>("f_param");
@@ -1783,7 +1750,7 @@ TEST(StateTests, HandleAllNumericTypes) {
 
 TEST(StateTests, HandleReflectsSetInRoot) {
     State state;
-    state.set("gain", 1.0);
+    state.create("gain", 1.0);
 
     auto handle = state.get_handle<double>("gain");
     EXPECT_DOUBLE_EQ(1.0, handle.load());
@@ -1795,7 +1762,7 @@ TEST(StateTests, HandleReflectsSetInRoot) {
 
 TEST(StateTests, HandleStoreKeepsStateInSync) {
     State state;
-    state.set("gain", 1.0);
+    state.create("gain", 1.0);
 
     auto handle = state.get_handle<double>("gain");
     handle.store(3.0);
@@ -1809,16 +1776,16 @@ TEST(StateTests, HandleStoreKeepsStateInSync) {
 
 TEST(StateTests, HandleSetUpdatesNativeAtomicOnly) {
     State state;
-    state.set("param", 3.14);
+    state.create("param", 3.14);
 
     // Only native-type handle is allowed
     auto dh = state.get_handle<double>("param");
     EXPECT_DOUBLE_EQ(3.14, dh.load());
 
     // Cross-type handles should throw
-    EXPECT_THROW(state.get_handle<float>("param"), std::invalid_argument);
-    EXPECT_THROW(state.get_handle<int>("param"), std::invalid_argument);
-    EXPECT_THROW(state.get_handle<bool>("param"), std::invalid_argument);
+    EXPECT_THROW(state.get_handle<float>("param"), ParameterTypeMismatchException);
+    EXPECT_THROW(state.get_handle<int>("param"), ParameterTypeMismatchException);
+    EXPECT_THROW(state.get_handle<bool>("param"), ParameterTypeMismatchException);
 
     // set_in_root updates only the native atomic (double)
     state.set("param", 0.0);
@@ -1832,14 +1799,14 @@ TEST(StateTests, HandleSetUpdatesNativeAtomicOnly) {
 
 TEST(StateTests, HandleSurvivesOtherParameterCreation) {
     State state;
-    state.set("param_a", 1.0);
+    state.create("param_a", 1.0);
 
     auto handle = state.get_handle<double>("param_a");
     EXPECT_DOUBLE_EQ(1.0, handle.load());
 
     // Create many more parameters -- must not invalidate handle
     for (int i = 0; i < 100; ++i) {
-        state.set("param_" + std::to_string(i), static_cast<double>(i));
+        state.create("param_" + std::to_string(i), static_cast<double>(i));
     }
 
     // Handle still works
@@ -1851,7 +1818,7 @@ TEST(StateTests, HandleSurvivesOtherParameterCreation) {
 
 TEST(StateTests, HandleWithHierarchicalPath) {
     State state;
-    state.set("audio.effects.reverb.mix", 0.5);
+    state.create("audio.effects.reverb.mix", 0.5);
 
     auto handle = state.get_handle<double>("audio.effects.reverb.mix");
     EXPECT_DOUBLE_EQ(0.5, handle.load());
@@ -1862,10 +1829,10 @@ TEST(StateTests, HandleWithHierarchicalPath) {
 
 TEST(StateTests, HandleNativeTypeEnforced) {
     State state;
-    state.set("dval", 10.0);
-    state.set("fval", 2.5f);
-    state.set("ival", 42);
-    state.set("bval", true);
+    state.create("dval", 10.0);
+    state.create("fval", 2.5f);
+    state.create("ival", 42);
+    state.create("bval", true);
 
     // Native-type handles succeed
     EXPECT_NO_THROW(state.get_handle<double>("dval"));
@@ -1874,15 +1841,15 @@ TEST(StateTests, HandleNativeTypeEnforced) {
     EXPECT_NO_THROW(state.get_handle<bool>("bval"));
 
     // Cross-type handles throw
-    EXPECT_THROW(state.get_handle<float>("dval"), std::invalid_argument);
-    EXPECT_THROW(state.get_handle<double>("fval"), std::invalid_argument);
-    EXPECT_THROW(state.get_handle<bool>("ival"), std::invalid_argument);
-    EXPECT_THROW(state.get_handle<int>("bval"), std::invalid_argument);
+    EXPECT_THROW(state.get_handle<float>("dval"), ParameterTypeMismatchException);
+    EXPECT_THROW(state.get_handle<double>("fval"), ParameterTypeMismatchException);
+    EXPECT_THROW(state.get_handle<bool>("ival"), ParameterTypeMismatchException);
+    EXPECT_THROW(state.get_handle<int>("bval"), ParameterTypeMismatchException);
 }
 
 TEST(StateTests, HandleCopySemantics) {
     State state;
-    state.set("param", 42.0);
+    state.create("param", 42.0);
 
     auto h1 = state.get_handle<double>("param");
     auto h2 = h1;  // Copy
@@ -1897,7 +1864,7 @@ TEST(StateTests, HandleCopySemantics) {
 
 TEST(StateTests, HandleConcurrentLoadStore) {
     State state;
-    state.set("param", 0.0);
+    state.create("param", 0.0);
 
     auto handle = state.get_handle<double>("param");
 
@@ -1938,6 +1905,206 @@ TEST(StateTests, HandleConcurrentLoadStore) {
 }
 
 // =============================================================================
+// ID-based access tests
+// =============================================================================
+
+// Helper: create a ParameterFloat with a specific m_id.
+static ParameterFloat make_float_with_id(const std::string& name,
+                                         Range range,
+                                         float default_val,
+                                         uint32_t id) {
+    ParameterFloat def(name, range, default_val);
+    def.m_id = id;
+    return def;
+}
+
+TEST(StateTests, GetHandleByIdBasic) {
+    State state;
+
+    state.create("synth.freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+    state.create("synth.gain", make_float_with_id("Gain", Range(0.0f, 1.0f), 0.8f, 2));
+
+    auto freq_handle = state.get_handle_by_id<float>(1);
+    auto gain_handle = state.get_handle_by_id<float>(2);
+
+    EXPECT_TRUE(freq_handle.is_valid());
+    EXPECT_TRUE(gain_handle.is_valid());
+    EXPECT_FLOAT_EQ(440.0f, freq_handle.load());
+    EXPECT_FLOAT_EQ(0.8f, gain_handle.load());
+
+    // Metadata accessible via handle
+    EXPECT_EQ("Frequency", freq_handle.def().m_name);
+    EXPECT_EQ(1u, freq_handle.id());
+    EXPECT_EQ("synth.freq", freq_handle.key());
+    EXPECT_EQ(ParameterType::Float, freq_handle.type());
+}
+
+TEST(StateTests, GetByIdReturnsParameter) {
+    State state;
+
+    state.create("vol", make_float_with_id("Volume", Range(0.0f, 1.0f), 0.5f, 10));
+
+    Parameter param = state.get_parameter_by_id(10);
+    EXPECT_FLOAT_EQ(0.5f, param.to<float>());
+    EXPECT_EQ("Volume", param.def().m_name);
+    EXPECT_EQ("vol", param.key());
+}
+
+TEST(StateTests, GetHandleByIdThrowsOnUnknownId) {
+    State state;
+    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+
+    EXPECT_THROW(state.get_handle_by_id<float>(999), StateKeyNotFoundException);
+    EXPECT_THROW(state.get_parameter_by_id(999), StateKeyNotFoundException);
+}
+
+TEST(StateTests, GetHandleByIdThrowsOnTypeMismatch) {
+    State state;
+    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+
+    // Parameter is float, requesting double handle should throw
+    EXPECT_THROW(state.get_handle_by_id<double>(1), ParameterTypeMismatchException);
+    EXPECT_THROW(state.get_handle_by_id<int>(1), ParameterTypeMismatchException);
+}
+
+TEST(StateTests, DuplicateIdThrows) {
+    State state;
+
+    state.create("param1", make_float_with_id("P1", Range(), 0.0f, 5));
+
+    // Same ID 5 on a different parameter should throw
+    EXPECT_THROW(state.create("param2", make_float_with_id("P2", Range(), 0.0f, 5)),
+                 DuplicateParameterIdException);
+}
+
+TEST(StateTests, AutoIdAssignment) {
+    State state;
+
+    // Value-created params get auto-assigned IDs starting from 0
+    state.create("plain", 42.0);
+    state.create("another", 7.0);
+
+    // Auto-assigned IDs are sequential starting from 0
+    EXPECT_DOUBLE_EQ(42.0, state.get_handle_by_id<double>(0).load());
+    EXPECT_DOUBLE_EQ(7.0, state.get_handle_by_id<double>(1).load());
+
+    // UINT32_MAX should not be findable (no longer used as a real ID)
+    EXPECT_THROW(state.get_handle_by_id<double>(UINT32_MAX), StateKeyNotFoundException);
+}
+
+TEST(StateTests, ClearRemovesIdIndex) {
+    State state;
+
+    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+
+    EXPECT_FLOAT_EQ(0.0f, state.get_handle_by_id<float>(1).load());
+
+    state.clear();
+
+    EXPECT_THROW(state.get_handle_by_id<float>(1), StateKeyNotFoundException);
+}
+
+TEST(StateTests, HandleByIdAllNumericTypes) {
+    State state;
+
+    state.create("f", make_float_with_id("F", Range(), 3.14f, 1));
+
+    ParameterInt int_def("I", Range(0, 100), 42);
+    int_def.m_id = 2;
+    state.create("i", int_def);
+
+    ParameterBool bool_def("B", true);
+    bool_def.m_id = 3;
+    state.create("b", bool_def);
+
+    auto fh = state.get_handle_by_id<float>(1);
+    auto ih = state.get_handle_by_id<int>(2);
+    auto bh = state.get_handle_by_id<bool>(3);
+
+    EXPECT_FLOAT_EQ(3.14f, fh.load());
+    EXPECT_EQ(42, ih.load());
+    EXPECT_TRUE(bh.load());
+}
+
+// =============================================================================
+// get_by_id tests
+// =============================================================================
+
+TEST(StateTests, GetByIdFloat) {
+    State state;
+    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+
+    EXPECT_FLOAT_EQ(440.0f, state.get_by_id<float>(1));
+
+    state.set("freq", 880.0f);
+    EXPECT_FLOAT_EQ(880.0f, state.get_by_id<float>(1));
+}
+
+TEST(StateTests, GetByIdInt) {
+    State state;
+    ParameterInt int_def("Voices", Range(1, 16), 4);
+    int_def.m_id = 10;
+    state.create("voices", int_def);
+
+    EXPECT_EQ(4, state.get_by_id<int>(10));
+
+    state.set("voices", 8);
+    EXPECT_EQ(8, state.get_by_id<int>(10));
+}
+
+TEST(StateTests, GetByIdBool) {
+    State state;
+    ParameterBool bool_def("Bypass", false);
+    bool_def.m_id = 20;
+    state.create("bypass", bool_def);
+
+    EXPECT_FALSE(state.get_by_id<bool>(20));
+
+    state.set("bypass", true);
+    EXPECT_TRUE(state.get_by_id<bool>(20));
+}
+
+TEST(StateTests, GetByIdString) {
+    State state;
+    ParameterDefinition str_def;
+    str_def.m_type = ParameterType::String;
+    str_def.m_name = "Preset";
+    str_def.m_id = 30;
+    state.create("preset", str_def);
+    state.set("preset", std::string("Init"));
+
+    EXPECT_EQ("Init", state.get_by_id<std::string>(30, true));
+}
+
+TEST(StateTests, GetByIdCrossTypeConversion) {
+    State state;
+    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+
+    // Reading float param as double/int should convert
+    EXPECT_FLOAT_EQ(440.0f, static_cast<float>(state.get_by_id<double>(1)));
+    EXPECT_EQ(440, state.get_by_id<int>(1));
+}
+
+TEST(StateTests, GetByIdThrowsOnUnknownId) {
+    State state;
+    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+
+    EXPECT_THROW(state.get_by_id<float>(999), StateKeyNotFoundException);
+}
+
+TEST(StateTests, GetByIdStringWithoutAllowBlockingThrows) {
+    State state;
+    ParameterDefinition str_def;
+    str_def.m_type = ParameterType::String;
+    str_def.m_name = "Preset";
+    str_def.m_id = 30;
+    state.create("preset", str_def);
+
+    EXPECT_THROW(state.get_by_id<std::string>(30), BlockingException);
+    EXPECT_NO_THROW(state.get_by_id<std::string>(30, true));
+}
+
+// =============================================================================
 // Gesture notification filtering tests
 // =============================================================================
 
@@ -1947,8 +2114,8 @@ TEST(StateTests, GestureFilterSkipsListenerDuringGesture) {
     // Listener that opts out of gesture notifications
     class NoGestureListener : public ParameterListener {
     public:
-        NoGestureListener() : ParameterListener(/* receives_during_gesture */ false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        NoGestureListener() : ParameterListener(NotifyStrategies::All, false) {}
+        void on_parameter_changed(const Parameter&) override { m_count++; }
         int m_count = 0;
     };
 
@@ -1959,7 +2126,7 @@ TEST(StateTests, GestureFilterSkipsListenerDuringGesture) {
     state.add_listener(&filtered_listener);
 
     // Normal set -- both listeners fire
-    state.set("test.param", 1.0f);
+    state.create("test.param", 1.0f);
     EXPECT_EQ(1, always_listener.m_notification_count);
     EXPECT_EQ(1, filtered_listener.m_count);
 
@@ -1982,8 +2149,8 @@ TEST(StateTests, GestureFilterWithGroupListeners) {
 
     class NoGestureListener : public ParameterListener {
     public:
-        NoGestureListener() : ParameterListener(false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        NoGestureListener() : ParameterListener(NotifyStrategies::All, false) {}
+        void on_parameter_changed(const Parameter&) override { m_count++; }
         int m_count = 0;
     };
 
@@ -1993,7 +2160,7 @@ TEST(StateTests, GestureFilterWithGroupListeners) {
     state.add_listener(&root_listener);
     group->add_listener(&group_filtered);
 
-    state.set("synth.cutoff", 0.5f);
+    state.create("synth.cutoff", 0.5f);
     EXPECT_EQ(1, root_listener.m_notification_count);
     EXPECT_EQ(1, group_filtered.m_count);
 
@@ -2014,16 +2181,16 @@ TEST(StateTests, GestureFilterIsPerParameter) {
 
     class NoGestureListener : public ParameterListener {
     public:
-        NoGestureListener() : ParameterListener(false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        NoGestureListener() : ParameterListener(NotifyStrategies::All, false) {}
+        void on_parameter_changed(const Parameter&) override { m_count++; }
         int m_count = 0;
     };
 
     NoGestureListener filtered;
     state.add_listener(&filtered);
 
-    state.set("param.a", 1.0f);
-    state.set("param.b", 1.0f);
+    state.create("param.a", 1.0f);
+    state.create("param.b", 1.0f);
     EXPECT_EQ(2, filtered.m_count);
 
     // Only param.a is in gesture
@@ -2045,15 +2212,15 @@ TEST(StateTests, GestureValueStillUpdatedWhenListenerSkipped) {
 
     class NoGestureListener : public ParameterListener {
     public:
-        NoGestureListener() : ParameterListener(false) {}
-        void on_parameter_changed(std::string_view, const Parameter&) override { m_count++; }
+        NoGestureListener() : ParameterListener(NotifyStrategies::All, false) {}
+        void on_parameter_changed(const Parameter&) override { m_count++; }
         int m_count = 0;
     };
 
     NoGestureListener filtered;
     state.add_listener(&filtered);
 
-    state.set("vol", 0.5f);
+    state.create("vol", 0.5f);
     EXPECT_EQ(1, filtered.m_count);
 
     state.set_gesture("vol", true);
@@ -2072,8 +2239,8 @@ TEST(StateTests, GestureValueStillUpdatedWhenListenerSkipped) {
 TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
     State state;
 
-    // Create a listener that captures the path string_view and then calls set() on another
-    // parameter
+    // Create a listener that captures the path via param.key() and then calls set() on
+    // another parameter
     class NestedSetListener : public ParameterListener {
     public:
         // Each invocation records a (before, after) pair in m_matched_pairs
@@ -2082,7 +2249,8 @@ TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
             std::string m_after;
         };
 
-        void on_parameter_changed(std::string_view path, const Parameter& param) override {
+        void on_parameter_changed(const Parameter& param) override {
+            std::string_view path = param.key();
             // Store the path immediately - this creates a copy
             std::string path_copy_immediate(path);
 
@@ -2101,7 +2269,8 @@ TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
                 m_state_ref->set("response.deep.level3.param", 3.0);
             }
 
-            // Now try to access the original string_view - this is where it might be corrupted
+            // Now try to access the original string_view - this is where it might be
+            // corrupted
             std::string path_copy_after(path);
 
             // Store matched pair for this invocation
@@ -2126,8 +2295,19 @@ TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
     listener.m_state_ref = &state;
     state.add_listener(&listener);
 
+    // Pre-create the response parameters so nested set() calls don't need create()
+    state.create("response.param1", 0.0);
+    state.create("response.param2", 0.0);
+    state.create("response.param3", 0.0);
+    state.create("response.deep.level1.param", 0.0);
+    state.create("response.deep.level2.param", 0.0);
+    state.create("response.deep.level3.param", 0.0);
+
+    // Clear notification count from creates
+    listener.m_matched_pairs.clear();
+
     // Test 1: Simple nested set
-    state.set("trigger.param1", 42.0);
+    state.create("trigger.param1", 42.0);
 
     // trigger.param1 + 3 response params = 4 notifications
     ASSERT_EQ(4, listener.m_matched_pairs.size());
@@ -2139,7 +2319,7 @@ TEST(StateTests, StringViewInvalidationInNestedSetCalls) {
     }
 
     // Test 2: Deeply nested path
-    state.set("trigger.deeply.nested.param", 123.0);
+    state.create("trigger.deeply.nested.param", 123.0);
 
     // Previous 4 + trigger.deeply.nested.param + 3 response.deep params = 8 total
     ASSERT_EQ(8, listener.m_matched_pairs.size());
@@ -2172,8 +2352,13 @@ TEST(StateTests, StringViewInvalidationInCallbackListeners) {
     };
     std::vector<PathPair> matched_pairs;
 
+    // Pre-create target parameters
+    state.create("target.b", 0.0);
+    state.create("target.c", 0.0);
+
     // Add a callback listener that performs nested set() calls
-    state.add_callback_listener([&](std::string_view path, const Parameter& param) {
+    CallbackListener cb([&](const Parameter& param) {
+        std::string_view path = param.key();
         // Capture path immediately
         std::string immediate_copy(path);
 
@@ -2195,9 +2380,13 @@ TEST(StateTests, StringViewInvalidationInCallbackListeners) {
         // Verify pointer hasn't changed
         EXPECT_EQ(view_ptr, path.data()) << "string_view pointer changed in callback listener!";
     });
+    state.add_listener(&cb);
+
+    // Clear matched_pairs from pre-create notifications
+    matched_pairs.clear();
 
     // Trigger the callback
-    state.set("source.a", 10.0);
+    state.create("source.a", 10.0);
 
     // Verify we got notifications for all three parameters
     ASSERT_EQ(3, matched_pairs.size());
@@ -2215,7 +2404,8 @@ TEST(StateTests, StringViewInvalidationWithLongPaths) {
 
     class LongPathListener : public ParameterListener {
     public:
-        void on_parameter_changed(std::string_view path, const Parameter& param) override {
+        void on_parameter_changed(const Parameter& param) override {
+            std::string_view path = param.key();
             std::string path_before(path);
             const char* ptr_before = path.data();
             size_t size_before = path.size();
@@ -2248,10 +2438,17 @@ TEST(StateTests, StringViewInvalidationWithLongPaths) {
 
     LongPathListener listener;
     listener.m_state_ref = &state;
+
+    // Pre-create response parameters
+    state.create("another.very.long.hierarchical.path.level1.level2.level3.param1", 0.0);
+    state.create("another.very.long.hierarchical.path.level1.level2.level3.param2", 0.0);
+    state.create("another.very.long.hierarchical.path.level1.level2.level3.param3", 0.0);
+    state.create("yet.another.extremely.long.path.with.many.nested.groups.param", 0.0);
+
     state.add_listener(&listener);
 
     // Create a very long parameter path
-    state.set("very.long.hierarchical.path.with.multiple.levels.and.groups.final.param", 99.0);
+    state.create("very.long.hierarchical.path.with.multiple.levels.and.groups.final.param", 99.0);
 
     // Verify the listener received notifications with valid paths
     // (m_paths vector is in DFS post-order due to recursion, so check by content)
@@ -2264,7 +2461,7 @@ TEST(StateTests, StringViewInvalidationWithLongPaths) {
     }
     EXPECT_TRUE(found_trigger) << "Trigger path not found in listener notifications";
 
-    // Verify all the nested parameters were created
+    // Verify all the nested parameters were set
     EXPECT_DOUBLE_EQ(
         1.0,
         state.get<double>("another.very.long.hierarchical.path.level1.level2.level3.param1"));
@@ -2281,7 +2478,8 @@ TEST(StateTests, StringViewInvalidationWithListenerChain) {
     public:
         explicit ChainListener(int id) : m_listener_id(id) {}
 
-        void on_parameter_changed(std::string_view path, const Parameter& param) override {
+        void on_parameter_changed(const Parameter& param) override {
+            std::string_view path = param.key();
             std::string path_copy(path);
             const char* ptr = path.data();
 
@@ -2308,6 +2506,12 @@ TEST(StateTests, StringViewInvalidationWithListenerChain) {
         int m_listener_id;
         std::vector<std::string> m_notifications;
     };
+
+    // Pre-create the chain parameters
+    state.create("chain.step1", 0.0);
+    state.create("chain.step2", 0.0);
+    state.create("chain.step3", 0.0);
+    state.create("chain.step4", 0.0);
 
     ChainListener listener1(1);
     ChainListener listener2(2);
@@ -2346,11 +2550,11 @@ TEST(StateTests, ThreadSafety) {
     const int k_num_operations = 1000;
 
     // Set up some initial parameters
-    state.set("counter", 0);
-    state.set("string_param", "initial");
+    state.create("counter", 0);
+    state.create("string_param", "initial");
 
     // Create a group with parameters
-    state.create_group("audio")->set("volume", 0.5);
+    state.create_group("audio")->create("volume", 0.5);
 
     // Use atomic flag for controlling thread execution
     std::atomic<bool> start_flag(false);
@@ -2469,7 +2673,7 @@ TEST(StateTests, ThreadSafety) {
     }
 
     // Nested group with parameter
-    state.create_group("nested")->create_group("group")->set("param", 10);
+    state.create_group("nested")->create_group("group")->create("param", 10);
 
     // Start all threads simultaneously - real-time safe trigger
     start_flag.store(true, std::memory_order_release);
@@ -2494,4 +2698,373 @@ TEST(StateTests, ThreadSafety) {
     // String parameter should have been updated multiple times, but we can't
     // know the final value
     EXPECT_FALSE(state.get<std::string>("string_param", true).empty());
+}
+
+// =============================================================================
+// Display formatting tests (Phase 5: m_value_to_text / m_text_to_value)
+// =============================================================================
+
+TEST(StateTests, FloatValueToText) {
+    ParameterFloat def("Gain", Range(0.0f, 10.0f), 3.14f, 2);
+    EXPECT_EQ("3.14", def.m_value_to_text(3.14f));
+    EXPECT_EQ("0.00", def.m_value_to_text(0.0f));
+    EXPECT_EQ("10.00", def.m_value_to_text(10.0f));
+}
+
+TEST(StateTests, FloatValueToTextDecimalPlaces) {
+    ParameterFloat def0("P", Range(), 0.0f, 0);
+    EXPECT_EQ("3", def0.m_value_to_text(3.14f));
+
+    ParameterFloat def4("P", Range(), 0.0f, 4);
+    EXPECT_EQ("3.1416", def4.m_value_to_text(3.14159f));
+}
+
+TEST(StateTests, FloatTextToValue) {
+    ParameterFloat def("Gain", Range(0.0f, 10.0f), 0.0f);
+    EXPECT_FLOAT_EQ(3.14f, def.m_text_to_value("3.14"));
+    EXPECT_FLOAT_EQ(0.0f, def.m_text_to_value("0"));
+    EXPECT_FLOAT_EQ(0.0f, def.m_text_to_value("not_a_number"));
+}
+
+TEST(StateTests, IntValueToText) {
+    ParameterInt def("Steps", Range(0, 100), 42);
+    EXPECT_EQ("42", def.m_value_to_text(42.0f));
+    EXPECT_EQ("0", def.m_value_to_text(0.0f));
+    EXPECT_EQ("-5", def.m_value_to_text(-5.0f));
+}
+
+TEST(StateTests, IntTextToValue) {
+    ParameterInt def("Steps", Range(0, 100), 0);
+    EXPECT_FLOAT_EQ(42.0f, def.m_text_to_value("42"));
+    EXPECT_FLOAT_EQ(0.0f, def.m_text_to_value("not_a_number"));
+}
+
+TEST(StateTests, BoolValueToText) {
+    ParameterBool def("Enable", true);
+    EXPECT_EQ("On", def.m_value_to_text(1.0f));
+    EXPECT_EQ("Off", def.m_value_to_text(0.0f));
+}
+
+TEST(StateTests, BoolTextToValue) {
+    ParameterBool def("Enable");
+    EXPECT_FLOAT_EQ(1.0f, def.m_text_to_value("On"));
+    EXPECT_FLOAT_EQ(1.0f, def.m_text_to_value("on"));
+    EXPECT_FLOAT_EQ(1.0f, def.m_text_to_value("true"));
+    EXPECT_FLOAT_EQ(1.0f, def.m_text_to_value("1"));
+    EXPECT_FLOAT_EQ(0.0f, def.m_text_to_value("Off"));
+    EXPECT_FLOAT_EQ(0.0f, def.m_text_to_value("anything_else"));
+}
+
+TEST(StateTests, ChoiceValueToText) {
+    ParameterChoice def("Waveform", {"Sine", "Saw", "Square"}, 0);
+    EXPECT_EQ("Sine", def.m_value_to_text(0.0f));
+    EXPECT_EQ("Saw", def.m_value_to_text(1.0f));
+    EXPECT_EQ("Square", def.m_value_to_text(2.0f));
+    // Out of range falls back to int string
+    EXPECT_EQ("5", def.m_value_to_text(5.0f));
+}
+
+TEST(StateTests, ChoiceTextToValue) {
+    ParameterChoice def("Waveform", {"Sine", "Saw", "Square"}, 0);
+    EXPECT_FLOAT_EQ(0.0f, def.m_text_to_value("Sine"));
+    EXPECT_FLOAT_EQ(1.0f, def.m_text_to_value("Saw"));
+    EXPECT_FLOAT_EQ(2.0f, def.m_text_to_value("Square"));
+    // Numeric fallback
+    EXPECT_FLOAT_EQ(1.0f, def.m_text_to_value("1"));
+    // Unknown label falls back to parsing
+    EXPECT_FLOAT_EQ(0.0f, def.m_text_to_value("Unknown"));
+}
+
+TEST(StateTests, DisplayFormattingViaParameterDef) {
+    // Verify formatting works when accessed through State::get_from_root
+    State state;
+    state.create("gain", ParameterFloat("Gain", Range(0.0f, 1.0f), 0.75f, 3));
+
+    Parameter param = state.get_parameter_from_root("gain");
+    const auto& def = param.def();
+    ASSERT_TRUE(def.m_value_to_text);
+    EXPECT_EQ("0.750", def.m_value_to_text(param.to<float>()));
+}
+
+TEST(StateTests, DisplayFormattingViaHandle) {
+    // Verify formatting works when accessed through ParameterHandle
+    State state;
+    state.create("freq", ParameterFloat("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+
+    auto handle = state.get_handle<float>("freq");
+    ASSERT_TRUE(handle.def().m_value_to_text);
+    EXPECT_EQ("440.0", handle.def().m_value_to_text(handle.load()));
+}
+
+// =============================================================================
+// set_by_id tests
+// =============================================================================
+
+TEST(StateTests, SetByIdFloat) {
+    State state;
+    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+
+    state.set_by_id<float>(1, 880.0f);
+    EXPECT_FLOAT_EQ(880.0f, state.get<float>("freq"));
+}
+
+TEST(StateTests, SetByIdInt) {
+    State state;
+    ParameterDefinition int_def;
+    int_def.m_type = ParameterType::Int;
+    int_def.m_name = "Note";
+    int_def.m_id = 10;
+    state.create("note", int_def);
+
+    state.set_by_id<int>(10, 72);
+    EXPECT_EQ(72, state.get<int>("note"));
+}
+
+TEST(StateTests, SetByIdBool) {
+    State state;
+    ParameterDefinition bool_def;
+    bool_def.m_type = ParameterType::Bool;
+    bool_def.m_name = "Active";
+    bool_def.m_id = 20;
+    state.create("active", bool_def);
+
+    state.set_by_id<bool>(20, true);
+    EXPECT_TRUE(state.get<bool>("active"));
+
+    state.set_by_id<bool>(20, false);
+    EXPECT_FALSE(state.get<bool>("active"));
+}
+
+TEST(StateTests, SetByIdDouble) {
+    State state;
+    ParameterDefinition dbl_def;
+    dbl_def.m_type = ParameterType::Double;
+    dbl_def.m_name = "Gain";
+    dbl_def.m_id = 5;
+    state.create("gain", dbl_def);
+
+    state.set_by_id<double>(5, 0.75);
+    EXPECT_DOUBLE_EQ(0.75, state.get<double>("gain"));
+}
+
+TEST(StateTests, SetByIdString) {
+    State state;
+    ParameterDefinition str_def;
+    str_def.m_type = ParameterType::String;
+    str_def.m_name = "Preset";
+    str_def.m_id = 30;
+    state.create("preset", str_def);
+
+    state.set_by_id<std::string>(30, "Warm Pad");
+    EXPECT_EQ("Warm Pad", state.get<std::string>("preset", true));
+}
+
+TEST(StateTests, SetByIdThrowsOnUnknownId) {
+    State state;
+    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+
+    EXPECT_THROW(state.set_by_id<float>(999, 1.0f), StateKeyNotFoundException);
+}
+
+TEST(StateTests, SetByIdNotifiesListeners) {
+    State state;
+    state.create("vol", make_float_with_id("Volume", Range(0.0f, 1.0f), 0.5f, 1));
+
+    TestParameterListener listener;
+    state.add_listener(&listener);
+
+    state.set_by_id<float>(1, 0.9f);
+    EXPECT_EQ(1, listener.m_notification_count);
+    EXPECT_FLOAT_EQ(0.9f, state.get<float>("vol"));
+}
+
+TEST(StateTests, SetByIdCrossTypeConversion) {
+    State state;
+    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+
+    // Set float parameter using int value
+    state.set_by_id<int>(1, 880);
+    EXPECT_FLOAT_EQ(880.0f, state.get<float>("freq"));
+}
+
+TEST(StateTests, SetByIdRoundTrip) {
+    State state;
+    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+
+    state.set_by_id<float>(1, 3.14f);
+    EXPECT_FLOAT_EQ(3.14f, state.get_by_id<float>(1));
+}
+
+// =============================================================================
+// Subgroup get_handle tests
+// =============================================================================
+
+TEST(StateTests, GetHandleFromSubgroup) {
+    State state;
+    StateGroup* synth = state.create_group("synth");
+    synth->create("freq", 440.0f);
+
+    // Get handle via subgroup (relative path)
+    auto handle = synth->get_handle<float>("freq");
+    EXPECT_FLOAT_EQ(440.0f, handle.load());
+
+    // Modify via root state, verify handle sees the change
+    state.set("synth.freq", 880.0f);
+    EXPECT_FLOAT_EQ(880.0f, handle.load());
+}
+
+TEST(StateTests, GetHandleFromNestedSubgroup) {
+    State state;
+    StateGroup* audio = state.create_group("audio");
+    StateGroup* effects = audio->create_group("effects");
+    StateGroup* reverb = effects->create_group("reverb");
+    reverb->create("mix", 0.3f);
+
+    // Get handle from deeply nested group
+    auto handle = reverb->get_handle<float>("mix");
+    EXPECT_FLOAT_EQ(0.3f, handle.load());
+
+    // Get handle via intermediate group (relative path)
+    auto handle2 = effects->get_handle<float>("reverb.mix");
+    EXPECT_FLOAT_EQ(0.3f, handle2.load());
+
+    // Get handle via root (full path)
+    auto handle3 = state.get_handle<float>("audio.effects.reverb.mix");
+    EXPECT_FLOAT_EQ(0.3f, handle3.load());
+
+    // All handles point to the same underlying record
+    state.set("audio.effects.reverb.mix", 0.9f);
+    EXPECT_FLOAT_EQ(0.9f, handle.load());
+    EXPECT_FLOAT_EQ(0.9f, handle2.load());
+    EXPECT_FLOAT_EQ(0.9f, handle3.load());
+}
+
+TEST(StateTests, GetHandleFromSubgroupAllTypes) {
+    State state;
+    StateGroup* group = state.create_group("params");
+    group->create("d", 1.0);
+    group->create("f", 2.5f);
+    group->create("i", 42);
+    group->create("b", true);
+
+    auto dh = group->get_handle<double>("d");
+    auto fh = group->get_handle<float>("f");
+    auto ih = group->get_handle<int>("i");
+    auto bh = group->get_handle<bool>("b");
+
+    EXPECT_DOUBLE_EQ(1.0, dh.load());
+    EXPECT_FLOAT_EQ(2.5f, fh.load());
+    EXPECT_EQ(42, ih.load());
+    EXPECT_TRUE(bh.load());
+}
+
+TEST(StateTests, GetHandleFromSubgroupThrowsTypeMismatch) {
+    State state;
+    StateGroup* group = state.create_group("params");
+    group->create("val", 1.0f);
+
+    EXPECT_THROW(group->get_handle<double>("val"), ParameterTypeMismatchException);
+    EXPECT_THROW(group->get_handle<int>("val"), ParameterTypeMismatchException);
+    EXPECT_THROW(group->get_handle<bool>("val"), ParameterTypeMismatchException);
+}
+
+TEST(StateTests, GetHandleFromSubgroupThrowsOnMissing) {
+    State state;
+    StateGroup* group = state.create_group("params");
+    group->create("val", 1.0f);
+
+    EXPECT_THROW(group->get_handle<float>("nonexistent"), StateKeyNotFoundException);
+}
+
+// =============================================================================
+// Subgroup set_gesture tests
+// =============================================================================
+
+TEST(StateTests, SetGestureFromSubgroup) {
+    State state;
+
+    class NoGestureListener : public ParameterListener {
+    public:
+        NoGestureListener() : ParameterListener(NotifyStrategies::All, false) {}
+        void on_parameter_changed(const Parameter&) override { m_count++; }
+        int m_count = 0;
+    };
+
+    StateGroup* synth = state.create_group("synth");
+    synth->create("cutoff", 0.5f);
+
+    TestParameterListener always_listener;
+    NoGestureListener filtered_listener;
+    state.add_listener(&always_listener);
+    state.add_listener(&filtered_listener);
+
+    // set via subgroup, then gesture via subgroup
+    synth->set("cutoff", 0.6f);
+    EXPECT_EQ(1, always_listener.m_notification_count);
+    EXPECT_EQ(1, filtered_listener.m_count);
+
+    synth->set_gesture("cutoff", true);
+    synth->set("cutoff", 0.8f);
+    EXPECT_EQ(2, always_listener.m_notification_count);
+    EXPECT_EQ(1, filtered_listener.m_count);  // skipped
+
+    synth->set_gesture("cutoff", false);
+    synth->set("cutoff", 0.3f);
+    EXPECT_EQ(3, always_listener.m_notification_count);
+    EXPECT_EQ(2, filtered_listener.m_count);  // fires again
+}
+
+TEST(StateTests, SetGestureFromNestedSubgroup) {
+    State state;
+
+    class NoGestureListener : public ParameterListener {
+    public:
+        NoGestureListener() : ParameterListener(NotifyStrategies::All, false) {}
+        void on_parameter_changed(const Parameter&) override { m_count++; }
+        int m_count = 0;
+    };
+
+    StateGroup* audio = state.create_group("audio");
+    StateGroup* effects = audio->create_group("effects");
+    effects->create("mix", 0.5f);
+
+    NoGestureListener filtered;
+    state.add_listener(&filtered);
+
+    // Gesture set via intermediate group
+    audio->set_gesture("effects.mix", true);
+    state.set("audio.effects.mix", 0.9f);
+    EXPECT_EQ(0, filtered.m_count);  // skipped (create notified before listener added)
+
+    audio->set_gesture("effects.mix", false);
+    state.set("audio.effects.mix", 0.1f);
+    EXPECT_EQ(1, filtered.m_count);  // fires
+}
+
+TEST(StateTests, SetGestureFromSubgroupMatchesRootGesture) {
+    // Gesture set via subgroup should be visible via root and vice versa
+    State state;
+
+    class NoGestureListener : public ParameterListener {
+    public:
+        NoGestureListener() : ParameterListener(NotifyStrategies::All, false) {}
+        void on_parameter_changed(const Parameter&) override { m_count++; }
+        int m_count = 0;
+    };
+
+    StateGroup* synth = state.create_group("synth");
+    synth->create("vol", 0.5f);
+
+    NoGestureListener filtered;
+    state.add_listener(&filtered);
+
+    // Set gesture via subgroup, verify root state recognizes it
+    synth->set_gesture("vol", true);
+    state.set("synth.vol", 0.7f);
+    EXPECT_EQ(0, filtered.m_count);  // skipped
+
+    // End gesture via root state
+    state.set_gesture("synth.vol", false);
+    state.set("synth.vol", 0.4f);
+    EXPECT_EQ(1, filtered.m_count);  // fires again
 }
