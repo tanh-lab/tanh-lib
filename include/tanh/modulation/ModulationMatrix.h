@@ -67,10 +67,13 @@ public:
     // the first time a parameter key is requested. The returned SmartHandle
     // holds a stable pointer into the target map — no registration needed.
     //
+    // T must match the parameter's native type (float, double, int, bool).
+    //
     // Throws StateKeyNotFoundException if the parameter doesn't exist in State.
     // Throws std::invalid_argument if the parameter's definition has
-    // modulation disabled.
-    SmartHandle get_smart_handle(const std::string_view param_key);
+    // modulation disabled or if T doesn't match the parameter's type.
+    template <typename T>
+    SmartHandle<T> get_smart_handle(std::string_view param_key);
 
     // Routing management
     void add_routing(const ModulationRouting& routing);

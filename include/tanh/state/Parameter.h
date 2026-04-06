@@ -48,6 +48,14 @@ struct AtomicCacheEntry {
  * parameter: immutable definition (type, range, flags, name, etc.),
  * atomic cache for real-time value access, gesture state, and string value.
  *
+ * @section layout Cache-Line Layout
+ *
+ * Fields are ordered for cache efficiency. `m_cache` is at offset 0 so
+ * that ParameterHandle::load() touches the first cache line of the
+ * allocation. `alignas(64)` on `m_def` guarantees the hot cache line
+ * contains only `m_cache` (24 B), isolating it from non-RT writes to
+ * `m_in_gesture` / `m_string_value` (false-sharing prevention).
+ *
  * `m_key` is a string_view pointing into the owning std::map node's key.
  * Set once after map insertion, never modified. Zero-cost, no duplication.
  *
@@ -59,16 +67,17 @@ struct AtomicCacheEntry {
  * is non-copyable/non-movable — always accessed via pointer.
  */
 struct ParameterRecord {
+    /// RT-hot: per-sample lock-free access (offset 0 for single cache line fetch)
+    AtomicCacheEntry m_cache;
+
+    /// Immutable definition (type, range, flags, name, etc.)
+    /// alignas(64) ensures m_cache occupies its own cache line.
+    alignas(64) const ParameterDefinition m_def;
+
     /// Identity (set once after map insertion, never modified)
     std::string_view m_key;
 
-    /// Immutable definition (type, range, flags, name, etc.)
-    const ParameterDefinition m_def;
-
-    /// Mutable value (per-sample, lock-free)
-    AtomicCacheEntry m_cache;
-
-    /// Mutable runtime state
+    /// Mutable runtime state (non-RT only, separate cache line from m_cache)
     std::atomic<bool> m_in_gesture{false};
     std::string m_string_value;  // mutex-protected for String-typed parameters
 
@@ -152,9 +161,7 @@ public:
     [[nodiscard]] const ParameterDefinition& def() const TANH_NONBLOCKING_FUNCTION {
         return m_record->m_def;
     }
-    [[nodiscard]] const Range& range() const TANH_NONBLOCKING_FUNCTION {
-        return m_record->m_def.m_range;
-    }
+    [[nodiscard]] const Range& range() const TANH_NONBLOCKING_FUNCTION { return *m_range; }
     [[nodiscard]] std::string_view key() const TANH_NONBLOCKING_FUNCTION { return m_record->m_key; }
     [[nodiscard]] uint32_t id() const TANH_NONBLOCKING_FUNCTION { return m_record->m_def.m_id; }
     [[nodiscard]] ParameterType type() const TANH_NONBLOCKING_FUNCTION {
@@ -167,8 +174,10 @@ public:
 private:
     friend class State;
     friend class Parameter;
-    explicit ParameterHandle(ParameterRecord* record) : m_record(record) {}
+    explicit ParameterHandle(ParameterRecord* record)
+        : m_record(record), m_range(&record->m_def.m_range) {}
     ParameterRecord* m_record = nullptr;
+    const Range* m_range = nullptr;
 };
 
 /**

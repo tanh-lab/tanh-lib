@@ -264,6 +264,9 @@ void State::create_in_root(std::string_view key, ParameterDefinition def) {
     // Check if parameter already exists
     if (get_record(key)) { throw ParameterAlreadyExistsException(key); }
 
+    // Ensure every parameter has working formatters
+    def.ensure_formatters();
+
     // Auto-assign ID if the user didn't provide one.
     // If an explicit ID is provided, advance the counter past it to avoid future collisions.
     if (def.m_id == UINT32_MAX) {
@@ -607,7 +610,10 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
             def_obj["min"] = def.m_range.m_min;
             def_obj["max"] = def.m_range.m_max;
             def_obj["step"] = def.m_range.m_step;
-            def_obj["skew"] = def.m_range.m_skew;
+            if (def.m_range.m_curve.m_type == NormalizationCurve::Type::PowerLaw) {
+                def_obj["skew"] = def.m_range.m_curve.m_skew;
+            }
+            if (def.m_range.m_periodic) { def_obj["periodic"] = true; }
 
             def_obj["default_value"] = def.m_default_value;
             def_obj["decimal_places"] = def.m_decimal_places;

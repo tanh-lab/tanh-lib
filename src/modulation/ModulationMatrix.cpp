@@ -1,6 +1,7 @@
 #include "tanh/modulation/ModulationMatrix.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -14,24 +15,48 @@
 #include <unordered_map>
 #include <utility>
 
+#include "tanh/state/ParameterDefinitions.h"
+
 #include "tanh/modulation/SmartHandle.h"
 #include "tanh/modulation/ResolvedTarget.h"
 #include "tanh/modulation/ModulationRouting.h"
 #include "tanh/modulation/ResolvedRouting.h"
+#include "tanh/state/Parameter.h"
 #include "tanh/state/State.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 using namespace thl::modulation;
 
+// ── ResolvedTarget::read_base_as_float ──────────────────────────────────────
+
+float ResolvedTarget::read_base_as_float() const TANH_NONBLOCKING_FUNCTION {
+    if (!m_record) { return 0.0f; }
+    switch (m_type) {
+        case thl::ParameterType::Float:
+            return m_record->m_cache.m_atomic_float.load(std::memory_order_relaxed);
+        case thl::ParameterType::Double:
+            return static_cast<float>(
+                m_record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
+        case thl::ParameterType::Int:
+            return static_cast<float>(
+                m_record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
+        case thl::ParameterType::Bool:
+            return m_record->m_cache.m_atomic_bool.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+        default: return 0.0f;
+    }
+}
+
 ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {
     m_config.register_reader_thread();
 }
 
-SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key) {
+template <typename T>
+SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_key) {
     std::scoped_lock const lock(m_writer_mutex);
 
-    // Throws StateKeyNotFoundException if parameter doesn't exist
-    auto handle = m_state.get_handle<float>(param_key);
+    // Throws StateKeyNotFoundException if parameter doesn't exist.
+    // Throws std::invalid_argument if T doesn't match the parameter's type.
+    auto handle = m_state.get_handle<T>(param_key);
 
     // Check modulation flag
     if (!m_state.is_modulatable(param_key)) {
@@ -43,14 +68,29 @@ SmartHandle ModulationMatrix::get_smart_handle(const std::string_view param_key)
     return {handle, target};
 }
 
+// Explicit instantiations for all supported types
+template SmartHandle<float> ModulationMatrix::get_smart_handle<float>(std::string_view);
+template SmartHandle<double> ModulationMatrix::get_smart_handle<double>(std::string_view);
+template SmartHandle<int> ModulationMatrix::get_smart_handle<int>(std::string_view);
+template SmartHandle<bool> ModulationMatrix::get_smart_handle<bool>(std::string_view);
+
 ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id) {
     auto it = m_targets.find(id);
     if (it != m_targets.end()) { return &it->second; }
     ResolvedTarget target;
     auto [target_it, inserted] = m_targets.emplace(std::string(id), target);
-    target_it->second.m_id = id;
-    target_it->second.resize(m_samples_per_block);
-    return &target_it->second;
+    auto& t = target_it->second;
+    t.m_id = id;
+    t.resize(m_samples_per_block);
+
+    // Populate metadata from State for normalized depth processing
+    const thl::Parameter param = m_state.get_parameter(id);
+    t.m_range = &param.range();
+    t.m_type = param.def().m_type;
+    t.m_record = m_state.get_record(id);
+    t.m_uses_normalized_buffer = t.m_range && !t.m_range->is_linear();
+
+    return &t;
 }
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
@@ -162,8 +202,27 @@ void ModulationMatrix::rebuild_schedule_locked() {
         r.m_source = src_it->second;
         r.m_target = &tgt_it->second;
         r.m_depth = routing.m_depth;
+        r.m_depth_mode = routing.m_depth_mode;
         r.m_max_decimation = routing.m_max_decimation;
         r.m_samples_until_update = 0;
+
+        // Pre-compute effective depth for the RT hot path.
+        // Non-linear targets accumulate in normalized [0,1] space; linear targets
+        // accumulate in plain parameter units. m_depth_abs_precomputed holds the
+        // per-sample multiplier so the inner loop is branch-free.
+        const auto* range = tgt_it->second.m_range;
+        if (range) {
+            const float span = range->m_max - range->m_min;
+            if (r.m_target->m_uses_normalized_buffer) {
+                // Non-linear: buffer is in normalized space
+                r.m_depth_abs_precomputed =
+                    r.m_depth_mode == DepthMode::Absolute ? r.m_depth / span : r.m_depth;
+            } else {
+                // Linear: buffer is in plain parameter units
+                r.m_depth_abs_precomputed =
+                    r.m_depth_mode == DepthMode::Normalized ? r.m_depth * span : r.m_depth;
+            }
+        }
         new_routings.push_back(r);
     }
 
@@ -295,6 +354,31 @@ void ModulationMatrix::build_schedule_from_graph(
     }
 }
 
+// ── Depth-mode-aware modulation helpers ──────────────────────────────────────
+
+namespace {
+
+// Apply a single source sample through a routing to the target buffer at index i.
+// All depth modes and range types are handled uniformly via m_depth_abs_precomputed
+// (set at schedule build time for all four depth-mode × range-type combinations).
+void apply_modulation_sample(const ResolvedRouting& routing,
+                             float src_sample,
+                             size_t i) TANH_NONBLOCKING_FUNCTION {
+    routing.m_target->m_modulation_buffer[i] += src_sample * routing.m_depth_abs_precomputed;
+}
+
+// Fill the modulation buffer for a bulk routing (whole block at once).
+void apply_routing_bulk(const ResolvedRouting& routing,
+                        const std::vector<float>& src_output,
+                        size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+    const float depth = routing.m_depth_abs_precomputed;
+    for (size_t i = 0; i < num_samples; ++i) {
+        routing.m_target->m_modulation_buffer[i] += src_output[i] * depth;
+    }
+}
+
+}  // namespace
+
 // ── Per-source bulk processing ────────────────────────────────────────────────
 
 void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
@@ -307,9 +391,7 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
 
     for (auto* routing : it->second) {
         const auto& src_output = source->get_output_buffer();
-        for (size_t i = 0; i < num_samples; ++i) {
-            routing->m_target->m_modulation_buffer[i] += src_output[i] * routing->m_depth;
-        }
+        apply_routing_bulk(*routing, src_output, num_samples);
 
         for (uint32_t const cp : source->get_change_points()) {
             if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
@@ -330,16 +412,14 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
     // Per-sample processing: interleave sources, apply routings immediately
     for (size_t i = 0; i < num_samples; ++i) {
         for (auto* source : sources) {
-            float sample;
+            float sample = 0.0f;
             source->process_single(&sample, static_cast<uint32_t>(i));
 
             // Apply routing immediately so subsequent sources see updated
             // target buffers within the same sample iteration.
             auto it = config.m_routings_by_source.find(source);
             if (it != config.m_routings_by_source.end()) {
-                for (auto* routing : it->second) {
-                    routing->m_target->m_modulation_buffer[i] += sample * routing->m_depth;
-                }
+                for (auto* routing : it->second) { apply_modulation_sample(*routing, sample, i); }
             }
         }
     }
