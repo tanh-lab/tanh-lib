@@ -1,30 +1,54 @@
 #include "tanh/state/State.h"
-#include <tanh/core/Logger.h>
-#include <cstddef>
-#include "tanh/state/StateGroup.h"
-#include "tanh/state/Parameter.h"
-#include <mutex>
+
 #include <atomic>
-#include <memory>
-#include <utility>
-#include "tanh/utils/RealtimeSanitizer.h"
-#include <string>
-#include <nlohmann/json_fwd.hpp>
-#include "tanh/state/ParameterDefinitions.h"
-#include <functional>
-#include "tanh/state/path_helpers.h"
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 #include <exception>
-#include <optional>
-#include <stdexcept>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <utility>
+
+#include <nlohmann/json_fwd.hpp>
+#include <tanh/core/Logger.h>
+
 #include "tanh/core/Exports.h"
+#include "tanh/state/Parameter.h"
+#include "tanh/state/ParameterDefinitions.h"
+#include "tanh/state/StateGroup.h"
+#include "tanh/state/path_helpers.h"
+#include "tanh/utils/RealtimeSanitizer.h"
+#include "tanh/state/Exceptions.h"
+#include "tanh/state/ParameterListener.h"
 
 namespace thl {
+
+// ── Anonymous helpers ───────────────────────────────────────────────────────
+
+namespace {
+// Non-throwing string-to-double conversion.
+// Returns 0.0 for unparseable input, handles bool-like strings.
+double parse_string_as_double(const std::string& value) {
+    if (value == "true" || value == "1" || value == "yes" || value == "on") { return 1.0; }
+    if (value == "false" || value == "0" || value == "no" || value == "off") { return 0.0; }
+    const char* const end_init = value.c_str();
+    char const* end = nullptr;
+    const double result = std::strtod(end_init, const_cast<char**>(&end));
+    if (end == end_init) { return 0.0; }  // no conversion performed
+    return result;
+}
+}  // namespace
+
+// ── Constructor & thread registration ───────────────────────────────────────
 
 State::State(size_t max_string_size, size_t max_levels)
     : m_max_string_size(max_string_size)
     , m_max_levels(max_levels)
     , StateGroup(nullptr, nullptr, "")
-    , m_index_rcu(IndexMap{}) {
+    , m_string_index_rcu(StringIndexMap{})
+    , m_id_index_rcu(IdIndexMap{}) {
     // Initialize the StateGroup with this as the root state
     m_root_state = this;
 
@@ -44,16 +68,14 @@ void State::ensure_thread_registered() {
 
 void State::register_reader_thread() {
     // Register this thread with all RCU structures for this State
-    m_index_rcu.register_reader_thread();
+    m_string_index_rcu.register_reader_thread();
+    m_id_index_rcu.register_reader_thread();
     m_groups_rcu.register_reader_thread();
     m_listeners_rcu.register_reader_thread();
 }
 
 void State::reserve_temporary_string_buffers() {
-    // Reserve buffers - no separate tracking needed, called from
-    // ensure_thread_registered
     if (m_temp_buffer_0().capacity() < m_max_string_size) {
-        // Reserve space only if the buffer is not already large enough
         m_temp_buffer_0().reserve(m_max_string_size);
         m_temp_buffer_1().reserve(m_max_string_size);
         m_temp_buffer_2().reserve(m_max_string_size);
@@ -65,214 +87,36 @@ void State::reserve_temporary_string_buffers() {
     m_temp_buffer_3().clear();
 }
 
-template <typename T>
-void State::set_in_root(std::string_view key,
-                        const T& value,
-                        NotifyStrategies strategy,
-                        ParameterListener* source) {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> ||
-                      std::is_same_v<T, bool> || std::is_same_v<T, std::string>,
-                  "Unsupported type for set_in_root");
+// ── Private helpers: record lookup ──────────────────────────────────────────
 
-    // Try to update existing parameter via atomic cache (no RCU copy needed for numerics)
-    bool parameter_exists = false;
+ParameterRecord* State::get_record(std::string_view key) const {
     ParameterRecord* record = nullptr;
-
-    // Read-only RCU check: does the parameter already exist?
-    m_index_rcu.read([&](const IndexMap& idx) {
+    m_string_index_rcu.read([&](const StringIndexMap& idx) {
         auto it = idx.find(key);
-        if (it != idx.end()) {
-            parameter_exists = true;
-            record = it->second;
-        }
+        if (it != idx.end()) { record = it->second; }
     });
-
-    if (parameter_exists && record) {
-        if constexpr (std::is_same_v<T, std::string>) {
-            // Convert string to double — this is the only numeric conversion needed.
-            // get_from_root reads from the native atomic and casts on the fly.
-            double d_value = 0.0;
-            try {
-                if (value == "true" || value == "1" || value == "yes" || value == "on") {
-                    d_value = 1.0;
-                } else if (value == "false" || value == "0" || value == "no" || value == "off") {
-                    d_value = 0.0;
-                } else {
-                    d_value = std::stod(value);
-                }
-            } catch (...) {  // NOLINT(bugprone-empty-catch) stod may fail on invalid input
-                             // default value (0.0) if conversion fails
-            }
-
-            if (record->m_type == ParameterType::String) {
-                // Only String-typed params store string_value
-                {
-                    std::scoped_lock const lock(m_storage_mutex);
-                    record->m_string_value = value;
-                }
-                // get_from_root reads atomic_double for String-typed numeric access
-                record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
-            } else {
-                // Non-string param receiving a string value: cast to its native atomic
-                switch (record->m_type) {
-                    case ParameterType::Double:
-                        record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
-                        break;
-                    case ParameterType::Float:
-                        record->m_cache.m_atomic_float.store(static_cast<float>(d_value),
-                                                             std::memory_order_relaxed);
-                        break;
-                    case ParameterType::Int:
-                        record->m_cache.m_atomic_int.store(static_cast<int>(d_value),
-                                                           std::memory_order_relaxed);
-                        break;
-                    case ParameterType::Bool:
-                        record->m_cache.m_atomic_bool.store(d_value != 0.0,
-                                                            std::memory_order_relaxed);
-                        break;
-                    default: break;
-                }
-            }
-        } else {
-            // Numeric params: skip RCU entirely, convert and write to the parameter's native-type
-            // atomic. This handles cross-type sets (e.g., set<int> on a Double-typed param).
-            switch (record->m_type) {
-                case ParameterType::Double:
-                    record->m_cache.m_atomic_double.store(static_cast<double>(value),
-                                                          std::memory_order_relaxed);
-                    break;
-                case ParameterType::Float:
-                    record->m_cache.m_atomic_float.store(static_cast<float>(value),
-                                                         std::memory_order_relaxed);
-                    break;
-                case ParameterType::Int:
-                    record->m_cache.m_atomic_int.store(static_cast<int>(value),
-                                                       std::memory_order_relaxed);
-                    break;
-                case ParameterType::Bool:
-                    if constexpr (std::is_same_v<T, bool>) {
-                        record->m_cache.m_atomic_bool.store(value, std::memory_order_relaxed);
-                    } else {
-                        record->m_cache.m_atomic_bool.store(value != T{0},
-                                                            std::memory_order_relaxed);
-                    }
-                    break;
-                case ParameterType::String:
-                    // Numeric value to a string-typed param: store in the native numeric atomic
-                    // (string_value is not updated — use set<string> for that)
-                    record->m_cache.m_atomic_double.store(static_cast<double>(value),
-                                                          std::memory_order_relaxed);
-                    break;
-                default: break;
-            }
-        }
-    } else if (!parameter_exists) {
-        // Parameter doesn't exist — create it under the storage mutex
-        {
-            std::scoped_lock const lock(m_storage_mutex);
-            auto new_record = std::make_unique<ParameterRecord>();
-
-            if constexpr (std::is_same_v<T, double>) {
-                new_record->m_type = ParameterType::Double;
-            } else if constexpr (std::is_same_v<T, float>) {
-                new_record->m_type = ParameterType::Float;
-            } else if constexpr (std::is_same_v<T, int>) {
-                new_record->m_type = ParameterType::Int;
-            } else if constexpr (std::is_same_v<T, bool>) {
-                new_record->m_type = ParameterType::Bool;
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                new_record->m_type = ParameterType::String;
-            }
-
-            // Populate the atomic cache with the native-type value
-            if constexpr (std::is_same_v<T, double>) {
-                new_record->m_cache.m_atomic_double.store(value, std::memory_order_relaxed);
-            } else if constexpr (std::is_same_v<T, float>) {
-                new_record->m_cache.m_atomic_float.store(value, std::memory_order_relaxed);
-            } else if constexpr (std::is_same_v<T, int>) {
-                new_record->m_cache.m_atomic_int.store(value, std::memory_order_relaxed);
-            } else if constexpr (std::is_same_v<T, bool>) {
-                new_record->m_cache.m_atomic_bool.store(value, std::memory_order_relaxed);
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                new_record->m_string_value = value;
-                // Only atomic_double is needed for String-typed params because
-                // get_from_root reads exclusively from atomic_double and casts to
-                // the requested type T on the fly via static_cast<T>.
-                double d_value = 0.0;
-                try {
-                    if (value == "true" || value == "1" || value == "yes" || value == "on") {
-                        d_value = 1.0;
-                    } else if (value == "false" || value == "0" || value == "no" ||
-                               value == "off") {
-                        d_value = 0.0;
-                    } else {
-                        d_value = std::stod(value);
-                    }
-                } catch (...) {  // NOLINT(bugprone-empty-catch) stod may fail on invalid input
-                }
-                new_record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
-            }
-
-            record = new_record.get();
-            m_storage[std::string(key)] = std::move(new_record);
-        }
-
-        // Publish the new entry in the lock-free index
-        m_index_rcu.update([&](IndexMap& idx) { idx[std::string(key)] = record; });
-    }
-
-    // Handle notification
-    if (strategy != NotifyStrategies::None) {
-        // Copy the key before notifying — key may point into m_temp_buffer_2
-        // which re-entrant set() calls from listeners would overwrite.
-        std::string const key_copy(key);
-
-        Parameter const param_obj(this, key_copy);
-
-        bool const is_in_gesture =
-            record ? record->m_metadata.m_in_gesture.load(std::memory_order_relaxed) : false;
-
-        auto [group, param_name] = resolve_path(key_copy);
-
-        // Notify through the most specific group (which will propagate up)
-        // or notify directly from State if no group was found
-        if (group) {
-            group->notify_listeners(key_copy, param_obj, strategy, source, is_in_gesture);
-        } else {
-            const_cast<State*>(this)->notify_listeners(key_copy,
-                                                       param_obj,
-                                                       strategy,
-                                                       source,
-                                                       is_in_gesture);
-        }
-    }
+    return record;
 }
 
-// Add const char* overload for set_in_root
-void State::set_in_root(std::string_view key,
-                        const char* value,
-                        NotifyStrategies strategy,
-                        ParameterListener* source) {
-    set_in_root(key, std::string(value), strategy, source);
-}
-
-// Parameter getters (real-time safe for numeric types)
-template <typename T>
-T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
-    // String access requires allow_blocking=true as it may allocate memory
-    if constexpr (std::is_same_v<T, std::string>) {
-        if (!allow_blocking) { throw BlockingException(key); }
-    }
-
-    // Read type and record pointer from index RCU (lock-free)
-    ParameterType param_type = ParameterType::Unknown;
+ParameterRecord* State::get_record_by_id(uint32_t id) const {
     ParameterRecord* record = nullptr;
-    m_index_rcu.read([&](const IndexMap& idx) {
-        auto it = idx.find(key);
-        if (it == idx.end()) { throw StateKeyNotFoundException(key); }
-        param_type = it->second->m_type;
+    m_id_index_rcu.read([&](const IdIndexMap& idx) {
+        auto it = idx.find(id);
+        if (it == idx.end()) { throw StateKeyNotFoundException("id:" + std::to_string(id)); }
         record = it->second;
     });
+    return record;
+}
+
+// ── Private helpers: read / write / handle / notify ─────────────────────────
+
+template <typename T>
+T State::read_value(ParameterRecord* record, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (!allow_blocking) { throw BlockingException(std::string(record->m_key)); }
+    }
+
+    ParameterType const param_type = record->m_def.m_type;
 
     if constexpr (std::is_same_v<T, std::string>) {
         TANH_NONBLOCKING_SCOPED_DISABLER
@@ -295,7 +139,6 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
             default: return "";
         }
     } else {
-        // Numeric types: read from the native atomic and convert on the fly
         switch (param_type) {
             case ParameterType::Double:
                 return static_cast<T>(
@@ -308,15 +151,406 @@ T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NON
             case ParameterType::Bool:
                 return static_cast<T>(
                     record->m_cache.m_atomic_bool.load(std::memory_order_relaxed));
-            case ParameterType::String: {
-                // For string-typed params, convert from atomic_double
+            case ParameterType::String:
                 return static_cast<T>(
                     record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
-            }
             default: return T{};
         }
     }
 }
+
+template <typename T>
+void State::write_value(ParameterRecord* record, const T& value) {
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> ||
+                      std::is_same_v<T, bool> || std::is_same_v<T, std::string>,
+                  "Unsupported type for write_value");
+
+    if constexpr (std::is_same_v<T, std::string>) {
+        const double d_value = parse_string_as_double(value);
+
+        if (record->m_def.m_type == ParameterType::String) {
+            {
+                std::scoped_lock const lock(m_storage_mutex);
+                record->m_string_value = value;
+            }
+            record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
+        } else {
+            switch (record->m_def.m_type) {
+                case ParameterType::Double:
+                    record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
+                    break;
+                case ParameterType::Float:
+                    record->m_cache.m_atomic_float.store(static_cast<float>(d_value),
+                                                         std::memory_order_relaxed);
+                    break;
+                case ParameterType::Int:
+                    record->m_cache.m_atomic_int.store(static_cast<int>(d_value),
+                                                       std::memory_order_relaxed);
+                    break;
+                case ParameterType::Bool:
+                    record->m_cache.m_atomic_bool.store(d_value != 0.0, std::memory_order_relaxed);
+                    break;
+                default: break;
+            }
+        }
+    } else {
+        switch (record->m_def.m_type) {
+            case ParameterType::Double:
+                record->m_cache.m_atomic_double.store(static_cast<double>(value),
+                                                      std::memory_order_relaxed);
+                break;
+            case ParameterType::Float:
+                record->m_cache.m_atomic_float.store(static_cast<float>(value),
+                                                     std::memory_order_relaxed);
+                break;
+            case ParameterType::Int:
+                record->m_cache.m_atomic_int.store(static_cast<int>(value),
+                                                   std::memory_order_relaxed);
+                break;
+            case ParameterType::Bool:
+                if constexpr (std::is_same_v<T, bool>) {
+                    record->m_cache.m_atomic_bool.store(value, std::memory_order_relaxed);
+                } else {
+                    record->m_cache.m_atomic_bool.store(value != T{0}, std::memory_order_relaxed);
+                }
+                break;
+            case ParameterType::String:
+                record->m_cache.m_atomic_double.store(static_cast<double>(value),
+                                                      std::memory_order_relaxed);
+                break;
+            default: break;
+        }
+    }
+}
+
+template <typename T>
+ParameterHandle<T> State::make_handle(ParameterRecord* record) const {
+    constexpr ParameterType k_expected_type = []() {
+        if constexpr (std::is_same_v<T, double>) {
+            return ParameterType::Double;
+        } else if constexpr (std::is_same_v<T, float>) {
+            return ParameterType::Float;
+        } else if constexpr (std::is_same_v<T, int>) {
+            return ParameterType::Int;
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return ParameterType::Bool;
+        }
+    }();
+    if (record->m_def.m_type != k_expected_type) {
+        throw ParameterTypeMismatchException(k_expected_type, record->m_def.m_type);
+    }
+
+    return ParameterHandle<T>(record);
+}
+
+void State::notify_after_write(ParameterRecord* record, ParameterListener* source) {
+    // Copy key before notifying (key may point into temp buffer
+    // which re-entrant set() calls from listeners would overwrite)
+    std::string const key_copy(record->m_key);
+    Parameter const param_obj(this, record);
+
+    auto [group, param_name] = resolve_path(key_copy);
+
+    if (group) {
+        group->notify_listeners(param_obj, source);
+    } else {
+        const_cast<State*>(this)->notify_listeners(param_obj, source);
+    }
+}
+
+// ── Parameter creation ──────────────────────────────────────────────────────
+
+void State::create_in_root(std::string_view key, ParameterDefinition def) {
+    // Check if parameter already exists
+    if (get_record(key)) { throw ParameterAlreadyExistsException(key); }
+
+    // Auto-assign ID if the user didn't provide one.
+    // If an explicit ID is provided, advance the counter past it to avoid future collisions.
+    if (def.m_id == UINT32_MAX) {
+        def.m_id = m_next_auto_id++;
+    } else if (def.m_id >= m_next_auto_id) {
+        m_next_auto_id = def.m_id + 1;
+    }
+
+    ParameterRecord* record = nullptr;
+    {
+        std::scoped_lock const lock(m_storage_mutex);
+        auto new_record = std::make_unique<ParameterRecord>(std::move(def));
+
+        // Set initial value from the definition's default_value
+        switch (new_record->m_def.m_type) {
+            case ParameterType::Double:
+                new_record->m_cache.m_atomic_double.store(
+                    static_cast<double>(new_record->m_def.m_default_value),
+                    std::memory_order_relaxed);
+                break;
+            case ParameterType::Float:
+                new_record->m_cache.m_atomic_float.store(new_record->m_def.m_default_value,
+                                                         std::memory_order_relaxed);
+                break;
+            case ParameterType::Int:
+                new_record->m_cache.m_atomic_int.store(
+                    static_cast<int>(new_record->m_def.m_default_value),
+                    std::memory_order_relaxed);
+                break;
+            case ParameterType::Bool:
+                new_record->m_cache.m_atomic_bool.store(new_record->m_def.m_default_value != 0.0f,
+                                                        std::memory_order_relaxed);
+                break;
+            case ParameterType::String:
+                // String default: store 0.0 in atomic_double
+                new_record->m_cache.m_atomic_double.store(0.0, std::memory_order_relaxed);
+                break;
+            default: break;
+        }
+
+        record = new_record.get();
+        auto [it, inserted] = m_storage.emplace(std::string(key), std::move(new_record));
+        // Set m_key to point into the map node's key (stable for lifetime of entry)
+        record->m_key = it->first;
+    }
+
+    // Publish the new entry in the lock-free string index
+    m_string_index_rcu.update([&](StringIndexMap& idx) { idx[std::string(key)] = record; });
+
+    // Index by ID
+    m_id_index_rcu.update([&](IdIndexMap& idx) {
+        auto [id_it, id_inserted] = idx.emplace(record->m_def.m_id, record);
+        if (!id_inserted) { throw DuplicateParameterIdException(record->m_def.m_id, key); }
+    });
+
+    // Notify listeners — copy key before notifying (re-entrant calls may overwrite temp buffers)
+    std::string const key_copy(key);
+    Parameter const param_obj(this, record);
+
+    auto [group, param_name] = resolve_path(key_copy);
+    if (group) {
+        group->notify_listeners(param_obj, nullptr);
+    } else {
+        notify_listeners(param_obj, nullptr);
+    }
+}
+
+template <typename T>
+void State::create_in_root(std::string_view key, const T& initial_value) {
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> ||
+                      std::is_same_v<T, bool> || std::is_same_v<T, std::string>,
+                  "Unsupported type for create_in_root");
+
+    ParameterDefinition def;
+    if constexpr (std::is_same_v<T, double>) {
+        def.m_type = ParameterType::Double;
+        def.m_default_value = static_cast<float>(initial_value);
+    } else if constexpr (std::is_same_v<T, float>) {
+        def.m_type = ParameterType::Float;
+        def.m_default_value = initial_value;
+    } else if constexpr (std::is_same_v<T, int>) {
+        def.m_type = ParameterType::Int;
+        def.m_default_value = static_cast<float>(initial_value);
+    } else if constexpr (std::is_same_v<T, bool>) {
+        def.m_type = ParameterType::Bool;
+        def.m_default_value = initial_value ? 1.0f : 0.0f;
+        def.m_range = Range::boolean();
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        def.m_type = ParameterType::String;
+    }
+
+    // For value-created params, clear default flags (no name = not a plugin param)
+    def.m_flags = 0;
+
+    create_in_root(key, std::move(def));
+
+    // m_default_value is float — directly store the full-precision initial value
+    // in the atomic cache to avoid truncation for doubles and large ints.
+    auto* record = get_record(key);
+    if (record) {
+        if constexpr (std::is_same_v<T, double>) {
+            record->m_cache.m_atomic_double.store(initial_value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, int>) {
+            record->m_cache.m_atomic_int.store(initial_value, std::memory_order_relaxed);
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            std::scoped_lock const lock(m_storage_mutex);
+            record->m_string_value = initial_value;
+            const double d_value = parse_string_as_double(initial_value);
+            record->m_cache.m_atomic_double.store(d_value, std::memory_order_relaxed);
+        }
+    }
+}
+
+void State::create_in_root(std::string_view key, const char* value) {
+    create_in_root(key, std::string(value));
+}
+
+// ── Parameter update ────────────────────────────────────────────────────────
+
+template <typename T>
+void State::set_in_root(std::string_view key, const T& value, ParameterListener* source) {
+    auto* record = get_record(key);
+    if (!record) { throw StateKeyNotFoundException(key); }
+    write_value(record, value);
+    notify_after_write(record, source);
+}
+
+void State::set_in_root(std::string_view key, const char* value, ParameterListener* source) {
+    set_in_root(key, std::string(value), source);
+}
+
+// ── Parameter access ────────────────────────────────────────────────────────
+
+template <typename T>
+T State::get_from_root(std::string_view key, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
+    auto* record = get_record(key);
+    if (!record) { throw StateKeyNotFoundException(key); }
+    return read_value<T>(record, allow_blocking);
+}
+
+Parameter State::get_parameter_from_root(std::string_view key) const {
+    auto* record = get_record(key);
+    if (!record) { throw StateKeyNotFoundException(key); }
+    return {this, record};
+}
+
+ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOCKING_FUNCTION {
+    auto* record = get_record(key);
+    if (!record) { throw StateKeyNotFoundException(key); }
+    return record->m_def.m_type;
+}
+
+template <typename T>
+ParameterHandle<T> State::get_handle_from_root(std::string_view key) const {
+    auto* record = get_record(key);
+    if (!record) { throw StateKeyNotFoundException(key); }
+    return make_handle<T>(record);
+}
+
+bool State::is_modulatable(std::string_view key) const TANH_NONBLOCKING_FUNCTION {
+    auto* record = get_record(key);
+    if (!record) { return false; }
+    return (record->m_def.m_flags & ParameterFlags::k_modulatable) != 0;
+}
+
+// ── ID-based access ─────────────────────────────────────────────────────────
+
+template <typename T>
+ParameterHandle<T> State::get_handle_by_id(uint32_t id) const {
+    return make_handle<T>(get_record_by_id(id));
+}
+
+Parameter State::get_parameter_by_id(uint32_t id) const {
+    return {this, get_record_by_id(id)};
+}
+
+template <typename T>
+T State::get_by_id(uint32_t id, bool allow_blocking) const TANH_NONBLOCKING_FUNCTION {
+    return read_value<T>(get_record_by_id(id), allow_blocking);
+}
+
+template <typename T>
+void State::set_by_id(uint32_t id, const T& value, ParameterListener* source) {
+    auto* record = get_record_by_id(id);
+    write_value(record, value);
+    notify_after_write(record, source);
+}
+
+// ── Gesture ─────────────────────────────────────────────────────────────────
+
+void State::set_gesture_from_root(std::string_view key, bool gesture) {
+    auto* record = get_record(key);
+    if (!record) { return; }
+
+    record->m_in_gesture.store(gesture, std::memory_order_relaxed);
+
+    // Dispatch gesture callbacks through the listener chain
+    Parameter const param_obj(this, record);
+    std::string const key_copy(key);
+    auto [group, param_name] = resolve_path(key_copy);
+
+    auto dispatch = [&](const StateGroup* g) {
+        g->m_listeners_rcu.read([&](const StateGroup::ListenerData& data) {
+            for (auto* listener : data.m_object_listeners) {
+                if (gesture) {
+                    listener->on_gesture_start(param_obj);
+                } else {
+                    listener->on_gesture_end(param_obj);
+                }
+            }
+        });
+    };
+
+    if (group) {
+        // Walk up from the resolved group to root
+        const StateGroup* g = group;
+        while (g) {
+            dispatch(g);
+            g = g->m_parent;
+        }
+    } else {
+        dispatch(this);
+    }
+}
+
+// ── JSON update ─────────────────────────────────────────────────────────────
+
+void State::update_from_json(const nlohmann::json& json_data, ParameterListener* source) {
+    ensure_thread_registered();
+
+    auto check_parameter_exists = [this](std::string_view key) {
+        bool const exists = m_string_index_rcu.read(
+            [&](const StringIndexMap& idx) { return idx.find(key) != idx.end(); });
+        if (!exists) { throw StateKeyNotFoundException(key); }
+    };
+
+    std::function<void(const nlohmann::json&, std::string_view)> update_parameters;
+
+    update_parameters = [this, &check_parameter_exists, &update_parameters, &source](
+                            const nlohmann::json& json,
+                            std::string_view prefix) {
+        for (auto it = json.begin(); it != json.end(); ++it) {
+            const std::string& key = it.key();
+            std::string path;
+            if (prefix.empty()) {
+                path = key;
+            } else {
+                m_root_state->m_temp_buffer_0().clear();
+                detail::join_path(prefix, key, m_root_state->m_temp_buffer_0());
+                path = m_root_state->m_temp_buffer_0();
+            }
+
+            if (it.value().is_object()) {
+                update_parameters(it.value(), path);
+            } else {
+                check_parameter_exists(path);
+
+                if (it.value().is_number_float()) {
+                    set(path, it.value().get<double>(), source);
+                } else if (it.value().is_number_integer()) {
+                    set(path, it.value().get<int>(), source);
+                } else if (it.value().is_boolean()) {
+                    set(path, it.value().get<bool>(), source);
+                } else if (it.value().is_string()) {
+                    set(path, it.value().get<std::string>(), source);
+                } else if (it.value().is_null()) {
+                    thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                                      "thl.state.state",
+                                      "Ignoring null value for key '%s'",
+                                      path.c_str());
+                }
+            }
+        }
+    };
+
+    try {
+        update_parameters(json_data, "");
+    } catch (const StateKeyNotFoundException& e) { throw; } catch (const std::exception& e) {
+        thl::Logger::logf(thl::Logger::LogLevel::Error,
+                          "thl.state.state",
+                          "Error updating state from JSON: %s",
+                          e.what());
+        throw;
+    }
+}
+
+// ── State dump ──────────────────────────────────────────────────────────────
 
 std::string State::get_state_dump(bool include_definitions) const {
     return get_group_state_dump("", include_definitions);
@@ -328,7 +562,6 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
 
     std::scoped_lock const lock(m_storage_mutex);
     for (const auto& [key, record] : m_storage) {
-        // If group_prefix is non-empty, skip keys that don't start with it
         if (!group_prefix.empty() &&
             (key.size() < group_prefix.size() || !key.starts_with(group_prefix))) {
             continue;
@@ -337,7 +570,7 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
         nlohmann::json param_obj = nlohmann::json::object();
         param_obj["key"] = key;
 
-        switch (record->m_type) {
+        switch (record->m_def.m_type) {
             case ParameterType::Double:
                 param_obj["value"] =
                     record->m_cache.m_atomic_double.load(std::memory_order_relaxed);
@@ -355,17 +588,18 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
             default: break;
         }
 
-        if (include_definitions && record->m_definition.has_value()) {
-            const auto& def = record->m_definition.value();
+        // Include definition if requested and the parameter has a named definition
+        // (parameters created with just a value have empty m_name)
+        if (include_definitions && !record->m_def.m_name.empty()) {
+            const auto& def = record->m_def;
             nlohmann::json def_obj = nlohmann::json::object();
 
             def_obj["name"] = def.m_name;
             def_obj["type"] = [&]() {
                 switch (def.m_type) {
-                    case PluginParamType::ParamFloat: return "float";
-                    case PluginParamType::ParamInt: return "int";
-                    case PluginParamType::ParamBool: return "bool";
-                    case PluginParamType::ParamChoice: return "choice";
+                    case ParameterType::Float: return "float";
+                    case ParameterType::Int: return def.m_choices.empty() ? "int" : "choice";
+                    case ParameterType::Bool: return "bool";
                     default: return "unknown";
                 }
             }();
@@ -377,18 +611,18 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
 
             def_obj["default_value"] = def.m_default_value;
             def_obj["decimal_places"] = def.m_decimal_places;
-            def_obj["automation"] = def.m_automation;
-            def_obj["modulation"] = def.m_modulation;
+            def_obj["automation"] = def.is_automatable();
+            def_obj["modulation"] = def.is_modulatable();
 
             def_obj["slider_polarity"] = [&]() {
-                switch (def.m_slider_polarity) {
+                switch (def.m_polarity) {
                     case SliderPolarity::Unipolar: return "unipolar";
                     case SliderPolarity::Bipolar: return "bipolar";
                     default: return "unipolar";
                 }
             }();
 
-            if (!def.m_data.empty()) { def_obj["data"] = def.m_data; }
+            if (!def.m_choices.empty()) { def_obj["data"] = def.m_choices; }
 
             param_obj["definition"] = def_obj;
         }
@@ -399,200 +633,50 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
     return root.dump();
 }
 
-// Get the type of a parameter - renamed to get_type_from_root
-ParameterType State::get_type_from_root(std::string_view key) const TANH_NONBLOCKING_FUNCTION {
-    return m_index_rcu.read([&](const IndexMap& idx) -> ParameterType {
-        auto it = idx.find(key);
-        if (it == idx.end()) { throw StateKeyNotFoundException(key); }
-        return it->second->m_type;
-    });
-}
+// ── State management ────────────────────────────────────────────────────────
 
-// State management methods
 void State::clear() {
-    // Clear the lock-free index first so readers can no longer
-    // obtain pointers to records we are about to destroy.
-    m_index_rcu.update([](IndexMap& idx) { idx.clear(); });
+    m_string_index_rcu.update([](StringIndexMap& idx) { idx.clear(); });
+    m_id_index_rcu.update([](IdIndexMap& idx) { idx.clear(); });
 
-    // Now safe to destroy the records — all existing ParameterHandles are now invalid
     {
         std::scoped_lock const lock(m_storage_mutex);
         m_storage.clear();
     }
 
-    // Call the base class implementation to clear groups
+    m_next_auto_id = 0;
     StateGroup::clear_groups();
 }
 
 bool State::is_empty() const TANH_NONBLOCKING_FUNCTION {
-    // Check if parameters are empty
-    bool const parameters_empty = m_index_rcu.read([](const IndexMap& idx) { return idx.empty(); });
-
-    // If parameters exist, it's not empty
+    bool const parameters_empty =
+        m_string_index_rcu.read([](const StringIndexMap& idx) { return idx.empty(); });
     if (!parameters_empty) { return false; }
-
-    // Use the base class to check if groups are empty
     return StateGroup::is_empty();
 }
 
-// Implementation of update_from_json method
-void State::update_from_json(const nlohmann::json& json_data,
-                             NotifyStrategies strategy,
-                             ParameterListener* source) {
-    // Ensure thread is registered for RT-safe access
-    ensure_thread_registered();
+// ── Template instantiations ─────────────────────────────────────────────────
 
-    // Helper function to check if a parameter exists before updating
-    auto check_parameter_exists = [this](std::string_view key) {
-        bool const exists =
-            m_index_rcu.read([&](const IndexMap& idx) { return idx.find(key) != idx.end(); });
-        if (!exists) { throw StateKeyNotFoundException(key); }
-    };
-
-    // Helper function for recursive update of parameters
-    std::function<void(const nlohmann::json&, std::string_view)> update_parameters;
-
-    update_parameters = [this, &check_parameter_exists, &update_parameters, &strategy, &source](
-                            const nlohmann::json& json,
-                            std::string_view prefix) {
-        for (auto it = json.begin(); it != json.end(); ++it) {
-            const std::string& key = it.key();
-            std::string path;
-            if (prefix.empty()) {
-                path = key;
-            } else {
-                // Use State's pre-allocated buffer
-                m_root_state->m_temp_buffer_0().clear();
-                detail::join_path(prefix, key, m_root_state->m_temp_buffer_0());
-                path = m_root_state->m_temp_buffer_0();
-            }
-
-            // Check if the value is a nested object
-            if (it.value().is_object()) {
-                // For nested objects, recurse with updated path
-                update_parameters(it.value(), path);
-            } else {
-                check_parameter_exists(path);
-
-                // Update based on JSON type
-                if (it.value().is_number_float()) {
-                    set(path, it.value().get<double>(), strategy, source, false);
-                } else if (it.value().is_number_integer()) {
-                    set(path, it.value().get<int>(), strategy, source, false);
-                } else if (it.value().is_boolean()) {
-                    set(path, it.value().get<bool>(), strategy, source, false);
-                } else if (it.value().is_string()) {
-                    set(path, it.value().get<std::string>(), strategy, source, false);
-                } else if (it.value().is_null()) {
-                    // Simply log a warning for null values
-                    thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                                      "thl.state.state",
-                                      "Ignoring null value for key '%s'",
-                                      path.c_str());
-                }
-            }
-        }
-    };
-
-    try {
-        // Start recursive update from root level
-        update_parameters(json_data, "");
-    } catch (const StateKeyNotFoundException& e) {
-        // Re-throw the specific exception
-        throw;
-    } catch (const std::exception& e) {
-        // Wrap other exceptions
-        thl::Logger::logf(thl::Logger::LogLevel::Error,
-                          "thl.state.state",
-                          "Error updating state from JSON: %s",
-                          e.what());
-        throw;
-    }
-}
-
-// Parameter definition management
-void State::set_definition_in_root(std::string_view key, const ParameterDefinition& def) {
-    ParameterRecord* record = nullptr;
-    m_index_rcu.read([&](const IndexMap& idx) {
-        auto it = idx.find(key);
-        if (it != idx.end()) { record = it->second; }
-    });
-    if (!record) { throw StateKeyNotFoundException(key); }
-
-    std::scoped_lock const lock(m_storage_mutex);
-    record->m_definition.emplace(def);
-}
-
-std::optional<ParameterDefinition> State::get_definition_from_root(std::string_view key) const {
-    ParameterRecord* record = nullptr;
-    m_index_rcu.read([&](const IndexMap& idx) {
-        auto it = idx.find(key);
-        if (it != idx.end()) { record = it->second; }
-    });
-    if (!record) { throw StateKeyNotFoundException(key); }
-
-    std::scoped_lock const lock(m_storage_mutex);
-    return record->m_definition;
-}
-
-// get_handle - returns a lightweight handle for per-sample real-time access
-template <typename T>
-ParameterHandle<T> State::get_handle(std::string_view key) const {
-    ParameterRecord* record = nullptr;
-    m_index_rcu.read([&](const IndexMap& idx) {
-        auto it = idx.find(key);
-        if (it == idx.end()) { throw StateKeyNotFoundException(key); }
-        record = it->second;
-    });
-
-    constexpr ParameterType k_expected_type = []() {
-        if constexpr (std::is_same_v<T, double>) {
-            return ParameterType::Double;
-        } else if constexpr (std::is_same_v<T, float>) {
-            return ParameterType::Float;
-        } else if constexpr (std::is_same_v<T, int>) {
-            return ParameterType::Int;
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return ParameterType::Bool;
-        }
-    }();
-    if (record->m_type != k_expected_type) {
-        throw std::invalid_argument(
-            "ParameterHandle type mismatch: requested handle type does not match parameter type");
-    }
-
-    return ParameterHandle<T>(&record->m_cache);
-}
-
-// set_gesture - sets the gesture state for a parameter
-void State::set_gesture(std::string_view key, bool gesture) {
-    m_index_rcu.read([&](const IndexMap& idx) {
-        auto it = idx.find(key);
-        if (it != idx.end()) {
-            it->second->m_metadata.m_in_gesture.store(gesture, std::memory_order_relaxed);
-        }
-    });
-}
+template TANH_API void State::create_in_root(std::string_view key, const double& value);
+template TANH_API void State::create_in_root(std::string_view key, const float& value);
+template TANH_API void State::create_in_root(std::string_view key, const int& value);
+template TANH_API void State::create_in_root(std::string_view key, const bool& value);
+template TANH_API void State::create_in_root(std::string_view key, const std::string& value);
 
 template TANH_API void State::set_in_root(std::string_view key,
                                           const double& value,
-                                          NotifyStrategies strategy,
                                           ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
                                           const float& value,
-                                          NotifyStrategies strategy,
                                           ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
                                           const int& value,
-                                          NotifyStrategies strategy,
                                           ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
                                           const bool& value,
-                                          NotifyStrategies strategy,
                                           ParameterListener* source);
 template TANH_API void State::set_in_root(std::string_view key,
                                           const std::string& value,
-                                          NotifyStrategies strategy,
                                           ParameterListener* source);
 
 template TANH_API double State::get_from_root(std::string_view key,
@@ -606,8 +690,35 @@ template TANH_API bool State::get_from_root(std::string_view key,
 template TANH_API std::string State::get_from_root(std::string_view key, bool allow_blocking) const
     TANH_NONBLOCKING_FUNCTION;
 
-template TANH_API ParameterHandle<double> State::get_handle(std::string_view key) const;
-template TANH_API ParameterHandle<float> State::get_handle(std::string_view key) const;
-template TANH_API ParameterHandle<int> State::get_handle(std::string_view key) const;
-template TANH_API ParameterHandle<bool> State::get_handle(std::string_view key) const;
+template TANH_API ParameterHandle<double> State::get_handle_from_root(std::string_view key) const;
+template TANH_API ParameterHandle<float> State::get_handle_from_root(std::string_view key) const;
+template TANH_API ParameterHandle<int> State::get_handle_from_root(std::string_view key) const;
+template TANH_API ParameterHandle<bool> State::get_handle_from_root(std::string_view key) const;
+
+template TANH_API ParameterHandle<double> State::get_handle_by_id(uint32_t id) const;
+template TANH_API ParameterHandle<float> State::get_handle_by_id(uint32_t id) const;
+template TANH_API ParameterHandle<int> State::get_handle_by_id(uint32_t id) const;
+template TANH_API ParameterHandle<bool> State::get_handle_by_id(uint32_t id) const;
+
+template TANH_API double State::get_by_id(uint32_t id,
+                                          bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API float State::get_by_id(uint32_t id,
+                                         bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API int State::get_by_id(uint32_t id,
+                                       bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API bool State::get_by_id(uint32_t id,
+                                        bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+template TANH_API std::string State::get_by_id(uint32_t id,
+                                               bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
+
+template TANH_API void State::set_by_id(uint32_t id,
+                                        const double& value,
+                                        ParameterListener* source);
+template TANH_API void State::set_by_id(uint32_t id, const float& value, ParameterListener* source);
+template TANH_API void State::set_by_id(uint32_t id, const int& value, ParameterListener* source);
+template TANH_API void State::set_by_id(uint32_t id, const bool& value, ParameterListener* source);
+template TANH_API void State::set_by_id(uint32_t id,
+                                        const std::string& value,
+                                        ParameterListener* source);
+
 }  // namespace thl

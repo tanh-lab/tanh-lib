@@ -45,6 +45,22 @@ public:
     thl::ParameterHandle<float> raw_handle() const TANH_NONBLOCKING_FUNCTION { return m_handle; }
     bool is_valid() const TANH_NONBLOCKING_FUNCTION { return m_handle.is_valid(); }
 
+    // ── Metadata accessors (RT-safe — immutable after construction) ──────
+    [[nodiscard]] const thl::ParameterDefinition& def() const TANH_NONBLOCKING_FUNCTION {
+        return m_handle.def();
+    }
+    [[nodiscard]] const thl::Range& range() const TANH_NONBLOCKING_FUNCTION {
+        return m_handle.range();
+    }
+    [[nodiscard]] std::string_view key() const TANH_NONBLOCKING_FUNCTION { return m_handle.key(); }
+    [[nodiscard]] uint32_t id() const TANH_NONBLOCKING_FUNCTION { return m_handle.id(); }
+    [[nodiscard]] uint32_t flags() const TANH_NONBLOCKING_FUNCTION { return m_handle.flags(); }
+
+    // Read the parameter value normalized to [0, 1] at a given sample offset.
+    float load_normalized(uint32_t modulation_offset = 0) const TANH_NONBLOCKING_FUNCTION {
+        return m_handle.range().to_normalized(load(modulation_offset));
+    }
+
     size_t get_buffer_size() TANH_NONBLOCKING_FUNCTION {
         if (m_target) {
             return m_target->m_modulation_buffer.size();

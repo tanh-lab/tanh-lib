@@ -4,7 +4,12 @@ project (${PROJECT_NAME} VERSION ${PROJECT_VERSION})
 add_executable(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
-	test_State.cpp
+	test_StateCore.cpp
+	test_StateNotifications.cpp
+	test_ParameterDefinitions.cpp
+	test_StateSerialization.cpp
+	test_ParameterHandle.cpp
+	test_StateThreadSafety.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
