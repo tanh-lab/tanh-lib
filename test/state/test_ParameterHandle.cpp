@@ -1,6 +1,6 @@
 #include "TestHelpers.h"
 #include "tanh/state/State.h"
-#include <future>
+#include "tanh/state/Exceptions.h"
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>

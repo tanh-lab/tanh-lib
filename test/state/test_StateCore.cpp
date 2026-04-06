@@ -1,4 +1,5 @@
 #include "tanh/state/State.h"
+#include "tanh/state/Exceptions.h"
 #include <gtest/gtest.h>
 #include <tanh/core/Numbers.h>
 
