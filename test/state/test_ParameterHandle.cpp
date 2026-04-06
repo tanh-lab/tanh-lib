@@ -378,6 +378,8 @@ TEST(StateTests, GetByIdCrossTypeConversion) {
     EXPECT_EQ(440, state.get_by_id<int>(1));
 }
 
+#if !defined(TANH_WITH_RTSAN)  // RTSAN's dynamic type checks cause these to throw, but in a real
+                               // build they should work fine.
 TEST(StateTests, GetByIdThrowsOnUnknownId) {
     State state;
     state.create("param", ParameterDefinition::make_float("P", Range(), 0.0f).param_id(1));
@@ -396,6 +398,7 @@ TEST(StateTests, GetByIdStringWithoutAllowBlockingThrows) {
     EXPECT_THROW(state.get_by_id<std::string>(30), BlockingException);
     EXPECT_NO_THROW(state.get_by_id<std::string>(30, true));
 }
+#endif
 
 // =============================================================================
 // set_by_id tests
