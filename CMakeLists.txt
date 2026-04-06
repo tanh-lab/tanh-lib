@@ -598,7 +598,7 @@ if (TANH_WITH_TESTS)
     # On iOS, test executables become .app bundles and need a bundle identifier
     # for simctl install/launch to work.
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state)
+        foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state benchmark_modulation)
             if(TARGET ${_test})
                 # Bundle IDs must use hyphens, not underscores
                 string(REPLACE "_" "-" _bundle_suffix "${_test}")

@@ -206,21 +206,16 @@ TEST(StateTests, HandleConcurrentLoadStore) {
 // ID-based access tests
 // =============================================================================
 
-// Helper: create a ParameterFloat with a specific m_id.
-static ParameterFloat make_float_with_id(const std::string& name,
-                                         Range range,
-                                         float default_val,
-                                         uint32_t id) {
-    ParameterFloat def(name, range, default_val);
-    def.m_id = id;
-    return def;
-}
-
 TEST(StateTests, GetHandleByIdBasic) {
     State state;
 
-    state.create("synth.freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
-    state.create("synth.gain", make_float_with_id("Gain", Range(0.0f, 1.0f), 0.8f, 2));
+    state.create(
+        "synth.freq",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f), 440.0f)
+            .param_id(1));
+    state.create(
+        "synth.gain",
+        ParameterDefinition::make_float("Gain", Range::linear(0.0f, 1.0f), 0.8f).param_id(2));
 
     auto freq_handle = state.get_handle_by_id<float>(1);
     auto gain_handle = state.get_handle_by_id<float>(2);
@@ -240,7 +235,9 @@ TEST(StateTests, GetHandleByIdBasic) {
 TEST(StateTests, GetByIdReturnsParameter) {
     State state;
 
-    state.create("vol", make_float_with_id("Volume", Range(0.0f, 1.0f), 0.5f, 10));
+    state.create(
+        "vol",
+        ParameterDefinition::make_float("Volume", Range::linear(0.0f, 1.0f), 0.5f).param_id(10));
 
     Parameter param = state.get_parameter_by_id(10);
     EXPECT_FLOAT_EQ(0.5f, param.to<float>());
@@ -250,7 +247,7 @@ TEST(StateTests, GetByIdReturnsParameter) {
 
 TEST(StateTests, GetHandleByIdThrowsOnUnknownId) {
     State state;
-    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+    state.create("param", ParameterDefinition::make_float("P", Range(), 0.0f).param_id(1));
 
     EXPECT_THROW(state.get_handle_by_id<float>(999), StateKeyNotFoundException);
     EXPECT_THROW(state.get_parameter_by_id(999), StateKeyNotFoundException);
@@ -258,7 +255,7 @@ TEST(StateTests, GetHandleByIdThrowsOnUnknownId) {
 
 TEST(StateTests, GetHandleByIdThrowsOnTypeMismatch) {
     State state;
-    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+    state.create("param", ParameterDefinition::make_float("P", Range(), 0.0f).param_id(1));
 
     // Parameter is float, requesting double handle should throw
     EXPECT_THROW(state.get_handle_by_id<double>(1), ParameterTypeMismatchException);
@@ -268,11 +265,12 @@ TEST(StateTests, GetHandleByIdThrowsOnTypeMismatch) {
 TEST(StateTests, DuplicateIdThrows) {
     State state;
 
-    state.create("param1", make_float_with_id("P1", Range(), 0.0f, 5));
+    state.create("param1", ParameterDefinition::make_float("P1", Range(), 0.0f).param_id(5));
 
     // Same ID 5 on a different parameter should throw
-    EXPECT_THROW(state.create("param2", make_float_with_id("P2", Range(), 0.0f, 5)),
-                 DuplicateParameterIdException);
+    EXPECT_THROW(
+        state.create("param2", ParameterDefinition::make_float("P2", Range(), 0.0f).param_id(5)),
+        DuplicateParameterIdException);
 }
 
 TEST(StateTests, AutoIdAssignment) {
@@ -293,7 +291,7 @@ TEST(StateTests, AutoIdAssignment) {
 TEST(StateTests, ClearRemovesIdIndex) {
     State state;
 
-    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+    state.create("param", ParameterDefinition::make_float("P", Range(), 0.0f).param_id(1));
 
     EXPECT_FLOAT_EQ(0.0f, state.get_handle_by_id<float>(1).load());
 
@@ -305,15 +303,9 @@ TEST(StateTests, ClearRemovesIdIndex) {
 TEST(StateTests, HandleByIdAllNumericTypes) {
     State state;
 
-    state.create("f", make_float_with_id("F", Range(), 3.14f, 1));
-
-    ParameterInt int_def("I", Range(0, 100), 42);
-    int_def.m_id = 2;
-    state.create("i", int_def);
-
-    ParameterBool bool_def("B", true);
-    bool_def.m_id = 3;
-    state.create("b", bool_def);
+    state.create("f", ParameterDefinition::make_float("F", Range(), 3.14f).param_id(1));
+    state.create("i", ParameterDefinition::make_int("I", Range::discrete(0, 100), 42).param_id(2));
+    state.create("b", ParameterDefinition::make_bool("B", true).param_id(3));
 
     auto fh = state.get_handle_by_id<float>(1);
     auto ih = state.get_handle_by_id<int>(2);
@@ -330,7 +322,10 @@ TEST(StateTests, HandleByIdAllNumericTypes) {
 
 TEST(StateTests, GetByIdFloat) {
     State state;
-    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+    state.create(
+        "freq",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f), 440.0f)
+            .param_id(1));
 
     EXPECT_FLOAT_EQ(440.0f, state.get_by_id<float>(1));
 
@@ -340,9 +335,8 @@ TEST(StateTests, GetByIdFloat) {
 
 TEST(StateTests, GetByIdInt) {
     State state;
-    ParameterInt int_def("Voices", Range(1, 16), 4);
-    int_def.m_id = 10;
-    state.create("voices", int_def);
+    state.create("voices",
+                 ParameterDefinition::make_int("Voices", Range::discrete(1, 16), 4).param_id(10));
 
     EXPECT_EQ(4, state.get_by_id<int>(10));
 
@@ -352,9 +346,7 @@ TEST(StateTests, GetByIdInt) {
 
 TEST(StateTests, GetByIdBool) {
     State state;
-    ParameterBool bool_def("Bypass", false);
-    bool_def.m_id = 20;
-    state.create("bypass", bool_def);
+    state.create("bypass", ParameterDefinition::make_bool("Bypass", false).param_id(20));
 
     EXPECT_FALSE(state.get_by_id<bool>(20));
 
@@ -376,7 +368,10 @@ TEST(StateTests, GetByIdString) {
 
 TEST(StateTests, GetByIdCrossTypeConversion) {
     State state;
-    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+    state.create(
+        "freq",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f), 440.0f)
+            .param_id(1));
 
     // Reading float param as double/int should convert
     EXPECT_FLOAT_EQ(440.0f, static_cast<float>(state.get_by_id<double>(1)));
@@ -385,7 +380,7 @@ TEST(StateTests, GetByIdCrossTypeConversion) {
 
 TEST(StateTests, GetByIdThrowsOnUnknownId) {
     State state;
-    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+    state.create("param", ParameterDefinition::make_float("P", Range(), 0.0f).param_id(1));
 
     EXPECT_THROW(state.get_by_id<float>(999), StateKeyNotFoundException);
 }
@@ -408,7 +403,10 @@ TEST(StateTests, GetByIdStringWithoutAllowBlockingThrows) {
 
 TEST(StateTests, SetByIdFloat) {
     State state;
-    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+    state.create(
+        "freq",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f), 440.0f)
+            .param_id(1));
 
     state.set_by_id<float>(1, 880.0f);
     EXPECT_FLOAT_EQ(880.0f, state.get<float>("freq"));
@@ -467,14 +465,16 @@ TEST(StateTests, SetByIdString) {
 
 TEST(StateTests, SetByIdThrowsOnUnknownId) {
     State state;
-    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+    state.create("param", ParameterDefinition::make_float("P", Range(), 0.0f).param_id(1));
 
     EXPECT_THROW(state.set_by_id<float>(999, 1.0f), StateKeyNotFoundException);
 }
 
 TEST(StateTests, SetByIdNotifiesListeners) {
     State state;
-    state.create("vol", make_float_with_id("Volume", Range(0.0f, 1.0f), 0.5f, 1));
+    state.create(
+        "vol",
+        ParameterDefinition::make_float("Volume", Range::linear(0.0f, 1.0f), 0.5f).param_id(1));
 
     TestParameterListener listener;
     state.add_listener(&listener);
@@ -486,7 +486,10 @@ TEST(StateTests, SetByIdNotifiesListeners) {
 
 TEST(StateTests, SetByIdCrossTypeConversion) {
     State state;
-    state.create("freq", make_float_with_id("Frequency", Range(20.0f, 20000.0f), 440.0f, 1));
+    state.create(
+        "freq",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f), 440.0f)
+            .param_id(1));
 
     // Set float parameter using int value
     state.set_by_id<int>(1, 880);
@@ -495,7 +498,7 @@ TEST(StateTests, SetByIdCrossTypeConversion) {
 
 TEST(StateTests, SetByIdRoundTrip) {
     State state;
-    state.create("param", make_float_with_id("P", Range(), 0.0f, 1));
+    state.create("param", ParameterDefinition::make_float("P", Range(), 0.0f).param_id(1));
 
     state.set_by_id<float>(1, 3.14f);
     EXPECT_FLOAT_EQ(3.14f, state.get_by_id<float>(1));

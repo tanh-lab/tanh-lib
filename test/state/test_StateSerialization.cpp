@@ -157,12 +157,17 @@ TEST(StateTests, StateDumpWithDefinitions) {
 
     // Create parameters with definitions
     state.create("synth.volume",
-                 ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f, 1.0f), 0.75f, 2, true, true));
-    state.create("synth.pitch", ParameterInt("Pitch", Range(-12, 12, 1), 0, true, false));
-    state.create("synth.enabled", ParameterBool("Enabled", true, true, false));
+                 ParameterDefinition::make_float("Volume", Range::linear(0.0f, 1.0f, 0.01f), 0.75f)
+                     .modulatable(true));
+    state.create(
+        "synth.pitch",
+        ParameterDefinition::make_int("Pitch", Range::discrete(-12, 12), 0).modulatable(false));
+    state.create("synth.enabled",
+                 ParameterDefinition::make_bool("Enabled", true).modulatable(false));
 
     std::vector<std::string> waveforms = {"Sine", "Saw", "Square"};
-    state.create("synth.waveform", ParameterChoice("Waveform", waveforms, 1, true, false));
+    state.create("synth.waveform",
+                 ParameterDefinition::make_choice("Waveform", waveforms, 1).modulatable(false));
 
     // Create a parameter without named definition (value-created)
     state.create("synth.internal_state", 42);
@@ -175,7 +180,7 @@ TEST(StateTests, StateDumpWithDefinitions) {
 
     // Verify it's an array
     EXPECT_TRUE(json_dump.is_array());
-    EXPECT_EQ(5, json_dump.size());
+    EXPECT_EQ(5u, json_dump.size());
 
     // Find and verify each parameter
     for (const auto& param_obj : json_dump) {
@@ -197,7 +202,8 @@ TEST(StateTests, StateDumpWithDefinitions) {
             EXPECT_FLOAT_EQ(0.0f, def["min"].get<float>());
             EXPECT_FLOAT_EQ(1.0f, def["max"].get<float>());
             EXPECT_FLOAT_EQ(0.01f, def["step"].get<float>());
-            EXPECT_FLOAT_EQ(1.0f, def["skew"].get<float>());
+            // Linear range — no "skew" key emitted
+            EXPECT_FALSE(def.contains("skew"));
             EXPECT_FLOAT_EQ(0.75f, def["default_value"].get<float>());
             EXPECT_EQ(2, def["decimal_places"].get<int>());
             EXPECT_TRUE(def["automation"].get<bool>());
@@ -251,7 +257,7 @@ TEST(StateTests, StateDumpWithDefinitions) {
 
             // Check choice data
             ASSERT_TRUE(def.contains("data"));
-            EXPECT_EQ(3, def["data"].size());
+            EXPECT_EQ(3u, def["data"].size());
             EXPECT_EQ("Sine", def["data"][0]);
             EXPECT_EQ("Saw", def["data"][1]);
             EXPECT_EQ("Square", def["data"][2]);
@@ -271,7 +277,8 @@ TEST(StateTests, StateDumpMixedParameters) {
     State state;
 
     // Some with definitions
-    state.create("audio.gain", ParameterFloat("Gain", Range(0.0f, 2.0f), 1.0f, 2));
+    state.create("audio.gain",
+                 ParameterDefinition::make_float("Gain", Range::linear(0.0f, 2.0f), 1.0f));
 
     // Some without
     state.create("audio.sample_rate", 44100);
@@ -283,7 +290,7 @@ TEST(StateTests, StateDumpMixedParameters) {
 
     // Verify structure
     EXPECT_TRUE(json_dump.is_array());
-    EXPECT_EQ(3, json_dump.size());
+    EXPECT_EQ(3u, json_dump.size());
 
     // Count parameters with and without definitions
     int with_def = 0;
@@ -306,15 +313,12 @@ TEST(StateTests, SliderPolarityInJsonDump) {
     State state;
 
     // Create parameters with different polarities
-    state.create("unipolar_param", ParameterFloat("Unipolar", Range(0.0f, 1.0f), 0.5f));
+    state.create("unipolar_param",
+                 ParameterDefinition::make_float("Unipolar", Range::linear(0.0f, 1.0f), 0.5f));
     state.create("bipolar_param",
-                 ParameterFloat("Bipolar",
-                                Range(-1.0f, 1.0f),
-                                0.0f,
-                                2,
-                                true,
-                                true,
-                                SliderPolarity::Bipolar));
+                 ParameterDefinition::make_float("Bipolar", Range::linear(-1.0f, 1.0f), 0.0f)
+                     .polarity(SliderPolarity::Bipolar)
+                     .modulatable(true));
 
     // Get state dump
     std::string dump = state.get_state_dump();
@@ -339,15 +343,19 @@ TEST(StateTests, SliderPolarityInJsonDump) {
 TEST(StateTests, GetStateDumpWithDefinitions) {
     State state;
     state.create("synth.osc.frequency",
-                 ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f));
-    state.create("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
-    state.create("synth.filter.cutoff",
-                 ParameterFloat("Cutoff", Range(20.0f, 20000.0f, 1.0f), 1000.0f));
+                 ParameterDefinition::make_float("Frequency",
+                                                 Range::power_law(20.0f, 20000.0f, 0.3f, 1.0f),
+                                                 440.0f));
+    state.create("synth.osc.volume",
+                 ParameterDefinition::make_float("Volume", Range::linear(0.0f, 1.0f, 0.01f), 0.8f));
+    state.create(
+        "synth.filter.cutoff",
+        ParameterDefinition::make_float("Cutoff", Range::linear(20.0f, 20000.0f, 1.0f), 1000.0f));
 
     auto dump = state.get_state_dump(true);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(3, json.size());
+    EXPECT_EQ(3u, json.size());
     for (const auto& entry : json) {
         EXPECT_TRUE(entry.contains("key"));
         EXPECT_TRUE(entry.contains("value"));
@@ -361,14 +369,16 @@ TEST(StateTests, GetStateDumpWithDefinitions) {
 
 TEST(StateTests, GetStateDumpWithoutDefinitions) {
     State state;
-    state.create("synth.osc.frequency",
-                 ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
-    state.create("synth.osc.volume", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
+    state.create(
+        "synth.osc.frequency",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.create("synth.osc.volume",
+                 ParameterDefinition::make_float("Volume", Range::linear(0.0f, 1.0f, 0.01f), 0.8f));
 
     auto dump = state.get_state_dump(false);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(2, json.size());
+    EXPECT_EQ(2u, json.size());
     for (const auto& entry : json) {
         EXPECT_TRUE(entry.contains("key"));
         EXPECT_TRUE(entry.contains("value"));
@@ -378,7 +388,8 @@ TEST(StateTests, GetStateDumpWithoutDefinitions) {
 
 TEST(StateTests, GetStateDumpDefaultIncludesDefinitions) {
     State state;
-    state.create("param", ParameterFloat("Param", Range(0.0f, 1.0f, 0.01f), 0.5f));
+    state.create("param",
+                 ParameterDefinition::make_float("Param", Range::linear(0.0f, 1.0f, 0.01f), 0.5f));
 
     auto dump = state.get_state_dump();  // no arg = include definitions
     auto json = nlohmann::json::parse(dump);
@@ -396,7 +407,7 @@ TEST(StateTests, GetStateDumpPreservesAllValueTypes) {
     auto dump = state.get_state_dump(false);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(5, json.size());
+    EXPECT_EQ(5u, json.size());
 
     std::map<std::string, nlohmann::json> entries;
     for (const auto& e : json) { entries[e["key"]] = e["value"]; }
@@ -433,14 +444,17 @@ TEST(StateTests, GetStateDumpRoundTrip) {
 
 TEST(StateTests, GetStateDumpDefinitionValues) {
     State state;
-    state.create(
-        "synth.freq",
-        ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f, 0.3f), 440.0f, 1, true, true));
+    state.create("synth.freq",
+                 ParameterDefinition::make_float("Frequency",
+                                                 Range::power_law(20.0f, 20000.0f, 0.3f, 1.0f),
+                                                 440.0f,
+                                                 1)
+                     .modulatable(true));
 
     // With definitions: verify actual values
     auto dump_with = state.get_state_dump(true);
     auto json_with = nlohmann::json::parse(dump_with);
-    ASSERT_EQ(1, json_with.size());
+    ASSERT_EQ(1u, json_with.size());
 
     const auto& entry = json_with[0];
     EXPECT_EQ("synth.freq", entry["key"].get<std::string>());
@@ -453,6 +467,8 @@ TEST(StateTests, GetStateDumpDefinitionValues) {
     EXPECT_NEAR(20.0f, def["min"].get<float>(), 0.01f);
     EXPECT_NEAR(20000.0f, def["max"].get<float>(), 0.01f);
     EXPECT_NEAR(1.0f, def["step"].get<float>(), 0.01f);
+    // Power-law range emits skew
+    ASSERT_TRUE(def.contains("skew"));
     EXPECT_NEAR(0.3f, def["skew"].get<float>(), 0.01f);
     EXPECT_NEAR(440.0f, def["default_value"].get<float>(), 0.01f);
     EXPECT_EQ(1, def["decimal_places"].get<int>());
@@ -463,7 +479,7 @@ TEST(StateTests, GetStateDumpDefinitionValues) {
     // Without definitions: verify no definition key at all
     auto dump_without = state.get_state_dump(false);
     auto json_without = nlohmann::json::parse(dump_without);
-    ASSERT_EQ(1, json_without.size());
+    ASSERT_EQ(1u, json_without.size());
     EXPECT_EQ("synth.freq", json_without[0]["key"].get<std::string>());
     EXPECT_NEAR(440.0f, json_without[0]["value"].get<float>(), 0.01f);
     EXPECT_FALSE(json_without[0].contains("definition"));
@@ -471,19 +487,16 @@ TEST(StateTests, GetStateDumpDefinitionValues) {
 
 TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
     State state;
-    state.create("synth.model", ParameterChoice("Model", {"Saw", "Square", "Sine"}, 0));
+    state.create("synth.model",
+                 ParameterDefinition::make_choice("Model", {"Saw", "Square", "Sine"}, 0));
     state.create("synth.pan",
-                 ParameterFloat("Pan",
-                                Range(0.0f, 1.0f, 0.01f),
-                                0.5f,
-                                2,
-                                true,
-                                true,
-                                SliderPolarity::Bipolar));
+                 ParameterDefinition::make_float("Pan", Range::linear(0.0f, 1.0f, 0.01f), 0.5f)
+                     .polarity(SliderPolarity::Bipolar)
+                     .modulatable(true));
 
     auto dump = state.get_state_dump(true);
     auto json = nlohmann::json::parse(dump);
-    ASSERT_EQ(2, json.size());
+    ASSERT_EQ(2u, json.size());
 
     // Find entries by key
     std::map<std::string, nlohmann::json> entries;
@@ -495,7 +508,7 @@ TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
     EXPECT_EQ("Model", model_def["name"].get<std::string>());
     ASSERT_TRUE(model_def.contains("data"));
     auto data = model_def["data"].get<std::vector<std::string>>();
-    ASSERT_EQ(3, data.size());
+    ASSERT_EQ(3u, data.size());
     EXPECT_EQ("Saw", data[0]);
     EXPECT_EQ("Square", data[1]);
     EXPECT_EQ("Sine", data[2]);
@@ -516,10 +529,10 @@ TEST(StateTests, GetGroupStateDump) {
     auto dump = state.get_group_state_dump("engine0", false);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(3, json.size());
+    EXPECT_EQ(3u, json.size());
     for (const auto& entry : json) {
         std::string key = entry["key"];
-        EXPECT_EQ(0, key.find("engine0"));
+        EXPECT_EQ(0u, key.find("engine0"));
     }
 }
 
@@ -533,10 +546,10 @@ TEST(StateTests, GetGroupStateDumpDeepPrefix) {
     auto dump = state.get_group_state_dump("engine0.grain0", false);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(2, json.size());
+    EXPECT_EQ(2u, json.size());
     for (const auto& entry : json) {
         std::string key = entry["key"];
-        EXPECT_EQ(0, key.find("engine0.grain0"));
+        EXPECT_EQ(0u, key.find("engine0.grain0"));
     }
 }
 
@@ -547,7 +560,7 @@ TEST(StateTests, GetGroupStateDumpNoMatch) {
     auto dump = state.get_group_state_dump("nonexistent", false);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(0, json.size());
+    EXPECT_EQ(0u, json.size());
 }
 
 TEST(StateTests, GetGroupStateDumpEmptyPrefixReturnsAll) {
@@ -563,26 +576,31 @@ TEST(StateTests, GetGroupStateDumpEmptyPrefixReturnsAll) {
 
 TEST(StateTests, GetGroupStateDumpWithDefinitions) {
     State state;
-    state.create("synth.osc.freq",
-                 ParameterFloat("Frequency", Range(20.0f, 20000.0f, 1.0f), 440.0f));
-    state.create("synth.osc.vol", ParameterFloat("Volume", Range(0.0f, 1.0f, 0.01f), 0.8f));
-    state.create("mixer.vol", ParameterFloat("Mixer Vol", Range(0.0f, 1.0f, 0.01f), 0.5f));
+    state.create(
+        "synth.osc.freq",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.create("synth.osc.vol",
+                 ParameterDefinition::make_float("Volume", Range::linear(0.0f, 1.0f, 0.01f), 0.8f));
+    state.create(
+        "mixer.vol",
+        ParameterDefinition::make_float("Mixer Vol", Range::linear(0.0f, 1.0f, 0.01f), 0.5f));
 
     auto dump = state.get_group_state_dump("synth", true);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(2, json.size());
+    EXPECT_EQ(2u, json.size());
     for (const auto& entry : json) { EXPECT_TRUE(entry.contains("definition")); }
 }
 
 TEST(StateTests, GetGroupStateDumpWithoutDefinitions) {
     State state;
-    state.create("synth.freq", ParameterFloat("Freq", Range(0.0f, 1.0f, 0.01f), 0.5f));
+    state.create("synth.freq",
+                 ParameterDefinition::make_float("Freq", Range::linear(0.0f, 1.0f, 0.01f), 0.5f));
 
     auto dump = state.get_group_state_dump("synth", false);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(1, json.size());
+    EXPECT_EQ(1u, json.size());
     EXPECT_FALSE(json[0].contains("definition"));
 }
 
@@ -594,6 +612,6 @@ TEST(StateTests, GetGroupStateDumpPrefixBoundary) {
     auto dump = state.get_group_state_dump("engine0.", false);
     auto json = nlohmann::json::parse(dump);
 
-    EXPECT_EQ(1, json.size());
+    EXPECT_EQ(1u, json.size());
     EXPECT_EQ("engine0.volume", json[0]["key"].get<std::string>());
 }

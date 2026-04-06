@@ -457,30 +457,6 @@ void StateGroup::ensure_child_groups_registered() {
     });
 }
 
-// ── Template specializations for ParameterDefinition subclasses ─────────────
-
-template <>
-TANH_API void StateGroup::create<ParameterFloat>(std::string_view path,
-                                                 const ParameterFloat& value) {
-    create(path, static_cast<const ParameterDefinition&>(value));
-}
-
-template <>
-TANH_API void StateGroup::create<ParameterInt>(std::string_view path, const ParameterInt& value) {
-    create(path, static_cast<const ParameterDefinition&>(value));
-}
-
-template <>
-TANH_API void StateGroup::create<ParameterBool>(std::string_view path, const ParameterBool& value) {
-    create(path, static_cast<const ParameterDefinition&>(value));
-}
-
-template <>
-TANH_API void StateGroup::create<ParameterChoice>(std::string_view path,
-                                                  const ParameterChoice& value) {
-    create(path, static_cast<const ParameterDefinition&>(value));
-}
-
 // ── Template instantiations ─────────────────────────────────────────────────
 
 template TANH_API void StateGroup::create(std::string_view path, const double& value);
