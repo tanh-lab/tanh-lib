@@ -56,6 +56,8 @@ TEST(CyclicModulation, IndependentSourcesAreBulkSteps) {
 
 TEST(CyclicModulation, CrossRoutingCreatesCyclicStep) {
     thl::State state;
+    state.create("param_a", modulatable_float(0.0f));
+    state.create("param_b", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
 
     // src1 owns "param_a", src2 owns "param_b"
@@ -83,6 +85,7 @@ TEST(CyclicModulation, CrossRoutingCreatesCyclicStep) {
 
 TEST(CyclicModulation, SelfEdgeCreatesCyclicStep) {
     thl::State state;
+    state.create("self_param", modulatable_float(0.0f));
     ModulationMatrix matrix(state);
 
     // src1 owns "self_param" and routes to it -> self-edge

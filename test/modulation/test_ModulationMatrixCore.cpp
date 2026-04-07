@@ -153,19 +153,128 @@ TEST(ModulationMatrix, PerRoutingDecimation) {
     EXPECT_GE(target->m_change_points.size(), k_block_size / 32);
 }
 
-TEST(ModulationMatrix, UnresolvedRoutingIgnored) {
+TEST(ModulationMatrix, UnresolvableRoutingRejected) {
     thl::State state;
     ModulationMatrix matrix(state);
     TestLFOSource lfo;
     lfo.m_frequency = 1.0f;
 
     matrix.add_source("lfo1", &lfo);
-    // Don't add a target — routing should be silently ignored
-    matrix.add_routing({"lfo1", "nonexistent", 100.0f});
+    // Target parameter does not exist in State — routing must be rejected
+    const uint32_t id = matrix.add_routing({"lfo1", "nonexistent", 100.0f});
+    EXPECT_EQ(id, k_invalid_routing_id);
 
     matrix.prepare(k_sample_rate, k_block_size);
-    // Should not crash
     matrix.process(k_block_size);
+}
+
+TEST(ModulationMatrix, AddRoutingRejectsUnregisteredSource) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    const uint32_t id = matrix.add_routing({"no_such_source", "freq", 1.0f});
+    EXPECT_EQ(id, k_invalid_routing_id);
+}
+
+TEST(ModulationMatrix, AddRoutingRejectsNonModulatableTarget) {
+    thl::State state;
+    // Create a parameter without the modulatable flag
+    state.create("fixed_param",
+                 thl::ParameterDefinition::make_float("", thl::Range::linear(0.0f, 1.0f), 0.5f));
+    ModulationMatrix matrix(state);
+    TestLFOSource lfo;
+
+    matrix.add_source("lfo1", &lfo);
+    const uint32_t id = matrix.add_routing({"lfo1", "fixed_param", 1.0f});
+    EXPECT_EQ(id, k_invalid_routing_id);
+}
+
+TEST(ModulationMatrix, AddRoutingResolvesTarget) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+    TestLFOSource lfo;
+    lfo.m_frequency = 1.0f;
+    lfo.m_waveform = LFOWaveform::Sine;
+
+    matrix.add_source("lfo1", &lfo);
+    // add_routing without prior get_smart_handle — target should be auto-resolved
+    matrix.add_routing({"lfo1", "freq", 100.0f});
+
+    const auto* target = matrix.get_target("freq");
+    ASSERT_NE(target, nullptr);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // Target should have modulation data
+    bool has_nonzero = false;
+    for (size_t i = 0; i < k_block_size; ++i) {
+        if (target->m_additive_buffer[i] != 0.0f) {
+            has_nonzero = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(has_nonzero);
+}
+
+TEST(ModulationMatrix, UnroutedTargetNotInActiveTargets) {
+    thl::State state;
+    state.create("routed", modulatable_float(0.0f));
+    state.create("unrouted", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+    TestLFOSource lfo;
+    lfo.m_frequency = 1.0f;
+
+    matrix.add_source("lfo1", &lfo);
+    matrix.get_smart_handle<float>("routed");
+    matrix.get_smart_handle<float>("unrouted");
+    matrix.add_routing({"lfo1", "routed", 100.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // Routed target should have modulation data
+    const auto* routed = matrix.get_target("routed");
+    ASSERT_NE(routed, nullptr);
+    EXPECT_FALSE(routed->m_additive_buffer.empty());
+
+    // Unrouted target should have empty buffers (not processed)
+    const auto* unrouted = matrix.get_target("unrouted");
+    ASSERT_NE(unrouted, nullptr);
+    EXPECT_FALSE(unrouted->m_has_mono_additive);
+    EXPECT_FALSE(unrouted->m_has_mono_replace);
+    EXPECT_TRUE(unrouted->m_additive_buffer.empty());
+    EXPECT_TRUE(unrouted->m_change_point_flags.empty());
+}
+
+TEST(ModulationMatrix, RoutingRemovedTargetBecomesInactive) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+    TestLFOSource lfo;
+    lfo.m_frequency = 1.0f;
+
+    matrix.add_source("lfo1", &lfo);
+    matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"lfo1", "freq", 100.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    const auto* target = matrix.get_target("freq");
+    ASSERT_NE(target, nullptr);
+    EXPECT_FALSE(target->m_additive_buffer.empty());
+
+    // Remove the routing — target should become inactive
+    matrix.remove_routing("lfo1", "freq");
+    matrix.process(k_block_size);
+
+    EXPECT_FALSE(target->m_has_mono_additive);
+    EXPECT_FALSE(target->m_has_mono_replace);
+    EXPECT_TRUE(target->m_additive_buffer.empty());
+    EXPECT_TRUE(target->m_change_point_flags.empty());
 }
 
 // ── Runtime Depth Update Tests ──────────────────────────────────────────────
