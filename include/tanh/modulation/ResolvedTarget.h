@@ -172,14 +172,17 @@ struct ResolvedTarget {
     [[nodiscard]] float read_base_as_float() const;
 
     void resize(size_t num_samples) {
-        m_additive_buffer.assign(num_samples, 0.0f);
-        m_change_point_flags.assign(num_samples, false);
-        m_change_points.clear();
-        m_change_points.reserve(num_samples);
+        if (m_has_mono_additive) { m_additive_buffer.assign(num_samples, 0.0f); }
 
         if (m_has_mono_replace) {
             m_replace_buffer.assign(num_samples, 0.0f);
             m_replace_active.assign(num_samples, 0);
+        }
+
+        if (m_has_mono_additive || m_has_mono_replace || m_voice) {
+            m_change_point_flags.assign(num_samples, false);
+            m_change_points.clear();
+            m_change_points.reserve(num_samples);
         }
 
         if (m_voice) {

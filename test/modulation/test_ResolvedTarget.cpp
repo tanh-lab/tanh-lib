@@ -6,6 +6,7 @@ using namespace thl::modulation;
 
 TEST(ResolvedTarget, BuildChangePointsFromFlags) {
     ResolvedTarget target;
+    target.m_has_mono_additive = true;
     target.resize(100);
 
     target.m_change_point_flags[5] = true;

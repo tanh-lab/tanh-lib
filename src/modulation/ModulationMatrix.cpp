@@ -84,7 +84,6 @@ ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id
     auto [target_it, inserted] = m_targets.emplace(std::string(id), ResolvedTarget{});
     auto& t = target_it->second;
     t.m_id = id;
-    t.resize(m_samples_per_block);
 
     // Populate metadata from State for normalized depth processing
     const thl::Parameter param = m_state.get_parameter(id);
@@ -192,6 +191,27 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
             }
         }
     }
+
+    // Reject routing if source is not registered
+    if (m_sources.find(routing.m_source_id) == m_sources.end()) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "modulation",
+                          "Routing rejected: source '%s' is not registered.",
+                          routing.m_source_id.c_str());
+        return k_invalid_routing_id;
+    }
+
+    // Reject routing if target parameter is not modulatable in State
+    if (!m_state.is_modulatable(routing.m_target_id)) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "modulation",
+                          "Routing rejected: target '%s' is not a modulatable parameter.",
+                          routing.m_target_id.c_str());
+        return k_invalid_routing_id;
+    }
+
+    // Resolve target if not yet in m_targets
+    ensure_target_locked(routing.m_target_id);
 
     const uint32_t id = m_next_routing_id++;
     m_user_routings.push_back(routing);
@@ -446,7 +466,17 @@ void ModulationMatrix::rebuild_schedule_locked() {
             target.m_replace_active.clear();
         }
 
-        const bool has_poly = it != target_info.end() && it->second.m_max_voices > 0;
+        const bool has_any_routing = it != target_info.end();
+        if (has_any_routing) {
+            target.m_change_point_flags.assign(m_samples_per_block, false);
+            target.m_change_points.clear();
+            target.m_change_points.reserve(m_samples_per_block);
+        } else {
+            target.m_change_point_flags.clear();
+            target.m_change_points.clear();
+        }
+
+        const bool has_poly = has_any_routing && it->second.m_max_voices > 0;
         if (has_poly) {
             const uint32_t nv = it->second.m_max_voices;
             const bool va = it->second.m_voice_additive;
@@ -577,10 +607,12 @@ void ModulationMatrix::rebuild_schedule_locked() {
     std::vector<ScheduleStep> new_schedule;
     build_schedule_from_graph(source_ids, adj, has_self_edge, new_schedule);
 
-    // Collect active target pointers
+    // Collect active target pointers — only targets with resolved routings
     std::vector<ResolvedTarget*> new_active_targets;
-    new_active_targets.reserve(m_targets.size());
-    for (auto& [id, target] : m_targets) { new_active_targets.push_back(&target); }
+    new_active_targets.reserve(target_info.size());
+    for (auto& [id, target] : m_targets) {
+        if (target_info.contains(id)) { new_active_targets.push_back(&target); }
+    }
 
     // Publish everything atomically via RCU
     m_config.update([&](ProcessingConfig& config) {
@@ -1154,7 +1186,8 @@ CombineMode combine_mode_from_string(const std::string& str) {
 
 }  // namespace
 
-nlohmann::json ModulationMatrix::to_json(bool include_state) {
+nlohmann::json  // NOLINT(misc-include-cleaner)
+    ModulationMatrix::to_json(bool include_state) {
     std::scoped_lock const lock(m_writer_mutex);
 
     nlohmann::json routings_array = nlohmann::json::array();
