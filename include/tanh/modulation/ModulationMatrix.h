@@ -78,10 +78,33 @@ public:
     SmartHandle<T> get_smart_handle(std::string_view param_key);
 
     // Routing management
-    // Returns false if the routing was rejected (duplicate Replace on the
-    // same target, or PolyToMono incompatibility).
-    bool add_routing(const ModulationRouting& routing);
-    void remove_routing(const std::string_view source_id, const std::string_view target_id);
+    // Returns a unique routing ID, or k_invalid_routing_id (0) if rejected.
+    // Rejects duplicate (source, target) pairs and duplicate Replace on the same target.
+    uint32_t add_routing(const ModulationRouting& routing);
+    void remove_routing(std::string_view source_id, std::string_view target_id);
+    void remove_routing(uint32_t routing_id);
+
+    // Update routing depth without schedule rebuild. Thread-safe.
+    // Returns false if the routing was not found.
+    bool update_routing_depth(std::string_view source_id,
+                              std::string_view target_id,
+                              float new_depth);
+    bool update_routing_depth(uint32_t routing_id, float new_depth);
+
+    // Set replace range on a routing without schedule rebuild. Thread-safe.
+    // Maps source [0,1] to [range_min, range_max] in plain parameter units.
+    // Only meaningful for Replace/ReplaceHold combine modes.
+    // Returns false if the routing was not found.
+    bool update_routing_replace_range(std::string_view source_id,
+                                      std::string_view target_id,
+                                      float range_min,
+                                      float range_max);
+    bool update_routing_replace_range(uint32_t routing_id, float range_min, float range_max);
+
+    // Clear replace range (revert to src * depth_precomputed behavior). Thread-safe.
+    // Returns false if the routing was not found.
+    bool clear_routing_replace_range(std::string_view source_id, std::string_view target_id);
+    bool clear_routing_replace_range(uint32_t routing_id);
 
     // Access the resolved target for reading modulation data.
     const ResolvedTarget* get_target(const std::string_view id) const;
@@ -111,6 +134,22 @@ private:
     // Ensure a target exists for the given id. Returns a stable pointer.
     // Must be called with m_writer_mutex held.
     ResolvedTarget* ensure_target_locked(const std::string_view id);
+
+    // Routing lookup helpers — must be called with m_writer_mutex held.
+    ModulationRouting* find_user_routing_locked(std::string_view source_id,
+                                                std::string_view target_id);
+    ModulationRouting* find_user_routing_locked(uint32_t routing_id);
+
+    // Compute the precomputed depth value for a routing given its target.
+    static float compute_depth_precomputed(const ModulationRouting& routing,
+                                           const ResolvedTarget& target);
+
+    // Routing update helpers — must be called with m_writer_mutex held.
+    bool update_routing_depth_locked(ModulationRouting& user_routing, float new_depth);
+    bool update_routing_replace_range_locked(ModulationRouting& user_routing,
+                                             float range_min,
+                                             float range_max);
+    bool clear_routing_replace_range_locked(ModulationRouting& user_routing);
 
     // Process helpers — called from within RCU read section.
     void process_source_bulk(const ProcessingConfig& config,
@@ -146,6 +185,10 @@ private:
 
     // User-facing routings — protected by m_writer_mutex
     std::vector<ModulationRouting> m_user_routings;
+
+    // Monotonically increasing routing ID counter — protected by m_writer_mutex.
+    // Starts at 1; 0 is k_invalid_routing_id.
+    uint32_t m_next_routing_id = 1;
 
     // RT-safe processing config — RCU-protected for lock-free RT reads
     thl::RCU<ProcessingConfig> m_config;

@@ -28,9 +28,16 @@ enum class RoutingMode : uint8_t {
     PolyToMono   // rejected at schedule-build time
 };
 
+// Sentinel value returned by add_routing() when the routing is rejected.
+static constexpr uint32_t k_invalid_routing_id = 0;
+
 // User-facing routing descriptor — uses string identifiers for source/target.
 // Converted to ResolvedRouting by ModulationMatrix when the schedule is built.
 struct ModulationRouting {
+    // Unique routing ID assigned by ModulationMatrix::add_routing().
+    // 0 (k_invalid_routing_id) means unassigned.
+    uint32_t m_id = k_invalid_routing_id;
+
     std::string m_source_id;
     std::string m_target_id;
     float m_depth = 1.0f;
@@ -38,10 +45,20 @@ struct ModulationRouting {
 
     CombineMode m_combine_mode = CombineMode::Additive;
 
+    // Replace range — maps source [0,1] to [min, max] in plain parameter units.
+    // Only meaningful for Replace/ReplaceHold combine modes.
+    float m_replace_range_min = 0.0f;
+    float m_replace_range_max = 1.0f;
+    bool m_has_replace_range = false;
+
     // Maximum decimation factor for this routing. The modulation matrix will
     // guarantee at least one change point every max_decimation samples along
     // this routing. 0 means use the source's native resolution.
     uint32_t m_max_decimation = 0;
+
+    // When true, this routing is skipped while the target parameter is in gesture
+    // (i.e. the user is actively interacting with the parameter).
+    bool m_skip_during_gesture = false;
 
     ModulationRouting() = default;
 

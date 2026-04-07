@@ -154,8 +154,23 @@ void ModulationMatrix::remove_source(const std::string_view id) {
     m_config.synchronize();
 }
 
-bool ModulationMatrix::add_routing(const ModulationRouting& routing) {
+uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
     std::scoped_lock const lock(m_writer_mutex);
+
+    // Reject duplicate (source, target) pair.
+    for (const auto& existing : m_user_routings) {
+        if (existing.m_source_id == routing.m_source_id &&
+            existing.m_target_id == routing.m_target_id) {
+            thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                              "modulation",
+                              "Routing rejected: duplicate source '%s' -> target '%s' "
+                              "(existing routing id %u).",
+                              routing.m_source_id.c_str(),
+                              routing.m_target_id.c_str(),
+                              existing.m_id);
+            return k_invalid_routing_id;
+        }
+    }
 
     // Reject if another Replace/ReplaceHold routing already targets the same parameter.
     const bool is_replace = routing.m_combine_mode == CombineMode::Replace ||
@@ -173,23 +188,172 @@ bool ModulationMatrix::add_routing(const ModulationRouting& routing) {
                     routing.m_source_id.c_str(),
                     routing.m_target_id.c_str(),
                     existing.m_source_id.c_str());
-                return false;
+                return k_invalid_routing_id;
             }
         }
     }
 
+    const uint32_t id = m_next_routing_id++;
     m_user_routings.push_back(routing);
+    m_user_routings.back().m_id = id;
     rebuild_schedule_locked();
-    return true;
+    return id;
 }
 
-void ModulationMatrix::remove_routing(const std::string_view source_id,
-                                      const std::string_view target_id) {
+void ModulationMatrix::remove_routing(std::string_view source_id, std::string_view target_id) {
     std::scoped_lock const lock(m_writer_mutex);
     std::erase_if(m_user_routings, [&](const ModulationRouting& r) {
         return r.m_source_id == source_id && r.m_target_id == target_id;
     });
     rebuild_schedule_locked();
+}
+
+void ModulationMatrix::remove_routing(uint32_t routing_id) {
+    std::scoped_lock const lock(m_writer_mutex);
+    std::erase_if(m_user_routings,
+                  [&](const ModulationRouting& r) { return r.m_id == routing_id; });
+    rebuild_schedule_locked();
+}
+
+// ── Private routing helpers ──────────────────────────────────────────────────
+
+ModulationRouting* ModulationMatrix::find_user_routing_locked(std::string_view source_id,
+                                                              std::string_view target_id) {
+    for (auto& r : m_user_routings) {
+        if (r.m_source_id == source_id && r.m_target_id == target_id) { return &r; }
+    }
+    return nullptr;
+}
+
+ModulationRouting* ModulationMatrix::find_user_routing_locked(uint32_t routing_id) {
+    for (auto& r : m_user_routings) {
+        if (r.m_id == routing_id) { return &r; }
+    }
+    return nullptr;
+}
+
+float ModulationMatrix::compute_depth_precomputed(const ModulationRouting& routing,
+                                                  const ResolvedTarget& target) {
+    const auto* range = target.m_range;
+    if (!range) { return routing.m_depth; }
+
+    const float span = range->m_max - range->m_min;
+    const bool is_replace = routing.m_combine_mode == CombineMode::Replace ||
+                            routing.m_combine_mode == CombineMode::ReplaceHold;
+    if (target.m_uses_normalized_buffer && !is_replace) {
+        return routing.m_depth_mode == DepthMode::Absolute ? routing.m_depth / span
+                                                           : routing.m_depth;
+    }
+    return routing.m_depth_mode == DepthMode::Normalized ? routing.m_depth * span : routing.m_depth;
+}
+
+bool ModulationMatrix::update_routing_depth_locked(ModulationRouting& user_routing,
+                                                   float new_depth) {
+    user_routing.m_depth = new_depth;
+
+    auto tgt_it = m_targets.find(user_routing.m_target_id);
+    if (tgt_it == m_targets.end()) { return false; }
+
+    const float precomputed = compute_depth_precomputed(user_routing, tgt_it->second);
+    const uint32_t id = user_routing.m_id;
+    m_config.read([&](const ProcessingConfig& config) {
+        for (const auto& r : config.m_routings) {
+            if (r.m_id == id) {
+                r.m_depth.store(new_depth, std::memory_order_relaxed);
+                r.m_depth_abs_precomputed.store(precomputed, std::memory_order_relaxed);
+                break;
+            }
+        }
+    });
+    return true;
+}
+
+bool ModulationMatrix::update_routing_replace_range_locked(ModulationRouting& user_routing,
+                                                           float range_min,
+                                                           float range_max) {
+    user_routing.m_replace_range_min = range_min;
+    user_routing.m_replace_range_max = range_max;
+    user_routing.m_has_replace_range = true;
+
+    const uint32_t id = user_routing.m_id;
+    m_config.read([&](const ProcessingConfig& config) {
+        for (const auto& r : config.m_routings) {
+            if (r.m_id == id) {
+                r.m_replace_range_min.store(range_min, std::memory_order_relaxed);
+                r.m_replace_range_max.store(range_max, std::memory_order_relaxed);
+                r.m_has_replace_range.store(true, std::memory_order_relaxed);
+                break;
+            }
+        }
+    });
+    return true;
+}
+
+bool ModulationMatrix::clear_routing_replace_range_locked(ModulationRouting& user_routing) {
+    user_routing.m_has_replace_range = false;
+
+    const uint32_t id = user_routing.m_id;
+    m_config.read([&](const ProcessingConfig& config) {
+        for (const auto& r : config.m_routings) {
+            if (r.m_id == id) {
+                r.m_has_replace_range.store(false, std::memory_order_relaxed);
+                break;
+            }
+        }
+    });
+    return true;
+}
+
+// ── Public routing update methods ───────────────────────────────────────────
+
+bool ModulationMatrix::update_routing_depth(std::string_view source_id,
+                                            std::string_view target_id,
+                                            float new_depth) {
+    std::scoped_lock const lock(m_writer_mutex);
+    auto* routing = find_user_routing_locked(source_id, target_id);
+    if (!routing) { return false; }
+    return update_routing_depth_locked(*routing, new_depth);
+}
+
+bool ModulationMatrix::update_routing_depth(uint32_t routing_id, float new_depth) {
+    std::scoped_lock const lock(m_writer_mutex);
+    auto* routing = find_user_routing_locked(routing_id);
+    if (!routing) { return false; }
+    return update_routing_depth_locked(*routing, new_depth);
+}
+
+bool ModulationMatrix::update_routing_replace_range(std::string_view source_id,
+                                                    std::string_view target_id,
+                                                    float range_min,
+                                                    float range_max) {
+    std::scoped_lock const lock(m_writer_mutex);
+    auto* routing = find_user_routing_locked(source_id, target_id);
+    if (!routing) { return false; }
+    return update_routing_replace_range_locked(*routing, range_min, range_max);
+}
+
+bool ModulationMatrix::update_routing_replace_range(uint32_t routing_id,
+                                                    float range_min,
+                                                    float range_max) {
+    std::scoped_lock const lock(m_writer_mutex);
+    auto* routing = find_user_routing_locked(routing_id);
+    if (!routing) { return false; }
+    return update_routing_replace_range_locked(*routing, range_min, range_max);
+}
+
+bool ModulationMatrix::clear_routing_replace_range(std::string_view source_id,
+                                                   std::string_view target_id) {
+    std::scoped_lock const lock(m_writer_mutex);
+    auto* routing = find_user_routing_locked(source_id, target_id);
+    if (!routing) { return false; }
+    return clear_routing_replace_range_locked(*routing);
+}
+
+bool ModulationMatrix::clear_routing_replace_range(uint32_t routing_id) {
+    std::scoped_lock const lock(m_writer_mutex);
+    auto* routing = find_user_routing_locked(routing_id);
+    if (!routing) { return false; }
+    return clear_routing_replace_range_locked(*routing);
 }
 
 const ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) const {
@@ -352,14 +516,21 @@ void ModulationMatrix::rebuild_schedule_locked() {
         }
 
         ResolvedRouting r;
+        r.m_id = routing.m_id;
         r.m_source = src_it->second;
         r.m_target = &tgt_it->second;
-        r.m_depth = routing.m_depth;
+        r.m_depth.store(routing.m_depth, std::memory_order_relaxed);
         r.m_depth_mode = routing.m_depth_mode;
         r.m_combine_mode = routing.m_combine_mode;
         r.m_routing_mode = routing_mode;
         r.m_max_decimation = routing.m_max_decimation;
+        r.m_skip_during_gesture = routing.m_skip_during_gesture;
         r.m_samples_until_update = 0;
+
+        // Replace range — copy from user routing.
+        r.m_replace_range_min.store(routing.m_replace_range_min, std::memory_order_relaxed);
+        r.m_replace_range_max.store(routing.m_replace_range_max, std::memory_order_relaxed);
+        r.m_has_replace_range.store(routing.m_has_replace_range, std::memory_order_relaxed);
 
         // Size per-voice held values for polyphonic ReplaceHold routings.
         if (r.m_combine_mode == CombineMode::ReplaceHold && tgt_poly) {
@@ -367,17 +538,8 @@ void ModulationMatrix::rebuild_schedule_locked() {
         }
 
         // Pre-compute effective depth for the RT hot path.
-        const auto* range = tgt_it->second.m_range;
-        if (range) {
-            const float span = range->m_max - range->m_min;
-            if (tgt_it->second.m_uses_normalized_buffer) {
-                r.m_depth_abs_precomputed =
-                    r.m_depth_mode == DepthMode::Absolute ? r.m_depth / span : r.m_depth;
-            } else {
-                r.m_depth_abs_precomputed =
-                    r.m_depth_mode == DepthMode::Normalized ? r.m_depth * span : r.m_depth;
-            }
-        }
+        r.m_depth_abs_precomputed.store(compute_depth_precomputed(routing, tgt_it->second),
+                                        std::memory_order_relaxed);
         new_routings.push_back(r);
     }
 
@@ -542,13 +704,25 @@ inline void apply_replace_sample_voice(const ResolvedRouting& routing,
     }
 }
 
+// Compute the replace value for a single sample, applying range mapping if active.
+inline float compute_replace_value(const ResolvedRouting& routing,
+                                   float src_sample) TANH_NONBLOCKING_FUNCTION {
+    if (routing.m_has_replace_range.load(std::memory_order_relaxed)) {
+        const float raw_depth = routing.m_depth.load(std::memory_order_relaxed);
+        const float rmin = routing.m_replace_range_min.load(std::memory_order_relaxed);
+        const float rmax = routing.m_replace_range_max.load(std::memory_order_relaxed);
+        return rmin + src_sample * raw_depth * (rmax - rmin);
+    }
+    return src_sample * routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
+}
+
 // MonoToMono: write to mono additive or mono replace buffer.
 void apply_routing_mono_to_mono(const ResolvedRouting& routing,
                                 const ModulationSource* source,
                                 size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    const float depth = routing.m_depth_abs_precomputed;
     const auto& src_output = source->get_output_buffer();
     if (routing.m_combine_mode == CombineMode::Additive) {
+        const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
         if (source->is_fully_active()) {
             for (size_t i = 0; i < num_samples; ++i) {
                 routing.m_target->m_additive_buffer[i] += src_output[i] * depth;
@@ -567,7 +741,7 @@ void apply_routing_mono_to_mono(const ResolvedRouting& routing,
                                      routing.m_target->m_replace_buffer.data(),
                                      routing.m_target->m_replace_active.data(),
                                      i,
-                                     src_output[i] * depth,
+                                     compute_replace_value(routing, src_output[i]),
                                      true);
             }
         } else {
@@ -577,7 +751,7 @@ void apply_routing_mono_to_mono(const ResolvedRouting& routing,
                                      routing.m_target->m_replace_buffer.data(),
                                      routing.m_target->m_replace_active.data(),
                                      i,
-                                     src_output[i] * depth,
+                                     compute_replace_value(routing, src_output[i]),
                                      active);
             }
         }
@@ -588,10 +762,10 @@ void apply_routing_mono_to_mono(const ResolvedRouting& routing,
 void apply_routing_poly_to_poly(const ResolvedRouting& routing,
                                 const ModulationSource* source,
                                 size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    const float depth = routing.m_depth_abs_precomputed;
     auto* vb = routing.m_target->m_voice.get();
     const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
     if (routing.m_combine_mode == CombineMode::Additive) {
+        const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
         if (source->is_fully_active()) {
             for (uint32_t v = 0; v < nv; ++v) {
                 const float* in = source->voice_output(v);
@@ -615,7 +789,13 @@ void apply_routing_poly_to_poly(const ResolvedRouting& routing,
                 float* out = vb->replace_voice(v);
                 uint8_t* active = vb->replace_active_voice(v);
                 for (size_t i = 0; i < num_samples; ++i) {
-                    apply_replace_sample_voice(routing, out, active, i, in[i] * depth, true, v);
+                    apply_replace_sample_voice(routing,
+                                               out,
+                                               active,
+                                               i,
+                                               compute_replace_value(routing, in[i]),
+                                               true,
+                                               v);
                 }
             }
         } else {
@@ -629,7 +809,7 @@ void apply_routing_poly_to_poly(const ResolvedRouting& routing,
                                                out,
                                                active,
                                                i,
-                                               in[i] * depth,
+                                               compute_replace_value(routing, in[i]),
                                                src_active[i] != 0,
                                                v);
                 }
@@ -642,10 +822,10 @@ void apply_routing_poly_to_poly(const ResolvedRouting& routing,
 void apply_routing_mono_to_poly(const ResolvedRouting& routing,
                                 const ModulationSource* source,
                                 size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    const float depth = routing.m_depth_abs_precomputed;
     const auto& src_output = source->get_output_buffer();
     auto* vb = routing.m_target->m_voice.get();
     if (routing.m_combine_mode == CombineMode::Additive) {
+        const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
         if (source->is_fully_active()) {
             for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
                 float* out = vb->additive_voice(v);
@@ -667,7 +847,12 @@ void apply_routing_mono_to_poly(const ResolvedRouting& routing,
                 float* out = vb->replace_voice(v);
                 uint8_t* active = vb->replace_active_voice(v);
                 for (size_t i = 0; i < num_samples; ++i) {
-                    apply_replace_sample(routing, out, active, i, src_output[i] * depth, true);
+                    apply_replace_sample(routing,
+                                         out,
+                                         active,
+                                         i,
+                                         compute_replace_value(routing, src_output[i]),
+                                         true);
                 }
             }
         } else {
@@ -676,7 +861,12 @@ void apply_routing_mono_to_poly(const ResolvedRouting& routing,
                 uint8_t* active = vb->replace_active_voice(v);
                 for (size_t i = 0; i < num_samples; ++i) {
                     const bool src_act = source->get_output_active_at(static_cast<uint32_t>(i));
-                    apply_replace_sample(routing, out, active, i, src_output[i] * depth, src_act);
+                    apply_replace_sample(routing,
+                                         out,
+                                         active,
+                                         i,
+                                         compute_replace_value(routing, src_output[i]),
+                                         src_act);
                 }
             }
         }
@@ -688,15 +878,15 @@ void apply_modulation_sample_mono(const ResolvedRouting& routing,
                                   float src_sample,
                                   bool src_active,
                                   size_t i) TANH_NONBLOCKING_FUNCTION {
-    const float depth = routing.m_depth_abs_precomputed;
     if (routing.m_combine_mode == CombineMode::Additive) {
+        const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
         if (src_active) { routing.m_target->m_additive_buffer[i] += src_sample * depth; }
     } else {
         apply_replace_sample(routing,
                              routing.m_target->m_replace_buffer.data(),
                              routing.m_target->m_replace_active.data(),
                              i,
-                             src_sample * depth,
+                             compute_replace_value(routing, src_sample),
                              src_active);
     }
 }
@@ -742,6 +932,11 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
     }
 
     for (const auto* routing : it->second) {
+        if (routing->m_skip_during_gesture &&
+            routing->m_target->m_record->m_in_gesture.load(std::memory_order_relaxed)) {
+            continue;
+        }
+
         switch (routing->m_routing_mode) {
             case RoutingMode::MonoToMono:
                 apply_routing_mono_to_mono(*routing, source, num_samples);
@@ -820,6 +1015,11 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
                 if (it != config.m_routings_by_source.end()) {
                     for (const auto* routing : it->second) {
                         if (routing->m_routing_mode == RoutingMode::MonoToMono) {
+                            if (routing->m_skip_during_gesture &&
+                                routing->m_target->m_record->m_in_gesture.load(
+                                    std::memory_order_relaxed)) {
+                                continue;
+                            }
                             apply_modulation_sample_mono(*routing, sample, active, i);
                         }
                     }
@@ -840,9 +1040,15 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
                             if (routing->m_routing_mode == RoutingMode::PolyToPoly &&
                                 routing->m_target->m_voice &&
                                 v < routing->m_target->m_voice->m_num_voices) {
-                                const float depth = routing->m_depth_abs_precomputed;
+                                if (routing->m_skip_during_gesture &&
+                                    routing->m_target->m_record->m_in_gesture.load(
+                                        std::memory_order_relaxed)) {
+                                    continue;
+                                }
                                 if (routing->m_combine_mode == CombineMode::Additive) {
                                     if (active) {
+                                        const float depth = routing->m_depth_abs_precomputed.load(
+                                            std::memory_order_relaxed);
                                         routing->m_target->m_voice->additive_voice(v)[i] +=
                                             sample * depth;
                                     }
@@ -852,7 +1058,7 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
                                         routing->m_target->m_voice->replace_voice(v),
                                         routing->m_target->m_voice->replace_active_voice(v),
                                         i,
-                                        sample * depth,
+                                        compute_replace_value(*routing, sample),
                                         active,
                                         v);
                                 }
@@ -870,6 +1076,11 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
         if (it == config.m_routings_by_source.end()) { continue; }
 
         for (const auto* routing : it->second) {
+            if (routing->m_skip_during_gesture &&
+                routing->m_target->m_record->m_in_gesture.load(std::memory_order_relaxed)) {
+                continue;
+            }
+
             if (routing->m_routing_mode == RoutingMode::MonoToMono) {
                 for (const uint32_t cp : source->get_change_points()) {
                     if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
@@ -949,12 +1160,18 @@ nlohmann::json ModulationMatrix::to_json(bool include_state) {
     nlohmann::json routings_array = nlohmann::json::array();
     for (const auto& r : m_user_routings) {
         nlohmann::json obj;
+        obj["id"] = r.m_id;
         obj["source_id"] = r.m_source_id;
         obj["target_id"] = r.m_target_id;
         obj["depth"] = r.m_depth;
         obj["depth_mode"] = depth_mode_to_string(r.m_depth_mode);
         obj["combine_mode"] = combine_mode_to_string(r.m_combine_mode);
         obj["max_decimation"] = r.m_max_decimation;
+        if (r.m_has_replace_range) {
+            obj["replace_range_min"] = r.m_replace_range_min;
+            obj["replace_range_max"] = r.m_replace_range_max;
+        }
+        if (r.m_skip_during_gesture) { obj["skip_during_gesture"] = true; }
         routings_array.push_back(std::move(obj));
     }
 
@@ -969,33 +1186,52 @@ nlohmann::json ModulationMatrix::to_json(bool include_state) {
 void ModulationMatrix::from_json(const nlohmann::json& json) {
     std::scoped_lock const lock(m_writer_mutex);
 
+    // Helper: parse a single routing JSON object into a ModulationRouting.
+    auto parse_routing = [](const nlohmann::json& obj) -> ModulationRouting {
+        ModulationRouting r;
+        r.m_id = obj.value("id", k_invalid_routing_id);
+        r.m_source_id = obj.value("source_id", "");
+        r.m_target_id = obj.value("target_id", "");
+        r.m_depth = obj.value("depth", 1.0f);
+        r.m_depth_mode = depth_mode_from_string(obj.value("depth_mode", "normalized"));
+        r.m_combine_mode = combine_mode_from_string(obj.value("combine_mode", "additive"));
+        r.m_max_decimation = obj.value("max_decimation", uint32_t{0});
+        r.m_skip_during_gesture = obj.value("skip_during_gesture", false);
+        if (obj.contains("replace_range_min") && obj.contains("replace_range_max")) {
+            r.m_replace_range_min = obj.value("replace_range_min", 0.0f);
+            r.m_replace_range_max = obj.value("replace_range_max", 1.0f);
+            r.m_has_replace_range = true;
+        }
+        return r;
+    };
+
+    // Helper: after loading routings, assign IDs to any that are missing and
+    // advance m_next_routing_id past the highest loaded ID.
+    auto finalize_ids = [this]() {
+        uint32_t max_id = 0;
+        for (const auto& r : m_user_routings) {
+            if (r.m_id != k_invalid_routing_id && r.m_id > max_id) { max_id = r.m_id; }
+        }
+        m_next_routing_id = max_id + 1;
+        // Assign IDs to routings that didn't have one in the JSON.
+        for (auto& r : m_user_routings) {
+            if (r.m_id == k_invalid_routing_id) { r.m_id = m_next_routing_id++; }
+        }
+    };
+
     // Restore routings
     if (json.contains("modulation_routings") && json["modulation_routings"].is_array()) {
         m_user_routings.clear();
         for (const auto& obj : json["modulation_routings"]) {
-            ModulationRouting r;
-            r.m_source_id = obj.value("source_id", "");
-            r.m_target_id = obj.value("target_id", "");
-            r.m_depth = obj.value("depth", 1.0f);
-            r.m_depth_mode = depth_mode_from_string(obj.value("depth_mode", "normalized"));
-            r.m_combine_mode = combine_mode_from_string(obj.value("combine_mode", "additive"));
-            r.m_max_decimation = obj.value("max_decimation", uint32_t{0});
-            m_user_routings.push_back(std::move(r));
+            m_user_routings.push_back(parse_routing(obj));
         }
+        finalize_ids();
         rebuild_schedule_locked();
     } else if (json.is_array()) {
         // Bare routings array (from to_json(false))
         m_user_routings.clear();
-        for (const auto& obj : json) {
-            ModulationRouting r;
-            r.m_source_id = obj.value("source_id", "");
-            r.m_target_id = obj.value("target_id", "");
-            r.m_depth = obj.value("depth", 1.0f);
-            r.m_depth_mode = depth_mode_from_string(obj.value("depth_mode", "normalized"));
-            r.m_combine_mode = combine_mode_from_string(obj.value("combine_mode", "additive"));
-            r.m_max_decimation = obj.value("max_decimation", uint32_t{0});
-            m_user_routings.push_back(std::move(r));
-        }
+        for (const auto& obj : json) { m_user_routings.push_back(parse_routing(obj)); }
+        finalize_ids();
         rebuild_schedule_locked();
     }
 
