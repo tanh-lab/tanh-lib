@@ -93,13 +93,10 @@ TEST(LFOSource, ProcessSingleMatchesBulk) {
     lfo_single.m_decimation = 1;
     lfo_single.prepare(k_sample_rate, k_block_size);
 
-    std::vector<float> single_output(k_block_size);
-    for (size_t i = 0; i < k_block_size; ++i) {
-        lfo_single.process_single(&single_output[i], static_cast<uint32_t>(i));
-    }
+    for (size_t i = 0; i < k_block_size; ++i) { lfo_single.process(1, i); }
 
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(lfo_bulk.get_output_buffer()[i], single_output[i])
+        EXPECT_FLOAT_EQ(lfo_bulk.get_output_buffer()[i], lfo_single.get_output_buffer()[i])
             << "Mismatch at sample " << i;
     }
 }

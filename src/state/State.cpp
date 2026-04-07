@@ -494,7 +494,7 @@ void State::set_gesture_from_root(std::string_view key, bool gesture) {
 
 // ── JSON update ─────────────────────────────────────────────────────────────
 
-void State::update_from_json(const nlohmann::json& json_data, ParameterListener* source) {
+void State::from_json(const nlohmann::json& json_data, ParameterListener* source) {
     ensure_thread_registered();
 
     auto check_parameter_exists = [this](std::string_view key) {
@@ -555,12 +555,11 @@ void State::update_from_json(const nlohmann::json& json_data, ParameterListener*
 
 // ── State dump ──────────────────────────────────────────────────────────────
 
-std::string State::get_state_dump(bool include_definitions) const {
-    return get_group_state_dump("", include_definitions);
+nlohmann::json State::to_json(bool include_definitions) const {
+    return group_to_json("", include_definitions);
 }
 
-std::string State::get_group_state_dump(std::string_view group_prefix,
-                                        bool include_definitions) const {
+nlohmann::json State::group_to_json(std::string_view group_prefix, bool include_definitions) const {
     nlohmann::json root = nlohmann::json::array();
 
     std::scoped_lock const lock(m_storage_mutex);
@@ -636,7 +635,7 @@ std::string State::get_group_state_dump(std::string_view group_prefix,
         root.push_back(param_obj);
     }
 
-    return root.dump();
+    return root;
 }
 
 // ── State management ────────────────────────────────────────────────────────

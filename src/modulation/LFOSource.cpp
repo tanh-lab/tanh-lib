@@ -14,10 +14,8 @@ void LFOSourceImpl::prepare(double sample_rate, size_t samples_per_block) {
     m_samples_until_update = 0;
 }
 
-void LFOSourceImpl::process(size_t num_samples) {
-    m_change_points.clear();
-
-    for (size_t i = 0; i < num_samples; ++i) {
+void LFOSourceImpl::process(size_t num_samples, size_t offset) {
+    for (size_t i = offset; i < offset + num_samples; ++i) {
         float const freq = get_parameter<float>(Frequency, static_cast<uint32_t>(i));
 
         m_phase_increment = static_cast<float>(freq / m_sample_rate);
@@ -29,7 +27,7 @@ void LFOSourceImpl::process(size_t num_samples) {
                 static_cast<LFOWaveform>(get_parameter<int>(Waveform, static_cast<uint32_t>(i)));
             m_last_output = generate_sample(m_phase, waveform);
             m_samples_until_update = decimation;
-            m_change_points.push_back(static_cast<uint32_t>(i));
+            record_change_point(static_cast<uint32_t>(i));
         }
         --m_samples_until_update;
 
@@ -38,27 +36,6 @@ void LFOSourceImpl::process(size_t num_samples) {
         m_phase += m_phase_increment;
         if (m_phase >= 1.0f) { m_phase -= 1.0f; }
     }
-}
-
-void LFOSourceImpl::process_single(float* out, uint32_t sample_index) {
-    float const freq = get_parameter<float>(Frequency, sample_index);
-    auto waveform = static_cast<LFOWaveform>(get_parameter<int>(Waveform, sample_index));
-    auto decimation = static_cast<uint32_t>(get_parameter<int>(Decimation, sample_index));
-
-    m_phase_increment = static_cast<float>(freq / m_sample_rate);
-
-    if (m_samples_until_update == 0) {
-        m_last_output = generate_sample(m_phase, waveform);
-        m_samples_until_update = decimation;
-        record_change_point(sample_index);
-    }
-    --m_samples_until_update;
-
-    *out = m_last_output;
-    m_output_buffer[sample_index] = m_last_output;
-
-    m_phase += m_phase_increment;
-    if (m_phase >= 1.0f) { m_phase -= 1.0f; }
 }
 
 float LFOSourceImpl::generate_sample(float phase, LFOWaveform waveform) {

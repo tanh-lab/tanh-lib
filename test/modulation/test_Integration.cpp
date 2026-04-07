@@ -111,21 +111,15 @@ class ConstantSource : public ModulationSource {
 public:
     float m_value = 1.0f;
 
+    ConstantSource() : ModulationSource(true, 0, true) {}
+
     void prepare(double /*sample_rate*/, size_t samples_per_block) override {
         resize_buffers(samples_per_block);
     }
 
-    void process(size_t num_samples) override {
-        m_change_points.clear();
-        for (size_t i = 0; i < num_samples; ++i) { m_output_buffer[i] = m_value; }
-        if (num_samples > 0) { m_change_points.push_back(0); }
-    }
-
-    void process_single(float* out, uint32_t sample_index) override {
-        m_last_output = m_value;
-        *out = m_last_output;
-        m_output_buffer[sample_index] = m_last_output;
-        if (sample_index == 0) { record_change_point(0); }
+    void process(size_t num_samples, size_t offset = 0) override {
+        for (size_t i = offset; i < offset + num_samples; ++i) { m_output_buffer[i] = m_value; }
+        if (num_samples > 0) { record_change_point(static_cast<uint32_t>(offset)); }
     }
 };
 
@@ -152,7 +146,7 @@ TEST(Integration, NormalizedDepthLinear) {
     const auto* target = matrix.get_target("param");
     ASSERT_NE(target, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], 50.0f) << "Mismatch at sample " << i;
+        EXPECT_FLOAT_EQ(target->m_additive_buffer[i], 50.0f) << "Mismatch at sample " << i;
     }
 }
 
@@ -177,7 +171,7 @@ TEST(Integration, AbsoluteDepthMode) {
     const auto* target = matrix.get_target("param");
     ASSERT_NE(target, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], 10.0f) << "Mismatch at sample " << i;
+        EXPECT_FLOAT_EQ(target->m_additive_buffer[i], 10.0f) << "Mismatch at sample " << i;
     }
 }
 
@@ -209,7 +203,7 @@ TEST(Integration, NormalizedDepthSkewed) {
     // src * depth = 0.5 * 0.3 = 0.15
     const float expected_norm_delta = 0.5f * 0.3f;
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], expected_norm_delta)
+        EXPECT_FLOAT_EQ(target->m_additive_buffer[i], expected_norm_delta)
             << "Mismatch at sample " << i;
     }
 
@@ -256,7 +250,7 @@ TEST(Integration, NormalizedDepthPeriodicWraps) {
     // src * depth = 1.0 * 0.3 = 0.3
     const float expected_norm_delta = 1.0f * 0.3f;
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], expected_norm_delta)
+        EXPECT_FLOAT_EQ(target->m_additive_buffer[i], expected_norm_delta)
             << "Mismatch at sample " << i;
     }
 
@@ -327,7 +321,7 @@ TEST(Integration, MixedAbsoluteAndNormalizedOnSameTarget) {
     const auto* target = matrix.get_target("param");
     ASSERT_NE(target, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], 25.0f) << "Mismatch at sample " << i;
+        EXPECT_FLOAT_EQ(target->m_additive_buffer[i], 25.0f) << "Mismatch at sample " << i;
     }
 }
 

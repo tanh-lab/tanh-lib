@@ -28,7 +28,7 @@ TEST(ModulationMatrix, SingleSourceSingleTarget) {
     // Modulation buffer should have non-zero values (sine LFO * depth 100)
     bool has_nonzero = false;
     for (size_t i = 0; i < k_block_size; ++i) {
-        if (target->m_modulation_buffer[i] != 0.0f) {
+        if (target->m_additive_buffer[i] != 0.0f) {
             has_nonzero = true;
             break;
         }
@@ -69,7 +69,7 @@ TEST(ModulationMatrix, MultipleSourcesSameTarget) {
     const auto& out2 = lfo2.get_output_buffer();
     for (size_t i = 0; i < k_block_size; ++i) {
         float expected = out1[i] * 50.0f + out2[i] * 25.0f;
-        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], expected) << "Mismatch at sample " << i;
+        EXPECT_FLOAT_EQ(target->m_additive_buffer[i], expected) << "Mismatch at sample " << i;
     }
 }
 
@@ -92,7 +92,7 @@ TEST(ModulationMatrix, RemoveRouting) {
     ASSERT_NE(target, nullptr);
     bool has_nonzero = false;
     for (size_t i = 0; i < k_block_size; ++i) {
-        if (target->m_modulation_buffer[i] != 0.0f) {
+        if (target->m_additive_buffer[i] != 0.0f) {
             has_nonzero = true;
             break;
         }
@@ -105,9 +105,9 @@ TEST(ModulationMatrix, RemoveRouting) {
 
     target = matrix.get_target("freq");
     ASSERT_NE(target, nullptr);
-    for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target->m_modulation_buffer[i], 0.0f);
-    }
+    // No routings → sparse allocation clears the buffer
+    EXPECT_FALSE(target->m_has_mono_additive);
+    EXPECT_TRUE(target->m_additive_buffer.empty());
 }
 
 TEST(ModulationMatrix, PerRoutingDecimation) {

@@ -10,12 +10,11 @@ enum class LFOWaveform { Sine = 0, Triangle, Saw, Square };
 
 class TANH_API LFOSourceImpl : public ModulationSource {
 public:
-    LFOSourceImpl() = default;
+    LFOSourceImpl() : ModulationSource(true, 0, true) {}
     ~LFOSourceImpl() override = default;
 
     void prepare(double sample_rate, size_t samples_per_block) override;
-    void process(size_t num_samples) override;
-    void process_single(float* out, uint32_t sample_index) override;
+    void process(size_t num_samples, size_t offset = 0) override;
 
 protected:
     enum Parameter {

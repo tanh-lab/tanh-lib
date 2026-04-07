@@ -12,26 +12,19 @@ using namespace thl::modulation;
 // Outputs a fixed value (configurable via set_value) every sample.
 class TestModSource : public ModulationSource {
 public:
-    explicit TestModSource(std::vector<std::string> keys = {}) : m_keys(std::move(keys)) {}
+    explicit TestModSource(std::vector<std::string> keys = {})
+        : ModulationSource(true, 0, true), m_keys(std::move(keys)) {}
 
     void prepare(double /*sample_rate*/, size_t samples_per_block) override {
         resize_buffers(samples_per_block);
     }
 
-    void process(size_t num_samples) override {
-        m_change_points.clear();
-        for (size_t i = 0; i < num_samples; ++i) {
+    void process(size_t num_samples, size_t offset = 0) override {
+        for (size_t i = offset; i < offset + num_samples; ++i) {
             m_last_output = m_value;
             m_output_buffer[i] = m_last_output;
         }
-        if (num_samples > 0) { m_change_points.push_back(0); }
-    }
-
-    void process_single(float* out, uint32_t sample_index) override {
-        m_last_output = m_value;
-        *out = m_last_output;
-        m_output_buffer[sample_index] = m_last_output;
-        if (sample_index == 0) { record_change_point(0); }
+        if (num_samples > 0) { record_change_point(static_cast<uint32_t>(offset)); }
     }
 
     std::vector<std::string> parameter_keys() const override { return m_keys; }
@@ -135,7 +128,7 @@ TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
     const auto* target_a = matrix.get_target("param_a");
     ASSERT_NE(target_a, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target_a->m_modulation_buffer[i], 0.7f * 2.0f)
+        EXPECT_FLOAT_EQ(target_a->m_additive_buffer[i], 0.7f * 2.0f)
             << "param_a mismatch at sample " << i;
     }
 
@@ -143,7 +136,7 @@ TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
     const auto* target_b = matrix.get_target("param_b");
     ASSERT_NE(target_b, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target_b->m_modulation_buffer[i], 0.5f * 3.0f)
+        EXPECT_FLOAT_EQ(target_b->m_additive_buffer[i], 0.5f * 3.0f)
             << "param_b mismatch at sample " << i;
     }
 }
@@ -197,7 +190,7 @@ TEST(CyclicModulation, MixedBulkAndCyclicSchedule) {
     const auto* plain = matrix.get_target("plain_target");
     ASSERT_NE(plain, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(plain->m_modulation_buffer[i], 1.0f);
+        EXPECT_FLOAT_EQ(plain->m_additive_buffer[i], 1.0f);
     }
 }
 

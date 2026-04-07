@@ -7,6 +7,8 @@
 #include <variant>
 #include <vector>
 
+#include <nlohmann/json_fwd.hpp>
+
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/modulation/ModulationRouting.h>
@@ -76,7 +78,9 @@ public:
     SmartHandle<T> get_smart_handle(std::string_view param_key);
 
     // Routing management
-    void add_routing(const ModulationRouting& routing);
+    // Returns false if the routing was rejected (duplicate Replace on the
+    // same target, or PolyToMono incompatibility).
+    bool add_routing(const ModulationRouting& routing);
     void remove_routing(const std::string_view source_id, const std::string_view target_id);
 
     // Access the resolved target for reading modulation data.
@@ -88,6 +92,17 @@ public:
 
     // Rebuild the processing schedule. Thread-safe (acquires writer mutex).
     void rebuild_schedule();
+
+    // ── Serialization ───────────────────────────────────────────────────
+    // Serialize modulation routings (and optionally State parameters) to JSON.
+    // include_state=true wraps both under {"parameters":..., "modulation_routings":...}.
+    // include_state=false returns just the routings array.
+    nlohmann::json to_json(bool include_state = true);
+
+    // Deserialize from JSON. Reads "modulation_routings" if present, replaces
+    // all user routings, and rebuilds the schedule. Forwards "parameters" to
+    // State::from_json() if present.
+    void from_json(const nlohmann::json& json);
 
 private:
     // Internal rebuild — must be called with m_writer_mutex held.

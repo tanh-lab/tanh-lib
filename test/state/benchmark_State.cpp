@@ -312,25 +312,25 @@ BENCHMARK(bm_set_with_many_parameters)->Range(1, 1024);
 // JSON Update Benchmarks
 // =============================================================================
 
-static void bm_update_from_json_simple(benchmark::State& bm_state) {
+static void bm_from_json_simple(benchmark::State& bm_state) {
     State state;
     state.create("volume", 0.5);
     state.create("muted", false);
     nlohmann::json update = {{"volume", 0.8}, {"muted", true}};
-    for ([[maybe_unused]] auto _ : bm_state) { state.update_from_json(update); }
+    for ([[maybe_unused]] auto _ : bm_state) { state.from_json(update); }
 }
-BENCHMARK(bm_update_from_json_simple);
+BENCHMARK(bm_from_json_simple);
 
-static void bm_update_from_json_nested(benchmark::State& bm_state) {
+static void bm_from_json_nested(benchmark::State& bm_state) {
     State state;
     state.create("audio.effects.reverb.wet", 0.3);
     state.create("audio.effects.reverb.dry", 0.7);
     state.create("audio.effects.reverb.room_size", 0.5);
     nlohmann::json update = {
         {"audio", {{"effects", {{"reverb", {{"wet", 0.4}, {"dry", 0.6}, {"room_size", 0.8}}}}}}}};
-    for ([[maybe_unused]] auto _ : bm_state) { state.update_from_json(update); }
+    for ([[maybe_unused]] auto _ : bm_state) { state.from_json(update); }
 }
-BENCHMARK(bm_update_from_json_nested);
+BENCHMARK(bm_from_json_nested);
 
 // =============================================================================
 // Group Operations Benchmarks
@@ -512,16 +512,16 @@ BENCHMARK(bm_handle_concurrent_loads)->Arg(1)->Arg(2)->Arg(4)->Arg(8);
 // State Dump Benchmark
 // =============================================================================
 
-static void bm_get_state_dump(benchmark::State& bm_state) {
+static void bm_to_json(benchmark::State& bm_state) {
     State state;
     state.create("volume", 0.8);
     state.create("muted", false);
     state.create("audio.effects.reverb.mix", 0.5);
     state.create("audio.effects.delay.time", 500);
     state.create("visual.brightness", 75);
-    for ([[maybe_unused]] auto _ : bm_state) { benchmark::DoNotOptimize(state.get_state_dump()); }
+    for ([[maybe_unused]] auto _ : bm_state) { benchmark::DoNotOptimize(state.to_json()); }
 }
-BENCHMARK(bm_get_state_dump);
+BENCHMARK(bm_to_json);
 
 // =============================================================================
 // Main
