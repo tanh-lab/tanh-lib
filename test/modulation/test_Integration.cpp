@@ -400,3 +400,33 @@ TEST(Integration, SmartHandleDouble) {
     // SmartHandle<double>::load() = 0.5 + static_cast<double>(0.25) = 0.75
     EXPECT_DOUBLE_EQ(handle.load(0), 0.75);
 }
+
+// ── Replace on Non-Linear Target ────────────────────────────────────────────
+
+TEST(Integration, ReplaceOnNonLinearTarget) {
+    // Replace routing on a power-law range must produce plain-unit values
+    // that SmartHandle converts correctly (no double-normalization).
+    thl::State state;
+    state.create("freq",
+                 thl::ParameterDefinition::make_float("Freq",
+                                                      thl::Range::power_law(20.0f, 20000.0f, 3.0f),
+                                                      440.0f)
+                     .modulatable(true));
+    ModulationMatrix matrix(state);
+
+    ConstantSource src;
+    src.m_value = 0.5f;
+
+    matrix.add_source("src", &src);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    // Absolute depth = 1.0 → replace value = src * depth = 0.5 * 1.0 * (20000-20) = 9990
+    // With normalized depth: replace value = src * depth * span = 0.5 * 0.5 * 19980 = 4995
+    matrix.add_routing({"src", "freq", 0.5f, 0, DepthMode::Normalized, CombineMode::Replace});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // The replace value in plain units: 0.5 * 0.5 * 19980 = 4995
+    const float expected = 0.5f * 0.5f * (20000.0f - 20.0f);
+    EXPECT_NEAR(handle.load(0), expected, 0.1f);
+}
