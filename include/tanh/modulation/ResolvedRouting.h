@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "ModulationRouting.h"
 
@@ -16,6 +17,8 @@ struct ResolvedRouting {
     ResolvedTarget* m_target = nullptr;
     float m_depth = 1.0f;
     DepthMode m_depth_mode = DepthMode::Normalized;
+    CombineMode m_combine_mode = CombineMode::Additive;
+    RoutingMode m_routing_mode = RoutingMode::MonoToMono;
     uint32_t m_max_decimation = 0;
 
     // Pre-computed per-sample depth multiplier, set at schedule-build time.
@@ -30,6 +33,15 @@ struct ResolvedRouting {
     // Mutable because it is modified during RT processing through const
     // references obtained from RCU reads.
     mutable uint32_t m_samples_until_update = 0;
+
+    // Last active replace value, persists across blocks. Used by ReplaceHold
+    // to continue replacing with the held value when the source becomes inactive.
+    // Mutable for the same reason as m_samples_until_update.
+    mutable float m_held_value = 0.0f;
+
+    // Per-voice held values for polyphonic ReplaceHold routings.
+    // Sized during schedule build. Mutable for RT processing.
+    mutable std::vector<float> m_held_voice_values;
 };
 
 }  // namespace thl::modulation

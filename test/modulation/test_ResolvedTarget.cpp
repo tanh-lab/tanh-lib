@@ -20,15 +20,16 @@ TEST(ResolvedTarget, BuildChangePointsFromFlags) {
 
 TEST(ResolvedTarget, ClearPerBlock) {
     ResolvedTarget target;
+    target.m_has_mono_additive = true;
     target.resize(100);
 
-    target.m_modulation_buffer[10] = 42.0f;
+    target.m_additive_buffer[10] = 42.0f;
     target.m_change_point_flags[10] = true;
     target.m_change_points.push_back(10);
 
     target.clear_per_block();
 
-    EXPECT_FLOAT_EQ(target.m_modulation_buffer[10], 0.0f);
+    EXPECT_FLOAT_EQ(target.m_additive_buffer[10], 0.0f);
     EXPECT_FALSE(target.m_change_point_flags[10]);
     EXPECT_TRUE(target.m_change_points.empty());
 }

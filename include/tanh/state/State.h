@@ -277,29 +277,29 @@ public:
      *
      * @warning NOT real-time safe - performs JSON parsing and memory allocation
      */
-    void update_from_json(const nlohmann::json& json_data, ParameterListener* source = nullptr);
+    void from_json(const nlohmann::json& json_data, ParameterListener* source = nullptr);
 
     /**
      * @brief Generates a JSON dump of the entire state.
      *
      * @param include_definitions Whether to include parameter definitions
-     * @return JSON string representation of the state
+     * @return JSON array of parameter objects
      *
      * @warning NOT real-time safe - performs JSON serialization
      */
-    std::string get_state_dump(bool include_definitions = true) const;
+    nlohmann::json to_json(bool include_definitions = true) const;
 
     /**
      * @brief Generates a JSON dump of parameters matching a group prefix.
      *
      * @param group_prefix Prefix to filter by (e.g., "parameter.engine0")
      * @param include_definitions Whether to include parameter definitions
-     * @return JSON string representation of matching parameters
+     * @return JSON array of matching parameter objects
      *
      * @warning NOT real-time safe - performs JSON serialization
      */
-    std::string get_group_state_dump(std::string_view group_prefix,
-                                     bool include_definitions = true) const;
+    nlohmann::json group_to_json(std::string_view group_prefix,
+                                 bool include_definitions = true) const;
 
     // ── State management ─────────────────────────────────────────────────
 

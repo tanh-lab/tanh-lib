@@ -11,6 +11,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_SmartHandle.cpp
 	test_ResolvedTarget.cpp
 	test_Integration.cpp
+	test_PolyphonicModulation.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

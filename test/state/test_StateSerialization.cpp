@@ -27,7 +27,7 @@ TEST(StateTests, UpdateFromJson) {
     // Basic JSON update
     nlohmann::json simple_update = {{"volume", 0.8}, {"muted", true}};
 
-    state.update_from_json(simple_update);
+    state.from_json(simple_update);
 
     // Verify the updated values
     EXPECT_DOUBLE_EQ(0.8, state.get<double>("volume"));
@@ -37,7 +37,7 @@ TEST(StateTests, UpdateFromJson) {
     // Test nested JSON update
     nlohmann::json nested_update = {{"eq", {{"bass", 7}, {"treble", 4}}}};
 
-    state.update_from_json(nested_update);
+    state.from_json(nested_update);
 
     // Verify the nested updates
     EXPECT_EQ(7, state.get<int>("eq.bass"));
@@ -46,7 +46,7 @@ TEST(StateTests, UpdateFromJson) {
     // Test mixed update with different types
     nlohmann::json mixed_update = {{"name", "new device"}, {"eq", {{"bass", 10}}}};
 
-    state.update_from_json(mixed_update);
+    state.from_json(mixed_update);
 
     EXPECT_EQ("new device", state.get<std::string>("name", true));
     EXPECT_EQ(10, state.get<int>("eq.bass"));
@@ -67,7 +67,7 @@ TEST(StateTests, UpdateFromJsonNonExistentKey) {
     EXPECT_THROW(
         {
             try {
-                state.update_from_json(invalid_update);
+                state.from_json(invalid_update);
             } catch (const StateKeyNotFoundException& e) {
                 // Verify the error message contains the key name
                 EXPECT_TRUE(std::string(e.what()).find("non_existent") != std::string::npos);
@@ -98,7 +98,7 @@ TEST(StateTests, UpdateFromJsonDeepNesting) {
     nlohmann::json deep_update = {
         {"audio", {{"effects", {{"reverb", {{"wet", 0.4}, {"room_size", 0.8}}}}}}}};
 
-    state.update_from_json(deep_update);
+    state.from_json(deep_update);
 
     // Verify the deep updates
     EXPECT_DOUBLE_EQ(0.4, state.get<double>("audio.effects.reverb.wet"));
@@ -123,7 +123,7 @@ TEST(StateTests, UpdateFromJsonNumericTypes) {
         {"bool_value", 1}     // Integer literal to bool parameter
     };
 
-    state.update_from_json(numeric_update);
+    state.from_json(numeric_update);
 
     // Verify appropriate type conversions
     EXPECT_DOUBLE_EQ(2.0, state.get<double>("double_value"));
@@ -144,8 +144,8 @@ TEST(StateTests, UpdateFromJsonNumericTypes) {
 TEST(StateTests, EmptyStateDump) {
     State state;
 
-    std::string dump = state.get_state_dump();
-    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    auto dump = state.to_json();
+    const auto& json_dump = dump;  // dump is already nlohmann::json
 
     EXPECT_TRUE(json_dump.is_array());
     EXPECT_TRUE(json_dump.empty());
@@ -173,10 +173,10 @@ TEST(StateTests, StateDumpWithDefinitions) {
     state.create("synth.internal_state", 42);
 
     // Get state dump
-    std::string dump = state.get_state_dump();
+    auto dump = state.to_json();
 
     // Parse JSON
-    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    const auto& json_dump = dump;  // dump is already nlohmann::json
 
     // Verify it's an array
     EXPECT_TRUE(json_dump.is_array());
@@ -285,8 +285,8 @@ TEST(StateTests, StateDumpMixedParameters) {
     state.create("audio.buffer_size", 512);
 
     // Get dump
-    std::string dump = state.get_state_dump();
-    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    auto dump = state.to_json();
+    const auto& json_dump = dump;  // dump is already nlohmann::json
 
     // Verify structure
     EXPECT_TRUE(json_dump.is_array());
@@ -321,8 +321,8 @@ TEST(StateTests, SliderPolarityInJsonDump) {
                      .modulatable(true));
 
     // Get state dump
-    std::string dump = state.get_state_dump();
-    nlohmann::json json_dump = nlohmann::json::parse(dump);
+    auto dump = state.to_json();
+    const auto& json_dump = dump;  // dump is already nlohmann::json
 
     // Find and verify each parameter
     for (const auto& param_obj : json_dump) {
@@ -352,8 +352,8 @@ TEST(StateTests, GetStateDumpWithDefinitions) {
         "synth.filter.cutoff",
         ParameterDefinition::make_float("Cutoff", Range::linear(20.0f, 20000.0f, 1.0f), 1000.0f));
 
-    auto dump = state.get_state_dump(true);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.to_json(true);
+    const auto& json = dump;
 
     EXPECT_EQ(3u, json.size());
     for (const auto& entry : json) {
@@ -375,8 +375,8 @@ TEST(StateTests, GetStateDumpWithoutDefinitions) {
     state.create("synth.osc.volume",
                  ParameterDefinition::make_float("Volume", Range::linear(0.0f, 1.0f, 0.01f), 0.8f));
 
-    auto dump = state.get_state_dump(false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.to_json(false);
+    const auto& json = dump;
 
     EXPECT_EQ(2u, json.size());
     for (const auto& entry : json) {
@@ -391,8 +391,8 @@ TEST(StateTests, GetStateDumpDefaultIncludesDefinitions) {
     state.create("param",
                  ParameterDefinition::make_float("Param", Range::linear(0.0f, 1.0f, 0.01f), 0.5f));
 
-    auto dump = state.get_state_dump();  // no arg = include definitions
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.to_json();  // no arg = include definitions
+    const auto& json = dump;
     EXPECT_TRUE(json[0].contains("definition"));
 }
 
@@ -404,8 +404,8 @@ TEST(StateTests, GetStateDumpPreservesAllValueTypes) {
     state.create("b", true);
     state.create("s", std::string("hello"));
 
-    auto dump = state.get_state_dump(false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.to_json(false);
+    const auto& json = dump;
 
     EXPECT_EQ(5u, json.size());
 
@@ -425,8 +425,8 @@ TEST(StateTests, GetStateDumpRoundTrip) {
     state.create("synth.vol", 0.8f);
     state.create("mixer.vol", 0.5f);
 
-    auto dump = state.get_state_dump(false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.to_json(false);
+    const auto& json = dump;
 
     state.clear();
     EXPECT_TRUE(state.is_empty());
@@ -452,8 +452,8 @@ TEST(StateTests, GetStateDumpDefinitionValues) {
                      .modulatable(true));
 
     // With definitions: verify actual values
-    auto dump_with = state.get_state_dump(true);
-    auto json_with = nlohmann::json::parse(dump_with);
+    auto dump_with = state.to_json(true);
+    const auto& json_with = dump_with;
     ASSERT_EQ(1u, json_with.size());
 
     const auto& entry = json_with[0];
@@ -477,8 +477,8 @@ TEST(StateTests, GetStateDumpDefinitionValues) {
     EXPECT_EQ("unipolar", def["slider_polarity"].get<std::string>());
 
     // Without definitions: verify no definition key at all
-    auto dump_without = state.get_state_dump(false);
-    auto json_without = nlohmann::json::parse(dump_without);
+    auto dump_without = state.to_json(false);
+    const auto& json_without = dump_without;
     ASSERT_EQ(1u, json_without.size());
     EXPECT_EQ("synth.freq", json_without[0]["key"].get<std::string>());
     EXPECT_NEAR(440.0f, json_without[0]["value"].get<float>(), 0.01f);
@@ -494,8 +494,8 @@ TEST(StateTests, GetStateDumpDefinitionChoiceAndBipolar) {
                      .polarity(SliderPolarity::Bipolar)
                      .modulatable(true));
 
-    auto dump = state.get_state_dump(true);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.to_json(true);
+    const auto& json = dump;
     ASSERT_EQ(2u, json.size());
 
     // Find entries by key
@@ -526,8 +526,8 @@ TEST(StateTests, GetGroupStateDump) {
     state.create("engine1.grain0.volume", 0.7f);
     state.create("mixer.volume", 0.9f);
 
-    auto dump = state.get_group_state_dump("engine0", false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.group_to_json("engine0", false);
+    const auto& json = dump;
 
     EXPECT_EQ(3u, json.size());
     for (const auto& entry : json) {
@@ -543,8 +543,8 @@ TEST(StateTests, GetGroupStateDumpDeepPrefix) {
     state.create("engine0.grain1.volume", 0.8f);
     state.create("engine1.grain0.volume", 0.7f);
 
-    auto dump = state.get_group_state_dump("engine0.grain0", false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.group_to_json("engine0.grain0", false);
+    const auto& json = dump;
 
     EXPECT_EQ(2u, json.size());
     for (const auto& entry : json) {
@@ -557,8 +557,8 @@ TEST(StateTests, GetGroupStateDumpNoMatch) {
     State state;
     state.create("engine0.volume", 1.0f);
 
-    auto dump = state.get_group_state_dump("nonexistent", false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.group_to_json("nonexistent", false);
+    const auto& json = dump;
 
     EXPECT_EQ(0u, json.size());
 }
@@ -568,8 +568,8 @@ TEST(StateTests, GetGroupStateDumpEmptyPrefixReturnsAll) {
     state.create("a.b", 1.0f);
     state.create("c.d", 2.0f);
 
-    auto all_dump = state.get_state_dump(false);
-    auto group_dump = state.get_group_state_dump("", false);
+    auto all_dump = state.to_json(false);
+    auto group_dump = state.group_to_json("", false);
 
     EXPECT_EQ(all_dump, group_dump);
 }
@@ -585,8 +585,8 @@ TEST(StateTests, GetGroupStateDumpWithDefinitions) {
         "mixer.vol",
         ParameterDefinition::make_float("Mixer Vol", Range::linear(0.0f, 1.0f, 0.01f), 0.5f));
 
-    auto dump = state.get_group_state_dump("synth", true);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.group_to_json("synth", true);
+    const auto& json = dump;
 
     EXPECT_EQ(2u, json.size());
     for (const auto& entry : json) { EXPECT_TRUE(entry.contains("definition")); }
@@ -597,8 +597,8 @@ TEST(StateTests, GetGroupStateDumpWithoutDefinitions) {
     state.create("synth.freq",
                  ParameterDefinition::make_float("Freq", Range::linear(0.0f, 1.0f, 0.01f), 0.5f));
 
-    auto dump = state.get_group_state_dump("synth", false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.group_to_json("synth", false);
+    const auto& json = dump;
 
     EXPECT_EQ(1u, json.size());
     EXPECT_FALSE(json[0].contains("definition"));
@@ -609,8 +609,8 @@ TEST(StateTests, GetGroupStateDumpPrefixBoundary) {
     state.create("engine0.volume", 1.0f);
     state.create("engine0_extra.volume", 0.5f);
 
-    auto dump = state.get_group_state_dump("engine0.", false);
-    auto json = nlohmann::json::parse(dump);
+    auto dump = state.group_to_json("engine0.", false);
+    const auto& json = dump;
 
     EXPECT_EQ(1u, json.size());
     EXPECT_EQ("engine0.volume", json[0]["key"].get<std::string>());

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <initializer_list>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -39,47 +40,48 @@ public:
 
     // Read the parameter value at a given sample offset.
     // If a modulation target is attached, returns base + modulation.
+    // voice_index selects which voice buffer to read from (0 = default/mono).
+    //
+    // A target is either mono-only or voice-only (never both):
+    // - Poly target (m_voice != nullptr): reads from voice buffers
+    // - Mono target: reads from mono buffers
     //
     // For targets with normalized buffers (non-linear ranges), the curve
     // conversion happens here — one pow() per read instead of 2N per block.
-    T load(uint32_t modulation_offset = 0) const TANH_NONBLOCKING_FUNCTION {
-        const T base = m_handle.load();
-        if (m_target && modulation_offset < m_target->m_modulation_buffer.size()) {
-            const float mod = m_target->m_modulation_buffer[modulation_offset];
-            if (m_target->m_uses_normalized_buffer) {
-                // Buffer stores normalized-space delta — apply curve conversion
-                const auto base_f = static_cast<float>(base);
-                const float base_norm = m_target->m_range->to_normalized(base_f);
-                float result_norm = base_norm + mod;
-                if (m_target->m_range->m_periodic) {
-                    result_norm = std::fmod(result_norm, 1.0f);
-                    if (result_norm < 0.0f) { result_norm += 1.0f; }
-                } else {
-                    result_norm = std::clamp(result_norm, 0.0f, 1.0f);
-                }
-                const float result = m_target->m_range->from_normalized(result_norm);
-                if constexpr (std::is_same_v<T, float>) {
-                    return result;
-                } else if constexpr (std::is_same_v<T, double>) {
-                    return static_cast<double>(result);
-                } else if constexpr (std::is_same_v<T, int>) {
-                    return static_cast<int>(std::round(result));
-                } else if constexpr (std::is_same_v<T, bool>) {
-                    return result >= 0.5f;
-                }
+    T load(uint32_t modulation_offset = 0,
+           uint32_t voice_index = 0) const TANH_NONBLOCKING_FUNCTION {
+        if (!m_target) { return m_handle.load(); }
+
+        float base_f = 0.0f;
+        float mod = 0.0f;
+
+        if (m_target->m_voice) {
+            // ── Poly target: all modulation is in voice buffers ─────────
+            if (m_target->m_voice->m_has_replace &&
+                m_target->m_voice->replace_active_voice(voice_index)[modulation_offset]) {
+                base_f = m_target->m_voice->replace_voice(voice_index)[modulation_offset];
+            } else {
+                base_f = static_cast<float>(m_handle.load());
             }
-            // Plain-space delta (linear ranges or absolute depth mode)
-            if constexpr (std::is_same_v<T, float>) {
-                return base + mod;
-            } else if constexpr (std::is_same_v<T, double>) {
-                return base + static_cast<double>(mod);
-            } else if constexpr (std::is_same_v<T, int>) {
-                return static_cast<int>(std::round(static_cast<float>(base) + mod));
-            } else if constexpr (std::is_same_v<T, bool>) {
-                return (base ? 1.0f : 0.0f) + mod >= 0.5f;
+            if (m_target->m_voice->m_has_additive) {
+                mod = m_target->m_voice->additive_voice(voice_index)[modulation_offset];
+            }
+        } else {
+            // ── Mono target: all modulation is in mono buffers ──────────
+            if (m_target->m_has_mono_replace &&
+                modulation_offset < m_target->m_replace_active.size() &&
+                m_target->m_replace_active[modulation_offset]) {
+                base_f = m_target->m_replace_buffer[modulation_offset];
+            } else {
+                base_f = static_cast<float>(m_handle.load());
+            }
+            if (m_target->m_has_mono_additive &&
+                modulation_offset < m_target->m_additive_buffer.size()) {
+                mod = m_target->m_additive_buffer[modulation_offset];
             }
         }
-        return base;
+
+        return apply_modulation(base_f, mod);
     }
 
     // Access the change points for this parameter's modulation target.
@@ -104,12 +106,42 @@ public:
 
     // Read the parameter value normalized to [0, 1] at a given sample offset.
     // For normalized buffers this avoids the from_norm→to_norm roundtrip.
-    float load_normalized(uint32_t modulation_offset = 0) const TANH_NONBLOCKING_FUNCTION {
-        if (m_target && m_target->m_uses_normalized_buffer &&
-            modulation_offset < m_target->m_modulation_buffer.size()) {
-            const auto base_f = static_cast<float>(m_handle.load());
+    float load_normalized(uint32_t modulation_offset = 0,
+                          uint32_t voice_index = 0) const TANH_NONBLOCKING_FUNCTION {
+        if (!m_target) {
+            return m_handle.range().to_normalized(static_cast<float>(m_handle.load()));
+        }
+
+        float base_f = 0.0f;
+        float mod = 0.0f;
+
+        if (m_target->m_voice) {
+            if (m_target->m_voice->m_has_replace &&
+                m_target->m_voice->replace_active_voice(voice_index)[modulation_offset]) {
+                base_f = m_target->m_voice->replace_voice(voice_index)[modulation_offset];
+            } else {
+                base_f = static_cast<float>(m_handle.load());
+            }
+            if (m_target->m_voice->m_has_additive) {
+                mod = m_target->m_voice->additive_voice(voice_index)[modulation_offset];
+            }
+        } else {
+            if (m_target->m_has_mono_replace &&
+                modulation_offset < m_target->m_replace_active.size() &&
+                m_target->m_replace_active[modulation_offset]) {
+                base_f = m_target->m_replace_buffer[modulation_offset];
+            } else {
+                base_f = static_cast<float>(m_handle.load());
+            }
+            if (m_target->m_has_mono_additive &&
+                modulation_offset < m_target->m_additive_buffer.size()) {
+                mod = m_target->m_additive_buffer[modulation_offset];
+            }
+        }
+
+        if (m_target->m_uses_normalized_buffer) {
             const float base_norm = m_target->m_range->to_normalized(base_f);
-            float result_norm = base_norm + m_target->m_modulation_buffer[modulation_offset];
+            float result_norm = base_norm + mod;
             if (m_target->m_range->m_periodic) {
                 result_norm = std::fmod(result_norm, 1.0f);
                 if (result_norm < 0.0f) { result_norm += 1.0f; }
@@ -118,101 +150,197 @@ public:
             }
             return result_norm;
         }
-        return m_handle.range().to_normalized(static_cast<float>(load(modulation_offset)));
+        return m_handle.range().to_normalized(base_f + mod);
     }
 
     size_t get_buffer_size() TANH_NONBLOCKING_FUNCTION {
-        if (m_target) { return m_target->m_modulation_buffer.size(); }
+        if (m_target) { return m_target->m_additive_buffer.size(); }
         return 0;
     }
 
+    // Access the ResolvedTarget (for testing / advanced use).
+    ResolvedTarget* target() const TANH_NONBLOCKING_FUNCTION { return m_target; }
+
 private:
+    // Common modulation application: base_f + mod with curve conversion and type cast.
+    T apply_modulation(float base_f, float mod) const TANH_NONBLOCKING_FUNCTION {
+        if (m_target->m_uses_normalized_buffer) {
+            const float base_norm = m_target->m_range->to_normalized(base_f);
+            float result_norm = base_norm + mod;
+            if (m_target->m_range->m_periodic) {
+                result_norm = std::fmod(result_norm, 1.0f);
+                if (result_norm < 0.0f) { result_norm += 1.0f; }
+            } else {
+                result_norm = std::clamp(result_norm, 0.0f, 1.0f);
+            }
+            const float result = m_target->m_range->from_normalized(result_norm);
+            return convert_float<T>(result);
+        }
+        // Plain-space delta (linear ranges or absolute depth mode)
+        return convert_float<T>(base_f + mod);
+    }
+
+    template <typename U>
+    static U convert_float(float value) TANH_NONBLOCKING_FUNCTION {
+        if constexpr (std::is_same_v<U, float>) {
+            return value;
+        } else if constexpr (std::is_same_v<U, double>) {
+            return static_cast<double>(value);
+        } else if constexpr (std::is_same_v<U, int>) {
+            return static_cast<int>(std::round(value));
+        } else if constexpr (std::is_same_v<U, bool>) {
+            return value >= 0.5f;
+        }
+    }
+
     thl::ParameterHandle<T> m_handle;
     ResolvedTarget* m_target = nullptr;
 };
 
 // Free utility: collect change points from a span of SmartHandles.
 // Writes a sorted, deduplicated list of change points into target_buffer.
+// voice_index selects per-voice change points for polyphonic targets (0 = mono/default).
 //
 // RT-SAFETY CONTRACT (must hold to avoid allocation on the audio thread):
 //   target_buffer.capacity() must be >= the block size used when the
-//   ModulationMatrix was prepared. Change points are indices within a block,
-//   so their count is bounded by block_size. The caller is responsible for
-//   reserving the buffer once at prepare() time, e.g.:
+//   ModulationMatrix was prepared. The caller is responsible for reserving
+//   the buffer once at prepare() time, e.g.:
 //     m_change_points.reserve(samples_per_block);
 //
-// Uses a stack-allocated bitset (1 KiB) for O(1) dedup and inherently sorted
-// output. Supports block sizes up to 8192 samples. O(H*C + block_size/64)
-// instead of the naive O(H*C*M).
+// Uses target_buffer's pre-reserved memory as a bitset for O(1) dedup and
+// inherently sorted output. No stack allocation, no block size limit.
+// O(H*C + block_size/32) instead of the naive O(H*C*M).
+//
+// Layout within target_buffer (capacity N, W = ceil(N/32) bitset words):
+//   [ output indices ...          | bitset words at N-W .. N-1 ]
+// The bitset is placed at the high end. During extraction the write pointer
+// advances at most 32× faster than the read pointer, but the W-word bitset
+// starts N-W positions ahead of position 0, giving exactly enough headroom
+// (32·W ≤ N for any N ≥ 32, and W = ceil(N/32)).
 template <typename T>
 void collect_change_points(std::span<const SmartHandle<T>> handles,
-                           std::vector<uint32_t>& target_buffer) TANH_NONBLOCKING_FUNCTION {
-    // 128 × 64 bits = 8192 sample indices. 1 KiB on the stack.
-    static constexpr size_t k_bitset_words = 128;
-    static constexpr size_t k_max_samples = k_bitset_words * 64;
-
-    target_buffer.clear();
-
-    std::array<uint64_t, k_bitset_words> flags{};
+                           std::vector<uint32_t>& target_buffer,
+                           uint32_t voice_index = 0) TANH_NONBLOCKING_FUNCTION {
+    // First pass: find max index to determine bitset size
     uint32_t max_index = 0;
+    bool has_any = false;
 
-    for (auto& h : handles) {
+    for (const auto& h : handles) {
         if (const auto* cp = h.change_points()) {
             for (const uint32_t v : *cp) {
-                assert(v < k_max_samples &&
-                       "collect_change_points: change point index exceeds 8192 — "
-                       "block size too large for stack bitset");
-                flags[v / 64] |= uint64_t{1} << (v % 64);
                 if (v > max_index) { max_index = v; }
+                has_any = true;
+            }
+        }
+        if (h.target() && h.target()->m_voice &&
+            (h.target()->m_voice->m_has_additive || h.target()->m_voice->m_has_replace) &&
+            voice_index < h.target()->m_voice->m_num_voices) {
+            for (const uint32_t v : h.target()->m_voice->m_change_points[voice_index]) {
+                if (v > max_index) { max_index = v; }
+                has_any = true;
             }
         }
     }
 
-    // Linear scan extracts set bits in sorted order — no final sort needed.
-    const size_t words_to_scan = max_index / 64 + 1;
-    for (size_t w = 0; w < words_to_scan; ++w) {
-        auto word = flags[w];
-        while (word != 0) {
-            const int bit = std::countr_zero(word);
-            assert(target_buffer.size() < target_buffer.capacity() &&
-                   "collect_change_points: target_buffer capacity exceeded — "
-                   "reserve at least samples_per_block before calling on the audio thread");
-            target_buffer.push_back(static_cast<uint32_t>(w * 64 + bit));
-            word &= word - 1;  // clear lowest set bit
+    if (!has_any) {
+        target_buffer.resize(0);
+        return;
+    }
+
+    const size_t count = static_cast<size_t>(max_index) + 1;
+    const size_t words_needed = (count + 31) / 32;
+    assert(count <= target_buffer.capacity() &&
+           "collect_change_points: target_buffer capacity too small — "
+           "reserve at least samples_per_block before calling");
+
+    // Resize to cover the full range. Bitset goes at [count - words_needed, count).
+    target_buffer.resize(count);
+    const size_t bitset_base = count - words_needed;
+    std::memset(&target_buffer[bitset_base], 0, words_needed * sizeof(uint32_t));
+
+    // Second pass: set bits in the high-end bitset region
+    for (const auto& h : handles) {
+        if (const auto* cp = h.change_points()) {
+            for (const uint32_t v : *cp) {
+                target_buffer[bitset_base + v / 32] |= uint32_t{1} << (v % 32);
+            }
+        }
+        if (h.target() && h.target()->m_voice &&
+            (h.target()->m_voice->m_has_additive || h.target()->m_voice->m_has_replace) &&
+            voice_index < h.target()->m_voice->m_num_voices) {
+            for (const uint32_t v : h.target()->m_voice->m_change_points[voice_index]) {
+                target_buffer[bitset_base + v / 32] |= uint32_t{1} << (v % 32);
+            }
         }
     }
+
+    // Extraction: read from bitset at the high end, write indices to the low end.
+    // The write pointer never overtakes the read pointer because the bitset
+    // starts count-W positions ahead, and each word produces at most 32 entries.
+    size_t write = 0;
+    for (size_t w = 0; w < words_needed; ++w) {
+        const auto word = target_buffer[bitset_base + w];
+        auto bits = word;
+        while (bits != 0) {
+            const int bit = std::countr_zero(bits);
+            target_buffer[write++] = static_cast<uint32_t>(w * 32 + bit);
+            bits &= bits - 1;  // clear lowest set bit
+        }
+    }
+    target_buffer.resize(write);  // shrink only — trivial type, no allocation
 }
 
-// Overload: collect change points from explicit span lists.
-inline std::vector<uint32_t> collect_change_points(
-    std::initializer_list<std::span<const uint32_t>> target_change_point_lists) {
-    uint32_t max_sample = 0;
-    for (auto& list : target_change_point_lists) {
+// Overload: collect change points from explicit span lists into target_buffer.
+// Same RT-safety contract as the SmartHandle overload: target_buffer must have
+// sufficient capacity pre-reserved by the caller.
+inline void collect_change_points(
+    std::initializer_list<std::span<const uint32_t>> target_change_point_lists,
+    std::vector<uint32_t>& target_buffer) {
+    // First pass: find max index
+    uint32_t max_index = 0;
+    bool has_any = false;
+    for (const auto& list : target_change_point_lists) {
         for (const uint32_t cp : list) {
-            if (cp > max_sample) { max_sample = cp; }
+            if (cp > max_index) { max_index = cp; }
+            has_any = true;
         }
     }
-    if (max_sample == 0) {
-        bool any_non_empty = false;
-        for (auto& list : target_change_point_lists) {
-            if (!list.empty()) {
-                any_non_empty = true;
-                break;
-            }
+
+    if (!has_any) {
+        target_buffer.resize(0);
+        return;
+    }
+
+    const size_t count = static_cast<size_t>(max_index) + 1;
+    const size_t words_needed = (count + 31) / 32;
+    assert(count <= target_buffer.capacity() &&
+           "collect_change_points: target_buffer capacity too small — "
+           "reserve at least samples_per_block before calling");
+
+    // Bitset at the high end of target_buffer
+    target_buffer.resize(count);
+    const size_t bitset_base = count - words_needed;
+    std::memset(&target_buffer[bitset_base], 0, words_needed * sizeof(uint32_t));
+
+    // Set bits
+    for (const auto& list : target_change_point_lists) {
+        for (const uint32_t cp : list) {
+            target_buffer[bitset_base + cp / 32] |= uint32_t{1} << (cp % 32);
         }
-        if (!any_non_empty) { return {}; }
     }
 
-    std::vector<bool> flags(max_sample + 1, false);
-    for (auto& list : target_change_point_lists) {
-        for (const uint32_t cp : list) { flags[cp] = true; }
+    // Extract sorted indices
+    size_t write = 0;
+    for (size_t w = 0; w < words_needed; ++w) {
+        const auto word = target_buffer[bitset_base + w];
+        auto bits = word;
+        while (bits != 0) {
+            const int bit = std::countr_zero(bits);
+            target_buffer[write++] = static_cast<uint32_t>(w * 32 + bit);
+            bits &= bits - 1;
+        }
     }
-
-    std::vector<uint32_t> result;
-    for (uint32_t i = 0; i <= max_sample; ++i) {
-        if (flags[i]) { result.push_back(i); }
-    }
-    return result;
+    target_buffer.resize(write);
 }
 
 }  // namespace thl::modulation

@@ -59,7 +59,7 @@ TEST(SmartHandle, ModulationOffsetReadsBuffer) {
     // SmartHandle should read base + modulation at each offset
     const auto* target = matrix.get_target("freq");
     for (size_t i = 0; i < k_block_size; ++i) {
-        float expected = 440.0f + target->m_modulation_buffer[i];
+        float expected = 440.0f + target->m_additive_buffer[i];
         EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), expected)
             << "Mismatch at sample " << i;
     }
@@ -146,16 +146,21 @@ TEST(CollectChangePoints, MergesMultipleLists) {
     std::vector<uint32_t> list2 = {3, 5, 12};
     std::vector<uint32_t> list3 = {1, 10, 15};
 
-    auto merged = collect_change_points({std::span<const uint32_t>(list1),
-                                         std::span<const uint32_t>(list2),
-                                         std::span<const uint32_t>(list3)});
+    std::vector<uint32_t> merged;
+    merged.reserve(16);
+    collect_change_points({std::span<const uint32_t>(list1),
+                           std::span<const uint32_t>(list2),
+                           std::span<const uint32_t>(list3)},
+                          merged);
 
     std::vector<uint32_t> expected = {0, 1, 3, 5, 10, 12, 15};
     EXPECT_EQ(merged, expected);
 }
 
 TEST(CollectChangePoints, EmptyInput) {
-    auto merged = collect_change_points({});
+    std::vector<uint32_t> merged;
+    merged.reserve(16);
+    collect_change_points({}, merged);
     EXPECT_TRUE(merged.empty());
 }
 
