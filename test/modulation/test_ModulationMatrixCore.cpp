@@ -265,6 +265,8 @@ TEST(ModulationMatrix, RoutingRemovedTargetBecomesInactive) {
 
     const auto* target = matrix.get_target("freq");
     ASSERT_NE(target, nullptr);
+    EXPECT_TRUE(target->m_has_mono_additive);
+    EXPECT_TRUE(target->m_has_mono_replace);
     EXPECT_FALSE(target->m_additive_buffer.empty());
 
     // Remove the routing — target should become inactive
