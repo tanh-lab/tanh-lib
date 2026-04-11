@@ -16,6 +16,16 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/tidy.sh",
             "statusMessage": "Running clang-tidy..."
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format-ts.sh",
+            "statusMessage": "Formatting..."
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/typecheck-ts.sh",
+            "statusMessage": "Type checking..."
           }
         ]
       }
