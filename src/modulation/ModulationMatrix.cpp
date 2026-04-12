@@ -1,5 +1,7 @@
 #include "tanh/modulation/ModulationMatrix.h"
 
+#include <tanh/core/Exports.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
@@ -54,6 +56,8 @@ ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {
     m_config.register_reader_thread();
 }
 
+ModulationMatrix::~ModulationMatrix() = default;
+
 template <typename T>
 SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_key) {
     std::scoped_lock const lock(m_writer_mutex);
@@ -72,11 +76,13 @@ SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_k
     return {handle, target};
 }
 
-// Explicit instantiations for all supported types
-template SmartHandle<float> ModulationMatrix::get_smart_handle<float>(std::string_view);
-template SmartHandle<double> ModulationMatrix::get_smart_handle<double>(std::string_view);
-template SmartHandle<int> ModulationMatrix::get_smart_handle<int>(std::string_view);
-template SmartHandle<bool> ModulationMatrix::get_smart_handle<bool>(std::string_view);
+// Explicit instantiations for all supported types.
+// TANH_API (__declspec(dllexport) on Windows) is required so that MSVC exports
+// these template specialisations from the shared library.
+template TANH_API SmartHandle<float> ModulationMatrix::get_smart_handle<float>(std::string_view);
+template TANH_API SmartHandle<double> ModulationMatrix::get_smart_handle<double>(std::string_view);
+template TANH_API SmartHandle<int> ModulationMatrix::get_smart_handle<int>(std::string_view);
+template TANH_API SmartHandle<bool> ModulationMatrix::get_smart_handle<bool>(std::string_view);
 
 ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id) {
     auto it = m_targets.find(id);

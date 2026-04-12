@@ -80,12 +80,12 @@ public:
 
             // Remove from thread-local state if the node is still tracked there
             // Note: For live threads, the node ownership is in
-            // t_rcu_state.nodes We need to take ownership back before deleting
-            auto it = t_rcu_state.m_nodes.find(this);
-            if (it != t_rcu_state.m_nodes.end() && it->second.get() == current) {
+            // t_rcu_state().nodes We need to take ownership back before deleting
+            auto it = t_rcu_state().m_nodes.find(this);
+            if (it != t_rcu_state().m_nodes.end() && it->second.get() == current) {
                 // This is the current thread's node - transfer ownership back
                 it->second.release();
-                t_rcu_state.m_nodes.erase(it);
+                t_rcu_state().m_nodes.erase(it);
             }
 
             // For dead nodes or nodes from other threads (which released
@@ -245,7 +245,7 @@ public:
      * ```
      */
     void register_reader_thread() const {
-        if (!t_rcu_state.get_node(this)) {
+        if (!t_rcu_state().get_node(this)) {
             // Serialize with cleanup and count
             const std::scoped_lock lock(m_writer_mutex);
 
@@ -261,7 +261,7 @@ public:
                                                           std::memory_order_release,
                                                           std::memory_order_acquire));
 
-            t_rcu_state.m_nodes.emplace(this, std::move(node));
+            t_rcu_state().m_nodes.emplace(this, std::move(node));
         }
     }
 
@@ -327,31 +327,38 @@ private:
 
         ~ThreadRCUState() {
             // Mark all nodes as dead - they'll be cleaned up by respective RCU
-            // instances
+            // instances.
+            //
+            // No need to wait for m_read_generation == 0: this thread is
+            // exiting, so it cannot be inside a read section. Spinning here
+            // would be unsafe in Windows DLL builds where cross-DLL template
+            // TLS duplication can leave orphaned nodes pointing to memory
+            // already freed by ~RCU() in a different DLL — MSVC debug mode
+            // fills freed heap with 0xDD, making m_read_generation appear
+            // permanently non-zero.
             for (auto& [_, node] : m_nodes) {
                 if (node) {
-                    // Ensure we're not in a read section before marking as dead
-                    while (node->m_read_generation.load(std::memory_order_acquire) != 0) {
-                        std::this_thread::yield();
-                    }
                     node->m_is_dead.store(true, std::memory_order_release);
                     node.release();  // Let cleanup_dead_nodes handle deletion
                 }
             }
         }
     };
-    static thread_local ThreadRCUState t_rcu_state;
+    static ThreadRCUState& t_rcu_state() {
+        static thread_local ThreadRCUState instance;
+        return instance;
+    }
 
     // RCU operations
     void rcu_read_lock() const {
-        if (auto* node = t_rcu_state.get_node(this)) {
+        if (auto* node = t_rcu_state().get_node(this)) {
             const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
             node->m_read_generation.store(current_period, std::memory_order_release);
         }
     }
 
     void rcu_read_unlock() const {
-        if (auto* node = t_rcu_state.get_node(this)) {
+        if (auto* node = t_rcu_state().get_node(this)) {
             node->m_read_generation.store(0, std::memory_order_release);
         }
     }
@@ -471,9 +478,5 @@ private:
         // nodes are freed
     }
 };
-
-// Static member definition for thread-local state
-template <typename T>
-thread_local typename RCU<T>::ThreadRCUState RCU<T>::t_rcu_state;
 
 }  // namespace thl

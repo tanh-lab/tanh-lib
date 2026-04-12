@@ -1,6 +1,5 @@
 #include "tanh/state/State.h"
 #include <atomic>
-#include <future>
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>
@@ -82,8 +81,17 @@ TEST(StateTests, ThreadSafety) {
         }
     };
 
+    // Atomic counter for reader success — replaces future<bool> return values.
+    // std::thread has no built-in return channel, so readers increment this on
+    // success; the main thread checks it equals k_num_threads after joining.
+    std::atomic<int> readers_succeeded(0);
+
     // Function for reader threads - made real-time safe
-    auto reader = [&state, &start_flag, &ready_thread_count, k_num_operations](int id) {
+    auto reader = [&state,
+                   &start_flag,
+                   &ready_thread_count,
+                   &readers_succeeded,
+                   k_num_operations](int id) {
         // Signal that thread is ready
         ready_thread_count.fetch_add(1);
 
@@ -117,20 +125,27 @@ TEST(StateTests, ThreadSafety) {
         }
 
         // Exit real-time context before thread cleanup to avoid RTSan false
-        // positive Thread destruction involves free(), which RTSan would flag
-        // if still in RT context
+        // positive: thread destruction involves free(), which RTSan would flag
+        // if still in RT context.
         TANH_NONBLOCKING_SCOPED_DISABLER
 
-        return true;  // All reads completed successfully
+        readers_succeeded.fetch_add(1, std::memory_order_relaxed);
     };
 
-    // Launch threads
-    std::vector<std::future<void>> write_threads;
-    std::vector<std::future<bool>> read_threads;
+    // Use std::thread instead of std::async to guarantee immediate OS-level
+    // thread creation.  std::async(launch::async) on MSVC uses the Concrt
+    // thread pool, which throttles concurrent threads to ~hardware_concurrency.
+    // With k_num_threads * 2 = 20 threads all spin-waiting, Concrt never
+    // schedules the queued tasks, so ready_thread_count never reaches its
+    // target — a deadlock.  std::thread bypasses Concrt entirely.
+    std::vector<std::thread> write_threads;
+    std::vector<std::thread> read_threads;
+    write_threads.reserve(k_num_threads);
+    read_threads.reserve(k_num_threads);
 
     for (int i = 0; i < k_num_threads; ++i) {
-        write_threads.push_back(std::async(std::launch::async, writer, i));
-        read_threads.push_back(std::async(std::launch::async, reader, i));
+        write_threads.emplace_back(writer, i);
+        read_threads.emplace_back(reader, i);
     }
 
     // Wait for all threads to be ready
@@ -146,11 +161,12 @@ TEST(StateTests, ThreadSafety) {
     start_flag.store(true, std::memory_order_release);
 
     // Wait for all threads to finish - not part of real-time execution
-    for (auto& f : write_threads) { f.get(); }
+    for (auto& t : write_threads) { t.join(); }
 
     // Check that all read threads completed successfully - not part of
     // real-time execution
-    for (auto& f : read_threads) { EXPECT_TRUE(f.get()); }
+    for (auto& t : read_threads) { t.join(); }
+    EXPECT_EQ(readers_succeeded.load(), k_num_threads);
 
     // Check final state - we should have exactly k_num_threads * k_num_operations
     // operations

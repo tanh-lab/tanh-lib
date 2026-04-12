@@ -162,7 +162,8 @@ AudioDeviceManager::AudioDeviceManager() : m_impl(std::make_unique<Impl>()) {
     m_impl->m_duplex_user_data.m_manager = this;
     m_impl->m_duplex_user_data.m_role = DeviceRole::Duplex;
 
-    ma_context_config const ctx_config = ma_context_config_init();
+    // NOLINTNEXTLINE(misc-const-correctness) mutated on iOS
+    ma_context_config ctx_config = ma_context_config_init();
 
 #if defined(THL_PLATFORM_IOS)
     configure_ios_audio_session();
