@@ -502,7 +502,6 @@ LoggerConfig get_config() {
 // Public API -- callback
 // ---------------------------------------------------------------------------
 
-namespace {
 void set_callback(const Callback& cb) {
     std::vector<LogRecord> buffered;
     {
@@ -522,7 +521,6 @@ void set_callback(const Callback& cb) {
         }
     }
 }
-}  // namespace
 
 void clear_callback() {
     auto& s = state();

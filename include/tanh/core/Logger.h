@@ -78,7 +78,7 @@ TANH_API LoggerConfig get_config();
 ///       redirected to the default fallback sink.
 /// @note If the callback captures plugin/host-owned objects, call
 ///       clear_callback() before those objects are torn down.
-TANH_API void set_callback(Callback cb);
+TANH_API void set_callback(const Callback& cb);
 
 /// Remove a previously registered callback.
 TANH_API void clear_callback();
