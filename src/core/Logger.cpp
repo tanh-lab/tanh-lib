@@ -1,4 +1,3 @@
-#include <sys/syslog.h>
 #include <tanh/core/Logger.h>
 
 #include <array>
@@ -24,6 +23,7 @@
 #include <sys/sysctl.h>
 #include <unistd.h>
 #elif defined(THL_PLATFORM_LINUX)
+#include <sys/syslog.h>
 #include <systemd/sd-journal.h>
 #endif
 

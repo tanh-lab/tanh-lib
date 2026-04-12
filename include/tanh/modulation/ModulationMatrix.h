@@ -48,7 +48,7 @@ struct ProcessingConfig {
 class TANH_API ModulationMatrix {
 public:
     explicit ModulationMatrix(thl::State& state);
-    ~ModulationMatrix() = default;
+    ~ModulationMatrix();
 
     ModulationMatrix(const ModulationMatrix&) = delete;
     ModulationMatrix& operator=(const ModulationMatrix&) = delete;

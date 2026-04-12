@@ -327,13 +327,17 @@ private:
 
         ~ThreadRCUState() {
             // Mark all nodes as dead - they'll be cleaned up by respective RCU
-            // instances
+            // instances.
+            //
+            // No need to wait for m_read_generation == 0: this thread is
+            // exiting, so it cannot be inside a read section. Spinning here
+            // would be unsafe in Windows DLL builds where cross-DLL template
+            // TLS duplication can leave orphaned nodes pointing to memory
+            // already freed by ~RCU() in a different DLL — MSVC debug mode
+            // fills freed heap with 0xDD, making m_read_generation appear
+            // permanently non-zero.
             for (auto& [_, node] : m_nodes) {
                 if (node) {
-                    // Ensure we're not in a read section before marking as dead
-                    while (node->m_read_generation.load(std::memory_order_acquire) != 0) {
-                        std::this_thread::yield();
-                    }
                     node->m_is_dead.store(true, std::memory_order_release);
                     node.release();  // Let cleanup_dead_nodes handle deletion
                 }
