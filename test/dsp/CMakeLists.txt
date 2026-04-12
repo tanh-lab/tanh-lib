@@ -73,6 +73,8 @@ if(TARGET tanh_resonator)
 	)
 endif()
 
+tanh_copy_dlls_for_tests(${PROJECT_NAME})
+
 if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
 	gtest_add_tests(TARGET ${PROJECT_NAME})
 else()
