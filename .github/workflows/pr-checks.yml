@@ -35,6 +35,9 @@ jobs:
           - name: macOS-arm64
             os: macos-15
             preset: desktop-debug
+          - name: macOS-x86_64
+            os: macos-15
+            preset: macos-x64-debug
           - name: Windows-x86_64
             os: windows-2025
             preset: windows-debug
@@ -50,6 +53,34 @@ jobs:
           SOURCES: "src/ test/"
           PRESET: ${{ matrix.preset }}
       - uses: tanh-lab/ci-actions/cmake-test@main
+        with:
+          PRESET: ${{ matrix.preset }}
+
+  build-cross:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS-Simulator
+            os: macos-26
+            preset: ios-simulator-debug
+          - name: Android-arm64
+            os: ubuntu-24.04
+            preset: android-debug
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
+      - uses: nttld/setup-ndk@v1
+        if: ${{ contains(matrix.name, 'Android') }}
+        with:
+          ndk-version: r27b
+      - uses: tanh-lab/ci-actions/cmake-build@main
+        with:
+          PRESET: ${{ matrix.preset }}
+      - uses: tanh-lab/ci-actions/cmake-test@main
+        if: ${{ matrix.name == 'iOS-Simulator' }}
         with:
           PRESET: ${{ matrix.preset }}
 
