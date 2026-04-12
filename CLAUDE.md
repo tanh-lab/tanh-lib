@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Commits
+
+Never add a `Co-Authored-By` trailer to commit messages.
+
 ## Project Overview
 
 tanh-lib is a modular, real-time-safe C++20 audio library with independently buildable components. Namespace: `thl`. Platforms: macOS (12.0+), iOS (14.0+), Android, Linux, Windows.

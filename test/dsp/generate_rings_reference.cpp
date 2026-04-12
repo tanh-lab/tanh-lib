@@ -65,7 +65,7 @@ int main() {
 #endif
 
     fs::create_directories(output_dir);
-    printf("Writing reference data to: %s\n", output_dir.c_str());
+    printf("Writing reference data to: %s\n", output_dir.string().c_str());
 
     auto patch = default_patch();
     auto state = default_state();
@@ -108,9 +108,9 @@ int main() {
 
         // Write [input][out][aux] to binary file
         fs::path filepath = output_dir / info.m_filename;
-        FILE* f = fopen(filepath.c_str(), "wb");
+        FILE* f = fopen(filepath.string().c_str(), "wb");
         if (!f) {
-            fprintf(stderr, "Failed to open %s for writing\n", filepath.c_str());
+            fprintf(stderr, "Failed to open %s for writing\n", filepath.string().c_str());
             return 1;
         }
 

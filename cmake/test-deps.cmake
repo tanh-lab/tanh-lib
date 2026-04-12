@@ -38,3 +38,18 @@ target_compile_options(benchmark_main PRIVATE -w)
 
 # include Loads and runs CMake code from the file given. Loads and runs CMake code from the file given.
 include(GoogleTest)
+
+# On Windows shared-library builds, gtest_discover_tests runs the test
+# executable during the build to enumerate test names.  The executable needs
+# its DLL dependencies in the same directory to load.  Call this function after
+# defining a test target to add a POST_BUILD copy of all transitive DLLs.
+function(tanh_copy_dlls_for_tests target)
+    if(WIN32 AND BUILD_SHARED_LIBS)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${target}>
+                $<TARGET_FILE_DIR:${target}>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+endfunction()

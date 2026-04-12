@@ -1,4 +1,3 @@
-#include <sys/syslog.h>
 #include <tanh/core/Logger.h>
 
 #include <array>
@@ -24,6 +23,7 @@
 #include <sys/sysctl.h>
 #include <unistd.h>
 #elif defined(THL_PLATFORM_LINUX)
+#include <sys/syslog.h>
 #include <systemd/sd-journal.h>
 #endif
 
@@ -502,7 +502,6 @@ LoggerConfig get_config() {
 // Public API -- callback
 // ---------------------------------------------------------------------------
 
-namespace {
 void set_callback(const Callback& cb) {
     std::vector<LogRecord> buffered;
     {
@@ -522,7 +521,6 @@ void set_callback(const Callback& cb) {
         }
     }
 }
-}  // namespace
 
 void clear_callback() {
     auto& s = state();

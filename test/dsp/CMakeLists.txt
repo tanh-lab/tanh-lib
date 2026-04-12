@@ -73,7 +73,9 @@ if(TARGET tanh_resonator)
 	)
 endif()
 
-if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+tanh_copy_dlls_for_tests(${PROJECT_NAME})
+
+if(CMAKE_CROSSCOMPILING)
 	gtest_add_tests(TARGET ${PROJECT_NAME})
 else()
 	gtest_discover_tests(${PROJECT_NAME})

@@ -2,6 +2,7 @@
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/Limiter.h>
 
+#include <array>
 #include <cmath>
 #include <vector>
 

@@ -666,21 +666,24 @@ TEST(AudioFileLoader, RoundTripDataSource) {
         sink.close_file();
     }
 
-    thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
-    ASSERT_TRUE(ds.is_valid());
-    EXPECT_EQ(ds.get_channel_count(), k_num_channels);
-    EXPECT_EQ(ds.get_sample_rate(), k_sample_rate);
-    EXPECT_EQ(ds.get_total_frames(), k_frame_count);
-    EXPECT_EQ(ds.get_cursor(), 0u);
+    {
+        thl::audio_io::AudioFileLoader loader;
+        auto ds =
+            loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
+        ASSERT_TRUE(ds.is_valid());
+        EXPECT_EQ(ds.get_channel_count(), k_num_channels);
+        EXPECT_EQ(ds.get_sample_rate(), k_sample_rate);
+        EXPECT_EQ(ds.get_total_frames(), k_frame_count);
+        EXPECT_EQ(ds.get_cursor(), 0u);
 
-    std::array<float, k_frame_count * k_num_channels> read_buf{};
-    uint64_t frames_read = ds.read_pcm_frames(read_buf.data(), k_frame_count);
-    EXPECT_EQ(frames_read, k_frame_count);
-    EXPECT_EQ(ds.get_cursor(), k_frame_count);
+        std::array<float, k_frame_count * k_num_channels> read_buf{};
+        uint64_t frames_read = ds.read_pcm_frames(read_buf.data(), k_frame_count);
+        EXPECT_EQ(frames_read, k_frame_count);
+        EXPECT_EQ(ds.get_cursor(), k_frame_count);
 
-    for (size_t i = 0; i < k_frame_count * k_num_channels; ++i) {
-        EXPECT_FLOAT_EQ(read_buf[i], source_data[i]) << "Mismatch at interleaved index " << i;
+        for (size_t i = 0; i < k_frame_count * k_num_channels; ++i) {
+            EXPECT_FLOAT_EQ(read_buf[i], source_data[i]) << "Mismatch at interleaved index " << i;
+        }
     }
 
     std::filesystem::remove(test_file);
@@ -731,28 +734,31 @@ TEST(DataSource, SequentialRead) {
         sink.close_file();
     }
 
-    thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
-    ASSERT_TRUE(ds.is_valid());
-    EXPECT_EQ(ds.get_cursor(), 0u);
+    {
+        thl::audio_io::AudioFileLoader loader;
+        auto ds = loader.load_data_source_from_file(
+            test_file.string(), k_sample_rate, k_num_channels);
+        ASSERT_TRUE(ds.is_valid());
+        EXPECT_EQ(ds.get_cursor(), 0u);
 
-    constexpr uint64_t k_chunk_size = 128;
-    std::array<float, k_chunk_size> read_buf{};
-    uint64_t total_read = 0;
+        constexpr uint64_t k_chunk_size = 128;
+        std::array<float, k_chunk_size> read_buf{};
+        uint64_t total_read = 0;
 
-    for (int chunk = 0; chunk < 4; ++chunk) {
-        uint64_t frames_read = ds.read_pcm_frames(read_buf.data(), k_chunk_size);
-        EXPECT_EQ(frames_read, k_chunk_size);
+        for (int chunk = 0; chunk < 4; ++chunk) {
+            uint64_t frames_read = ds.read_pcm_frames(read_buf.data(), k_chunk_size);
+            EXPECT_EQ(frames_read, k_chunk_size);
 
-        for (uint64_t i = 0; i < frames_read; ++i) {
-            EXPECT_FLOAT_EQ(read_buf[i], source_data[total_read + i])
-                << "Mismatch at frame " << (total_read + i);
+            for (uint64_t i = 0; i < frames_read; ++i) {
+                EXPECT_FLOAT_EQ(read_buf[i], source_data[total_read + i])
+                    << "Mismatch at frame " << (total_read + i);
+            }
+            total_read += frames_read;
         }
-        total_read += frames_read;
-    }
 
-    EXPECT_EQ(total_read, k_frame_count);
-    EXPECT_EQ(ds.get_cursor(), k_frame_count);
+        EXPECT_EQ(total_read, k_frame_count);
+        EXPECT_EQ(ds.get_cursor(), k_frame_count);
+    }
 
     std::filesystem::remove(test_file);
 }
@@ -776,15 +782,18 @@ TEST(DataSource, SeekUpdatesPosition) {
         sink.close_file();
     }
 
-    thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
-    ASSERT_TRUE(ds.is_valid());
+    {
+        thl::audio_io::AudioFileLoader loader;
+        auto ds = loader.load_data_source_from_file(
+            test_file.string(), k_sample_rate, k_num_channels);
+        ASSERT_TRUE(ds.is_valid());
 
-    EXPECT_TRUE(ds.seek(64));
-    EXPECT_EQ(ds.get_cursor(), 64u);
+        EXPECT_TRUE(ds.seek(64));
+        EXPECT_EQ(ds.get_cursor(), 64u);
 
-    EXPECT_TRUE(ds.seek(0));
-    EXPECT_EQ(ds.get_cursor(), 0u);
+        EXPECT_TRUE(ds.seek(0));
+        EXPECT_EQ(ds.get_cursor(), 0u);
+    }
 
     std::filesystem::remove(test_file);
 }
@@ -809,13 +818,16 @@ TEST(DataSource, ReadBeyondEnd) {
         sink.close_file();
     }
 
-    thl::audio_io::AudioFileLoader loader;
-    auto ds = loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
-    ASSERT_TRUE(ds.is_valid());
+    {
+        thl::audio_io::AudioFileLoader loader;
+        auto ds = loader.load_data_source_from_file(
+            test_file.string(), k_sample_rate, k_num_channels);
+        ASSERT_TRUE(ds.is_valid());
 
-    std::array<float, k_frame_count * 2> read_buf{};
-    uint64_t frames_read = ds.read_pcm_frames(read_buf.data(), k_frame_count * 2);
-    EXPECT_EQ(frames_read, k_frame_count);
+        std::array<float, k_frame_count * 2> read_buf{};
+        uint64_t frames_read = ds.read_pcm_frames(read_buf.data(), k_frame_count * 2);
+        EXPECT_EQ(frames_read, k_frame_count);
+    }
 
     std::filesystem::remove(test_file);
 }
