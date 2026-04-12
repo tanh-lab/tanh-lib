@@ -62,7 +62,19 @@
       "displayName": "Windows Release",
       "binaryDir": "${sourceDir}/build/windows"
     },
-{
+    {
+      "name": "windows-arm64-debug",
+      "displayName": "Windows ARM64 Debug",
+      "binaryDir": "${sourceDir}/build/windows-arm64",
+      "architecture": {
+        "value": "ARM64",
+        "strategy": "set"
+      },
+      "cacheVariables": {
+        "TANH_WITH_TESTS": "OFF"
+      }
+    },
+    {
       "name": "android-debug",
       "displayName": "Android Debug",
       "generator": "Ninja",
@@ -88,6 +100,19 @@
         "ANDROID_PLATFORM": "android-24",
         "BUILD_SHARED_LIBS": "OFF",
         "TANH_WITH_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "android-emulator-debug",
+      "displayName": "Android Emulator Debug (x86_64)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/android-emulator/Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "x86_64",
+        "ANDROID_PLATFORM": "android-24",
+        "BUILD_SHARED_LIBS": "OFF"
       }
     },
     {
@@ -135,7 +160,7 @@
       "name": "ios-simulator-debug",
       "displayName": "iOS Simulator Debug",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphonesimulator/Debug",
+      "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "SIMULATOR",
@@ -146,7 +171,7 @@
       "name": "ios-simulator-release",
       "displayName": "iOS Simulator Release",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphonesimulator/Release",
+      "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "SIMULATOR",
@@ -157,7 +182,7 @@
       "name": "ios-device-debug",
       "displayName": "iOS Device Debug",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphoneos/Debug",
+      "binaryDir": "${sourceDir}/build/ios-iphoneos",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "DEVICE",
@@ -168,7 +193,7 @@
       "name": "ios-device-release",
       "displayName": "iOS Device Release",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphoneos/Release",
+      "binaryDir": "${sourceDir}/build/ios-iphoneos",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
         "THL_IOS_PLATFORM": "DEVICE",
@@ -207,7 +232,12 @@
       "configurePreset": "windows-release",
       "configuration": "Release"
     },
-{
+    {
+      "name": "windows-arm64-debug",
+      "configurePreset": "windows-arm64-debug",
+      "configuration": "Debug"
+    },
+    {
       "name": "android-debug",
       "configurePreset": "android-debug",
       "configuration": "Debug"
@@ -216,6 +246,11 @@
       "name": "android-release",
       "configurePreset": "android-release",
       "configuration": "Release"
+    },
+    {
+      "name": "android-emulator-debug",
+      "configurePreset": "android-emulator-debug",
+      "configuration": "Debug"
     },
     {
       "name": "desktop-debug-asan",
