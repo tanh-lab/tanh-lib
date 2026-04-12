@@ -29,6 +29,30 @@
       }
     },
     {
+      "name": "macos-x64-debug",
+      "displayName": "macOS x86_64 Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/macos-x64/Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64"
+      }
+    },
+    {
+      "name": "macos-x64-release",
+      "displayName": "macOS x86_64 Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/macos-x64/Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64"
+      }
+    },
+    {
       "name": "windows-debug",
       "displayName": "Windows Debug",
       "binaryDir": "${sourceDir}/build/windows"
@@ -37,6 +61,34 @@
       "name": "windows-release",
       "displayName": "Windows Release",
       "binaryDir": "${sourceDir}/build/windows"
+    },
+{
+      "name": "android-debug",
+      "displayName": "Android Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/android/Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-24",
+        "BUILD_SHARED_LIBS": "OFF",
+        "TANH_WITH_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "android-release",
+      "displayName": "Android Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/android/Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-24",
+        "BUILD_SHARED_LIBS": "OFF",
+        "TANH_WITH_TESTS": "OFF"
+      }
     },
     {
       "name": "desktop-debug-asan",
@@ -136,6 +188,36 @@
       "configuration": "Release"
     },
     {
+      "name": "macos-x64-debug",
+      "configurePreset": "macos-x64-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "macos-x64-release",
+      "configurePreset": "macos-x64-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release"
+    },
+{
+      "name": "android-debug",
+      "configurePreset": "android-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "android-release",
+      "configurePreset": "android-release",
+      "configuration": "Release"
+    },
+    {
       "name": "desktop-debug-asan",
       "configurePreset": "desktop-debug-asan",
       "configuration": "Debug"
@@ -159,16 +241,6 @@
       "name": "desktop-debug-rtsan",
       "configurePreset": "desktop-debug-rtsan",
       "configuration": "Debug"
-    },
-    {
-      "name": "windows-debug",
-      "configurePreset": "windows-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "windows-release",
-      "configurePreset": "windows-release",
-      "configuration": "Release"
     },
     {
       "name": "ios-simulator-debug",
@@ -203,6 +275,18 @@
     {
       "name": "desktop-release",
       "configurePreset": "desktop-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos-x64-debug",
+      "configurePreset": "macos-x64-debug",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos-x64-release",
+      "configurePreset": "macos-x64-release",
       "configuration": "Release",
       "output": { "outputOnFailure": true }
     },
