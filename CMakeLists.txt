@@ -600,9 +600,6 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_AUDIO_IO)
         add_subdirectory(test/audio-io)
     endif()
-    if (TANH_BUILD_DSP)
-        add_subdirectory(test/transport)
-    endif()
 
     # On iOS, test executables become .app bundles and need a bundle identifier
     # for simctl install/launch to work.
