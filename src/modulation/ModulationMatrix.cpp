@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -859,7 +860,9 @@ inline float compute_replace_value(const ResolvedRouting& routing,
         const float raw_depth = routing.m_depth.load(std::memory_order_relaxed);
         const float rmin = routing.m_replace_range_min.load(std::memory_order_relaxed);
         const float rmax = routing.m_replace_range_max.load(std::memory_order_relaxed);
-        return rmin + src_sample * raw_depth * (rmax - rmin);
+        const float depth_abs = std::abs(raw_depth);
+        if (raw_depth >= 0.0f) { return rmin + src_sample * depth_abs * (rmax - rmin); }
+        return rmax - src_sample * depth_abs * (rmax - rmin);
     }
     return src_sample * routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
 }
