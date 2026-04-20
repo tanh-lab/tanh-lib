@@ -87,7 +87,9 @@ template TANH_API SmartHandle<bool> ModulationMatrix::get_smart_handle<bool>(std
 ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id) {
     auto it = m_targets.find(id);
     if (it != m_targets.end()) { return &it->second; }
-    auto [target_it, inserted] = m_targets.emplace(std::string(id), ResolvedTarget{});
+    // ResolvedTarget is non-movable (holds atomics) — use try_emplace to
+    // default-construct the value in place.
+    auto [target_it, inserted] = m_targets.try_emplace(std::string(id));
     auto& t = target_it->second;
     t.m_id = id;
 
@@ -102,6 +104,9 @@ ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id
 }
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
+    // See the threading contract on the header declaration: same-size and
+    // growing prepares are safe under concurrent process_locked(); shrinking
+    // prepares require quiescing the audio thread first.
     std::scoped_lock const lock(m_writer_mutex);
 
     m_sample_rate = sample_rate;
@@ -109,28 +114,43 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
 
     for (auto& [id, source] : m_sources) { source->prepare(sample_rate, samples_per_block); }
 
-    for (auto& [id, target] : m_targets) { target.resize(samples_per_block); }
-
+    // Buffers are (re)allocated inside rebuild_schedule_locked() sized against
+    // the new m_samples_per_block — no per-target resize pass needed here.
     rebuild_schedule_locked();
 }
 
 void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    m_config.read([&](const ProcessingConfig& config) {
-        // 1. Clear all active targets for this block
-        for (auto* target : config.m_active_targets) { target->clear_per_block(); }
+    const auto scope = m_config.read_scope();
+    process_locked(scope.data(), num_samples);
+}
 
-        // 2. Execute schedule steps
-        for (const auto& step : config.m_schedule) {
-            if (auto* bulk = std::get_if<BulkStep>(&step)) {
-                process_source_bulk(config, bulk->m_source, num_samples);
-            } else if (auto* cyclic = std::get_if<CyclicStep>(&step)) {
-                process_cyclic(config, cyclic->m_sources, num_samples);
-            }
+void ModulationMatrix::process_locked(const ProcessingConfig& config,
+                                      size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+    // 1. Drain pass — every registered source consumes its event queue and
+    //    freezes per-block input state. Runs exactly once per source per
+    //    block, before any ScheduleStep. Makes cyclic-SCC iteration safe:
+    //    the input snapshot is stable across all cycle iterations.
+    for (auto* source : config.m_all_sources) { source->pre_process_block(); }
+
+    // 2. Clear all active targets for this block
+    for (auto* target : config.m_active_targets) { target->clear_per_block(); }
+
+    // 3. Execute schedule steps
+    for (const auto& step : config.m_schedule) {
+        if (auto* bulk = std::get_if<BulkStep>(&step)) {
+            process_source_bulk(config, bulk->m_source, num_samples);
+        } else if (auto* cyclic = std::get_if<CyclicStep>(&step)) {
+            process_cyclic(config, cyclic->m_sources, num_samples);
         }
+    }
 
-        // 3. Build final sorted change point lists from flags
-        for (auto* target : config.m_active_targets) { target->build_change_points(); }
-    });
+    // 4. Multi-Replace composition — re-apply deferred Replace/ReplaceHold
+    //    routings on shared targets in ascending priority order so higher
+    //    priority wins per sample. Single-Replace targets are untouched.
+    apply_multi_replace_composition(config, num_samples);
+
+    // 5. Build final sorted change point lists from flags
+    for (auto* target : config.m_active_targets) { target->build_change_points(); }
 }
 
 void ModulationMatrix::add_source(const std::string_view id, ModulationSource* source) {
@@ -177,26 +197,10 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
         }
     }
 
-    // Reject if another Replace/ReplaceHold routing already targets the same parameter.
-    const bool is_replace = routing.m_combine_mode == CombineMode::Replace ||
-                            routing.m_combine_mode == CombineMode::ReplaceHold;
-    if (is_replace) {
-        for (const auto& existing : m_user_routings) {
-            const bool existing_is_replace = existing.m_combine_mode == CombineMode::Replace ||
-                                             existing.m_combine_mode == CombineMode::ReplaceHold;
-            if (existing_is_replace && existing.m_target_id == routing.m_target_id) {
-                thl::Logger::logf(
-                    thl::Logger::LogLevel::Warning,
-                    "modulation",
-                    "Replace routing rejected: source '%s' -> target '%s'. "
-                    "A Replace routing from source '%s' already targets this parameter.",
-                    routing.m_source_id.c_str(),
-                    routing.m_target_id.c_str(),
-                    existing.m_source_id.c_str());
-                return k_invalid_routing_id;
-            }
-        }
-    }
+    // Note: multiple Replace/ReplaceHold routings may target the same parameter.
+    // Priority (ModulationRouting::m_priority) decides the winner per sample —
+    // see the deferred Replace-composition pass in process(). Same-priority
+    // equals fall back to add-order among active routings.
 
     // Reject routing if source is not registered
     if (m_sources.find(routing.m_source_id) == m_sources.end()) {
@@ -367,6 +371,19 @@ bool ModulationMatrix::update_routing_replace_range(uint32_t routing_id,
     return update_routing_replace_range_locked(*routing, range_min, range_max);
 }
 
+bool ModulationMatrix::update_routing_replace_range_normalized(std::string_view source_id,
+                                                               std::string_view target_id,
+                                                               float norm_min,
+                                                               float norm_max) {
+    const thl::ParameterRecord* record = m_state.get_record(target_id);
+    if (!record) { return false; }
+    const auto& range = record->m_def.m_range;
+    return update_routing_replace_range(source_id,
+                                        target_id,
+                                        range.from_normalized(norm_min),
+                                        range.from_normalized(norm_max));
+}
+
 bool ModulationMatrix::clear_routing_replace_range(std::string_view source_id,
                                                    std::string_view target_id) {
     std::scoped_lock const lock(m_writer_mutex);
@@ -451,50 +468,63 @@ void ModulationMatrix::rebuild_schedule_locked() {
         }
     }
 
-    // ── Pass 1c: Allocate/free buffers on targets ───────────────────────
+    // ── 1c: Swap-in fresh buffer structs via atomic publish ────────
+    // For each target we compute the desired (mono vs poly, flags, sizes).
+    // If the currently-published buffer object's geometry already matches,
+    // we keep it — no swap, no audio-thread-visible pointer change. When it
+    // doesn't match we allocate a fresh VoiceBuffers / MonoBuffers off to
+    // the side, atomic-store the new pointer, and push the previous owner
+    // into the target's retirement list. Actual destruction is deferred to
+    // after m_config.synchronize() below so that any audio block still
+    // holding a raw pointer through its ReadScope finishes first.
     for (auto& [id, target] : m_targets) {
         auto it = target_info.find(id);
-
-        target.m_has_mono_additive = it != target_info.end() && it->second.m_mono_additive;
-        target.m_has_mono_replace = it != target_info.end() && it->second.m_mono_replace;
-
-        if (target.m_has_mono_additive) {
-            target.m_additive_buffer.assign(m_samples_per_block, 0.0f);
-        } else {
-            target.m_additive_buffer.clear();
-        }
-
-        if (target.m_has_mono_replace) {
-            target.m_replace_buffer.assign(m_samples_per_block, 0.0f);
-            target.m_replace_active.assign(m_samples_per_block, 0);
-        } else {
-            target.m_replace_buffer.clear();
-            target.m_replace_active.clear();
-        }
-
         const bool has_any_routing = it != target_info.end();
-        if (has_any_routing) {
-            target.m_change_point_flags.assign(m_samples_per_block, false);
-            target.m_change_points.clear();
-            target.m_change_points.reserve(m_samples_per_block);
-        } else {
-            target.m_change_point_flags.clear();
-            target.m_change_points.clear();
-        }
-
         const bool has_poly = has_any_routing && it->second.m_max_voices > 0;
+        const bool has_mono = has_any_routing && !has_poly &&
+                              (it->second.m_mono_additive || it->second.m_mono_replace);
+
+        // Voice buffers
         if (has_poly) {
             const uint32_t nv = it->second.m_max_voices;
             const bool va = it->second.m_voice_additive;
             const bool vr = it->second.m_voice_replace;
-            if (!target.m_voice || target.m_voice->m_num_voices != nv ||
-                target.m_voice->m_block_size != m_samples_per_block ||
-                target.m_voice->m_has_additive != va || target.m_voice->m_has_replace != vr) {
-                target.m_voice = std::make_unique<VoiceBuffers>();
-                target.m_voice->resize(nv, m_samples_per_block, va, vr);
+            auto* cur = target.m_voice_owner.get();
+            const bool geometry_matches = cur != nullptr && cur->m_num_voices == nv &&
+                                          cur->m_block_size == m_samples_per_block &&
+                                          cur->m_has_additive == va && cur->m_has_replace == vr;
+            if (!geometry_matches) {
+                auto fresh = std::make_unique<VoiceBuffers>(nv, m_samples_per_block, va, vr);
+                target.m_voice.store(fresh.get(), std::memory_order_release);
+                if (target.m_voice_owner) {
+                    target.m_voice_retired.push_back(std::move(target.m_voice_owner));
+                }
+                target.m_voice_owner = std::move(fresh);
             }
-        } else {
-            target.m_voice.reset();
+        } else if (target.m_voice_owner) {
+            target.m_voice.store(nullptr, std::memory_order_release);
+            target.m_voice_retired.push_back(std::move(target.m_voice_owner));
+        }
+
+        // Mono buffers
+        if (has_mono) {
+            const bool ma = it->second.m_mono_additive;
+            const bool mr = it->second.m_mono_replace;
+            auto* cur = target.m_mono_owner.get();
+            const bool geometry_matches = cur != nullptr &&
+                                          cur->m_block_size == m_samples_per_block &&
+                                          cur->m_has_additive == ma && cur->m_has_replace == mr;
+            if (!geometry_matches) {
+                auto fresh = std::make_unique<MonoBuffers>(m_samples_per_block, ma, mr);
+                target.m_mono.store(fresh.get(), std::memory_order_release);
+                if (target.m_mono_owner) {
+                    target.m_mono_retired.push_back(std::move(target.m_mono_owner));
+                }
+                target.m_mono_owner = std::move(fresh);
+            }
+        } else if (target.m_mono_owner) {
+            target.m_mono.store(nullptr, std::memory_order_release);
+            target.m_mono_retired.push_back(std::move(target.m_mono_owner));
         }
     }
 
@@ -506,10 +536,13 @@ void ModulationMatrix::rebuild_schedule_locked() {
 
         if (src_it == m_sources.end() || tgt_it == m_targets.end()) { continue; }
 
-        // Determine routing mode from source capability + target type
+        // Determine routing mode from source capability + target type.
+        // Writer-side: inspect the owning unique_ptr rather than the atomic
+        // publish pointer — both are in sync under m_writer_mutex, and the
+        // owner is the definitive writer-visible state.
         const bool src_mono = src_it->second->has_mono_output();
         const bool src_voice = src_it->second->has_voice_output();
-        const bool tgt_poly = tgt_it->second.m_voice != nullptr;
+        const bool tgt_poly = tgt_it->second.m_voice_owner != nullptr;
 
         RoutingMode routing_mode;
         if (tgt_poly && src_voice) {
@@ -536,7 +569,7 @@ void ModulationMatrix::rebuild_schedule_locked() {
         // Voice mismatch warning for PolyToPoly
         if (routing_mode == RoutingMode::PolyToPoly) {
             const uint32_t src_v = src_it->second->num_voices();
-            const uint32_t tgt_v = tgt_it->second.m_voice->m_num_voices;
+            const uint32_t tgt_v = tgt_it->second.m_voice_owner->m_num_voices;
             if (src_v != tgt_v) {
                 thl::Logger::logf(
                     thl::Logger::LogLevel::Warning,
@@ -560,6 +593,7 @@ void ModulationMatrix::rebuild_schedule_locked() {
         r.m_combine_mode = routing.m_combine_mode;
         r.m_routing_mode = routing_mode;
         r.m_max_decimation = routing.m_max_decimation;
+        r.m_priority = routing.m_priority;
         r.m_skip_during_gesture = routing.m_skip_during_gesture;
         r.m_samples_until_update = 0;
 
@@ -569,9 +603,15 @@ void ModulationMatrix::rebuild_schedule_locked() {
         r.m_has_replace_range.store(routing.m_has_replace_range, std::memory_order_relaxed);
 
         // Size per-voice held values for polyphonic ReplaceHold routings.
+        // m_held_voice_active is parallel and gates the ReplaceHold fallback
+        // so voices that have never received a live contribution stay silent
+        // instead of writing the default-0 held value with active=1.
         if (r.m_combine_mode == CombineMode::ReplaceHold && tgt_poly) {
-            r.m_held_voice_values.assign(tgt_it->second.m_voice->m_num_voices, 0.0f);
+            const uint32_t nv = tgt_it->second.m_voice_owner->m_num_voices;
+            r.m_held_voice_values.assign(nv, 0.0f);
+            r.m_held_voice_active.assign(nv, uint8_t{0});
         }
+        r.m_held_mono_active = false;
 
         // Pre-compute effective depth for the RT hot path.
         r.m_depth_abs_precomputed.store(compute_depth_precomputed(routing, tgt_it->second),
@@ -620,16 +660,79 @@ void ModulationMatrix::rebuild_schedule_locked() {
         if (target_info.contains(id)) { new_active_targets.push_back(&target); }
     }
 
+    // Collect every registered source for the drain pass. Includes sources
+    // with no routings — pre_process_block() must still run so input-driven
+    // sources can consume events and maintain their internal state.
+    std::vector<ModulationSource*> new_all_sources;
+    new_all_sources.reserve(m_sources.size());
+    for (auto& [id, source] : m_sources) { new_all_sources.push_back(source); }
+
     // Publish everything atomically via RCU
     m_config.update([&](ProcessingConfig& config) {
         config.m_routings = std::move(new_routings);
         config.m_schedule = std::move(new_schedule);
         config.m_active_targets = std::move(new_active_targets);
+        config.m_all_sources = std::move(new_all_sources);
         config.m_routings_by_source.clear();
         for (const auto& r : config.m_routings) {
             config.m_routings_by_source[r.m_source].push_back(&r);
         }
+
+        // Group Replace routings by target. Targets with >1 Replace routing
+        // get deferred composition: in-schedule routings skip the Replace
+        // write, and a post-pass re-applies all of them in ascending-priority
+        // order so higher-priority wins deterministically.
+        //
+        // Iteration is in-order over config.m_routings (a std::vector) so
+        // output ordering is deterministic regardless of pointer hashing.
+        config.m_multi_replace_targets.clear();
+        std::vector<ResolvedTarget*> target_order;
+        std::unordered_map<ResolvedTarget*, size_t> target_index;
+        std::vector<std::vector<ResolvedRouting*>> grouped;
+        for (auto& r : config.m_routings) {
+            if (r.m_combine_mode != CombineMode::Replace &&
+                r.m_combine_mode != CombineMode::ReplaceHold) {
+                continue;
+            }
+            auto [it, inserted] = target_index.try_emplace(r.m_target, target_order.size());
+            if (inserted) {
+                target_order.push_back(r.m_target);
+                grouped.emplace_back();
+            }
+            grouped[it->second].push_back(&r);
+        }
+        for (size_t i = 0; i < target_order.size(); ++i) {
+            auto& routings = grouped[i];
+            if (routings.size() < 2) { continue; }
+            // Stable-sort by priority ascending — equal priorities keep add-order.
+            // Higher-priority routings are applied last in the deferred post-
+            // pass, so their writes overwrite lower-priority writes in the
+            // overlapping active regions.
+            std::ranges::stable_sort(routings,
+                                     [](const ResolvedRouting* a, const ResolvedRouting* b) {
+                                         return a->m_priority < b->m_priority;
+                                     });
+            std::vector<const ResolvedRouting*> ordered;
+            ordered.reserve(routings.size());
+            for (auto* r : routings) {
+                r->m_replace_deferred = true;
+                ordered.push_back(r);
+            }
+            config.m_multi_replace_targets.emplace_back(target_order[i], std::move(ordered));
+        }
     });
+
+    // Drain retired buffers. After m_config.update() the old ProcessingConfig
+    // is retired into the RCU's deferred-reclamation list; after synchronize()
+    // returns, every in-flight audio block that was still inside a ReadScope
+    // has left it, so the target-owned buffer pointers they may have read are
+    // guaranteed to be past their last use. Only then is it safe to destroy
+    // the retired VoiceBuffers / MonoBuffers instances.
+    m_config.synchronize();
+    for (auto& [id, target] : m_targets) {
+        target.m_voice_retired.clear();
+        target.m_mono_retired.clear();
+    }
 }
 
 void ModulationMatrix::build_schedule_from_graph(
@@ -715,7 +818,11 @@ inline void apply_replace_sample(const ResolvedRouting& routing,
         replace_buf[i] = value;
         active_buf[i] = 1;
         routing.m_held_value = value;
-    } else if (routing.m_combine_mode == CombineMode::ReplaceHold) {
+        routing.m_held_mono_active = true;
+    } else if (routing.m_combine_mode == CombineMode::ReplaceHold && routing.m_held_mono_active) {
+        // Only hold after the source has been active at least once — a routing
+        // that has never seen a live sample must not broadcast active=1 with
+        // the default-0 held value.
         replace_buf[i] = routing.m_held_value;
         active_buf[i] = 1;
     }
@@ -734,9 +841,12 @@ inline void apply_replace_sample_voice(const ResolvedRouting& routing,
         active_buf[i] = 1;
         if (voice < routing.m_held_voice_values.size()) {
             routing.m_held_voice_values[voice] = value;
+            routing.m_held_voice_active[voice] = 1;
         }
     } else if (routing.m_combine_mode == CombineMode::ReplaceHold &&
-               voice < routing.m_held_voice_values.size()) {
+               voice < routing.m_held_voice_values.size() && routing.m_held_voice_active[voice]) {
+        // Per-voice gate on the fallback: voices that have never contributed
+        // a live sample stay inactive instead of holding the default-0 value.
         replace_buf[i] = routing.m_held_voice_values[voice];
         active_buf[i] = 1;
     }
@@ -755,29 +865,56 @@ inline float compute_replace_value(const ResolvedRouting& routing,
 }
 
 // MonoToMono: write to mono additive or mono replace buffer.
+//
+// Flag-gate rationale (applies to every apply_routing_* helper and to the
+// change-point propagation sites below).
+//
+// Rebuild discipline is:
+//   1. writer atomically publishes fresh VoiceBuffers / MonoBuffers on each
+//      target (with the new set of m_has_additive / m_has_replace flags);
+//   2. writer publishes the new ProcessingConfig via m_config.update;
+//   3. writer calls m_config.synchronize() to drain in-flight readers;
+//   4. writer reclaims retired buffers.
+//
+// Between steps 1 and 2, an audio block that entered its RCU read scope
+// before step 2 is still executing the *old* routings — a routing that was
+// classified against the old buffer's flags — but every buffer pointer it
+// loads already points at the *new* buffer (step 1 already happened). If the
+// new buffer's flag set has shrunk (e.g. the last Additive routing for this
+// target was removed, so m_has_additive went true → false), the old routing
+// will try to touch m_additive_storage / m_change_point_flags_storage etc.
+// that were never allocated on the new buffer → assert / UB.
+//
+// Gating on the flags we just loaded from the atomic-published buffer turns
+// that stale write into a safe no-op. Correctness for the *next* block is
+// restored automatically because step 3 guarantees it sees the new config.
 void apply_routing_mono_to_mono(const ResolvedRouting& routing,
                                 const ModulationSource* source,
                                 size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+    auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
+    if (mb == nullptr) { return; }
     const auto& src_output = source->get_output_buffer();
     if (routing.m_combine_mode == CombineMode::Additive) {
+        if (!mb->m_has_additive) { return; }
         const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
         if (source->is_fully_active()) {
             for (size_t i = 0; i < num_samples; ++i) {
-                routing.m_target->m_additive_buffer[i] += src_output[i] * depth;
+                mb->m_additive_buffer[i] += src_output[i] * depth;
             }
         } else {
             for (size_t i = 0; i < num_samples; ++i) {
                 if (source->get_output_active_at(static_cast<uint32_t>(i))) {
-                    routing.m_target->m_additive_buffer[i] += src_output[i] * depth;
+                    mb->m_additive_buffer[i] += src_output[i] * depth;
                 }
             }
         }
     } else {
+        if (!mb->m_has_replace) { return; }
         if (source->is_fully_active()) {
             for (size_t i = 0; i < num_samples; ++i) {
                 apply_replace_sample(routing,
-                                     routing.m_target->m_replace_buffer.data(),
-                                     routing.m_target->m_replace_active.data(),
+                                     mb->m_replace_buffer.data(),
+                                     mb->m_replace_active.data(),
                                      i,
                                      compute_replace_value(routing, src_output[i]),
                                      true);
@@ -786,8 +923,8 @@ void apply_routing_mono_to_mono(const ResolvedRouting& routing,
             for (size_t i = 0; i < num_samples; ++i) {
                 const bool active = source->get_output_active_at(static_cast<uint32_t>(i));
                 apply_replace_sample(routing,
-                                     routing.m_target->m_replace_buffer.data(),
-                                     routing.m_target->m_replace_active.data(),
+                                     mb->m_replace_buffer.data(),
+                                     mb->m_replace_active.data(),
                                      i,
                                      compute_replace_value(routing, src_output[i]),
                                      active);
@@ -800,9 +937,12 @@ void apply_routing_mono_to_mono(const ResolvedRouting& routing,
 void apply_routing_poly_to_poly(const ResolvedRouting& routing,
                                 const ModulationSource* source,
                                 size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    auto* vb = routing.m_target->m_voice.get();
+    auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
+    if (vb == nullptr) { return; }
     const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
     if (routing.m_combine_mode == CombineMode::Additive) {
+        // See flag-gate rationale on apply_routing_mono_to_mono.
+        if (!vb->m_has_additive) { return; }
         const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
         if (source->is_fully_active()) {
             for (uint32_t v = 0; v < nv; ++v) {
@@ -821,6 +961,7 @@ void apply_routing_poly_to_poly(const ResolvedRouting& routing,
             }
         }
     } else {
+        if (!vb->m_has_replace) { return; }
         if (source->is_fully_active()) {
             for (uint32_t v = 0; v < nv; ++v) {
                 const float* in = source->voice_output(v);
@@ -861,8 +1002,10 @@ void apply_routing_mono_to_poly(const ResolvedRouting& routing,
                                 const ModulationSource* source,
                                 size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     const auto& src_output = source->get_output_buffer();
-    auto* vb = routing.m_target->m_voice.get();
+    auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
+    if (vb == nullptr) { return; }
     if (routing.m_combine_mode == CombineMode::Additive) {
+        if (!vb->m_has_additive) { return; }
         const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
         if (source->is_fully_active()) {
             for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
@@ -880,6 +1023,7 @@ void apply_routing_mono_to_poly(const ResolvedRouting& routing,
             }
         }
     } else {
+        if (!vb->m_has_replace) { return; }
         if (source->is_fully_active()) {
             for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
                 float* out = vb->replace_voice(v);
@@ -916,13 +1060,17 @@ void apply_modulation_sample_mono(const ResolvedRouting& routing,
                                   float src_sample,
                                   bool src_active,
                                   size_t i) TANH_NONBLOCKING_FUNCTION {
+    auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
+    if (mb == nullptr) { return; }
     if (routing.m_combine_mode == CombineMode::Additive) {
+        if (!mb->m_has_additive) { return; }
         const float depth = routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
-        if (src_active) { routing.m_target->m_additive_buffer[i] += src_sample * depth; }
+        if (src_active) { mb->m_additive_buffer[i] += src_sample * depth; }
     } else {
+        if (!mb->m_has_replace) { return; }
         apply_replace_sample(routing,
-                             routing.m_target->m_replace_buffer.data(),
-                             routing.m_target->m_replace_active.data(),
+                             mb->m_replace_buffer.data(),
+                             mb->m_replace_active.data(),
                              i,
                              compute_replace_value(routing, src_sample),
                              src_active);
@@ -975,47 +1123,58 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
             continue;
         }
 
-        switch (routing->m_routing_mode) {
-            case RoutingMode::MonoToMono:
-                apply_routing_mono_to_mono(*routing, source, num_samples);
-                break;
-            case RoutingMode::PolyToPoly:
-                apply_routing_poly_to_poly(*routing, source, num_samples);
-                break;
-            case RoutingMode::MonoToPoly:
-                apply_routing_mono_to_poly(*routing, source, num_samples);
-                break;
-            case RoutingMode::PolyToMono: break;  // rejected at schedule-build time
+        // Deferred multi-Replace routings skip the write here — they are re-
+        // applied in apply_multi_replace_composition() after the schedule loop
+        // in priority order. Change-point propagation below still runs so the
+        // target evaluates transition points regardless.
+        if (!routing->m_replace_deferred) {
+            switch (routing->m_routing_mode) {
+                case RoutingMode::MonoToMono:
+                    apply_routing_mono_to_mono(*routing, source, num_samples);
+                    break;
+                case RoutingMode::PolyToPoly:
+                    apply_routing_poly_to_poly(*routing, source, num_samples);
+                    break;
+                case RoutingMode::MonoToPoly:
+                    apply_routing_mono_to_poly(*routing, source, num_samples);
+                    break;
+                case RoutingMode::PolyToMono: break;  // rejected at schedule-build time
+            }
         }
 
-        // Propagate change points to target flags
+        // Propagate change points to target flags. m_change_point_flags[_storage]
+        // is only allocated when at least one of m_has_additive / m_has_replace
+        // is set; guard so old-config routings landing on a flag-shrunken buffer
+        // become a no-op instead of writing to empty storage.
         if (routing->m_routing_mode == RoutingMode::MonoToMono) {
-            for (const uint32_t cp : source->get_change_points()) {
-                if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
+            if (auto* mb = routing->m_target->m_mono.load(std::memory_order_acquire);
+                mb != nullptr && (mb->m_has_additive || mb->m_has_replace)) {
+                for (const uint32_t cp : source->get_change_points()) {
+                    if (cp < num_samples) { mb->m_change_point_flags[cp] = 1; }
+                }
             }
-        } else if (routing->m_routing_mode == RoutingMode::PolyToPoly &&
-                   routing->m_target->m_voice) {
-            const uint32_t nv =
-                std::min(source->num_voices(), routing->m_target->m_voice->m_num_voices);
-            for (uint32_t v = 0; v < nv; ++v) {
-                const auto& vcp = source->get_voice_change_points(v);
-                const size_t base =
-                    static_cast<size_t>(v) * routing->m_target->m_voice->m_block_size;
-                for (const uint32_t cp : vcp) {
-                    if (cp < num_samples) {
-                        routing->m_target->m_voice->m_change_point_flags_storage[base + cp] = 1;
+        } else if (routing->m_routing_mode == RoutingMode::PolyToPoly) {
+            if (auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
+                vb != nullptr && (vb->m_has_additive || vb->m_has_replace)) {
+                const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
+                for (uint32_t v = 0; v < nv; ++v) {
+                    const auto& vcp = source->get_voice_change_points(v);
+                    const size_t base = static_cast<size_t>(v) * vb->m_block_size;
+                    for (const uint32_t cp : vcp) {
+                        if (cp < num_samples) { vb->m_change_point_flags_storage[base + cp] = 1; }
                     }
                 }
             }
-        } else if (routing->m_routing_mode == RoutingMode::MonoToPoly &&
-                   routing->m_target->m_voice) {
-            // Broadcast mono change points to all voices
-            for (const uint32_t cp : source->get_change_points()) {
-                if (cp >= num_samples) { continue; }
-                for (uint32_t v = 0; v < routing->m_target->m_voice->m_num_voices; ++v) {
-                    const size_t base =
-                        static_cast<size_t>(v) * routing->m_target->m_voice->m_block_size;
-                    routing->m_target->m_voice->m_change_point_flags_storage[base + cp] = 1;
+        } else if (routing->m_routing_mode == RoutingMode::MonoToPoly) {
+            if (auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
+                vb != nullptr && (vb->m_has_additive || vb->m_has_replace)) {
+                // Broadcast mono change points to all voices
+                for (const uint32_t cp : source->get_change_points()) {
+                    if (cp >= num_samples) { continue; }
+                    for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
+                        const size_t base = static_cast<size_t>(v) * vb->m_block_size;
+                        vb->m_change_point_flags_storage[base + cp] = 1;
+                    }
                 }
             }
         }
@@ -1058,6 +1217,11 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
                                     std::memory_order_relaxed)) {
                                 continue;
                             }
+                            // Deferred Replace routings are composed post-schedule.
+                            if (routing->m_replace_deferred &&
+                                routing->m_combine_mode != CombineMode::Additive) {
+                                continue;
+                            }
                             apply_modulation_sample_mono(*routing, sample, active, i);
                         }
                     }
@@ -1075,31 +1239,31 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
 
                     if (it != config.m_routings_by_source.end()) {
                         for (const auto* routing : it->second) {
-                            if (routing->m_routing_mode == RoutingMode::PolyToPoly &&
-                                routing->m_target->m_voice &&
-                                v < routing->m_target->m_voice->m_num_voices) {
-                                if (routing->m_skip_during_gesture &&
-                                    routing->m_target->m_record->m_in_gesture.load(
-                                        std::memory_order_relaxed)) {
-                                    continue;
+                            if (routing->m_routing_mode != RoutingMode::PolyToPoly) { continue; }
+                            auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
+                            if (vb == nullptr || v >= vb->m_num_voices) { continue; }
+                            if (routing->m_skip_during_gesture &&
+                                routing->m_target->m_record->m_in_gesture.load(
+                                    std::memory_order_relaxed)) {
+                                continue;
+                            }
+                            if (routing->m_combine_mode == CombineMode::Additive) {
+                                if (!vb->m_has_additive) { continue; }
+                                if (active) {
+                                    const float depth = routing->m_depth_abs_precomputed.load(
+                                        std::memory_order_relaxed);
+                                    vb->additive_voice(v)[i] += sample * depth;
                                 }
-                                if (routing->m_combine_mode == CombineMode::Additive) {
-                                    if (active) {
-                                        const float depth = routing->m_depth_abs_precomputed.load(
-                                            std::memory_order_relaxed);
-                                        routing->m_target->m_voice->additive_voice(v)[i] +=
-                                            sample * depth;
-                                    }
-                                } else {
-                                    apply_replace_sample_voice(
-                                        *routing,
-                                        routing->m_target->m_voice->replace_voice(v),
-                                        routing->m_target->m_voice->replace_active_voice(v),
-                                        i,
-                                        compute_replace_value(*routing, sample),
-                                        active,
-                                        v);
-                                }
+                            } else if (!routing->m_replace_deferred) {
+                                if (!vb->m_has_replace) { continue; }
+                                // Deferred Replace routings are composed post-schedule.
+                                apply_replace_sample_voice(*routing,
+                                                           vb->replace_voice(v),
+                                                           vb->replace_active_voice(v),
+                                                           i,
+                                                           compute_replace_value(*routing, sample),
+                                                           active,
+                                                           v);
                             }
                         }
                     }
@@ -1120,25 +1284,59 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
             }
 
             if (routing->m_routing_mode == RoutingMode::MonoToMono) {
-                for (const uint32_t cp : source->get_change_points()) {
-                    if (cp < num_samples) { routing->m_target->m_change_point_flags[cp] = true; }
+                if (auto* mb = routing->m_target->m_mono.load(std::memory_order_acquire);
+                    mb != nullptr && (mb->m_has_additive || mb->m_has_replace)) {
+                    for (const uint32_t cp : source->get_change_points()) {
+                        if (cp < num_samples) { mb->m_change_point_flags[cp] = 1; }
+                    }
                 }
-            } else if (routing->m_routing_mode == RoutingMode::PolyToPoly &&
-                       routing->m_target->m_voice) {
-                const uint32_t nv =
-                    std::min(source->num_voices(), routing->m_target->m_voice->m_num_voices);
-                for (uint32_t v = 0; v < nv; ++v) {
-                    const auto& vcp = source->get_voice_change_points(v);
-                    const size_t base =
-                        static_cast<size_t>(v) * routing->m_target->m_voice->m_block_size;
-                    for (const uint32_t cp : vcp) {
-                        if (cp < num_samples) {
-                            routing->m_target->m_voice->m_change_point_flags_storage[base + cp] = 1;
+            } else if (routing->m_routing_mode == RoutingMode::PolyToPoly) {
+                if (auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
+                    vb != nullptr && (vb->m_has_additive || vb->m_has_replace)) {
+                    const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
+                    for (uint32_t v = 0; v < nv; ++v) {
+                        const auto& vcp = source->get_voice_change_points(v);
+                        const size_t base = static_cast<size_t>(v) * vb->m_block_size;
+                        for (const uint32_t cp : vcp) {
+                            if (cp < num_samples) {
+                                vb->m_change_point_flags_storage[base + cp] = 1;
+                            }
                         }
                     }
                 }
             }
             apply_routing_change_points(*routing, num_samples);
+        }
+    }
+}
+
+// ── Multi-Replace composition (post-schedule) ────────────────────────────────
+
+void ModulationMatrix::apply_multi_replace_composition(const ProcessingConfig& config,
+                                                       size_t num_samples) {
+    // Empty in the common single-Replace case — early out keeps cost zero.
+    if (config.m_multi_replace_targets.empty()) { return; }
+
+    for (const auto& [target, ordered] : config.m_multi_replace_targets) {
+        for (const auto* routing : ordered) {
+            if (routing->m_skip_during_gesture &&
+                target->m_record->m_in_gesture.load(std::memory_order_relaxed)) {
+                continue;
+            }
+            auto* source = routing->m_source;
+            if (source == nullptr) { continue; }
+            switch (routing->m_routing_mode) {
+                case RoutingMode::MonoToMono:
+                    apply_routing_mono_to_mono(*routing, source, num_samples);
+                    break;
+                case RoutingMode::PolyToPoly:
+                    apply_routing_poly_to_poly(*routing, source, num_samples);
+                    break;
+                case RoutingMode::MonoToPoly:
+                    apply_routing_mono_to_poly(*routing, source, num_samples);
+                    break;
+                case RoutingMode::PolyToMono: break;  // rejected at schedule-build time
+            }
         }
     }
 }
@@ -1149,9 +1347,22 @@ void ModulationMatrix::apply_routing_change_points(const ResolvedRouting& routin
                                                    size_t num_samples) {
     if (routing.m_max_decimation == 0) { return; }
 
+    auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
+    auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
+    // Gate by allocation of the change-point flag storage — only valid when at
+    // least one of additive / replace is present on the corresponding buffer.
+    const bool mb_ok = mb != nullptr && (mb->m_has_additive || mb->m_has_replace);
+    const bool vb_ok = vb != nullptr && (vb->m_has_additive || vb->m_has_replace);
+    if (!mb_ok && !vb_ok) { return; }
     for (size_t i = 0; i < num_samples; ++i) {
         if (routing.m_samples_until_update == 0) {
-            routing.m_target->m_change_point_flags[i] = true;
+            if (mb_ok) { mb->m_change_point_flags[i] = 1; }
+            if (vb_ok) {
+                for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
+                    const size_t base = static_cast<size_t>(v) * vb->m_block_size;
+                    vb->m_change_point_flags_storage[base + i] = 1;
+                }
+            }
             routing.m_samples_until_update = routing.m_max_decimation;
         }
         --routing.m_samples_until_update;
@@ -1211,6 +1422,7 @@ nlohmann::json  // NOLINT(misc-include-cleaner)
             obj["replace_range_max"] = r.m_replace_range_max;
         }
         if (r.m_skip_during_gesture) { obj["skip_during_gesture"] = true; }
+        if (r.m_priority != 0) { obj["priority"] = r.m_priority; }
         routings_array.push_back(std::move(obj));
     }
 
@@ -1236,6 +1448,7 @@ void ModulationMatrix::from_json(const nlohmann::json& json) {
         r.m_combine_mode = combine_mode_from_string(obj.value("combine_mode", "additive"));
         r.m_max_decimation = obj.value("max_decimation", uint32_t{0});
         r.m_skip_during_gesture = obj.value("skip_during_gesture", false);
+        r.m_priority = obj.value("priority", uint32_t{0});
         if (obj.contains("replace_range_min") && obj.contains("replace_range_max")) {
             r.m_replace_range_min = obj.value("replace_range_min", 0.0f);
             r.m_replace_range_max = obj.value("replace_range_max", 1.0f);

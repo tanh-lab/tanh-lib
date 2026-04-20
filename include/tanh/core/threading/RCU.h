@@ -9,6 +9,8 @@
 #include <chrono>
 #include <functional>
 
+#include <tanh/utils/RealtimeSanitizer.h>
+
 namespace thl {
 
 /**
@@ -282,6 +284,51 @@ public:
         synchronize_rcu();
     }
 
+    /**
+     * @brief RAII scope that holds an RCU read section open.
+     *
+     * Use when a caller needs to keep the read section open across multiple
+     * operations (e.g. wrapping a whole audio block rather than each per-sample
+     * access). Opens rcu_read_lock() in the ctor and closes it in the dtor,
+     * while exposing the current data pointer.
+     *
+     * Non-copyable, non-movable. Must not outlive the RCU instance. Nested
+     * scopes on the same thread/instance are not supported.
+     *
+     * Usage:
+     * ```cpp
+     * auto scope = rcu.read_scope();        // auto-registers, enters section
+     * use(scope.data());                    // data() valid until dtor
+     * ```                                   // dtor releases section
+     */
+    class [[nodiscard]] ReadScope {
+    public:
+        explicit ReadScope(const RCU* rcu) : m_rcu(rcu) {
+            m_rcu->register_reader_thread();
+            m_rcu->rcu_read_lock();
+            m_data = m_rcu->m_data_ptr.load(std::memory_order_acquire);
+        }
+        ~ReadScope() {
+            if (m_rcu != nullptr) { m_rcu->rcu_read_unlock(); }
+        }
+        ReadScope(const ReadScope&) = delete;
+        ReadScope& operator=(const ReadScope&) = delete;
+        ReadScope(ReadScope&&) = delete;
+        ReadScope& operator=(ReadScope&&) = delete;
+
+        const T& data() const TANH_NONBLOCKING_FUNCTION { return *m_data; }
+        const T* operator->() const TANH_NONBLOCKING_FUNCTION { return m_data; }
+
+    private:
+        const RCU* m_rcu;
+        const T* m_data = nullptr;
+    };
+
+    /**
+     * @brief Open an RCU read section as an RAII scope. See ReadScope.
+     */
+    ReadScope read_scope() const TANH_NONBLOCKING_FUNCTION { return ReadScope(this); }
+
 private:
     // RCU-protected data pointer
     std::atomic<T*> m_data_ptr;
@@ -325,6 +372,7 @@ private:
             return it != m_nodes.end() ? it->second.get() : nullptr;
         }
 
+        // NOLINTNEXTLINE(modernize-use-equals-default) — destructor has real cleanup logic below.
         ~ThreadRCUState() {
             // Mark all nodes as dead - they'll be cleaned up by respective RCU
             // instances.

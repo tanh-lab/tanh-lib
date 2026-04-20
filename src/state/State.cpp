@@ -616,6 +616,7 @@ nlohmann::json State::group_to_json(std::string_view group_prefix, bool include_
 
             def_obj["default_value"] = def.m_default_value;
             def_obj["decimal_places"] = def.m_decimal_places;
+            def_obj["unit"] = def.m_unit;
             def_obj["automation"] = def.is_automatable();
             def_obj["modulation"] = def.is_modulatable();
 

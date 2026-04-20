@@ -25,6 +25,13 @@ public:
 
     virtual void prepare(double sample_rate, size_t samples_per_block) = 0;
 
+    // Called exactly once per source per block by ModulationMatrix::process(),
+    // before any ScheduleStep runs. Input-driven sources override this to
+    // drain their event queue and snapshot per-voice state for the whole block
+    // so the snapshot stays stable across cyclic-SCC iteration. Default no-op
+    // for procedural sources (LFOs, envelopes).
+    virtual void pre_process_block() {}
+
     // Process num_samples starting at offset, writing output to
     // m_output_buffer[offset..offset+num_samples]. Sources should record
     // change points via record_change_point() when output changes.
@@ -45,6 +52,7 @@ public:
     [[nodiscard]] bool has_voice_output() const { return m_has_voice_output; }
     [[nodiscard]] uint32_t num_voices() const { return m_num_voices; }
     [[nodiscard]] bool is_fully_active() const { return m_fully_active; }
+    [[nodiscard]] size_t block_size() const { return m_block_size; }
 
     // ── Mono accessors ──────────────────────────────────────────────────
     float last_output() const { return m_last_output; }
@@ -75,10 +83,16 @@ public:
 
     // ── Output active mask accessors ────────────────────────────────────
     const std::vector<uint8_t>& get_output_active() const { return m_output_active; }
+    std::vector<uint8_t>& get_output_active() { return m_output_active; }
 
     uint8_t get_output_active_at(uint32_t index) const { return m_output_active[index]; }
 
     const uint8_t* voice_output_active(uint32_t v) const {
+        assert(v < m_num_voices);
+        return m_voice_output_active_storage.data() + static_cast<size_t>(v) * m_block_size;
+    }
+
+    uint8_t* voice_output_active(uint32_t v) {
         assert(v < m_num_voices);
         return m_voice_output_active_storage.data() + static_cast<size_t>(v) * m_block_size;
     }

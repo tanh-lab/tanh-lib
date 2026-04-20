@@ -385,6 +385,7 @@ struct ParameterDefinition {
     /// Called by State::create_in_root() to ensure every parameter has formatters.
     void ensure_formatters() {
         if (!m_value_to_text) {
+            // NOLINTNEXTLINE(bugprone-branch-clone) — Float/Double/Int/Bool branches are distinct.
             switch (m_type) {
                 case ParameterType::Float:
                 case ParameterType::Double:
@@ -399,6 +400,7 @@ struct ParameterDefinition {
             }
         }
         if (!m_text_to_value) {
+            // NOLINTNEXTLINE(bugprone-branch-clone) — Float/Double/Int/Bool branches are distinct.
             switch (m_type) {
                 case ParameterType::Float:
                 case ParameterType::Double: m_text_to_value = make_float_parser(); break;

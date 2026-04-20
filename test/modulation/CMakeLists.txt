@@ -12,6 +12,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_ResolvedTarget.cpp
 	test_Integration.cpp
 	test_PolyphonicModulation.cpp
+	test_InputEventQueue.cpp
+	test_ConcurrentRebuild.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
