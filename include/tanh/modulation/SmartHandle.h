@@ -213,6 +213,7 @@ public:
 private:
     // Common modulation application: base_f + mod with curve conversion and type cast.
     T apply_modulation(float base_f, float mod) const TANH_NONBLOCKING_FUNCTION {
+        float result;
         if (m_target->m_uses_normalized_buffer) {
             const float base_norm = m_target->m_range->to_normalized(base_f);
             float result_norm = base_norm + mod;
@@ -222,11 +223,17 @@ private:
             } else {
                 result_norm = std::clamp(result_norm, 0.0f, 1.0f);
             }
-            const float result = m_target->m_range->from_normalized(result_norm);
-            return convert_float<T>(result);
+            result = m_target->m_range->from_normalized(result_norm);
+        } else {
+            // Plain-space delta (linear ranges or absolute depth mode)
+            result = base_f + mod;
         }
-        // Plain-space delta (linear ranges or absolute depth mode)
-        return convert_float<T>(base_f + mod);
+        // Snap stepped int targets (step > 1) to the parameter's step boundary
+        // before the int cast. For step == 1 this is equivalent to the
+        // round-to-nearest already done by convert_float<int>; for larger
+        // steps it keeps modulated values on the quantized grid.
+        if constexpr (std::is_same_v<T, int>) { result = m_target->m_range->snap(result); }
+        return convert_float<T>(result);
     }
 
     template <typename U>
