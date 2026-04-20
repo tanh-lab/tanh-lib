@@ -28,7 +28,7 @@ inline void sink(float v) {
 
 // Concurrent stress: exercises the rebuild/publish race that the atomic-pointer
 // refactor fixes. An "audio" thread loops opening a ReadScope and calling
-// process_locked + SmartHandle::load while a "writer" thread concurrently
+// process_with_scope + SmartHandle::load while a "writer" thread concurrently
 // mutates routings and re-prepares the matrix with varying block sizes. Under
 // the old design, the audio thread could dereference m_voice/m_mono mid-rebuild
 // and crash; under the new design those pointers are only swapped after a
@@ -67,7 +67,7 @@ TEST(ConcurrentRebuild, NoNullDerefUnderConcurrentRoutingChurn) {
     std::thread audio_thread([&]() {
         while (!stop.load(std::memory_order_relaxed)) {
             auto scope = matrix.read_scope();
-            matrix.process_locked(scope.data(), k_block_size);
+            matrix.process_with_scope(scope.data(), k_block_size);
 
             // Reads the atomic buffer pointers inside the scope — the retired
             // buffers from any in-flight rebuild are guaranteed live until
@@ -155,7 +155,7 @@ TEST(ConcurrentRebuild, RepeatedAddRemoveSingleRouting) {
     std::thread audio_thread([&]() {
         while (!stop.load(std::memory_order_relaxed)) {
             auto scope = matrix.read_scope();
-            matrix.process_locked(scope.data(), k_block_size);
+            matrix.process_with_scope(scope.data(), k_block_size);
             const float v = handle.load(0);
             sink(v);
             audio_iterations.fetch_add(1, std::memory_order_relaxed);
