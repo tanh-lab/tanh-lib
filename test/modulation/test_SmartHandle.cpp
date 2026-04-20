@@ -25,9 +25,10 @@ TEST(SmartHandle, GetSmartHandleFromState) {
     EXPECT_TRUE(handle.is_valid());
     EXPECT_FLOAT_EQ(handle.load(), 440.0f);
 
-    // Target created lazily — change_points exists but is empty (no routings)
-    ASSERT_NE(handle.change_points(), nullptr);
-    EXPECT_TRUE(handle.change_points()->empty());
+    // No routings → no MonoBuffers allocated → change_points() returns nullptr.
+    // Buffers are created lazily on the first schedule rebuild that produces
+    // routings touching this target.
+    EXPECT_EQ(handle.change_points(), nullptr);
 }
 
 TEST(SmartHandle, ThrowsOnNonModulatableParameter) {
@@ -59,7 +60,7 @@ TEST(SmartHandle, ModulationOffsetReadsBuffer) {
     // SmartHandle should read base + modulation at each offset
     const auto* target = matrix.get_target("freq");
     for (size_t i = 0; i < k_block_size; ++i) {
-        float expected = 440.0f + target->m_additive_buffer[i];
+        float expected = 440.0f + mono_of(target)->m_additive_buffer[i];
         EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), expected)
             << "Mismatch at sample " << i;
     }

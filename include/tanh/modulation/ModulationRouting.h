@@ -45,6 +45,13 @@ struct ModulationRouting {
 
     CombineMode m_combine_mode = CombineMode::Additive;
 
+    // Priority for multi-Replace composition on a shared target. Higher value
+    // wins when multiple active Replace routings overlap. Default 0 — single
+    // Replace routings behave identically regardless of priority value, so
+    // legacy presets without the field load as 0 without behavior change.
+    // Equal priorities fall back to add-order among active routings.
+    uint32_t m_priority = 0;
+
     // Replace range — maps source [0,1] to [min, max] in plain parameter units.
     // Only meaningful for Replace/ReplaceHold combine modes.
     float m_replace_range_min = 0.0f;

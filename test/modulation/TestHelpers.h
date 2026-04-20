@@ -6,7 +6,29 @@
 
 #include <tanh/modulation/LFOSource.h>
 #include <tanh/modulation/ModulationSource.h>
+#include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/state/ParameterDefinitions.h>
+
+// Test-only accessors for the mono/voice buffer pointers on a ResolvedTarget.
+// The production RT path loads these atomically with acquire semantics under
+// a ReadScope; tests run single-threaded after matrix.process() and just
+// need a plain load for assertions.
+inline const thl::modulation::MonoBuffers* mono_of(const thl::modulation::ResolvedTarget* t) {
+    return t == nullptr ? nullptr : t->m_mono.load(std::memory_order_relaxed);
+}
+inline const thl::modulation::VoiceBuffers* voice_of(const thl::modulation::ResolvedTarget* t) {
+    return t == nullptr ? nullptr : t->m_voice.load(std::memory_order_relaxed);
+}
+
+// Semantic flags replacing the old ResolvedTarget::m_has_mono_* booleans.
+inline bool has_mono_additive(const thl::modulation::ResolvedTarget* t) {
+    auto* m = mono_of(t);
+    return m != nullptr && m->m_has_additive;
+}
+inline bool has_mono_replace(const thl::modulation::ResolvedTarget* t) {
+    auto* m = mono_of(t);
+    return m != nullptr && m->m_has_replace;
+}
 
 static constexpr double k_sample_rate = 48000.0;
 static constexpr size_t k_block_size = 512;

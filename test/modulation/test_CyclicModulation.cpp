@@ -131,7 +131,7 @@ TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
     const auto* target_a = matrix.get_target("param_a");
     ASSERT_NE(target_a, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target_a->m_additive_buffer[i], 0.7f * 2.0f)
+        EXPECT_FLOAT_EQ(mono_of(target_a)->m_additive_buffer[i], 0.7f * 2.0f)
             << "param_a mismatch at sample " << i;
     }
 
@@ -139,7 +139,7 @@ TEST(CyclicModulation, CyclicProcessingFillsModulationBuffer) {
     const auto* target_b = matrix.get_target("param_b");
     ASSERT_NE(target_b, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(target_b->m_additive_buffer[i], 0.5f * 3.0f)
+        EXPECT_FLOAT_EQ(mono_of(target_b)->m_additive_buffer[i], 0.5f * 3.0f)
             << "param_b mismatch at sample " << i;
     }
 }
@@ -193,7 +193,7 @@ TEST(CyclicModulation, MixedBulkAndCyclicSchedule) {
     const auto* plain = matrix.get_target("plain_target");
     ASSERT_NE(plain, nullptr);
     for (size_t i = 0; i < k_block_size; ++i) {
-        EXPECT_FLOAT_EQ(plain->m_additive_buffer[i], 1.0f);
+        EXPECT_FLOAT_EQ(mono_of(plain)->m_additive_buffer[i], 1.0f);
     }
 }
 
@@ -258,6 +258,80 @@ TEST(CyclicModulation, CyclicSourcesRecordChangePoints) {
     const auto* target_b = matrix.get_target("param_b");
     ASSERT_NE(target_a, nullptr);
     ASSERT_NE(target_b, nullptr);
-    EXPECT_FALSE(target_a->m_change_points.empty());
-    EXPECT_FALSE(target_b->m_change_points.empty());
+    EXPECT_FALSE(mono_of(target_a)->m_change_points.empty());
+    EXPECT_FALSE(mono_of(target_b)->m_change_points.empty());
+}
+
+// Simulates an input-driven source that freezes its per-block value in
+// pre_process_block — mirrors the XYTouchSource pattern. The snapshot must
+// remain stable across cyclic iterations: if process() is invoked multiple
+// times per block inside a CyclicStep, the "queue" must not be redrained.
+class SnapshotSource : public ModulationSource {
+public:
+    float m_next_value = 0.0f;  // Written "from the UI thread" between blocks.
+    int m_drain_count = 0;
+    float m_snapshot = 0.0f;
+
+    explicit SnapshotSource(std::vector<std::string> keys = {})
+        : ModulationSource(true, 0, true), m_keys(std::move(keys)) {}
+
+    void prepare(double /*sr*/, size_t spb) override { resize_buffers(spb); }
+
+    void pre_process_block() override {
+        ++m_drain_count;
+        m_snapshot = m_next_value;  // One-shot drain of the "queue".
+    }
+
+    void process(size_t num_samples, size_t offset = 0) override {
+        for (size_t i = offset; i < offset + num_samples; ++i) { m_output_buffer[i] = m_snapshot; }
+        m_last_output = m_snapshot;
+        if (num_samples > 0) { record_change_point(static_cast<uint32_t>(offset)); }
+    }
+
+    std::vector<std::string> parameter_keys() const override { return m_keys; }
+
+private:
+    std::vector<std::string> m_keys;
+};
+
+TEST(CyclicModulation, PreProcessBlockSnapshotStableAcrossCyclicIterations) {
+    // Two sources in a cycle, one of which drains its "queue" in
+    // pre_process_block. CyclicStep may iterate process() multiple times;
+    // the queue-composing source must not re-drain per iteration.
+    thl::State state;
+    state.create("param_a", modulatable_float(0.0f));
+    state.create("param_b", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    SnapshotSource src1({"param_a"});
+    TestModSource src2({"param_b"});
+    src1.m_next_value = 0.5f;
+    src2.set_value(0.3f);
+
+    matrix.add_source("src1", &src1);
+    matrix.add_source("src2", &src2);
+    matrix.get_smart_handle<float>("param_a");
+    matrix.get_smart_handle<float>("param_b");
+
+    // Cross-routing: src1 <-> src2 form a cycle.
+    matrix.add_routing({"src2", "param_a", 1.0f});
+    matrix.add_routing({"src1", "param_b", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    matrix.process(k_block_size);
+    EXPECT_EQ(src1.m_drain_count, 1);
+    // Snapshot reflects the pre-block value.
+    EXPECT_FLOAT_EQ(src1.m_snapshot, 0.5f);
+
+    // Between blocks, the "UI thread" writes a new value.
+    src1.m_next_value = 0.9f;
+
+    matrix.process(k_block_size);
+    EXPECT_EQ(src1.m_drain_count, 2);
+    EXPECT_FLOAT_EQ(src1.m_snapshot, 0.9f);
+    // Block 2's output reflects the snapshot, not mid-iteration rewrites.
+    for (size_t i = 0; i < k_block_size; ++i) {
+        EXPECT_FLOAT_EQ(src1.get_output_buffer()[i], 0.9f);
+    }
 }

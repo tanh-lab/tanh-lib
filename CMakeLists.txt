@@ -366,9 +366,21 @@ if(TANH_BUILD_MODULATION)
         message(FATAL_ERROR "Modulation component requires State component")
     endif()
 
+    # moodycamel/readerwriterqueue — header-only lock-free SPSC queue used by
+    # InputEventQueue to transport UI-thread events to the audio thread.
+    FetchContent_Declare(
+        readerwriterqueue
+        GIT_REPOSITORY https://github.com/cameron314/readerwriterqueue.git
+        GIT_TAG v1.0.6
+        GIT_SHALLOW TRUE
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(readerwriterqueue)
+
     add_library(${PROJECT_NAME}_modulation
         src/modulation/ModulationMatrix.cpp
         src/modulation/LFOSource.cpp
+        src/modulation/InputEventQueue.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES
@@ -388,6 +400,7 @@ if(TANH_BUILD_MODULATION)
         PUBLIC
         ${PROJECT_NAME}_dsp
         ${PROJECT_NAME}_state
+        readerwriterqueue
     )
 
     target_compile_definitions(${PROJECT_NAME}_modulation

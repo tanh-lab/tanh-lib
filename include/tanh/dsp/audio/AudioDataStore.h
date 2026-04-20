@@ -24,6 +24,7 @@ public:
     AudioDataStore() = default;
 
     bool begin_read() {
+        // NOLINTNEXTLINE(misc-const-correctness) — mutated by compare_exchange_strong on failure.
         int expected = Idle;
         return m_state.compare_exchange_strong(expected,
                                                Reading,
@@ -46,6 +47,7 @@ public:
     std::vector<AudioBuffer>& begin_load() {
         // Spin until we can acquire Loading state
         while (true) {
+            // NOLINTNEXTLINE(misc-const-correctness) — mutated by compare_exchange_weak on failure.
             int expected = Idle;
             if (m_state.compare_exchange_weak(expected,
                                               Loading,

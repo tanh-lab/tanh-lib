@@ -43,6 +43,21 @@ struct ProcessingConfig {
     std::vector<ScheduleStep> m_schedule;
     std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>> m_routings_by_source;
     std::vector<ResolvedTarget*> m_active_targets;
+
+    // Every registered source — populated in rebuild_schedule_locked(). Used
+    // by process() to run the pre_process_block() drain pass exactly once per
+    // source per block, before any ScheduleStep. Contains every source added
+    // via add_source(), including sources with no routings.
+    std::vector<ModulationSource*> m_all_sources;
+
+    // Per-target Replace routings sorted ascending by priority. Only populated
+    // for targets with >1 Replace/ReplaceHold routing — the common single-
+    // Replace case keeps the in-schedule fast path with m_replace_deferred =
+    // false. Deferred routings are re-applied after the schedule loop so
+    // higher-priority writes overwrite lower-priority ones deterministically
+    // regardless of source schedule order.
+    std::vector<std::pair<ResolvedTarget*, std::vector<const ResolvedRouting*>>>
+        m_multi_replace_targets;
 };
 
 class TANH_API ModulationMatrix {
@@ -53,10 +68,60 @@ public:
     ModulationMatrix(const ModulationMatrix&) = delete;
     ModulationMatrix& operator=(const ModulationMatrix&) = delete;
 
+    // Access the underlying State — useful when downstream code holds only a
+    // ModulationMatrix& but still needs non-RT writes (e.g. setting string
+    // parameters, loading presets) that don't route through the matrix.
+    thl::State& state() { return m_state; }
+    const thl::State& state() const { return m_state; }
+
+    // Allocate internal buffers sized to samples_per_block and rebuild the
+    // schedule. Every target's VoiceBuffers / MonoBuffers is freshly allocated
+    // and atomically published — old buffers are retired past a synchronize()
+    // barrier so in-flight audio blocks always see either the old or the new
+    // buffer in full, never a torn mid-resize state.
+    //
+    // Threading contract:
+    // - Same-size prepare (same samples_per_block) is safe to call concurrently
+    //   with process_locked(). The routing-churn race is closed by the flag
+    //   guards on every target-buffer access.
+    // - Shrinking prepare (new samples_per_block < the num_samples the audio
+    //   thread is currently calling process_locked() with) is NOT safe. The
+    //   apply_routing_* loops iterate over num_samples, which may now exceed
+    //   the newly-published m_block_size and write OOB into buffer storage.
+    //   Callers must quiesce audio — stop the driver, or call prepare() from
+    //   the driver's own reconfiguration callback — before reducing block
+    //   size. Growing prepare is safe because the old num_samples fits the
+    //   new larger storage.
     void prepare(double sample_rate, size_t samples_per_block);
 
+    using ConfigRCU = thl::RCU<ProcessingConfig>;
+    using ReadScope = typename ConfigRCU::ReadScope;
+
+    // Open an RCU read section covering the full audio block. Callers that
+    // need to reach into ResolvedTarget buffers outside of ModulationMatrix
+    // (e.g. DSP processors reading SmartHandle state) must hold a ReadScope
+    // for the duration of those reads — the scope prevents the writer from
+    // reclaiming retired VoiceBuffers / MonoBuffers while the audio thread
+    // still references them.
+    //
+    // Usage on the audio thread:
+    //   auto scope = matrix.read_scope();
+    //   matrix.process_locked(scope.data(), num_samples);
+    //   processor_manager.process(buffer);  // SmartHandle reads safe here
+    //   // scope dtor releases the read section
+    [[nodiscard]] ReadScope read_scope() const TANH_NONBLOCKING_FUNCTION {
+        return m_config.read_scope();
+    }
+
     // Process all sources and fill modulation buffers for all targets.
+    // Convenience wrapper that opens a read scope internally — use when the
+    // caller doesn't need to extend the scope across downstream DSP work.
     void process(size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+
+    // Process variant assuming the caller already holds an open ReadScope.
+    // The config reference must come from that scope's data().
+    void process_locked(const ProcessingConfig& config,
+                        size_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
     // Source management
     void add_source(const std::string_view id, ModulationSource* source);
@@ -100,6 +165,16 @@ public:
                                       float range_min,
                                       float range_max);
     bool update_routing_replace_range(uint32_t routing_id, float range_min, float range_max);
+
+    // Normalized-[0,1] variant: looks up the target parameter's Range via the
+    // matrix's State reference and converts the endpoints to plain units
+    // internally. Callers that already work in normalized coordinates can
+    // avoid a separate State lookup.
+    // Returns false if the target is not in State or the routing was not found.
+    bool update_routing_replace_range_normalized(std::string_view source_id,
+                                                 std::string_view target_id,
+                                                 float norm_min,
+                                                 float norm_max);
 
     // Clear replace range (revert to src * depth_precomputed behavior). Thread-safe.
     // Returns false if the routing was not found.
@@ -160,6 +235,12 @@ private:
                         size_t num_samples);
 
     void apply_routing_change_points(const ResolvedRouting& routing, size_t num_samples);
+
+    // Post-schedule composition pass for targets with multiple Replace/ReplaceHold
+    // routings. Re-applies the deferred routings in ascending priority order so
+    // higher-priority writes land last and therefore win within their active
+    // regions. Called from process() after the schedule loop.
+    void apply_multi_replace_composition(const ProcessingConfig& config, size_t num_samples);
 
     // Tarjan SCC helper
     void build_schedule_from_graph(
