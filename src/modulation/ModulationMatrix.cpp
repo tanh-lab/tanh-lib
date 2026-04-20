@@ -72,7 +72,7 @@ SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_k
                                     "' has modulation disabled");
     }
 
-    auto* target = ensure_target_locked(param_key);
+    auto* target = ensure_target_with_lock(param_key);
     return {handle, target};
 }
 
@@ -84,7 +84,7 @@ template TANH_API SmartHandle<double> ModulationMatrix::get_smart_handle<double>
 template TANH_API SmartHandle<int> ModulationMatrix::get_smart_handle<int>(std::string_view);
 template TANH_API SmartHandle<bool> ModulationMatrix::get_smart_handle<bool>(std::string_view);
 
-ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id) {
+ResolvedTarget* ModulationMatrix::ensure_target_with_lock(const std::string_view id) {
     auto it = m_targets.find(id);
     if (it != m_targets.end()) { return &it->second; }
     // ResolvedTarget is non-movable (holds atomics) — use try_emplace to
@@ -105,7 +105,7 @@ ResolvedTarget* ModulationMatrix::ensure_target_locked(const std::string_view id
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
     // See the threading contract on the header declaration: same-size and
-    // growing prepares are safe under concurrent process_locked(); shrinking
+    // growing prepares are safe under concurrent process_with_scope(); shrinking
     // prepares require quiescing the audio thread first.
     std::scoped_lock const lock(m_writer_mutex);
 
@@ -114,18 +114,18 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
 
     for (auto& [id, source] : m_sources) { source->prepare(sample_rate, samples_per_block); }
 
-    // Buffers are (re)allocated inside rebuild_schedule_locked() sized against
+    // Buffers are (re)allocated inside rebuild_schedule_with_lock() sized against
     // the new m_samples_per_block — no per-target resize pass needed here.
-    rebuild_schedule_locked();
+    rebuild_schedule_with_lock();
 }
 
 void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     const auto scope = m_config.read_scope();
-    process_locked(scope.data(), num_samples);
+    process_with_scope(scope.data(), num_samples);
 }
 
-void ModulationMatrix::process_locked(const ProcessingConfig& config,
-                                      size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
+                                          size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     // 1. Drain pass — every registered source consumes its event queue and
     //    freezes per-block input state. Runs exactly once per source per
     //    block, before any ScheduleStep. Makes cyclic-SCC iteration safe:
@@ -138,16 +138,16 @@ void ModulationMatrix::process_locked(const ProcessingConfig& config,
     // 3. Execute schedule steps
     for (const auto& step : config.m_schedule) {
         if (auto* bulk = std::get_if<BulkStep>(&step)) {
-            process_source_bulk(config, bulk->m_source, num_samples);
+            process_source_bulk_with_scope(config, bulk->m_source, num_samples);
         } else if (auto* cyclic = std::get_if<CyclicStep>(&step)) {
-            process_cyclic(config, cyclic->m_sources, num_samples);
+            process_cyclic_with_scope(config, cyclic->m_sources, num_samples);
         }
     }
 
     // 4. Multi-Replace composition — re-apply deferred Replace/ReplaceHold
     //    routings on shared targets in ascending priority order so higher
     //    priority wins per sample. Single-Replace targets are untouched.
-    apply_multi_replace_composition(config, num_samples);
+    apply_multi_replace_composition_with_scope(config, num_samples);
 
     // 5. Build final sorted change point lists from flags
     for (auto* target : config.m_active_targets) { target->build_change_points(); }
@@ -158,11 +158,11 @@ void ModulationMatrix::add_source(const std::string_view id, ModulationSource* s
     auto it = m_sources.find(id);
     if (it != m_sources.end()) {
         it->second = source;
-        rebuild_schedule_locked();
+        rebuild_schedule_with_lock();
         return;
     }
     m_sources.emplace(std::string(id), source);
-    rebuild_schedule_locked();
+    rebuild_schedule_with_lock();
 }
 
 void ModulationMatrix::remove_source(const std::string_view id) {
@@ -172,7 +172,7 @@ void ModulationMatrix::remove_source(const std::string_view id) {
     // Remove user-facing routings that reference this source.
     std::erase_if(m_user_routings, [&](const ModulationRouting& r) { return r.m_source_id == id; });
 
-    rebuild_schedule_locked();
+    rebuild_schedule_with_lock();
     // Block until all RT readers have finished with the old config that still
     // referenced the removed source. After this returns the caller may safely
     // delete the ModulationSource object.
@@ -221,12 +221,12 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
     }
 
     // Resolve target if not yet in m_targets
-    ensure_target_locked(routing.m_target_id);
+    ensure_target_with_lock(routing.m_target_id);
 
     const uint32_t id = m_next_routing_id++;
     m_user_routings.push_back(routing);
     m_user_routings.back().m_id = id;
-    rebuild_schedule_locked();
+    rebuild_schedule_with_lock();
     return id;
 }
 
@@ -235,27 +235,27 @@ void ModulationMatrix::remove_routing(std::string_view source_id, std::string_vi
     std::erase_if(m_user_routings, [&](const ModulationRouting& r) {
         return r.m_source_id == source_id && r.m_target_id == target_id;
     });
-    rebuild_schedule_locked();
+    rebuild_schedule_with_lock();
 }
 
 void ModulationMatrix::remove_routing(uint32_t routing_id) {
     std::scoped_lock const lock(m_writer_mutex);
     std::erase_if(m_user_routings,
                   [&](const ModulationRouting& r) { return r.m_id == routing_id; });
-    rebuild_schedule_locked();
+    rebuild_schedule_with_lock();
 }
 
 // ── Private routing helpers ──────────────────────────────────────────────────
 
-ModulationRouting* ModulationMatrix::find_user_routing_locked(std::string_view source_id,
-                                                              std::string_view target_id) {
+ModulationRouting* ModulationMatrix::find_user_routing_with_lock(std::string_view source_id,
+                                                                 std::string_view target_id) {
     for (auto& r : m_user_routings) {
         if (r.m_source_id == source_id && r.m_target_id == target_id) { return &r; }
     }
     return nullptr;
 }
 
-ModulationRouting* ModulationMatrix::find_user_routing_locked(uint32_t routing_id) {
+ModulationRouting* ModulationMatrix::find_user_routing_with_lock(uint32_t routing_id) {
     for (auto& r : m_user_routings) {
         if (r.m_id == routing_id) { return &r; }
     }
@@ -277,8 +277,8 @@ float ModulationMatrix::compute_depth_precomputed(const ModulationRouting& routi
     return routing.m_depth_mode == DepthMode::Normalized ? routing.m_depth * span : routing.m_depth;
 }
 
-bool ModulationMatrix::update_routing_depth_locked(ModulationRouting& user_routing,
-                                                   float new_depth) {
+bool ModulationMatrix::update_routing_depth_with_lock(ModulationRouting& user_routing,
+                                                      float new_depth) {
     user_routing.m_depth = new_depth;
 
     auto tgt_it = m_targets.find(user_routing.m_target_id);
@@ -298,9 +298,9 @@ bool ModulationMatrix::update_routing_depth_locked(ModulationRouting& user_routi
     return true;
 }
 
-bool ModulationMatrix::update_routing_replace_range_locked(ModulationRouting& user_routing,
-                                                           float range_min,
-                                                           float range_max) {
+bool ModulationMatrix::update_routing_replace_range_with_lock(ModulationRouting& user_routing,
+                                                              float range_min,
+                                                              float range_max) {
     user_routing.m_replace_range_min = range_min;
     user_routing.m_replace_range_max = range_max;
     user_routing.m_has_replace_range = true;
@@ -319,7 +319,7 @@ bool ModulationMatrix::update_routing_replace_range_locked(ModulationRouting& us
     return true;
 }
 
-bool ModulationMatrix::clear_routing_replace_range_locked(ModulationRouting& user_routing) {
+bool ModulationMatrix::clear_routing_replace_range_with_lock(ModulationRouting& user_routing) {
     user_routing.m_has_replace_range = false;
 
     const uint32_t id = user_routing.m_id;
@@ -340,16 +340,16 @@ bool ModulationMatrix::update_routing_depth(std::string_view source_id,
                                             std::string_view target_id,
                                             float new_depth) {
     std::scoped_lock const lock(m_writer_mutex);
-    auto* routing = find_user_routing_locked(source_id, target_id);
+    auto* routing = find_user_routing_with_lock(source_id, target_id);
     if (!routing) { return false; }
-    return update_routing_depth_locked(*routing, new_depth);
+    return update_routing_depth_with_lock(*routing, new_depth);
 }
 
 bool ModulationMatrix::update_routing_depth(uint32_t routing_id, float new_depth) {
     std::scoped_lock const lock(m_writer_mutex);
-    auto* routing = find_user_routing_locked(routing_id);
+    auto* routing = find_user_routing_with_lock(routing_id);
     if (!routing) { return false; }
-    return update_routing_depth_locked(*routing, new_depth);
+    return update_routing_depth_with_lock(*routing, new_depth);
 }
 
 bool ModulationMatrix::update_routing_replace_range(std::string_view source_id,
@@ -357,18 +357,18 @@ bool ModulationMatrix::update_routing_replace_range(std::string_view source_id,
                                                     float range_min,
                                                     float range_max) {
     std::scoped_lock const lock(m_writer_mutex);
-    auto* routing = find_user_routing_locked(source_id, target_id);
+    auto* routing = find_user_routing_with_lock(source_id, target_id);
     if (!routing) { return false; }
-    return update_routing_replace_range_locked(*routing, range_min, range_max);
+    return update_routing_replace_range_with_lock(*routing, range_min, range_max);
 }
 
 bool ModulationMatrix::update_routing_replace_range(uint32_t routing_id,
                                                     float range_min,
                                                     float range_max) {
     std::scoped_lock const lock(m_writer_mutex);
-    auto* routing = find_user_routing_locked(routing_id);
+    auto* routing = find_user_routing_with_lock(routing_id);
     if (!routing) { return false; }
-    return update_routing_replace_range_locked(*routing, range_min, range_max);
+    return update_routing_replace_range_with_lock(*routing, range_min, range_max);
 }
 
 bool ModulationMatrix::update_routing_replace_range_normalized(std::string_view source_id,
@@ -387,16 +387,16 @@ bool ModulationMatrix::update_routing_replace_range_normalized(std::string_view 
 bool ModulationMatrix::clear_routing_replace_range(std::string_view source_id,
                                                    std::string_view target_id) {
     std::scoped_lock const lock(m_writer_mutex);
-    auto* routing = find_user_routing_locked(source_id, target_id);
+    auto* routing = find_user_routing_with_lock(source_id, target_id);
     if (!routing) { return false; }
-    return clear_routing_replace_range_locked(*routing);
+    return clear_routing_replace_range_with_lock(*routing);
 }
 
 bool ModulationMatrix::clear_routing_replace_range(uint32_t routing_id) {
     std::scoped_lock const lock(m_writer_mutex);
-    auto* routing = find_user_routing_locked(routing_id);
+    auto* routing = find_user_routing_with_lock(routing_id);
     if (!routing) { return false; }
-    return clear_routing_replace_range_locked(*routing);
+    return clear_routing_replace_range_with_lock(*routing);
 }
 
 const ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) const {
@@ -413,14 +413,14 @@ ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) {
 
 void ModulationMatrix::rebuild_schedule() {
     std::scoped_lock const lock(m_writer_mutex);
-    rebuild_schedule_locked();
+    rebuild_schedule_with_lock();
 }
 
 std::vector<ScheduleStep> ModulationMatrix::get_schedule() const {
     return m_config.read([](const ProcessingConfig& config) { return config.m_schedule; });
 }
 
-void ModulationMatrix::rebuild_schedule_locked() {
+void ModulationMatrix::rebuild_schedule_with_lock() {
     // ── Pass 1: Determine per-target buffer requirements ────────────────
     struct TargetInfo {
         uint32_t m_max_voices = 0;
@@ -1081,9 +1081,9 @@ void apply_modulation_sample_mono(const ResolvedRouting& routing,
 
 // ── Per-source bulk processing ────────────────────────────────────────────────
 
-void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
-                                           ModulationSource* source,
-                                           size_t num_samples) {
+void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& config,
+                                                      ModulationSource* source,
+                                                      size_t num_samples) {
     auto it = config.m_routings_by_source.find(source);
     if (it == config.m_routings_by_source.end()) { return; }
 
@@ -1124,7 +1124,7 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
         }
 
         // Deferred multi-Replace routings skip the write here — they are re-
-        // applied in apply_multi_replace_composition() after the schedule loop
+        // applied in apply_multi_replace_composition_with_scope() after the schedule loop
         // in priority order. Change-point propagation below still runs so the
         // target evaluates transition points regardless.
         if (!routing->m_replace_deferred) {
@@ -1179,15 +1179,15 @@ void ModulationMatrix::process_source_bulk(const ProcessingConfig& config,
             }
         }
 
-        apply_routing_change_points(*routing, num_samples);
+        apply_routing_change_points_with_scope(*routing, num_samples);
     }
 }
 
 // ── Cyclic group processing (per-sample with z⁻¹) ────────────────────────────
 
-void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
-                                      const std::vector<ModulationSource*>& sources,
-                                      size_t num_samples) {
+void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
+                                                 const std::vector<ModulationSource*>& sources,
+                                                 size_t num_samples) {
     // Clear per-block state for all sources
     for (auto* source : sources) {
         source->clear_change_points();
@@ -1305,15 +1305,15 @@ void ModulationMatrix::process_cyclic(const ProcessingConfig& config,
                     }
                 }
             }
-            apply_routing_change_points(*routing, num_samples);
+            apply_routing_change_points_with_scope(*routing, num_samples);
         }
     }
 }
 
 // ── Multi-Replace composition (post-schedule) ────────────────────────────────
 
-void ModulationMatrix::apply_multi_replace_composition(const ProcessingConfig& config,
-                                                       size_t num_samples) {
+void ModulationMatrix::apply_multi_replace_composition_with_scope(const ProcessingConfig& config,
+                                                                  size_t num_samples) {
     // Empty in the common single-Replace case — early out keeps cost zero.
     if (config.m_multi_replace_targets.empty()) { return; }
 
@@ -1343,8 +1343,8 @@ void ModulationMatrix::apply_multi_replace_composition(const ProcessingConfig& c
 
 // ── Routing change point helper ───────────────────────────────────────────────
 
-void ModulationMatrix::apply_routing_change_points(const ResolvedRouting& routing,
-                                                   size_t num_samples) {
+void ModulationMatrix::apply_routing_change_points_with_scope(const ResolvedRouting& routing,
+                                                              size_t num_samples) {
     if (routing.m_max_decimation == 0) { return; }
 
     auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
@@ -1478,13 +1478,13 @@ void ModulationMatrix::from_json(const nlohmann::json& json) {
             m_user_routings.push_back(parse_routing(obj));
         }
         finalize_ids();
-        rebuild_schedule_locked();
+        rebuild_schedule_with_lock();
     } else if (json.is_array()) {
         // Bare routings array (from to_json(false))
         m_user_routings.clear();
         for (const auto& obj : json) { m_user_routings.push_back(parse_routing(obj)); }
         finalize_ids();
-        rebuild_schedule_locked();
+        rebuild_schedule_with_lock();
     }
 
     // Forward parameters to State

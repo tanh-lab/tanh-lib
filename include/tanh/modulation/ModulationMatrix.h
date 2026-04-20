@@ -44,7 +44,7 @@ struct ProcessingConfig {
     std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>> m_routings_by_source;
     std::vector<ResolvedTarget*> m_active_targets;
 
-    // Every registered source — populated in rebuild_schedule_locked(). Used
+    // Every registered source — populated in rebuild_schedule_with_lock(). Used
     // by process() to run the pre_process_block() drain pass exactly once per
     // source per block, before any ScheduleStep. Contains every source added
     // via add_source(), including sources with no routings.
@@ -82,10 +82,10 @@ public:
     //
     // Threading contract:
     // - Same-size prepare (same samples_per_block) is safe to call concurrently
-    //   with process_locked(). The routing-churn race is closed by the flag
+    //   with process_with_scope(). The routing-churn race is closed by the flag
     //   guards on every target-buffer access.
     // - Shrinking prepare (new samples_per_block < the num_samples the audio
-    //   thread is currently calling process_locked() with) is NOT safe. The
+    //   thread is currently calling process_with_scope() with) is NOT safe. The
     //   apply_routing_* loops iterate over num_samples, which may now exceed
     //   the newly-published m_block_size and write OOB into buffer storage.
     //   Callers must quiesce audio — stop the driver, or call prepare() from
@@ -106,7 +106,7 @@ public:
     //
     // Usage on the audio thread:
     //   auto scope = matrix.read_scope();
-    //   matrix.process_locked(scope.data(), num_samples);
+    //   matrix.process_with_scope(scope.data(), num_samples);
     //   processor_manager.process(buffer);  // SmartHandle reads safe here
     //   // scope dtor releases the read section
     [[nodiscard]] ReadScope read_scope() const TANH_NONBLOCKING_FUNCTION {
@@ -120,8 +120,8 @@ public:
 
     // Process variant assuming the caller already holds an open ReadScope.
     // The config reference must come from that scope's data().
-    void process_locked(const ProcessingConfig& config,
-                        size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+    void process_with_scope(const ProcessingConfig& config,
+                            size_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
     // Source management
     void add_source(const std::string_view id, ModulationSource* source);
@@ -204,43 +204,44 @@ public:
 
 private:
     // Internal rebuild — must be called with m_writer_mutex held.
-    void rebuild_schedule_locked();
+    void rebuild_schedule_with_lock();
 
     // Ensure a target exists for the given id. Returns a stable pointer.
     // Must be called with m_writer_mutex held.
-    ResolvedTarget* ensure_target_locked(const std::string_view id);
+    ResolvedTarget* ensure_target_with_lock(const std::string_view id);
 
     // Routing lookup helpers — must be called with m_writer_mutex held.
-    ModulationRouting* find_user_routing_locked(std::string_view source_id,
-                                                std::string_view target_id);
-    ModulationRouting* find_user_routing_locked(uint32_t routing_id);
+    ModulationRouting* find_user_routing_with_lock(std::string_view source_id,
+                                                   std::string_view target_id);
+    ModulationRouting* find_user_routing_with_lock(uint32_t routing_id);
 
     // Compute the precomputed depth value for a routing given its target.
     static float compute_depth_precomputed(const ModulationRouting& routing,
                                            const ResolvedTarget& target);
 
     // Routing update helpers — must be called with m_writer_mutex held.
-    bool update_routing_depth_locked(ModulationRouting& user_routing, float new_depth);
-    bool update_routing_replace_range_locked(ModulationRouting& user_routing,
-                                             float range_min,
-                                             float range_max);
-    bool clear_routing_replace_range_locked(ModulationRouting& user_routing);
+    bool update_routing_depth_with_lock(ModulationRouting& user_routing, float new_depth);
+    bool update_routing_replace_range_with_lock(ModulationRouting& user_routing,
+                                                float range_min,
+                                                float range_max);
+    bool clear_routing_replace_range_with_lock(ModulationRouting& user_routing);
 
     // Process helpers — called from within RCU read section.
-    void process_source_bulk(const ProcessingConfig& config,
-                             ModulationSource* source,
-                             size_t num_samples);
-    void process_cyclic(const ProcessingConfig& config,
-                        const std::vector<ModulationSource*>& sources,
-                        size_t num_samples);
+    void process_source_bulk_with_scope(const ProcessingConfig& config,
+                                        ModulationSource* source,
+                                        size_t num_samples);
+    void process_cyclic_with_scope(const ProcessingConfig& config,
+                                   const std::vector<ModulationSource*>& sources,
+                                   size_t num_samples);
 
-    void apply_routing_change_points(const ResolvedRouting& routing, size_t num_samples);
+    void apply_routing_change_points_with_scope(const ResolvedRouting& routing, size_t num_samples);
 
     // Post-schedule composition pass for targets with multiple Replace/ReplaceHold
     // routings. Re-applies the deferred routings in ascending priority order so
     // higher-priority writes land last and therefore win within their active
     // regions. Called from process() after the schedule loop.
-    void apply_multi_replace_composition(const ProcessingConfig& config, size_t num_samples);
+    void apply_multi_replace_composition_with_scope(const ProcessingConfig& config,
+                                                    size_t num_samples);
 
     // Tarjan SCC helper
     void build_schedule_from_graph(
