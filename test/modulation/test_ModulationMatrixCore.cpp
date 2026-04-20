@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <array>
+#include <utility>
+
 #include "TestHelpers.h"
 
 #include <nlohmann/json.hpp>
@@ -400,6 +403,141 @@ TEST(ModulationMatrix, ReplaceRange_DepthScalesSource) {
 
     // value = 200 + 1.0 * 0.5 * (800 - 200) = 200 + 300 = 500
     EXPECT_FLOAT_EQ(handle.load(0), 500.0f);
+}
+
+// Negative depth on a replace routing with an explicit range must reverse the
+// direction of the mapping: src=0 → rmax, src=1 → rmin. Regression for a bug
+// where inverted full-range mappings collapsed every source value to rmin.
+TEST(ModulationMatrix, ReplaceRange_InvertedReversesEndpoints_SrcOne) {
+    thl::State state;
+    state.create(
+        "freq",
+        thl::ParameterDefinition::make_float("Freq", thl::Range::linear(0.0f, 1000.0f), 500.0f)
+            .modulatable(true));
+    ModulationMatrix matrix(state);
+
+    ConstSource src;
+    src.m_value = 1.0f;
+
+    matrix.add_source("src", &src);
+    auto handle = matrix.get_smart_handle<float>("freq");
+
+    ModulationRouting routing;
+    routing.m_source_id = "src";
+    routing.m_target_id = "freq";
+    routing.m_depth = -1.0f;  // inverted
+    routing.m_combine_mode = CombineMode::Replace;
+    routing.m_replace_range_min = 200.0f;
+    routing.m_replace_range_max = 800.0f;
+    routing.m_has_replace_range = true;
+    matrix.add_routing(routing);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // src=1 with inverted routing → rmin
+    EXPECT_FLOAT_EQ(handle.load(0), 200.0f);
+}
+
+TEST(ModulationMatrix, ReplaceRange_InvertedReversesEndpoints_SrcZero) {
+    thl::State state;
+    state.create(
+        "freq",
+        thl::ParameterDefinition::make_float("Freq", thl::Range::linear(0.0f, 1000.0f), 500.0f)
+            .modulatable(true));
+    ModulationMatrix matrix(state);
+
+    ConstSource src;
+    src.m_value = 0.0f;
+
+    matrix.add_source("src", &src);
+    auto handle = matrix.get_smart_handle<float>("freq");
+
+    ModulationRouting routing;
+    routing.m_source_id = "src";
+    routing.m_target_id = "freq";
+    routing.m_depth = -1.0f;
+    routing.m_combine_mode = CombineMode::Replace;
+    routing.m_replace_range_min = 200.0f;
+    routing.m_replace_range_max = 800.0f;
+    routing.m_has_replace_range = true;
+    matrix.add_routing(routing);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // src=0 with inverted routing → rmax
+    EXPECT_FLOAT_EQ(handle.load(0), 800.0f);
+}
+
+TEST(ModulationMatrix, ReplaceRange_InvertedMidpointUnchanged) {
+    thl::State state;
+    state.create(
+        "freq",
+        thl::ParameterDefinition::make_float("Freq", thl::Range::linear(0.0f, 1000.0f), 500.0f)
+            .modulatable(true));
+    ModulationMatrix matrix(state);
+
+    ConstSource src;
+    src.m_value = 0.5f;
+
+    matrix.add_source("src", &src);
+    auto handle = matrix.get_smart_handle<float>("freq");
+
+    ModulationRouting routing;
+    routing.m_source_id = "src";
+    routing.m_target_id = "freq";
+    routing.m_depth = -1.0f;
+    routing.m_combine_mode = CombineMode::Replace;
+    routing.m_replace_range_min = 200.0f;
+    routing.m_replace_range_max = 800.0f;
+    routing.m_has_replace_range = true;
+    matrix.add_routing(routing);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // src=0.5 is symmetric — inversion shouldn't move it
+    EXPECT_FLOAT_EQ(handle.load(0), 500.0f);
+}
+
+// Regression for reported bug: a pad sweep from 0→1 with an inverted, full-span
+// [0, param_max] mapping previously produced rmin across the whole sweep (every
+// note collapsed to the lowest). Sweep the source through {0, 0.25, 0.5, 0.75,
+// 1} and assert the output traces rmax → rmin linearly.
+TEST(ModulationMatrix, ReplaceRange_InvertedFullRangeSweep) {
+    thl::State state;
+    state.create(
+        "note",
+        thl::ParameterDefinition::make_float("Note", thl::Range::linear(0.0f, 127.0f), 60.0f)
+            .modulatable(true));
+    ModulationMatrix matrix(state);
+
+    ConstSource src;
+    src.m_value = 0.0f;
+
+    matrix.add_source("src", &src);
+    auto handle = matrix.get_smart_handle<float>("note");
+
+    ModulationRouting routing;
+    routing.m_source_id = "src";
+    routing.m_target_id = "note";
+    routing.m_depth = -1.0f;
+    routing.m_combine_mode = CombineMode::Replace;
+    routing.m_replace_range_min = 0.0f;
+    routing.m_replace_range_max = 127.0f;
+    routing.m_has_replace_range = true;
+    matrix.add_routing(routing);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    const std::array<std::pair<float, float>, 5> cases{
+        {{0.0f, 127.0f}, {0.25f, 95.25f}, {0.5f, 63.5f}, {0.75f, 31.75f}, {1.0f, 0.0f}}};
+    for (const auto& [input, expected] : cases) {
+        src.m_value = input;
+        matrix.process(k_block_size);
+        EXPECT_FLOAT_EQ(handle.load(0), expected) << "input=" << input;
+    }
 }
 
 TEST(ModulationMatrix, UpdateReplaceRange_Runtime) {
