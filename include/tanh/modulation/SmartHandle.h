@@ -10,6 +10,7 @@
 #include <initializer_list>
 #include <span>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 #include <tanh/modulation/ResolvedTarget.h>
@@ -107,12 +108,31 @@ public:
     // nullptr if the target has no mono buffer (unmodulated or poly-only).
     // The returned pointer is valid for the duration of the current RCU block
     // scope.
+    //
+    // TIMING: same caveat as change_points_voice() — only populated by
+    // MonoBuffers::build_change_points() at end-of-block. Mid-block readers
+    // should use change_point_flags() instead.
     const std::vector<uint32_t>* change_points() const TANH_NONBLOCKING_FUNCTION {
         if (!m_target) { return nullptr; }
         if (auto* mb = m_target->m_mono.load(std::memory_order_acquire)) {
             return &mb->m_change_points;
         }
         return nullptr;
+    }
+
+    // Access the mono change-point flag bitmask (one uint8_t per sample) for
+    // this parameter's target. Returns nullptr if the target has no mono
+    // buffer or carries no modulation flags.
+    //
+    // Live counterpart to change_points() — updated as the matrix applies
+    // each upstream routing, so mid-block readers (e.g. a relay source)
+    // observe change points already contributed by Tarjan-earlier sources.
+    // Pointer is valid for the current RCU block scope.
+    const uint8_t* change_point_flags() const TANH_NONBLOCKING_FUNCTION {
+        if (!m_target) { return nullptr; }
+        auto* mb = m_target->m_mono.load(std::memory_order_acquire);
+        if (!mb || !(mb->m_has_additive || mb->m_has_replace)) { return nullptr; }
+        return mb->m_change_point_flags.data();
     }
 
     // Access the per-voice replace-active mask (one uint8_t per sample) for
@@ -127,6 +147,44 @@ public:
         // returning nullptr is the contract, not an error.
         if (!vb || !vb->m_has_replace) { return nullptr; }
         return vb->replace_active_voice(voice_index);
+    }
+
+    // Access the per-voice change-point list for this parameter's target.
+    // Returns nullptr if the target has no voice buffer, carries no
+    // modulation flags, or voice_index is out of range. Pointer is valid
+    // for the current RCU block scope. Symmetric to change_points() but
+    // for polyphonic targets.
+    //
+    // TIMING: the list is only populated by ResolvedTarget::build_change_points(),
+    // which the matrix runs once per block *after* all sources have executed.
+    // Readers that run mid-block (e.g. a relay source inside
+    // process_source_bulk_with_scope) will observe stale previous-block data.
+    // For live in-block reads use change_point_flags_voice() instead.
+    const std::vector<uint32_t>* change_points_voice(uint32_t voice_index) const
+        TANH_NONBLOCKING_FUNCTION {
+        if (!m_target) { return nullptr; }
+        auto* vb = m_target->m_voice.load(std::memory_order_acquire);
+        if (!vb || !(vb->m_has_additive || vb->m_has_replace)) { return nullptr; }
+        if (voice_index >= vb->m_num_voices) { return nullptr; }
+        return &vb->m_change_points[voice_index];
+    }
+
+    // Access the per-voice change-point flag bitmask (one uint8_t per sample)
+    // for this parameter's target. Returns nullptr if the target has no voice
+    // buffer, carries no modulation flags, or voice_index is out of range.
+    //
+    // Unlike change_points_voice(), the flag storage is updated live as the
+    // matrix applies each upstream routing — so a mid-block reader (e.g. a
+    // relay source) sees the change points already contributed by sources
+    // that Tarjan ordered before it. Pointer is valid for the current RCU
+    // block scope.
+    const uint8_t* change_point_flags_voice(uint32_t voice_index) const TANH_NONBLOCKING_FUNCTION {
+        if (!m_target) { return nullptr; }
+        auto* vb = m_target->m_voice.load(std::memory_order_acquire);
+        if (!vb || !(vb->m_has_additive || vb->m_has_replace)) { return nullptr; }
+        if (voice_index >= vb->m_num_voices) { return nullptr; }
+        return vb->m_change_point_flags_storage.data() +
+               static_cast<size_t>(voice_index) * vb->m_block_size;
     }
 
     thl::ParameterHandle<T> raw_handle() const TANH_NONBLOCKING_FUNCTION { return m_handle; }
@@ -253,9 +311,50 @@ private:
     ResolvedTarget* m_target = nullptr;
 };
 
-// Free utility: collect change points from a span of SmartHandles.
+namespace detail {
+
+// Dispatch helper: extract a ResolvedTarget* from anything "handle-like".
+// Supports:
+//   - SmartHandle<T>                     — direct .target() call
+//   - std::variant<Ts...>                — std::visit each alternative;
+//                                          alternatives without .target()
+//                                          (e.g. plain ParameterHandle<T>
+//                                          for non-modulatable params)
+//                                          contribute nullptr and are skipped
+//                                          by callers.
+//   - ResolvedTarget*                    — identity (pass-through)
+// Users extend by providing another overload.
+template <typename H>
+ResolvedTarget* handle_target(const H& h) TANH_NONBLOCKING_FUNCTION {
+    if constexpr (std::is_pointer_v<H>) {
+        return h;
+    } else if constexpr (requires { h.target(); }) {
+        return h.target();
+    } else {
+        return std::visit(
+            [](const auto& inner) -> ResolvedTarget* {
+                if constexpr (requires { inner.target(); }) {
+                    return inner.target();
+                } else {
+                    return nullptr;
+                }
+            },
+            h);
+    }
+}
+
+}  // namespace detail
+
+// Free utility: collect change points from a span of handles.
 // Writes a sorted, deduplicated list of change points into target_buffer.
 // voice_index selects per-voice change points for polyphonic targets (0 = mono/default).
+//
+// Accepts any element type for which detail::handle_target(h) resolves to a
+// ResolvedTarget* — SmartHandle<T>, std::variant<SmartHandle<Ts>...>, or a
+// raw ResolvedTarget*. nullptr targets (e.g. unattached handles) are skipped.
+// This lets callers keep a single heterogeneous handle array (per-parameter
+// std::variant over differently-typed SmartHandles) without maintaining a
+// parallel ResolvedTarget* array just for this call.
 //
 // RT-SAFETY CONTRACT (must hold to avoid allocation on the audio thread):
 //   target_buffer.capacity() must be >= the block size used when the
@@ -273,34 +372,33 @@ private:
 // advances at most 32× faster than the read pointer, but the W-word bitset
 // starts N-W positions ahead of position 0, giving exactly enough headroom
 // (32·W ≤ N for any N ≥ 32, and W = ceil(N/32)).
-template <typename T>
-void collect_change_points(std::span<const SmartHandle<T>> handles,
+template <typename Handle>
+void collect_change_points(std::span<const Handle> handles,
                            std::vector<uint32_t>& target_buffer,
                            uint32_t voice_index = 0) TANH_NONBLOCKING_FUNCTION {
-    // First pass: find max index to determine bitset size
+    // First pass: find max index to determine bitset size.
     // NOLINTNEXTLINE(misc-const-correctness) — mutated in the loop below.
     uint32_t max_index = 0;
     // NOLINTNEXTLINE(misc-const-correctness) — mutated in the loop below.
     bool has_any = false;
 
     for (const auto& h : handles) {
-        if (const auto* cp = h.change_points()) {
-            for (const uint32_t v : *cp) {
+        auto* t = detail::handle_target(h);
+        if (!t) { continue; }
+        if (auto* mb = t->m_mono.load(std::memory_order_acquire)) {
+            for (const uint32_t v : mb->m_change_points) {
                 if (v > max_index) { max_index = v; }
                 has_any = true;
             }
         }
-        if (auto* t = h.target()) {
-            if (auto* vb = t->m_voice.load(std::memory_order_acquire)) {
-                // m_change_points is sized to m_num_voices only when the
-                // buffer actually carries modulation (either flag set); an
-                // all-flags-clear VoiceBuffers leaves it empty and indexing
-                // it would be OOB.
-                if ((vb->m_has_additive || vb->m_has_replace) && voice_index < vb->m_num_voices) {
-                    for (const uint32_t v : vb->m_change_points[voice_index]) {
-                        if (v > max_index) { max_index = v; }
-                        has_any = true;
-                    }
+        if (auto* vb = t->m_voice.load(std::memory_order_acquire)) {
+            // m_change_points is sized to m_num_voices only when the buffer
+            // actually carries modulation (either flag set); an all-flags-
+            // clear VoiceBuffers leaves it empty and indexing would be OOB.
+            if ((vb->m_has_additive || vb->m_has_replace) && voice_index < vb->m_num_voices) {
+                for (const uint32_t v : vb->m_change_points[voice_index]) {
+                    if (v > max_index) { max_index = v; }
+                    has_any = true;
                 }
             }
         }
@@ -322,19 +420,19 @@ void collect_change_points(std::span<const SmartHandle<T>> handles,
     const size_t bitset_base = count - words_needed;
     std::memset(&target_buffer[bitset_base], 0, words_needed * sizeof(uint32_t));
 
-    // Second pass: set bits in the high-end bitset region
+    // Second pass: set bits in the high-end bitset region.
     for (const auto& h : handles) {
-        if (const auto* cp = h.change_points()) {
-            for (const uint32_t v : *cp) {
+        auto* t = detail::handle_target(h);
+        if (!t) { continue; }
+        if (auto* mb = t->m_mono.load(std::memory_order_acquire)) {
+            for (const uint32_t v : mb->m_change_points) {
                 target_buffer[bitset_base + v / 32] |= uint32_t{1} << (v % 32);
             }
         }
-        if (auto* t = h.target()) {
-            if (auto* vb = t->m_voice.load(std::memory_order_acquire)) {
-                if ((vb->m_has_additive || vb->m_has_replace) && voice_index < vb->m_num_voices) {
-                    for (const uint32_t v : vb->m_change_points[voice_index]) {
-                        target_buffer[bitset_base + v / 32] |= uint32_t{1} << (v % 32);
-                    }
+        if (auto* vb = t->m_voice.load(std::memory_order_acquire)) {
+            if ((vb->m_has_additive || vb->m_has_replace) && voice_index < vb->m_num_voices) {
+                for (const uint32_t v : vb->m_change_points[voice_index]) {
+                    target_buffer[bitset_base + v / 32] |= uint32_t{1} << (v % 32);
                 }
             }
         }

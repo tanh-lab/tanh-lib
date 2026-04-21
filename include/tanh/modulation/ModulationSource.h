@@ -25,11 +25,34 @@ public:
 
     virtual void prepare(double sample_rate, size_t samples_per_block) = 0;
 
-    // Called exactly once per source per block by ModulationMatrix::process(),
-    // before any ScheduleStep runs. Input-driven sources override this to
-    // drain their event queue and snapshot per-voice state for the whole block
-    // so the snapshot stays stable across cyclic-SCC iteration. Default no-op
-    // for procedural sources (LFOs, envelopes).
+    // Per-block reset hook. Called exactly once per source per block by
+    // ModulationMatrix::process_with_scope(), *before* pre_process_block().
+    // The default wipes only the change-point lists — these are per-block
+    // transition metadata and are never meaningful cross-block.
+    //
+    // What is intentionally NOT touched here:
+    //   - m_output_buffer / m_voice_output_storage (the value buffers)
+    //   - m_output_active / m_voice_output_active_storage (the active masks)
+    //
+    // Those are authored state: the source decides whether to hold them
+    // across blocks (XYTouchSource-style: last value & gate persist until
+    // the next event) or overwrite them every block (LFO-style). The matrix
+    // takes no position — if a subclass wants its masks zeroed at block
+    // start it can call clear_output_active() / clear_voice_output_active()
+    // here (or override this method entirely).
+    virtual void clear_per_block() {
+        clear_change_points();
+        if (m_has_voice_output) { clear_voice_change_points(); }
+    }
+
+    // Optional input-snapshot hook. Called exactly once per source per block
+    // by ModulationMatrix::process_with_scope(), *after* clear_per_block()
+    // and before any ScheduleStep runs. Event-driven sources override this
+    // to drain their input queue once and write the full block's worth of
+    // value, mask, and change-point state — all three then survive to the
+    // propagation pass (because clear_per_block already ran). Default is a
+    // no-op; procedural sources (LFOs, envelopes) just do their work in
+    // process() / process_voice() and leave this alone.
     virtual void pre_process_block() {}
 
     // Process num_samples starting at offset, writing output to

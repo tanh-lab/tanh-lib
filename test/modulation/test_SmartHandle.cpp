@@ -232,6 +232,170 @@ TEST(SmartHandle, LoadNormalized) {
     EXPECT_FLOAT_EQ(0.0f, handle.load_normalized());
 }
 
+// =============================================================================
+// change_point_flags / change_point_flags_voice / change_points_voice
+// accessors — introduced so mid-block readers (e.g. relay sources) can see
+// change points already stamped by Tarjan-earlier sources inside the same
+// block. The built list variants are only populated after all sources have
+// run, so they would be stale mid-block.
+// =============================================================================
+
+TEST(SmartHandle, ChangePointFlags_SetAtMonoChangePointOffsets) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.5f));
+    ModulationMatrix matrix(state);
+
+    TestLFOSource lfo;
+    lfo.m_frequency = 10.0f;
+    lfo.m_decimation = 1;  // change point every sample
+    matrix.add_source("lfo", &lfo);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"lfo", "freq", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    const uint8_t* flags = handle.change_point_flags();
+    ASSERT_NE(flags, nullptr);
+
+    // decimation=1 → every sample is a change point
+    for (size_t i = 0; i < k_block_size; ++i) {
+        EXPECT_EQ(flags[i], 1) << "Expected flag set at sample " << i;
+    }
+
+    // And the flag bitmask should agree with the post-build list.
+    const auto* list = handle.change_points();
+    ASSERT_NE(list, nullptr);
+    EXPECT_EQ(list->size(), k_block_size);
+}
+
+TEST(SmartHandle, ChangePointFlags_NullptrWhenNoMonoBuffer) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.5f));
+    ModulationMatrix matrix(state);
+
+    // Poly-only routing → no MonoBuffers allocated for this target.
+    PolyTestSource poly(2);
+    poly.m_voice_values = {0.1f, 0.2f};
+    matrix.add_source("poly", &poly);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"poly", "freq", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    EXPECT_EQ(handle.change_point_flags(), nullptr);
+}
+
+TEST(SmartHandle, ChangePointFlags_NullptrOnUnattachedHandle) {
+    SmartHandle<float> handle;  // default-constructed, no target
+    EXPECT_EQ(handle.change_point_flags(), nullptr);
+}
+
+TEST(SmartHandle, ChangePointFlagsVoice_SetAtVoiceChangePointOffsets) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.5f));
+    ModulationMatrix matrix(state);
+
+    // PolyTestSource records exactly one voice change point per voice, at
+    // offset 0 (see TestHelpers.h). So flags[0] must be set for every voice
+    // and all other samples must be zero.
+    PolyTestSource poly(3);
+    poly.m_voice_values = {0.1f, 0.2f, 0.3f};
+    matrix.add_source("poly", &poly);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"poly", "freq", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    for (uint32_t v = 0; v < 3; ++v) {
+        const uint8_t* flags = handle.change_point_flags_voice(v);
+        ASSERT_NE(flags, nullptr) << "voice " << v;
+        EXPECT_EQ(flags[0], 1) << "voice " << v << " expected change-point flag at sample 0";
+        for (size_t i = 1; i < k_block_size; ++i) {
+            EXPECT_EQ(flags[i], 0) << "voice " << v << " unexpected flag at sample " << i;
+        }
+    }
+}
+
+TEST(SmartHandle, ChangePointFlagsVoice_AgreesWithBuiltList) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.5f));
+    ModulationMatrix matrix(state);
+
+    PolyTestSource poly(2);
+    poly.m_voice_values = {0.4f, 0.6f};
+    matrix.add_source("poly", &poly);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"poly", "freq", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // After build_change_points runs at end-of-block, the list must equal
+    // the set-bit positions of the live flag bitmask.
+    for (uint32_t v = 0; v < 2; ++v) {
+        const uint8_t* flags = handle.change_point_flags_voice(v);
+        const auto* list = handle.change_points_voice(v);
+        ASSERT_NE(flags, nullptr);
+        ASSERT_NE(list, nullptr);
+
+        std::vector<uint32_t> from_flags;
+        for (size_t i = 0; i < k_block_size; ++i) {
+            if (flags[i]) { from_flags.push_back(static_cast<uint32_t>(i)); }
+        }
+        EXPECT_EQ(from_flags, *list) << "voice " << v;
+    }
+}
+
+TEST(SmartHandle, ChangePointFlagsVoice_NullptrWhenNoVoiceBuffer) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.5f));
+    ModulationMatrix matrix(state);
+
+    // Mono-only routing → no VoiceBuffers allocated.
+    TestLFOSource lfo;
+    lfo.m_frequency = 10.0f;
+    matrix.add_source("lfo", &lfo);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"lfo", "freq", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    EXPECT_EQ(handle.change_point_flags_voice(0), nullptr);
+    EXPECT_EQ(handle.change_points_voice(0), nullptr);
+}
+
+TEST(SmartHandle, ChangePointFlagsVoice_NullptrForOutOfRangeVoice) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.5f));
+    ModulationMatrix matrix(state);
+
+    PolyTestSource poly(2);
+    poly.m_voice_values = {0.1f, 0.2f};
+    matrix.add_source("poly", &poly);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"poly", "freq", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // In-range accessor succeeds; out-of-range returns nullptr rather than
+    // indexing into the per-voice storage.
+    EXPECT_NE(handle.change_point_flags_voice(0), nullptr);
+    EXPECT_NE(handle.change_point_flags_voice(1), nullptr);
+    EXPECT_EQ(handle.change_point_flags_voice(2), nullptr);
+    EXPECT_EQ(handle.change_points_voice(2), nullptr);
+}
+
+TEST(SmartHandle, ChangePointFlagsVoice_NullptrOnUnattachedHandle) {
+    SmartHandle<float> handle;
+    EXPECT_EQ(handle.change_point_flags_voice(0), nullptr);
+    EXPECT_EQ(handle.change_points_voice(0), nullptr);
+}
+
 TEST(SmartHandle, DisplayFormattingViaSmartHandle) {
     thl::State state;
     state.create("freq",
