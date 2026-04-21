@@ -127,16 +127,31 @@ void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
 
 void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
                                           size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    // 1. Drain pass — every registered source consumes its event queue and
-    //    freezes per-block input state. Runs exactly once per source per
-    //    block, before any ScheduleStep. Makes cyclic-SCC iteration safe:
-    //    the input snapshot is stable across all cycle iterations.
+    // 1. Source per-block reset. Wipes change-point lists by default. Value
+    //    buffers and active masks are intentionally *not* touched here —
+    //    those are source-authored state (an event-driven source like
+    //    XYTouchSource holds last-value + gate across blocks; an LFO rewrites
+    //    its buffer every block anyway). Subclasses that want their masks
+    //    zeroed at block start override clear_per_block() or call
+    //    clear_output_active() / clear_voice_output_active() from it.
+    //
+    //    Runs *before* pre_process_block so event-driven sources that write
+    //    CPs during draining don't have them immediately wiped.
+    for (auto* source : config.m_all_sources) { source->clear_per_block(); }
+
+    // 2. Drain pass — every registered source consumes its event queue and
+    //    freezes per-block input state (values + masks + CPs). Runs exactly
+    //    once per source per block, before any ScheduleStep. Makes cyclic-SCC
+    //    iteration safe: the input snapshot is stable across all cycle
+    //    iterations. All three state kinds (value buffer, active mask, CP
+    //    list) written here survive into the schedule — step 1 already ran.
     for (auto* source : config.m_all_sources) { source->pre_process_block(); }
 
-    // 2. Clear all active targets for this block
+    // 3. Target per-block reset. Targets are pure aggregators of multiple
+    //    sources; everything they hold is block-local and must be cleared.
     for (auto* target : config.m_active_targets) { target->clear_per_block(); }
 
-    // 3. Execute schedule steps
+    // 4. Execute schedule steps
     for (const auto& step : config.m_schedule) {
         if (auto* bulk = std::get_if<BulkStep>(&step)) {
             process_source_bulk_with_scope(config, bulk->m_source, num_samples);
@@ -145,12 +160,12 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
         }
     }
 
-    // 4. Multi-Replace composition — re-apply deferred Replace/ReplaceHold
+    // 5. Multi-Replace composition — re-apply deferred Replace/ReplaceHold
     //    routings on shared targets in ascending priority order so higher
     //    priority wins per sample. Single-Replace targets are untouched.
     apply_multi_replace_composition_with_scope(config, num_samples);
 
-    // 5. Build final sorted change point lists from flags
+    // 6. Build final sorted change point lists from flags
     for (auto* target : config.m_active_targets) { target->build_change_points(); }
 }
 
@@ -1101,13 +1116,10 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
         }
     }
 
-    // Clear per-block state before processing
-    source->clear_change_points();
-    if (!source->is_fully_active()) { source->clear_output_active(); }
-    if (source->has_voice_output()) {
-        source->clear_voice_change_points();
-        if (!source->is_fully_active()) { source->clear_voice_output_active(); }
-    }
+    // Per-source state reset has already happened in process_with_scope step 1
+    // (clear_per_block) and step 2 (pre_process_block may have repopulated
+    // masks + CPs). Do NOT re-clear here — that would discard event-driven
+    // sources' freshly drained input.
 
     if (needs_mono && source->has_mono_output()) { source->process(num_samples); }
     if (needs_voice && source->has_voice_output()) {
@@ -1191,15 +1203,8 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
 void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                                                  const std::vector<ModulationSource*>& sources,
                                                  size_t num_samples) {
-    // Clear per-block state for all sources
-    for (auto* source : sources) {
-        source->clear_change_points();
-        if (!source->is_fully_active()) { source->clear_output_active(); }
-        if (source->has_voice_output()) {
-            source->clear_voice_change_points();
-            if (!source->is_fully_active()) { source->clear_voice_output_active(); }
-        }
-    }
+    // Per-source state reset was done in process_with_scope step 1
+    // (clear_per_block). Do NOT re-clear — same reasoning as the bulk path.
 
     // Per-sample processing: interleave sources, apply routings immediately
     for (size_t i = 0; i < num_samples; ++i) {
