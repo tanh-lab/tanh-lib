@@ -117,7 +117,8 @@ ResolvedTarget* ModulationMatrix::ensure_target_with_lock(const std::string_view
 
 // ── Scope registry ──────────────────────────────────────────────────────────
 
-thl::modulation::ModulationScope ModulationMatrix::register_scope(std::string_view name, uint32_t voice_count) {
+thl::modulation::ModulationScope ModulationMatrix::register_scope(std::string_view name,
+                                                                  uint32_t voice_count) {
     std::scoped_lock const lock(m_writer_mutex);
 
     // Guard the global sentinel. "global" is reserved for k_global_scope
@@ -161,7 +162,8 @@ thl::modulation::ModulationScope ModulationMatrix::register_scope(std::string_vi
     return ModulationScope{.m_id = new_id, .m_name = stable_name};
 }
 
-std::optional<thl::modulation::ModulationScope> ModulationMatrix::find_scope(std::string_view name) const {
+std::optional<thl::modulation::ModulationScope> ModulationMatrix::find_scope(
+    std::string_view name) const {
     // "global" is the canonical human-readable alias for k_global_scope.
     // An empty name is treated as "no scope specified" and returns nullopt — JSON
     // deserialization that encounters a missing modulationScope key must default
@@ -325,6 +327,34 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
 
 void ModulationMatrix::add_source(const std::string_view id, ModulationSource* source) {
     std::scoped_lock const lock(m_writer_mutex);
+
+    // Validate the source's scope against the registry. Pointer equality on
+    // m_name is sufficient — std::list nodes never move, so the same textual
+    // name registered on two different matrices yields two different c_str()
+    // pointers (matches resolve_parameter_scope_with_lock's logic).
+    const ModulationScope declared = source->scope();
+    const bool scope_ok =
+        declared == k_global_scope ||
+        (declared.m_id < m_scopes.size() && m_scopes[declared.m_id].m_name == declared.m_name);
+    if (!scope_ok) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "modulation",
+                          "add_source('%.*s'): source's scope '%s' (id %u) is not registered in "
+                          "this matrix — source will be treated as unreachable.",
+                          static_cast<int>(id.size()),
+                          id.data(),
+                          declared.m_name ? declared.m_name : "",
+                          declared.m_id);
+        return;
+    }
+
+    // If the matrix has already been prepared, immediately prepare the source
+    // so its m_num_voices is populated. Without this, a source registered
+    // after matrix.prepare() stays at 0 voices until the next scope resize.
+    if (m_sample_rate > 0.0) {
+        source->prepare(m_sample_rate, m_samples_per_block, voice_count(declared));
+    }
+
     auto it = m_sources.find(id);
     if (it != m_sources.end()) {
         it->second = source;
@@ -758,10 +788,15 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
             routing_mode = RoutingMode::GlobalToGlobal;
         }
 
-        // Voice mismatch warning for ScopedToScoped
+        // Voice mismatch warning for ScopedToScoped. Read both counts from the
+        // scope registry rather than from the live source/target state: the
+        // source hasn't necessarily been prepare()'d yet when add_routing is
+        // called before matrix.prepare(), and the target's voice_owner may
+        // not be allocated at this point either. The scope registry is the
+        // authoritative count for both ends.
         if (routing_mode == RoutingMode::ScopedToScoped) {
-            const uint32_t src_v = src_it->second->num_voices();
-            const uint32_t tgt_v = tgt_it->second.m_voice_owner->m_num_voices;
+            const uint32_t src_v = voice_count(src_it->second->scope());
+            const uint32_t tgt_v = voice_count(tgt_it->second.m_scope);
             if (src_v != tgt_v) {
                 thl::Logger::logf(
                     thl::Logger::LogLevel::Warning,
