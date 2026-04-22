@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <list>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <map>
 #include <variant>
@@ -16,6 +18,7 @@
 #include <tanh/modulation/ResolvedRouting.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/modulation/SmartHandle.h>
+#include <tanh/state/ModulationScope.h>
 
 namespace thl {
 class State;
@@ -122,6 +125,43 @@ public:
     // The config reference must come from that scope's data().
     void process_with_scope(const ProcessingConfig& config,
                             size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+
+    // ── Scope registry ───────────────────────────────────────────────────
+    // Register (or look up) a named polyphony scope. Returns a ModulationScope
+    // handle whose m_name points into stable storage owned by this matrix.
+    //
+    // Idempotent on name: a second call with the same name returns the same
+    // handle. If voice_count differs from the stored value, the count is
+    // updated, the schedule is rebuilt (affected VoiceBuffers re-allocated),
+    // and a warning is logged.
+    //
+    // k_global_scope is pre-registered at construction with
+    // voice_count == 1 and the reserved name "global" (k_global_scope_name).
+    // Registering that name is rejected with a warning and returns the
+    // pre-registered global handle.
+    ModulationScope register_scope(std::string_view name, uint32_t voice_count);
+
+    // Look up an already-registered scope by name. "global" is the canonical
+    // human-readable alias for k_global_scope. An empty name, or
+    // any other unregistered name, returns std::nullopt — JSON deserialization
+    // must handle a missing "modulationScope" key by defaulting to
+    // k_global_scope itself, not by asking find_scope("").
+    [[nodiscard]] std::optional<ModulationScope> find_scope(std::string_view name) const;
+
+    // Voice count for a registered scope. Returns 1 for
+    // k_global_scope, 0 if the handle is not registered on this
+    // matrix.
+    [[nodiscard]] uint32_t voice_count(ModulationScope scope) const;
+
+    // Name lookup — returns the stored name for a registered scope;
+    // k_global_scope_name ("global") for the global handle; an
+    // empty string_view for handles not registered on this matrix.
+    [[nodiscard]] std::string_view scope_name(ModulationScope scope) const;
+
+    // Runtime voice-count update for a registered scope. Triggers a schedule
+    // rebuild so affected VoiceBuffers are re-sized. No-op if scope is
+    // k_global_scope or not registered.
+    void set_voice_count(ModulationScope scope, uint32_t voice_count);
 
     // Source management
     void add_source(const std::string_view id, ModulationSource* source);
@@ -274,6 +314,25 @@ private:
 
     // RT-safe processing config — RCU-protected for lock-free RT reads
     thl::RCU<ProcessingConfig> m_config;
+
+    // Scope registry. Entries in m_scope_names own the name strings; the
+    // c_str() pointers from these std::string nodes are stored on
+    // ModulationScope handles and in m_scopes below. std::list guarantees
+    // node stability so the stored c_str() stays valid for the matrix's
+    // lifetime (or until deletion — scope deletion is not supported).
+    struct ScopeEntry {
+        const char* m_name;  // Points at m_scope_names node's c_str()
+        uint32_t m_voice_count;
+    };
+    std::list<std::string> m_scope_names;
+    std::vector<ScopeEntry> m_scopes;  // Indexed by ModulationScope::m_id
+
+    // Resolve a parameter's declared ModulationScope against this matrix's
+    // registry. Called from ensure_target_with_lock. Validates three
+    // fault modes (unknown id, id out of range, name mismatch) and falls
+    // back to k_global_scope with a one-time warning.
+    [[nodiscard]] ModulationScope resolve_parameter_scope_with_lock(std::string_view param_key,
+                                                                    ModulationScope declared);
 };
 
 }  // namespace thl::modulation

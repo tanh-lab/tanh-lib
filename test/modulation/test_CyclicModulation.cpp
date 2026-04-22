@@ -13,10 +13,10 @@ using namespace thl::modulation;
 class TestModSource : public ModulationSource {
 public:
     explicit TestModSource(std::vector<std::string> keys = {})
-        : ModulationSource(true, 0, true), m_keys(std::move(keys)) {}
+        : ModulationSource(thl::modulation::k_global_scope, true), m_keys(std::move(keys)) {}
 
-    void prepare(double /*sample_rate*/, size_t samples_per_block) override {
-        resize_buffers(samples_per_block);
+    void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
+        resize_buffers(samples_per_block, voice_count);
     }
 
     void process(size_t num_samples, size_t offset = 0) override {
@@ -273,9 +273,11 @@ public:
     float m_snapshot = 0.0f;
 
     explicit SnapshotSource(std::vector<std::string> keys = {})
-        : ModulationSource(true, 0, true), m_keys(std::move(keys)) {}
+        : ModulationSource(thl::modulation::k_global_scope, true), m_keys(std::move(keys)) {}
 
-    void prepare(double /*sr*/, size_t spb) override { resize_buffers(spb); }
+    void prepare(double /*sr*/, size_t spb, uint32_t voice_count) override {
+        resize_buffers(spb, voice_count);
+    }
 
     void pre_process_block() override {
         ++m_drain_count;

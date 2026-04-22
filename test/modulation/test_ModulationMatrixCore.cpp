@@ -16,8 +16,10 @@ using namespace thl::modulation;
 class ConstSource : public ModulationSource {
 public:
     float m_value = 1.0f;
-    ConstSource() : ModulationSource(true, 0, true) {}
-    void prepare(double /*sr*/, size_t spb) override { resize_buffers(spb); }
+    ConstSource() : ModulationSource(thl::modulation::k_global_scope, true) {}
+    void prepare(double /*sr*/, size_t spb, uint32_t voice_count) override {
+        resize_buffers(spb, voice_count);
+    }
     void process(size_t num_samples, size_t offset = 0) override {
         for (size_t i = offset; i < offset + num_samples; ++i) { m_output_buffer[i] = m_value; }
         if (num_samples > 0) { record_change_point(static_cast<uint32_t>(offset)); }
@@ -1045,9 +1047,11 @@ public:
     int m_pre_call_count = 0;
     float m_value = 1.0f;
 
-    TrackingSource() : ModulationSource(true, 0, true) {}
+    TrackingSource() : ModulationSource(thl::modulation::k_global_scope, true) {}
 
-    void prepare(double /*sr*/, size_t spb) override { resize_buffers(spb); }
+    void prepare(double /*sr*/, size_t spb, uint32_t voice_count) override {
+        resize_buffers(spb, voice_count);
+    }
 
     void pre_process_block() override {
         ++m_pre_call_count;
@@ -1166,8 +1170,10 @@ public:
     bool m_initial_active = true;
     uint32_t m_switch_at = 0;  // 0 = constant (no switch)
 
-    ActiveMaskSource() : ModulationSource(true, 0, false) {}
-    void prepare(double /*sr*/, size_t spb) override { resize_buffers(spb); }
+    ActiveMaskSource() : ModulationSource(thl::modulation::k_global_scope, false) {}
+    void prepare(double /*sr*/, size_t spb, uint32_t voice_count) override {
+        resize_buffers(spb, voice_count);
+    }
     void process(size_t num_samples, size_t offset = 0) override {
         for (size_t i = offset; i < offset + num_samples; ++i) {
             m_output_buffer[i] = m_value;

@@ -444,8 +444,11 @@ static void bm_input_event_queue_drain_spread(benchmark::State& bm_state) {
     const uint32_t block_size = static_cast<uint32_t>(k_block_size);
     const size_t capacity = static_cast<size_t>(events_per_voice) * num_voices;
 
-    InputEventQueue queue(false, num_voices, capacity);
-    queue.prepare();
+    // A non-global scope handle so the queue allocates voice buckets. Not
+    // bound to any matrix — InputEventQueue only inspects has_mono().
+    static constexpr thl::modulation::ModulationScope k_bench_voice_scope{.m_id = 1, .m_name = "bench_voice"};
+    InputEventQueue queue(k_bench_voice_scope, capacity);
+    queue.prepare(num_voices);
 
     uint32_t callback_count = 0;
     const auto cb = [&](const InputEventQueue::Event&, uint32_t) { ++callback_count; };

@@ -18,10 +18,10 @@ public:
     float m_value = 0.7f;
     std::vector<bool> m_active_pattern;
 
-    PartiallyActiveSource() : ModulationSource(true, 0, false) {}
+    PartiallyActiveSource() : ModulationSource(thl::modulation::k_global_scope, false) {}
 
-    void prepare(double /*sample_rate*/, size_t samples_per_block) override {
-        resize_buffers(samples_per_block);
+    void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
+        resize_buffers(samples_per_block, voice_count);
         if (m_active_pattern.empty()) { m_active_pattern.assign(samples_per_block, true); }
     }
 
@@ -39,14 +39,13 @@ public:
     std::vector<float> m_voice_values;
     std::vector<std::vector<bool>> m_voice_active_patterns;
 
-    explicit PartiallyActivePolySource(uint32_t num_voices)
-        : ModulationSource(false, num_voices, false) {}
+    explicit PartiallyActivePolySource(thl::modulation::ModulationScope scope)
+        : ModulationSource(scope, false) {}
 
-    void prepare(double /*sample_rate*/, size_t samples_per_block) override {
-        resize_buffers(samples_per_block);
+    void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
+        resize_buffers(samples_per_block, voice_count);
         if (m_voice_active_patterns.empty()) {
-            m_voice_active_patterns.resize(num_voices(),
-                                           std::vector<bool>(samples_per_block, true));
+            m_voice_active_patterns.resize(voice_count, std::vector<bool>(samples_per_block, true));
         }
     }
 
@@ -71,10 +70,11 @@ public:
 
 TEST(PolyphonicModulation, PolyAdditive_AllocatesAdditiveVoiceBuffersOnly) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.1f, 0.2f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -91,10 +91,11 @@ TEST(PolyphonicModulation, PolyAdditive_AllocatesAdditiveVoiceBuffersOnly) {
 
 TEST(PolyphonicModulation, PolyReplace_AllocatesReplaceVoiceBuffersOnly) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.3f, 0.7f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -110,12 +111,13 @@ TEST(PolyphonicModulation, PolyReplace_AllocatesReplaceVoiceBuffersOnly) {
 
 TEST(PolyphonicModulation, PolyBoth_AllocatesBothVoiceBuffers) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly_add(2);
+    PolyTestSource poly_add(voice_scope);
     poly_add.m_voice_values = {0.1f, 0.2f};
-    PolyTestSource poly_replace(2);
+    PolyTestSource poly_replace(voice_scope);
     poly_replace.m_voice_values = {0.3f, 0.4f};
 
     matrix.add_source("add", &poly_add);
@@ -134,8 +136,8 @@ TEST(PolyphonicModulation, PolyBoth_AllocatesBothVoiceBuffers) {
 
 TEST(PolyphonicModulation, MonoOnly_NoVoiceBuffers) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     lfo.m_frequency = 1.0f;
@@ -152,10 +154,11 @@ TEST(PolyphonicModulation, MonoOnly_NoVoiceBuffers) {
 
 TEST(PolyphonicModulation, VoiceBuffers_FreedWhenPolyRoutingRemoved) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.1f, 0.2f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -175,10 +178,11 @@ TEST(PolyphonicModulation, VoiceBuffers_FreedWhenPolyRoutingRemoved) {
 
 TEST(PolyphonicModulation, PolySource_PolyTarget_IsPolyToPoly) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.1f, 0.2f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -191,11 +195,12 @@ TEST(PolyphonicModulation, PolySource_PolyTarget_IsPolyToPoly) {
 
 TEST(PolyphonicModulation, MonoSource_PolyTarget_IsMonoToPoly) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // Add poly source to make the target polyphonic
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.0f, 0.0f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -215,8 +220,8 @@ TEST(PolyphonicModulation, MonoSource_PolyTarget_IsMonoToPoly) {
 
 TEST(PolyphonicModulation, MonoSource_MonoTarget_IsMonoToMono) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     lfo.m_frequency = 1.0f;
@@ -236,10 +241,11 @@ TEST(PolyphonicModulation, MonoSource_MonoTarget_IsMonoToMono) {
 
 TEST(PolyphonicModulation, PolyToPoly_VoiceBuffersFilled) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.3f, 0.7f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -255,11 +261,12 @@ TEST(PolyphonicModulation, PolyToPoly_VoiceBuffersFilled) {
 
 TEST(PolyphonicModulation, MonoToPoly_BroadcastsToAllVoices) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // Poly source to make target polyphonic
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.0f, 0.0f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -286,12 +293,13 @@ TEST(PolyphonicModulation, MonoToPoly_BroadcastsToAllVoices) {
 
 TEST(PolyphonicModulation, CombinedSource_MakesTargetPoly_UsesVoicePath) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // A combined source has voice output, so it makes the target poly.
     // The matrix uses the voice path (PolyToPoly) for combined → poly target.
-    CombinedTestSource combined(2);
+    CombinedTestSource combined(voice_scope);
     combined.m_mono_value = 0.5f;
     combined.m_voice_values = {0.1f, 0.2f};
     matrix.add_source("combined", &combined);
@@ -313,8 +321,8 @@ TEST(PolyphonicModulation, CombinedSource_MakesTargetPoly_UsesVoicePath) {
 
 TEST(PolyphonicModulation, Replace_MonoToMono_OverridesBase) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     lfo.m_frequency = 0.0f;  // DC
@@ -335,10 +343,11 @@ TEST(PolyphonicModulation, Replace_MonoToMono_OverridesBase) {
 
 TEST(PolyphonicModulation, Replace_PolyToPoly_PerVoiceOverride) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.3f, 0.8f};
     matrix.add_source("poly", &poly);
     auto handle = matrix.get_smart_handle<float>("freq");
@@ -363,12 +372,13 @@ TEST(PolyphonicModulation, Replace_PolyToPoly_PerVoiceOverride) {
 
 TEST(PolyphonicModulation, Replace_PlusAdditive_Composes) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly_replace(2);
+    PolyTestSource poly_replace(voice_scope);
     poly_replace.m_voice_values = {0.4f, 0.6f};
-    PolyTestSource poly_add(2);
+    PolyTestSource poly_add(voice_scope);
     poly_add.m_voice_values = {0.1f, 0.1f};
 
     matrix.add_source("rep", &poly_replace);
@@ -386,8 +396,8 @@ TEST(PolyphonicModulation, Replace_PlusAdditive_Composes) {
 
 TEST(PolyphonicModulation, Replace_Inactive_FallsBackToBase) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     // No replace source active — just additive mono
     TestLFOSource lfo;
@@ -404,14 +414,15 @@ TEST(PolyphonicModulation, Replace_Inactive_FallsBackToBase) {
 
 TEST(PolyphonicModulation, Replace_EqualPriority_AddOrderWins) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // Two Replace routings with equal (default) priority on the same target
     // compose in add-order — the later-added routing writes last per sample.
-    PolyTestSource poly_a(2);
+    PolyTestSource poly_a(voice_scope);
     poly_a.m_voice_values = {0.9f, 0.9f};
-    PolyTestSource poly_b(2);
+    PolyTestSource poly_b(voice_scope);
     poly_b.m_voice_values = {0.1f, 0.1f};
     matrix.add_source("poly_a", &poly_a);
     matrix.add_source("poly_b", &poly_b);
@@ -433,13 +444,14 @@ TEST(PolyphonicModulation, Replace_EqualPriority_AddOrderWins) {
 
 TEST(PolyphonicModulation, Replace_HigherPriorityWins) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // Higher priority wins even when added earlier.
-    PolyTestSource poly_hi(2);
+    PolyTestSource poly_hi(voice_scope);
     poly_hi.m_voice_values = {0.9f, 0.9f};
-    PolyTestSource poly_lo(2);
+    PolyTestSource poly_lo(voice_scope);
     poly_lo.m_voice_values = {0.1f, 0.1f};
     matrix.add_source("poly_hi", &poly_hi);
     matrix.add_source("poly_lo", &poly_lo);
@@ -464,16 +476,17 @@ TEST(PolyphonicModulation, Replace_HigherPriorityWins) {
 
 TEST(PolyphonicModulation, Replace_HigherPriorityInactive_LowerPriorityWins) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // Higher-priority Replace is inactive → lower-priority Replace's write survives.
-    PartiallyActivePolySource poly_hi(2);
+    PartiallyActivePolySource poly_hi(voice_scope);
     poly_hi.m_voice_values = {0.9f, 0.9f};
     poly_hi.m_voice_active_patterns = {std::vector<bool>(k_block_size, false),
                                        std::vector<bool>(k_block_size, false)};
 
-    PolyTestSource poly_lo(2);
+    PolyTestSource poly_lo(voice_scope);
     poly_lo.m_voice_values = {0.1f, 0.1f};
 
     matrix.add_source("poly_hi", &poly_hi);
@@ -499,13 +512,14 @@ TEST(PolyphonicModulation, Replace_HigherPriorityInactive_LowerPriorityWins) {
 
 TEST(PolyphonicModulation, Replace_SingleRouting_RegressionIdenticalToLegacy) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // Regression: a single Replace routing (with priority set) should behave
     // identically to the legacy single-Replace fast path — no multi-Replace
     // composition, no deferral.
-    PolyTestSource poly_a(2);
+    PolyTestSource poly_a(voice_scope);
     poly_a.m_voice_values = {0.42f, 0.77f};
     matrix.add_source("poly_a", &poly_a);
     auto handle = matrix.get_smart_handle<float>("freq");
@@ -527,10 +541,11 @@ TEST(PolyphonicModulation, Replace_SingleRouting_RegressionIdenticalToLegacy) {
 
 TEST(PolyphonicModulation, Load_WithVoiceIndex) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.2f, 0.8f};
     matrix.add_source("poly", &poly);
     auto handle = matrix.get_smart_handle<float>("freq");
@@ -548,8 +563,8 @@ TEST(PolyphonicModulation, Load_WithVoiceIndex) {
 
 TEST(PolyphonicModulation, Load_NoVoiceBuffers_IgnoresVoiceIndex) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     lfo.m_frequency = 0.0f;
@@ -569,8 +584,8 @@ TEST(PolyphonicModulation, Load_NoVoiceBuffers_IgnoresVoiceIndex) {
 
 TEST(PolyphonicModulation, ToJson_SerializesAllRoutingFields) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     matrix.add_source("lfo1", &lfo);
@@ -593,8 +608,8 @@ TEST(PolyphonicModulation, ToJson_SerializesAllRoutingFields) {
 
 TEST(PolyphonicModulation, FromJson_RestoresRoutings) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     matrix.add_source("lfo1", &lfo);
@@ -624,8 +639,8 @@ TEST(PolyphonicModulation, FromJson_RestoresRoutings) {
 
 TEST(PolyphonicModulation, ToJson_OmitsDefaultPriority_LegacyRoundTrip) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     matrix.add_source("lfo1", &lfo);
@@ -642,8 +657,8 @@ TEST(PolyphonicModulation, ToJson_OmitsDefaultPriority_LegacyRoundTrip) {
 
 TEST(PolyphonicModulation, ToJson_EmitsExplicitPriority) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     matrix.add_source("lfo1", &lfo);
@@ -660,8 +675,8 @@ TEST(PolyphonicModulation, ToJson_EmitsExplicitPriority) {
 
 TEST(PolyphonicModulation, FromJson_RestoresPriority) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     matrix.add_source("lfo1", &lfo);
@@ -685,8 +700,8 @@ TEST(PolyphonicModulation, FromJson_RestoresPriority) {
 
 TEST(PolyphonicModulation, FromJson_MissingPriority_DefaultsToZero) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     matrix.add_source("lfo1", &lfo);
@@ -710,8 +725,8 @@ TEST(PolyphonicModulation, FromJson_MissingPriority_DefaultsToZero) {
 
 TEST(PolyphonicModulation, ToJson_IncludeState) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     matrix.add_source("lfo1", &lfo);
@@ -732,10 +747,11 @@ TEST(PolyphonicModulation, ToJson_IncludeState) {
 
 TEST(PolyphonicModulation, PolySource_DrivesTargetVoiceCount) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 4);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(4);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.1f, 0.2f, 0.3f, 0.4f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -749,10 +765,11 @@ TEST(PolyphonicModulation, PolySource_DrivesTargetVoiceCount) {
 
 TEST(PolyphonicModulation, ZeroVoices_NoPolyAllocation) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 0);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(0);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {};  // 0 voices
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -770,8 +787,8 @@ TEST(PolyphonicModulation, ZeroVoices_NoPolyAllocation) {
 
 TEST(PolyphonicModulation, ActiveMask_FullyActive_Default) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     TestLFOSource lfo;
     lfo.m_frequency = 10.0f;
@@ -795,8 +812,8 @@ TEST(PolyphonicModulation, ActiveMask_FullyActive_Default) {
 
 TEST(PolyphonicModulation, ActiveMask_Additive_InactiveSkipped) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     PartiallyActiveSource src;
     src.m_value = 0.3f;
@@ -823,8 +840,8 @@ TEST(PolyphonicModulation, ActiveMask_Additive_InactiveSkipped) {
 
 TEST(PolyphonicModulation, ActiveMask_Replace_InactiveFallsBack) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     PartiallyActiveSource src;
     src.m_value = 0.9f;
@@ -846,10 +863,11 @@ TEST(PolyphonicModulation, ActiveMask_Replace_InactiveFallsBack) {
 
 TEST(PolyphonicModulation, ActiveMask_PolyToPoly_PerVoice) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PartiallyActivePolySource src(2);
+    PartiallyActivePolySource src(voice_scope);
     src.m_voice_values = {0.3f, 0.7f};
     // Voice 0: only even samples active. Voice 1: only odd samples active.
     src.m_voice_active_patterns = {
@@ -882,8 +900,8 @@ TEST(PolyphonicModulation, ActiveMask_PolyToPoly_PerVoice) {
 
 TEST(PolyphonicModulation, ReplaceHold_HoldsLastValue) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    state.create("freq", modulatable_float(0.5f));
 
     PartiallyActiveSource src;
     src.m_value = 0.8f;
@@ -907,9 +925,9 @@ TEST(PolyphonicModulation, ReplaceHold_HoldsLastValue) {
 
 TEST(PolyphonicModulation, ReplaceHold_VsReplace_SameSource) {
     thl::State state;
+    ModulationMatrix matrix(state);
     state.create("cutoff", modulatable_float(0.5f));
     state.create("play", modulatable_float(0.0f));
-    ModulationMatrix matrix(state);
 
     PartiallyActiveSource src;
     src.m_value = 0.9f;
@@ -940,10 +958,11 @@ TEST(PolyphonicModulation, ReplaceHold_VsReplace_SameSource) {
 
 TEST(PolyphonicModulation, ChangePoints_PolyReplace_Propagated) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.3f, 0.7f};
     matrix.add_source("poly", &poly);
     matrix.get_smart_handle<float>("freq");
@@ -960,10 +979,11 @@ TEST(PolyphonicModulation, ChangePoints_PolyReplace_Propagated) {
 
 TEST(PolyphonicModulation, CollectChangePoints_IncludesReplace) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.3f, 0.7f};
     matrix.add_source("poly", &poly);
     auto handle = matrix.get_smart_handle<float>("freq");

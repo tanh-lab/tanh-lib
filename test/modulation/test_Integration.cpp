@@ -111,10 +111,10 @@ class ConstantSource : public ModulationSource {
 public:
     float m_value = 1.0f;
 
-    ConstantSource() : ModulationSource(true, 0, true) {}
+    ConstantSource() : ModulationSource(thl::modulation::k_global_scope, true) {}
 
-    void prepare(double /*sample_rate*/, size_t samples_per_block) override {
-        resize_buffers(samples_per_block);
+    void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
+        resize_buffers(samples_per_block, voice_count);
     }
 
     void process(size_t num_samples, size_t offset = 0) override {

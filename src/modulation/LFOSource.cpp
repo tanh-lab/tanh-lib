@@ -7,10 +7,10 @@
 
 using namespace thl::modulation;
 
-void LFOSourceImpl::prepare(double sample_rate, size_t samples_per_block) {
+void LFOSourceImpl::prepare(double sample_rate, size_t samples_per_block, uint32_t voice_count) {
     m_sample_rate = sample_rate;
     m_phase_increment = static_cast<float>(get_parameter<float>(Frequency) / sample_rate);
-    resize_buffers(samples_per_block);
+    resize_buffers(samples_per_block, voice_count);
     m_samples_until_update = 0;
 }
 
