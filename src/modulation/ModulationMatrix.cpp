@@ -398,9 +398,9 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
     }
 
     // Note: multiple Replace/ReplaceHold routings may target the same parameter.
-    // Priority (ModulationRouting::m_priority) decides the winner per sample —
-    // see the deferred Replace-composition pass in process(). Same-priority
-    // equals fall back to add-order among active routings.
+    // Priority (ModulationRouting::m_replace_priority) decides the winner per
+    // sample — see the deferred Replace-composition pass in process().
+    // Same-priority equals fall back to add-order among active routings.
 
     // Reject routing if source is not registered
     if (m_sources.find(routing.m_source_id) == m_sources.end()) {
@@ -820,7 +820,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         r.m_combine_mode = routing.m_combine_mode;
         r.m_routing_mode = routing_mode;
         r.m_max_decimation = routing.m_max_decimation;
-        r.m_priority = routing.m_priority;
+        r.m_replace_priority = routing.m_replace_priority;
         r.m_skip_during_gesture = routing.m_skip_during_gesture;
         r.m_samples_until_update = 0;
 
@@ -937,7 +937,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
             // overlapping active regions.
             std::ranges::stable_sort(routings,
                                      [](const ResolvedRouting* a, const ResolvedRouting* b) {
-                                         return a->m_priority < b->m_priority;
+                                         return a->m_replace_priority < b->m_replace_priority;
                                      });
             std::vector<const ResolvedRouting*> ordered;
             ordered.reserve(routings.size());
@@ -1636,7 +1636,7 @@ nlohmann::json  // NOLINT(misc-include-cleaner)
             obj["replace_range_max"] = r.m_replace_range_max;
         }
         if (r.m_skip_during_gesture) { obj["skip_during_gesture"] = true; }
-        if (r.m_priority != 0) { obj["priority"] = r.m_priority; }
+        if (r.m_replace_priority != 0) { obj["replace_priority"] = r.m_replace_priority; }
         routings_array.push_back(std::move(obj));
     }
 
@@ -1662,7 +1662,7 @@ void ModulationMatrix::from_json(const nlohmann::json& json) {
         r.m_combine_mode = combine_mode_from_string(obj.value("combine_mode", "additive"));
         r.m_max_decimation = obj.value("max_decimation", uint32_t{0});
         r.m_skip_during_gesture = obj.value("skip_during_gesture", false);
-        r.m_priority = obj.value("priority", uint32_t{0});
+        r.m_replace_priority = obj.value("replace_priority", uint32_t{0});
         if (obj.contains("replace_range_min") && obj.contains("replace_range_max")) {
             r.m_replace_range_min = obj.value("replace_range_min", 0.0f);
             r.m_replace_range_max = obj.value("replace_range_max", 1.0f);

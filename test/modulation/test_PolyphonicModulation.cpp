@@ -458,11 +458,11 @@ TEST(PolyphonicModulation, Replace_HigherPriorityWins) {
     auto handle = matrix.get_smart_handle<float>("freq");
 
     ModulationRouting hi{"poly_hi", "freq", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    hi.m_priority = 10;
+    hi.m_replace_priority = 10;
     EXPECT_NE(matrix.add_routing(hi), k_invalid_routing_id);
 
     ModulationRouting lo{"poly_lo", "freq", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    lo.m_priority = 1;
+    lo.m_replace_priority = 1;
     EXPECT_NE(matrix.add_routing(lo), k_invalid_routing_id);
 
     matrix.prepare(k_sample_rate, k_block_size);
@@ -494,11 +494,11 @@ TEST(PolyphonicModulation, Replace_HigherPriorityInactive_LowerPriorityWins) {
     auto handle = matrix.get_smart_handle<float>("freq");
 
     ModulationRouting hi{"poly_hi", "freq", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    hi.m_priority = 10;
+    hi.m_replace_priority = 10;
     matrix.add_routing(hi);
 
     ModulationRouting lo{"poly_lo", "freq", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    lo.m_priority = 1;
+    lo.m_replace_priority = 1;
     matrix.add_routing(lo);
 
     matrix.prepare(k_sample_rate, k_block_size);
@@ -525,7 +525,7 @@ TEST(PolyphonicModulation, Replace_SingleRouting_RegressionIdenticalToLegacy) {
     auto handle = matrix.get_smart_handle<float>("freq");
 
     ModulationRouting r{"poly_a", "freq", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    r.m_priority = 7;
+    r.m_replace_priority = 7;
     matrix.add_routing(r);
 
     matrix.prepare(k_sample_rate, k_block_size);
@@ -652,7 +652,7 @@ TEST(PolyphonicModulation, ToJson_OmitsDefaultPriority_LegacyRoundTrip) {
     ASSERT_EQ(json.size(), 1u);
     // Default priority (0) is omitted → legacy presets without the field
     // round-trip to the default value with no schema churn.
-    EXPECT_FALSE(json[0].contains("priority"));
+    EXPECT_FALSE(json[0].contains("replace_priority"));
 }
 
 TEST(PolyphonicModulation, ToJson_EmitsExplicitPriority) {
@@ -664,13 +664,13 @@ TEST(PolyphonicModulation, ToJson_EmitsExplicitPriority) {
     matrix.add_source("lfo1", &lfo);
     matrix.get_smart_handle<float>("freq");
     ModulationRouting r{"lfo1", "freq", 0.5f, 0, DepthMode::Normalized, CombineMode::Replace};
-    r.m_priority = 42;
+    r.m_replace_priority = 42;
     matrix.add_routing(r);
     matrix.prepare(k_sample_rate, k_block_size);
 
     auto json = matrix.to_json(false);
     ASSERT_EQ(json.size(), 1u);
-    EXPECT_EQ(json[0]["priority"], 42u);
+    EXPECT_EQ(json[0]["replace_priority"], 42u);
 }
 
 TEST(PolyphonicModulation, FromJson_RestoresPriority) {
@@ -682,7 +682,7 @@ TEST(PolyphonicModulation, FromJson_RestoresPriority) {
     matrix.add_source("lfo1", &lfo);
     matrix.get_smart_handle<float>("freq");
     ModulationRouting r{"lfo1", "freq", 0.5f, 0, DepthMode::Normalized, CombineMode::Replace};
-    r.m_priority = 42;
+    r.m_replace_priority = 42;
     matrix.add_routing(r);
     matrix.prepare(k_sample_rate, k_block_size);
     auto json = matrix.to_json(false);
@@ -695,7 +695,7 @@ TEST(PolyphonicModulation, FromJson_RestoresPriority) {
 
     auto json2 = matrix2.to_json(false);
     ASSERT_EQ(json2.size(), 1u);
-    EXPECT_EQ(json2[0]["priority"], 42u);
+    EXPECT_EQ(json2[0]["replace_priority"], 42u);
 }
 
 TEST(PolyphonicModulation, FromJson_MissingPriority_DefaultsToZero) {
@@ -720,7 +720,7 @@ TEST(PolyphonicModulation, FromJson_MissingPriority_DefaultsToZero) {
 
     auto round = matrix.to_json(false);
     ASSERT_EQ(round.size(), 1u);
-    EXPECT_FALSE(round[0].contains("priority"));
+    EXPECT_FALSE(round[0].contains("replace_priority"));
 }
 
 TEST(PolyphonicModulation, ToJson_IncludeState) {

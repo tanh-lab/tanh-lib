@@ -1222,11 +1222,11 @@ TEST(ModulationMatrix, MultiReplace_MidBlockActiveTransition_WinnerFlips) {
     auto handle = matrix.get_smart_handle<float>("cutoff");
 
     ModulationRouting r_hi{"hi", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    r_hi.m_priority = 10;
+    r_hi.m_replace_priority = 10;
     ModulationRouting r_mid{"mid", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    r_mid.m_priority = 5;
+    r_mid.m_replace_priority = 5;
     ModulationRouting r_lo{"lo", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    r_lo.m_priority = 1;
+    r_lo.m_replace_priority = 1;
 
     matrix.add_routing(r_hi);
     matrix.add_routing(r_mid);
@@ -1271,9 +1271,9 @@ TEST(ModulationMatrix, MultiReplaceHold_HigherPriorityBlocksLower) {
     auto handle = matrix.get_smart_handle<float>("cutoff");
 
     ModulationRouting r_hi{"hi", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::ReplaceHold};
-    r_hi.m_priority = 10;
+    r_hi.m_replace_priority = 10;
     ModulationRouting r_lo{"lo", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    r_lo.m_priority = 1;
+    r_lo.m_replace_priority = 1;
 
     matrix.add_routing(r_hi);
     matrix.add_routing(r_lo);
@@ -1317,9 +1317,9 @@ TEST(ModulationMatrix, MultiReplace_HigherPriorityAdditiveOnly_StillComposesWith
 
     matrix.add_routing({"add", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::Additive});
     ModulationRouting r_hi{"rep_hi", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    r_hi.m_priority = 10;
+    r_hi.m_replace_priority = 10;
     ModulationRouting r_lo{"rep_lo", "cutoff", 1.0f, 0, DepthMode::Absolute, CombineMode::Replace};
-    r_lo.m_priority = 1;
+    r_lo.m_replace_priority = 1;
     matrix.add_routing(r_hi);
     matrix.add_routing(r_lo);
 

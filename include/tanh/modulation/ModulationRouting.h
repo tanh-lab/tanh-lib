@@ -62,7 +62,9 @@ struct ModulationRouting {
     // Replace routings behave identically regardless of priority value, so
     // legacy presets without the field load as 0 without behavior change.
     // Equal priorities fall back to add-order among active routings.
-    uint32_t m_priority = 0;
+    // Only meaningful for Replace / ReplaceHold combine modes; ignored for
+    // Additive.
+    uint32_t m_replace_priority = 0;
 
     // Replace range — maps source [0,1] to [min, max] in plain parameter units.
     // Only meaningful for Replace/ReplaceHold combine modes.
