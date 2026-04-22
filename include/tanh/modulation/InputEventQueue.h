@@ -9,6 +9,7 @@
 #include <readerwriterqueue.h>
 
 #include <tanh/core/Exports.h>
+#include <tanh/state/ModulationScope.h>
 
 namespace thl::modulation {
 
@@ -25,8 +26,13 @@ namespace thl::modulation {
 // concurrent touch events on 10 voices all land at offset 0, not strummed.
 //
 // Not a base class — compose this as a member of a ModulationSource and
-// call drain_spread() from pre_process_block(). Mirrors ModulationSource's
-// has_mono / num_voices capability flags.
+// call drain_spread() from pre_process_block(). Stream topology mirrors
+// ModulationSource: the scope declared at construction selects mono vs.
+// per-voice semantics; prepare() authors the voice count.
+//   scope == k_global_scope → mono stream, push_mono_* valid,
+//                                        push_voice_* asserts.
+//   scope != k_global_scope → per-voice streams, push_voice_* valid,
+//                                        push_mono_* asserts.
 class TANH_API InputEventQueue {
 public:
     enum class EventType : uint8_t { Value, Active };
@@ -39,17 +45,13 @@ public:
         float m_value;    // used when m_type == Value
     };
 
-    // Configure which input streams this queue carries.
-    //   has_mono = true      enables push_mono_* + a mono drain bucket.
-    //   num_voices > 0       enables push_voice_* + per-voice drain buckets.
-    //   queue_capacity       SPSC queue size; also reserves drain scratch.
-    explicit InputEventQueue(bool has_mono = true,
-                             uint32_t num_voices = 0,
-                             size_t queue_capacity = 64);
+    explicit InputEventQueue(thl::modulation::ModulationScope scope, size_t queue_capacity = 64);
 
-    // Reserve all audio-thread scratch buffers. Call from the composing
-    // ModulationSource's prepare() before any audio-thread use.
-    void prepare();
+    // Author the voice-count and reserve all audio-thread scratch buffers.
+    // Call from the composing ModulationSource's prepare() before any
+    // audio-thread use. num_voices is ignored for a global-scoped queue —
+    // the caller may pass anything (the matrix passes voice_count(global) == 1).
+    void prepare(uint32_t num_voices);
 
     // ── UI thread (single producer) — non-blocking, allocation-free ────
     // Returns false if the SPSC queue is full (audio-thread stall — always
@@ -67,7 +69,8 @@ public:
     using OnEvent = std::function<void(const Event& e, uint32_t offset)>;
     size_t drain_spread(uint32_t block_size, const OnEvent& cb);
 
-    [[nodiscard]] bool has_mono() const { return m_has_mono; }
+    [[nodiscard]] thl::modulation::ModulationScope scope() const { return m_scope; }
+    [[nodiscard]] bool has_mono() const { return m_scope == k_global_scope; }
     [[nodiscard]] uint32_t num_voices() const { return m_num_voices; }
     [[nodiscard]] size_t queue_capacity() const { return m_queue_capacity; }
 
@@ -77,15 +80,15 @@ private:
     // Cross-thread transport — lock-free SPSC.
     moodycamel::ReaderWriterQueue<Event> m_event_queue;
 
-    // Audio-thread-only scratch (no sync needed). Distinct storage per
-    // stream mirrors ModulationSource's own mono/voice buffer split.
+    // Audio-thread-only scratch (no sync needed). Exactly one of
+    // m_mono_indices / m_voice_indices carries traffic, selected by scope.
     std::vector<Event> m_drain_buffer;
-    std::vector<size_t> m_mono_indices;                // only if m_has_mono
-    std::vector<std::vector<size_t>> m_voice_indices;  // size = m_num_voices
+    std::vector<size_t> m_mono_indices;                // only if scope is global
+    std::vector<std::vector<size_t>> m_voice_indices;  // only if scope is non-global
 
     const size_t m_queue_capacity;
-    const uint32_t m_num_voices;
-    const bool m_has_mono;
+    uint32_t m_num_voices = 0;  // authored by prepare(); always 0 for global scope
+    const thl::modulation::ModulationScope m_scope;
 };
 
 }  // namespace thl::modulation

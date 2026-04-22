@@ -30,7 +30,7 @@ struct ResolvedRouting {
     mutable std::atomic<float> m_depth{1.0f};
     DepthMode m_depth_mode = DepthMode::Normalized;
     CombineMode m_combine_mode = CombineMode::Additive;
-    RoutingMode m_routing_mode = RoutingMode::MonoToMono;
+    RoutingMode m_routing_mode = RoutingMode::GlobalToGlobal;
     uint32_t m_max_decimation = 0;
     uint32_t m_priority = 0;
     bool m_skip_during_gesture = false;

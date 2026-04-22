@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "tanh/state/ModulationScope.h"
 #include "tanh/state/ParameterDefinitions.h"
 
 namespace thl {
@@ -135,7 +136,7 @@ struct VoiceBuffers {
 //
 // Same lifetime discipline as VoiceBuffers: structure is fixed at construction
 // time, writer never mutates contents, audio thread owns all content writes
-// (clear_per_block, apply_routing_mono_to_mono, build_change_points).
+// (clear_per_block, apply_routing_global_to_global, build_change_points).
 struct MonoBuffers {
     size_t m_block_size = 0;
     bool m_has_additive = false;
@@ -217,6 +218,14 @@ struct ResolvedTarget {
     std::string m_id;
     ParameterType m_type = ParameterType::Float;
     ParameterRecord* m_record = nullptr;
+
+    // Scope declared on the parameter's ParameterDefinition, copied and
+    // validated by ensure_target_with_lock. Gates routing validity: only
+    // (Global, Global), (Global, scope), and (scope, scope) pairs are
+    // accepted; cross-scope and scope→Global routings are rejected.
+    // Unlike m_voice / m_mono, this is authoritative metadata — it does
+    // not change based on which routings currently exist.
+    ModulationScope m_scope = k_global_scope;
 
     // Owner of the currently-published VoiceBuffers / MonoBuffers. Touched only
     // under m_writer_mutex. Paired with the atomic pointers above.

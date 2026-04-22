@@ -8,12 +8,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <list>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stack>
 #include <stdexcept>
 #include <string_view>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 #include <unordered_map>
@@ -22,6 +25,7 @@
 #include <nlohmann/json.hpp>
 
 #include "tanh/core/Logger.h"
+#include "tanh/state/ModulationScope.h"
 #include "tanh/state/ParameterDefinitions.h"
 
 #include "tanh/modulation/SmartHandle.h"
@@ -54,6 +58,12 @@ float ResolvedTarget::read_base_as_float() const TANH_NONBLOCKING_FUNCTION {
 }
 
 ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {
+    // Pre-register Global scope at id 0 with voice_count == 1. The name is
+    // the reserved "global" string from k_global_scope_name —
+    // hosts cannot register it (register_scope rejects "global").
+    m_scope_names.emplace_back(k_global_scope_name);
+    m_scopes.push_back(ScopeEntry{.m_name = m_scope_names.back().c_str(), .m_voice_count = 1});
+
     m_config.register_reader_thread();
 }
 
@@ -100,8 +110,150 @@ ResolvedTarget* ModulationMatrix::ensure_target_with_lock(const std::string_view
     t.m_type = param.def().m_type;
     t.m_record = m_state.get_record(id);
     t.m_uses_normalized_buffer = t.m_range && !t.m_range->is_linear();
+    t.m_scope = resolve_parameter_scope_with_lock(id, param.def().m_modulation_scope);
 
     return &t;
+}
+
+// ── Scope registry ──────────────────────────────────────────────────────────
+
+thl::modulation::ModulationScope ModulationMatrix::register_scope(std::string_view name, uint32_t voice_count) {
+    std::scoped_lock const lock(m_writer_mutex);
+
+    // Guard the global sentinel. "global" is reserved for k_global_scope
+    // (id 0, voice_count fixed at 1); registering that name would collide with the
+    // pre-registered global entry. Warn and hand back the pre-registered handle.
+    if (name == k_global_scope_name) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "modulation",
+                          "register_scope('%.*s'): name is reserved for "
+                          "k_global_scope — returning the global handle.",
+                          static_cast<int>(name.size()),
+                          name.data());
+        return k_global_scope;
+    }
+
+    // Idempotent on name — search existing registry. Skip id 0 (the global
+    // sentinel's name "global" is handled by the reserved-name guard above).
+    for (size_t i = 1; i < m_scopes.size(); ++i) {
+        if (name == m_scopes[i].m_name) {
+            if (m_scopes[i].m_voice_count != voice_count) {
+                thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                                  "modulation",
+                                  "register_scope('%.*s', %u): voice count changed from %u, "
+                                  "rebuilding schedule.",
+                                  static_cast<int>(name.size()),
+                                  name.data(),
+                                  voice_count,
+                                  m_scopes[i].m_voice_count);
+                m_scopes[i].m_voice_count = voice_count;
+                rebuild_schedule_with_lock();
+            }
+            return ModulationScope{.m_id = static_cast<uint16_t>(i), .m_name = m_scopes[i].m_name};
+        }
+    }
+
+    // New registration — park the name in stable storage, then index it.
+    m_scope_names.emplace_back(name);
+    const char* stable_name = m_scope_names.back().c_str();
+    const auto new_id = static_cast<uint16_t>(m_scopes.size());
+    m_scopes.push_back(ScopeEntry{.m_name = stable_name, .m_voice_count = voice_count});
+    return ModulationScope{.m_id = new_id, .m_name = stable_name};
+}
+
+std::optional<thl::modulation::ModulationScope> ModulationMatrix::find_scope(std::string_view name) const {
+    // "global" is the canonical human-readable alias for k_global_scope.
+    // An empty name is treated as "no scope specified" and returns nullopt — JSON
+    // deserialization that encounters a missing modulationScope key must default
+    // to k_global_scope itself, not rely on find_scope("") to resolve it.
+    if (name == k_global_scope_name) { return k_global_scope; }
+
+    for (size_t i = 1; i < m_scopes.size(); ++i) {
+        if (name == m_scopes[i].m_name) {
+            return ModulationScope{.m_id = static_cast<uint16_t>(i), .m_name = m_scopes[i].m_name};
+        }
+    }
+    return std::nullopt;
+}
+
+uint32_t ModulationMatrix::voice_count(ModulationScope scope) const {
+    if (scope.m_id >= m_scopes.size()) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "modulation",
+                          "voice_count: scope id=%u not registered on this matrix "
+                          "(registry size=%zu) — cross-matrix leak or stale handle.",
+                          static_cast<unsigned>(scope.m_id),
+                          m_scopes.size());
+        return 0;
+    }
+    return m_scopes[scope.m_id].m_voice_count;
+}
+
+std::string_view ModulationMatrix::scope_name(ModulationScope scope) const {
+    if (scope.m_id >= m_scopes.size()) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "modulation",
+                          "scope_name: scope id=%u not registered on this matrix "
+                          "(registry size=%zu) — cross-matrix leak or stale handle.",
+                          static_cast<unsigned>(scope.m_id),
+                          m_scopes.size());
+        return {};
+    }
+    return m_scopes[scope.m_id].m_name;
+}
+
+void ModulationMatrix::set_voice_count(ModulationScope scope, uint32_t new_voice_count) {
+    std::scoped_lock const lock(m_writer_mutex);
+    if (scope.m_id == 0) {
+        thl::Logger::log(thl::Logger::LogLevel::Warning,
+                         "modulation",
+                         "set_voice_count: refusing to resize k_global_scope "
+                         "(voice_count is fixed at 1).");
+        return;
+    }
+    if (scope.m_id >= m_scopes.size()) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                          "modulation",
+                          "set_voice_count: scope id=%u not registered on this matrix "
+                          "(registry size=%zu) — cross-matrix leak or stale handle.",
+                          static_cast<unsigned>(scope.m_id),
+                          m_scopes.size());
+        return;
+    }
+    if (m_scopes[scope.m_id].m_voice_count == new_voice_count) { return; }
+    m_scopes[scope.m_id].m_voice_count = new_voice_count;
+
+    // Re-prepare scoped sources so their voice buffers match the new count.
+    for (auto& [id, source] : m_sources) {
+        if (source->scope().m_id == scope.m_id) {
+            source->prepare(m_sample_rate, m_samples_per_block, new_voice_count);
+        }
+    }
+    rebuild_schedule_with_lock();
+}
+
+thl::modulation::ModulationScope ModulationMatrix::resolve_parameter_scope_with_lock(
+    std::string_view param_key,
+    thl::modulation::ModulationScope declared) {
+    if (declared == k_global_scope) { return k_global_scope; }
+
+    // Validate: id in range AND name pointer matches this matrix's stable
+    // storage. Pointer equality is sufficient — std::list nodes never move,
+    // so the same textual name registered on two different matrices yields
+    // two different c_str() pointers.
+    if (declared.m_id < m_scopes.size() && m_scopes[declared.m_id].m_name == declared.m_name) {
+        return declared;
+    }
+
+    thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                      "modulation",
+                      "Parameter '%.*s' declared scope '%s' (id %u) is not registered in this "
+                      "matrix; falling back to Global.",
+                      static_cast<int>(param_key.size()),
+                      param_key.data(),
+                      declared.m_name ? declared.m_name : "",
+                      declared.m_id);
+    return k_global_scope;
 }
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
@@ -113,7 +265,9 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
     m_sample_rate = sample_rate;
     m_samples_per_block = samples_per_block;
 
-    for (auto& [id, source] : m_sources) { source->prepare(sample_rate, samples_per_block); }
+    for (auto& [id, source] : m_sources) {
+        source->prepare(sample_rate, samples_per_block, voice_count(source->scope()));
+    }
 
     // Buffers are (re)allocated inside rebuild_schedule_with_lock() sized against
     // the new m_samples_per_block — no per-target resize pass needed here.
@@ -437,74 +591,112 @@ std::vector<ScheduleStep> ModulationMatrix::get_schedule() const {
 }
 
 void ModulationMatrix::rebuild_schedule_with_lock() {
-    // ── Pass 1: Determine per-target buffer requirements ────────────────
+    // ── Pass 1: Validate routings by scope and collect per-target needs ──
+    //
+    // Scope validity table (src.scope × tgt.scope):
+    //   (Global, Global)           → accepted as GlobalToGlobal
+    //   (Global, S ≠ Global)       → accepted as GlobalToScoped (broadcast)
+    //   (S, S)                     → accepted as ScopedToScoped (same non-global scope)
+    //   (S1, S2) both non-global,
+    //     S1 != S2                 → rejected as CrossScope
+    //   (S ≠ Global, Global)       → rejected as ScopedToGlobal (scope-narrowing)
+    //
+    // Allocation is still routing-derived: we collect per-target flags for
+    // additive/replace and same-scope-routing presence, then allocate only
+    // what's needed. A per-voice-scope parameter with only Global routings
+    // allocates MonoBuffers only.
     struct TargetInfo {
-        uint32_t m_max_voices = 0;
-        bool m_mono_additive = false;
-        bool m_mono_replace = false;
-        bool m_voice_additive = false;
-        bool m_voice_replace = false;
+        bool m_has_same_scope_routing = false;
+        bool m_global_additive = false;
+        bool m_global_replace = false;
+        bool m_same_scope_additive = false;
+        bool m_same_scope_replace = false;
     };
     std::unordered_map<std::string, TargetInfo> target_info;
 
-    // 1a: Determine which targets are polyphonic (any voice-capable source)
+    // Tracks routings rejected during pass 1a so pass 2 skips them cleanly.
+    std::unordered_set<uint32_t> rejected_routing_ids;
+
     for (const auto& routing : m_user_routings) {
         auto src_it = m_sources.find(routing.m_source_id);
-        if (src_it == m_sources.end()) { continue; }
+        auto tgt_it = m_targets.find(routing.m_target_id);
+        if (src_it == m_sources.end() || tgt_it == m_targets.end()) { continue; }
 
-        auto& info = target_info[routing.m_target_id];
-        if (src_it->second->has_voice_output()) {
-            info.m_max_voices = std::max(info.m_max_voices, src_it->second->num_voices());
+        const ModulationScope src_scope = src_it->second->scope();
+        const ModulationScope tgt_scope = tgt_it->second.m_scope;
+        const bool src_global = src_scope == k_global_scope;
+        const bool tgt_global = tgt_scope == k_global_scope;
+
+        // Reject ScopedToGlobal: voice source into a mono-only parameter.
+        if (!src_global && tgt_global) {
+            thl::Logger::logf(
+                thl::Logger::LogLevel::Warning,
+                "modulation",
+                "Routing rejected (ScopedToGlobal): scoped source '%s' (scope '%s') -> "
+                "global target '%s'. Scope narrowing is not supported.",
+                routing.m_source_id.c_str(),
+                src_scope.m_name,
+                routing.m_target_id.c_str());
+            rejected_routing_ids.insert(routing.m_id);
+            continue;
         }
-    }
 
-    // 1b: Determine buffer needs based on actual routing modes.
-    // A target is either mono-only or voice-only — never both.
-    for (const auto& routing : m_user_routings) {
-        auto src_it = m_sources.find(routing.m_source_id);
-        if (src_it == m_sources.end()) { continue; }
+        // Reject CrossScope: two different non-global scopes.
+        if (!src_global && !tgt_global && src_scope != tgt_scope) {
+            thl::Logger::logf(
+                thl::Logger::LogLevel::Warning,
+                "modulation",
+                "Routing rejected (CrossScope): source '%s' scope '%s' != target '%s' scope '%s'. "
+                "Cross-scope modulation is not supported.",
+                routing.m_source_id.c_str(),
+                src_scope.m_name,
+                routing.m_target_id.c_str(),
+                tgt_scope.m_name);
+            rejected_routing_ids.insert(routing.m_id);
+            continue;
+        }
 
-        auto& info = target_info[routing.m_target_id];
-        const bool tgt_poly = info.m_max_voices > 0;
+        const bool same_scope = !src_global && !tgt_global && src_scope == tgt_scope;
         const bool is_replace = routing.m_combine_mode == CombineMode::Replace ||
                                 routing.m_combine_mode == CombineMode::ReplaceHold;
-
-        if (tgt_poly) {
+        auto& info = target_info[routing.m_target_id];
+        if (same_scope) {
+            info.m_has_same_scope_routing = true;
             if (is_replace) {
-                info.m_voice_replace = true;
+                info.m_same_scope_replace = true;
             } else {
-                info.m_voice_additive = true;
+                info.m_same_scope_additive = true;
             }
-        } else if (src_it->second->has_mono_output()) {
+        } else {
+            // src_global == true (the only remaining accepted case)
             if (is_replace) {
-                info.m_mono_replace = true;
+                info.m_global_replace = true;
             } else {
-                info.m_mono_additive = true;
+                info.m_global_additive = true;
             }
         }
     }
 
-    // ── 1c: Swap-in fresh buffer structs via atomic publish ────────
-    // For each target we compute the desired (mono vs poly, flags, sizes).
-    // If the currently-published buffer object's geometry already matches,
-    // we keep it — no swap, no audio-thread-visible pointer change. When it
-    // doesn't match we allocate a fresh VoiceBuffers / MonoBuffers off to
-    // the side, atomic-store the new pointer, and push the previous owner
-    // into the target's retirement list. Actual destruction is deferred to
-    // after m_config.synchronize() below so that any audio block still
-    // holding a raw pointer through its ReadScope finishes first.
+    // ── Pass 1b: Allocate per-target buffers ─────────────────────────────
+    // Rule:
+    //   - Any same-scope routing → VoiceBuffers (sized via matrix voice_count
+    //     of the target's scope). Global routings to the same target broadcast
+    //     into those VoiceBuffers (the existing GlobalToScoped write path).
+    //   - No same-scope routing, only global routings → MonoBuffers.
+    //   - No routings → no buffers.
     for (auto& [id, target] : m_targets) {
         auto it = target_info.find(id);
-        const bool has_any_routing = it != target_info.end();
-        const bool has_poly = has_any_routing && it->second.m_max_voices > 0;
-        const bool has_mono = has_any_routing && !has_poly &&
-                              (it->second.m_mono_additive || it->second.m_mono_replace);
+        const bool has_any = it != target_info.end();
+        const bool has_poly = has_any && it->second.m_has_same_scope_routing;
+        const bool has_mono =
+            has_any && !has_poly && (it->second.m_global_additive || it->second.m_global_replace);
 
-        // Voice buffers
-        if (has_poly) {
-            const uint32_t nv = it->second.m_max_voices;
-            const bool va = it->second.m_voice_additive;
-            const bool vr = it->second.m_voice_replace;
+        // Voice buffers. Skip allocation when the scope is registered with zero
+        // voices — there's nothing for downstream consumers to index into.
+        const uint32_t nv = has_poly ? voice_count(target.m_scope) : 0u;
+        if (has_poly && nv > 0) {
+            const bool va = it->second.m_same_scope_additive || it->second.m_global_additive;
+            const bool vr = it->second.m_same_scope_replace || it->second.m_global_replace;
             auto* cur = target.m_voice_owner.get();
             const bool geometry_matches = cur != nullptr && cur->m_num_voices == nv &&
                                           cur->m_block_size == m_samples_per_block &&
@@ -524,8 +716,8 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
 
         // Mono buffers
         if (has_mono) {
-            const bool ma = it->second.m_mono_additive;
-            const bool mr = it->second.m_mono_replace;
+            const bool ma = it->second.m_global_additive;
+            const bool mr = it->second.m_global_replace;
             auto* cur = target.m_mono_owner.get();
             const bool geometry_matches = cur != nullptr &&
                                           cur->m_block_size == m_samples_per_block &&
@@ -551,39 +743,23 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         auto tgt_it = m_targets.find(routing.m_target_id);
 
         if (src_it == m_sources.end() || tgt_it == m_targets.end()) { continue; }
+        if (rejected_routing_ids.contains(routing.m_id)) { continue; }
 
-        // Determine routing mode from source capability + target type.
-        // Writer-side: inspect the owning unique_ptr rather than the atomic
-        // publish pointer — both are in sync under m_writer_mutex, and the
-        // owner is the definitive writer-visible state.
-        const bool src_mono = src_it->second->has_mono_output();
-        const bool src_voice = src_it->second->has_voice_output();
+        // Derive routing mode from target buffer allocation + source scope.
+        // Pass 1 rejected the CrossScope and ScopedToGlobal cases, so only
+        // three accepted modes remain.
+        const bool src_global = src_it->second->is_global();
         const bool tgt_poly = tgt_it->second.m_voice_owner != nullptr;
 
         RoutingMode routing_mode;
-        if (tgt_poly && src_voice) {
-            routing_mode = RoutingMode::PolyToPoly;
-        } else if (tgt_poly && !src_voice) {
-            routing_mode = RoutingMode::MonoToPoly;
-        } else if (!tgt_poly && src_mono) {
-            routing_mode = RoutingMode::MonoToMono;
+        if (tgt_poly) {
+            routing_mode = src_global ? RoutingMode::GlobalToScoped : RoutingMode::ScopedToScoped;
         } else {
-            routing_mode = RoutingMode::PolyToMono;
+            routing_mode = RoutingMode::GlobalToGlobal;
         }
 
-        // Reject PolyToMono
-        if (routing_mode == RoutingMode::PolyToMono) {
-            thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                              "modulation",
-                              "Routing rejected: poly source '%s' -> mono target '%s'. "
-                              "Use a mono source or make the target polyphonic.",
-                              routing.m_source_id.c_str(),
-                              routing.m_target_id.c_str());
-            continue;
-        }
-
-        // Voice mismatch warning for PolyToPoly
-        if (routing_mode == RoutingMode::PolyToPoly) {
+        // Voice mismatch warning for ScopedToScoped
+        if (routing_mode == RoutingMode::ScopedToScoped) {
             const uint32_t src_v = src_it->second->num_voices();
             const uint32_t tgt_v = tgt_it->second.m_voice_owner->m_num_voices;
             if (src_v != tgt_v) {
@@ -882,7 +1058,7 @@ inline float compute_replace_value(const ResolvedRouting& routing,
     return src_sample * routing.m_depth_abs_precomputed.load(std::memory_order_relaxed);
 }
 
-// MonoToMono: write to mono additive or mono replace buffer.
+// GlobalToGlobal: write to mono additive or mono replace buffer.
 //
 // Flag-gate rationale (applies to every apply_routing_* helper and to the
 // change-point propagation sites below).
@@ -906,9 +1082,9 @@ inline float compute_replace_value(const ResolvedRouting& routing,
 // Gating on the flags we just loaded from the atomic-published buffer turns
 // that stale write into a safe no-op. Correctness for the *next* block is
 // restored automatically because step 3 guarantees it sees the new config.
-void apply_routing_mono_to_mono(const ResolvedRouting& routing,
-                                const ModulationSource* source,
-                                size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+void apply_routing_global_to_global(const ResolvedRouting& routing,
+                                    const ModulationSource* source,
+                                    size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
     if (mb == nullptr) { return; }
     const auto& src_output = source->get_output_buffer();
@@ -951,10 +1127,10 @@ void apply_routing_mono_to_mono(const ResolvedRouting& routing,
     }
 }
 
-// PolyToPoly: write to per-voice additive or replace buffers.
-void apply_routing_poly_to_poly(const ResolvedRouting& routing,
-                                const ModulationSource* source,
-                                size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+// ScopedToScoped: write to per-voice additive or replace buffers.
+void apply_routing_scoped_to_scoped(const ResolvedRouting& routing,
+                                    const ModulationSource* source,
+                                    size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
     if (vb == nullptr) { return; }
     const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
@@ -1015,10 +1191,10 @@ void apply_routing_poly_to_poly(const ResolvedRouting& routing,
     }
 }
 
-// MonoToPoly: broadcast mono source to all voice buffers.
-void apply_routing_mono_to_poly(const ResolvedRouting& routing,
-                                const ModulationSource* source,
-                                size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+// GlobalToScoped: broadcast mono source to all voice buffers.
+void apply_routing_global_to_scoped(const ResolvedRouting& routing,
+                                    const ModulationSource* source,
+                                    size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     const auto& src_output = source->get_output_buffer();
     auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
     if (vb == nullptr) { return; }
@@ -1105,31 +1281,22 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
     auto it = config.m_routings_by_source.find(source);
     if (it == config.m_routings_by_source.end()) { return; }
 
-    // Determine which process methods to call based on routing modes
-    bool needs_mono = false;
-    bool needs_voice = false;
-    for (const auto* routing : it->second) {
-        if (routing->m_routing_mode == RoutingMode::MonoToMono) {
-            needs_mono = true;
-        } else {
-            needs_voice = true;
-        }
-    }
-
     // Per-source state reset has already happened in process_with_scope step 1
     // (clear_per_block) and step 2 (pre_process_block may have repopulated
     // masks + CPs). Do NOT re-clear here — that would discard event-driven
     // sources' freshly drained input.
 
-    if (needs_mono && source->has_mono_output()) { source->process(num_samples); }
-    if (needs_voice && source->has_voice_output()) {
+    // Source scope dictates which process variant to call:
+    //   - global scope  → one mono process(num_samples)
+    //   - scoped source → process_voice(v, num_samples) per voice
+    // GlobalToScoped routings still use the mono buffer, so a global source
+    // is processed once regardless of how many routings it feeds.
+    if (source->is_global()) {
+        source->process(num_samples);
+    } else {
         for (uint32_t v = 0; v < source->num_voices(); ++v) {
             source->process_voice(v, num_samples);
         }
-    }
-    // MonoToPoly uses mono output buffer — ensure it's processed
-    if (needs_voice && !source->has_voice_output() && source->has_mono_output()) {
-        if (!needs_mono) { source->process(num_samples); }
     }
 
     for (const auto* routing : it->second) {
@@ -1144,16 +1311,17 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
         // target evaluates transition points regardless.
         if (!routing->m_replace_deferred) {
             switch (routing->m_routing_mode) {
-                case RoutingMode::MonoToMono:
-                    apply_routing_mono_to_mono(*routing, source, num_samples);
+                case RoutingMode::GlobalToGlobal:
+                    apply_routing_global_to_global(*routing, source, num_samples);
                     break;
-                case RoutingMode::PolyToPoly:
-                    apply_routing_poly_to_poly(*routing, source, num_samples);
+                case RoutingMode::ScopedToScoped:
+                    apply_routing_scoped_to_scoped(*routing, source, num_samples);
                     break;
-                case RoutingMode::MonoToPoly:
-                    apply_routing_mono_to_poly(*routing, source, num_samples);
+                case RoutingMode::GlobalToScoped:
+                    apply_routing_global_to_scoped(*routing, source, num_samples);
                     break;
-                case RoutingMode::PolyToMono: break;  // rejected at schedule-build time
+                case RoutingMode::ScopedToGlobal:
+                case RoutingMode::CrossScope: break;  // rejected at schedule-build time
             }
         }
 
@@ -1161,14 +1329,14 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
         // is only allocated when at least one of m_has_additive / m_has_replace
         // is set; guard so old-config routings landing on a flag-shrunken buffer
         // become a no-op instead of writing to empty storage.
-        if (routing->m_routing_mode == RoutingMode::MonoToMono) {
+        if (routing->m_routing_mode == RoutingMode::GlobalToGlobal) {
             if (auto* mb = routing->m_target->m_mono.load(std::memory_order_acquire);
                 mb != nullptr && (mb->m_has_additive || mb->m_has_replace)) {
                 for (const uint32_t cp : source->get_change_points()) {
                     if (cp < num_samples) { mb->m_change_point_flags[cp] = 1; }
                 }
             }
-        } else if (routing->m_routing_mode == RoutingMode::PolyToPoly) {
+        } else if (routing->m_routing_mode == RoutingMode::ScopedToScoped) {
             if (auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
                 vb != nullptr && (vb->m_has_additive || vb->m_has_replace)) {
                 const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
@@ -1180,7 +1348,7 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
                     }
                 }
             }
-        } else if (routing->m_routing_mode == RoutingMode::MonoToPoly) {
+        } else if (routing->m_routing_mode == RoutingMode::GlobalToScoped) {
             if (auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
                 vb != nullptr && (vb->m_has_additive || vb->m_has_replace)) {
                 // Broadcast mono change points to all voices
@@ -1209,8 +1377,8 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
     // Per-sample processing: interleave sources, apply routings immediately
     for (size_t i = 0; i < num_samples; ++i) {
         for (auto* source : sources) {
-            // Mono path
-            if (source->has_mono_output()) {
+            // Mono path — only global-scope sources
+            if (source->is_global()) {
                 source->process(1, i);
                 const float sample = source->get_output_at(static_cast<uint32_t>(i));
                 const bool active = source->is_fully_active() ||
@@ -1219,7 +1387,7 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                 auto it = config.m_routings_by_source.find(source);
                 if (it != config.m_routings_by_source.end()) {
                     for (const auto* routing : it->second) {
-                        if (routing->m_routing_mode == RoutingMode::MonoToMono) {
+                        if (routing->m_routing_mode == RoutingMode::GlobalToGlobal) {
                             if (routing->m_skip_during_gesture &&
                                 routing->m_target->m_record->m_in_gesture.load(
                                     std::memory_order_relaxed)) {
@@ -1236,8 +1404,8 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                 }
             }
 
-            // Voice path
-            if (source->has_voice_output()) {
+            // Voice path — only scoped (non-global) sources
+            if (!source->is_global()) {
                 auto it = config.m_routings_by_source.find(source);
                 for (uint32_t v = 0; v < source->num_voices(); ++v) {
                     source->process_voice(v, 1, i);
@@ -1247,7 +1415,9 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
 
                     if (it != config.m_routings_by_source.end()) {
                         for (const auto* routing : it->second) {
-                            if (routing->m_routing_mode != RoutingMode::PolyToPoly) { continue; }
+                            if (routing->m_routing_mode != RoutingMode::ScopedToScoped) {
+                                continue;
+                            }
                             auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
                             if (vb == nullptr || v >= vb->m_num_voices) { continue; }
                             if (routing->m_skip_during_gesture &&
@@ -1291,14 +1461,14 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                 continue;
             }
 
-            if (routing->m_routing_mode == RoutingMode::MonoToMono) {
+            if (routing->m_routing_mode == RoutingMode::GlobalToGlobal) {
                 if (auto* mb = routing->m_target->m_mono.load(std::memory_order_acquire);
                     mb != nullptr && (mb->m_has_additive || mb->m_has_replace)) {
                     for (const uint32_t cp : source->get_change_points()) {
                         if (cp < num_samples) { mb->m_change_point_flags[cp] = 1; }
                     }
                 }
-            } else if (routing->m_routing_mode == RoutingMode::PolyToPoly) {
+            } else if (routing->m_routing_mode == RoutingMode::ScopedToScoped) {
                 if (auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
                     vb != nullptr && (vb->m_has_additive || vb->m_has_replace)) {
                     const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
@@ -1334,16 +1504,17 @@ void ModulationMatrix::apply_multi_replace_composition_with_scope(const Processi
             auto* source = routing->m_source;
             if (source == nullptr) { continue; }
             switch (routing->m_routing_mode) {
-                case RoutingMode::MonoToMono:
-                    apply_routing_mono_to_mono(*routing, source, num_samples);
+                case RoutingMode::GlobalToGlobal:
+                    apply_routing_global_to_global(*routing, source, num_samples);
                     break;
-                case RoutingMode::PolyToPoly:
-                    apply_routing_poly_to_poly(*routing, source, num_samples);
+                case RoutingMode::ScopedToScoped:
+                    apply_routing_scoped_to_scoped(*routing, source, num_samples);
                     break;
-                case RoutingMode::MonoToPoly:
-                    apply_routing_mono_to_poly(*routing, source, num_samples);
+                case RoutingMode::GlobalToScoped:
+                    apply_routing_global_to_scoped(*routing, source, num_samples);
                     break;
-                case RoutingMode::PolyToMono: break;  // rejected at schedule-build time
+                case RoutingMode::ScopedToGlobal:
+                case RoutingMode::CrossScope: break;  // rejected at schedule-build time
             }
         }
     }

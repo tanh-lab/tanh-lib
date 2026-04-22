@@ -5,11 +5,17 @@
 #include <gtest/gtest.h>
 
 #include <tanh/modulation/InputEventQueue.h>
+#include <tanh/state/ModulationScope.h>
 
 namespace {
 
 using thl::modulation::InputEventQueue;
 using EventType = InputEventQueue::EventType;
+
+// Test-local scopes. Not bound to any matrix — InputEventQueue only inspects
+// has_mono() via scope comparison against k_global_scope.
+constexpr thl::modulation::ModulationScope k_global_scope = thl::modulation::k_global_scope;
+constexpr thl::modulation::ModulationScope k_voice_scope{.m_id = 1, .m_name = "test_voice"};
 
 struct Captured {
     InputEventQueue::Event m_event;
@@ -32,8 +38,8 @@ public:
 // ── Basics ──────────────────────────────────────────────────────────────────
 
 TEST(InputEventQueue, SingleVoiceEventLandsAtOffsetZero) {
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     ASSERT_TRUE(q.push_voice_value(0, 0.7f));
 
@@ -50,8 +56,8 @@ TEST(InputEventQueue, SingleVoiceEventLandsAtOffsetZero) {
 }
 
 TEST(InputEventQueue, SingleMonoEventLandsAtOffsetZero) {
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/0, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_global_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/0);
 
     ASSERT_TRUE(q.push_mono_value(0.42f));
 
@@ -67,8 +73,8 @@ TEST(InputEventQueue, SingleMonoEventLandsAtOffsetZero) {
 }
 
 TEST(InputEventQueue, NoEventBlockProducesNoCallbacks) {
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     DrainRecorder rec;
     EXPECT_EQ(q.drain_spread(512, rec.callback()), 0u);
@@ -78,8 +84,8 @@ TEST(InputEventQueue, NoEventBlockProducesNoCallbacks) {
 // ── Per-stream spreading — the core behavior ────────────────────────────────
 
 TEST(InputEventQueue, TwoVoiceEventsSpreadEvenly) {
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     ASSERT_TRUE(q.push_voice_value(0, 0.2f));
     ASSERT_TRUE(q.push_voice_value(0, 0.8f));
@@ -95,8 +101,8 @@ TEST(InputEventQueue, TwoVoiceEventsSpreadEvenly) {
 }
 
 TEST(InputEventQueue, ThreeVoiceEventsSpreadEvenly) {
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     ASSERT_TRUE(q.push_voice_value(0, 0.1f));
     ASSERT_TRUE(q.push_voice_value(0, 0.5f));
@@ -112,8 +118,8 @@ TEST(InputEventQueue, ThreeVoiceEventsSpreadEvenly) {
 }
 
 TEST(InputEventQueue, TapWithinBlockPreservesBothEdges) {
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     ASSERT_TRUE(q.push_voice_active(0, true));
     ASSERT_TRUE(q.push_voice_value(0, 0.5f));
@@ -137,8 +143,8 @@ TEST(InputEventQueue, TapWithinBlockPreservesBothEdges) {
 TEST(InputEventQueue, PolyphonicSimultaneousTouchesAllLandAtZero) {
     // Regression test for the "strum bug" — 10 concurrent touches must all
     // land at offset 0, not be spread across the block.
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     for (uint32_t v = 0; v < 10; ++v) { ASSERT_TRUE(q.push_voice_active(v, true)); }
 
@@ -152,8 +158,8 @@ TEST(InputEventQueue, PolyphonicSimultaneousTouchesAllLandAtZero) {
 }
 
 TEST(InputEventQueue, PolyphonicMixedRatesSpreadPerBucket) {
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     // Voice 0 gets 8 events; voice 5 gets 1.
     for (int i = 0; i < 8; ++i) {
@@ -181,44 +187,9 @@ TEST(InputEventQueue, PolyphonicMixedRatesSpreadPerBucket) {
     EXPECT_EQ(v5[0].m_offset, 0u);
 }
 
-TEST(InputEventQueue, MonoAndVoiceConcurrentlyIndependentSpread) {
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
-
-    ASSERT_TRUE(q.push_mono_value(0.1f));
-    ASSERT_TRUE(q.push_mono_value(0.9f));
-    ASSERT_TRUE(q.push_voice_value(7, 0.5f));
-    ASSERT_TRUE(q.push_voice_value(7, 0.7f));
-    ASSERT_TRUE(q.push_voice_value(7, 0.2f));
-
-    DrainRecorder rec;
-    q.drain_spread(512, rec.callback());
-
-    ASSERT_EQ(rec.m_events.size(), 5u);
-
-    std::vector<Captured> mono;
-    std::vector<Captured> v7;
-    for (const auto& c : rec.m_events) {
-        if (c.m_event.m_is_mono) {
-            mono.push_back(c);
-        } else {
-            v7.push_back(c);
-        }
-    }
-
-    ASSERT_EQ(mono.size(), 2u);
-    EXPECT_EQ(mono[0].m_offset, 0u);
-    EXPECT_EQ(mono[1].m_offset, 256u);
-
-    ASSERT_EQ(v7.size(), 3u);
-    EXPECT_EQ(v7[0].m_offset, 0u);
-    EXPECT_EQ(v7[1].m_offset, 170u);
-    EXPECT_EQ(v7[2].m_offset, 341u);
-}
-
 TEST(InputEventQueue, ActiveOnlyToggle) {
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+    q.prepare(/*num_voices=*/10);
 
     ASSERT_TRUE(q.push_voice_active(0, true));
     ASSERT_TRUE(q.push_voice_active(0, false));
@@ -237,8 +208,8 @@ TEST(InputEventQueue, ActiveOnlyToggle) {
 
 TEST(InputEventQueue, BlockSizeScalesOffsets) {
     for (uint32_t bs : {64u, 512u, 2048u}) {
-        InputEventQueue q(/*has_mono=*/false, /*num_voices=*/10, /*queue_capacity=*/32);
-        q.prepare();
+        InputEventQueue q(k_voice_scope, /*queue_capacity=*/32);
+        q.prepare(/*num_voices=*/10);
 
         ASSERT_TRUE(q.push_voice_value(0, 0.1f));
         ASSERT_TRUE(q.push_voice_value(0, 0.5f));
@@ -254,43 +225,9 @@ TEST(InputEventQueue, BlockSizeScalesOffsets) {
     }
 }
 
-TEST(InputEventQueue, StreamIsolationVoicesAndMonoDontLeak) {
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/4, /*queue_capacity=*/32);
-    q.prepare();
-
-    ASSERT_TRUE(q.push_voice_value(0, 1.0f));
-    ASSERT_TRUE(q.push_voice_value(3, 2.0f));
-    ASSERT_TRUE(q.push_mono_value(3.0f));
-
-    DrainRecorder rec;
-    q.drain_spread(512, rec.callback());
-
-    ASSERT_EQ(rec.m_events.size(), 3u);
-
-    // Every captured event's voice/is_mono must match exactly what was pushed.
-    int mono_count = 0;
-    int v0_count = 0;
-    int v3_count = 0;
-    for (const auto& c : rec.m_events) {
-        if (c.m_event.m_is_mono) {
-            EXPECT_FLOAT_EQ(c.m_event.m_value, 3.0f);
-            ++mono_count;
-        } else if (c.m_event.m_voice == 0) {
-            EXPECT_FLOAT_EQ(c.m_event.m_value, 1.0f);
-            ++v0_count;
-        } else if (c.m_event.m_voice == 3) {
-            EXPECT_FLOAT_EQ(c.m_event.m_value, 2.0f);
-            ++v3_count;
-        }
-    }
-    EXPECT_EQ(mono_count, 1);
-    EXPECT_EQ(v0_count, 1);
-    EXPECT_EQ(v3_count, 1);
-}
-
 TEST(InputEventQueue, QueueFullReturnsFalseAndDrops) {
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/0, /*queue_capacity=*/4);
-    q.prepare();
+    InputEventQueue q(k_global_scope, /*queue_capacity=*/4);
+    q.prepare(/*num_voices=*/0);
 
     // Push well past capacity. ReaderWriterQueue grows on try_enqueue when at
     // capacity, but the event must always be either accepted or dropped (no
@@ -322,12 +259,11 @@ TEST(InputEventQueue, QueueFullReturnsFalseAndDrops) {
 
 TEST(InputEventQueue, DrainSpreadDoesNotReallocateScratch) {
     constexpr size_t k_cap = 64;
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/10, /*queue_capacity=*/k_cap);
-    q.prepare();
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/k_cap);
+    q.prepare(/*num_voices=*/10);
 
     // Warm up with a representative load.
-    for (int i = 0; i < 20; ++i) { ASSERT_TRUE(q.push_voice_value(i % 10, 0.1f)); }
-    for (int i = 0; i < 5; ++i) { ASSERT_TRUE(q.push_mono_value(0.2f)); }
+    for (int i = 0; i < 25; ++i) { ASSERT_TRUE(q.push_voice_value(i % 10, 0.1f)); }
 
     DrainRecorder rec;
     q.drain_spread(512, rec.callback());
@@ -335,8 +271,7 @@ TEST(InputEventQueue, DrainSpreadDoesNotReallocateScratch) {
     // Second pass — we don't have direct access to internal capacities, but
     // we can prove determinism + crash-free behavior under heavy churn.
     for (int cycle = 0; cycle < 10; ++cycle) {
-        for (int i = 0; i < 20; ++i) { q.push_voice_value(i % 10, 0.1f); }
-        for (int i = 0; i < 5; ++i) { q.push_mono_value(0.2f); }
+        for (int i = 0; i < 25; ++i) { q.push_voice_value(i % 10, 0.1f); }
 
         DrainRecorder r;
         const size_t n = q.drain_spread(512, r.callback());
@@ -346,23 +281,34 @@ TEST(InputEventQueue, DrainSpreadDoesNotReallocateScratch) {
 
 // ── Configurations ──────────────────────────────────────────────────────────
 
-TEST(InputEventQueue, VoiceOnlyConfigAcceptsVoicePushes) {
-    InputEventQueue q(/*has_mono=*/false, /*num_voices=*/4, /*queue_capacity=*/16);
-    q.prepare();
+TEST(InputEventQueue, VoiceScopeConfigAcceptsVoicePushes) {
+    InputEventQueue q(k_voice_scope, /*queue_capacity=*/16);
+    q.prepare(/*num_voices=*/4);
     ASSERT_TRUE(q.push_voice_value(0, 0.5f));
     ASSERT_TRUE(q.push_voice_active(3, true));
 }
 
-TEST(InputEventQueue, MonoOnlyConfigAcceptsMonoPushes) {
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/0, /*queue_capacity=*/16);
-    q.prepare();
+TEST(InputEventQueue, GlobalScopeConfigAcceptsMonoPushes) {
+    InputEventQueue q(k_global_scope, /*queue_capacity=*/16);
+    q.prepare(/*num_voices=*/0);
     ASSERT_TRUE(q.push_mono_value(0.5f));
     ASSERT_TRUE(q.push_mono_active(true));
 }
 
-TEST(InputEventQueue, BothConfigAcceptsMonoAndVoicePushes) {
-    InputEventQueue q(/*has_mono=*/true, /*num_voices=*/4, /*queue_capacity=*/16);
-    q.prepare();
-    ASSERT_TRUE(q.push_mono_value(0.5f));
-    ASSERT_TRUE(q.push_voice_value(0, 0.7f));
+TEST(InputEventQueue, ScopeDerivesHasMono) {
+    InputEventQueue global_q(k_global_scope);
+    InputEventQueue voice_q(k_voice_scope);
+    EXPECT_TRUE(global_q.has_mono());
+    EXPECT_FALSE(voice_q.has_mono());
+    EXPECT_EQ(global_q.scope(), k_global_scope);
+    EXPECT_EQ(voice_q.scope(), k_voice_scope);
+}
+
+TEST(InputEventQueue, GlobalScopeIgnoresVoiceCountInPrepare) {
+    // A global-scoped queue must not allocate voice buckets even if the
+    // matrix passes voice_count(global) == 1 (or anything else).
+    InputEventQueue q(k_global_scope, /*queue_capacity=*/16);
+    q.prepare(/*num_voices=*/5);
+    EXPECT_EQ(q.num_voices(), 0u);
+    EXPECT_TRUE(q.has_mono());
 }

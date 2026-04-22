@@ -7,6 +7,7 @@
 #include <tanh/modulation/LFOSource.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ResolvedTarget.h>
+#include <tanh/state/ModulationScope.h>
 #include <tanh/state/ParameterDefinitions.h>
 
 // Test-only accessors for the mono/voice buffer pointers on a ResolvedTarget.
@@ -40,6 +41,15 @@ static thl::ParameterDefinition modulatable_float(float default_value = 0.0f) {
         .modulatable(true);
 }
 
+// Overload that tags the parameter with a modulation scope — required when the
+// test registers a scope on the matrix and declares per-voice params.
+static thl::ParameterDefinition modulatable_float(float default_value, thl::modulation::ModulationScope scope) {
+    return thl::ParameterDefinition::make_float("", thl::Range::linear(0.0f, 1.0f), default_value)
+        .automatable(false)
+        .modulatable(true)
+        .modulation_scope(scope);
+}
+
 // Concrete LFOSourceImpl for tests — provides parameter values directly.
 class TestLFOSource : public thl::modulation::LFOSourceImpl {
 public:
@@ -69,10 +79,10 @@ class PolyTestSource : public thl::modulation::ModulationSource {
 public:
     std::vector<float> m_voice_values;
 
-    explicit PolyTestSource(uint32_t num_voices = 0) : ModulationSource(false, num_voices, true) {}
+    explicit PolyTestSource(thl::modulation::ModulationScope scope) : ModulationSource(scope, true) {}
 
-    void prepare(double /*sample_rate*/, size_t samples_per_block) override {
-        resize_buffers(samples_per_block);
+    void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
+        resize_buffers(samples_per_block, voice_count);
     }
 
     void process_voice(uint32_t voice_index, size_t num_samples, size_t offset = 0) override {
@@ -86,16 +96,17 @@ public:
 };
 
 // Combined test source — provides both mono and per-voice output.
+// Post-refactor sources are strict single-scope, so this shim keeps the mono
+// slot for compatibility but returns the mono value via process_voice as well.
 class CombinedTestSource : public thl::modulation::ModulationSource {
 public:
     float m_mono_value = 0.0f;
     std::vector<float> m_voice_values;
 
-    explicit CombinedTestSource(uint32_t num_voices = 0)
-        : ModulationSource(true, num_voices, true) {}
+    explicit CombinedTestSource(thl::modulation::ModulationScope scope) : ModulationSource(scope, true) {}
 
-    void prepare(double /*sample_rate*/, size_t samples_per_block) override {
-        resize_buffers(samples_per_block);
+    void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
+        resize_buffers(samples_per_block, voice_count);
     }
 
     void process(size_t num_samples, size_t offset = 0) override {

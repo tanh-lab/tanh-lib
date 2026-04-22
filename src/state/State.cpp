@@ -15,6 +15,7 @@
 #include <tanh/core/Logger.h>
 
 #include "tanh/core/Exports.h"
+#include "tanh/state/ModulationScope.h"
 #include "tanh/state/Parameter.h"
 #include "tanh/state/ParameterDefinitions.h"
 #include "tanh/state/StateGroup.h"
@@ -619,6 +620,12 @@ nlohmann::json State::group_to_json(std::string_view group_prefix, bool include_
             def_obj["unit"] = def.m_unit;
             def_obj["automation"] = def.is_automatable();
             def_obj["modulation"] = def.is_modulatable();
+            // Omit for Global (default) to keep presets lean; every other
+            // scope has a non-empty name by ModulationMatrix::register_scope
+            // construction.
+            if (def.m_modulation_scope != modulation::k_global_scope) {
+                def_obj["modulationScope"] = def.m_modulation_scope.m_name;
+            }
 
             def_obj["slider_polarity"] = [&]() {
                 switch (def.m_polarity) {

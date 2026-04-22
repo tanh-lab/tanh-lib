@@ -19,13 +19,25 @@ enum class CombineMode : uint8_t {
     ReplaceHold  // replaces base value, holds last active value when source inactive
 };
 
-// Routing mode: auto-detected from source capability + target polyphony.
-// Stored on ResolvedRouting, not on ModulationRouting.
+// Routing mode: derived from source scope + target scope at schedule build.
+// Stored on ResolvedRouting, not on ModulationRouting. The scope matrix:
+//
+//  src.scope \ tgt.scope |   Global    |   Scope S    | Scope T (≠ S)
+//  ──────────────────────┼─────────────┼──────────────┼───────────────
+//  Global                |GlobalToGlo..| GlobalToSco..| GlobalToScoped
+//  Scope S               |ScopedToGlo..| ScopedToSco..| CrossScope
+//
+// ScopedToGlobal (scope narrowing — voice source into a mono-only parameter)
+// and CrossScope (two unrelated voice domains) are both rejected at
+// schedule-build time. They are separate enumerators rather than a single
+// "Invalid" bucket because they represent semantically distinct rejection
+// reasons and should log distinctly.
 enum class RoutingMode : uint8_t {
-    MonoToMono,  // global source → global buffer
-    PolyToPoly,  // voice source[v] → voice buffer[v] (1:1)
-    MonoToPoly,  // global source → broadcast to all voice buffers
-    PolyToMono   // rejected at schedule-build time
+    GlobalToGlobal,  // global source → global buffer
+    GlobalToScoped,  // global source → broadcast to all voice buffers in tgt scope
+    ScopedToScoped,  // voice source[v] → voice buffer[v] (1:1, same scope)
+    ScopedToGlobal,  // rejected: scope-narrowing (voice → mono-only)
+    CrossScope       // rejected: two different non-global scopes
 };
 
 // Sentinel value returned by add_routing() when the routing is rejected.

@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include <tanh/state/ModulationScope.h>
+
 namespace thl {
 
 // ── Parameter type enumeration ─────────────────────────────────────────────
@@ -188,6 +190,23 @@ struct ParameterDefinition {
     std::string m_short_name;
     std::vector<std::string> m_choices;
 
+    // Modulation scope handle. Default is k_global_scope (id 0,
+    // empty name). Non-global values must come from
+    // ModulationMatrix::register_scope() / find_scope() so illegal states
+    // (undeclared scope name) are unrepresentable at the call site.
+    //
+    // ensure_target_with_lock() on the matrix validates the handle against
+    // its registry at bind time; handles from a different matrix (or stale
+    // handles) warn and fall back to k_global_scope.
+    thl::modulation::ModulationScope m_modulation_scope = thl::modulation::k_global_scope;
+
+    // Transient holder populated by JSON deserialization when a parameter's
+    // scope is loaded by name before the matrix is available to resolve it.
+    // ModulationMatrix::bind_to_state() walks all parameters once and
+    // resolves pending names into m_modulation_scope, then clears this.
+    // Empty string means "no pending — m_modulation_scope is authoritative".
+    std::string m_pending_scope_name;
+
     // ── Display formatters ─────────────────────────────────────────────
 
     std::function<std::string(float)> m_value_to_text;
@@ -258,6 +277,10 @@ struct ParameterDefinition {
     }
     ParameterDefinition& text_to_value_fn(std::function<float(const std::string&)> fn) {
         m_text_to_value = std::move(fn);
+        return *this;
+    }
+    ParameterDefinition& modulation_scope(thl::modulation::ModulationScope scope) {
+        m_modulation_scope = scope;
         return *this;
     }
 

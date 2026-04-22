@@ -271,11 +271,12 @@ TEST(SmartHandle, ChangePointFlags_SetAtMonoChangePointOffsets) {
 
 TEST(SmartHandle, ChangePointFlags_NullptrWhenNoMonoBuffer) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // Poly-only routing → no MonoBuffers allocated for this target.
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.1f, 0.2f};
     matrix.add_source("poly", &poly);
     auto handle = matrix.get_smart_handle<float>("freq");
@@ -294,13 +295,14 @@ TEST(SmartHandle, ChangePointFlags_NullptrOnUnattachedHandle) {
 
 TEST(SmartHandle, ChangePointFlagsVoice_SetAtVoiceChangePointOffsets) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 3);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
     // PolyTestSource records exactly one voice change point per voice, at
     // offset 0 (see TestHelpers.h). So flags[0] must be set for every voice
     // and all other samples must be zero.
-    PolyTestSource poly(3);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.1f, 0.2f, 0.3f};
     matrix.add_source("poly", &poly);
     auto handle = matrix.get_smart_handle<float>("freq");
@@ -321,10 +323,11 @@ TEST(SmartHandle, ChangePointFlagsVoice_SetAtVoiceChangePointOffsets) {
 
 TEST(SmartHandle, ChangePointFlagsVoice_AgreesWithBuiltList) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.4f, 0.6f};
     matrix.add_source("poly", &poly);
     auto handle = matrix.get_smart_handle<float>("freq");
@@ -370,10 +373,11 @@ TEST(SmartHandle, ChangePointFlagsVoice_NullptrWhenNoVoiceBuffer) {
 
 TEST(SmartHandle, ChangePointFlagsVoice_NullptrForOutOfRangeVoice) {
     thl::State state;
-    state.create("freq", modulatable_float(0.5f));
     ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 2);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
 
-    PolyTestSource poly(2);
+    PolyTestSource poly(voice_scope);
     poly.m_voice_values = {0.1f, 0.2f};
     matrix.add_source("poly", &poly);
     auto handle = matrix.get_smart_handle<float>("freq");
@@ -394,6 +398,47 @@ TEST(SmartHandle, ChangePointFlagsVoice_NullptrOnUnattachedHandle) {
     SmartHandle<float> handle;
     EXPECT_EQ(handle.change_point_flags_voice(0), nullptr);
     EXPECT_EQ(handle.change_points_voice(0), nullptr);
+}
+
+// Regression guard for the post-scope-refactor allocation rule:
+// a per-voice-scope target reached only by a Global source allocates
+// MonoBuffers (no VoiceBuffers). DSP voice processors call
+// collect_change_points(handles, buf, voice=v); that helper must fall through
+// to the mono change-points for every voice index so sub-block splits still
+// land on the Global source's transitions.
+TEST(SmartHandle, CollectChangePoints_FallsThroughMonoForVoiceScope) {
+    thl::State state;
+    ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 4);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
+
+    // LFO is Global — routes to a voice-scope target, triggers GlobalToScoped.
+    // Under the new rule this allocates MonoBuffers only (no poly sources
+    // routed here). The LFO records mono change points at offset 0 per block.
+    TestLFOSource lfo;
+    lfo.m_frequency = 10.0f;
+    lfo.m_decimation = 1;
+    matrix.add_source("lfo", &lfo);
+    auto handle = matrix.get_smart_handle<float>("freq");
+    matrix.add_routing({"lfo", "freq", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // VoiceBuffers must NOT be allocated (no same-scope routing).
+    const auto* target = matrix.get_target("freq");
+    ASSERT_NE(target, nullptr);
+    EXPECT_EQ(voice_of(target), nullptr);
+    ASSERT_NE(mono_of(target), nullptr);
+
+    // Helper must return the mono change points regardless of voice_index.
+    std::array<SmartHandle<float>, 1> handles{handle};
+    std::vector<uint32_t> buf;
+    buf.reserve(k_block_size);
+    for (uint32_t v = 0; v < 4; ++v) {
+        collect_change_points(std::span<const SmartHandle<float>>(handles), buf, v);
+        EXPECT_FALSE(buf.empty()) << "voice " << v << ": expected mono CPs to fall through";
+    }
 }
 
 TEST(SmartHandle, DisplayFormattingViaSmartHandle) {

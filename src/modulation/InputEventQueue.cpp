@@ -5,24 +5,34 @@
 #include <cstdint>
 #include <vector>
 
+#include <tanh/state/ModulationScope.h>
+
 namespace thl::modulation {
 
-InputEventQueue::InputEventQueue(bool has_mono, uint32_t num_voices, size_t queue_capacity)
-    : m_event_queue(queue_capacity)
-    , m_queue_capacity(queue_capacity)
-    , m_num_voices(num_voices)
-    , m_has_mono(has_mono) {
-    if (m_num_voices > 0) { m_voice_indices.resize(m_num_voices); }
-}
+InputEventQueue::InputEventQueue(thl::modulation::ModulationScope scope, size_t queue_capacity)
+    : m_event_queue(queue_capacity), m_queue_capacity(queue_capacity), m_scope(scope) {}
 
-void InputEventQueue::prepare() {
+void InputEventQueue::prepare(uint32_t num_voices) {
+    // Global scope carries the mono stream only — per-voice buckets are not
+    // allocated regardless of the num_voices argument (the matrix passes
+    // voice_count(global) == 1, which would otherwise spuriously allocate a
+    // voice bucket that push_voice_* can never reach). Non-global: size the
+    // voice-bucket array to match the scope's voice count.
+    if (has_mono()) {
+        m_num_voices = 0;
+        m_voice_indices.clear();
+    } else {
+        m_num_voices = num_voices;
+        m_voice_indices.resize(m_num_voices);
+    }
+
     // Pre-reserve every audio-thread-local vector so drain_spread never
     // allocates on the hot path. Worst case: all drained events target the
     // same stream, so each bucket needs queue_capacity capacity.
     m_drain_buffer.clear();
     m_drain_buffer.reserve(m_queue_capacity);
 
-    if (m_has_mono) {
+    if (has_mono()) {
         m_mono_indices.clear();
         m_mono_indices.reserve(m_queue_capacity);
     }
@@ -34,7 +44,7 @@ void InputEventQueue::prepare() {
 }
 
 bool InputEventQueue::push_mono_value(float value) {
-    assert(m_has_mono && "push_mono_value on a voice-only queue");
+    assert(has_mono() && "push_mono_value on a voice-only queue");
     Event const e{.m_type = EventType::Value,
                   .m_is_mono = true,
                   .m_voice = 0,
@@ -44,7 +54,7 @@ bool InputEventQueue::push_mono_value(float value) {
 }
 
 bool InputEventQueue::push_mono_active(bool active) {
-    assert(m_has_mono && "push_mono_active on a voice-only queue");
+    assert(has_mono() && "push_mono_active on a voice-only queue");
     Event const e{.m_type = EventType::Active,
                   .m_is_mono = true,
                   .m_voice = 0,
@@ -83,13 +93,13 @@ size_t InputEventQueue::drain_spread(uint32_t block_size, const OnEvent& cb) {
     if (m_drain_buffer.empty()) { return 0; }
 
     // 2. Bucket events by stream (mono or per-voice). Stable within bucket.
-    if (m_has_mono) { m_mono_indices.clear(); }
+    if (has_mono()) { m_mono_indices.clear(); }
     for (auto& bucket : m_voice_indices) { bucket.clear(); }
 
     for (size_t i = 0; i < m_drain_buffer.size(); ++i) {
         const Event& e = m_drain_buffer[i];
         if (e.m_is_mono) {
-            if (m_has_mono) { m_mono_indices.push_back(i); }
+            if (has_mono()) { m_mono_indices.push_back(i); }
         } else {
             if (e.m_voice < m_num_voices) { m_voice_indices[e.m_voice].push_back(i); }
         }
@@ -105,7 +115,7 @@ size_t InputEventQueue::drain_spread(uint32_t block_size, const OnEvent& cb) {
         }
     };
 
-    if (m_has_mono) { dispatch_bucket(m_mono_indices); }
+    if (has_mono()) { dispatch_bucket(m_mono_indices); }
     for (uint32_t v = 0; v < m_num_voices; ++v) { dispatch_bucket(m_voice_indices[v]); }
 
     return m_drain_buffer.size();
