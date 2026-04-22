@@ -32,7 +32,7 @@ struct ResolvedRouting {
     CombineMode m_combine_mode = CombineMode::Additive;
     RoutingMode m_routing_mode = RoutingMode::GlobalToGlobal;
     uint32_t m_max_decimation = 0;
-    uint32_t m_priority = 0;
+    uint32_t m_replace_priority = 0;
     bool m_skip_during_gesture = false;
 
     // True if this routing is deferred to the post-schedule Replace-composition
@@ -94,7 +94,7 @@ struct ResolvedRouting {
         , m_combine_mode(other.m_combine_mode)
         , m_routing_mode(other.m_routing_mode)
         , m_max_decimation(other.m_max_decimation)
-        , m_priority(other.m_priority)
+        , m_replace_priority(other.m_replace_priority)
         , m_skip_during_gesture(other.m_skip_during_gesture)
         , m_replace_deferred(other.m_replace_deferred)
         , m_depth_abs_precomputed(other.m_depth_abs_precomputed.load(std::memory_order_relaxed))
@@ -117,7 +117,7 @@ struct ResolvedRouting {
             m_combine_mode = other.m_combine_mode;
             m_routing_mode = other.m_routing_mode;
             m_max_decimation = other.m_max_decimation;
-            m_priority = other.m_priority;
+            m_replace_priority = other.m_replace_priority;
             m_skip_during_gesture = other.m_skip_during_gesture;
             m_replace_deferred = other.m_replace_deferred;
             m_depth_abs_precomputed.store(
