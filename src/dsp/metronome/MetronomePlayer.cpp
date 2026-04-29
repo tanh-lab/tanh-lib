@@ -2,13 +2,11 @@
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/transport/TransportClock.h>
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
-#include <optional>
 
 namespace thl::dsp::metronome {
 
