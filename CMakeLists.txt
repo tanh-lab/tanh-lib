@@ -288,9 +288,9 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
 
-        src/transport/InternalTransportClock.cpp
+        src/dsp/transport/InternalTransportClock.cpp
 
-        src/dsp/MetronomePlayer.cpp
+        src/dsp/metronome/MetronomePlayer.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_dsp PROPERTIES 
@@ -529,8 +529,6 @@ if(TANH_BUILD_AUDIO_IO)
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
 endif()
-
-# Transport component (depends on Core)
 
 # Apply shared library export definitions to all components
 if(BUILD_SHARED_LIBS)

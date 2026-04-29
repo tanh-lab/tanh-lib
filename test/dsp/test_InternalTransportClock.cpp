@@ -1,5 +1,5 @@
-#include <tanh/transport/InternalTransportClock.h>
-#include <tanh/transport/TransportClock.h>
+#include <tanh/dsp/transport/InternalTransportClock.h>
+#include <tanh/dsp/transport/TransportClock.h>
 
 #include <gtest/gtest.h>
 
@@ -13,7 +13,7 @@ constexpr double k_sample_rate = 48000.0;
 constexpr double k_epsilon = 1e-9;
 
 // Tick one block through the clock
-void tick(thl::InternalTransportClock& clk, uint32_t frames = 512) {
+void tick(thl::dsp::transport::InternalTransportClock& clk, uint32_t frames = 512) {
     clk.begin_block(frames);
     clk.end_block();
 }
@@ -21,7 +21,7 @@ void tick(thl::InternalTransportClock& clk, uint32_t frames = 512) {
 // ── Initial state ─────────────────────────────────────────────────────────────
 
 TEST(InternalTransportClock, InitialState) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.begin_block(512);
 
@@ -35,7 +35,7 @@ TEST(InternalTransportClock, InitialState) {
 // ── Stopped clock does not advance ───────────────────────────────────────────
 
 TEST(InternalTransportClock, StoppedPositionDoesNotAdvance) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
 
     tick(clk);
@@ -49,7 +49,7 @@ TEST(InternalTransportClock, StoppedPositionDoesNotAdvance) {
 // ── Beat advances while playing ───────────────────────────────────────────────
 
 TEST(InternalTransportClock, BeatAdvancesWhilePlaying) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
 
     // At 120 BPM: one beat = 24000 samples
@@ -66,7 +66,7 @@ TEST(InternalTransportClock, BeatAdvancesWhilePlaying) {
 // ── beat_at_sample interpolates within a block ────────────────────────────────
 
 TEST(InternalTransportClock, BeatAtSampleInterpolates) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.play();
 
@@ -82,7 +82,7 @@ TEST(InternalTransportClock, BeatAtSampleInterpolates) {
 // ── Stopped: beat_at_sample is constant across offsets ───────────────────────
 
 TEST(InternalTransportClock, StoppedBeatAtSampleIsConstant) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
 
     clk.begin_block(512);
@@ -93,7 +93,7 @@ TEST(InternalTransportClock, StoppedBeatAtSampleIsConstant) {
 // ── Seek ──────────────────────────────────────────────────────────────────────
 
 TEST(InternalTransportClock, SeekTakesEffectNextBlock) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
 
     clk.set_position_beats(4.0);
@@ -103,7 +103,7 @@ TEST(InternalTransportClock, SeekTakesEffectNextBlock) {
 }
 
 TEST(InternalTransportClock, SeekWhilePlaying) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.play();
 
@@ -119,7 +119,7 @@ TEST(InternalTransportClock, SeekWhilePlaying) {
 // ── BPM change ────────────────────────────────────────────────────────────────
 
 TEST(InternalTransportClock, BpmChangeTakesEffectNextBlock) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.play();
 
@@ -137,7 +137,7 @@ TEST(InternalTransportClock, BpmChangeTakesEffectNextBlock) {
 // ── Play / stop cycle ─────────────────────────────────────────────────────────
 
 TEST(InternalTransportClock, PlayStopCycle) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
 
     clk.play();
@@ -155,7 +155,7 @@ TEST(InternalTransportClock, PlayStopCycle) {
 // ── division_in_block ─────────────────────────────────────────────────────────
 
 TEST(InternalTransportClock, DivisionInBlockBeatCrossing) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.play();
 
@@ -163,32 +163,33 @@ TEST(InternalTransportClock, DivisionInBlockBeatCrossing) {
     tick(clk, 23999);
 
     clk.begin_block(2);
-    EXPECT_TRUE(clk.division_in_block(thl::Division::Beat));
+    EXPECT_TRUE(clk.division_in_block(thl::dsp::transport::Division::Beat));
     clk.end_block();
 }
 
 TEST(InternalTransportClock, DivisionInBlockNoCrossing) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.play();
 
-    // Block entirely within the first beat
+    // Skip past beat 0, then check a block entirely within the first beat
+    tick(clk, 1000);
     clk.begin_block(512);
-    EXPECT_FALSE(clk.division_in_block(thl::Division::Beat));
+    EXPECT_FALSE(clk.division_in_block(thl::dsp::transport::Division::Beat));
     clk.end_block();
 }
 
 TEST(InternalTransportClock, DivisionInBlockStoppedNeverFires) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
 
     clk.begin_block(48000);
-    EXPECT_FALSE(clk.division_in_block(thl::Division::Beat));
+    EXPECT_FALSE(clk.division_in_block(thl::dsp::transport::Division::Beat));
     clk.end_block();
 }
 
 TEST(InternalTransportClock, DivisionInBlockSixteenth) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.play();
 
@@ -196,12 +197,12 @@ TEST(InternalTransportClock, DivisionInBlockSixteenth) {
     tick(clk, 5999);
 
     clk.begin_block(2);
-    EXPECT_TRUE(clk.division_in_block(thl::Division::Sixteenth));
+    EXPECT_TRUE(clk.division_in_block(thl::dsp::transport::Division::Sixteenth));
     clk.end_block();
 }
 
 TEST(InternalTransportClock, DivisionInBlockBar) {
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.set_time_signature(4, 4);
     clk.play();
@@ -210,7 +211,7 @@ TEST(InternalTransportClock, DivisionInBlockBar) {
     tick(clk, 95999);
 
     clk.begin_block(2);
-    EXPECT_TRUE(clk.division_in_block(thl::Division::Bar));
+    EXPECT_TRUE(clk.division_in_block(thl::dsp::transport::Division::Bar));
     clk.end_block();
 }
 
@@ -227,7 +228,7 @@ TEST(InternalTransportClock, VariableBlockSizeAccuracy) {
     constexpr double k_bps = k_bpm / (60.0 * k_sample_rate);
     constexpr int k_num_blocks = 10000;
 
-    thl::InternalTransportClock clk;
+    thl::dsp::transport::InternalTransportClock clk;
     clk.prepare(k_sample_rate);
     clk.play();
 
@@ -255,17 +256,20 @@ TEST(InternalTransportClock, VariableBlockSizeAccuracy) {
         // ── division_in_block must match independent floor check ──────────
         const double beat_end = static_cast<double>(total_samples + frame_count) * k_bps;
 
-        auto expect_division = [&](thl::Division div, double size) {
-            const bool expected = std::floor(beat_end / size) > std::floor(expected_beat / size);
+        auto expect_division = [&](thl::dsp::transport::Division div, double size) {
+            // Half-open [beat_start, beat_end): boundary at exactly beat_end belongs
+            // to the next block.
+            const double next = std::ceil(expected_beat / size) * size;
+            const bool expected = next < beat_end;
             EXPECT_EQ(clk.division_in_block(div), expected)
                 << "block " << i << ", frame_count=" << frame_count << ", division_size=" << size;
         };
 
-        expect_division(thl::Division::Sixteenth, 0.25);
-        expect_division(thl::Division::Eighth, 0.5);
-        expect_division(thl::Division::Beat, 1.0);
-        expect_division(thl::Division::Half, 2.0);
-        expect_division(thl::Division::Bar, 4.0);
+        expect_division(thl::dsp::transport::Division::Sixteenth, 0.25);
+        expect_division(thl::dsp::transport::Division::Eighth, 0.5);
+        expect_division(thl::dsp::transport::Division::Beat, 1.0);
+        expect_division(thl::dsp::transport::Division::Half, 2.0);
+        expect_division(thl::dsp::transport::Division::Bar, 4.0);
 
         clk.end_block();
         total_samples += frame_count;
