@@ -5,32 +5,28 @@
 using namespace thl::modulation;
 
 TEST(ResolvedTarget, BuildChangePointsFromFlags) {
-    ResolvedTarget target;
-    target.m_has_mono_additive = true;
-    target.resize(100);
+    MonoBuffers mb(100, /*has_additive=*/true, /*has_replace=*/false);
 
-    target.m_change_point_flags[5] = true;
-    target.m_change_point_flags[20] = true;
-    target.m_change_point_flags[50] = true;
+    mb.m_change_point_flags[5] = 1;
+    mb.m_change_point_flags[20] = 1;
+    mb.m_change_point_flags[50] = 1;
 
-    target.build_change_points();
+    mb.build_change_points();
 
     std::vector<uint32_t> expected = {5, 20, 50};
-    EXPECT_EQ(target.m_change_points, expected);
+    EXPECT_EQ(mb.m_change_points, expected);
 }
 
 TEST(ResolvedTarget, ClearPerBlock) {
-    ResolvedTarget target;
-    target.m_has_mono_additive = true;
-    target.resize(100);
+    MonoBuffers mb(100, /*has_additive=*/true, /*has_replace=*/false);
 
-    target.m_additive_buffer[10] = 42.0f;
-    target.m_change_point_flags[10] = true;
-    target.m_change_points.push_back(10);
+    mb.m_additive_buffer[10] = 42.0f;
+    mb.m_change_point_flags[10] = 1;
+    mb.m_change_points.push_back(10);
 
-    target.clear_per_block();
+    mb.clear_per_block();
 
-    EXPECT_FLOAT_EQ(target.m_additive_buffer[10], 0.0f);
-    EXPECT_FALSE(target.m_change_point_flags[10]);
-    EXPECT_TRUE(target.m_change_points.empty());
+    EXPECT_FLOAT_EQ(mb.m_additive_buffer[10], 0.0f);
+    EXPECT_EQ(mb.m_change_point_flags[10], 0);
+    EXPECT_TRUE(mb.m_change_points.empty());
 }
