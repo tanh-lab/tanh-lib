@@ -110,11 +110,6 @@ private:
     virtual bool get_parameter_bool(Parameter parameter, uint32_t modulation_offset = 0) = 0;
     virtual int get_parameter_int(Parameter parameter, uint32_t modulation_offset = 0) = 0;
 
-    [[nodiscard]] std::optional<uint32_t> crossing_offset(double division_beats,
-                                                          double beat_start,
-                                                          double bps,
-                                                          uint32_t frame_count) const;
-
     transport::TransportClock& m_clock;
     double m_sample_rate = 48000.0;
 };
