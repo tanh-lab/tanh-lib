@@ -3,10 +3,12 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
+#include <tanh/modulation/InputEventQueue.h>
 #include <tanh/modulation/LFOSource.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>
@@ -429,6 +431,55 @@ static void bm_full_modulated_read_loop(benchmark::State& bm_state) {
                                static_cast<int64_t>(k_block_size));
 }
 BENCHMARK(bm_full_modulated_read_loop);
+
+// =============================================================================
+// InputEventQueue — drain_spread throughput (N events × M voices per block)
+// =============================================================================
+
+using namespace thl::modulation;
+
+static void bm_input_event_queue_drain_spread(benchmark::State& bm_state) {
+    const auto events_per_voice = static_cast<uint32_t>(bm_state.range(0));
+    const auto num_voices = static_cast<uint32_t>(bm_state.range(1));
+    const uint32_t block_size = static_cast<uint32_t>(k_block_size);
+    const size_t capacity = static_cast<size_t>(events_per_voice) * num_voices;
+
+    // A non-global scope handle so the queue allocates voice buckets. Not
+    // bound to any matrix — InputEventQueue only inspects has_mono().
+    static constexpr thl::modulation::ModulationScope k_bench_voice_scope{.m_id = 1, .m_name = "bench_voice"};
+    InputEventQueue queue(k_bench_voice_scope, capacity);
+    queue.prepare(num_voices);
+
+    uint32_t callback_count = 0;
+    const auto cb = [&](const InputEventQueue::Event&, uint32_t) { ++callback_count; };
+
+    for ([[maybe_unused]] auto _ : bm_state) {
+        bm_state.PauseTiming();
+        for (uint32_t v = 0; v < num_voices; ++v) {
+            for (uint32_t i = 0; i < events_per_voice; ++i) {
+                queue.push_voice_value(v, static_cast<float>(i) / events_per_voice);
+            }
+        }
+        callback_count = 0;
+        bm_state.ResumeTiming();
+
+        size_t n = queue.drain_spread(block_size, cb);
+        benchmark::DoNotOptimize(n);
+        benchmark::DoNotOptimize(callback_count);
+    }
+
+    bm_state.SetItemsProcessed(static_cast<int64_t>(bm_state.iterations()) *
+                               static_cast<int64_t>(events_per_voice) *
+                               static_cast<int64_t>(num_voices));
+}
+
+// Typical touch-and-drag densities: 1-8 events per voice, 1 / 4 / 10 voices.
+BENCHMARK(bm_input_event_queue_drain_spread)
+    ->Args({1, 1})    // single tap, mono-touch.
+    ->Args({4, 1})    // rapid move, mono-touch.
+    ->Args({1, 10})   // 10-voice simultaneous trigger (strum-fix case).
+    ->Args({4, 4})    // moderate multi-touch drag.
+    ->Args({8, 10});  // worst-case: dense drag across all voices.
 
 // =============================================================================
 // Main
