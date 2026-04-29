@@ -3,7 +3,9 @@
 #include <atomic>
 #include <optional>
 
-#include <tanh/transport/TransportClock.h>
+#include <tanh/dsp/transport/TransportClock.h>
+
+namespace thl::dsp::transport {
 
 /**
  * @class InternalTransportClock
@@ -17,15 +19,13 @@
  * at buffer boundaries. No locks in the audio path.
  *
  * Drop-in replaceable with a future LinkTransportClock via the
- * thl::TransportClock interface.
+ * TransportClock interface.
  *
  * @section rt_safety Real-Time Safety
  *   begin_block() and end_block() are real-time safe (no allocation, no locks).
  *   beat_at_sample() is real-time safe.
  *   All setters are lock-free.
  */
-namespace thl {
-
 class TANH_API InternalTransportClock final : public TransportClock {
 public:
     // ── Main thread ──────────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ public:
     [[nodiscard]] bool is_playing() const override;
     [[nodiscard]] double bpm() const override;
     [[nodiscard]] int sig_num() const override;
+    [[nodiscard]] int sig_denom() const override;
     [[nodiscard]] uint64_t sample_position() const override;
 
     // ── Any thread — lock-free ────────────────────────────────────────────────
@@ -74,4 +75,4 @@ private:
     std::atomic<bool> m_has_pending_position{false};
 };
 
-}  // namespace thl
+}  // namespace thl::dsp::transport

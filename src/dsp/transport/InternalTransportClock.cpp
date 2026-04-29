@@ -1,5 +1,5 @@
-#include <tanh/transport/InternalTransportClock.h>
-#include <tanh/transport/TransportClock.h>
+#include <tanh/dsp/transport/InternalTransportClock.h>
+#include <tanh/dsp/transport/TransportClock.h>
 
 #include <algorithm>
 #include <atomic>
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace thl {
+namespace thl::dsp::transport {
 
 // ── Main thread ───────────────────────────────────────────────────────────────
 
@@ -51,18 +51,13 @@ double InternalTransportClock::beat_at_sample(uint32_t offset) const {
 bool InternalTransportClock::division_in_block(Division div) const {
     if (!m_active_playing) { return false; }
 
-    double size = 1.0;
-    switch (div) {
-        case Division::Bar: size = static_cast<double>(m_active_sig_num); break;
-        case Division::Half: size = 2.0; break;
-        case Division::Beat: size = 1.0; break;
-        case Division::Eighth: size = 0.5; break;
-        case Division::Sixteenth: size = 0.25; break;
-    }
-
+    const double size = beats_per_division(div, m_active_sig_num, m_active_sig_denom);
     const double start = beat_at_sample(0);
     const double end = beat_at_sample(m_frame_count);
-    return std::floor(end / size) > std::floor(start / size);
+    // Half-open [start, end): a boundary at offset = frame_count belongs to
+    // the next block, not this one.
+    const double next = std::ceil(start / size) * size;
+    return next < end;
 }
 
 bool InternalTransportClock::is_playing() const {
@@ -77,6 +72,10 @@ int InternalTransportClock::sig_num() const {
     return m_active_sig_num;
 }
 
+int InternalTransportClock::sig_denom() const {
+    return m_active_sig_denom;
+}
+
 uint64_t InternalTransportClock::sample_position() const {
     return m_sample_position;
 }
@@ -84,7 +83,8 @@ uint64_t InternalTransportClock::sample_position() const {
 // ── Any thread ────────────────────────────────────────────────────────────────
 
 void InternalTransportClock::set_bpm(double bpm) {
-    m_pending_bpm.store(bpm, std::memory_order_release);
+    constexpr double k_min_bpm = 1.0;
+    m_pending_bpm.store(std::max(bpm, k_min_bpm), std::memory_order_release);
 }
 
 void InternalTransportClock::set_time_signature(int num, int denom) {
@@ -106,4 +106,4 @@ void InternalTransportClock::set_position_beats(double beats) {
     m_has_pending_position.store(true, std::memory_order_release);
 }
 
-}  // namespace thl
+}  // namespace thl::dsp::transport

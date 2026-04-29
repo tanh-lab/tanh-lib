@@ -6,16 +6,17 @@
 
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/transport/TransportClock.h>
 #include <tanh/dsp/utils/ADSR.h>
-#include <tanh/transport/TransportClock.h>
 
-namespace thl::dsp {
+namespace thl::dsp::metronome {
 
 /**
- * @class MetronomePlayer
+ * @class MetronomePlayerImpl
  * @brief Sample-accurate metronome processor driven by a TransportClock.
  *
- * Inherits BaseProcessor so it can be placed in the audio processing chain.
+ * Mixes its output into the buffer (additive), so it can be placed anywhere
+ * in the audio processing chain without silencing upstream signal.
  * Uses a voice pool with ADSR-shaped decaying sines for click sounds.
  *
  * Two sounds:
@@ -25,12 +26,19 @@ namespace thl::dsp {
  * Override trigger_accent(), trigger_click(), and tick_voices() to replace the
  * built-in sine clicks with custom sounds (e.g. sample playback).
  *
+ * @section lifetime Lifetime
+ *   The TransportClock reference passed in must outlive this player.
+ *
+ * @section modulation Modulation
+ *   The Rhythm parameter is sampled once per process() block; sub-block
+ *   change points are not honored. Gain and Enabled may modulate per-trigger.
+ *
  * @section rt_safety Real-Time Safety
  *   process() is real-time safe — no allocation, no locks.
  */
-class TANH_API MetronomePlayer : public BaseProcessor {
+class TANH_API MetronomePlayerImpl : public BaseProcessor {
 public:
-    explicit MetronomePlayer(thl::TransportClock& clock);
+    explicit MetronomePlayerImpl(transport::TransportClock& clock);
 
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
@@ -48,10 +56,6 @@ protected:
         Rhythm,   ///< int — subdivision (0=Bar, 1=Half, 2=Beat, 3=Eighth, 4=Sixteenth)
         NumParameters
     };
-
-    virtual float get_parameter_float(Parameter param, uint32_t modulation_offset = 0) = 0;
-    virtual bool get_parameter_bool(Parameter param, uint32_t modulation_offset = 0) = 0;
-    virtual int get_parameter_int(Parameter param, uint32_t modulation_offset = 0) = 0;
 
     // ── Override points ──────────────────────────────────────────────────────
     // Override these to replace the built-in sine clicks with custom sounds
@@ -87,7 +91,7 @@ protected:
     static constexpr int k_num_voices = 4;
     std::array<Voice, k_num_voices> m_voices;
 
-    static constexpr float k_attack_ms = 0.1f;
+    static constexpr float k_attack_ms = 1.5f;
     static constexpr float k_accent_freq = 800.0f;
     static constexpr float k_accent_decay_ms = 20.0f;
     static constexpr float k_click_freq = 1200.0f;
@@ -98,15 +102,35 @@ protected:
     static constexpr float k_click_gain_factor = 0.6f;
 
 private:
+    // Template wrapper for get_parameter
+    template <typename T>
+    T get_parameter(Parameter parameter, uint32_t modulation_offset = 0);
+
+    virtual float get_parameter_float(Parameter parameter, uint32_t modulation_offset = 0) = 0;
+    virtual bool get_parameter_bool(Parameter parameter, uint32_t modulation_offset = 0) = 0;
+    virtual int get_parameter_int(Parameter parameter, uint32_t modulation_offset = 0) = 0;
+
     [[nodiscard]] std::optional<uint32_t> crossing_offset(double division_beats,
                                                           double beat_start,
                                                           double bps,
                                                           uint32_t frame_count) const;
 
-    [[nodiscard]] static thl::Division int_to_division(int value);
-
-    thl::TransportClock& m_clock;
+    transport::TransportClock& m_clock;
     double m_sample_rate = 48000.0;
 };
 
-}  // namespace thl::dsp
+// Template specializations for get_parameter
+template <>
+inline float MetronomePlayerImpl::get_parameter<float>(Parameter p, uint32_t modulation_offset) {
+    return get_parameter_float(p, modulation_offset);
+}
+template <>
+inline bool MetronomePlayerImpl::get_parameter<bool>(Parameter p, uint32_t modulation_offset) {
+    return get_parameter_bool(p, modulation_offset);
+}
+template <>
+inline int MetronomePlayerImpl::get_parameter<int>(Parameter p, uint32_t modulation_offset) {
+    return get_parameter_int(p, modulation_offset);
+}
+
+}  // namespace thl::dsp::metronome
