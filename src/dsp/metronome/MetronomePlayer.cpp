@@ -66,18 +66,38 @@ void MetronomePlayerImpl::process(thl::dsp::audio::AudioBufferView buffer,
 
     const auto rhythm = transport::division_from_int(get_parameter_int(Rhythm, modulation_offset));
     const double div_size = transport::beats_per_division(rhythm, sig_num, sig_denom);
+    const bool div_distinct = (div_size != bar_size);
 
-    const auto bar_off =
-        playing ? crossing_offset(bar_size, beat_start, bps, frame_count) : std::nullopt;
-    const auto div_off = (playing && div_size != bar_size)
-                             ? crossing_offset(div_size, beat_start, bps, frame_count)
-                             : std::nullopt;
+    // Track the next upcoming boundary as both a beat position and the
+    // corresponding sample offset. Recompute the offset after each crossing so
+    // multiple boundaries within the same block all fire (matters for fast
+    // subdivisions or offline rendering with large blocks).
+    double next_bar = std::ceil(beat_start / bar_size) * bar_size;
+    double next_div = div_distinct ? std::ceil(beat_start / div_size) * div_size : 0.0;
+
+    const auto offset_for = [&](double next_beat) -> uint32_t {
+        const double s = (next_beat - beat_start) / bps;
+        return s < 0.0 ? 0u : static_cast<uint32_t>(s);
+    };
+
+    uint32_t bar_off = playing ? offset_for(next_bar) : frame_count;
+    uint32_t div_off = (playing && div_distinct) ? offset_for(next_div) : frame_count;
 
     for (uint32_t i = 0; i < frame_count; ++i) {
-        if (bar_off && i == *bar_off) {
+        if (bar_off < frame_count && i == bar_off) {
             trigger_accent();
-        } else if (div_off && i == *div_off) {
+            next_bar += bar_size;
+            bar_off = offset_for(next_bar);
+            // A division boundary that coincides with a bar is absorbed by the
+            // accent — advance it so we don't fire a redundant click.
+            if (div_distinct && div_off == i) {
+                next_div += div_size;
+                div_off = offset_for(next_div);
+            }
+        } else if (div_distinct && div_off < frame_count && i == div_off) {
             trigger_click();
+            next_div += div_size;
+            div_off = offset_for(next_div);
         }
 
         const float s = tick_voices();
@@ -114,20 +134,6 @@ MetronomePlayerImpl::Voice& MetronomePlayerImpl::pick_voice() {
         if (v.m_env.get_current_level() < quietest->m_env.get_current_level()) { quietest = &v; }
     }
     return *quietest;
-}
-
-std::optional<uint32_t> MetronomePlayerImpl::crossing_offset(double division_beats,
-                                                             double beat_start,
-                                                             double bps,
-                                                             uint32_t frame_count) const {
-    const double next = std::ceil(beat_start / division_beats) * division_beats;
-    const double beat_end = beat_start + static_cast<double>(frame_count) * bps;
-    if (next >= beat_end) { return std::nullopt; }
-    const auto offset = static_cast<uint32_t>((next - beat_start) / bps);
-    // Float math could nudge offset to frame_count even after the next < beat_end check;
-    // reject rather than clamp so the boundary fires cleanly at offset 0 of the next block.
-    if (offset >= frame_count) { return std::nullopt; }
-    return offset;
 }
 
 }  // namespace thl::dsp::metronome
