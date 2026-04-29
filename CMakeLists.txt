@@ -287,6 +287,10 @@ if(TANH_BUILD_DSP)
 
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
+
+        src/dsp/transport/InternalTransportClock.cpp
+
+        src/dsp/metronome/MetronomePlayer.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_dsp PROPERTIES 
