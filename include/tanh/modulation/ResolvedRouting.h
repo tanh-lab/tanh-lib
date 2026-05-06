@@ -35,12 +35,6 @@ struct ResolvedRouting {
     uint32_t m_replace_priority = 0;
     bool m_skip_during_gesture = false;
 
-    // True if this routing is deferred to the post-schedule Replace-composition
-    // pass. Set at schedule-build time when the target has >1 Replace routing.
-    // Single-Replace targets keep the in-schedule fast path (m_replace_deferred
-    // stays false).
-    bool m_replace_deferred = false;
-
     // Pre-computed per-sample depth multiplier, set at schedule-build time.
     // For linear targets: depth * (max - min) converts normalized depth to plain units.
     // For non-linear targets (additive only): depth in normalized space.
@@ -96,7 +90,6 @@ struct ResolvedRouting {
         , m_max_decimation(other.m_max_decimation)
         , m_replace_priority(other.m_replace_priority)
         , m_skip_during_gesture(other.m_skip_during_gesture)
-        , m_replace_deferred(other.m_replace_deferred)
         , m_depth_abs_precomputed(other.m_depth_abs_precomputed.load(std::memory_order_relaxed))
         , m_replace_range_min(other.m_replace_range_min.load(std::memory_order_relaxed))
         , m_replace_range_max(other.m_replace_range_max.load(std::memory_order_relaxed))
@@ -119,7 +112,6 @@ struct ResolvedRouting {
             m_max_decimation = other.m_max_decimation;
             m_replace_priority = other.m_replace_priority;
             m_skip_during_gesture = other.m_skip_during_gesture;
-            m_replace_deferred = other.m_replace_deferred;
             m_depth_abs_precomputed.store(
                 other.m_depth_abs_precomputed.load(std::memory_order_relaxed),
                 std::memory_order_relaxed);
