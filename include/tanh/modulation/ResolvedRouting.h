@@ -33,6 +33,11 @@ struct ResolvedRouting {
     RoutingMode m_routing_mode = RoutingMode::GlobalToGlobal;
     uint32_t m_max_decimation = 0;
     uint32_t m_replace_priority = 0;
+    // Resolved hold-priority for ReplaceHold. Equals m_replace_priority when
+    // the user-facing optional is unset (the inherit-default), or the
+    // user-supplied value otherwise. Always concrete here so the inline
+    // gate avoids an optional unwrap on the audio thread.
+    uint32_t m_replace_hold_priority = 0;
     bool m_skip_during_gesture = false;
 
     // Pre-computed per-sample depth multiplier, set at schedule-build time.
@@ -89,6 +94,7 @@ struct ResolvedRouting {
         , m_routing_mode(other.m_routing_mode)
         , m_max_decimation(other.m_max_decimation)
         , m_replace_priority(other.m_replace_priority)
+        , m_replace_hold_priority(other.m_replace_hold_priority)
         , m_skip_during_gesture(other.m_skip_during_gesture)
         , m_depth_abs_precomputed(other.m_depth_abs_precomputed.load(std::memory_order_relaxed))
         , m_replace_range_min(other.m_replace_range_min.load(std::memory_order_relaxed))
@@ -111,6 +117,7 @@ struct ResolvedRouting {
             m_routing_mode = other.m_routing_mode;
             m_max_decimation = other.m_max_decimation;
             m_replace_priority = other.m_replace_priority;
+            m_replace_hold_priority = other.m_replace_hold_priority;
             m_skip_during_gesture = other.m_skip_during_gesture;
             m_depth_abs_precomputed.store(
                 other.m_depth_abs_precomputed.load(std::memory_order_relaxed),
