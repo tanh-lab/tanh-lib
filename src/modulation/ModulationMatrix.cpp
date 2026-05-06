@@ -832,6 +832,10 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         r.m_routing_mode = routing_mode;
         r.m_max_decimation = routing.m_max_decimation;
         r.m_replace_priority = routing.m_replace_priority;
+        // Hold-priority defaults to the active priority when the user hasn't
+        // overridden it — matches pre-feature behavior for ReplaceHold.
+        r.m_replace_hold_priority =
+            routing.m_replace_hold_priority.value_or(routing.m_replace_priority);
         r.m_skip_during_gesture = routing.m_skip_during_gesture;
         r.m_samples_until_update = 0;
 
@@ -1010,6 +1014,11 @@ namespace {
 // routing wins for each sample. Hold state always tracks the last live sample
 // regardless of the gate, so a routing that loses a sample to a higher-priority
 // peer can still drive ReplaceHold fallbacks later.
+//
+// Active and held writes use independent priorities (m_replace_priority vs
+// m_replace_hold_priority) so a routing can yield the parameter to a peer
+// when it transitions from active to held — useful for layered ReplaceHold
+// setups where a "live" voice should outrank a stale held value.
 inline void apply_replace_sample(const ResolvedRouting& routing,
                                  float* replace_buf,
                                  uint8_t* active_buf,
@@ -1017,9 +1026,9 @@ inline void apply_replace_sample(const ResolvedRouting& routing,
                                  size_t i,
                                  float value,
                                  bool src_active) TANH_NONBLOCKING_FUNCTION {
-    const uint32_t prio = routing.m_replace_priority;
-    const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
     if (src_active) {
+        const uint32_t prio = routing.m_replace_priority;
+        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
         if (wins) {
             replace_buf[i] = value;
             active_buf[i] = 1;
@@ -1027,14 +1036,17 @@ inline void apply_replace_sample(const ResolvedRouting& routing,
         }
         routing.m_held_value = value;
         routing.m_held_mono_active = true;
-    } else if (routing.m_combine_mode == CombineMode::ReplaceHold && routing.m_held_mono_active &&
-               wins) {
+    } else if (routing.m_combine_mode == CombineMode::ReplaceHold && routing.m_held_mono_active) {
         // Only hold after the source has been active at least once — a routing
         // that has never seen a live sample must not broadcast active=1 with
         // the default-0 held value.
-        replace_buf[i] = routing.m_held_value;
-        active_buf[i] = 1;
-        if (priority_buf != nullptr) { priority_buf[i] = prio; }
+        const uint32_t prio = routing.m_replace_hold_priority;
+        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
+        if (wins) {
+            replace_buf[i] = routing.m_held_value;
+            active_buf[i] = 1;
+            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+        }
     }
 }
 
@@ -1047,9 +1059,9 @@ inline void apply_replace_sample_voice(const ResolvedRouting& routing,
                                        float value,
                                        bool src_active,
                                        uint32_t voice) TANH_NONBLOCKING_FUNCTION {
-    const uint32_t prio = routing.m_replace_priority;
-    const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
     if (src_active) {
+        const uint32_t prio = routing.m_replace_priority;
+        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
         if (wins) {
             replace_buf[i] = value;
             active_buf[i] = 1;
@@ -1060,13 +1072,16 @@ inline void apply_replace_sample_voice(const ResolvedRouting& routing,
             routing.m_held_voice_active[voice] = 1;
         }
     } else if (routing.m_combine_mode == CombineMode::ReplaceHold &&
-               voice < routing.m_held_voice_values.size() && routing.m_held_voice_active[voice] &&
-               wins) {
+               voice < routing.m_held_voice_values.size() && routing.m_held_voice_active[voice]) {
         // Per-voice gate on the fallback: voices that have never contributed
         // a live sample stay inactive instead of holding the default-0 value.
-        replace_buf[i] = routing.m_held_voice_values[voice];
-        active_buf[i] = 1;
-        if (priority_buf != nullptr) { priority_buf[i] = prio; }
+        const uint32_t prio = routing.m_replace_hold_priority;
+        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
+        if (wins) {
+            replace_buf[i] = routing.m_held_voice_values[voice];
+            active_buf[i] = 1;
+            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+        }
     }
 }
 
@@ -1608,6 +1623,9 @@ nlohmann::json  // NOLINT(misc-include-cleaner)
         }
         if (r.m_skip_during_gesture) { obj["skip_during_gesture"] = true; }
         if (r.m_replace_priority != 0) { obj["replace_priority"] = r.m_replace_priority; }
+        if (r.m_replace_hold_priority.has_value()) {
+            obj["replace_hold_priority"] = *r.m_replace_hold_priority;
+        }
         routings_array.push_back(std::move(obj));
     }
 
@@ -1634,6 +1652,9 @@ void ModulationMatrix::from_json(const nlohmann::json& json) {
         r.m_max_decimation = obj.value("max_decimation", uint32_t{0});
         r.m_skip_during_gesture = obj.value("skip_during_gesture", false);
         r.m_replace_priority = obj.value("replace_priority", uint32_t{0});
+        if (obj.contains("replace_hold_priority")) {
+            r.m_replace_hold_priority = obj["replace_hold_priority"].get<uint32_t>();
+        }
         if (obj.contains("replace_range_min") && obj.contains("replace_range_max")) {
             r.m_replace_range_min = obj.value("replace_range_min", 0.0f);
             r.m_replace_range_max = obj.value("replace_range_max", 1.0f);
