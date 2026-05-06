@@ -267,6 +267,14 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
     m_sample_rate = sample_rate;
     m_samples_per_block = samples_per_block;
 
+    // Reset the global sample counter. The freshly-built ResolvedRoutings in
+    // rebuild_schedule_with_lock() default m_active_phase_start /
+    // m_last_active_sample to 0, so prepare() and the rebuild together start
+    // every routing from a clean slate. Schedule rebuilds outside of
+    // prepare() preserve the counter (the matrix's "samples since prepare"
+    // notion is not invalidated by routing churn).
+    m_num_processed_samples = 0;
+
     for (auto& [id, source] : m_sources) {
         source->prepare(sample_rate, samples_per_block, voice_count(source->scope()));
     }
@@ -318,9 +326,15 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
 
     // 5. Build final sorted change point lists from flags. Multi-Replace
     //    composition is no longer a separate pass — apply_replace_sample
-    //    gates writes by per-sample priority watermark inline, so the
-    //    highest-priority active routing wins regardless of schedule order.
+    //    gates writes inline by (priority, freshness): higher priority
+    //    always wins; on a priority tie a live writer beats a held writer,
+    //    and same-state ties resolve to the more-recently-started writer.
     for (auto* target : config.m_active_targets) { target->build_change_points(); }
+
+    // 6. Advance the freshness timestamp source by the block size so the
+    //    next process_with_scope call writes monotonically-larger active /
+    //    held timestamps.
+    m_num_processed_samples += num_samples;
 }
 
 void ModulationMatrix::add_source(const std::string_view id, ModulationSource* source) {
@@ -397,8 +411,11 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
 
     // Note: multiple Replace/ReplaceHold routings may target the same parameter.
     // Priority (ModulationRouting::m_replace_priority) decides the winner per
-    // sample — see the deferred Replace-composition pass in process().
-    // Same-priority equals fall back to add-order among active routings.
+    // sample inline in apply_replace_sample / apply_replace_sample_voice.
+    // At equal priority the freshness watermark resolves it: live > held,
+    // then more recently-started live (resp. more recently-active held)
+    // wins. See the comment on ModulationRouting::m_replace_priority for
+    // the full ordering rules.
 
     // Reject routing if source is not registered
     if (m_sources.find(routing.m_source_id) == m_sources.end()) {
@@ -639,10 +656,11 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         bool m_global_replace = false;
         bool m_same_scope_additive = false;
         bool m_same_scope_replace = false;
-        // Total Replace/ReplaceHold routings on this target across both scope
-        // pairings. ≥2 triggers per-sample priority-buffer allocation so
-        // inline writes can gate on priority instead of going through a
-        // post-schedule deferred composition pass.
+        // Total Replace/ReplaceHold routings on this target across both
+        // scope pairings. ≥2 triggers allocation of the per-sample priority
+        // and freshness buffers so apply_replace_sample / _voice can gate
+        // writes inline; single-Replace targets skip both buffers and take
+        // the unconditional-write fast path.
         uint32_t m_replace_count = 0;
     };
     std::unordered_map<std::string, TargetInfo> target_info;
@@ -844,16 +862,36 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         r.m_replace_range_max.store(routing.m_replace_range_max, std::memory_order_relaxed);
         r.m_has_replace_range.store(routing.m_has_replace_range, std::memory_order_relaxed);
 
-        // Size per-voice held values for polyphonic ReplaceHold routings.
-        // m_held_voice_active is parallel and gates the ReplaceHold fallback
-        // so voices that have never received a live contribution stay silent
-        // instead of writing the default-0 held value with active=1.
-        if (r.m_combine_mode == CombineMode::ReplaceHold && tgt_poly) {
+        // Size per-voice held state for polyphonic Replace routings. Plain
+        // Replace also gets m_held_voice_values sized so the apply helpers
+        // can write into it on every active sample without a per-mode branch
+        // (the values just go unread when the routing isn't ReplaceHold).
+        // m_held_voice_active gates the ReplaceHold fallback so voices that
+        // have never received a live contribution stay silent.
+        const bool tgt_replace = r.m_combine_mode == CombineMode::Replace ||
+                                 r.m_combine_mode == CombineMode::ReplaceHold;
+        const auto info_it = target_info.find(routing.m_target_id);
+        const bool target_is_multi_replace =
+            info_it != target_info.end() && info_it->second.m_replace_count >= 2;
+
+        if (tgt_replace && tgt_poly) {
             const uint32_t nv = tgt_it->second.m_voice_owner->m_num_voices;
             r.m_held_voice_values.assign(nv, 0.0f);
             r.m_held_voice_active.assign(nv, uint8_t{0});
+
+            // Freshness vectors are only needed under contention. Single-
+            // Replace targets fall through the priority_buf == nullptr fast
+            // path in apply_replace_sample_voice and never read these.
+            if (target_is_multi_replace) {
+                r.m_voice_active_phase_start.assign(nv, uint64_t{0});
+                r.m_voice_last_active_sample.assign(nv, uint64_t{0});
+                r.m_voice_was_active_prev.assign(nv, uint8_t{0});
+            }
         }
         r.m_held_mono_active = false;
+        r.m_active_phase_start = 0;
+        r.m_last_active_sample = 0;
+        r.m_was_active_prev = false;
 
         // Pre-compute effective depth for the RT hot path.
         r.m_depth_abs_precomputed.store(compute_depth_precomputed(routing, tgt_it->second),
@@ -1006,33 +1044,68 @@ void ModulationMatrix::build_schedule_from_graph(
 
 namespace {
 
+// High bit of the per-sample freshness watermark indicating "a live writer
+// wrote this slot." Live writers OR this into their freshness; held writers
+// leave it clear. Because any value with bit 63 set is strictly greater than
+// any value without, the comparison `fresh >= freshness_buf[i]` naturally
+// enforces "live > held at same priority" with no extra branch.
+constexpr uint64_t k_live_freshness_bit = uint64_t{1} << 63;
+
 // Helper: apply a single replace sample with ReplaceHold support.
 //
-// priority_buf is null on single-Replace targets (fast path: write
-// unconditionally). On multi-Replace targets it points at the per-sample
-// priority watermark — the write is gated so only the highest-priority active
-// routing wins for each sample. Hold state always tracks the last live sample
-// regardless of the gate, so a routing that loses a sample to a higher-priority
-// peer can still drive ReplaceHold fallbacks later.
+// priority_buf / freshness_buf are null on single-Replace targets (no
+// contention — fast path writes unconditionally and skips freshness state
+// updates entirely). On multi-Replace targets the writes are gated: higher
+// priority always wins, and on a priority tie the freshness watermark
+// resolves it — live > held, then more recently-started live (resp. more
+// recently-active held) wins.
 //
 // Active and held writes use independent priorities (m_replace_priority vs
 // m_replace_hold_priority) so a routing can yield the parameter to a peer
-// when it transitions from active to held — useful for layered ReplaceHold
-// setups where a "live" voice should outrank a stale held value.
+// when it transitions from active to held.
 inline void apply_replace_sample(const ResolvedRouting& routing,
                                  float* replace_buf,
                                  uint8_t* active_buf,
                                  uint32_t* priority_buf,
+                                 uint64_t* freshness_buf,
                                  size_t i,
+                                 uint64_t block_offset,
                                  float value,
                                  bool src_active) TANH_NONBLOCKING_FUNCTION {
+    if (priority_buf == nullptr) {
+        // Single-Replace fast path: no contender, no priority/freshness work.
+        if (src_active) {
+            replace_buf[i] = value;
+            active_buf[i] = 1;
+            routing.m_held_value = value;
+            routing.m_held_mono_active = true;
+        } else if (routing.m_combine_mode == CombineMode::ReplaceHold &&
+                   routing.m_held_mono_active) {
+            replace_buf[i] = routing.m_held_value;
+            active_buf[i] = 1;
+        }
+        return;
+    }
+
+    // Multi-Replace path: track freshness and gate writes against the
+    // per-sample watermark.
+    const uint64_t now = block_offset + i;
+    const bool was_prev_active = routing.m_was_active_prev;
+    routing.m_was_active_prev = src_active;
+
     if (src_active) {
+        if (!was_prev_active) { routing.m_active_phase_start = now; }
+        routing.m_last_active_sample = now;
+
         const uint32_t prio = routing.m_replace_priority;
-        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
+        const uint64_t fresh = k_live_freshness_bit | routing.m_active_phase_start;
+        const bool wins =
+            prio > priority_buf[i] || (prio == priority_buf[i] && fresh >= freshness_buf[i]);
         if (wins) {
             replace_buf[i] = value;
             active_buf[i] = 1;
-            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+            priority_buf[i] = prio;
+            freshness_buf[i] = fresh;
         }
         routing.m_held_value = value;
         routing.m_held_mono_active = true;
@@ -1041,46 +1114,85 @@ inline void apply_replace_sample(const ResolvedRouting& routing,
         // that has never seen a live sample must not broadcast active=1 with
         // the default-0 held value.
         const uint32_t prio = routing.m_replace_hold_priority;
-        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
+        const uint64_t fresh = routing.m_last_active_sample;  // bit 63 clear
+        const bool wins =
+            prio > priority_buf[i] || (prio == priority_buf[i] && fresh >= freshness_buf[i]);
         if (wins) {
             replace_buf[i] = routing.m_held_value;
             active_buf[i] = 1;
-            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+            priority_buf[i] = prio;
+            freshness_buf[i] = fresh;
         }
     }
 }
 
 // Helper: apply a single replace sample for poly with per-voice held values.
+//
+// On single-Replace targets (priority_buf == nullptr) the per-voice freshness
+// vectors aren't allocated — take the fast path that writes unconditionally
+// and skips every freshness-state access.
 inline void apply_replace_sample_voice(const ResolvedRouting& routing,
                                        float* replace_buf,
                                        uint8_t* active_buf,
                                        uint32_t* priority_buf,
+                                       uint64_t* freshness_buf,
                                        size_t i,
+                                       uint64_t block_offset,
                                        float value,
                                        bool src_active,
                                        uint32_t voice) TANH_NONBLOCKING_FUNCTION {
+    if (voice >= routing.m_held_voice_values.size()) { return; }
+
+    if (priority_buf == nullptr) {
+        // Single-Replace fast path: write unconditionally; do not touch
+        // freshness vectors (they are not allocated on this target).
+        if (src_active) {
+            replace_buf[i] = value;
+            active_buf[i] = 1;
+            routing.m_held_voice_values[voice] = value;
+            routing.m_held_voice_active[voice] = 1;
+        } else if (routing.m_combine_mode == CombineMode::ReplaceHold &&
+                   routing.m_held_voice_active[voice]) {
+            replace_buf[i] = routing.m_held_voice_values[voice];
+            active_buf[i] = 1;
+        }
+        return;
+    }
+
+    // Multi-Replace path: per-voice freshness state is sized to nv.
+    const uint64_t now = block_offset + i;
+    const bool was_prev_active = routing.m_voice_was_active_prev[voice] != 0;
+    routing.m_voice_was_active_prev[voice] = src_active ? uint8_t{1} : uint8_t{0};
+
     if (src_active) {
+        if (!was_prev_active) { routing.m_voice_active_phase_start[voice] = now; }
+        routing.m_voice_last_active_sample[voice] = now;
+
         const uint32_t prio = routing.m_replace_priority;
-        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
+        const uint64_t fresh = k_live_freshness_bit | routing.m_voice_active_phase_start[voice];
+        const bool wins =
+            prio > priority_buf[i] || (prio == priority_buf[i] && fresh >= freshness_buf[i]);
         if (wins) {
             replace_buf[i] = value;
             active_buf[i] = 1;
-            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+            priority_buf[i] = prio;
+            freshness_buf[i] = fresh;
         }
-        if (voice < routing.m_held_voice_values.size()) {
-            routing.m_held_voice_values[voice] = value;
-            routing.m_held_voice_active[voice] = 1;
-        }
+        routing.m_held_voice_values[voice] = value;
+        routing.m_held_voice_active[voice] = 1;
     } else if (routing.m_combine_mode == CombineMode::ReplaceHold &&
-               voice < routing.m_held_voice_values.size() && routing.m_held_voice_active[voice]) {
+               routing.m_held_voice_active[voice]) {
         // Per-voice gate on the fallback: voices that have never contributed
         // a live sample stay inactive instead of holding the default-0 value.
         const uint32_t prio = routing.m_replace_hold_priority;
-        const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
+        const uint64_t fresh = routing.m_voice_last_active_sample[voice];
+        const bool wins =
+            prio > priority_buf[i] || (prio == priority_buf[i] && fresh >= freshness_buf[i]);
         if (wins) {
             replace_buf[i] = routing.m_held_voice_values[voice];
             active_buf[i] = 1;
-            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+            priority_buf[i] = prio;
+            freshness_buf[i] = fresh;
         }
     }
 }
@@ -1125,7 +1237,8 @@ inline float compute_replace_value(const ResolvedRouting& routing,
 // restored automatically because step 3 guarantees it sees the new config.
 void apply_routing_global_to_global(const ResolvedRouting& routing,
                                     const ModulationSource* source,
-                                    size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+                                    size_t num_samples,
+                                    uint64_t block_offset) TANH_NONBLOCKING_FUNCTION {
     auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
     if (mb == nullptr) { return; }
     const auto& src_output = source->get_output_buffer();
@@ -1146,13 +1259,16 @@ void apply_routing_global_to_global(const ResolvedRouting& routing,
     } else {
         if (!mb->m_has_replace) { return; }
         uint32_t* prio_buf = mb->m_has_replace_priority ? mb->m_replace_priority.data() : nullptr;
+        uint64_t* fresh_buf = mb->m_has_replace_priority ? mb->m_replace_freshness.data() : nullptr;
         if (source->is_fully_active()) {
             for (size_t i = 0; i < num_samples; ++i) {
                 apply_replace_sample(routing,
                                      mb->m_replace_buffer.data(),
                                      mb->m_replace_active.data(),
                                      prio_buf,
+                                     fresh_buf,
                                      i,
+                                     block_offset,
                                      compute_replace_value(routing, src_output[i]),
                                      true);
             }
@@ -1163,7 +1279,9 @@ void apply_routing_global_to_global(const ResolvedRouting& routing,
                                      mb->m_replace_buffer.data(),
                                      mb->m_replace_active.data(),
                                      prio_buf,
+                                     fresh_buf,
                                      i,
+                                     block_offset,
                                      compute_replace_value(routing, src_output[i]),
                                      active);
             }
@@ -1174,7 +1292,8 @@ void apply_routing_global_to_global(const ResolvedRouting& routing,
 // ScopedToScoped: write to per-voice additive or replace buffers.
 void apply_routing_scoped_to_scoped(const ResolvedRouting& routing,
                                     const ModulationSource* source,
-                                    size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+                                    size_t num_samples,
+                                    uint64_t block_offset) TANH_NONBLOCKING_FUNCTION {
     auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
     if (vb == nullptr) { return; }
     const uint32_t nv = std::min(source->num_voices(), vb->m_num_voices);
@@ -1207,12 +1326,16 @@ void apply_routing_scoped_to_scoped(const ResolvedRouting& routing,
                 uint8_t* active = vb->replace_active_voice(v);
                 uint32_t* prio =
                     vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
+                uint64_t* fresh =
+                    vb->m_has_replace_priority ? vb->replace_freshness_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     apply_replace_sample_voice(routing,
                                                out,
                                                active,
                                                prio,
+                                               fresh,
                                                i,
+                                               block_offset,
                                                compute_replace_value(routing, in[i]),
                                                true,
                                                v);
@@ -1226,12 +1349,16 @@ void apply_routing_scoped_to_scoped(const ResolvedRouting& routing,
                 uint8_t* active = vb->replace_active_voice(v);
                 uint32_t* prio =
                     vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
+                uint64_t* fresh =
+                    vb->m_has_replace_priority ? vb->replace_freshness_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     apply_replace_sample_voice(routing,
                                                out,
                                                active,
                                                prio,
+                                               fresh,
                                                i,
+                                               block_offset,
                                                compute_replace_value(routing, in[i]),
                                                src_active[i] != 0,
                                                v);
@@ -1244,7 +1371,8 @@ void apply_routing_scoped_to_scoped(const ResolvedRouting& routing,
 // GlobalToScoped: broadcast mono source to all voice buffers.
 void apply_routing_global_to_scoped(const ResolvedRouting& routing,
                                     const ModulationSource* source,
-                                    size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+                                    size_t num_samples,
+                                    uint64_t block_offset) TANH_NONBLOCKING_FUNCTION {
     const auto& src_output = source->get_output_buffer();
     auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
     if (vb == nullptr) { return; }
@@ -1274,12 +1402,16 @@ void apply_routing_global_to_scoped(const ResolvedRouting& routing,
                 uint8_t* active = vb->replace_active_voice(v);
                 uint32_t* prio =
                     vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
+                uint64_t* fresh =
+                    vb->m_has_replace_priority ? vb->replace_freshness_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     apply_replace_sample(routing,
                                          out,
                                          active,
                                          prio,
+                                         fresh,
                                          i,
+                                         block_offset,
                                          compute_replace_value(routing, src_output[i]),
                                          true);
                 }
@@ -1290,13 +1422,17 @@ void apply_routing_global_to_scoped(const ResolvedRouting& routing,
                 uint8_t* active = vb->replace_active_voice(v);
                 uint32_t* prio =
                     vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
+                uint64_t* fresh =
+                    vb->m_has_replace_priority ? vb->replace_freshness_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     const bool src_act = source->get_output_active_at(static_cast<uint32_t>(i));
                     apply_replace_sample(routing,
                                          out,
                                          active,
                                          prio,
+                                         fresh,
                                          i,
+                                         block_offset,
                                          compute_replace_value(routing, src_output[i]),
                                          src_act);
                 }
@@ -1309,7 +1445,8 @@ void apply_routing_global_to_scoped(const ResolvedRouting& routing,
 void apply_modulation_sample_mono(const ResolvedRouting& routing,
                                   float src_sample,
                                   bool src_active,
-                                  size_t i) TANH_NONBLOCKING_FUNCTION {
+                                  size_t i,
+                                  uint64_t block_offset) TANH_NONBLOCKING_FUNCTION {
     auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
     if (mb == nullptr) { return; }
     if (routing.m_combine_mode == CombineMode::Additive) {
@@ -1319,11 +1456,14 @@ void apply_modulation_sample_mono(const ResolvedRouting& routing,
     } else {
         if (!mb->m_has_replace) { return; }
         uint32_t* prio_buf = mb->m_has_replace_priority ? mb->m_replace_priority.data() : nullptr;
+        uint64_t* fresh_buf = mb->m_has_replace_priority ? mb->m_replace_freshness.data() : nullptr;
         apply_replace_sample(routing,
                              mb->m_replace_buffer.data(),
                              mb->m_replace_active.data(),
                              prio_buf,
+                             fresh_buf,
                              i,
+                             block_offset,
                              compute_replace_value(routing, src_sample),
                              src_active);
     }
@@ -1338,6 +1478,8 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
                                                       size_t num_samples) {
     auto it = config.m_routings_by_source.find(source);
     if (it == config.m_routings_by_source.end()) { return; }
+
+    const uint64_t block_offset = m_num_processed_samples;
 
     // Per-source state reset has already happened in process_with_scope step 1
     // (clear_per_block) and step 2 (pre_process_block may have repopulated
@@ -1368,13 +1510,13 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
         // post-schedule pass is needed.
         switch (routing->m_routing_mode) {
             case RoutingMode::GlobalToGlobal:
-                apply_routing_global_to_global(*routing, source, num_samples);
+                apply_routing_global_to_global(*routing, source, num_samples, block_offset);
                 break;
             case RoutingMode::ScopedToScoped:
-                apply_routing_scoped_to_scoped(*routing, source, num_samples);
+                apply_routing_scoped_to_scoped(*routing, source, num_samples, block_offset);
                 break;
             case RoutingMode::GlobalToScoped:
-                apply_routing_global_to_scoped(*routing, source, num_samples);
+                apply_routing_global_to_scoped(*routing, source, num_samples, block_offset);
                 break;
             case RoutingMode::ScopedToGlobal:
             case RoutingMode::CrossScope: break;  // rejected at schedule-build time
@@ -1426,6 +1568,8 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
 void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                                                  const std::vector<ModulationSource*>& sources,
                                                  size_t num_samples) {
+    const uint64_t block_offset = m_num_processed_samples;
+
     // Per-source state reset was done in process_with_scope step 1
     // (clear_per_block). Do NOT re-clear — same reasoning as the bulk path.
 
@@ -1448,7 +1592,7 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                                     std::memory_order_relaxed)) {
                                 continue;
                             }
-                            apply_modulation_sample_mono(*routing, sample, active, i);
+                            apply_modulation_sample_mono(*routing, sample, active, i, block_offset);
                         }
                     }
                 }
@@ -1487,11 +1631,16 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                                 uint32_t* prio = vb->m_has_replace_priority
                                                      ? vb->replace_priority_voice(v)
                                                      : nullptr;
+                                uint64_t* fresh = vb->m_has_replace_priority
+                                                      ? vb->replace_freshness_voice(v)
+                                                      : nullptr;
                                 apply_replace_sample_voice(*routing,
                                                            vb->replace_voice(v),
                                                            vb->replace_active_voice(v),
                                                            prio,
+                                                           fresh,
                                                            i,
+                                                           block_offset,
                                                            compute_replace_value(*routing, sample),
                                                            active,
                                                            v);
