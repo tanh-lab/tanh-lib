@@ -4,6 +4,7 @@
 
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationSource.h>
+#include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/State.h>
 
 using namespace thl::modulation;
@@ -335,5 +336,120 @@ TEST(CyclicModulation, PreProcessBlockSnapshotStableAcrossCyclicIterations) {
     // Block 2's output reflects the snapshot, not mid-iteration rewrites.
     for (size_t i = 0; i < k_block_size; ++i) {
         EXPECT_FLOAT_EQ(src1.get_output_buffer()[i], 0.9f);
+    }
+}
+
+// A modulator that owns a single parameter, reads it via SmartHandle during its
+// own process(), and emits the sampled value as its output. Used to detect
+// whether upstream Replace routings are visible at the moment this source runs
+// — i.e. whether the schedule put the replaces before this source's process().
+class ParamReadingSource : public ModulationSource {
+public:
+    explicit ParamReadingSource(std::string key)
+        : ModulationSource(thl::modulation::k_global_scope, true), m_key(std::move(key)) {}
+
+    void prepare(double /*sr*/, size_t spb, uint32_t voice_count) override {
+        resize_buffers(spb, voice_count);
+    }
+
+    void process(size_t num_samples, size_t offset = 0) override {
+        for (size_t i = offset; i < offset + num_samples; ++i) {
+            m_output_buffer[i] = m_handle.load(static_cast<uint32_t>(i));
+        }
+        if (num_samples > 0) { record_change_point(static_cast<uint32_t>(offset)); }
+    }
+
+    std::vector<std::string> parameter_keys() const override { return {m_key}; }
+
+    void set_handle(SmartHandle<float> handle) { m_handle = std::move(handle); }
+
+private:
+    std::string m_key;
+    SmartHandle<float> m_handle;
+};
+
+// Bug repro: when two sources Replace a parameter that belongs to a downstream
+// modulator, the deferred multi-replace composition runs *after* the schedule
+// loop, so the modulator reads the unmodulated base value rather than the
+// replaced value. Confirms (a) the schedule still orders the replace sources
+// before the modulator and (b) the modulator's output reflects the replaced
+// value at process() time.
+TEST(CyclicModulation, MultiReplaceOnModulatorParamVisibleDuringProcess) {
+    thl::State state;
+    state.create("mod_param", modulatable_float(0.0f));
+    state.create("sink", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    TestModSource replace_lo;
+    replace_lo.set_value(0.25f);
+    TestModSource replace_hi;
+    replace_hi.set_value(0.75f);
+    ParamReadingSource modulator("mod_param");
+
+    matrix.add_source("replace_lo", &replace_lo);
+    matrix.add_source("replace_hi", &replace_hi);
+    matrix.add_source("modulator", &modulator);
+
+    auto mod_param_handle = matrix.get_smart_handle<float>("mod_param");
+    matrix.get_smart_handle<float>("sink");
+    modulator.set_handle(mod_param_handle);
+
+    ModulationRouting r_lo("replace_lo", "mod_param", 1.0f);
+    r_lo.m_combine_mode = CombineMode::Replace;
+    r_lo.m_replace_priority = 1;
+    matrix.add_routing(r_lo);
+
+    ModulationRouting r_hi("replace_hi", "mod_param", 1.0f);
+    r_hi.m_combine_mode = CombineMode::Replace;
+    r_hi.m_replace_priority = 2;
+    matrix.add_routing(r_hi);
+
+    matrix.add_routing({"modulator", "sink", 1.0f});
+
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    // Schedule sanity: replace_lo and replace_hi must be ordered before the
+    // modulator (regardless of whether they are merged into one cyclic step
+    // or three bulk steps).
+    const auto schedule = matrix.get_schedule();
+    auto position_of = [&](ModulationSource* s) -> int {
+        for (size_t i = 0; i < schedule.size(); ++i) {
+            if (auto* bulk = std::get_if<BulkStep>(&schedule[i])) {
+                if (bulk->m_source == s) { return static_cast<int>(i); }
+            } else if (auto* cyc = std::get_if<CyclicStep>(&schedule[i])) {
+                for (auto* m : cyc->m_sources) {
+                    if (m == s) { return static_cast<int>(i); }
+                }
+            }
+        }
+        return -1;
+    };
+    const int pos_lo = position_of(&replace_lo);
+    const int pos_hi = position_of(&replace_hi);
+    const int pos_mod = position_of(&modulator);
+    ASSERT_GE(pos_lo, 0);
+    ASSERT_GE(pos_hi, 0);
+    ASSERT_GE(pos_mod, 0);
+    EXPECT_LT(pos_lo, pos_mod) << "replace_lo must run before modulator";
+    EXPECT_LT(pos_hi, pos_mod) << "replace_hi must run before modulator";
+
+    matrix.process(k_block_size);
+
+    // After the block, mod_param's replace buffer must reflect the higher-
+    // priority value (post-deferred composition). This already works today.
+    EXPECT_FLOAT_EQ(mod_param_handle.load(0), 0.75f);
+
+    // The bug: modulator.process() ran *between* replace_lo/replace_hi and the
+    // deferred composition pass. With the deferred pass running after the
+    // schedule loop, modulator saw the unmodulated base (0.0) and emitted that
+    // into its output — which is what arrives at the sink target.
+    const auto* sink_target = matrix.get_target("sink");
+    ASSERT_NE(sink_target, nullptr);
+    const auto* sink_mono = mono_of(sink_target);
+    ASSERT_NE(sink_mono, nullptr);
+    for (size_t i = 0; i < k_block_size; ++i) {
+        EXPECT_FLOAT_EQ(sink_mono->m_additive_buffer[i], 0.75f)
+            << "modulator failed to observe replaced mod_param at sample " << i << " (saw "
+            << sink_mono->m_additive_buffer[i] << ")";
     }
 }

@@ -61,7 +61,8 @@ struct ModulationRouting {
     // wins when multiple active Replace routings overlap. Default 0 — single
     // Replace routings behave identically regardless of priority value, so
     // legacy presets without the field load as 0 without behavior change.
-    // Equal priorities fall back to add-order among active routings.
+    // On equal priority, the routing whose source is scheduled later in the
+    // Tarjan SCC order wins (the late writer overwrites the earlier write).
     // Only meaningful for Replace / ReplaceHold combine modes; ignored for
     // Additive.
     uint32_t m_replace_priority = 0;

@@ -52,15 +52,6 @@ struct ProcessingConfig {
     // source per block, before any ScheduleStep. Contains every source added
     // via add_source(), including sources with no routings.
     std::vector<ModulationSource*> m_all_sources;
-
-    // Per-target Replace routings sorted ascending by priority. Only populated
-    // for targets with >1 Replace/ReplaceHold routing — the common single-
-    // Replace case keeps the in-schedule fast path with m_replace_deferred =
-    // false. Deferred routings are re-applied after the schedule loop so
-    // higher-priority writes overwrite lower-priority ones deterministically
-    // regardless of source schedule order.
-    std::vector<std::pair<ResolvedTarget*, std::vector<const ResolvedRouting*>>>
-        m_multi_replace_targets;
 };
 
 class TANH_API ModulationMatrix {
@@ -275,13 +266,6 @@ private:
                                    size_t num_samples);
 
     void apply_routing_change_points_with_scope(const ResolvedRouting& routing, size_t num_samples);
-
-    // Post-schedule composition pass for targets with multiple Replace/ReplaceHold
-    // routings. Re-applies the deferred routings in ascending priority order so
-    // higher-priority writes land last and therefore win within their active
-    // regions. Called from process() after the schedule loop.
-    void apply_multi_replace_composition_with_scope(const ProcessingConfig& config,
-                                                    size_t num_samples);
 
     // Tarjan SCC helper
     void build_schedule_from_graph(
