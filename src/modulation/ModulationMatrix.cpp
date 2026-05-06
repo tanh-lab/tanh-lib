@@ -316,12 +316,10 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
         }
     }
 
-    // 5. Multi-Replace composition — re-apply deferred Replace/ReplaceHold
-    //    routings on shared targets in ascending priority order so higher
-    //    priority wins per sample. Single-Replace targets are untouched.
-    apply_multi_replace_composition_with_scope(config, num_samples);
-
-    // 6. Build final sorted change point lists from flags
+    // 5. Build final sorted change point lists from flags. Multi-Replace
+    //    composition is no longer a separate pass — apply_replace_sample
+    //    gates writes by per-sample priority watermark inline, so the
+    //    highest-priority active routing wins regardless of schedule order.
     for (auto* target : config.m_active_targets) { target->build_change_points(); }
 }
 
@@ -641,6 +639,11 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         bool m_global_replace = false;
         bool m_same_scope_additive = false;
         bool m_same_scope_replace = false;
+        // Total Replace/ReplaceHold routings on this target across both scope
+        // pairings. ≥2 triggers per-sample priority-buffer allocation so
+        // inline writes can gate on priority instead of going through a
+        // post-schedule deferred composition pass.
+        uint32_t m_replace_count = 0;
     };
     std::unordered_map<std::string, TargetInfo> target_info;
 
@@ -705,6 +708,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
                 info.m_global_additive = true;
             }
         }
+        if (is_replace) { ++info.m_replace_count; }
     }
 
     // ── Pass 1b: Allocate per-target buffers ─────────────────────────────
@@ -721,6 +725,11 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         const bool has_mono =
             has_any && !has_poly && (it->second.m_global_additive || it->second.m_global_replace);
 
+        // Per-sample priority watermark: only allocated when ≥2 Replace
+        // routings target this parameter. Single-Replace targets keep the
+        // unconditional-write fast path with priority_buf == nullptr.
+        const bool vrp = has_any && it->second.m_replace_count >= 2;
+
         // Voice buffers. Skip allocation when the scope is registered with zero
         // voices — there's nothing for downstream consumers to index into.
         const uint32_t nv = has_poly ? voice_count(target.m_scope) : 0u;
@@ -730,9 +739,10 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
             auto* cur = target.m_voice_owner.get();
             const bool geometry_matches = cur != nullptr && cur->m_num_voices == nv &&
                                           cur->m_block_size == m_samples_per_block &&
-                                          cur->m_has_additive == va && cur->m_has_replace == vr;
+                                          cur->m_has_additive == va && cur->m_has_replace == vr &&
+                                          cur->m_has_replace_priority == vrp;
             if (!geometry_matches) {
-                auto fresh = std::make_unique<VoiceBuffers>(nv, m_samples_per_block, va, vr);
+                auto fresh = std::make_unique<VoiceBuffers>(nv, m_samples_per_block, va, vr, vrp);
                 target.m_voice.store(fresh.get(), std::memory_order_release);
                 if (target.m_voice_owner) {
                     target.m_voice_retired.push_back(std::move(target.m_voice_owner));
@@ -751,9 +761,10 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
             auto* cur = target.m_mono_owner.get();
             const bool geometry_matches = cur != nullptr &&
                                           cur->m_block_size == m_samples_per_block &&
-                                          cur->m_has_additive == ma && cur->m_has_replace == mr;
+                                          cur->m_has_additive == ma && cur->m_has_replace == mr &&
+                                          cur->m_has_replace_priority == vrp;
             if (!geometry_matches) {
-                auto fresh = std::make_unique<MonoBuffers>(m_samples_per_block, ma, mr);
+                auto fresh = std::make_unique<MonoBuffers>(m_samples_per_block, ma, mr, vrp);
                 target.m_mono.store(fresh.get(), std::memory_order_release);
                 if (target.m_mono_owner) {
                     target.m_mono_retired.push_back(std::move(target.m_mono_owner));
@@ -904,49 +915,6 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         for (const auto& r : config.m_routings) {
             config.m_routings_by_source[r.m_source].push_back(&r);
         }
-
-        // Group Replace routings by target. Targets with >1 Replace routing
-        // get deferred composition: in-schedule routings skip the Replace
-        // write, and a post-pass re-applies all of them in ascending-priority
-        // order so higher-priority wins deterministically.
-        //
-        // Iteration is in-order over config.m_routings (a std::vector) so
-        // output ordering is deterministic regardless of pointer hashing.
-        config.m_multi_replace_targets.clear();
-        std::vector<ResolvedTarget*> target_order;
-        std::unordered_map<ResolvedTarget*, size_t> target_index;
-        std::vector<std::vector<ResolvedRouting*>> grouped;
-        for (auto& r : config.m_routings) {
-            if (r.m_combine_mode != CombineMode::Replace &&
-                r.m_combine_mode != CombineMode::ReplaceHold) {
-                continue;
-            }
-            auto [it, inserted] = target_index.try_emplace(r.m_target, target_order.size());
-            if (inserted) {
-                target_order.push_back(r.m_target);
-                grouped.emplace_back();
-            }
-            grouped[it->second].push_back(&r);
-        }
-        for (size_t i = 0; i < target_order.size(); ++i) {
-            auto& routings = grouped[i];
-            if (routings.size() < 2) { continue; }
-            // Stable-sort by priority ascending — equal priorities keep add-order.
-            // Higher-priority routings are applied last in the deferred post-
-            // pass, so their writes overwrite lower-priority writes in the
-            // overlapping active regions.
-            std::ranges::stable_sort(routings,
-                                     [](const ResolvedRouting* a, const ResolvedRouting* b) {
-                                         return a->m_replace_priority < b->m_replace_priority;
-                                     });
-            std::vector<const ResolvedRouting*> ordered;
-            ordered.reserve(routings.size());
-            for (auto* r : routings) {
-                r->m_replace_deferred = true;
-                ordered.push_back(r);
-            }
-            config.m_multi_replace_targets.emplace_back(target_order[i], std::move(ordered));
-        }
     });
 
     // Drain retired buffers. After m_config.update() the old ProcessingConfig
@@ -1035,23 +1003,38 @@ void ModulationMatrix::build_schedule_from_graph(
 namespace {
 
 // Helper: apply a single replace sample with ReplaceHold support.
+//
+// priority_buf is null on single-Replace targets (fast path: write
+// unconditionally). On multi-Replace targets it points at the per-sample
+// priority watermark — the write is gated so only the highest-priority active
+// routing wins for each sample. Hold state always tracks the last live sample
+// regardless of the gate, so a routing that loses a sample to a higher-priority
+// peer can still drive ReplaceHold fallbacks later.
 inline void apply_replace_sample(const ResolvedRouting& routing,
                                  float* replace_buf,
                                  uint8_t* active_buf,
+                                 uint32_t* priority_buf,
                                  size_t i,
                                  float value,
                                  bool src_active) TANH_NONBLOCKING_FUNCTION {
+    const uint32_t prio = routing.m_replace_priority;
+    const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
     if (src_active) {
-        replace_buf[i] = value;
-        active_buf[i] = 1;
+        if (wins) {
+            replace_buf[i] = value;
+            active_buf[i] = 1;
+            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+        }
         routing.m_held_value = value;
         routing.m_held_mono_active = true;
-    } else if (routing.m_combine_mode == CombineMode::ReplaceHold && routing.m_held_mono_active) {
+    } else if (routing.m_combine_mode == CombineMode::ReplaceHold && routing.m_held_mono_active &&
+               wins) {
         // Only hold after the source has been active at least once — a routing
         // that has never seen a live sample must not broadcast active=1 with
         // the default-0 held value.
         replace_buf[i] = routing.m_held_value;
         active_buf[i] = 1;
+        if (priority_buf != nullptr) { priority_buf[i] = prio; }
     }
 }
 
@@ -1059,23 +1042,31 @@ inline void apply_replace_sample(const ResolvedRouting& routing,
 inline void apply_replace_sample_voice(const ResolvedRouting& routing,
                                        float* replace_buf,
                                        uint8_t* active_buf,
+                                       uint32_t* priority_buf,
                                        size_t i,
                                        float value,
                                        bool src_active,
                                        uint32_t voice) TANH_NONBLOCKING_FUNCTION {
+    const uint32_t prio = routing.m_replace_priority;
+    const bool wins = (priority_buf == nullptr) || prio >= priority_buf[i];
     if (src_active) {
-        replace_buf[i] = value;
-        active_buf[i] = 1;
+        if (wins) {
+            replace_buf[i] = value;
+            active_buf[i] = 1;
+            if (priority_buf != nullptr) { priority_buf[i] = prio; }
+        }
         if (voice < routing.m_held_voice_values.size()) {
             routing.m_held_voice_values[voice] = value;
             routing.m_held_voice_active[voice] = 1;
         }
     } else if (routing.m_combine_mode == CombineMode::ReplaceHold &&
-               voice < routing.m_held_voice_values.size() && routing.m_held_voice_active[voice]) {
+               voice < routing.m_held_voice_values.size() && routing.m_held_voice_active[voice] &&
+               wins) {
         // Per-voice gate on the fallback: voices that have never contributed
         // a live sample stay inactive instead of holding the default-0 value.
         replace_buf[i] = routing.m_held_voice_values[voice];
         active_buf[i] = 1;
+        if (priority_buf != nullptr) { priority_buf[i] = prio; }
     }
 }
 
@@ -1139,11 +1130,13 @@ void apply_routing_global_to_global(const ResolvedRouting& routing,
         }
     } else {
         if (!mb->m_has_replace) { return; }
+        uint32_t* prio_buf = mb->m_has_replace_priority ? mb->m_replace_priority.data() : nullptr;
         if (source->is_fully_active()) {
             for (size_t i = 0; i < num_samples; ++i) {
                 apply_replace_sample(routing,
                                      mb->m_replace_buffer.data(),
                                      mb->m_replace_active.data(),
+                                     prio_buf,
                                      i,
                                      compute_replace_value(routing, src_output[i]),
                                      true);
@@ -1154,6 +1147,7 @@ void apply_routing_global_to_global(const ResolvedRouting& routing,
                 apply_replace_sample(routing,
                                      mb->m_replace_buffer.data(),
                                      mb->m_replace_active.data(),
+                                     prio_buf,
                                      i,
                                      compute_replace_value(routing, src_output[i]),
                                      active);
@@ -1196,10 +1190,13 @@ void apply_routing_scoped_to_scoped(const ResolvedRouting& routing,
                 const float* in = source->voice_output(v);
                 float* out = vb->replace_voice(v);
                 uint8_t* active = vb->replace_active_voice(v);
+                uint32_t* prio =
+                    vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     apply_replace_sample_voice(routing,
                                                out,
                                                active,
+                                               prio,
                                                i,
                                                compute_replace_value(routing, in[i]),
                                                true,
@@ -1212,10 +1209,13 @@ void apply_routing_scoped_to_scoped(const ResolvedRouting& routing,
                 const uint8_t* src_active = source->voice_output_active(v);
                 float* out = vb->replace_voice(v);
                 uint8_t* active = vb->replace_active_voice(v);
+                uint32_t* prio =
+                    vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     apply_replace_sample_voice(routing,
                                                out,
                                                active,
+                                               prio,
                                                i,
                                                compute_replace_value(routing, in[i]),
                                                src_active[i] != 0,
@@ -1257,10 +1257,13 @@ void apply_routing_global_to_scoped(const ResolvedRouting& routing,
             for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
                 float* out = vb->replace_voice(v);
                 uint8_t* active = vb->replace_active_voice(v);
+                uint32_t* prio =
+                    vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     apply_replace_sample(routing,
                                          out,
                                          active,
+                                         prio,
                                          i,
                                          compute_replace_value(routing, src_output[i]),
                                          true);
@@ -1270,11 +1273,14 @@ void apply_routing_global_to_scoped(const ResolvedRouting& routing,
             for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
                 float* out = vb->replace_voice(v);
                 uint8_t* active = vb->replace_active_voice(v);
+                uint32_t* prio =
+                    vb->m_has_replace_priority ? vb->replace_priority_voice(v) : nullptr;
                 for (size_t i = 0; i < num_samples; ++i) {
                     const bool src_act = source->get_output_active_at(static_cast<uint32_t>(i));
                     apply_replace_sample(routing,
                                          out,
                                          active,
+                                         prio,
                                          i,
                                          compute_replace_value(routing, src_output[i]),
                                          src_act);
@@ -1297,9 +1303,11 @@ void apply_modulation_sample_mono(const ResolvedRouting& routing,
         if (src_active) { mb->m_additive_buffer[i] += src_sample * depth; }
     } else {
         if (!mb->m_has_replace) { return; }
+        uint32_t* prio_buf = mb->m_has_replace_priority ? mb->m_replace_priority.data() : nullptr;
         apply_replace_sample(routing,
                              mb->m_replace_buffer.data(),
                              mb->m_replace_active.data(),
+                             prio_buf,
                              i,
                              compute_replace_value(routing, src_sample),
                              src_active);
@@ -1340,24 +1348,21 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
             continue;
         }
 
-        // Deferred multi-Replace routings skip the write here — they are re-
-        // applied in apply_multi_replace_composition_with_scope() after the schedule loop
-        // in priority order. Change-point propagation below still runs so the
-        // target evaluates transition points regardless.
-        if (!routing->m_replace_deferred) {
-            switch (routing->m_routing_mode) {
-                case RoutingMode::GlobalToGlobal:
-                    apply_routing_global_to_global(*routing, source, num_samples);
-                    break;
-                case RoutingMode::ScopedToScoped:
-                    apply_routing_scoped_to_scoped(*routing, source, num_samples);
-                    break;
-                case RoutingMode::GlobalToScoped:
-                    apply_routing_global_to_scoped(*routing, source, num_samples);
-                    break;
-                case RoutingMode::ScopedToGlobal:
-                case RoutingMode::CrossScope: break;  // rejected at schedule-build time
-            }
+        // Multi-Replace targets gate writes inline via the priority watermark
+        // in apply_replace_sample / apply_replace_sample_voice — no deferred
+        // post-schedule pass is needed.
+        switch (routing->m_routing_mode) {
+            case RoutingMode::GlobalToGlobal:
+                apply_routing_global_to_global(*routing, source, num_samples);
+                break;
+            case RoutingMode::ScopedToScoped:
+                apply_routing_scoped_to_scoped(*routing, source, num_samples);
+                break;
+            case RoutingMode::GlobalToScoped:
+                apply_routing_global_to_scoped(*routing, source, num_samples);
+                break;
+            case RoutingMode::ScopedToGlobal:
+            case RoutingMode::CrossScope: break;  // rejected at schedule-build time
         }
 
         // Propagate change points to target flags. m_change_point_flags[_storage]
@@ -1428,11 +1433,6 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                                     std::memory_order_relaxed)) {
                                 continue;
                             }
-                            // Deferred Replace routings are composed post-schedule.
-                            if (routing->m_replace_deferred &&
-                                routing->m_combine_mode != CombineMode::Additive) {
-                                continue;
-                            }
                             apply_modulation_sample_mono(*routing, sample, active, i);
                         }
                     }
@@ -1467,12 +1467,15 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                                         std::memory_order_relaxed);
                                     vb->additive_voice(v)[i] += sample * depth;
                                 }
-                            } else if (!routing->m_replace_deferred) {
+                            } else {
                                 if (!vb->m_has_replace) { continue; }
-                                // Deferred Replace routings are composed post-schedule.
+                                uint32_t* prio = vb->m_has_replace_priority
+                                                     ? vb->replace_priority_voice(v)
+                                                     : nullptr;
                                 apply_replace_sample_voice(*routing,
                                                            vb->replace_voice(v),
                                                            vb->replace_active_voice(v),
+                                                           prio,
                                                            i,
                                                            compute_replace_value(*routing, sample),
                                                            active,
@@ -1519,38 +1522,6 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                 }
             }
             apply_routing_change_points_with_scope(*routing, num_samples);
-        }
-    }
-}
-
-// ── Multi-Replace composition (post-schedule) ────────────────────────────────
-
-void ModulationMatrix::apply_multi_replace_composition_with_scope(const ProcessingConfig& config,
-                                                                  size_t num_samples) {
-    // Empty in the common single-Replace case — early out keeps cost zero.
-    if (config.m_multi_replace_targets.empty()) { return; }
-
-    for (const auto& [target, ordered] : config.m_multi_replace_targets) {
-        for (const auto* routing : ordered) {
-            if (routing->m_skip_during_gesture &&
-                target->m_record->m_in_gesture.load(std::memory_order_relaxed)) {
-                continue;
-            }
-            auto* source = routing->m_source;
-            if (source == nullptr) { continue; }
-            switch (routing->m_routing_mode) {
-                case RoutingMode::GlobalToGlobal:
-                    apply_routing_global_to_global(*routing, source, num_samples);
-                    break;
-                case RoutingMode::ScopedToScoped:
-                    apply_routing_scoped_to_scoped(*routing, source, num_samples);
-                    break;
-                case RoutingMode::GlobalToScoped:
-                    apply_routing_global_to_scoped(*routing, source, num_samples);
-                    break;
-                case RoutingMode::ScopedToGlobal:
-                case RoutingMode::CrossScope: break;  // rejected at schedule-build time
-            }
         }
     }
 }
