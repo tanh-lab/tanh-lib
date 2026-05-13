@@ -15,6 +15,9 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_InputEventQueue.cpp
 	test_ConcurrentRebuild.cpp
 	test_ModulationScope.cpp
+	test_DspFixture_Wavefolder.cpp
+	test_DspFixture_Limiter.cpp
+	test_DspFixture_Reverb.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
