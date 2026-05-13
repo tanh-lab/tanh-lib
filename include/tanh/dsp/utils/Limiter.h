@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/SmoothedValue.h>
 
 namespace thl::dsp::utils {
 
@@ -35,8 +36,10 @@ private:
     size_t m_channels = 2;
 
     float m_gain = 1.0f;
-    float m_attack_coeff = 0.0f;
-    float m_release_coeff = 0.0f;
+
+    SmoothedValue m_smoothed_threshold;
+    SmoothedValue m_smoothed_attack_coeff;
+    SmoothedValue m_smoothed_release_coeff;
 };
 
 template <>
