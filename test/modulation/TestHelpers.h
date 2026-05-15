@@ -43,7 +43,8 @@ static thl::ParameterDefinition modulatable_float(float default_value = 0.0f) {
 
 // Overload that tags the parameter with a modulation scope — required when the
 // test registers a scope on the matrix and declares per-voice params.
-static thl::ParameterDefinition modulatable_float(float default_value, thl::modulation::ModulationScope scope) {
+static thl::ParameterDefinition modulatable_float(float default_value,
+                                                  thl::modulation::ModulationScope scope) {
     return thl::ParameterDefinition::make_float("", thl::Range::linear(0.0f, 1.0f), default_value)
         .automatable(false)
         .modulatable(true)
@@ -56,11 +57,24 @@ public:
     float m_frequency = 1.0f;
     thl::modulation::LFOWaveform m_waveform = thl::modulation::LFOWaveform::Sine;
     int m_decimation = 1;
+    float m_phase_offset = 0.0f;
+    float m_bias = 0.0f;
+    float m_pulse_width = 0.5f;
+    float m_depth = 1.0f;
+    thl::modulation::LFOPolarity m_polarity = thl::modulation::LFOPolarity::Bipolar;
+    float m_smooth = 0.0f;
+    float m_fade_in = 0.0f;
 
 private:
     float get_parameter_float(Parameter p, uint32_t) override {
         switch (p) {
             case Frequency: return m_frequency;
+            case PhaseOffset: return m_phase_offset;
+            case Bias: return m_bias;
+            case PulseWidth: return m_pulse_width;
+            case Depth: return m_depth;
+            case Smooth: return m_smooth;
+            case FadeIn: return m_fade_in;
             default: return 0.0f;
         }
     }
@@ -68,6 +82,7 @@ private:
         switch (p) {
             case Waveform: return static_cast<int>(m_waveform);
             case Decimation: return m_decimation;
+            case Polarity: return static_cast<int>(m_polarity);
             default: return 0;
         }
     }
@@ -79,7 +94,8 @@ class PolyTestSource : public thl::modulation::ModulationSource {
 public:
     std::vector<float> m_voice_values;
 
-    explicit PolyTestSource(thl::modulation::ModulationScope scope) : ModulationSource(scope, true) {}
+    explicit PolyTestSource(thl::modulation::ModulationScope scope)
+        : ModulationSource(scope, true) {}
 
     void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
         resize_buffers(samples_per_block, voice_count);
@@ -103,7 +119,8 @@ public:
     float m_mono_value = 0.0f;
     std::vector<float> m_voice_values;
 
-    explicit CombinedTestSource(thl::modulation::ModulationScope scope) : ModulationSource(scope, true) {}
+    explicit CombinedTestSource(thl::modulation::ModulationScope scope)
+        : ModulationSource(scope, true) {}
 
     void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
         resize_buffers(samples_per_block, voice_count);
