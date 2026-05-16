@@ -30,11 +30,24 @@ public:
     float m_frequency = 10.0f;
     LFOWaveform m_waveform = LFOWaveform::Sine;
     int m_decimation = 1;
+    float m_phase_offset = 0.0f;
+    float m_bias = 0.0f;
+    float m_pulse_width = 0.5f;
+    float m_depth = 1.0f;
+    LFOPolarity m_polarity = LFOPolarity::Bipolar;
+    float m_smooth = 0.0f;
+    float m_fade_in = 0.0f;
 
 private:
     float get_parameter_float(Parameter p, uint32_t) override {
         switch (p) {
             case Frequency: return m_frequency;
+            case PhaseOffset: return m_phase_offset;
+            case Bias: return m_bias;
+            case PulseWidth: return m_pulse_width;
+            case Depth: return m_depth;
+            case Smooth: return m_smooth;
+            case FadeIn: return m_fade_in;
             default: return 0.0f;
         }
     }
@@ -42,6 +55,7 @@ private:
         switch (p) {
             case Waveform: return static_cast<int>(m_waveform);
             case Decimation: return m_decimation;
+            case Polarity: return static_cast<int>(m_polarity);
             default: return 0;
         }
     }
@@ -446,7 +460,8 @@ static void bm_input_event_queue_drain_spread(benchmark::State& bm_state) {
 
     // A non-global scope handle so the queue allocates voice buckets. Not
     // bound to any matrix — InputEventQueue only inspects has_mono().
-    static constexpr thl::modulation::ModulationScope k_bench_voice_scope{.m_id = 1, .m_name = "bench_voice"};
+    static constexpr thl::modulation::ModulationScope k_bench_voice_scope{.m_id = 1,
+                                                                          .m_name = "bench_voice"};
     InputEventQueue queue(k_bench_voice_scope, capacity);
     queue.prepare(num_voices);
 

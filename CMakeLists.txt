@@ -72,6 +72,11 @@ set (PROJECT_NAME tanh)
 
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_SHORT})
 
+# Exposed for downstream consumers (e.g. cosmos) that want to reuse our
+# shared CMake helpers like gtest-deps.cmake.
+set(TANH_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake" CACHE INTERNAL
+    "Path to tanh-lib's shared CMake helpers")
+
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(TANH_OPERATING_SYSTEM "iOS")
     set(TANH_PLATFORM_DEFINE "THL_PLATFORM_IOS")

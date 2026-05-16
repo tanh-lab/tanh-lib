@@ -11,7 +11,7 @@ Checks: >
   misc-*,
   -misc-non-private-member-variables-in-classes
 HeaderFilterRegex: "^.*/(src|include|examples)/.*"
-ExcludeHeaderFilterRegex: "^(/usr/|/opt/|.*/build/|.*/_deps/).*"
+ExcludeHeaderFilterRegex: "^(/usr/|/opt/|.*/build/|.*/_deps/|.*/modules/).*"
 
 CheckOptions:
   # Classes/structs/enums/unions: PascalCase
