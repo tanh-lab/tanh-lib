@@ -105,8 +105,12 @@ void LFOSourceImpl::process(size_t num_samples, size_t offset) {
             }
 
             // Smoothing slew: one-pole low-pass with tau in [0, ~1s].
+            // Stepped at the decimation rate (this branch only runs every
+            // `decimation` samples), so the alpha uses `decimation` in the
+            // exponent to keep the time constant invariant w.r.t. decimation.
             const float tau_samples = std::max(1.0f, smooth * static_cast<float>(m_sample_rate));
-            const float alpha = 1.0f - std::exp(-1.0f / tau_samples);
+            const auto step_samples = static_cast<float>(decimation == 0 ? 1 : decimation);
+            const float alpha = 1.0f - std::exp(-step_samples / tau_samples);
             if (smooth <= 0.0f) {
                 m_smoothed_value = raw;
             } else {
@@ -123,8 +127,11 @@ void LFOSourceImpl::process(size_t num_samples, size_t offset) {
                 if (fade_in_s <= 0.0f) {
                     m_fade_in_value = 1.0f;
                 } else {
-                    const float step = 1.0f / (fade_in_s * static_cast<float>(m_sample_rate));
-                    m_fade_in_value = std::min(1.0f, m_fade_in_value + step);
+                    // Advance by `step_samples` worth of fade per update so
+                    // the ramp completes in `fade_in_s` seconds regardless
+                    // of decimation.
+                    const float per_sample = 1.0f / (fade_in_s * static_cast<float>(m_sample_rate));
+                    m_fade_in_value = std::min(1.0f, m_fade_in_value + per_sample * step_samples);
                 }
             }
 
