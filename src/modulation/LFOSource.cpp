@@ -128,7 +128,12 @@ void LFOSourceImpl::process(size_t num_samples, size_t offset) {
                 }
             }
 
-            m_last_output = shaped * depth * m_fade_in_value;
+            // Hard clip to [-1, 1]. Bias and depth can together push the
+            // shaped signal past unity (e.g. bias=+1 with depth=1 → peaks
+            // at +2). Clipping here keeps the LFO output within its
+            // documented range so downstream routings — and the JS
+            // visualisation — never see out-of-bounds samples.
+            m_last_output = std::clamp(shaped * depth * m_fade_in_value, -1.0f, 1.0f);
             m_samples_until_update = decimation == 0 ? 1 : decimation;
             record_change_point(sample_idx);
         }
