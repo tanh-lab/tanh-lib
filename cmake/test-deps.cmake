@@ -1,18 +1,14 @@
 # This disables the default behavior of adding all targets to the CTest dashboard.
 set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
 
-include(FetchContent)
-
 # enable ctest
 include(CTest)
 
-# Externally provided libraries
-FetchContent_Declare(googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_PROGRESS TRUE
-    GIT_SHALLOW TRUE
-    GIT_TAG v1.14.0
-    SYSTEM)
+# Shared googletest setup (also used by downstream consumers like cosmos).
+include(${CMAKE_CURRENT_LIST_DIR}/gtest-deps.cmake)
+
+# googlebenchmark — tanh-lib's own benchmarks only; not exposed downstream.
+include(FetchContent)
 
 FetchContent_Declare(googlebenchmark
     GIT_REPOSITORY https://github.com/google/benchmark.git
@@ -24,32 +20,7 @@ FetchContent_Declare(googlebenchmark
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
-# This command ensures that each of the named dependencies are made available to the project by the time it returns. If the dependency has already been populated the command does nothing. Otherwise, the command populates the dependency and then calls add_subdirectory() on the result.
-FetchContent_MakeAvailable(googletest googlebenchmark)
+FetchContent_MakeAvailable(googlebenchmark)
 
-# enable position independent code because otherwise the library cannot be linked into a shared library
-set_target_properties(gtest PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-# Suppress warnings from googletest source compilation
-target_compile_options(gtest PRIVATE -w)
-target_compile_options(gtest_main PRIVATE -w)
 target_compile_options(benchmark PRIVATE -w)
 target_compile_options(benchmark_main PRIVATE -w)
-
-# include Loads and runs CMake code from the file given. Loads and runs CMake code from the file given.
-include(GoogleTest)
-
-# On Windows shared-library builds, gtest_discover_tests runs the test
-# executable during the build to enumerate test names.  The executable needs
-# its DLL dependencies in the same directory to load.  Call this function after
-# defining a test target to add a POST_BUILD copy of all transitive DLLs.
-function(tanh_copy_dlls_for_tests target)
-    if(WIN32 AND BUILD_SHARED_LIBS)
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:${target}>
-                $<TARGET_FILE_DIR:${target}>
-            COMMAND_EXPAND_LISTS
-        )
-    endif()
-endfunction()

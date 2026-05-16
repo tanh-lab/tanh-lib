@@ -92,22 +92,29 @@ void ConstellationReverbImpl::process(thl::dsp::audio::AudioBufferView buffer,
     // ── Cache all parameters once per block ───────────────────────────────
     // These are stored as members so process_tank() can use them without
     // incurring a virtual dispatch on every sample.
-    m_p_decay = get_parameter<float>(Decay, modulation_offset);
+    // Modulation on a linear range adds in plain units without clamping (the
+    // DSP processor is responsible for staying inside its safe domain). The
+    // one-pole filters below are unstable for negative coefficients, so any
+    // parameter that becomes a one-pole coefficient is clamped here.
+    m_p_decay = std::clamp(get_parameter<float>(Decay, modulation_offset), 0.0f, 0.99f);
     m_p_freeze = get_parameter<bool>(Freeze, modulation_offset);
-    m_p_shimmer = get_parameter<float>(Shimmer, modulation_offset);
+    m_p_shimmer = std::clamp(get_parameter<float>(Shimmer, modulation_offset), 0.0f, 1.0f);
     m_p_shim_mod = get_parameter<float>(ShimmerModDepth, modulation_offset);
     m_p_fshift_hz = get_parameter<float>(FreqShiftHz, modulation_offset);
     m_p_fshift_det = get_parameter<float>(FreqShiftDetune, modulation_offset);
     m_p_fshift_mod = get_parameter<float>(FreqShiftModDepth, modulation_offset);
 
-    m_damping_coeff = 1.0f - get_parameter<float>(Damping, modulation_offset);
-    m_predelay_len = get_parameter<float>(PredelayMs, modulation_offset) *
+    const float damping = std::clamp(get_parameter<float>(Damping, modulation_offset), 0.0f, 0.99f);
+    m_damping_coeff = 1.0f - damping;
+    m_predelay_len = std::max(0.0f, get_parameter<float>(PredelayMs, modulation_offset)) *
                      static_cast<float>(m_sample_rate) / 1000.0f;
-    m_hp_coeff = 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> *
-                                 get_parameter<float>(InputHpHz, modulation_offset) /
+    const float input_hp_hz = std::clamp(get_parameter<float>(InputHpHz, modulation_offset),
+                                         0.0f,
+                                         static_cast<float>(m_sample_rate) * 0.45f);
+    m_hp_coeff = 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> * input_hp_hz /
                                  static_cast<float>(m_sample_rate));
-    m_target_size = get_parameter<float>(Size, modulation_offset);
-    m_target_fshift = get_parameter<float>(FreqShift, modulation_offset);
+    m_target_size = std::clamp(get_parameter<float>(Size, modulation_offset), 0.1f, k_max_size);
+    m_target_fshift = std::clamp(get_parameter<float>(FreqShift, modulation_offset), 0.0f, 1.0f);
 
     apply_shimmer_pitch(modulation_offset);
 

@@ -52,15 +52,6 @@ struct ProcessingConfig {
     // source per block, before any ScheduleStep. Contains every source added
     // via add_source(), including sources with no routings.
     std::vector<ModulationSource*> m_all_sources;
-
-    // Per-target Replace routings sorted ascending by priority. Only populated
-    // for targets with >1 Replace/ReplaceHold routing — the common single-
-    // Replace case keeps the in-schedule fast path with m_replace_deferred =
-    // false. Deferred routings are re-applied after the schedule loop so
-    // higher-priority writes overwrite lower-priority ones deterministically
-    // regardless of source schedule order.
-    std::vector<std::pair<ResolvedTarget*, std::vector<const ResolvedRouting*>>>
-        m_multi_replace_targets;
 };
 
 class TANH_API ModulationMatrix {
@@ -125,6 +116,16 @@ public:
     // The config reference must come from that scope's data().
     void process_with_scope(const ProcessingConfig& config,
                             size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+
+    // Total number of samples passed through process_with_scope() since the
+    // last prepare(). Monotonically increasing within a prepare()-bounded
+    // session; reset to 0 by prepare(); unaffected by schedule rebuilds. The
+    // matrix uses this internally as the freshness timestamp source for the
+    // multi-Replace tie-break, so callers can use the same value to
+    // correlate external events with the matrix's notion of "now."
+    [[nodiscard]] uint64_t get_num_processed_samples() const TANH_NONBLOCKING_FUNCTION {
+        return m_num_processed_samples;
+    }
 
     // ── Scope registry ───────────────────────────────────────────────────
     // Register (or look up) a named polyphony scope. Returns a ModulationScope
@@ -276,13 +277,6 @@ private:
 
     void apply_routing_change_points_with_scope(const ResolvedRouting& routing, size_t num_samples);
 
-    // Post-schedule composition pass for targets with multiple Replace/ReplaceHold
-    // routings. Re-applies the deferred routings in ascending priority order so
-    // higher-priority writes land last and therefore win within their active
-    // regions. Called from process() after the schedule loop.
-    void apply_multi_replace_composition_with_scope(const ProcessingConfig& config,
-                                                    size_t num_samples);
-
     // Tarjan SCC helper
     void build_schedule_from_graph(
         const std::vector<std::string>& source_ids,
@@ -294,6 +288,13 @@ private:
 
     double m_sample_rate = 48000.0;
     size_t m_samples_per_block = 512;
+
+    // Monotonic count of samples processed since the last prepare(). Read
+    // and advanced from the RT thread inside process_with_scope; reset to 0
+    // by prepare(). Doubles as the timestamp source for the multi-Replace
+    // freshness tie-break. Survives schedule rebuilds — the user-visible
+    // "samples since prepare" value is not invalidated by routing changes.
+    uint64_t m_num_processed_samples = 0;
 
     // Writer mutex — serializes all non-RT methods
     std::mutex m_writer_mutex;

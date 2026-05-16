@@ -47,13 +47,31 @@ struct VoiceBuffers {
     std::vector<float> m_replace_storage;
     std::vector<uint8_t> m_replace_active_storage;
 
+    // Per-sample priority watermark for inline multi-Replace gating. Only
+    // allocated when the target has ≥2 Replace/ReplaceHold routings — single-
+    // Replace targets keep the unconditional-write fast path with this flag
+    // false and the buffer empty.
+    //
+    // m_replace_freshness_storage is the parallel 64-bit tie-break value:
+    // bit 63 set = a live writer wrote this slot; lower 63 bits carry the
+    // routing's active_phase_start (live) or last_active_sample (held).
+    // Allocated together with the priority buffer.
+    bool m_has_replace_priority = false;
+    std::vector<uint32_t> m_replace_priority_storage;
+    std::vector<uint64_t> m_replace_freshness_storage;
+
     VoiceBuffers() = default;
 
-    VoiceBuffers(uint32_t num_voices, size_t block_size, bool has_additive, bool has_replace)
+    VoiceBuffers(uint32_t num_voices,
+                 size_t block_size,
+                 bool has_additive,
+                 bool has_replace,
+                 bool has_replace_priority)
         : m_num_voices(num_voices)
         , m_block_size(block_size)
         , m_has_additive(has_additive)
-        , m_has_replace(has_replace) {
+        , m_has_replace(has_replace)
+        , m_has_replace_priority(has_replace_priority) {
         const size_t total = static_cast<size_t>(num_voices) * block_size;
 
         if (m_has_additive) { m_additive_storage.assign(total, 0.0f); }
@@ -70,6 +88,11 @@ struct VoiceBuffers {
         if (m_has_replace) {
             m_replace_storage.assign(total, 0.0f);
             m_replace_active_storage.assign(total, 0);
+        }
+
+        if (m_has_replace_priority) {
+            m_replace_priority_storage.assign(total, 0u);
+            m_replace_freshness_storage.assign(total, uint64_t{0});
         }
     }
 
@@ -103,6 +126,26 @@ struct VoiceBuffers {
         return m_replace_active_storage.data() + static_cast<size_t>(v) * m_block_size;
     }
 
+    uint32_t* replace_priority_voice(uint32_t v) {
+        assert(m_has_replace_priority && v < m_num_voices);
+        return m_replace_priority_storage.data() + static_cast<size_t>(v) * m_block_size;
+    }
+
+    const uint32_t* replace_priority_voice(uint32_t v) const {
+        assert(m_has_replace_priority && v < m_num_voices);
+        return m_replace_priority_storage.data() + static_cast<size_t>(v) * m_block_size;
+    }
+
+    uint64_t* replace_freshness_voice(uint32_t v) {
+        assert(m_has_replace_priority && v < m_num_voices);
+        return m_replace_freshness_storage.data() + static_cast<size_t>(v) * m_block_size;
+    }
+
+    const uint64_t* replace_freshness_voice(uint32_t v) const {
+        assert(m_has_replace_priority && v < m_num_voices);
+        return m_replace_freshness_storage.data() + static_cast<size_t>(v) * m_block_size;
+    }
+
     void clear_per_block() {
         if (m_has_additive) { std::ranges::fill(m_additive_storage, 0.0f); }
         if (m_has_additive || m_has_replace) {
@@ -112,6 +155,10 @@ struct VoiceBuffers {
         if (m_has_replace) {
             std::ranges::fill(m_replace_storage, 0.0f);
             std::ranges::fill(m_replace_active_storage, uint8_t{0});
+        }
+        if (m_has_replace_priority) {
+            std::ranges::fill(m_replace_priority_storage, uint32_t{0});
+            std::ranges::fill(m_replace_freshness_storage, uint64_t{0});
         }
     }
 
@@ -149,6 +196,15 @@ struct MonoBuffers {
     std::vector<float> m_replace_buffer;
     std::vector<uint8_t> m_replace_active;
 
+    // Per-sample priority watermark for inline multi-Replace gating. Only
+    // allocated when the target has ≥2 Replace/ReplaceHold routings.
+    // m_replace_freshness is the parallel tie-break: bit 63 = "live writer
+    // owns this slot," lower 63 bits carry the active_phase_start (live) or
+    // last_active_sample (held).
+    bool m_has_replace_priority = false;
+    std::vector<uint32_t> m_replace_priority;
+    std::vector<uint64_t> m_replace_freshness;
+
     // Change points — allocated whenever m_has_additive || m_has_replace.
     // uint8_t (not bool) so callers can write through a pointer.
     std::vector<uint8_t> m_change_point_flags;
@@ -156,12 +212,19 @@ struct MonoBuffers {
 
     MonoBuffers() = default;
 
-    MonoBuffers(size_t block_size, bool has_additive, bool has_replace)
-        : m_block_size(block_size), m_has_additive(has_additive), m_has_replace(has_replace) {
+    MonoBuffers(size_t block_size, bool has_additive, bool has_replace, bool has_replace_priority)
+        : m_block_size(block_size)
+        , m_has_additive(has_additive)
+        , m_has_replace(has_replace)
+        , m_has_replace_priority(has_replace_priority) {
         if (m_has_additive) { m_additive_buffer.assign(block_size, 0.0f); }
         if (m_has_replace) {
             m_replace_buffer.assign(block_size, 0.0f);
             m_replace_active.assign(block_size, 0);
+        }
+        if (m_has_replace_priority) {
+            m_replace_priority.assign(block_size, 0u);
+            m_replace_freshness.assign(block_size, uint64_t{0});
         }
         if (m_has_additive || m_has_replace) {
             m_change_point_flags.assign(block_size, 0);
@@ -179,6 +242,10 @@ struct MonoBuffers {
         if (m_has_replace) {
             std::ranges::fill(m_replace_buffer, 0.0f);
             std::ranges::fill(m_replace_active, uint8_t{0});
+        }
+        if (m_has_replace_priority) {
+            std::ranges::fill(m_replace_priority, uint32_t{0});
+            std::ranges::fill(m_replace_freshness, uint64_t{0});
         }
     }
 
