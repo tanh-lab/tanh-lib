@@ -221,11 +221,14 @@ if(TANH_BUILD_STATE)
     # Enable installation for nlohmann_json so it can be exported with tanh_state
     # set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
     
+    # Fetch the release tarball instead of cloning the repo — the full git
+    # history is ~150MB while the release archive is a few MB, and the tarball
+    # is content-addressable so CMake will reuse a cached copy across build
+    # folders.
     FetchContent_Declare(
         nlohmann_json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.12.0
-        GIT_SHALLOW TRUE
+        URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+        URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
         SYSTEM
     )
     FetchContent_MakeAvailable(nlohmann_json)
