@@ -21,6 +21,14 @@ namespace thl::dsp::fx {
  * the output removes the static DC offset the transfer function produces for
  * non-zero Symmetry.
  *
+ * Output is amplitude-normalized to the input: a one-pole envelope follower
+ * tracks both input and post-fold output level, and the output is scaled so
+ * its envelope matches the input's. This prevents two artifacts: noise from
+ * a non-zero Symmetry/Drive when the input is silent (Symmetry synthesises
+ * DC from nothing), and large loudness jumps when Drive/Folds/Symmetry are
+ * randomized while audio is playing. Drive/Folds/Symmetry still control the
+ * harmonic content; they no longer control the level.
+ *
  * Processes all input channels in-place.
  *
  * Parameters:
@@ -61,6 +69,13 @@ private:
     std::vector<float> m_dc_x_prev;
     std::vector<float> m_dc_y_prev;
     float m_dc_pole = 0.0f;
+
+    // One-pole envelope followers on |input| and |post-fold output|. Output
+    // is rescaled per sample so its envelope tracks the input envelope —
+    // makes the wavefolder loudness-flat across Drive/Folds/Symmetry.
+    std::vector<float> m_input_env;
+    std::vector<float> m_output_env;
+    float m_env_pole = 0.0f;
 };
 
 template <>
