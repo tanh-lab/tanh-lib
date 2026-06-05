@@ -657,6 +657,407 @@ TEST(ModulationMatrix, Serialization_ReplaceRangeRoundTrip) {
     EXPECT_FLOAT_EQ(json2[0]["replace_range_max"].get<float>(), 900.0f);
 }
 
+// ── ReplaceHold divergent active/hold priority ──────────────────────────────
+
+// Source whose output is active for the first half of every block and
+// inactive for the second half. fully_active is false so the per-sample
+// active mask is consulted by the apply helpers.
+class HalfActiveSource : public ModulationSource {
+public:
+    float m_value = 0.0f;
+
+    HalfActiveSource()
+        : ModulationSource(thl::modulation::k_global_scope, /*fully_active=*/false) {}
+
+    void prepare(double /*sr*/, size_t spb, uint32_t voice_count) override {
+        resize_buffers(spb, voice_count);
+    }
+
+    void process(size_t num_samples, size_t offset = 0) override {
+        for (size_t i = offset; i < offset + num_samples; ++i) {
+            m_output_buffer[i] = m_value;
+            if (i < num_samples / 2) { set_output_active(static_cast<uint32_t>(i)); }
+        }
+        if (num_samples > 0) { record_change_point(static_cast<uint32_t>(offset)); }
+    }
+};
+
+TEST(ModulationMatrix, ReplaceHold_DivergentActiveAndHoldPriority) {
+    // Routing A's source goes active→inactive mid-block. Its active priority
+    // outranks B; its hold priority is lower than B's. Routing B is fully
+    // active across the block at a middling priority. Expectation: while A is
+    // live, A's value wins; once A is held, B's live value takes over.
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    HalfActiveSource src_a;
+    src_a.m_value = 0.9f;
+    ConstSource src_b;
+    src_b.m_value = 0.4f;
+
+    matrix.add_source("a", &src_a);
+    matrix.add_source("b", &src_b);
+    auto handle = matrix.get_smart_handle<float>("param");
+
+    ModulationRouting r_a("a", "param", 1.0f);
+    r_a.m_combine_mode = CombineMode::ReplaceHold;
+    r_a.m_replace_priority = 2;
+    r_a.m_replace_hold_priority = 0u;
+    matrix.add_routing(r_a);
+
+    ModulationRouting r_b("b", "param", 1.0f);
+    r_b.m_combine_mode = CombineMode::ReplaceHold;
+    r_b.m_replace_priority = 1;
+    r_b.m_replace_hold_priority = 1u;
+    matrix.add_routing(r_b);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // First half: A live (prio 2) > B live (prio 1) → A's value wins.
+    for (size_t i = 0; i < k_block_size / 2; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.9f)
+            << "live-A phase mismatch at sample " << i;
+    }
+    // Second half: A held (prio 0) < B live (prio 1) → B's value wins.
+    for (size_t i = k_block_size / 2; i < k_block_size; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.4f)
+            << "held-A phase mismatch at sample " << i;
+    }
+}
+
+TEST(ModulationMatrix, ReplaceHold_HoldPriorityDefaultsToActivePriority) {
+    // When m_replace_hold_priority is unset, the held write inherits
+    // m_replace_priority — preserves pre-feature behavior. With both
+    // routings ReplaceHold and A's active-only source going inactive,
+    // A's held value should still outrank B because A's hold priority
+    // inherits its active priority of 2.
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    HalfActiveSource src_a;
+    src_a.m_value = 0.9f;
+    ConstSource src_b;
+    src_b.m_value = 0.4f;
+
+    matrix.add_source("a", &src_a);
+    matrix.add_source("b", &src_b);
+    auto handle = matrix.get_smart_handle<float>("param");
+
+    ModulationRouting r_a("a", "param", 1.0f);
+    r_a.m_combine_mode = CombineMode::ReplaceHold;
+    r_a.m_replace_priority = 2;
+    // m_replace_hold_priority left unset → inherits 2.
+    matrix.add_routing(r_a);
+
+    ModulationRouting r_b("b", "param", 1.0f);
+    r_b.m_combine_mode = CombineMode::ReplaceHold;
+    r_b.m_replace_priority = 1;
+    matrix.add_routing(r_b);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    for (size_t i = 0; i < k_block_size; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.9f)
+            << "A should win whole block (live then held at inherited prio 2) at " << i;
+    }
+}
+
+// ── Freshness tie-break tests ──────────────────────────────────────────────
+
+// Source that's active inside a half-open [start, end) sample window each
+// block and inactive elsewhere. Lets tests stage routings that come live at
+// different times within the same block so the tie-break can be exercised.
+class WindowedActiveSource : public ModulationSource {
+public:
+    float m_value = 0.0f;
+    size_t m_start = 0;
+    size_t m_end = 0;
+
+    WindowedActiveSource()
+        : ModulationSource(thl::modulation::k_global_scope, /*fully_active=*/false) {}
+
+    void prepare(double /*sr*/, size_t spb, uint32_t voice_count) override {
+        resize_buffers(spb, voice_count);
+    }
+
+    void process(size_t num_samples, size_t offset = 0) override {
+        // The base ModulationSource::clear_per_block() intentionally leaves
+        // m_output_active alone (authored state). Clear here so each block's
+        // window is independent of the prior block's set bits.
+        if (offset == 0) { clear_output_active(); }
+        for (size_t i = offset; i < offset + num_samples; ++i) {
+            m_output_buffer[i] = m_value;
+            if (i >= m_start && i < m_end) { set_output_active(static_cast<uint32_t>(i)); }
+        }
+        if (num_samples > 0) { record_change_point(static_cast<uint32_t>(offset)); }
+    }
+};
+
+TEST(ModulationMatrix, ReplaceHold_FreshestHeldWinsAtSamePriority) {
+    // Two ReplaceHold routings at equal priority. In block 1, A is live
+    // first, then B becomes live (and ends the block held with the more
+    // recent active phase). In block 2, both sources are silent, so both
+    // routings are in their held phase — B's hold should win every sample
+    // because B's last_active_sample is greater than A's.
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    WindowedActiveSource src_a;
+    src_a.m_value = 0.3f;
+    src_a.m_start = 0;
+    src_a.m_end = k_block_size / 4;
+
+    WindowedActiveSource src_b;
+    src_b.m_value = 0.7f;
+    src_b.m_start = k_block_size / 2;
+    src_b.m_end = (3 * k_block_size) / 4;
+
+    matrix.add_source("a", &src_a);
+    matrix.add_source("b", &src_b);
+    auto handle = matrix.get_smart_handle<float>("param");
+
+    ModulationRouting r_a("a", "param", 1.0f);
+    r_a.m_combine_mode = CombineMode::ReplaceHold;
+    r_a.m_replace_priority = 1;
+    matrix.add_routing(r_a);
+
+    ModulationRouting r_b("b", "param", 1.0f);
+    r_b.m_combine_mode = CombineMode::ReplaceHold;
+    r_b.m_replace_priority = 1;
+    matrix.add_routing(r_b);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);  // Block 1: live phases happen.
+
+    // Silence both sources so block 2 is purely held-vs-held.
+    src_a.m_end = 0;
+    src_b.m_end = 0;
+
+    matrix.process(k_block_size);
+    for (size_t i = 0; i < k_block_size; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.7f)
+            << "B should hold every sample of block 2 (B's last_active is more recent) at " << i;
+    }
+}
+
+TEST(ModulationMatrix, Replace_LiveLatestStartedWinsAtSamePriority) {
+    // Two Replace routings at equal priority both becoming live within the
+    // same block. A starts at sample 0; B starts at sample N/2. In the
+    // overlap region [N/2..3N/4) both are live — the one that started
+    // later (B) should win via freshness tie-break.
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    WindowedActiveSource src_a;
+    src_a.m_value = 0.3f;
+    src_a.m_start = 0;
+    src_a.m_end = (3 * k_block_size) / 4;
+
+    WindowedActiveSource src_b;
+    src_b.m_value = 0.7f;
+    src_b.m_start = k_block_size / 2;
+    src_b.m_end = (3 * k_block_size) / 4;
+
+    matrix.add_source("a", &src_a);
+    matrix.add_source("b", &src_b);
+    auto handle = matrix.get_smart_handle<float>("param");
+
+    ModulationRouting r_a("a", "param", 1.0f);
+    r_a.m_combine_mode = CombineMode::Replace;
+    r_a.m_replace_priority = 1;
+    matrix.add_routing(r_a);
+
+    ModulationRouting r_b("b", "param", 1.0f);
+    r_b.m_combine_mode = CombineMode::Replace;
+    r_b.m_replace_priority = 1;
+    matrix.add_routing(r_b);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+
+    // [0..N/2): only A live → A's value.
+    for (size_t i = 0; i < k_block_size / 2; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.3f) << "A live alone at " << i;
+    }
+    // [N/2..3N/4): both live. B started later → B wins.
+    for (size_t i = k_block_size / 2; i < (3 * k_block_size) / 4; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.7f)
+            << "B started later, should win tie at " << i;
+    }
+}
+
+TEST(ModulationMatrix, ReplaceHold_HighHoldPriorityBeatsLowerLive) {
+    // B's hold priority outranks A's active priority. Block 1 arms B's hold
+    // by giving it a brief live phase. In block 2, A is live throughout but
+    // at the lower active priority — B's held value (hold priority 2) must
+    // win every sample over A's live value (active priority 1).
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    WindowedActiveSource src_a;
+    src_a.m_value = 0.3f;
+    src_a.m_start = 0;
+    src_a.m_end = 0;  // silent in block 1
+
+    WindowedActiveSource src_b;
+    src_b.m_value = 0.7f;
+    src_b.m_start = 0;
+    src_b.m_end = k_block_size;  // active throughout block 1 → arms B's hold
+
+    matrix.add_source("a", &src_a);
+    matrix.add_source("b", &src_b);
+    auto handle = matrix.get_smart_handle<float>("param");
+
+    ModulationRouting r_a("a", "param", 1.0f);
+    r_a.m_combine_mode = CombineMode::Replace;
+    r_a.m_replace_priority = 1;
+    matrix.add_routing(r_a);
+
+    ModulationRouting r_b("b", "param", 1.0f);
+    r_b.m_combine_mode = CombineMode::ReplaceHold;
+    r_b.m_replace_priority = 1;
+    r_b.m_replace_hold_priority = 2u;
+    matrix.add_routing(r_b);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);  // Block 1: B live, hold armed.
+
+    // Block 2: A live, B held. B's hold priority strictly higher → B wins.
+    src_a.m_end = k_block_size;
+    src_b.m_end = 0;
+    matrix.process(k_block_size);
+
+    for (size_t i = 0; i < k_block_size; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.7f)
+            << "B held (hold prio 2) must beat A live (prio 1) at " << i;
+    }
+}
+
+TEST(ModulationMatrix, ReplaceHold_LiveAlwaysBeatsHeldAtSamePriority) {
+    // A held throughout the block (came live in a prior block), B live
+    // throughout. Same priority. The bit-packed live-bit must make B win
+    // every sample — held cannot outrank live at equal priority regardless
+    // of how recent A's last live phase was.
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    WindowedActiveSource src_a;
+    src_a.m_value = 0.3f;
+    src_a.m_start = 0;
+    src_a.m_end = k_block_size;  // active full block 1, then never again
+
+    ConstSource src_b;
+    src_b.m_value = 0.7f;
+
+    matrix.add_source("a", &src_a);
+    matrix.add_source("b", &src_b);
+    auto handle = matrix.get_smart_handle<float>("param");
+
+    ModulationRouting r_a("a", "param", 1.0f);
+    r_a.m_combine_mode = CombineMode::ReplaceHold;
+    r_a.m_replace_priority = 1;
+    matrix.add_routing(r_a);
+
+    ModulationRouting r_b("b", "param", 1.0f);
+    r_b.m_combine_mode = CombineMode::Replace;
+    r_b.m_replace_priority = 1;
+    matrix.add_routing(r_b);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);  // A live, B live → B wins (later started, both live).
+
+    src_a.m_end = 0;  // A inactive for block 2 → falls back to held.
+    matrix.process(k_block_size);
+    for (size_t i = 0; i < k_block_size; ++i) {
+        EXPECT_FLOAT_EQ(handle.load(static_cast<uint32_t>(i)), 0.7f)
+            << "B live must beat A held at same priority, sample " << i;
+    }
+}
+
+TEST(ModulationMatrix, GetNumProcessedSamples_Tracks) {
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    EXPECT_EQ(matrix.get_num_processed_samples(), uint64_t{0});
+    matrix.process(128);
+    EXPECT_EQ(matrix.get_num_processed_samples(), uint64_t{128});
+    matrix.process(256);
+    EXPECT_EQ(matrix.get_num_processed_samples(), uint64_t{384});
+
+    // prepare() resets the counter.
+    matrix.prepare(k_sample_rate, k_block_size);
+    EXPECT_EQ(matrix.get_num_processed_samples(), uint64_t{0});
+}
+
+TEST(ModulationMatrix, Serialization_ReplaceHoldPriorityRoundTrip) {
+    thl::State state;
+    state.create("param", modulatable_float(0.5f));
+    ModulationMatrix matrix(state);
+
+    ConstSource src;
+    matrix.add_source("src", &src);
+    matrix.get_smart_handle<float>("param");
+
+    ModulationRouting routing;
+    routing.m_source_id = "src";
+    routing.m_target_id = "param";
+    routing.m_combine_mode = CombineMode::ReplaceHold;
+    routing.m_replace_priority = 5;
+    routing.m_replace_hold_priority = 7u;
+    matrix.add_routing(routing);
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    auto json = matrix.to_json(false);
+    ASSERT_TRUE(json.is_array());
+    ASSERT_EQ(json.size(), 1u);
+    EXPECT_EQ(json[0]["replace_priority"].get<uint32_t>(), 5u);
+    EXPECT_EQ(json[0]["replace_hold_priority"].get<uint32_t>(), 7u);
+
+    ModulationMatrix matrix2(state);
+    matrix2.add_source("src", &src);
+    matrix2.get_smart_handle<float>("param");
+    matrix2.from_json(json);
+    matrix2.prepare(k_sample_rate, k_block_size);
+
+    auto json2 = matrix2.to_json(false);
+    ASSERT_EQ(json2.size(), 1u);
+    EXPECT_EQ(json2[0]["replace_hold_priority"].get<uint32_t>(), 7u);
+}
+
+TEST(ModulationMatrix, Serialization_ReplaceHoldPriorityOmittedWhenUnset) {
+    // An unset hold-priority must not serialize a key — keeps presets clean
+    // and lets old loaders ignore the field gracefully.
+    thl::State state;
+    state.create("param", modulatable_float(0.0f));
+    ModulationMatrix matrix(state);
+
+    ConstSource src;
+    matrix.add_source("src", &src);
+    matrix.get_smart_handle<float>("param");
+
+    ModulationRouting routing;
+    routing.m_source_id = "src";
+    routing.m_target_id = "param";
+    routing.m_combine_mode = CombineMode::ReplaceHold;
+    routing.m_replace_priority = 3;
+    matrix.add_routing(routing);
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    auto json = matrix.to_json(false);
+    ASSERT_EQ(json.size(), 1u);
+    EXPECT_FALSE(json[0].contains("replace_hold_priority"));
+}
+
 // ── Routing ID Tests ────────────────────────────────────────────────────────
 
 TEST(ModulationMatrix, AddRouting_ReturnsUniqueIDs) {

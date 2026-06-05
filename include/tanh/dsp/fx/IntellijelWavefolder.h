@@ -1,7 +1,10 @@
 #pragma once
 
+#include <vector>
+
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/SmoothedValue.h>
 
 namespace thl::dsp::fx {
 
@@ -11,7 +14,20 @@ namespace thl::dsp::fx {
  * Models the analog wavefolder topology found in the Intellijel µFold /
  * Bifold modules. Uses a sine-shaping transfer function with a continuous
  * `Folds` parameter, combined with an optional JFET-like soft saturation
- * stage for tonal warmth. Stateless — no per-sample history.
+ * stage for tonal warmth.
+ *
+ * Per-sample parameter smoothing prevents zipper noise when Drive/Folds/
+ * Symmetry/JfetTone are modulated at control rate. A one-pole DC blocker on
+ * the output removes the static DC offset the transfer function produces for
+ * non-zero Symmetry.
+ *
+ * Output is amplitude-normalized to the input: a one-pole envelope follower
+ * tracks both input and post-fold output level, and the output is scaled so
+ * its envelope matches the input's. This prevents two artifacts: noise from
+ * a non-zero Symmetry/Drive when the input is silent (Symmetry synthesises
+ * DC from nothing), and large loudness jumps when Drive/Folds/Symmetry are
+ * randomized while audio is playing. Drive/Folds/Symmetry still control the
+ * harmonic content; they no longer control the level.
  *
  * Processes all input channels in-place.
  *
@@ -43,6 +59,23 @@ protected:
 private:
     static float process_sample(float x, float drive, float folds, float symmetry, float jfet_tone);
     static float jfet_saturate(float x);
+
+    utils::SmoothedValue m_smoothed_drive;
+    utils::SmoothedValue m_smoothed_folds;
+    utils::SmoothedValue m_smoothed_symmetry;
+    utils::SmoothedValue m_smoothed_jfet_tone;
+
+    // One-pole DC blocker — y[n] = x[n] - x[n-1] + pole * y[n-1].
+    std::vector<float> m_dc_x_prev;
+    std::vector<float> m_dc_y_prev;
+    float m_dc_pole = 0.0f;
+
+    // One-pole envelope followers on |input| and |post-fold output|. Output
+    // is rescaled per sample so its envelope tracks the input envelope —
+    // makes the wavefolder loudness-flat across Drive/Folds/Symmetry.
+    std::vector<float> m_input_env;
+    std::vector<float> m_output_env;
+    float m_env_pole = 0.0f;
 };
 
 template <>

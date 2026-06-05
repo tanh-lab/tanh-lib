@@ -72,6 +72,11 @@ set (PROJECT_NAME tanh)
 
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_SHORT})
 
+# Exposed for downstream consumers (e.g. cosmos) that want to reuse our
+# shared CMake helpers like gtest-deps.cmake.
+set(TANH_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake" CACHE INTERNAL
+    "Path to tanh-lib's shared CMake helpers")
+
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(TANH_OPERATING_SYSTEM "iOS")
     set(TANH_PLATFORM_DEFINE "THL_PLATFORM_IOS")
@@ -216,11 +221,14 @@ if(TANH_BUILD_STATE)
     # Enable installation for nlohmann_json so it can be exported with tanh_state
     # set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
     
+    # Fetch the release tarball instead of cloning the repo — the full git
+    # history is ~150MB while the release archive is a few MB, and the tarball
+    # is content-addressable so CMake will reuse a cached copy across build
+    # folders.
     FetchContent_Declare(
         nlohmann_json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.12.0
-        GIT_SHALLOW TRUE
+        URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+        URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
         SYSTEM
     )
     FetchContent_MakeAvailable(nlohmann_json)
@@ -287,6 +295,10 @@ if(TANH_BUILD_DSP)
 
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
+
+        src/dsp/transport/InternalTransportClock.cpp
+
+        src/dsp/metronome/MetronomePlayer.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_dsp PROPERTIES 
