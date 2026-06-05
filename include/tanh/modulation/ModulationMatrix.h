@@ -117,6 +117,16 @@ public:
     void process_with_scope(const ProcessingConfig& config,
                             size_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
+    // Total number of samples passed through process_with_scope() since the
+    // last prepare(). Monotonically increasing within a prepare()-bounded
+    // session; reset to 0 by prepare(); unaffected by schedule rebuilds. The
+    // matrix uses this internally as the freshness timestamp source for the
+    // multi-Replace tie-break, so callers can use the same value to
+    // correlate external events with the matrix's notion of "now."
+    [[nodiscard]] uint64_t get_num_processed_samples() const TANH_NONBLOCKING_FUNCTION {
+        return m_num_processed_samples;
+    }
+
     // ── Scope registry ───────────────────────────────────────────────────
     // Register (or look up) a named polyphony scope. Returns a ModulationScope
     // handle whose m_name points into stable storage owned by this matrix.
@@ -278,6 +288,13 @@ private:
 
     double m_sample_rate = 48000.0;
     size_t m_samples_per_block = 512;
+
+    // Monotonic count of samples processed since the last prepare(). Read
+    // and advanced from the RT thread inside process_with_scope; reset to 0
+    // by prepare(). Doubles as the timestamp source for the multi-Replace
+    // freshness tie-break. Survives schedule rebuilds — the user-visible
+    // "samples since prepare" value is not invalidated by routing changes.
+    uint64_t m_num_processed_samples = 0;
 
     // Writer mutex — serializes all non-RT methods
     std::mutex m_writer_mutex;

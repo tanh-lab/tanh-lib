@@ -116,7 +116,11 @@ TEST(ConcurrentRebuild, NoNullDerefUnderConcurrentRoutingChurn) {
                 default: break;
             }
             writer_iterations.fetch_add(1, std::memory_order_relaxed);
+#ifndef _WIN32
+            // Skipped on Windows: scheduler granularity (~1–15ms) makes this
+            // sleep far longer than intended and starves the writer loop.
             std::this_thread::sleep_for(50us);
+#endif
         }
     });
 

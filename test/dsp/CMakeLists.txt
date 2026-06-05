@@ -8,6 +8,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_AudioBufferView.cpp
 	test_RingBuffer.cpp
 	test_Limiter.cpp
+	test_InternalTransportClock.cpp
+	test_MetronomePlayer.cpp
 )
 
 if(TARGET tanh_resonator)

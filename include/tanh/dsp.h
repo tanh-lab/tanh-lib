@@ -9,3 +9,6 @@
 #include "dsp/BaseProcessor.h"
 #include "dsp/synth/SineProcessor.h"
 #include "dsp/granular/GrainProcessor.h"
+#include "dsp/metronome/MetronomePlayer.h"
+#include "dsp/transport/InternalTransportClock.h"
+#include "dsp/transport/TransportClock.h"

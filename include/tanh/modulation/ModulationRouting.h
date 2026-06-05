@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -61,11 +62,29 @@ struct ModulationRouting {
     // wins when multiple active Replace routings overlap. Default 0 — single
     // Replace routings behave identically regardless of priority value, so
     // legacy presets without the field load as 0 without behavior change.
-    // On equal priority, the routing whose source is scheduled later in the
-    // Tarjan SCC order wins (the late writer overwrites the earlier write).
+    //
+    // At equal priority, the matrix breaks ties by freshness:
+    //   1. A live writer always beats a held writer at the same priority.
+    //   2. Among two live writers, the one whose current live phase started
+    //      later (more recent inactive→active transition) wins.
+    //   3. Among two held writers, the one whose source was most recently
+    //      active wins.
+    //   4. If even freshness ties (e.g., both start the same live phase at
+    //      the same sample), schedule order — the later-scheduled source
+    //      overwrites the earlier one within that sample.
     // Only meaningful for Replace / ReplaceHold combine modes; ignored for
     // Additive.
     uint32_t m_replace_priority = 0;
+
+    // Separate priority for the held-write branch of ReplaceHold. When the
+    // source goes inactive but has previously been active, the routing
+    // continues writing m_held_value at this priority instead of
+    // m_replace_priority — so a held source can yield to a now-active
+    // lower-priority peer (or vice-versa) without the user re-arming
+    // priorities at runtime. std::nullopt (the default) inherits
+    // m_replace_priority, preserving the pre-feature behavior. Ignored for
+    // plain Replace and Additive combine modes.
+    std::optional<uint32_t> m_replace_hold_priority;
 
     // Replace range — maps source [0,1] to [min, max] in plain parameter units.
     // Only meaningful for Replace/ReplaceHold combine modes.
