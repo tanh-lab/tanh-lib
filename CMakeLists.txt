@@ -295,6 +295,7 @@ if(TANH_BUILD_DSP)
 
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
+        src/dsp/fx/StereoFDN.cpp
 
         src/dsp/transport/InternalTransportClock.cpp
 
@@ -645,7 +646,11 @@ if (TANH_WITH_TESTS)
     endif()
 endif()
 
-if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+if(TANH_WITH_EXAMPLES AND TANH_BUILD_DSP AND NOT TANH_OPERATING_SYSTEM STREQUAL "iOS")
+    add_subdirectory(examples/fdn-example)
+endif()
+
+if(TANH_WITH_EXAMPLES AND TANH_OPERATING_SYSTEM STREQUAL "iOS")
     add_subdirectory(examples/ios/audio-io)
 endif()
 

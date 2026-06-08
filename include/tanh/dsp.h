@@ -2,6 +2,7 @@
 
 #include "dsp/utils/ADSR.h"
 #include "dsp/utils/HannWindow.h"
+#include "dsp/utils/LinearSmootherBank.h"
 #include "dsp/utils/Scales.h"
 #include "dsp/utils/SmoothedValue.h"
 
