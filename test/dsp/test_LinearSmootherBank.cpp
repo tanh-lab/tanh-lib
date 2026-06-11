@@ -48,6 +48,19 @@ TEST(LinearSmootherBank, ZeroRampSnapsToTarget) {
     EXPECT_EQ(smoothers.samples_remaining(0), 0u);
 }
 
+TEST(LinearSmootherBank, TargetCanOverrideRampLength) {
+    LinearSmootherBank smoothers;
+    smoothers.resize(1);
+    smoothers.set_ramp_samples(2);
+    smoothers.set_current_and_target(0, 0.0f);
+
+    smoothers.set_target(0, 8.0f, 4);
+
+    EXPECT_FLOAT_EQ(smoothers.next(0), 2.0f);
+    EXPECT_FLOAT_EQ(smoothers.next(0), 4.0f);
+    EXPECT_EQ(smoothers.samples_remaining(0), 2u);
+}
+
 TEST(LinearSmootherBank, AdvancesAllRequestedLanes) {
     LinearSmootherBank smoothers;
     smoothers.resize(3);

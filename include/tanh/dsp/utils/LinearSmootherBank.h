@@ -50,6 +50,14 @@ public:
         start_ramp(lane);
     }
 
+    void set_target(size_t lane, float value, size_t ramp_samples) noexcept {
+        assert(lane < m_current.size());
+        if (value == m_target[lane]) { return; }
+
+        m_target[lane] = value;
+        start_ramp(lane, ramp_samples);
+    }
+
     void snap_to_targets() noexcept {
         for (size_t lane = 0; lane < m_current.size(); ++lane) {
             m_current[lane] = m_target[lane];
@@ -97,15 +105,17 @@ public:
     }
 
 private:
-    void start_ramp(size_t lane) noexcept {
-        if (m_ramp_samples == 0) {
+    void start_ramp(size_t lane) noexcept { start_ramp(lane, m_ramp_samples); }
+
+    void start_ramp(size_t lane, size_t ramp_samples) noexcept {
+        if (ramp_samples == 0) {
             m_current[lane] = m_target[lane];
             m_step[lane] = 0.0f;
             m_samples_remaining[lane] = 0;
             return;
         }
 
-        m_samples_remaining[lane] = m_ramp_samples;
+        m_samples_remaining[lane] = ramp_samples;
         m_step[lane] =
             (m_target[lane] - m_current[lane]) / static_cast<float>(m_samples_remaining[lane]);
     }
