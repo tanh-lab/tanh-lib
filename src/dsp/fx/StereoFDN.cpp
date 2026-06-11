@@ -1,10 +1,16 @@
 #include <tanh/dsp/fx/StereoFDN.h>
 
-#include <array>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <numbers>
 #include <utility>
 #include <vector>
+
+#include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl::dsp::fx {
 
@@ -16,7 +22,6 @@ constexpr float k_min_base_time_ms = 1.0f;
 constexpr float k_min_damping_cutoff_hz = 800.0f;
 constexpr float k_max_damping_cutoff_hz = 20000.0f;
 constexpr float k_max_delay_slew_samples_per_sample = 0.5f;
-constexpr float k_pi = 3.14159265358979323846f;
 
 constexpr std::array<float, 5> k_left_delay_base_ratios = {0.67f, 0.89f, 1.13f, 1.41f, 1.73f};
 constexpr std::array<float, 5> k_right_delay_base_ratios = {0.71f, 0.97f, 1.19f, 1.53f, 1.81f};
@@ -80,7 +85,8 @@ float damping_to_lowpass_coeff(float damping, double sample_rate) {
     const float cutoff = std::exp(std::log(k_max_damping_cutoff_hz) * (1.0f - d) +
                                   std::log(k_min_damping_cutoff_hz) * d);
     const float clamped_cutoff = std::clamp(cutoff, 0.0f, static_cast<float>(sample_rate * 0.45));
-    return 1.0f - std::exp(-2.0f * k_pi * clamped_cutoff / static_cast<float>(sample_rate));
+    return 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> * clamped_cutoff /
+                           static_cast<float>(sample_rate));
 }
 
 void normalize_by_power_iteration(std::vector<float>& matrix, size_t size) {
@@ -91,8 +97,8 @@ void normalize_by_power_iteration(std::vector<float>& matrix, size_t size) {
     std::vector<float> z(size, 0.0f);
 
     for (size_t iter = 0; iter < 20; ++iter) {
-        std::fill(w.begin(), w.end(), 0.0f);
-        std::fill(z.begin(), z.end(), 0.0f);
+        std::ranges::fill(w, 0.0f);
+        std::ranges::fill(z, 0.0f);
 
         for (size_t row = 0; row < size; ++row) {
             for (size_t col = 0; col < size; ++col) { w[row] += matrix[row * size + col] * v[col]; }
@@ -102,19 +108,19 @@ void normalize_by_power_iteration(std::vector<float>& matrix, size_t size) {
         }
 
         float norm = 0.0f;
-        for (float value : z) { norm += value * value; }
+        for (const float value : z) { norm += value * value; }
         norm = std::sqrt(norm);
         if (norm <= 0.0f) { return; }
         for (size_t i = 0; i < size; ++i) { v[i] = z[i] / norm; }
     }
 
-    std::fill(w.begin(), w.end(), 0.0f);
+    std::ranges::fill(w, 0.0f);
     for (size_t row = 0; row < size; ++row) {
         for (size_t col = 0; col < size; ++col) { w[row] += matrix[row * size + col] * v[col]; }
     }
 
     float spectral_norm = 0.0f;
-    for (float value : w) { spectral_norm += value * value; }
+    for (const float value : w) { spectral_norm += value * value; }
     spectral_norm = std::sqrt(spectral_norm);
     if (spectral_norm > 0.0f) {
         for (float& value : matrix) { value /= spectral_norm; }
@@ -127,7 +133,8 @@ void make_random_orthogonal(std::vector<float>& matrix, size_t size) {
 
     for (size_t col = 0; col < size; ++col) {
         for (size_t row = 0; row < size; ++row) {
-            column[row] = std::sin(static_cast<float>((row + 1) * 12.9898 + (col + 1) * 78.233));
+            column[row] = std::sin(static_cast<float>(row + 1) * 12.9898f +
+                                   static_cast<float>(col + 1) * 78.233f);
         }
 
         for (size_t prev = 0; prev < col; ++prev) {
@@ -141,7 +148,7 @@ void make_random_orthogonal(std::vector<float>& matrix, size_t size) {
         }
 
         float norm = 0.0f;
-        for (float value : column) { norm += value * value; }
+        for (const float value : column) { norm += value * value; }
         norm = std::sqrt(norm);
         if (norm <= 1.0e-6f) {
             for (size_t row = 0; row < size; ++row) { column[row] = row == col ? 1.0f : 0.0f; }
@@ -161,14 +168,14 @@ std::pair<float, float> input_pan_to_gains(float input_pan) {
 }  // namespace
 
 StereoFDN::StereoFDN(size_t delay_lines_per_channel) {
-    m_scalar_smoothers.resize(k_num_scalar_lanes);
+    m_scalar_smoothers.resize(NumScalarLanes);
     m_scalar_smoothers.set_ramp_samples(m_linear_smoothing_samples);
-    m_scalar_smoothers.set_current_and_target(k_feedback_lane, m_feedback);
-    m_scalar_smoothers.set_current_and_target(k_damping_lane, m_damping);
-    m_scalar_smoothers.set_current_and_target(k_cross_feedback_lane, m_cross_feedback);
-    m_scalar_smoothers.set_current_and_target(k_input_pan_lane, m_input_pan);
-    m_scalar_smoothers.set_current_and_target(k_wet_lane, m_wet);
-    m_scalar_smoothers.set_current_and_target(k_dry_lane, m_dry);
+    m_scalar_smoothers.set_current_and_target(FeedbackLane, m_feedback);
+    m_scalar_smoothers.set_current_and_target(DampingLane, m_damping);
+    m_scalar_smoothers.set_current_and_target(CrossFeedbackLane, m_cross_feedback);
+    m_scalar_smoothers.set_current_and_target(InputPanLane, m_input_pan);
+    m_scalar_smoothers.set_current_and_target(WetLane, m_wet);
+    m_scalar_smoothers.set_current_and_target(DryLane, m_dry);
     set_delay_lines_per_channel(delay_lines_per_channel);
 }
 
@@ -206,18 +213,18 @@ void StereoFDN::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modula
         const float in_r = right[sample];
 
         read_delay_outputs();
-        const float damping = m_scalar_smoothers.next(k_damping_lane);
+        const float damping = m_scalar_smoothers.next(DampingLane);
         update_damped_outputs(damping);
         const float delayed_l = average_delayed_output(k_left);
         const float delayed_r = average_delayed_output(k_right);
-        const float feedback = m_scalar_smoothers.next(k_feedback_lane);
-        const float cross_feedback = m_scalar_smoothers.next(k_cross_feedback_lane);
+        const float feedback = m_scalar_smoothers.next(FeedbackLane);
+        const float cross_feedback = m_scalar_smoothers.next(CrossFeedbackLane);
         const float remaining = std::max(0.0f, 1.0f - cross_feedback * cross_feedback);
         const float stereo_main = std::sqrt(remaining);
-        const float input_pan = m_scalar_smoothers.next(k_input_pan_lane);
+        const float input_pan = m_scalar_smoothers.next(InputPanLane);
         const auto [input_l_gain, input_r_gain] = input_pan_to_gains(input_pan);
-        const float wet = m_scalar_smoothers.next(k_wet_lane);
-        const float dry = m_scalar_smoothers.next(k_dry_lane);
+        const float wet = m_scalar_smoothers.next(WetLane);
+        const float dry = m_scalar_smoothers.next(DryLane);
         const float delay_in_l = in_l * input_l_gain;
         const float delay_in_r = in_r * input_r_gain;
 
@@ -255,11 +262,11 @@ void StereoFDN::reset() {
 
 void StereoFDN::clear_delay_state() {
     for (auto& delay_line : m_delay_lines) { delay_line->reset(); }
-    std::fill(m_delayed_outputs.begin(), m_delayed_outputs.end(), 0.0f);
-    std::fill(m_damped_outputs.begin(), m_damped_outputs.end(), 0.0f);
-    std::fill(m_damping_states.begin(), m_damping_states.end(), 0.0f);
-    std::fill(m_crossfade_positions.begin(), m_crossfade_positions.end(), 0);
-    std::fill(m_crossfade_lengths.begin(), m_crossfade_lengths.end(), 0);
+    std::ranges::fill(m_delayed_outputs, 0.0f);
+    std::ranges::fill(m_damped_outputs, 0.0f);
+    std::ranges::fill(m_damping_states, 0.0f);
+    std::ranges::fill(m_crossfade_positions, 0);
+    std::ranges::fill(m_crossfade_lengths, 0);
     m_previous_delay_samples = m_delay_samples;
 }
 
@@ -336,14 +343,14 @@ void StereoFDN::set_delay_spread(float delay_spread) {
 
 void StereoFDN::set_feedback(float feedback) {
     m_feedback = std::clamp(feedback, 0.0f, 0.99f);
-    set_smoothed_scalar_target(k_feedback_lane, m_feedback);
+    set_smoothed_scalar_target(FeedbackLane, m_feedback);
 }
 
 void StereoFDN::set_crossfade_samples(size_t crossfade_samples) {
     m_crossfade_samples = crossfade_samples;
     if (m_crossfade_samples == 0) {
-        std::fill(m_crossfade_positions.begin(), m_crossfade_positions.end(), 0);
-        std::fill(m_crossfade_lengths.begin(), m_crossfade_lengths.end(), 0);
+        std::ranges::fill(m_crossfade_positions, 0);
+        std::ranges::fill(m_crossfade_lengths, 0);
         m_previous_delay_samples = m_delay_samples;
     }
 }
@@ -356,17 +363,17 @@ void StereoFDN::set_linear_smoothing_samples(size_t smoothing_samples) {
 
 void StereoFDN::set_damping(float damping) {
     m_damping = std::clamp(damping, 0.0f, 1.0f);
-    set_smoothed_scalar_target(k_damping_lane, m_damping);
+    set_smoothed_scalar_target(DampingLane, m_damping);
 }
 
 void StereoFDN::set_cross_feedback(float cross_feedback) {
     m_cross_feedback = std::clamp(cross_feedback, 0.0f, 1.0f);
-    set_smoothed_scalar_target(k_cross_feedback_lane, m_cross_feedback);
+    set_smoothed_scalar_target(CrossFeedbackLane, m_cross_feedback);
 }
 
 void StereoFDN::set_input_pan(float input_pan) {
     m_input_pan = std::clamp(input_pan, -1.0f, 1.0f);
-    set_smoothed_scalar_target(k_input_pan_lane, m_input_pan);
+    set_smoothed_scalar_target(InputPanLane, m_input_pan);
 }
 
 void StereoFDN::set_matrix_kind(MatrixKind matrix_kind) {
@@ -379,12 +386,12 @@ void StereoFDN::set_matrix_kind(MatrixKind matrix_kind) {
 
 void StereoFDN::set_wet(float wet) {
     m_wet = std::clamp(wet, 0.0f, 1.0f);
-    set_smoothed_scalar_target(k_wet_lane, m_wet);
+    set_smoothed_scalar_target(WetLane, m_wet);
 }
 
 void StereoFDN::set_dry(float dry) {
     m_dry = std::clamp(dry, 0.0f, 1.0f);
-    set_smoothed_scalar_target(k_dry_lane, m_dry);
+    set_smoothed_scalar_target(DryLane, m_dry);
 }
 
 void StereoFDN::prepare_delay_lines(size_t max_delay_samples) {
@@ -458,7 +465,7 @@ void StereoFDN::apply_derived_delay_layout() {
 }
 
 void StereoFDN::set_smoothed_delay_target(size_t index, size_t delay_samples) {
-    const float delay = static_cast<float>(delay_samples);
+    const auto delay = static_cast<float>(delay_samples);
     if (m_prepared && m_has_processed) {
         m_delay_smoothers.set_target(index, delay, delay_target_ramp_samples(index, delay));
     } else {
@@ -490,26 +497,26 @@ void StereoFDN::update_smoothed_parameter_targets(uint32_t modulation_offset) {
         std::max(get_parameter<float>(BaseTimeMs, modulation_offset), k_min_base_time_ms));
     set_delay_spread(std::max(get_parameter<float>(DelaySpread, modulation_offset), 0.0f));
     set_smoothed_scalar_target(
-        k_feedback_lane,
+        FeedbackLane,
         std::clamp(get_parameter<float>(Feedback, modulation_offset), 0.0f, 0.99f));
     set_smoothed_scalar_target(
-        k_damping_lane,
+        DampingLane,
         std::clamp(get_parameter<float>(Damping, modulation_offset), 0.0f, 1.0f));
     set_smoothed_scalar_target(
-        k_cross_feedback_lane,
+        CrossFeedbackLane,
         std::clamp(get_parameter<float>(CrossFeedback, modulation_offset), 0.0f, 1.0f));
     set_smoothed_scalar_target(
-        k_input_pan_lane,
+        InputPanLane,
         std::clamp(get_parameter<float>(InputPan, modulation_offset), -1.0f, 1.0f));
     const int matrix_kind = std::clamp(get_parameter_int(MatrixKindParam, modulation_offset),
                                        static_cast<int>(MatrixKind::Householder),
                                        static_cast<int>(MatrixKind::RandomOrthogonal));
     set_matrix_kind(static_cast<MatrixKind>(matrix_kind));
     set_smoothed_scalar_target(
-        k_wet_lane,
+        WetLane,
         std::clamp(get_parameter<float>(Wet, modulation_offset), 0.0f, 1.0f));
     set_smoothed_scalar_target(
-        k_dry_lane,
+        DryLane,
         std::clamp(get_parameter<float>(Dry, modulation_offset), 0.0f, 1.0f));
 }
 

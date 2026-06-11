@@ -137,13 +137,13 @@ private:
     size_t line_index(size_t channel, size_t line) const;
 
     enum ScalarSmootherLane : size_t {
-        k_feedback_lane = 0,
-        k_damping_lane,
-        k_cross_feedback_lane,
-        k_input_pan_lane,
-        k_wet_lane,
-        k_dry_lane,
-        k_num_scalar_lanes
+        FeedbackLane = 0,
+        DampingLane,
+        CrossFeedbackLane,
+        InputPanLane,
+        WetLane,
+        DryLane,
+        NumScalarLanes
     };
 
     size_t m_delay_lines_per_channel = 1;
