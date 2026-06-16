@@ -22,6 +22,12 @@ jobs:
         with:
           SOURCES: "src/ include/"
 
+  # Verify the committed .clang-* files still match the pinned tanh-tooling release.
+  clang-config:
+    uses: tanh-lab/tanh-tooling/.github/workflows/clang-check.yml@v0.1.4
+    with:
+      ref: v0.1.4
+
   build-and-test:
     name: Build & Test (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
