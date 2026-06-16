@@ -1,9 +1,9 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
+
 #include <string>
 #include <vector>
-
-#include <tanh/core/Exports.h>
 
 namespace thl::dsp::utils {
 

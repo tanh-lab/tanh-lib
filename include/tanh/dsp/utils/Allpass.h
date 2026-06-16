@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstddef>
-
 #include <tanh/dsp/utils/DelayLine.h>
+
+#include <cstddef>
 
 namespace thl::dsp::utils {
 

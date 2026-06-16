@@ -1,8 +1,10 @@
-#include "tanh/state/State.h"
-#include <atomic>
 #include <gtest/gtest.h>
+
+#include <atomic>
 #include <thread>
 #include <vector>
+
+#include "tanh/state/State.h"
 
 using namespace thl;
 
@@ -87,50 +89,47 @@ TEST(StateTests, ThreadSafety) {
     std::atomic<int> readers_succeeded(0);
 
     // Function for reader threads - made real-time safe
-    auto reader = [&state,
-                   &start_flag,
-                   &ready_thread_count,
-                   &readers_succeeded,
-                   k_num_operations](int id) {
-        // Signal that thread is ready
-        ready_thread_count.fetch_add(1);
+    auto reader =
+        [&state, &start_flag, &ready_thread_count, &readers_succeeded, k_num_operations](int id) {
+            // Signal that thread is ready
+            ready_thread_count.fetch_add(1);
 
-        // Wait for start signal
-        while (!start_flag.load(std::memory_order_acquire)) {
-            // Real-time safe spin wait
-            std::atomic_thread_fence(std::memory_order_acquire);
-        }
+            // Wait for start signal
+            while (!start_flag.load(std::memory_order_acquire)) {
+                // Real-time safe spin wait
+                std::atomic_thread_fence(std::memory_order_acquire);
+            }
 
-        // Ensure thread is registered after start signal to account for the
-        // nested group created after initial thread creation
-        state.ensure_thread_registered();
+            // Ensure thread is registered after start signal to account for the
+            // nested group created after initial thread creation
+            state.ensure_thread_registered();
 
-        for (int i = 0; i < k_num_operations; ++i) {
-            // Read various parameters - these are real-time safe operations
-            auto counter = state.get<int>("counter");
-            auto volume = state.get<double>("audio.volume");
-            auto test_param = state.get<int>("nested.group.param");
+            for (int i = 0; i < k_num_operations; ++i) {
+                // Read various parameters - these are real-time safe operations
+                auto counter = state.get<int>("counter");
+                auto volume = state.get<double>("audio.volume");
+                auto test_param = state.get<int>("nested.group.param");
 
-            // String read is not real-time safe, but is necessary for the test
-            auto str = state.get<std::string>("string_param", true);
+                // String read is not real-time safe, but is necessary for the test
+                auto str = state.get<std::string>("string_param", true);
 
-            // Just to avoid compiler optimization
-            EXPECT_GE(counter, 0);
-            EXPECT_GE(volume, 0.0);
-            EXPECT_EQ(test_param, 10);
-            EXPECT_FALSE(str.empty());
+                // Just to avoid compiler optimization
+                EXPECT_GE(counter, 0);
+                EXPECT_GE(volume, 0.0);
+                EXPECT_EQ(test_param, 10);
+                EXPECT_FALSE(str.empty());
 
-            // Sleep to simulate work - not real-time safe
-            std::this_thread::sleep_for(std::chrono::microseconds(1));
-        }
+                // Sleep to simulate work - not real-time safe
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
+            }
 
-        // Exit real-time context before thread cleanup to avoid RTSan false
-        // positive: thread destruction involves free(), which RTSan would flag
-        // if still in RT context.
-        TANH_NONBLOCKING_SCOPED_DISABLER
+            // Exit real-time context before thread cleanup to avoid RTSan false
+            // positive: thread destruction involves free(), which RTSan would flag
+            // if still in RT context.
+            TANH_NONBLOCKING_SCOPED_DISABLER
 
-        readers_succeeded.fetch_add(1, std::memory_order_relaxed);
-    };
+            readers_succeeded.fetch_add(1, std::memory_order_relaxed);
+        };
 
     // Use std::thread instead of std::async to guarantee immediate OS-level
     // thread creation.  std::async(launch::async) on MSVC uses the Concrt

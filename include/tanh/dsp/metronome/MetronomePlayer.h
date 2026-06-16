@@ -1,13 +1,13 @@
 #pragma once
 
-#include <array>
-#include <cstdint>
-#include <optional>
-
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/transport/TransportClock.h>
 #include <tanh/dsp/utils/ADSR.h>
+
+#include <array>
+#include <cstdint>
+#include <optional>
 
 namespace thl::dsp::metronome {
 

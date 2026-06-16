@@ -1,12 +1,11 @@
-#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
-
 #include <gtest/gtest.h>
+#include <tanh/core/Numbers.h>
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
 #include <cmath>
-#include <tanh/core/Numbers.h>
+#include <cstddef>
 #include <vector>
 
 namespace rings = thl::dsp::resonator;

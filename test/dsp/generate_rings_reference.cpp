@@ -1,15 +1,15 @@
+#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsPatch.h>
+#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
+#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
+#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
+
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-
-#include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/rings-resonator/RingsDsp.h>
-#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
-#include <tanh/dsp/rings-resonator/RingsPatch.h>
-#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
-#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 
 namespace rings = thl::dsp::synth;
 

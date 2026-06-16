@@ -11,28 +11,26 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <stack>
 #include <stdexcept>
-#include <string_view>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
-#include <unordered_map>
-#include <utility>
-
-#include <nlohmann/json.hpp>
 
 #include "tanh/core/Logger.h"
-#include "tanh/state/ModulationScope.h"
-#include "tanh/state/ParameterDefinitions.h"
-
-#include "tanh/modulation/SmartHandle.h"
-#include "tanh/modulation/ResolvedTarget.h"
 #include "tanh/modulation/ModulationRouting.h"
 #include "tanh/modulation/ResolvedRouting.h"
+#include "tanh/modulation/ResolvedTarget.h"
+#include "tanh/modulation/SmartHandle.h"
+#include "tanh/state/ModulationScope.h"
 #include "tanh/state/Parameter.h"
+#include "tanh/state/ParameterDefinitions.h"
 #include "tanh/state/State.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 

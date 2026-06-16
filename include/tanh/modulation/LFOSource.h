@@ -1,9 +1,10 @@
 #pragma once
 
-#include <atomic>
-#include <cstdint>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/ModulationSource.h>
+
+#include <atomic>
+#include <cstdint>
 
 namespace thl::modulation {
 

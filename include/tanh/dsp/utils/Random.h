@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstdint>
-
 #include <tanh/core/Exports.h>
+
+#include <cstdint>
 
 namespace thl::dsp::utils {
 

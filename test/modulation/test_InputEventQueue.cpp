@@ -1,11 +1,10 @@
+#include <gtest/gtest.h>
+#include <tanh/modulation/InputEventQueue.h>
+#include <tanh/state/ModulationScope.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-
-#include <gtest/gtest.h>
-
-#include <tanh/modulation/InputEventQueue.h>
-#include <tanh/state/ModulationScope.h>
 
 namespace {
 

@@ -1,11 +1,13 @@
-#include "tanh/state/State.h"
 #include <benchmark/benchmark.h>
 #include <gtest/gtest.h>
 #include <tanh/core/Numbers.h>
+
+#include <atomic>
 #include <string>
 #include <thread>
-#include <atomic>
 #include <vector>
+
+#include "tanh/state/State.h"
 
 using namespace thl;
 

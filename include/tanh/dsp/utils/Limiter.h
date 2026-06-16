@@ -1,9 +1,10 @@
 #pragma once
 
-#include <cstddef>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
+
+#include <cstddef>
 
 namespace thl::dsp::utils {
 

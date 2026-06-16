@@ -1,17 +1,19 @@
 #include <tanh/state/Parameter.h>
 #include <tanh/state/State.h>
 #include <tanh/utils/RealtimeSanitizer.h>
+
+#include <atomic>
 #include <cstddef>
-#include <string_view>
-#include "tanh/state/StateGroup.h"
+#include <cstdint>
 #include <mutex>
 #include <string>
-#include <atomic>
-#include "tanh/state/ParameterDefinitions.h"
-#include <cstdint>
+#include <string_view>
+
 #include "tanh/core/Exports.h"
 #include "tanh/state/Exceptions.h"
+#include "tanh/state/ParameterDefinitions.h"
 #include "tanh/state/ParameterListener.h"
+#include "tanh/state/StateGroup.h"
 
 namespace thl {
 

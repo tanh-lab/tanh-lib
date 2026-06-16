@@ -7,7 +7,6 @@
 // here cascade.
 
 #include <gtest/gtest.h>
-
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/state/ModulationScope.h>
 #include <tanh/state/State.h>

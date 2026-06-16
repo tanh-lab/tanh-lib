@@ -1,8 +1,8 @@
 #pragma once
 
-#include <array>
-
 #include <tanh/core/Exports.h>
+
+#include <array>
 
 namespace thl::dsp::utils {
 

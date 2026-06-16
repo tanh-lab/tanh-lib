@@ -1,7 +1,9 @@
 #include <tanh/audio-io/DataSource.h>
+
+#include <cstdint>
 #include <memory>
 #include <utility>
-#include <cstdint>
+
 #include "DataSourceImpl.h"
 
 namespace thl::audio_io {

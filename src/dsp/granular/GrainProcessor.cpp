@@ -1,14 +1,16 @@
+#include <tanh/core/Numbers.h>
 #include <tanh/dsp/granular/GrainProcessor.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <tanh/core/Numbers.h>
 #include <utility>
+
+#include "tanh/dsp/audio/AudioBufferView.h"
 #include "tanh/dsp/audio/AudioDataStore.h"
 #include "tanh/dsp/granular/GrainVisualizationListener.h"
-#include "tanh/dsp/audio/AudioBufferView.h"
 
 namespace thl::dsp::granular {
 

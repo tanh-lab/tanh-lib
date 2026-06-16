@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/state/ModulationScope.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -9,8 +11,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
-#include <tanh/state/ModulationScope.h>
 
 namespace thl {
 

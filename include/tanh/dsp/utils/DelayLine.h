@@ -1,11 +1,11 @@
 #pragma once
 
+#include <tanh/dsp/utils/DspMath.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-
-#include <tanh/dsp/utils/DspMath.h>
 
 namespace thl::dsp::utils {
 

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstddef>
-
 #include <tanh/dsp/audio/AudioBufferView.h>
+
+#include <cstddef>
 
 namespace thl::dsp::filter {
 

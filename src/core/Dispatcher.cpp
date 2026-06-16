@@ -1,6 +1,7 @@
 #include <tanh/core/Dispatcher.h>
-#include <string>
+
 #include <mutex>
+#include <string>
 
 namespace thl {
 

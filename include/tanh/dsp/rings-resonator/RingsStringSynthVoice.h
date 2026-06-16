@@ -28,9 +28,9 @@
 
 #pragma once
 
-#include <array>
-
 #include <tanh/dsp/rings-resonator/RingsStringSynthOscillator.h>
+
+#include <array>
 
 namespace thl::dsp::synth {
 

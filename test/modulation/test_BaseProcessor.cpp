@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
+#include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
 
 #include <span>
 #include <vector>
-
-#include <tanh/dsp/BaseProcessor.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
 
 #include "TestHelpers.h"
 

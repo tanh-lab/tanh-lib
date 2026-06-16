@@ -1,10 +1,11 @@
 #pragma once
 
+#include <tanh/core/Logger.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <tanh/core/Logger.h>
 #include <type_traits>
 #include <utility>
 

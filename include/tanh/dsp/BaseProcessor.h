@@ -1,10 +1,11 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/utils/RealtimeSanitizer.h>
+
 #include <cstdint>
 #include <span>
-#include <tanh/core/Exports.h>
-#include <tanh/utils/RealtimeSanitizer.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl::dsp {
 

@@ -1,14 +1,16 @@
 #if defined(THL_PLATFORM_ANDROID)
 
+#include <jni.h>
+#include <sys/system_properties.h>
 #include <tanh/audio-io/AndroidAudioDevices.h>
-#include "miniaudio.h"
 #include <tanh/core/Logger.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
-#include <jni.h>
-#include <sys/system_properties.h>
+
+#include "miniaudio.h"
 
 namespace thl {
 

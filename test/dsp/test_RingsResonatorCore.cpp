@@ -1,16 +1,15 @@
 #include <gtest/gtest.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsPatch.h>
+#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
+#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
+#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
-
-#include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/rings-resonator/RingsDsp.h>
-#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
-#include <tanh/dsp/rings-resonator/RingsPatch.h>
-#include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
-#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
 
 #ifdef RINGS_HAS_REFERENCE_FIXTURES
 #include <RingsTestFixtures.h>
@@ -65,8 +64,10 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
         std::ranges::fill(aux, 0.0f);
         thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
                                                       thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView out_view(out.data(),
+                                                  thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+                                                  thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
 
@@ -96,8 +97,10 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
         std::ranges::fill(aux, 0.0f);
         thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
                                                        thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView out_view(out.data(),
+                                                  thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+                                                  thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, sil_view, out_view, aux_view);
     }
 
@@ -106,8 +109,10 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     {
         thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
                                                       thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView out_view(out.data(),
+                                                  thl::dsp::resonator::k_max_block_size);
+        thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+                                                  thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
 
@@ -148,14 +153,12 @@ INSTANTIATE_TEST_SUITE_P(AllModels,
                          [](const ::testing::TestParamInfo<rings::ResonatorModel>& info) {
                              switch (info.param) {
                                  case rings::Modal: return "Modal";
-                                 case rings::SympatheticString:
-                                     return "SympatheticString";
+                                 case rings::SympatheticString: return "SympatheticString";
                                  case rings::String: return "ModulatedString";
                                  case rings::FmVoice: return "FMVoice";
                                  case rings::SympatheticStringQuantized:
                                      return "SympatheticStringQuantized";
-                                 case rings::StringAndReverb:
-                                     return "StringAndReverb";
+                                 case rings::StringAndReverb: return "StringAndReverb";
                                  default: return "Unknown";
                              }
                          });
@@ -247,22 +250,20 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
 INSTANTIATE_TEST_SUITE_P(
     AllModels,
     RingsReferenceOutputTest,
-    ::testing::Values(
-        ReferenceModelInfo{rings::Modal, "modal.bin"},
-        ReferenceModelInfo{rings::SympatheticString, "sympathetic_string.bin"},
-        ReferenceModelInfo{rings::String, "modulated_string.bin"},
-        ReferenceModelInfo{rings::FmVoice, "fm_voice.bin"},
-        ReferenceModelInfo{rings::SympatheticStringQuantized,
-                           "sympathetic_string_quantized.bin"},
-        ReferenceModelInfo{rings::StringAndReverb, "string_and_reverb.bin"}),
+    ::testing::Values(ReferenceModelInfo{rings::Modal, "modal.bin"},
+                      ReferenceModelInfo{rings::SympatheticString, "sympathetic_string.bin"},
+                      ReferenceModelInfo{rings::String, "modulated_string.bin"},
+                      ReferenceModelInfo{rings::FmVoice, "fm_voice.bin"},
+                      ReferenceModelInfo{rings::SympatheticStringQuantized,
+                                         "sympathetic_string_quantized.bin"},
+                      ReferenceModelInfo{rings::StringAndReverb, "string_and_reverb.bin"}),
     [](const ::testing::TestParamInfo<ReferenceModelInfo>& info) {
         switch (info.param.model) {
             case rings::Modal: return "Modal";
             case rings::SympatheticString: return "SympatheticString";
             case rings::String: return "ModulatedString";
             case rings::FmVoice: return "FMVoice";
-            case rings::SympatheticStringQuantized:
-                return "SympatheticStringQuantized";
+            case rings::SympatheticStringQuantized: return "SympatheticStringQuantized";
             case rings::StringAndReverb: return "StringAndReverb";
             default: return "Unknown";
         }

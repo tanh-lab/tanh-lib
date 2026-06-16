@@ -1,9 +1,10 @@
 #pragma once
 
-#include <cstdint>
-#include <memory>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
+
+#include <cstdint>
+#include <memory>
 
 namespace thl::dsp::synth {
 

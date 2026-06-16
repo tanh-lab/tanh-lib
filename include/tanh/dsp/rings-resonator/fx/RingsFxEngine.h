@@ -28,11 +28,11 @@
 
 #pragma once
 
+#include <tanh/dsp/utils/CosineOscillator.h>
+#include <tanh/dsp/utils/DspMath.h>
+
 #include <algorithm>
 #include <array>
-
-#include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/utils/CosineOscillator.h>
 
 namespace thl::dsp::fx {
 

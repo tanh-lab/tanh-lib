@@ -1,7 +1,6 @@
+#include <gtest/gtest.h>
 #include <tanh/dsp/transport/InternalTransportClock.h>
 #include <tanh/dsp/transport/TransportClock.h>
-
-#include <gtest/gtest.h>
 
 #include <cmath>
 #include <cstdint>

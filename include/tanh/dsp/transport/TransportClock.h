@@ -1,10 +1,10 @@
 #pragma once
 
-#include <cstdint>
-#include <optional>
-
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
+
+#include <cstdint>
+#include <optional>
 
 namespace thl::dsp::transport {
 

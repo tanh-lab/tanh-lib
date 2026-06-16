@@ -1,5 +1,10 @@
 #include <benchmark/benchmark.h>
 #include <gtest/gtest.h>
+#include <tanh/modulation/InputEventQueue.h>
+#include <tanh/modulation/LFOSource.h>
+#include <tanh/modulation/ModulationMatrix.h>
+#include <tanh/modulation/SmartHandle.h>
+#include <tanh/state/State.h>
 
 #include <cmath>
 #include <cstddef>
@@ -7,12 +12,6 @@
 #include <span>
 #include <string>
 #include <vector>
-
-#include <tanh/modulation/InputEventQueue.h>
-#include <tanh/modulation/LFOSource.h>
-#include <tanh/modulation/ModulationMatrix.h>
-#include <tanh/modulation/SmartHandle.h>
-#include <tanh/state/State.h>
 
 using namespace thl;
 using namespace thl::modulation;

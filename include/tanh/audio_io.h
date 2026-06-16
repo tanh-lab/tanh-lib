@@ -1,8 +1,8 @@
 #pragma once
 
+#include "audio-io/AudioDeviceInfo.h"
 #include "audio-io/AudioDeviceManager.h"
 #include "audio-io/AudioIODeviceCallback.h"
-#include "audio-io/AudioDeviceInfo.h"
 
 #if defined(THL_PLATFORM_IOS)
 #include "audio-io/iOSAudioDevices.h"

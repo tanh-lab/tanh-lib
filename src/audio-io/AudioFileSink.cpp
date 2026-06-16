@@ -1,10 +1,12 @@
 #include <tanh/audio-io/AudioFileSink.h>
-#include "miniaudio.h"
+
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <string>
+
+#include "miniaudio.h"
 
 namespace thl {
 

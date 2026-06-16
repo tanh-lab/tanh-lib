@@ -1,12 +1,14 @@
 #include "tanh/dsp/synth/SineProcessor.h"
 
+#include <tanh/core/Numbers.h>
+
 #include <algorithm>
 #include <array>
-#include <cstddef>
-#include "tanh/dsp/audio/AudioBufferView.h"
-#include <cstdint>
-#include <tanh/core/Numbers.h>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+
+#include "tanh/dsp/audio/AudioBufferView.h"
 
 using namespace thl::dsp::synth;
 

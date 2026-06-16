@@ -1,9 +1,9 @@
 #pragma once
 
+#include <tanh/dsp/transport/TransportClock.h>
+
 #include <atomic>
 #include <optional>
-
-#include <tanh/dsp/transport/TransportClock.h>
 
 namespace thl::dsp::transport {
 

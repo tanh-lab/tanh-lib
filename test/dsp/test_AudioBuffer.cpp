@@ -1,11 +1,12 @@
 #include <gtest/gtest.h>
-#include "tanh/dsp/audio/AudioBuffer.h"
+#include <tanh/core/Numbers.h>
 
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <tanh/core/Numbers.h>
 #include <vector>
+
+#include "tanh/dsp/audio/AudioBuffer.h"
 
 using namespace thl::dsp::audio;
 

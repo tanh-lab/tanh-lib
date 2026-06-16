@@ -28,16 +28,14 @@
 
 #pragma once
 
-#include <algorithm>
-
 #include <tanh/core/Exports.h>
+#include <tanh/dsp/analysis/Follower.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
-
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
-#include <tanh/dsp/analysis/Follower.h>
-
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
+
+#include <algorithm>
 
 namespace thl::dsp::synth {
 

@@ -29,11 +29,10 @@
 #pragma once
 
 #include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/utils/DspMath.h>
-
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
-#include <tanh/dsp/rings-resonator/fx/RingsFxEngine.h>
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
+#include <tanh/dsp/rings-resonator/fx/RingsFxEngine.h>
+#include <tanh/dsp/utils/DspMath.h>
 
 namespace thl::dsp::fx {
 

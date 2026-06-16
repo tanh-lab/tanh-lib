@@ -28,12 +28,12 @@
 
 #pragma once
 
+#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/dsp/filter/Svf.h>
+#include <tanh/dsp/utils/DspMath.h>
+
 #include <algorithm>
 #include <array>
-
-#include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/filter/Svf.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl::dsp::analysis {
 

@@ -1,15 +1,16 @@
 #include <tanh/audio-io/AudioFileLoader.h>
 #include <tanh/core/Logger.h>
-#include "DataSourceImpl.h"
-#include "tanh/dsp/audio/AudioBuffer.h"
-#include "tanh/audio-io/DataSource.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include "DataSourceImpl.h"
+#include "tanh/audio-io/DataSource.h"
+#include "tanh/dsp/audio/AudioBuffer.h"
 
 namespace thl::audio_io {
 

@@ -1,15 +1,14 @@
 #include <gtest/gtest.h>
-
-#include "TestHelpers.h"
-
-#include <string_view>
-#include <vector>
-
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/Limiter.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/State.h>
+
+#include <string_view>
+#include <vector>
+
+#include "TestHelpers.h"
 
 using namespace thl::modulation;
 

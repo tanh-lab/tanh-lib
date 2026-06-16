@@ -1,10 +1,10 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>
-
-#include <tanh/core/Exports.h>
 
 namespace thl::audio_io {
 

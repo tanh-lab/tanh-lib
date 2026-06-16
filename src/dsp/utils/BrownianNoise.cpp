@@ -1,10 +1,9 @@
+#include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/BrownianNoise.h>
+#include <tanh/dsp/utils/Random.h>
 
 #include <algorithm>
 #include <cmath>
-#include <tanh/core/Numbers.h>
-
-#include <tanh/dsp/utils/Random.h>
 
 namespace thl::dsp::utils {
 

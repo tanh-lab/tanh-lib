@@ -1,5 +1,9 @@
 #pragma once
 
+#include <tanh/modulation/ResolvedTarget.h>
+#include <tanh/state/Parameter.h>
+#include <tanh/utils/RealtimeSanitizer.h>
+
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -12,10 +16,6 @@
 #include <type_traits>
 #include <variant>
 #include <vector>
-
-#include <tanh/modulation/ResolvedTarget.h>
-#include <tanh/state/Parameter.h>
-#include <tanh/utils/RealtimeSanitizer.h>
 
 namespace thl::modulation {
 

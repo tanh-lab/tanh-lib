@@ -1,8 +1,8 @@
+#include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/FrequencyShifter.h>
 
 #include <array>
 #include <cmath>
-#include <tanh/core/Numbers.h>
 
 namespace thl::dsp::utils {
 

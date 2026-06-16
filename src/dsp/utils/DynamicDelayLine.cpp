@@ -1,9 +1,8 @@
+#include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
 
 #include <cstddef>
 #include <cstdint>
-
-#include <tanh/dsp/utils/DspMath.h>
 
 namespace thl::dsp::utils {
 

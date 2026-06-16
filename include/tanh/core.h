@@ -1,10 +1,10 @@
 #pragma once
 
+#include <string>
+
 #include "core/Dispatcher.h"
 #include "core/Logger.h"
 #include "core/threading/RCU.h"
-
-#include <string>
 
 // Core utility functions available to all components
 namespace thl::core {

@@ -26,28 +26,26 @@
 //
 // Group of voices.
 
-#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
-
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/RingsFmVoice.h>
 #include <tanh/dsp/rings-resonator/RingsModalResonator.h>
 #include <tanh/dsp/rings-resonator/RingsString.h>
+#include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
+#include <tanh/dsp/utils/DspMath.h>
 
 #include <algorithm>
 #include <array>
-#include <cstdint>
-#include "tanh/dsp/rings-resonator/RingsDsp.h"
-#include "tanh/dsp/utils/CosineOscillator.h"
+#include <cmath>
 #include <cstddef>
-#include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
-#include "tanh/dsp/rings-resonator/RingsPatch.h"
+#include <cstdint>
+
+#include "tanh/dsp/DspTypes.h"
 #include "tanh/dsp/audio/AudioBufferView.h"
 #include "tanh/dsp/filter/OnePole.h"
-#include <cmath>
-#include "tanh/dsp/DspTypes.h"
-
-#include <tanh/dsp/utils/DspMath.h>
-
-#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
+#include "tanh/dsp/rings-resonator/RingsDsp.h"
+#include "tanh/dsp/rings-resonator/RingsPatch.h"
+#include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
+#include "tanh/dsp/utils/CosineOscillator.h"
 
 namespace thl::dsp::synth {
 

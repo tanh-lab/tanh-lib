@@ -1,4 +1,16 @@
 #include <gtest/gtest.h>
+#include <tanh/core/Numbers.h>
+
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <thread>
+#include <vector>
+
 #include "tanh/audio-io/AudioDeviceInfo.h"
 #include "tanh/audio-io/AudioDeviceManager.h"
 #include "tanh/audio-io/AudioFileLoader.h"
@@ -6,16 +18,6 @@
 #include "tanh/audio-io/AudioIODeviceCallback.h"
 #include "tanh/audio-io/AudioPlayerSource.h"
 #include "tanh/audio-io/DataSource.h"
-#include <array>
-#include <atomic>
-#include <chrono>
-#include <cmath>
-#include <cstdio>
-#include <tanh/core/Numbers.h>
-#include <filesystem>
-#include <fstream>
-#include <thread>
-#include <vector>
 
 using namespace thl;
 
@@ -736,8 +738,8 @@ TEST(DataSource, SequentialRead) {
 
     {
         thl::audio_io::AudioFileLoader loader;
-        auto ds = loader.load_data_source_from_file(
-            test_file.string(), k_sample_rate, k_num_channels);
+        auto ds =
+            loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
         ASSERT_TRUE(ds.is_valid());
         EXPECT_EQ(ds.get_cursor(), 0u);
 
@@ -784,8 +786,8 @@ TEST(DataSource, SeekUpdatesPosition) {
 
     {
         thl::audio_io::AudioFileLoader loader;
-        auto ds = loader.load_data_source_from_file(
-            test_file.string(), k_sample_rate, k_num_channels);
+        auto ds =
+            loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
         ASSERT_TRUE(ds.is_valid());
 
         EXPECT_TRUE(ds.seek(64));
@@ -820,8 +822,8 @@ TEST(DataSource, ReadBeyondEnd) {
 
     {
         thl::audio_io::AudioFileLoader loader;
-        auto ds = loader.load_data_source_from_file(
-            test_file.string(), k_sample_rate, k_num_channels);
+        auto ds =
+            loader.load_data_source_from_file(test_file.string(), k_sample_rate, k_num_channels);
         ASSERT_TRUE(ds.is_valid());
 
         std::array<float, k_frame_count * 2> read_buf{};

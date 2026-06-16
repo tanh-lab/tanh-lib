@@ -4,6 +4,7 @@
 
 #include <tanh/audio-io/AudioDeviceInfo.h>
 #include <tanh/core/Exports.h>
+
 #include <vector>
 
 namespace thl {

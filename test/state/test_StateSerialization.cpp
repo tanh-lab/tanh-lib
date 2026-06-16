@@ -1,8 +1,10 @@
-#include "tanh/state/State.h"
-#include "tanh/state/Exceptions.h"
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 #include <tanh/core/Numbers.h>
+
+#include <nlohmann/json.hpp>
+
+#include "tanh/state/Exceptions.h"
+#include "tanh/state/State.h"
 
 using namespace thl;
 

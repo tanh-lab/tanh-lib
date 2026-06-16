@@ -8,10 +8,11 @@
 
 #pragma once
 
+#include <tanh/core/Numbers.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <tanh/core/Numbers.h>
 
 namespace thl::dsp::resonator {
 

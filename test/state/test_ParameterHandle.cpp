@@ -1,9 +1,11 @@
-#include "TestHelpers.h"
-#include "tanh/state/State.h"
-#include "tanh/state/Exceptions.h"
 #include <gtest/gtest.h>
+
 #include <thread>
 #include <vector>
+
+#include "TestHelpers.h"
+#include "tanh/state/Exceptions.h"
+#include "tanh/state/State.h"
 
 using namespace thl;
 

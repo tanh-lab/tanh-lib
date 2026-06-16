@@ -14,8 +14,11 @@
 // thresholds against a known-broken-then-fixed processor.
 
 #include <gtest/gtest.h>
-
-#include "TestHelpers.h"
+#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/dsp/fx/IntellijelWavefolder.h>
+#include <tanh/modulation/ModulationMatrix.h>
+#include <tanh/modulation/SmartHandle.h>
+#include <tanh/state/State.h>
 
 #include <algorithm>
 #include <cmath>
@@ -26,11 +29,7 @@
 #include <string_view>
 #include <vector>
 
-#include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/fx/IntellijelWavefolder.h>
-#include <tanh/modulation/ModulationMatrix.h>
-#include <tanh/modulation/SmartHandle.h>
-#include <tanh/state/State.h>
+#include "TestHelpers.h"
 
 using namespace thl::modulation;
 using thl::dsp::fx::IntellijelWavefolderImpl;

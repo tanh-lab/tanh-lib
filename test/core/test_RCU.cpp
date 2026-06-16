@@ -1,10 +1,12 @@
-#include <iostream>
-#include <thread>
-#include <chrono>
-#include <vector>
-#include <atomic>
-#include <map>
 #include <gtest/gtest.h>
+
+#include <atomic>
+#include <chrono>
+#include <iostream>
+#include <map>
+#include <thread>
+#include <vector>
+
 #include "tanh/core/threading/RCU.h"
 
 using namespace thl;

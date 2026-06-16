@@ -1,14 +1,14 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <vector>
-
 #include <tanh/modulation/LFOSource.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/state/ModulationScope.h>
 #include <tanh/state/ParameterDefinitions.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 // Test-only accessors for the mono/voice buffer pointers on a ResolvedTarget.
 // The production RT path loads these atomically with acquire semantics under

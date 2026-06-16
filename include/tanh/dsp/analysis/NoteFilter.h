@@ -28,10 +28,10 @@
 
 #pragma once
 
-#include <array>
-
-#include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/DelayLine.h>
+#include <tanh/dsp/utils/DspMath.h>
+
+#include <array>
 
 namespace thl::dsp::analysis {
 

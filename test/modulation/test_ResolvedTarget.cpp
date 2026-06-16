@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include <tanh/modulation/ResolvedTarget.h>
 
 using namespace thl::modulation;

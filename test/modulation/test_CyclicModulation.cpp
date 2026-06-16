@@ -1,11 +1,10 @@
 #include <gtest/gtest.h>
-
-#include "TestHelpers.h"
-
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/State.h>
+
+#include "TestHelpers.h"
 
 using namespace thl::modulation;
 

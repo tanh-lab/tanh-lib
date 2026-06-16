@@ -28,12 +28,12 @@
 
 #pragma once
 
+#include <tanh/dsp/filter/Svf.h>
+#include <tanh/dsp/utils/DspMath.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
-
-#include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/filter/Svf.h>
 
 namespace thl::dsp::analysis {
 

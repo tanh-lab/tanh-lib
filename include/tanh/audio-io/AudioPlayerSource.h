@@ -1,15 +1,17 @@
 #pragma once
-#include "AudioIODeviceCallback.h"
 #include <tanh/audio-io/AudioFileLoader.h>
 #include <tanh/audio-io/DataSource.h>
 #include <tanh/core/AtomicSharedPtr.h>
 #include <tanh/core/Exports.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <string>
+
+#include "AudioIODeviceCallback.h"
 
 namespace thl {
 

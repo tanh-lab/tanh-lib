@@ -1,14 +1,12 @@
 #include <gtest/gtest.h>
+#include <tanh/modulation/ModulationMatrix.h>
+#include <tanh/state/State.h>
 
 #include <array>
+#include <nlohmann/json.hpp>
 #include <utility>
 
 #include "TestHelpers.h"
-
-#include <nlohmann/json.hpp>
-
-#include <tanh/modulation/ModulationMatrix.h>
-#include <tanh/state/State.h>
 
 using namespace thl::modulation;
 

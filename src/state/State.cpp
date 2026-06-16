@@ -1,5 +1,7 @@
 #include "tanh/state/State.h"
 
+#include <tanh/core/Logger.h>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -8,21 +10,19 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <utility>
 
-#include <nlohmann/json_fwd.hpp>
-#include <tanh/core/Logger.h>
-
 #include "tanh/core/Exports.h"
+#include "tanh/state/Exceptions.h"
 #include "tanh/state/ModulationScope.h"
 #include "tanh/state/Parameter.h"
 #include "tanh/state/ParameterDefinitions.h"
+#include "tanh/state/ParameterListener.h"
 #include "tanh/state/StateGroup.h"
 #include "tanh/state/path_helpers.h"
 #include "tanh/utils/RealtimeSanitizer.h"
-#include "tanh/state/Exceptions.h"
-#include "tanh/state/ParameterListener.h"
 
 namespace thl {
 

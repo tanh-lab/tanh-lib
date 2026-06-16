@@ -12,19 +12,18 @@
 //     audible as clicks.
 
 #include <gtest/gtest.h>
-
-#include "DspFixture.h"
-#include "TestHelpers.h"
-
-#include <span>
-#include <string_view>
-#include <vector>
-
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/Limiter.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/State.h>
+
+#include <span>
+#include <string_view>
+#include <vector>
+
+#include "DspFixture.h"
+#include "TestHelpers.h"
 
 using namespace thl::modulation;
 using thl::dsp::utils::LimiterImpl;

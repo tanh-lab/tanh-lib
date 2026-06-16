@@ -1,14 +1,16 @@
 #include <tanh/audio-io/AudioPlayerSource.h>
-#include <cstdint>
-#include <atomic>
+
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <cstring>
-#include <string>
-#include <mutex>
-#include "tanh/core/AtomicSharedPtr.h"
 #include <memory>
-#include "tanh/audio-io/DataSource.h"
+#include <mutex>
+#include <string>
 #include <utility>
+
+#include "tanh/audio-io/DataSource.h"
+#include "tanh/core/AtomicSharedPtr.h"
 
 namespace thl {
 

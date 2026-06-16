@@ -1,14 +1,14 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
+#include <tanh/state/ModulationScope.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
-
-#include <tanh/core/Exports.h>
-#include <tanh/state/ModulationScope.h>
 
 namespace thl::modulation {
 

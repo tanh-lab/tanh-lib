@@ -28,12 +28,12 @@
 
 #pragma once
 
-#include <algorithm>
-
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
 #include <tanh/dsp/utils/Random.h>
+
+#include <algorithm>
 
 namespace thl::dsp::synth {
 

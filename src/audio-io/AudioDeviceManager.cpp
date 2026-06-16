@@ -1,18 +1,20 @@
 #include <tanh/audio-io/AudioDeviceManager.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "miniaudio.h"
 #include "tanh/audio-io/AudioDeviceInfo.h"
 #include "tanh/audio-io/AudioIODeviceCallback.h"
 #include "tanh/core/AtomicSharedPtr.h"
 #include "tanh/core/Logger.h"
 #include "tanh/core/threading/RCU.h"
-#include <algorithm>
-#include <cstdint>
-#include <atomic>
-#include <cstring>
-#include <string>
-#include <utility>
-#include <memory>
-#include <vector>
 
 #if defined(THL_PLATFORM_ANDROID)
 #include <tanh/audio-io/AndroidAudioDevices.h>

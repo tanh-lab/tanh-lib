@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstddef>
-
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/OnePole.h>
+
+#include <cstddef>
 
 namespace thl::dsp::filter {
 

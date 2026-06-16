@@ -1,7 +1,8 @@
 #include "tanh/dsp/utils/SmoothedValue.h"
+
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <algorithm>
 
 namespace thl::dsp::utils {
 

@@ -1,8 +1,10 @@
 #include <tanh/dsp/BaseProcessor.h>
+
+#include <cstdint>
+#include <span>
+
 #include "tanh/dsp/audio/AudioBufferView.h"
 #include "tanh/utils/RealtimeSanitizer.h"
-#include <span>
-#include <cstdint>
 
 namespace thl::dsp {
 

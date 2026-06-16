@@ -1,6 +1,7 @@
+#include <gtest/gtest.h>
+
 #include "TestHelpers.h"
 #include "tanh/state/State.h"
-#include <gtest/gtest.h>
 
 using namespace thl;
 

@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
-
-#include <tanh/dsp/synth/RingsResonatorSynthProcessor.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/dsp/synth/RingsResonatorSynthProcessor.h>
 
 #include <algorithm>
 #include <array>

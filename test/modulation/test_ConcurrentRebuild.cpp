@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
-
-#include "TestHelpers.h"
+#include <tanh/modulation/ModulationMatrix.h>
+#include <tanh/modulation/SmartHandle.h>
+#include <tanh/state/State.h>
 
 #include <atomic>
 #include <chrono>
@@ -9,9 +10,7 @@
 #include <thread>
 #include <vector>
 
-#include <tanh/modulation/ModulationMatrix.h>
-#include <tanh/modulation/SmartHandle.h>
-#include <tanh/state/State.h>
+#include "TestHelpers.h"
 
 using namespace thl::modulation;
 using namespace std::chrono_literals;

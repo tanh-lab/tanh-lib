@@ -1,7 +1,5 @@
 #pragma once
 
-#include <array>
-
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/BrownianNoise.h>
@@ -10,6 +8,8 @@
 #include <tanh/dsp/utils/FrequencyShifter.h>
 #include <tanh/dsp/utils/PitchShifter.h>
 #include <tanh/dsp/utils/SineOscillator.h>
+
+#include <array>
 
 namespace thl::dsp::fx {
 

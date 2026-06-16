@@ -1,8 +1,8 @@
 #include <tanh/dsp/utils/Scales.h>
 
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 namespace thl::dsp::utils {
 

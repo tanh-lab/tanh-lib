@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <vector>
+
 #include "tanh/core/Exports.h"
 #include "tanh/dsp/BaseProcessor.h"
 #include "tanh/dsp/utils/SmoothedValue.h"

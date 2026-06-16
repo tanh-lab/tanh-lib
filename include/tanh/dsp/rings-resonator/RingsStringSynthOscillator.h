@@ -30,7 +30,6 @@
 
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/ParameterInterpolator.h>
-#include <tanh/dsp/utils/DspMath.h>
 
 namespace thl::dsp::synth {
 

@@ -1,10 +1,11 @@
 #pragma once
 
-#include "StateGroup.h"
-#include "tanh/utils/RealtimeSanitizer.h"
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <unordered_map>
+
+#include "StateGroup.h"
+#include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl::modulation {
 class ModulationMatrix;

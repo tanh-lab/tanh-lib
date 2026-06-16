@@ -26,21 +26,19 @@
 //
 // Comb filter / KS string.
 
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/RingsString.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/ParameterInterpolator.h>
+#include <tanh/dsp/utils/Random.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+
 #include "tanh/dsp/DspTypes.h"
 #include "tanh/dsp/audio/AudioBufferView.h"
 #include "tanh/dsp/filter/OnePole.h"
-
-#include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/utils/ParameterInterpolator.h>
-#include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/utils/Random.h>
-
-#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 
 namespace thl::dsp::resonator {
 

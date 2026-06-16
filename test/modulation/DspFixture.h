@@ -12,17 +12,17 @@
 
 #pragma once
 
+#include <gtest/gtest.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/modulation/ModulationMatrix.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <gtest/gtest.h>
 #include <vector>
 
 #include "TestHelpers.h"
-
-#include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/modulation/ModulationMatrix.h>
 
 namespace dsp_fixture {
 

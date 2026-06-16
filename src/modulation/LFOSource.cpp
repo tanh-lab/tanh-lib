@@ -1,11 +1,12 @@
 #include "tanh/modulation/LFOSource.h"
 
+#include <tanh/core/Numbers.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <tanh/core/Numbers.h>
 
 using namespace thl::modulation;
 

@@ -1,9 +1,9 @@
 #if defined(THL_PLATFORM_IOS)
 
-#include <tanh/audio-io/iOSAudioDevices.h>
-#include <tanh/audio-io/AudioDeviceManager.h>
-#include <tanh/core/Logger.h>
 #import <AVFoundation/AVAudioSession.h>
+#include <tanh/audio-io/AudioDeviceManager.h>
+#include <tanh/audio-io/iOSAudioDevices.h>
+#include <tanh/core/Logger.h>
 
 static constexpr AVAudioSessionCategoryOptions k_base_session_options =
     AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowAirPlay |

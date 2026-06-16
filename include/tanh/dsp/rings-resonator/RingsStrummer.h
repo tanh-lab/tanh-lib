@@ -28,8 +28,8 @@
 
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/analysis/OnsetDetector.h>
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
 
 #include <cmath>

@@ -1,6 +1,6 @@
 ---
 BasedOnStyle: Google
-SortIncludes: false
+SortIncludes: true
 AlignEscapedNewlines: Left
 AllowShortBlocksOnASingleLine: true
 AllowShortCaseLabelsOnASingleLine: true

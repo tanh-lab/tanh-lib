@@ -1,9 +1,9 @@
 #pragma once
+#include <tanh/core/Exports.h>
+
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <algorithm>
-
-#include <tanh/core/Exports.h>
 
 namespace thl::dsp::utils {
 

@@ -1,16 +1,5 @@
 #pragma once
 
-#include <cstddef>
-#include <list>
-#include <mutex>
-#include <optional>
-#include <string>
-#include <map>
-#include <variant>
-#include <vector>
-
-#include <nlohmann/json_fwd.hpp>
-
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/modulation/ModulationRouting.h>
@@ -19,6 +8,16 @@
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/ModulationScope.h>
+
+#include <cstddef>
+#include <list>
+#include <map>
+#include <mutex>
+#include <nlohmann/json_fwd.hpp>
+#include <optional>
+#include <string>
+#include <variant>
+#include <vector>
 
 namespace thl {
 class State;

@@ -1,8 +1,7 @@
+#include <gtest/gtest.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/transport/InternalTransportClock.h>
-
-#include <gtest/gtest.h>
 
 #include <array>
 #include <cstdint>

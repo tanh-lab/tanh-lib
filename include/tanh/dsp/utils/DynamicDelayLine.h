@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstddef>
-
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBuffer.h>
+
+#include <cstddef>
 
 namespace thl::dsp::utils {
 

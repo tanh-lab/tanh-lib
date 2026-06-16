@@ -28,11 +28,11 @@
 
 #pragma once
 
-#include <algorithm>
-#include <cmath>
-
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/DspMath.h>
+
+#include <algorithm>
+#include <cmath>
 
 namespace thl::dsp::utils {
 

@@ -1,5 +1,5 @@
-#include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/transport/TransportClock.h>
 
 #include <array>

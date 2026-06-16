@@ -28,14 +28,14 @@
 
 #pragma once
 
-#include <algorithm>
-#include <array>
-
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/filter/Svf.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/utils/DelayLine.h>
+
+#include <algorithm>
+#include <array>
 
 namespace thl::dsp::resonator {
 

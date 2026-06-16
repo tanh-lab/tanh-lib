@@ -1,8 +1,9 @@
 #pragma once
 
+#include <tanh/core/Numbers.h>
+
 #include <cmath>
 #include <cstdint>
-#include <tanh/core/Numbers.h>
 
 namespace thl::dsp::utils {
 

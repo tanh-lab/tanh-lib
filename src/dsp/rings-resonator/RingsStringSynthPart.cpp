@@ -26,20 +26,20 @@
 //
 // String synth part.
 
-#include <tanh/dsp/rings-resonator/RingsStringSynthPart.h>
-
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
+#include <tanh/dsp/rings-resonator/RingsStringSynthPart.h>
 
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <cstddef>
-#include "tanh/dsp/utils/DspMath.h"
-#include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include <cstdint>
+
 #include "tanh/dsp/DspTypes.h"
+#include "tanh/dsp/audio/AudioBufferView.h"
 #include "tanh/dsp/filter/OnePole.h"
 #include "tanh/dsp/rings-resonator/RingsPatch.h"
+#include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
+#include "tanh/dsp/utils/DspMath.h"
 #include "tanh/dsp/utils/StringSynthEnvelope.h"
 
 namespace thl::dsp::synth {

@@ -26,18 +26,16 @@
 //
 // FM Voice.
 
+#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/RingsFmVoice.h>
+#include <tanh/dsp/utils/DspMath.h>
+#include <tanh/dsp/utils/ParameterInterpolator.h>
 
 #include <cmath>
-#include "tanh/dsp/audio/AudioBufferView.h"
 #include <cstddef>
 #include <cstdint>
 
-#include <tanh/dsp/utils/DspMath.h>
-#include <tanh/dsp/utils/ParameterInterpolator.h>
-#include <tanh/dsp/utils/DspMath.h>
-
-#include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
+#include "tanh/dsp/audio/AudioBufferView.h"
 
 namespace thl::dsp::synth {
 

@@ -28,25 +28,24 @@
 
 #pragma once
 
-#include <algorithm>
-#include <array>
-
 #include <tanh/core/Exports.h>
+#include <tanh/dsp/analysis/NoteFilter.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/utils/CosineOscillator.h>
 #include <tanh/dsp/filter/DCBlocker.h>
-#include <tanh/dsp/utils/DelayLine.h>
-
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsFmVoice.h>
-#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
-#include <tanh/dsp/utils/SoftLimiter.h>
-#include <tanh/dsp/analysis/NoteFilter.h>
+#include <tanh/dsp/rings-resonator/RingsModalResonator.h>
 #include <tanh/dsp/rings-resonator/RingsPatch.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
 #include <tanh/dsp/rings-resonator/RingsPlucker.h>
-#include <tanh/dsp/rings-resonator/RingsModalResonator.h>
 #include <tanh/dsp/rings-resonator/RingsString.h>
+#include <tanh/dsp/rings-resonator/fx/RingsReverb.h>
+#include <tanh/dsp/utils/CosineOscillator.h>
+#include <tanh/dsp/utils/DelayLine.h>
+#include <tanh/dsp/utils/SoftLimiter.h>
+
+#include <algorithm>
+#include <array>
 
 namespace thl::dsp::synth {
 

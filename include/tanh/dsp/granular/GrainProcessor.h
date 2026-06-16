@@ -1,13 +1,14 @@
 #pragma once
 
-#include <random>
-#include <vector>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
+#include <tanh/dsp/granular/GrainVisualizationListener.h>
 #include <tanh/dsp/utils/ADSR.h>
 #include <tanh/dsp/utils/HannWindow.h>
-#include <tanh/dsp/granular/GrainVisualizationListener.h>
+
+#include <random>
+#include <vector>
 
 namespace thl::dsp::granular {
 
