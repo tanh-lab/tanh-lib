@@ -1,3 +1,4 @@
+#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/fx/StereoFDN.h>
 
 #include <algorithm>
@@ -9,8 +10,6 @@
 #include <numbers>
 #include <utility>
 #include <vector>
-
-#include <tanh/dsp/audio/AudioBufferView.h>
 
 namespace thl::dsp::fx {
 

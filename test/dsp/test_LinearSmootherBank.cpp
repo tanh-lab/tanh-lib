@@ -1,8 +1,7 @@
 #include <gtest/gtest.h>
+#include <tanh/dsp/utils/LinearSmootherBank.h>
 
 #include <array>
-
-#include <tanh/dsp/utils/LinearSmootherBank.h>
 
 using thl::dsp::utils::LinearSmootherBank;
 

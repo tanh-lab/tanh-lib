@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
-
-#include <algorithm>
-
 #include <tanh/dsp/audio/AudioBuffer.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/fx/StereoFDN.h>
+
+#include <algorithm>
 
 namespace {
 

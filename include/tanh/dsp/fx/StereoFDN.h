@@ -1,15 +1,15 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <vector>
-
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
 #include <tanh/dsp/utils/LinearSmootherBank.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace thl::dsp::fx {
 
