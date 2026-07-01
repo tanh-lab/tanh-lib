@@ -283,8 +283,12 @@ private:
             }
             result = m_target->m_range->from_normalized(result_norm);
         } else {
-            // Plain-space delta (linear ranges or absolute depth mode)
+            // Plain-space delta (linear ranges or absolute depth mode). Clamp to
+            // the parameter range so additive modulation can't drive the value
+            // past [min, max] — matching the normalized branch above, which
+            // already clamps. Periodic ranges intentionally wrap, so leave them.
             result = base_f + mod;
+            if (!m_target->m_range->m_periodic) { result = m_target->m_range->clamp(result); }
         }
         // Snap stepped int targets (step > 1) to the parameter's step boundary
         // before the int cast. For step == 1 this is equivalent to the
