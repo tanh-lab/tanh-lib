@@ -17,15 +17,17 @@ constexpr size_t k_max_channel_support = 16;
 
 // Grain size limits in seconds (will be converted to samples based on sample
 // rate)
-constexpr float k_min_grain_size = 0.02f;  // 20 ms
-constexpr float k_max_grain_size = 0.4f;   // 400 ms
+constexpr float k_min_grain_size = 0.002f;  // 2 ms
+constexpr float k_max_grain_size = 0.4f;    // 400 ms
 
-// Minium and maximum grain interval in seconds (for density control)
-constexpr float k_min_grain_interval = 0.02f;  // 20 ms (50 grains/sec)
-constexpr float k_max_grain_interval = 0.2f;   // 200 ms (5 grains/sec)
+// Grain trigger rate limits in grains per second (for density control).
+// Density maps exponentially between these so the control feels even.
+constexpr float k_min_grain_rate = 2.0f;
+constexpr float k_max_grain_rate = 100.0f;
 
-// Maximum number of grains that can be active simultaneously
-constexpr size_t k_max_grains = 32;
+// Maximum number of grains that can be active simultaneously.
+// Must cover the worst-case overlap: k_max_grain_rate * k_max_grain_size.
+constexpr size_t k_max_grains = 48;
 
 // Duration in seconds over which temperature ramps up from 0 to full at
 // playback start
