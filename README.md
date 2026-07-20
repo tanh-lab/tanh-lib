@@ -295,3 +295,23 @@ processing in the duplex callback.
 - Android `startBluetoothSco()` docs state SCO input sampling "must be 8 kHz"
   (predates mSBC; modern headsets use 16 kHz)
 - Confirmed on Samsung SM-X716B, Android API 36 (March 2026)
+
+## License
+
+tanh-lib is licensed per component:
+
+- **Apache-2.0** — the buffer/core primitives and the binary-data CMake
+  helpers, so they can be reused by permissively licensed projects (e.g.
+  [anira](https://github.com/anira-project/anira)):
+  - `include/tanh/dsp/audio/` (`AudioBuffer.h`, `AudioBufferView.h`,
+    `RingBuffer.h`, `MemoryBlock.h`) and `src/dsp/audio/RingBuffer.cpp`
+  - `include/tanh/core/Exports.h`, `include/tanh/core/Logger.h` and
+    `src/core/Logger.cpp`
+  - `cmake/binary_data.cmake`, `cmake/bin2cpp.cmake`
+
+  These files carry an `SPDX-License-Identifier: Apache-2.0` header; the
+  license text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0). This set is
+  self-contained: the Apache-licensed files include only each other and the
+  C++ standard library.
+
+- **AGPL-3.0** — all other files (see [`LICENSE`](LICENSE)).
