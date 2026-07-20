@@ -195,3 +195,13 @@ TEST(RingBufferTyped, OverwriteOldestWhenFull) {
     EXPECT_EQ(rb.pop_sample(0), 5);
     EXPECT_EQ(rb.pop_sample(0), 6);
 }
+
+TEST(RingBufferTyped, ZeroCapacityIsGraceful) {
+    RingBuffer<float> rb;
+    rb.initialise_with_positions(1, 0);
+    rb.push_sample(0, 1.0f);  // must not divide by zero
+    EXPECT_EQ(rb.get_available_samples(0), 0u);
+    EXPECT_FLOAT_EQ(rb.pop_sample(0), 0.0f);
+    EXPECT_FLOAT_EQ(rb.get_future_sample(0, 0), 0.0f);
+    EXPECT_FLOAT_EQ(rb.get_past_sample(0, 0), 0.0f);
+}
