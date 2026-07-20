@@ -50,7 +50,7 @@ void MetronomePlayerImpl::prepare(const double& sample_rate,
 
 void MetronomePlayerImpl::process(thl::dsp::audio::AudioBufferView buffer,
                                   uint32_t modulation_offset) {
-    const auto frame_count = static_cast<uint32_t>(buffer.get_num_frames());
+    const auto frame_count = static_cast<uint32_t>(buffer.get_num_samples());
     const auto num_channels = buffer.get_num_channels();
     const bool enabled = get_parameter_bool(Enabled, modulation_offset);
     const bool playing = enabled && m_clock.is_playing();

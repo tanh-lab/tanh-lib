@@ -13,7 +13,7 @@ TEST(AudioBufferView, MonoConstructor) {
     AudioBufferView view(data.data(), 8);
 
     EXPECT_EQ(view.get_num_channels(), 1u);
-    EXPECT_EQ(view.get_num_frames(), 8u);
+    EXPECT_EQ(view.get_num_samples(), 8u);
     EXPECT_EQ(view.get_write_pointer(0), data.data());
 }
 
@@ -34,7 +34,7 @@ TEST(AudioBufferView, MultiChannelConstructor) {
     AudioBufferView view(channels.data(), 2, 4);
 
     EXPECT_EQ(view.get_num_channels(), 2u);
-    EXPECT_EQ(view.get_num_frames(), 4u);
+    EXPECT_EQ(view.get_num_samples(), 4u);
     EXPECT_EQ(view.get_write_pointer(0), ch0.data());
     EXPECT_EQ(view.get_write_pointer(1), ch1.data());
 }
@@ -46,7 +46,7 @@ TEST(AudioBufferView, FromBuffer) {
     AudioBufferView view(buffer);
 
     EXPECT_EQ(view.get_num_channels(), 2u);
-    EXPECT_EQ(view.get_num_frames(), 64u);
+    EXPECT_EQ(view.get_num_samples(), 64u);
     EXPECT_FLOAT_EQ(view.get_read_pointer(0)[10], 0.5f);
 }
 
@@ -58,7 +58,7 @@ TEST(ConstAudioBufferView, FromConstBuffer) {
     ConstAudioBufferView view(cref);
 
     EXPECT_EQ(view.get_num_channels(), 2u);
-    EXPECT_EQ(view.get_num_frames(), 64u);
+    EXPECT_EQ(view.get_num_samples(), 64u);
     EXPECT_FLOAT_EQ(view.get_read_pointer(1)[20], -0.75f);
 }
 
@@ -67,7 +67,7 @@ TEST(ConstAudioBufferView, MonoConstPointer) {
     ConstAudioBufferView view(data.data(), 4);
 
     EXPECT_EQ(view.get_num_channels(), 1u);
-    EXPECT_EQ(view.get_num_frames(), 4u);
+    EXPECT_EQ(view.get_num_samples(), 4u);
     EXPECT_FLOAT_EQ(view.get_read_pointer(0)[2], 30.0f);
 }
 
@@ -78,7 +78,7 @@ TEST(AudioBufferView, ImplicitConversionToConst) {
     ConstAudioBufferView const_view = mutable_view;
 
     EXPECT_EQ(const_view.get_num_channels(), 1u);
-    EXPECT_EQ(const_view.get_num_frames(), 4u);
+    EXPECT_EQ(const_view.get_num_samples(), 4u);
     EXPECT_FLOAT_EQ(const_view.get_read_pointer(0)[0], 1.0f);
 }
 
@@ -101,7 +101,7 @@ TEST(AudioBufferView, CopyMonoFixup) {
     AudioBufferView copy(original);
 
     EXPECT_EQ(copy.get_num_channels(), 1u);
-    EXPECT_EQ(copy.get_num_frames(), 8u);
+    EXPECT_EQ(copy.get_num_samples(), 8u);
     EXPECT_EQ(copy.get_write_pointer(0), data.data());
     EXPECT_FLOAT_EQ(copy.get_read_pointer(0)[7], 8.0f);
 }
@@ -113,7 +113,7 @@ TEST(AudioBufferView, MoveMonoFixup) {
     AudioBufferView moved(std::move(original));
 
     EXPECT_EQ(moved.get_num_channels(), 1u);
-    EXPECT_EQ(moved.get_num_frames(), 8u);
+    EXPECT_EQ(moved.get_num_samples(), 8u);
     EXPECT_EQ(moved.get_write_pointer(0), data.data());
     EXPECT_FLOAT_EQ(moved.get_read_pointer(0)[7], 8.0f);
 }
@@ -174,7 +174,7 @@ TEST(AudioBufferView, BufferViewIntegration) {
 
     AudioBufferView view = buffer.view();
     EXPECT_EQ(view.get_num_channels(), 2u);
-    EXPECT_EQ(view.get_num_frames(), 4u);
+    EXPECT_EQ(view.get_num_samples(), 4u);
     EXPECT_FLOAT_EQ(view.get_read_pointer(0)[0], 1.0f);
     EXPECT_FLOAT_EQ(view.get_read_pointer(0)[3], 2.0f);
     EXPECT_FLOAT_EQ(view.get_read_pointer(1)[1], 3.0f);
@@ -182,7 +182,7 @@ TEST(AudioBufferView, BufferViewIntegration) {
     const Buffer<float>& cbuffer = buffer;
     ConstAudioBufferView const_view = cbuffer.view();
     EXPECT_EQ(const_view.get_num_channels(), 2u);
-    EXPECT_EQ(const_view.get_num_frames(), 4u);
+    EXPECT_EQ(const_view.get_num_samples(), 4u);
     EXPECT_FLOAT_EQ(const_view.get_read_pointer(0)[0], 1.0f);
     EXPECT_FLOAT_EQ(const_view.get_read_pointer(1)[1], 3.0f);
 }
@@ -194,7 +194,7 @@ TEST(AudioBufferView, SubBlockMono) {
     AudioBufferView view(data.data(), 512);
 
     auto sub = view.sub_block(100, 50);
-    EXPECT_EQ(sub.get_num_frames(), 50u);
+    EXPECT_EQ(sub.get_num_samples(), 50u);
     EXPECT_EQ(sub.get_num_channels(), 1u);
 
     // Verify the sub_block points to the right data
@@ -213,7 +213,7 @@ TEST(AudioBufferView, SubBlockStereo) {
     AudioBufferView view(channels.data(), 2, 512);
 
     auto sub = view.sub_block(200, 100);
-    EXPECT_EQ(sub.get_num_frames(), 100u);
+    EXPECT_EQ(sub.get_num_samples(), 100u);
     EXPECT_EQ(sub.get_num_channels(), 2u);
 
     EXPECT_FLOAT_EQ(sub.get_read_pointer(0)[0], 200.0f);
@@ -243,7 +243,7 @@ TEST(AudioBufferView, SubBlockChained) {
     auto sub1 = view.sub_block(100, 200);
     auto sub2 = sub1.sub_block(50, 50);
 
-    EXPECT_EQ(sub2.get_num_frames(), 50u);
+    EXPECT_EQ(sub2.get_num_samples(), 50u);
     EXPECT_FLOAT_EQ(sub2.get_read_pointer(0)[0], 150.0f);
     EXPECT_FLOAT_EQ(sub2.get_read_pointer(0)[49], 199.0f);
 }

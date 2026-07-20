@@ -101,7 +101,7 @@ void RingsFmVoice::process(const thl::dsp::audio::ConstAudioBufferView& in,
     const float* const in_ptr = in.get_read_pointer(0);
     float* const out_ptr = out.get_write_pointer(0);
     float* const aux_ptr = aux.get_write_pointer(0);
-    const size_t size = in.get_num_frames();
+    const size_t size = in.get_num_samples();
 
     prepare_coefficients();
 

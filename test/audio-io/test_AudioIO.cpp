@@ -632,7 +632,7 @@ TEST(AudioFileLoader, RoundTripRecordAndLoad) {
     auto buffer = loader.load_from_file(test_file.string(), k_sample_rate, k_num_channels);
     EXPECT_FALSE(buffer.empty());
     EXPECT_EQ(buffer.get_num_channels(), k_num_channels);
-    EXPECT_EQ(buffer.get_num_frames(), k_frame_count);
+    EXPECT_EQ(buffer.get_num_samples(), k_frame_count);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), static_cast<double>(k_sample_rate));
 
     for (size_t ch = 0; ch < k_num_channels; ++ch) {

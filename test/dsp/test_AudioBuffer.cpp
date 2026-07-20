@@ -154,7 +154,7 @@ TEST(MemoryBlock, SubscriptOperator) {
 TEST(AudioBuffer, DefaultConstruction) {
     AudioBuffer buffer;
     EXPECT_EQ(buffer.get_num_channels(), 0u);
-    EXPECT_EQ(buffer.get_num_frames(), 0u);
+    EXPECT_EQ(buffer.get_num_samples(), 0u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 0.0);
     EXPECT_TRUE(buffer.empty());
 }
@@ -162,7 +162,7 @@ TEST(AudioBuffer, DefaultConstruction) {
 TEST(AudioBuffer, SizedConstruction) {
     AudioBuffer buffer(2, 128, 44100.0);
     EXPECT_EQ(buffer.get_num_channels(), 2u);
-    EXPECT_EQ(buffer.get_num_frames(), 128u);
+    EXPECT_EQ(buffer.get_num_samples(), 128u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 44100.0);
     EXPECT_FALSE(buffer.empty());
 }
@@ -232,7 +232,7 @@ TEST(AudioBuffer, SetSize) {
     buffer.set_size(3, 256, 96000.0);
 
     EXPECT_EQ(buffer.get_num_channels(), 3u);
-    EXPECT_EQ(buffer.get_num_frames(), 256u);
+    EXPECT_EQ(buffer.get_num_samples(), 256u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 96000.0);
     EXPECT_FALSE(buffer.empty());
 }
@@ -242,7 +242,7 @@ TEST(AudioBuffer, Resize) {
     buffer.resize(4, 128);
 
     EXPECT_EQ(buffer.get_num_channels(), 4u);
-    EXPECT_EQ(buffer.get_num_frames(), 128u);
+    EXPECT_EQ(buffer.get_num_samples(), 128u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 48000.0);
 }
 
@@ -255,7 +255,7 @@ TEST(AudioBuffer, CopyConstruction) {
 
     AudioBuffer copy(original);
     EXPECT_EQ(copy.get_num_channels(), 2u);
-    EXPECT_EQ(copy.get_num_frames(), 64u);
+    EXPECT_EQ(copy.get_num_samples(), 64u);
     EXPECT_DOUBLE_EQ(copy.get_sample_rate(), 44100.0);
 
     EXPECT_NE(copy.data(), original.data());
@@ -274,7 +274,7 @@ TEST(AudioBuffer, CopyAssignment) {
     AudioBuffer copy;
     copy = original;
     EXPECT_EQ(copy.get_num_channels(), 2u);
-    EXPECT_EQ(copy.get_num_frames(), 32u);
+    EXPECT_EQ(copy.get_num_samples(), 32u);
     EXPECT_FLOAT_EQ(copy.get_sample(0, 0), 42.0f);
 }
 
@@ -285,7 +285,7 @@ TEST(AudioBuffer, MoveConstruction) {
 
     AudioBuffer moved(std::move(original));
     EXPECT_EQ(moved.get_num_channels(), 2u);
-    EXPECT_EQ(moved.get_num_frames(), 64u);
+    EXPECT_EQ(moved.get_num_samples(), 64u);
     EXPECT_DOUBLE_EQ(moved.get_sample_rate(), 48000.0);
     EXPECT_EQ(moved.data(), original_data);
     EXPECT_FLOAT_EQ(moved.get_sample(0, 0), 7.0f);
@@ -448,7 +448,7 @@ TEST(AudioBuffer, FromInterleaved) {
     AudioBuffer buffer = from_interleaved(data.data(), 2, 4, 44100.0);
 
     EXPECT_EQ(buffer.get_num_channels(), 2u);
-    EXPECT_EQ(buffer.get_num_frames(), 4u);
+    EXPECT_EQ(buffer.get_num_samples(), 4u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 44100.0);
 
     EXPECT_FLOAT_EQ(buffer.get_sample(0, 0), 1.0f);
@@ -487,7 +487,7 @@ TEST(AudioBuffer, InterleavedRoundTrip) {
 TEST(BufferDouble, BasicOperations) {
     Buffer<double> buffer(2, 32, 96000.0);
     EXPECT_EQ(buffer.get_num_channels(), 2u);
-    EXPECT_EQ(buffer.get_num_frames(), 32u);
+    EXPECT_EQ(buffer.get_num_samples(), 32u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 96000.0);
 
     buffer.set_sample(0, 0, std::numbers::pi);

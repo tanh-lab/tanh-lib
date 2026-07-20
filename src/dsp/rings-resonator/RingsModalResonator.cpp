@@ -106,7 +106,7 @@ void RingsModalResonator::process(const thl::dsp::audio::ConstAudioBufferView& i
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);  // NOLINT(misc-const-correctness)
     float* aux_ptr = aux.get_write_pointer(0);  // NOLINT(misc-const-correctness)
-    size_t size = in.get_num_frames();
+    size_t size = in.get_num_samples();
 
     if (m_dirty) {
         m_num_modes = compute_filters();

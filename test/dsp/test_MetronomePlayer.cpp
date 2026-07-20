@@ -93,7 +93,7 @@ struct StereoBuffer {
 
 // Drive one process() call with the clock advanced by frame_count samples.
 void run_block(InternalTransportClock& clk, TestMetronome& m, AudioBufferView buf) {
-    clk.begin_block(static_cast<uint32_t>(buf.get_num_frames()));
+    clk.begin_block(static_cast<uint32_t>(buf.get_num_samples()));
     m.process(buf, 0);
     clk.end_block();
 }

@@ -57,11 +57,11 @@ struct RingsResonatorSynthProcessor::EngineState {
 
     double m_host_sample_rate = 48000.0;
     int m_latency = static_cast<int>(k_block_size);
-    thl::dsp::audio::RingBuffer m_dry_delay_line;
+    thl::dsp::audio::RingBuffer<float> m_dry_delay_line;
 
-    thl::dsp::audio::RingBuffer m_input_fifo;
-    thl::dsp::audio::RingBuffer m_output_fifo_odd;
-    thl::dsp::audio::RingBuffer m_output_fifo_even;
+    thl::dsp::audio::RingBuffer<float> m_input_fifo;
+    thl::dsp::audio::RingBuffer<float> m_output_fifo_odd;
+    thl::dsp::audio::RingBuffer<float> m_output_fifo_even;
 
     void prepare(double sample_rate, int max_block_size) {
         m_host_sample_rate = sample_rate;
@@ -143,7 +143,7 @@ void RingsResonatorSynthProcessor::process(const thl::dsp::audio::ConstAudioBuff
                                            thl::dsp::audio::AudioBufferView output) {
     const float* input_ptr = input.get_read_pointer(0);
     float* output_ptr = output.get_write_pointer(0);
-    int const num_samples = static_cast<int>(input.get_num_frames());
+    int const num_samples = static_cast<int>(input.get_num_samples());
 
     auto& e = *m_engine;
 

@@ -75,7 +75,7 @@ public:
                  thl::dsp::audio::AudioBufferView out) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
-        const size_t size = in.get_num_frames();
+        const size_t size = in.get_num_samples();
         float state_1 = m_state_1;
         float state_2 = m_state_2;
         for (size_t i = 0; i < size; ++i) {
@@ -117,7 +117,7 @@ public:
                            float mode) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
-        const size_t size = in.get_num_frames();
+        const size_t size = in.get_num_samples();
         float state_1 = m_state_1;
         float state_2 = m_state_2;
 
@@ -147,7 +147,7 @@ public:
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_1_ptr = out_1.get_write_pointer(0);
         float* const out_2_ptr = out_2.get_write_pointer(0);
-        const size_t size = in.get_num_frames();
+        const size_t size = in.get_num_samples();
         float state_1 = m_state_1;
         float state_2 = m_state_2;
         for (size_t i = 0; i < size; ++i) {
@@ -232,7 +232,7 @@ public:
                  thl::dsp::audio::AudioBufferView out) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
-        const size_t size = in.get_num_frames();
+        const size_t size = in.get_num_samples();
         float lp = m_lp;
         float bp = m_bp;
         for (size_t i = 0; i < size; ++i) {
@@ -253,7 +253,7 @@ public:
         const float* const in_ptr = in.get_read_pointer(0);
         float* const low_ptr = low.get_write_pointer(0);
         float* const high_ptr = high.get_write_pointer(0);
-        const size_t size = in.get_num_frames();
+        const size_t size = in.get_num_samples();
         float lp = m_lp;
         float bp = m_bp;
         for (size_t i = 0; i < size; ++i) {
@@ -275,7 +275,7 @@ public:
                  size_t decimate) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
-        const size_t size = in.get_num_frames();
+        const size_t size = in.get_num_samples();
         float lp = m_lp;
         float bp = m_bp;
         size_t n = decimate - 1;

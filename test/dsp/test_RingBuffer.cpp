@@ -7,13 +7,13 @@
 using namespace thl::dsp::audio;
 
 TEST(RingBuffer, DefaultConstruction) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     EXPECT_EQ(rb.get_num_channels(), 0u);
     EXPECT_EQ(rb.get_num_samples(), 0u);
 }
 
 TEST(RingBuffer, InitialiseWithPositions) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(2, 128);
     EXPECT_EQ(rb.get_num_channels(), 2u);
     EXPECT_EQ(rb.get_num_samples(), 128u);
@@ -22,7 +22,7 @@ TEST(RingBuffer, InitialiseWithPositions) {
 }
 
 TEST(RingBuffer, PushPopSingle) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 8);
     rb.push_sample(0, 1.0f);
     rb.push_sample(0, 2.0f);
@@ -35,7 +35,7 @@ TEST(RingBuffer, PushPopSingle) {
 }
 
 TEST(RingBuffer, WrapAround) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 4);
     for (int i = 0; i < 4; ++i) { rb.push_sample(0, static_cast<float>(i)); }
     EXPECT_EQ(rb.get_available_samples(0), 4u);
@@ -51,7 +51,7 @@ TEST(RingBuffer, WrapAround) {
 }
 
 TEST(RingBuffer, PushPopBlock) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 16);
     std::array<float, 4> in = {1.0f, 2.0f, 3.0f, 4.0f};
     rb.push_block(0, in.data(), 4);
@@ -64,7 +64,7 @@ TEST(RingBuffer, PushPopBlock) {
 }
 
 TEST(RingBuffer, PushBlockWrapAround) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 4);
     std::array<float, 3> in1 = {1, 2, 3};
     rb.push_block(0, in1.data(), 3);
@@ -80,7 +80,7 @@ TEST(RingBuffer, PushBlockWrapAround) {
 }
 
 TEST(RingBuffer, PopBlockWrapAround) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 4);
     for (int i = 0; i < 4; ++i) { rb.push_sample(0, static_cast<float>(i)); }
     rb.pop_sample(0);
@@ -96,7 +96,7 @@ TEST(RingBuffer, PopBlockWrapAround) {
 }
 
 TEST(RingBuffer, FutureSample) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 8);
     rb.push_sample(0, 10.0f);
     rb.push_sample(0, 20.0f);
@@ -108,7 +108,7 @@ TEST(RingBuffer, FutureSample) {
 }
 
 TEST(RingBuffer, PastSample) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 8);
     rb.push_sample(0, 1.0f);
     rb.push_sample(0, 2.0f);
@@ -121,7 +121,7 @@ TEST(RingBuffer, PastSample) {
 }
 
 TEST(RingBuffer, MultiChannelIndependence) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(2, 8);
     rb.push_sample(0, 100.0f);
     rb.push_sample(1, 200.0f);
@@ -133,7 +133,7 @@ TEST(RingBuffer, MultiChannelIndependence) {
 }
 
 TEST(RingBuffer, ClearWithPositions) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 8);
     rb.push_sample(0, 1.0f);
     rb.push_sample(0, 2.0f);
@@ -143,11 +143,55 @@ TEST(RingBuffer, ClearWithPositions) {
 }
 
 TEST(RingBuffer, FullState) {
-    RingBuffer rb;
+    RingBuffer<float> rb;
     rb.initialise_with_positions(1, 4);
     rb.push_sample(0, 1.0f);
     rb.push_sample(0, 2.0f);
     rb.push_sample(0, 3.0f);
     rb.push_sample(0, 4.0f);
     EXPECT_EQ(rb.get_available_samples(0), 4u);
+}
+
+// --- typed element support -------------------------------------------------
+
+TEST(RingBufferTyped, Int64RoundTripIsExact) {
+    RingBuffer<int64_t> rb;
+    rb.initialize_with_positions(1, 8);  // American-spelling alias
+    // Values beyond float32's 2^24 integer range must survive exactly.
+    const int64_t values[] = {0, -1, 13087, (1LL << 40) + 7, INT64_MAX};
+    for (const int64_t v : values) { rb.push_sample(0, v); }
+    EXPECT_EQ(rb.get_available_samples(0), 5u);
+    for (const int64_t v : values) { EXPECT_EQ(rb.pop_sample(0), v); }
+    EXPECT_EQ(rb.get_available_samples(0), 0u);
+}
+
+TEST(RingBufferTyped, PopEmptyReturnsValueInitialized) {
+    RingBuffer<int32_t> rb;
+    rb.initialise_with_positions(1, 4);
+    EXPECT_EQ(rb.pop_sample(0), 0);
+    rb.push_sample(0, 42);
+    EXPECT_EQ(rb.pop_sample(0), 42);
+    EXPECT_EQ(rb.pop_sample(0), 0);
+}
+
+TEST(RingBufferTyped, BlockOpsWithInt16) {
+    RingBuffer<int16_t> rb;
+    rb.initialise_with_positions(2, 16);
+    const int16_t in[] = {1, -2, 3, -4};
+    rb.push_block(1, in, 4);
+    EXPECT_EQ(rb.get_available_samples(1), 4u);
+    int16_t out[4] = {};
+    rb.pop_block(1, out, 4);
+    for (int i = 0; i < 4; ++i) { EXPECT_EQ(out[i], in[i]); }
+}
+
+TEST(RingBufferTyped, OverwriteOldestWhenFull) {
+    RingBuffer<int32_t> rb;
+    rb.initialise_with_positions(1, 4);
+    for (int32_t v = 1; v <= 6; ++v) { rb.push_sample(0, v); }  // 5 and 6 overwrite 1 and 2
+    EXPECT_EQ(rb.get_available_samples(0), 4u);
+    EXPECT_EQ(rb.pop_sample(0), 3);
+    EXPECT_EQ(rb.pop_sample(0), 4);
+    EXPECT_EQ(rb.pop_sample(0), 5);
+    EXPECT_EQ(rb.pop_sample(0), 6);
 }

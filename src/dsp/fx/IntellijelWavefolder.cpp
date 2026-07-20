@@ -102,7 +102,7 @@ void IntellijelWavefolderImpl::process(thl::dsp::audio::AudioBufferView buffer,
         std::clamp(get_parameter<float>(JfetTone, modulation_offset), 0.0f, 1.0f));
 
     const size_t num_channels = std::min(buffer.get_num_channels(), m_dc_x_prev.size());
-    const size_t num_frames = buffer.get_num_frames();
+    const size_t num_frames = buffer.get_num_samples();
 
     for (size_t i = 0; i < num_frames; ++i) {
         const float drive = m_smoothed_drive.get_smoothed_value(1);

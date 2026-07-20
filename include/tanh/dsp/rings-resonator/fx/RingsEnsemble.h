@@ -53,7 +53,7 @@ public:
     void process(thl::dsp::audio::AudioBufferView stereo) {
         float* left = stereo.get_write_pointer(0);
         float* right = stereo.get_write_pointer(1);
-        size_t size = stereo.get_num_frames();
+        size_t size = stereo.get_num_samples();
         using Memory = E::Reserve<4095, E::Reserve<4095> >;
         E::DelayLine<Memory, 0> line_l;
         E::DelayLine<Memory, 1> line_r;

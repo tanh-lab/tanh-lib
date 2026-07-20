@@ -497,7 +497,7 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
-    size_t const size = in.get_num_frames();
+    size_t const size = in.get_num_samples();
 
     // Copy inputs to outputs when bypass mode is enabled.
     if (m_bypass) {

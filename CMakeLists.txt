@@ -288,7 +288,6 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/FrequencyShifter.cpp
         src/dsp/utils/PitchShifter.cpp
 
-        src/dsp/audio/RingBuffer.cpp
 
         src/dsp/synth/SineProcessor.cpp
         src/dsp/granular/GrainProcessor.cpp

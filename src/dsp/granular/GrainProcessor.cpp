@@ -81,7 +81,7 @@ void GrainProcessorImpl::prepare(const double& sample_rate,
 
 void GrainProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer,
                                  uint32_t modulation_offset) {
-    const size_t num_samples = buffer.get_num_frames();
+    const size_t num_samples = buffer.get_num_samples();
     const size_t num_channels =
         std::min(buffer.get_num_channels(), static_cast<size_t>(k_max_channel_support));
     std::array<float*, k_max_channel_support> channel_ptrs{};
@@ -225,7 +225,7 @@ void GrainProcessorImpl::update_grains(float** buffer,
     // Get total frames for visualization position normalization
     size_t total_frames = 0;
     if (sample_index < audio_data.size() && !audio_data[sample_index].empty()) {
-        total_frames = audio_data[sample_index].get_num_frames();
+        total_frames = audio_data[sample_index].get_num_samples();
     }
 
     // For each sample in the buffer
@@ -375,7 +375,7 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index, uint32_t modul
             velocity = calculate_velocity(velocity, velocity_temperature);
 
             // Apply sample start/end/loop region
-            size_t const total_frames = audio_data[sample_index].get_num_frames();
+            size_t const total_frames = audio_data[sample_index].get_num_samples();
             auto region = compute_sample_region(total_frames, modulation_offset);
             if (region.size() == 0) { return; }
 
@@ -543,7 +543,7 @@ void GrainProcessorImpl::read_sample(float position,
     const auto& buf = audio_data[sample_index];
     if (source_channel >= buf.get_num_channels()) { return; }
 
-    size_t const num_frames = buf.get_num_frames();
+    size_t const num_frames = buf.get_num_samples();
 
     // Linear interpolation between samples for fractional positions
     long pos_floor = static_cast<long>(position);
