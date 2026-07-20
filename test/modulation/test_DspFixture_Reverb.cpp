@@ -12,7 +12,7 @@
 //     wet mix, Decay) can still produce audible discontinuities.
 
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/fx/ConstellationReverb.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>

@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 
 using namespace thl::dsp::synth;
 
@@ -30,7 +30,7 @@ void SineProcessorImpl::prepare(const double& sample_rate,
     m_smoothed_amplitude.set_current_and_target_value(get_parameter<float>(Amplitude));
 }
 
-void SineProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer,
+void SineProcessorImpl::process(thl::core::BufferView buffer,
                                 uint32_t modulation_offset) {
     constexpr size_t k_max_channels = 16;
     const size_t num_samples = buffer.get_num_samples();

@@ -8,7 +8,7 @@
 #include <cstring>
 #include <utility>
 
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 #include "tanh/dsp/audio/AudioDataStore.h"
 #include "tanh/dsp/granular/GrainVisualizationListener.h"
 
@@ -79,7 +79,7 @@ void GrainProcessorImpl::prepare(const double& sample_rate,
     m_envelope.reset();
 }
 
-void GrainProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer,
+void GrainProcessorImpl::process(thl::core::BufferView buffer,
                                  uint32_t modulation_offset) {
     const size_t num_samples = buffer.get_num_samples();
     const size_t num_channels =

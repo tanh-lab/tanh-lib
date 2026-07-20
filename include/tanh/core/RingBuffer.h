@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-#include <tanh/dsp/audio/AudioBuffer.h>
+#include <tanh/core/Buffer.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::audio {
+namespace thl::core {
 
 /**
  * Multi-channel ring buffer over an arbitrary element type.
@@ -139,4 +139,4 @@ private:
 
 using RingBufferF = RingBuffer<float>;
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::core

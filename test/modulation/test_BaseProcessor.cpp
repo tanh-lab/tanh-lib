@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <tanh/dsp/BaseProcessor.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 
 #include <span>
 #include <vector>
@@ -19,7 +19,7 @@ public:
         m_block_sizes.reserve(samples_per_block);
     }
 
-    void process(thl::dsp::audio::AudioBufferView buffer,
+    void process(thl::core::BufferView buffer,
                  uint32_t /*modulation_offset*/ = 0) override {
         m_block_sizes.push_back(buffer.get_num_samples());
     }
@@ -30,7 +30,7 @@ TEST(BaseProcessor, ProcessModulatedNoChangePoints) {
     proc.prepare(k_sample_rate, k_block_size, 1);
 
     std::vector<float> data(k_block_size, 1.0f);
-    thl::dsp::audio::AudioBufferView view(data.data(), k_block_size);
+    thl::core::BufferView view(data.data(), k_block_size);
 
     proc.process_modulated(view, {});
     ASSERT_EQ(proc.m_block_sizes.size(), 1u);
@@ -42,7 +42,7 @@ TEST(BaseProcessor, ProcessModulatedWithChangePoints) {
     proc.prepare(k_sample_rate, k_block_size, 1);
 
     std::vector<float> data(512, 1.0f);
-    thl::dsp::audio::AudioBufferView view(data.data(), 512);
+    thl::core::BufferView view(data.data(), 512);
 
     std::vector<uint32_t> cps = {100, 300};
     proc.process_modulated(view, std::span<const uint32_t>(cps));
@@ -59,7 +59,7 @@ TEST(BaseProcessor, ProcessModulatedSkipsInvalidChangePoints) {
     proc.prepare(k_sample_rate, k_block_size, 1);
 
     std::vector<float> data(512, 1.0f);
-    thl::dsp::audio::AudioBufferView view(data.data(), 512);
+    thl::core::BufferView view(data.data(), 512);
 
     // Include edge cases: 0 (at start, skip), 512 (at end, skip), duplicate
     std::vector<uint32_t> cps = {0, 200, 200, 512};

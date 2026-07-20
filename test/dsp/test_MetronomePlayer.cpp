@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/transport/InternalTransportClock.h>
 
@@ -14,7 +14,7 @@ constexpr double k_sample_rate = 48000.0;
 constexpr double k_bpm = 120.0;
 // At 120 BPM: 1 beat = 24000 samples, 1 sixteenth = 6000, 1 bar (4/4) = 96000.
 
-using thl::dsp::audio::AudioBufferView;
+using thl::core::BufferView;
 using thl::dsp::metronome::MetronomePlayerImpl;
 using thl::dsp::transport::Division;
 using thl::dsp::transport::InternalTransportClock;
@@ -43,7 +43,7 @@ public:
     std::vector<Event> events;
     std::vector<uint32_t> modulation_offsets;  // captured per process() invocation
 
-    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset) override {
+    void process(thl::core::BufferView buffer, uint32_t modulation_offset) override {
         modulation_offsets.push_back(modulation_offset);
         m_sample_counter = 0;  // reset for each sub-block
         MetronomePlayerImpl::process(buffer, modulation_offset);
@@ -83,16 +83,16 @@ private:
 struct StereoBuffer {
     std::vector<float> l, r;
     std::array<float*, 2> channels{};
-    AudioBufferView view;
+    BufferView view;
 
     explicit StereoBuffer(uint32_t frames, float fill = 0.0f) : l(frames, fill), r(frames, fill) {
         channels = {l.data(), r.data()};
-        view = AudioBufferView(channels.data(), 2, frames);
+        view = BufferView(channels.data(), 2, frames);
     }
 };
 
 // Drive one process() call with the clock advanced by frame_count samples.
-void run_block(InternalTransportClock& clk, TestMetronome& m, AudioBufferView buf) {
+void run_block(InternalTransportClock& clk, TestMetronome& m, BufferView buf) {
     clk.begin_block(static_cast<uint32_t>(buf.get_num_samples()));
     m.process(buf, 0);
     clk.end_block();

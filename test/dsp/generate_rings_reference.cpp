@@ -1,4 +1,4 @@
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsPatch.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
@@ -82,9 +82,9 @@ int main() {
             std::array<float, k_frames_per_block> in{};
             std::array<float, k_frames_per_block> out{};
             std::array<float, k_frames_per_block> aux{};
-            thl::dsp::audio::ConstAudioBufferView in_view(in.data(), k_frames_per_block);
-            thl::dsp::audio::AudioBufferView out_view(out.data(), k_frames_per_block);
-            thl::dsp::audio::AudioBufferView aux_view(aux.data(), k_frames_per_block);
+            thl::core::ConstBufferView in_view(in.data(), k_frames_per_block);
+            thl::core::BufferView out_view(out.data(), k_frames_per_block);
+            thl::core::BufferView aux_view(aux.data(), k_frames_per_block);
             part.process(state, patch, in_view, out_view, aux_view);
         }
 
@@ -100,9 +100,9 @@ int main() {
             float* out_ptr = out_data.data() + block * k_frames_per_block;
             float* aux_ptr = aux_data.data() + block * k_frames_per_block;
 
-            thl::dsp::audio::ConstAudioBufferView in_view(in_ptr, k_frames_per_block);
-            thl::dsp::audio::AudioBufferView out_view(out_ptr, k_frames_per_block);
-            thl::dsp::audio::AudioBufferView aux_view(aux_ptr, k_frames_per_block);
+            thl::core::ConstBufferView in_view(in_ptr, k_frames_per_block);
+            thl::core::BufferView out_view(out_ptr, k_frames_per_block);
+            thl::core::BufferView aux_view(aux_ptr, k_frames_per_block);
             part.process(state, patch, in_view, out_view, aux_view);
         }
 

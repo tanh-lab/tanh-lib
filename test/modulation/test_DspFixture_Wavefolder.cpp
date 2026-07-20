@@ -14,7 +14,7 @@
 // thresholds against a known-broken-then-fixed processor.
 
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/fx/IntellijelWavefolder.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>
@@ -117,7 +117,7 @@ static std::vector<float> run_blocks(ModulationMatrix& matrix,
                   input.begin() + static_cast<ptrdiff_t>((b + 1) * k_block_size),
                   block.begin());
         matrix.process(k_block_size);
-        thl::dsp::audio::AudioBufferView view(block.data(), k_block_size);
+        thl::core::BufferView view(block.data(), k_block_size);
         wf.process_modulated(view);
         output.insert(output.end(), block.begin(), block.end());
     }

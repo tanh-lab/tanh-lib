@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace thl::dsp::audio {
+namespace thl::core {
 
 template <typename T>
 class MemoryBlock {
@@ -138,4 +138,4 @@ private:
     size_t m_size = 0;
 };
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::core

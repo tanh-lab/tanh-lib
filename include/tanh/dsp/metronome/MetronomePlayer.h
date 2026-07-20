@@ -44,7 +44,7 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
 
-    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
+    void process(thl::core::BufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
     // ── Parameters ───────────────────────────────────────────────────────────

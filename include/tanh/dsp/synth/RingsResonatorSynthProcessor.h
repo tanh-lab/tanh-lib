@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 
 #include <cstdint>
 #include <memory>
@@ -36,8 +36,8 @@ public:
     RingsResonatorSynthProcessor& operator=(RingsResonatorSynthProcessor&&) noexcept;
 
     void prepare(double sample_rate, int max_block_size);
-    void process(const thl::dsp::audio::ConstAudioBufferView& input,
-                 thl::dsp::audio::AudioBufferView output);
+    void process(const thl::core::ConstBufferView& input,
+                 thl::core::BufferView output);
     int get_latency() const;
 
 protected:

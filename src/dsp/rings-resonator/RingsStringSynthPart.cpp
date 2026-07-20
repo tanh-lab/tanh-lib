@@ -35,7 +35,7 @@
 #include <cstdint>
 
 #include "tanh/dsp/DspTypes.h"
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 #include "tanh/dsp/filter/OnePole.h"
 #include "tanh/dsp/rings-resonator/RingsPatch.h"
 #include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
@@ -282,8 +282,8 @@ const std::array<std::array<float, k_num_formants>, k_formant_table_size> k_form
 void RingsStringSynthPart::process_formant_filter(float vowel,
                                                   float shift,
                                                   float resonance,
-                                                  thl::dsp::audio::AudioBufferView out,
-                                                  thl::dsp::audio::AudioBufferView aux) {
+                                                  thl::core::BufferView out,
+                                                  thl::core::BufferView aux) {
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
     size_t const size = out.get_num_samples();
@@ -301,8 +301,8 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
         float f = a + (b - a) * vowel_fractional;
         f *= shift;
         m_formant_filter[i].set_f_q<Approximation::Dirty>(f / m_sample_rate, resonance);
-        thl::dsp::audio::ConstAudioBufferView const filter_in(m_filter_in_buffer.data(), size);
-        thl::dsp::audio::AudioBufferView const filter_out(m_filter_out_buffer.data(), size);
+        thl::core::ConstBufferView const filter_in(m_filter_in_buffer.data(), size);
+        thl::core::BufferView const filter_out(m_filter_out_buffer.data(), size);
         m_formant_filter[i].process<thl::dsp::filter::FilterMode::BandPass>(filter_in, filter_out);
         const float pan = static_cast<float>(i) * 0.3f + 0.2f;
         for (size_t j = 0; j < size; ++j) {
@@ -320,9 +320,9 @@ struct ChordNote {
 void RingsStringSynthPart::process(
     const thl::dsp::resonator::RingsPerformanceState& performance_state,
     const thl::dsp::resonator::RingsPatch& patch,
-    const thl::dsp::audio::ConstAudioBufferView& in,
-    thl::dsp::audio::AudioBufferView out,
-    thl::dsp::audio::AudioBufferView aux) {
+    const thl::core::ConstBufferView& in,
+    thl::core::BufferView out,
+    thl::core::BufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
@@ -406,7 +406,7 @@ void RingsStringSynthPart::process(
     }
 
     std::array<float*, 2> stereo_ptrs = {out_ptr, aux_ptr};
-    thl::dsp::audio::AudioBufferView const stereo_view(stereo_ptrs.data(), 2, size);
+    thl::core::BufferView const stereo_view(stereo_ptrs.data(), 2, size);
 
     switch (m_fx_type) {
         case FxType::Formant:

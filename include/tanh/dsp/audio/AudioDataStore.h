@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/dsp/audio/AudioBuffer.h>
+#include <tanh/core/Buffer.h>
 
 #include <atomic>
 #include <cstdint>
@@ -8,6 +8,8 @@
 #include <vector>
 
 namespace thl::dsp::audio {
+
+using core::BufferF;
 
 /**
  * RT-safe single-buffered audio data storage with CAS state machine.
@@ -34,7 +36,7 @@ public:
 
     void end_read() { m_state.store(Idle, std::memory_order_release); }
 
-    const std::vector<AudioBuffer>& get_buffer() const { return m_buffer; }
+    const std::vector<BufferF>& get_buffer() const { return m_buffer; }
 
     bool is_loaded() const { return m_loaded.load(std::memory_order_acquire); }
 
@@ -44,7 +46,7 @@ public:
         return m_load_generation.load(std::memory_order_acquire);
     }
 
-    std::vector<AudioBuffer>& begin_load() {
+    std::vector<BufferF>& begin_load() {
         // Spin until we can acquire Loading state
         while (true) {
             // NOLINTNEXTLINE(misc-const-correctness) — mutated by compare_exchange_weak on failure.
@@ -74,7 +76,7 @@ public:
 private:
     enum State { Idle = 0, Reading = 1, Loading = 2 };
 
-    std::vector<AudioBuffer> m_buffer;
+    std::vector<BufferF> m_buffer;
     std::atomic<int> m_state{Idle};
     std::atomic<int> m_root_note{60};
     std::atomic<bool> m_loaded{false};

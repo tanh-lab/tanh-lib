@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/fx/RingsFxEngine.h>
 
@@ -50,7 +50,7 @@ public:
 
     static constexpr size_t k_reverb_buffer_size = 65536;
 
-    void process(thl::dsp::audio::AudioBufferView stereo) {
+    void process(thl::core::BufferView stereo) {
         float* left = stereo.get_write_pointer(0);
         float* right = stereo.get_write_pointer(1);
         size_t size = stereo.get_num_samples();

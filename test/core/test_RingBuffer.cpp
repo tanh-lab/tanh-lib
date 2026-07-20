@@ -2,9 +2,9 @@
 
 #include <array>
 
-#include "tanh/dsp/audio/RingBuffer.h"
+#include "tanh/core/RingBuffer.h"
 
-using namespace thl::dsp::audio;
+using namespace thl::core;
 
 TEST(RingBuffer, DefaultConstruction) {
     RingBuffer<float> rb;

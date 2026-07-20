@@ -3,24 +3,24 @@
 #include <cstdint>
 #include <span>
 
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl::dsp {
 
-void BaseProcessor::process_modulated(const thl::dsp::audio::AudioBufferView& buffer)
+void BaseProcessor::process_modulated(const thl::core::BufferView& buffer)
     TANH_NONBLOCKING_FUNCTION {
     split_and_process(buffer, get_change_points());
 }
 
 // Caller-injected: uses externally supplied change points
-void BaseProcessor::process_modulated(const thl::dsp::audio::AudioBufferView& buffer,
+void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
                                       std::span<const uint32_t> change_points)
     TANH_NONBLOCKING_FUNCTION {
     split_and_process(buffer, change_points);
 }
 
-void BaseProcessor::split_and_process(const thl::dsp::audio::AudioBufferView& buffer,
+void BaseProcessor::split_and_process(const thl::core::BufferView& buffer,
                                       std::span<const uint32_t> change_points)
     TANH_NONBLOCKING_FUNCTION {
     if (change_points.empty()) {

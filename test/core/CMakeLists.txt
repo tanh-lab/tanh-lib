@@ -5,6 +5,9 @@ add_executable(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
 	test_RCU.cpp
+	test_Buffer.cpp
+	test_BufferView.cpp
+	test_RingBuffer.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

@@ -13,7 +13,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/modulation/ModulationMatrix.h>
 
 #include <algorithm>
@@ -57,7 +57,7 @@ std::vector<float> run_blocks_mono(thl::modulation::ModulationMatrix& matrix,
                   input.begin() + static_cast<ptrdiff_t>((b + 1) * k_block_size),
                   block.begin());
         matrix.process(k_block_size);
-        thl::dsp::audio::AudioBufferView view(block.data(), k_block_size);
+        thl::core::BufferView view(block.data(), k_block_size);
         proc.process_modulated(view);
         output.insert(output.end(), block.begin(), block.end());
     }
@@ -86,7 +86,7 @@ std::pair<std::vector<float>, std::vector<float>> run_blocks_stereo(
             r[i] = sample;
         }
         matrix.process(k_block_size);
-        thl::dsp::audio::AudioBufferView view(channels.data(), 2, k_block_size);
+        thl::core::BufferView view(channels.data(), 2, k_block_size);
         proc.process_modulated(view);
         out_l.insert(out_l.end(), l.begin(), l.end());
         out_r.insert(out_r.end(), r.begin(), r.end());

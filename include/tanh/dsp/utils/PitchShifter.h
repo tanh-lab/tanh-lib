@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/dsp/audio/AudioBuffer.h>
+#include <tanh/core/Buffer.h>
 
 namespace thl::dsp::utils {
 
@@ -12,7 +12,7 @@ namespace thl::dsp::utils {
  * pitch ratio, crossfaded with a Hann window so the two grains always sum
  * to 1.0, hiding grain boundaries.
  *
- * The circular buffer is backed by an AudioBuffer (heap-allocated).
+ * The circular buffer is backed by an BufferF (heap-allocated).
  *
  * Call prepare() before use.
  */
@@ -35,7 +35,7 @@ private:
     void update_phase_inc(float rate);
     float read_interp(const float* buf, float delay) const;
 
-    thl::dsp::audio::Buffer<float> m_buf;
+    thl::core::Buffer<float> m_buf;
     int m_window_size = 2048;
     int m_buf_size = 4096;
     int m_write_pos = 0;

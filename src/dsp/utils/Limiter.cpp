@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 
 namespace thl::dsp::utils {
 
@@ -43,7 +43,7 @@ void LimiterImpl::prepare(const double& sample_rate,
         static_cast<float>(std::exp(-1.0 / (release_ms * 0.001 * sample_rate))));
 }
 
-void LimiterImpl::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset) {
+void LimiterImpl::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     constexpr size_t k_max_channels = 16;
     const size_t num_samples = buffer.get_num_samples();
     const size_t num_channels = std::min(buffer.get_num_channels(), k_max_channels);

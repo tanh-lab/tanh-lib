@@ -1,8 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
 #pragma once
 
 #include <string>
 
+#include "core/Buffer.h"
+#include "core/BufferView.h"
 #include "core/Dispatcher.h"
+#include "core/MemoryBlock.h"
+#include "core/RingBuffer.h"
 #include "core/Logger.h"
 #include "core/threading/RCU.h"
 
