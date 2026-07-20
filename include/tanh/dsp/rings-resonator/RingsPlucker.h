@@ -61,7 +61,7 @@ public:
 
     void process(thl::dsp::audio::AudioBufferView out) {
         float* out_ptr = out.get_write_pointer(0);
-        const size_t size = out.get_num_frames();
+        const size_t size = out.get_num_samples();
         const float comb_gain = m_comb_filter_gain;
         const float comb_delay = m_comb_filter_period;
         for (size_t i = 0; i < size; ++i) {

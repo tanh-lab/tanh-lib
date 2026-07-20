@@ -115,7 +115,7 @@ void RingsString::process_internal(const thl::dsp::audio::ConstAudioBufferView& 
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);  // NOLINT(misc-const-correctness)
     float* aux_ptr = aux.get_write_pointer(0);  // NOLINT(misc-const-correctness)
-    size_t size = in.get_num_frames();
+    size_t size = in.get_num_samples();
 
     float delay = 1.0f / m_frequency;
     thl::dsp::utils::constrain<float>(delay, 4.0f, k_delay_line_size - 4.0f);

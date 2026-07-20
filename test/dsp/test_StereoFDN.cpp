@@ -97,7 +97,7 @@ TEST(StereoFDN, CrossfadesDelayChangesAfterProcessingStarts) {
     fdn.set_delay_samples(2, 2);
 
     AudioBuffer first_block(2, 8, k_sample_rate);
-    for (size_t i = 0; i < first_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < first_block.get_num_samples(); ++i) {
         first_block.get_write_pointer(0)[i] = static_cast<float>(i + 1);
     }
     fdn.process(AudioBufferView(first_block));
@@ -105,7 +105,7 @@ TEST(StereoFDN, CrossfadesDelayChangesAfterProcessingStarts) {
     fdn.set_delay_sample(StereoFDN::k_left, 0, 4);
 
     AudioBuffer second_block(2, 6, k_sample_rate);
-    for (size_t i = 0; i < second_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < second_block.get_num_samples(); ++i) {
         second_block.get_write_pointer(0)[i] = static_cast<float>(i + 9);
     }
     fdn.process(AudioBufferView(second_block));
@@ -285,7 +285,7 @@ TEST(StereoFDN, SmoothsDelayTargetsWithFractionalReads) {
     fdn.set_delay_samples(2, 2);
 
     AudioBuffer first_block(2, 8, k_sample_rate);
-    for (size_t i = 0; i < first_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < first_block.get_num_samples(); ++i) {
         first_block.get_write_pointer(0)[i] = static_cast<float>(i + 1);
     }
     fdn.process(AudioBufferView(first_block));
@@ -293,7 +293,7 @@ TEST(StereoFDN, SmoothsDelayTargetsWithFractionalReads) {
     fdn.set_delay_sample(StereoFDN::k_left, 0, 4);
 
     AudioBuffer second_block(2, 6, k_sample_rate);
-    for (size_t i = 0; i < second_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < second_block.get_num_samples(); ++i) {
         second_block.get_write_pointer(0)[i] = static_cast<float>(i + 9);
     }
     fdn.process(AudioBufferView(second_block));
@@ -319,7 +319,7 @@ TEST(StereoFDN, SmoothedDelayChangesDoNotRestartCrossfade) {
     fdn.set_delay_samples(2, 2);
 
     AudioBuffer first_block(2, 8, k_sample_rate);
-    for (size_t i = 0; i < first_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < first_block.get_num_samples(); ++i) {
         first_block.get_write_pointer(0)[i] = static_cast<float>(i + 1);
     }
     fdn.process(AudioBufferView(first_block));
@@ -327,7 +327,7 @@ TEST(StereoFDN, SmoothedDelayChangesDoNotRestartCrossfade) {
     fdn.set_delay_sample(StereoFDN::k_left, 0, 4);
 
     AudioBuffer second_block(2, 6, k_sample_rate);
-    for (size_t i = 0; i < second_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < second_block.get_num_samples(); ++i) {
         second_block.get_write_pointer(0)[i] = static_cast<float>(i + 9);
     }
     fdn.process(AudioBufferView(second_block));
@@ -353,7 +353,7 @@ TEST(StereoFDN, LargeDelayRetargetsAreSlewLimited) {
     fdn.set_delay_samples(2, 2);
 
     AudioBuffer first_block(2, 8, k_sample_rate);
-    for (size_t i = 0; i < first_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < first_block.get_num_samples(); ++i) {
         first_block.get_write_pointer(0)[i] = static_cast<float>(i + 1);
     }
     fdn.process(AudioBufferView(first_block));
@@ -361,7 +361,7 @@ TEST(StereoFDN, LargeDelayRetargetsAreSlewLimited) {
     fdn.set_delay_sample(StereoFDN::k_left, 0, 10);
 
     AudioBuffer second_block(2, 6, k_sample_rate);
-    for (size_t i = 0; i < second_block.get_num_frames(); ++i) {
+    for (size_t i = 0; i < second_block.get_num_samples(); ++i) {
         second_block.get_write_pointer(0)[i] = static_cast<float>(i + 9);
     }
     fdn.process(AudioBufferView(second_block));

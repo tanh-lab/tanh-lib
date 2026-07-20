@@ -50,7 +50,7 @@ public:
     }
 
     void push_sample(size_t channel, T sample) {
-        const size_t capacity = m_buffer.get_num_frames();
+        const size_t capacity = m_buffer.get_num_samples();
         m_buffer.get_write_pointer(channel)[m_write_pos[channel]] = sample;
         m_write_pos[channel] = (m_write_pos[channel] + 1) % capacity;
         if (m_is_full[channel]) {
@@ -63,7 +63,7 @@ public:
 
     T pop_sample(size_t channel) {
         if (empty(channel)) { return T{}; }
-        const size_t capacity = m_buffer.get_num_frames();
+        const size_t capacity = m_buffer.get_num_samples();
         T const sample = m_buffer.get_read_pointer(channel)[m_read_pos[channel]];
         m_read_pos[channel] = (m_read_pos[channel] + 1) % capacity;
         m_is_full[channel] = false;
@@ -71,7 +71,7 @@ public:
     }
 
     void push_block(size_t channel, const T* data, size_t count) {
-        const size_t capacity = m_buffer.get_num_frames();
+        const size_t capacity = m_buffer.get_num_samples();
         T* buf = m_buffer.get_write_pointer(channel);
         for (size_t i = 0; i < count; ++i) {
             buf[m_write_pos[channel]] = data[i];
@@ -86,7 +86,7 @@ public:
     }
 
     void pop_block(size_t channel, T* data, size_t count) {
-        const size_t capacity = m_buffer.get_num_frames();
+        const size_t capacity = m_buffer.get_num_samples();
         const T* buf = m_buffer.get_read_pointer(channel);
         for (size_t i = 0; i < count; ++i) {
             if (empty(channel)) {
@@ -100,19 +100,19 @@ public:
     }
 
     T get_future_sample(size_t channel, size_t offset) const {
-        const size_t capacity = m_buffer.get_num_frames();
+        const size_t capacity = m_buffer.get_num_samples();
         size_t const pos = (m_read_pos[channel] + offset) % capacity;
         return m_buffer.get_read_pointer(channel)[pos];
     }
 
     T get_past_sample(size_t channel, size_t offset) const {
-        const size_t capacity = m_buffer.get_num_frames();
+        const size_t capacity = m_buffer.get_num_samples();
         size_t const pos = (m_read_pos[channel] + capacity - offset) % capacity;
         return m_buffer.get_read_pointer(channel)[pos];
     }
 
     size_t get_available_samples(size_t channel) const {
-        const size_t capacity = m_buffer.get_num_frames();
+        const size_t capacity = m_buffer.get_num_samples();
         if (m_is_full[channel]) { return capacity; }
         return (m_write_pos[channel] + capacity - m_read_pos[channel]) % capacity;
     }
@@ -122,11 +122,11 @@ public:
     }
 
     size_t get_num_channels() const { return m_buffer.get_num_channels(); }
-    size_t get_num_samples() const { return m_buffer.get_num_frames(); }
+    size_t get_num_samples() const { return m_buffer.get_num_samples(); }
 
 private:
     bool empty(size_t channel) const {
-        return m_buffer.get_num_frames() == 0 ||
+        return m_buffer.get_num_samples() == 0 ||
                (!m_is_full[channel] && m_read_pos[channel] == m_write_pos[channel]);
     }
 

@@ -151,7 +151,7 @@ public:
 
     bool process(const thl::dsp::audio::ConstAudioBufferView& samples) {
         const float* samples_ptr = samples.get_read_pointer(0);
-        const size_t size = samples.get_num_frames();
+        const size_t size = samples.get_num_samples();
         // Automatic gain control.
         m_compressor.process(samples_ptr, m_bands[0].data(), size);
 

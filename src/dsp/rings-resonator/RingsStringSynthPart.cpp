@@ -286,7 +286,7 @@ void RingsStringSynthPart::process_formant_filter(float vowel,
                                                   thl::dsp::audio::AudioBufferView aux) {
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
-    size_t const size = out.get_num_frames();
+    size_t const size = out.get_num_samples();
 
     for (size_t i = 0; i < size; ++i) { m_filter_in_buffer[i] = out_ptr[i] + aux_ptr[i]; }
     fill(&out_ptr[0], &out_ptr[size], 0.0f);
@@ -326,7 +326,7 @@ void RingsStringSynthPart::process(
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
-    size_t const size = in.get_num_frames();
+    size_t const size = in.get_num_samples();
 
     // Assign note to a voice.
     std::array<uint8_t, k_max_string_synth_polyphony> envelope_flags{};

@@ -28,7 +28,7 @@ void BaseProcessor::split_and_process(const thl::dsp::audio::AudioBufferView& bu
         return;
     }
     uint32_t pos = 0;
-    const auto total = static_cast<uint32_t>(buffer.get_num_frames());
+    const auto total = static_cast<uint32_t>(buffer.get_num_samples());
     for (uint32_t const cp : change_points) {
         if (cp <= pos || cp >= total) { continue; }
         process(buffer.sub_block(pos, cp - pos), pos);

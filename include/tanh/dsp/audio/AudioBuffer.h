@@ -88,9 +88,9 @@ public:
 
     // -- Dimensions and metadata ------------------------------------------
 
-    size_t get_num_frames() const { return m_size; }
-    /// Alias of get_num_frames() (anira-compatible surface).
     size_t get_num_samples() const { return m_size; }
+    [[deprecated("Use get_num_samples() instead")]]
+    size_t get_num_frames() const { return m_size; }
     size_t get_num_channels() const { return m_num_channels; }
     double get_sample_rate() const { return m_sample_rate; }
     bool empty() const { return m_size == 0 || m_num_channels == 0; }
@@ -226,7 +226,7 @@ using AudioBuffer = Buffer<float>;
 /// Copy planar buffer to an interleaved float vector.
 inline std::vector<float> to_interleaved(const AudioBuffer& buffer) {
     const size_t num_channels = buffer.get_num_channels();
-    const size_t num_frames = buffer.get_num_frames();
+    const size_t num_frames = buffer.get_num_samples();
     std::vector<float> interleaved(num_frames * num_channels);
     for (size_t ch = 0; ch < num_channels; ++ch) {
         const float* src = buffer.get_read_pointer(ch);

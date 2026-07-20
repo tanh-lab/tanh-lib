@@ -30,14 +30,14 @@ public:
     BasicAudioBufferView(Buffer<std::remove_const_t<T>>& buffer)
         : m_channels(buffer.get_array_of_write_pointers())
         , m_num_channels(buffer.get_num_channels())
-        , m_num_frames(buffer.get_num_frames()) {}
+        , m_num_frames(buffer.get_num_samples()) {}
 
     template <typename U = T>
         requires(std::is_const_v<U>)
     BasicAudioBufferView(const Buffer<std::remove_const_t<T>>& buffer)
         : m_channels(reinterpret_cast<const float* const*>(buffer.get_array_of_read_pointers()))
         , m_num_channels(buffer.get_num_channels())
-        , m_num_frames(buffer.get_num_frames()) {}
+        , m_num_frames(buffer.get_num_samples()) {}
 
     // Implicit conversion: mutable view -> const view
     template <typename U = T>
@@ -45,7 +45,7 @@ public:
     BasicAudioBufferView(const BasicAudioBufferView<float>& other)
         : m_frame_offset(other.get_frame_offset())
         , m_num_channels(other.get_num_channels())
-        , m_num_frames(other.get_num_frames()) {
+        , m_num_frames(other.get_num_samples()) {
         if (other.is_mono_inline()) {
             m_inline_channel = other.get_read_pointer(0);
             m_channels = &m_inline_channel;
@@ -110,6 +110,8 @@ public:
     }
 
     size_t get_num_channels() const { return m_num_channels; }
+    size_t get_num_samples() const { return m_num_frames; }
+    [[deprecated("Use get_num_samples() instead")]]
     size_t get_num_frames() const { return m_num_frames; }
 
     std::span<T> operator[](size_t channel) {

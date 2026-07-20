@@ -53,7 +53,7 @@ public:
     void process(thl::dsp::audio::AudioBufferView stereo) {
         float* left = stereo.get_write_pointer(0);
         float* right = stereo.get_write_pointer(1);
-        size_t size = stereo.get_num_frames();
+        size_t size = stereo.get_num_samples();
         // This is the Griesinger topology described in the Dattorro paper
         // (4 AP diffusers on the input, then a loop of 2x 2AP+1Delay).
         // Modulation is applied in the loop of the first diffuser AP for

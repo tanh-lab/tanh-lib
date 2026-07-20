@@ -197,7 +197,7 @@ void StereoFDN::prepare(const double& sample_rate,
 
 void StereoFDN::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset) {
     if (!m_prepared || buffer.get_num_channels() < k_num_audio_channels ||
-        buffer.get_num_frames() == 0) {
+        buffer.get_num_samples() == 0) {
         return;
     }
 
@@ -205,7 +205,7 @@ void StereoFDN::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modula
 
     float* left = buffer.get_write_pointer(k_left);
     float* right = buffer.get_write_pointer(k_right);
-    const size_t num_samples = buffer.get_num_frames();
+    const size_t num_samples = buffer.get_num_samples();
 
     for (size_t sample = 0; sample < num_samples; ++sample) {
         const float in_l = left[sample];

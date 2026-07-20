@@ -54,7 +54,7 @@ public:
 
     void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  RingsPerformanceState* performance_state) {
-        const bool has_onset = in.get_num_frames() > 0 && m_onset_detector.process(in);
+        const bool has_onset = in.get_num_samples() > 0 && m_onset_detector.process(in);
         const bool note_changed = std::fabs(performance_state->m_note - m_previous_note) > 0.4f;
 
         int32_t inhibit_timer = m_inhibit_timer;

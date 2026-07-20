@@ -21,7 +21,7 @@ public:
 
     void process(thl::dsp::audio::AudioBufferView buffer,
                  uint32_t /*modulation_offset*/ = 0) override {
-        m_block_sizes.push_back(buffer.get_num_frames());
+        m_block_sizes.push_back(buffer.get_num_samples());
     }
 };
 

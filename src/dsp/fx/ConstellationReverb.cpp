@@ -85,7 +85,7 @@ void ConstellationReverbImpl::process(thl::dsp::audio::AudioBufferView buffer,
                                       uint32_t modulation_offset) {
     if (buffer.get_num_channels() < 2) { return; }
 
-    const size_t num_frames = buffer.get_num_frames();
+    const size_t num_frames = buffer.get_num_samples();
     float* ch0 = buffer.get_write_pointer(0);
     float* ch1 = buffer.get_write_pointer(1);
 

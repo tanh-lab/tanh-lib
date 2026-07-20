@@ -33,7 +33,7 @@ void SineProcessorImpl::prepare(const double& sample_rate,
 void SineProcessorImpl::process(thl::dsp::audio::AudioBufferView buffer,
                                 uint32_t modulation_offset) {
     constexpr size_t k_max_channels = 16;
-    const size_t num_samples = buffer.get_num_frames();
+    const size_t num_samples = buffer.get_num_samples();
     const size_t num_channels =
         std::min({buffer.get_num_channels(), k_max_channels, m_phase.size()});
     std::array<float*, k_max_channels> channel_ptrs;

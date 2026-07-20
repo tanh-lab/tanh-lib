@@ -143,7 +143,7 @@ void RingsResonatorSynthProcessor::process(const thl::dsp::audio::ConstAudioBuff
                                            thl::dsp::audio::AudioBufferView output) {
     const float* input_ptr = input.get_read_pointer(0);
     float* output_ptr = output.get_write_pointer(0);
-    int const num_samples = static_cast<int>(input.get_num_frames());
+    int const num_samples = static_cast<int>(input.get_num_samples());
 
     auto& e = *m_engine;
 

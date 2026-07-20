@@ -46,7 +46,7 @@ public:
     void process(thl::dsp::audio::AudioBufferView stereo, float pre_gain) {
         float* l = stereo.get_write_pointer(0);  // NOLINT(misc-const-correctness)
         float* r = stereo.get_write_pointer(1);  // NOLINT(misc-const-correctness)
-        size_t size = stereo.get_num_frames();
+        size_t size = stereo.get_num_samples();
         while (size--) {
             const float l_pre = *l * pre_gain;
             const float r_pre = *r * pre_gain;
