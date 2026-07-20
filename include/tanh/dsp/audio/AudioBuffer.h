@@ -89,6 +89,8 @@ public:
     // -- Dimensions and metadata ------------------------------------------
 
     size_t get_num_frames() const { return m_size; }
+    /// Alias of get_num_frames() (anira-compatible surface).
+    size_t get_num_samples() const { return m_size; }
     size_t get_num_channels() const { return m_num_channels; }
     double get_sample_rate() const { return m_sample_rate; }
     bool empty() const { return m_size == 0 || m_num_channels == 0; }
