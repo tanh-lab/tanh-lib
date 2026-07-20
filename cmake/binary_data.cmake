@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 macro(tanh_make_absolute path)
     if(NOT IS_ABSOLUTE "${${path}}")
         get_filename_component(${path} "${${path}}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")

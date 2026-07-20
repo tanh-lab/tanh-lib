@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # bin2cpp.cmake
 # Variables: SRC, DST, HEADER, NAMESPACE, VAR
 
