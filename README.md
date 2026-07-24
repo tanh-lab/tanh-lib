@@ -307,6 +307,8 @@ tanh-lib is licensed per component:
     `RingBuffer.h`, `MemoryBlock.h`) and `src/dsp/audio/RingBuffer.cpp`
   - `include/tanh/core/Exports.h`, `include/tanh/core/Logger.h` and
     `src/core/Logger.cpp`
+  - `include/tanh/dsp/analysis/AdaptivePeakPicker.h` and
+    `src/dsp/analysis/AdaptivePeakPicker.cpp`
   - `cmake/binary_data.cmake`, `cmake/bin2cpp.cmake`
 
   These files carry an `SPDX-License-Identifier: Apache-2.0` header; the
