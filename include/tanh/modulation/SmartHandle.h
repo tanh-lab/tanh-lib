@@ -283,7 +283,9 @@ private:
             }
             result = m_target->m_range->from_normalized(result_norm);
         } else {
-            // Plain-space delta (linear ranges or absolute depth mode)
+            // Plain-space delta (linear ranges or absolute depth mode). Not
+            // clamped to range: absolute-depth modulation is allowed to push the
+            // value past [min, max] (see PolyphonicModulation.Load_WithVoiceIndex).
             result = base_f + mod;
         }
         // Snap stepped int targets (step > 1) to the parameter's step boundary
