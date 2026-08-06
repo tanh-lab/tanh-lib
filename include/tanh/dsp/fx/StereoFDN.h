@@ -2,7 +2,7 @@
 
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
 #include <tanh/dsp/utils/LinearSmootherBank.h>
 
@@ -55,7 +55,7 @@ public:
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
-    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
+    void process(thl::core::BufferView buffer, uint32_t modulation_offset = 0) override;
 
     void reset();
 

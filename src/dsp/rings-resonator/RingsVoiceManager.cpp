@@ -40,7 +40,7 @@
 #include <cstdint>
 
 #include "tanh/dsp/DspTypes.h"
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 #include "tanh/dsp/filter/OnePole.h"
 #include "tanh/dsp/rings-resonator/RingsDsp.h"
 #include "tanh/dsp/rings-resonator/RingsPatch.h"
@@ -312,9 +312,9 @@ void RingsVoiceManager::render_modal_voice(
     }
 
     // Process through filter.
-    thl::dsp::audio::AudioBufferView const res_in_view(m_resonator_input.data(), size);
+    thl::core::BufferView const res_in_view(m_resonator_input.data(), size);
     m_excitation_filter[voice].process<thl::dsp::filter::FilterMode::LowPass>(
-        thl::dsp::audio::ConstAudioBufferView(m_resonator_input.data(), size),
+        thl::core::ConstBufferView(m_resonator_input.data(), size),
         res_in_view);
 
     thl::dsp::resonator::RingsModalResonator& r = m_resonator[voice];
@@ -323,9 +323,9 @@ void RingsVoiceManager::render_modal_voice(
     r.set_brightness(patch.m_brightness * patch.m_brightness);
     r.set_position(patch.m_position);
     r.set_damping(patch.m_damping);
-    thl::dsp::audio::AudioBufferView const out_view(m_out_buffer.data(), size);
-    thl::dsp::audio::AudioBufferView const aux_view(m_aux_buffer.data(), size);
-    r.process(thl::dsp::audio::ConstAudioBufferView(m_resonator_input.data(), size),
+    thl::core::BufferView const out_view(m_out_buffer.data(), size);
+    thl::core::BufferView const aux_view(m_aux_buffer.data(), size);
+    r.process(thl::core::ConstBufferView(m_resonator_input.data(), size),
               out_view,
               aux_view);
 }
@@ -349,9 +349,9 @@ void RingsVoiceManager::render_fm_voice(
     v.set_feedback_amount(patch.m_position);
     v.set_position(/*patch.m_position*/ 0.0f);
     v.set_damping(patch.m_damping);
-    thl::dsp::audio::ConstAudioBufferView const in_view(m_resonator_input.data(), size);
-    thl::dsp::audio::AudioBufferView const out_view(m_out_buffer.data(), size);
-    thl::dsp::audio::AudioBufferView const aux_view(m_aux_buffer.data(), size);
+    thl::core::ConstBufferView const in_view(m_resonator_input.data(), size);
+    thl::core::BufferView const out_view(m_out_buffer.data(), size);
+    thl::core::BufferView const aux_view(m_aux_buffer.data(), size);
     v.process(in_view, out_view, aux_view);
 }
 
@@ -390,9 +390,9 @@ void RingsVoiceManager::render_string_voice(
     }
 
     // Process external input.
-    thl::dsp::audio::AudioBufferView const res_in_view(m_resonator_input.data(), size);
+    thl::core::BufferView const res_in_view(m_resonator_input.data(), size);
     m_excitation_filter[voice].process<thl::dsp::filter::FilterMode::LowPass>(
-        thl::dsp::audio::ConstAudioBufferView(m_resonator_input.data(), size),
+        thl::core::ConstBufferView(m_resonator_input.data(), size),
         res_in_view);
 
     // Add noise burst.
@@ -400,11 +400,11 @@ void RingsVoiceManager::render_string_voice(
         if (voice == m_active_voice && performance_state.m_strum) {
             m_plucker[voice].trigger(frequency, filter_cutoff * 8.0f, patch.m_position);
         }
-        thl::dsp::audio::AudioBufferView const noise_view(m_noise_burst_buffer.data(), size);
+        thl::core::BufferView const noise_view(m_noise_burst_buffer.data(), size);
         m_plucker[voice].process(noise_view);
         for (size_t i = 0; i < size; ++i) { m_resonator_input[i] += m_noise_burst_buffer[i]; }
     }
-    thl::dsp::audio::AudioBufferView const dc_view(m_resonator_input.data(), size);
+    thl::core::BufferView const dc_view(m_resonator_input.data(), size);
     m_dc_blocker[voice].process(dc_view);
 
     fill(m_out_buffer.begin(), m_out_buffer.begin() + size, 0.0f);
@@ -415,8 +415,8 @@ void RingsVoiceManager::render_string_voice(
                                  ? (structure - 0.24f) * 4.166f
                                  : (structure > 0.26f ? (structure - 0.26f) * 1.35135f : 0.0f);
 
-    thl::dsp::audio::AudioBufferView const out_view(m_out_buffer.data(), size);
-    thl::dsp::audio::AudioBufferView const aux_view(m_aux_buffer.data(), size);
+    thl::core::BufferView const out_view(m_out_buffer.data(), size);
+    thl::core::BufferView const aux_view(m_aux_buffer.data(), size);
 
     for (int32_t string = 0; string < num_strings; ++string) {
         int32_t const i = voice + string * m_polyphony;
@@ -451,7 +451,7 @@ void RingsVoiceManager::render_string_voice(
         s.set_brightness(brightness);
         s.set_position(position);
         s.set_damping(damping + string_index * (0.95f - damping));
-        thl::dsp::audio::ConstAudioBufferView const string_in(input, size);
+        thl::core::ConstBufferView const string_in(input, size);
         s.process(string_in, out_view, aux_view);
 
         if (string == 0) {
@@ -491,9 +491,9 @@ void RingsVoiceManager::prepare_voice_params(
 
 void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                                 const thl::dsp::resonator::RingsPatch& patch,
-                                const thl::dsp::audio::ConstAudioBufferView& in,
-                                thl::dsp::audio::AudioBufferView out,
-                                thl::dsp::audio::AudioBufferView aux) {
+                                const thl::core::ConstBufferView& in,
+                                thl::core::BufferView out,
+                                thl::core::BufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);
     float* aux_ptr = aux.get_write_pointer(0);
@@ -576,14 +576,14 @@ void RingsVoiceManager::process(const thl::dsp::resonator::RingsPerformanceState
         m_reverb.set_input_gain(0.2f);
         m_reverb.set_lp(0.3f + patch.m_brightness * 0.6f);
         std::array<float*, 2> stereo_ptrs = {out_ptr, aux_ptr};
-        thl::dsp::audio::AudioBufferView const stereo_view(stereo_ptrs.data(), 2, size);
+        thl::core::BufferView const stereo_view(stereo_ptrs.data(), 2, size);
         m_reverb.process(stereo_view);
         for (size_t i = 0; i < size; ++i) { aux_ptr[i] = -aux_ptr[i]; }
     }
 
     // Apply limiter to string output.
     std::array<float*, 2> limiter_ptrs = {out_ptr, aux_ptr};
-    thl::dsp::audio::AudioBufferView const limiter_view(limiter_ptrs.data(), 2, size);
+    thl::core::BufferView const limiter_view(limiter_ptrs.data(), 2, size);
     m_limiter.process(limiter_view, m_model_gains[m_model]);
 }
 

@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
 #include <tanh/dsp/utils/Random.h>
@@ -59,7 +59,7 @@ public:
         m_svf.set_f_q<Approximation::Dirty>(std::min(cutoff, 0.499f), 1.0f);
     }
 
-    void process(thl::dsp::audio::AudioBufferView out) {
+    void process(thl::core::BufferView out) {
         float* out_ptr = out.get_write_pointer(0);
         const size_t size = out.get_num_samples();
         const float comb_gain = m_comb_filter_gain;
@@ -73,9 +73,9 @@ public:
             out_ptr[i] = in + comb_gain * m_comb_filter.read(comb_delay);
             m_comb_filter.write(out_ptr[i]);
         }
-        const thl::dsp::audio::AudioBufferView out_view(out_ptr, size);
+        const thl::core::BufferView out_view(out_ptr, size);
         m_svf.process<thl::dsp::filter::FilterMode::LowPass>(
-            thl::dsp::audio::ConstAudioBufferView(out_ptr, size),
+            thl::core::ConstBufferView(out_ptr, size),
             out_view);
     }
 

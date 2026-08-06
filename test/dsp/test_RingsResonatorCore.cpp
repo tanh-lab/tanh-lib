@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsPatch.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
@@ -62,11 +62,11 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     for (int block = 0; block < 8; ++block) {
         std::ranges::fill(out, 0.0f);
         std::ranges::fill(aux, 0.0f);
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
+        thl::core::ConstBufferView in_view(in.data(),
                                                       thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out.data(),
+        thl::core::BufferView out_view(out.data(),
                                                   thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+        thl::core::BufferView aux_view(aux.data(),
                                                   thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
@@ -95,11 +95,11 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     for (int block = 0; block < 4; ++block) {
         std::ranges::fill(out, 0.0f);
         std::ranges::fill(aux, 0.0f);
-        thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
+        thl::core::ConstBufferView sil_view(silence.data(),
                                                        thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out.data(),
+        thl::core::BufferView out_view(out.data(),
                                                   thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+        thl::core::BufferView aux_view(aux.data(),
                                                   thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, sil_view, out_view, aux_view);
     }
@@ -107,11 +107,11 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     in.fill(0.0f);
     in[0] = 1.0f;
     {
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(),
+        thl::core::ConstBufferView in_view(in.data(),
                                                       thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView out_view(out.data(),
+        thl::core::BufferView out_view(out.data(),
                                                   thl::dsp::resonator::k_max_block_size);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+        thl::core::BufferView aux_view(aux.data(),
                                                   thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
@@ -122,11 +122,11 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
         if (block > 0) {
             std::ranges::fill(out, 0.0f);
             std::ranges::fill(aux, 0.0f);
-            thl::dsp::audio::ConstAudioBufferView sil_view(silence.data(),
+            thl::core::ConstBufferView sil_view(silence.data(),
                                                            thl::dsp::resonator::k_max_block_size);
-            thl::dsp::audio::AudioBufferView out_view(out.data(),
+            thl::core::BufferView out_view(out.data(),
                                                       thl::dsp::resonator::k_max_block_size);
-            thl::dsp::audio::AudioBufferView aux_view(aux.data(),
+            thl::core::BufferView aux_view(aux.data(),
                                                       thl::dsp::resonator::k_max_block_size);
             part.process(state, patch, sil_view, out_view, aux_view);
         }
@@ -219,9 +219,9 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
         std::array<float, kFramesPerBlock> in{};
         std::array<float, kFramesPerBlock> out{};
         std::array<float, kFramesPerBlock> aux{};
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), kFramesPerBlock);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), kFramesPerBlock);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), kFramesPerBlock);
+        thl::core::ConstBufferView in_view(in.data(), kFramesPerBlock);
+        thl::core::BufferView out_view(out.data(), kFramesPerBlock);
+        thl::core::BufferView aux_view(aux.data(), kFramesPerBlock);
         part.process(state, patch, in_view, out_view, aux_view);
     }
 
@@ -232,9 +232,9 @@ TEST_P(RingsReferenceOutputTest, MatchesReferenceData) {
 
         if (block == 0) { in[0] = 1.0f; }
 
-        thl::dsp::audio::ConstAudioBufferView in_view(in.data(), kFramesPerBlock);
-        thl::dsp::audio::AudioBufferView out_view(out.data(), kFramesPerBlock);
-        thl::dsp::audio::AudioBufferView aux_view(aux.data(), kFramesPerBlock);
+        thl::core::ConstBufferView in_view(in.data(), kFramesPerBlock);
+        thl::core::BufferView out_view(out.data(), kFramesPerBlock);
+        thl::core::BufferView aux_view(aux.data(), kFramesPerBlock);
         part.process(state, patch, in_view, out_view, aux_view);
 
         for (size_t i = 0; i < kFramesPerBlock; ++i) {

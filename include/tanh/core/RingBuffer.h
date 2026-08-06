@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-#include <tanh/dsp/audio/AudioBuffer.h>
+#include <tanh/core/Buffer.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::audio {
+namespace thl::core {
 
 /**
  * Multi-channel ring buffer over an arbitrary element type.
@@ -51,6 +51,7 @@ public:
 
     void push_sample(size_t channel, T sample) {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0) { return; }
         m_buffer.get_write_pointer(channel)[m_write_pos[channel]] = sample;
         m_write_pos[channel] = (m_write_pos[channel] + 1) % capacity;
         if (m_is_full[channel]) {
@@ -72,6 +73,7 @@ public:
 
     void push_block(size_t channel, const T* data, size_t count) {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0) { return; }
         T* buf = m_buffer.get_write_pointer(channel);
         for (size_t i = 0; i < count; ++i) {
             buf[m_write_pos[channel]] = data[i];
@@ -101,12 +103,14 @@ public:
 
     T get_future_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0) { return T{}; }
         size_t const pos = (m_read_pos[channel] + offset) % capacity;
         return m_buffer.get_read_pointer(channel)[pos];
     }
 
     T get_past_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0) { return T{}; }
         size_t const pos = (m_read_pos[channel] + capacity - offset) % capacity;
         return m_buffer.get_read_pointer(channel)[pos];
     }
@@ -139,4 +143,4 @@ private:
 
 using RingBufferF = RingBuffer<float>;
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::core

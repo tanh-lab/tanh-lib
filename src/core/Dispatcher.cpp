@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <tanh/core/Dispatcher.h>
 
 #include <mutex>

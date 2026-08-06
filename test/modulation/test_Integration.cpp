@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/Limiter.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>
@@ -88,7 +88,7 @@ TEST(Integration, LFOModulatesLimiterThreshold) {
 
     // Create audio buffer
     std::vector<float> audio(k_block_size, 0.8f);
-    thl::dsp::audio::AudioBufferView view(audio.data(), k_block_size);
+    thl::core::BufferView view(audio.data(), k_block_size);
 
     // Process with modulation change points
     test_limiter.process_modulated(view);

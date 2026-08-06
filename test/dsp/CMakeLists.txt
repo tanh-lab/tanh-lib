@@ -4,9 +4,6 @@ project (${PROJECT_NAME} VERSION ${PROJECT_VERSION})
 add_executable(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
-	test_AudioBuffer.cpp
-	test_AudioBufferView.cpp
-	test_RingBuffer.cpp
 	test_Limiter.cpp
 	test_LinearSmootherBank.cpp
 	test_StereoFDN.cpp

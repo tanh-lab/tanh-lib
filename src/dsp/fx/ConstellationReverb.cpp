@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <utility>
 
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 
 namespace thl::dsp::fx {
 
@@ -81,7 +81,7 @@ void ConstellationReverbImpl::prepare(const double& sample_rate,
     m_tank_a_out = m_tank_b_out = 0.0f;
 }
 
-void ConstellationReverbImpl::process(thl::dsp::audio::AudioBufferView buffer,
+void ConstellationReverbImpl::process(thl::core::BufferView buffer,
                                       uint32_t modulation_offset) {
     if (buffer.get_num_channels() < 2) { return; }
 

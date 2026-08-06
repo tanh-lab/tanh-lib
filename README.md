@@ -300,18 +300,16 @@ processing in the duplex callback.
 
 tanh-lib is licensed per component:
 
-- **Apache-2.0** — the buffer/core primitives and the binary-data CMake
-  helpers, so they can be reused by permissively licensed projects (e.g.
-  [anira](https://github.com/anira-project/anira)):
-  - `include/tanh/dsp/audio/` (`AudioBuffer.h`, `AudioBufferView.h`,
-    `RingBuffer.h`, `MemoryBlock.h`) and `src/dsp/audio/RingBuffer.cpp`
-  - `include/tanh/core/Exports.h`, `include/tanh/core/Logger.h` and
-    `src/core/Logger.cpp`
-  - `cmake/binary_data.cmake`, `cmake/bin2cpp.cmake`
+- **Apache-2.0** — the **core component** (`tanh::Core`): generic containers
+  (`Buffer<T>`, `BufferView`, `RingBuffer<T>`, `MemoryBlock<T>`), `Logger`,
+  `Dispatcher`, threading utilities (RCU), and small helpers — everything under
+  `include/tanh/core/`, `include/tanh/core.h`, `src/core/`, `src/core.cpp` —
+  plus the binary-data CMake helpers (`cmake/binary_data.cmake`,
+  `cmake/bin2cpp.cmake`). One target, one license: linking `tanh::Core` pulls
+  in Apache-2.0 code only, so permissively licensed projects (e.g.
+  [anira](https://github.com/anira-project/anira)) can depend on it. These
+  files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
+  text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
 
-  These files carry an `SPDX-License-Identifier: Apache-2.0` header; the
-  license text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0). This set is
-  self-contained: the Apache-licensed files include only each other and the
-  C++ standard library.
-
-- **AGPL-3.0** — all other files (see [`LICENSE`](LICENSE)).
+- **AGPL-3.0** — all other components (`state`, `dsp`, `resonator`,
+  `modulation`, `audio-io`) and files (see [`LICENSE`](LICENSE)).

@@ -1,5 +1,5 @@
-#include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/audio/RingBuffer.h>
+#include <tanh/core/BufferView.h>
+#include <tanh/core/RingBuffer.h>
 #include <tanh/dsp/rings-resonator/RingsStringSynthPart.h>
 #include <tanh/dsp/rings-resonator/RingsStrummer.h>
 #include <tanh/dsp/rings-resonator/RingsVoiceManager.h>
@@ -57,11 +57,11 @@ struct RingsResonatorSynthProcessor::EngineState {
 
     double m_host_sample_rate = 48000.0;
     int m_latency = static_cast<int>(k_block_size);
-    thl::dsp::audio::RingBuffer<float> m_dry_delay_line;
+    thl::core::RingBuffer<float> m_dry_delay_line;
 
-    thl::dsp::audio::RingBuffer<float> m_input_fifo;
-    thl::dsp::audio::RingBuffer<float> m_output_fifo_odd;
-    thl::dsp::audio::RingBuffer<float> m_output_fifo_even;
+    thl::core::RingBuffer<float> m_input_fifo;
+    thl::core::RingBuffer<float> m_output_fifo_odd;
+    thl::core::RingBuffer<float> m_output_fifo_even;
 
     void prepare(double sample_rate, int max_block_size) {
         m_host_sample_rate = sample_rate;
@@ -105,9 +105,9 @@ struct RingsResonatorSynthProcessor::EngineState {
         std::array<float, k_block_size> out = {};
         std::array<float, k_block_size> aux = {};
 
-        thl::dsp::audio::ConstAudioBufferView const in_view(in.data(), k_block_size);
-        thl::dsp::audio::AudioBufferView const out_view(out.data(), k_block_size);
-        thl::dsp::audio::AudioBufferView const aux_view(aux.data(), k_block_size);
+        thl::core::ConstBufferView const in_view(in.data(), k_block_size);
+        thl::core::BufferView const out_view(out.data(), k_block_size);
+        thl::core::BufferView const aux_view(aux.data(), k_block_size);
 
         m_strummer.process(in_view, &m_performance_state);
 
@@ -139,8 +139,8 @@ void RingsResonatorSynthProcessor::prepare(double sample_rate, int max_block_siz
     m_engine->prepare(sample_rate, max_block_size);
 }
 
-void RingsResonatorSynthProcessor::process(const thl::dsp::audio::ConstAudioBufferView& input,
-                                           thl::dsp::audio::AudioBufferView output) {
+void RingsResonatorSynthProcessor::process(const thl::core::ConstBufferView& input,
+                                           thl::core::BufferView output) {
     const float* input_ptr = input.get_read_pointer(0);
     float* output_ptr = output.get_write_pointer(0);
     int const num_samples = static_cast<int>(input.get_num_samples());
