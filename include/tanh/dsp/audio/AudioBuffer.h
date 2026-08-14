@@ -90,7 +90,9 @@ public:
 
     size_t get_num_samples() const { return m_size; }
     [[deprecated("Use get_num_samples() instead")]]
-    size_t get_num_frames() const { return m_size; }
+    size_t get_num_frames() const {
+        return m_size;
+    }
     size_t get_num_channels() const { return m_num_channels; }
     double get_sample_rate() const { return m_sample_rate; }
     bool empty() const { return m_size == 0 || m_num_channels == 0; }

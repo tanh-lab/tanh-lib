@@ -188,6 +188,7 @@ void StereoFDN::prepare(const double& sample_rate,
                         const size_t& /*samples_per_block*/,
                         const size_t& /*num_channels*/) {
     m_sample_rate = sample_rate > 0.0 ? sample_rate : 48000.0;
+    m_damping_cache = -1.0f;  // coeff depends on sample rate
     const auto max_delay =
         static_cast<size_t>(std::lround(m_sample_rate * k_default_max_delay_seconds));
     prepare_delay_lines(std::max<size_t>(max_delay, 1));
@@ -218,8 +219,11 @@ void StereoFDN::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modula
         const float delayed_r = average_delayed_output(k_right);
         const float feedback = m_scalar_smoothers.next(FeedbackLane);
         const float cross_feedback = m_scalar_smoothers.next(CrossFeedbackLane);
-        const float remaining = std::max(0.0f, 1.0f - cross_feedback * cross_feedback);
-        const float stereo_main = std::sqrt(remaining);
+        if (cross_feedback != m_cross_feedback_cache) {
+            m_cross_feedback_cache = cross_feedback;
+            m_stereo_main_cache = std::sqrt(std::max(0.0f, 1.0f - cross_feedback * cross_feedback));
+        }
+        const float stereo_main = m_stereo_main_cache;
         const float input_pan = m_scalar_smoothers.next(InputPanLane);
         const auto [input_l_gain, input_r_gain] = input_pan_to_gains(input_pan);
         const float wet = m_scalar_smoothers.next(WetLane);
@@ -535,7 +539,11 @@ void StereoFDN::update_damped_outputs(float damping) {
         return;
     }
 
-    const float coeff = damping_to_lowpass_coeff(damping, m_sample_rate);
+    if (damping != m_damping_cache) {
+        m_damping_cache = damping;
+        m_damping_coeff_cache = damping_to_lowpass_coeff(damping, m_sample_rate);
+    }
+    const float coeff = m_damping_coeff_cache;
     for (size_t line = 0; line < m_delayed_outputs.size(); ++line) {
         m_damping_states[line] += coeff * (m_delayed_outputs[line] - m_damping_states[line]);
         m_damped_outputs[line] = m_damping_states[line];

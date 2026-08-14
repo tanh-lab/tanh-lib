@@ -112,7 +112,9 @@ public:
     size_t get_num_channels() const { return m_num_channels; }
     size_t get_num_samples() const { return m_num_frames; }
     [[deprecated("Use get_num_samples() instead")]]
-    size_t get_num_frames() const { return m_num_frames; }
+    size_t get_num_frames() const {
+        return m_num_frames;
+    }
 
     std::span<T> operator[](size_t channel) {
         return std::span<T>(m_channels[channel] + m_frame_offset, m_num_frames);

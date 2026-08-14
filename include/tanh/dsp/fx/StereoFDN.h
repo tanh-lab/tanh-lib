@@ -169,6 +169,13 @@ private:
     thl::dsp::utils::LinearSmootherBank m_delay_smoothers;
     thl::dsp::utils::LinearSmootherBank m_scalar_smoothers;
 
+    // Per-sample transcendental caches: recomputed only when the smoothed
+    // source value changes (i.e. during parameter ramps).
+    float m_damping_cache = -1.0f;
+    float m_damping_coeff_cache = 1.0f;
+    float m_cross_feedback_cache = -1.0f;
+    float m_stereo_main_cache = 1.0f;
+
     float m_base_time_ms = 500.0f;
     float m_delay_spread = 0.0f;
     float m_feedback = 0.65f;

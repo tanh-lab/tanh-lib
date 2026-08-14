@@ -2,6 +2,8 @@
 
 #include <tanh/core/Exports.h>
 
+#include <cstddef>
+
 namespace thl::dsp::utils {
 
 /**
@@ -28,6 +30,12 @@ public:
 
     float process();
 
+    // Advance the generator by `num_samples` in O(1) and return the smoothed
+    // value, for control-rate (once-per-block) use. Statistically equivalent
+    // to `num_samples` process() calls for block sizes where at most one
+    // impulse falls inside the block (rate * num_samples < sample_rate).
+    float process_block(size_t num_samples);
+
 private:
     static float calc_coeff(float rate, float sample_rate);
 
@@ -39,6 +47,8 @@ private:
     float m_velocity = 0.0f;
     float m_smoothed = 0.0f;
     float m_phase = 0.0f;
+    size_t m_block_len = 0;      // cached num_samples for m_block_coeff
+    float m_block_coeff = 0.0f;  // n-sample equivalent of m_smooth_coeff
 };
 
 }  // namespace thl::dsp::utils

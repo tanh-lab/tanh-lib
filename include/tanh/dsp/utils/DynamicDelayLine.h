@@ -14,6 +14,10 @@ namespace thl::dsp::utils {
  * Also exposes tap() for reading relative to the most recent write, as
  * required by reverb output tap matrices.
  *
+ * The physical ring is rounded up to a power of two so index wrapping is a
+ * bit-mask instead of an integer division. max_delay() keeps the caller's
+ * requested bound; delays beyond it read stale (but allocated) history.
+ *
  * Call prepare() before first use to allocate the buffer.
  */
 class TANH_API DynamicDelayLine {
@@ -41,11 +45,15 @@ public:
     DynamicDelayLine(const DynamicDelayLine&) = delete;
     DynamicDelayLine& operator=(const DynamicDelayLine&) = delete;
 
+    size_t max_delay() const { return m_max_delay; }
+
 private:
     float read_at(size_t delay) const;
 
     thl::dsp::audio::Buffer<float> m_buf;
-    size_t m_max_delay = 1;
+    size_t m_max_delay = 1;  // requested usable bound
+    size_t m_capacity = 1;   // physical ring size, power of two
+    size_t m_mask = 0;       // m_capacity - 1
     size_t m_write_ptr = 0;
     size_t m_delay = 1;
 };

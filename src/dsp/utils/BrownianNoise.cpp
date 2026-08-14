@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace thl::dsp::utils {
 
@@ -14,12 +15,14 @@ void BrownianNoise::prepare(float rate, float sample_rate, float momentum) {
     m_sample_rate = sample_rate;
     m_momentum = momentum;
     m_smooth_coeff = calc_coeff(rate, sample_rate);
+    m_block_len = 0;  // invalidate cached block coefficient
     reset();
 }
 
 void BrownianNoise::set_rate(float rate) {
     m_rate = rate;
     m_smooth_coeff = calc_coeff(rate, m_sample_rate);
+    m_block_len = 0;  // invalidate cached block coefficient
 }
 
 void BrownianNoise::set_momentum(float momentum) {
@@ -44,6 +47,28 @@ float BrownianNoise::process() {
     m_value += m_velocity * (m_rate / m_sample_rate);
     m_value = std::tanh(m_value);
     m_smoothed += m_smooth_coeff * (m_value - m_smoothed);
+    return m_smoothed;
+}
+
+float BrownianNoise::process_block(size_t num_samples) {
+    const float dt = m_rate / m_sample_rate;
+    const auto n = static_cast<float>(num_samples);
+
+    m_phase += dt * n;
+    if (m_phase >= 1.0f) {
+        m_phase -= std::floor(m_phase);
+        m_velocity += (Random::get_float() * 2.0f - 1.0f) * 0.3f;
+        m_velocity -= m_value * m_momentum;
+        m_velocity *= (1.0f - m_momentum * 0.5f);
+    }
+    m_value += m_velocity * dt * n;
+    m_value = std::tanh(m_value);
+
+    if (num_samples != m_block_len) {
+        m_block_len = num_samples;
+        m_block_coeff = 1.0f - std::pow(1.0f - m_smooth_coeff, n);
+    }
+    m_smoothed += m_block_coeff * (m_value - m_smoothed);
     return m_smoothed;
 }
 

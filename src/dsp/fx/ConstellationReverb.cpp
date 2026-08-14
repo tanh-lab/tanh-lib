@@ -73,6 +73,7 @@ void ConstellationReverbImpl::prepare(const double& sample_rate,
     m_freq_shift = get_parameter<float>(FreqShift);
     m_target_fshift = m_freq_shift;
 
+    m_shim_semi_cache = m_shim_detune_cache = -1000.0f;
     allocate_buffers(get_parameter<float>(PredelayMs));
     prepare_oscillators();
 
@@ -118,6 +119,40 @@ void ConstellationReverbImpl::process(thl::dsp::audio::AudioBufferView buffer,
 
     apply_shimmer_pitch(modulation_offset);
 
+    // ── Advance control-rate modulators once per block ────────────────────
+    // Brownian noise is a slow control signal (0.5–9 Hz); advancing it at
+    // block rate and ramping per sample is audibly identical to per-sample
+    // stepping but avoids ~10 tanh calls per sample.
+    const float inv_frames = 1.0f / static_cast<float>(num_frames);
+    const float ap_mod = k_ap_mod_depth * m_sr_ratio;
+    const float delay_mod = k_delay_mod_depth * m_sr_ratio;
+
+    m_ramp_exc_a.set_target(m_brown_exc_a.process_block(num_frames) * k_exc_brown_depth,
+                            inv_frames);
+    m_ramp_exc_b.set_target(m_brown_exc_b.process_block(num_frames) * k_exc_brown_depth,
+                            inv_frames);
+    m_ramp_delay_a1.set_target(m_brown_delay_a1.process_block(num_frames) * delay_mod, inv_frames);
+    m_ramp_delay_a2.set_target(m_brown_delay_a2.process_block(num_frames) * delay_mod, inv_frames);
+    m_ramp_delay_b1.set_target(m_brown_delay_b1.process_block(num_frames) * delay_mod, inv_frames);
+    m_ramp_delay_b2.set_target(m_brown_delay_b2.process_block(num_frames) * delay_mod, inv_frames);
+    m_ramp_ap_a2.set_target(m_brown_ap_a2.process_block(num_frames) * ap_mod, inv_frames);
+    m_ramp_ap_b2.set_target(m_brown_ap_b2.process_block(num_frames) * ap_mod, inv_frames);
+
+    if (m_p_shimmer > 0.0f) {
+        m_pitch_a.set_cents_modulation(m_brown_shim_a.process_block(num_frames) * m_p_shim_mod);
+        m_pitch_b.set_cents_modulation(m_brown_shim_b.process_block(num_frames) * m_p_shim_mod);
+    }
+
+    // Freq-shift oscillator rates update at block rate; the shifters' phase
+    // stays continuous, only the increment steps.
+    if (m_freq_shift > 0.0f || m_target_fshift > 0.0f) {
+        const auto [dha, dhb] = fshift_detune_to_hz(m_p_fshift_det);
+        m_fshift_a.set_shift(m_p_fshift_hz + dha +
+                             m_brown_fshift_a.process_block(num_frames) * m_p_fshift_mod);
+        m_fshift_b.set_shift(m_p_fshift_hz + dhb +
+                             m_brown_fshift_b.process_block(num_frames) * m_p_fshift_mod);
+    }
+
     const auto mode = static_cast<ConstellationReverbChannelMode>(
         get_parameter<int>(ChannelModeParam, modulation_offset));
 
@@ -151,10 +186,10 @@ void ConstellationReverbImpl::process_sample(float x, float& left, float& right)
     utils::one_pole(m_bw_state, x, m_bw_coeff);
     x = m_bw_state;
 
-    x = m_input_ap[0].process(x, sr_scale(k_base_input_ap[0]), k_input_dif_f1);
-    x = m_input_ap[1].process(x, sr_scale(k_base_input_ap[1]), k_input_dif_f1);
-    x = m_input_ap[2].process(x, sr_scale(k_base_input_ap[2]), k_input_dif_f2);
-    x = m_input_ap[3].process(x, sr_scale(k_base_input_ap[3]), k_input_dif_f2);
+    x = m_input_ap[0].process(x, m_input_ap_delay[0], k_input_dif_f1);
+    x = m_input_ap[1].process(x, m_input_ap_delay[1], k_input_dif_f1);
+    x = m_input_ap[2].process(x, m_input_ap_delay[2], k_input_dif_f2);
+    x = m_input_ap[3].process(x, m_input_ap_delay[3], k_input_dif_f2);
 
     process_tank(x, left, right);
 }
@@ -164,23 +199,11 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     utils::one_pole(m_size, m_target_size, m_size_smooth);
     utils::one_pole(m_freq_shift, m_target_fshift, m_fshift_smooth);
 
-    // ── Excursion: LFO + Brownian ─────────────────────────────────────────
+    // ── Excursion: LFO + Brownian (brownians ramped at control rate) ──────
     const float lfo_a = m_lfo_a.process();
     const float lfo_b = m_lfo_b.process();
-    const float brown_a = m_brown_exc_a.process() * k_exc_brown_depth;
-    const float brown_b = m_brown_exc_b.process() * k_exc_brown_depth;
-
-    const float ap_mod = k_ap_mod_depth * m_sr_ratio;
-    const float delay_mod = k_delay_mod_depth * m_sr_ratio;
-
-    // ── Freq-shift modulation (per-side brownian + detune) ─────────────────
-    const float fbrown_a = m_brown_fshift_a.process();
-    const float fbrown_b = m_brown_fshift_b.process();
-    if (m_freq_shift > 0.0f) {
-        const auto [dha, dhb] = fshift_detune_to_hz(m_p_fshift_det);
-        m_fshift_a.set_shift(m_p_fshift_hz + dha + fbrown_a * m_p_fshift_mod);
-        m_fshift_b.set_shift(m_p_fshift_hz + dhb + fbrown_b * m_p_fshift_mod);
-    }
+    const float brown_a = m_ramp_exc_a.next();
+    const float brown_b = m_ramp_exc_b.next();
 
     const float eff_decay = m_p_freeze ? 1.0f : m_p_decay;
     const float input_gain = m_p_freeze ? 0.0f : 1.0f;
@@ -198,8 +221,7 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
 
     // ── Half A ────────────────────────────────────────────────────────────
     float x_a = m_ap_a1.process(a_in, scaled(k_base_ap_a1) + lfo_a + brown_a, k_decay_dif_f1);
-    x_a = m_delay_a1.write_read(x_a,
-                                scaled(k_base_delay_a1) + m_brown_delay_a1.process() * delay_mod);
+    x_a = m_delay_a1.write_read(x_a, scaled(k_base_delay_a1) + m_ramp_delay_a1.next());
     if (!m_p_freeze) {
         utils::one_pole(m_damp_a, x_a, m_damping_coeff);
         x_a = m_damp_a;
@@ -208,22 +230,16 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     if (m_freq_shift > 0.0f) {
         x_a = (1.0f - m_freq_shift) * x_a + m_freq_shift * m_fshift_a.process(x_a);
     }
-    x_a = m_ap_a2.process(x_a,
-                          scaled(k_base_ap_a2) + m_brown_ap_a2.process() * ap_mod,
-                          k_decay_dif_f2);
-    float tank_a =
-        m_delay_a2.write_read(x_a,
-                              scaled(k_base_delay_a2) + m_brown_delay_a2.process() * delay_mod);
+    x_a = m_ap_a2.process(x_a, scaled(k_base_ap_a2) + m_ramp_ap_a2.next(), k_decay_dif_f2);
+    float tank_a = m_delay_a2.write_read(x_a, scaled(k_base_delay_a2) + m_ramp_delay_a2.next());
     if (m_p_shimmer > 0.0f) {
-        m_pitch_a.set_cents_modulation(m_brown_shim_a.process() * m_p_shim_mod);
         tank_a = (1.0f - m_p_shimmer) * tank_a + m_p_shimmer * m_pitch_a.process(tank_a);
     }
     m_tank_a_out = tank_a;
 
     // ── Half B ────────────────────────────────────────────────────────────
     float x_b = m_ap_b1.process(b_in, scaled(k_base_ap_b1) + lfo_b + brown_b, k_decay_dif_f1);
-    x_b = m_delay_b1.write_read(x_b,
-                                scaled(k_base_delay_b1) + m_brown_delay_b1.process() * delay_mod);
+    x_b = m_delay_b1.write_read(x_b, scaled(k_base_delay_b1) + m_ramp_delay_b1.next());
     if (!m_p_freeze) {
         utils::one_pole(m_damp_b, x_b, m_damping_coeff);
         x_b = m_damp_b;
@@ -232,14 +248,9 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     if (m_freq_shift > 0.0f) {
         x_b = (1.0f - m_freq_shift) * x_b + m_freq_shift * m_fshift_b.process(x_b);
     }
-    x_b = m_ap_b2.process(x_b,
-                          scaled(k_base_ap_b2) + m_brown_ap_b2.process() * ap_mod,
-                          k_decay_dif_f2);
-    float tank_b =
-        m_delay_b2.write_read(x_b,
-                              scaled(k_base_delay_b2) + m_brown_delay_b2.process() * delay_mod);
+    x_b = m_ap_b2.process(x_b, scaled(k_base_ap_b2) + m_ramp_ap_b2.next(), k_decay_dif_f2);
+    float tank_b = m_delay_b2.write_read(x_b, scaled(k_base_delay_b2) + m_ramp_delay_b2.next());
     if (m_p_shimmer > 0.0f) {
-        m_pitch_b.set_cents_modulation(m_brown_shim_b.process() * m_p_shim_mod);
         tank_b = (1.0f - m_p_shimmer) * tank_b + m_p_shimmer * m_pitch_b.process(tank_b);
     }
     m_tank_b_out = tank_b;
@@ -276,7 +287,10 @@ void ConstellationReverbImpl::allocate_buffers(float predelay_ms) {
         return static_cast<size_t>(std::ceil(static_cast<float>(base) * sr)) + 1;
     };
 
-    for (int i = 0; i < 4; ++i) { m_input_ap[i].prepare(input_buf(k_base_input_ap[i])); }
+    for (int i = 0; i < 4; ++i) {
+        m_input_ap[i].prepare(input_buf(k_base_input_ap[i]));
+        m_input_ap_delay[i] = sr_scale(k_base_input_ap[i]);
+    }
 
     m_predelay.prepare(static_cast<size_t>(std::ceil(k_max_predelay_ms *
                                                      static_cast<float>(m_sample_rate) / 1000.0f)) +
@@ -326,10 +340,15 @@ void ConstellationReverbImpl::prepare_oscillators() {
 }
 
 void ConstellationReverbImpl::apply_shimmer_pitch(uint32_t modulation_offset) {
-    const auto [ca, cb] =
-        shimmer_detune_to_cents(get_parameter<float>(ShimmerDetune, modulation_offset));
-    m_pitch_a.set_pitch(get_parameter<float>(ShimmerSemitones, modulation_offset), ca);
-    m_pitch_b.set_pitch(get_parameter<float>(ShimmerSemitones, modulation_offset), cb);
+    const float detune = get_parameter<float>(ShimmerDetune, modulation_offset);
+    const float semitones = get_parameter<float>(ShimmerSemitones, modulation_offset);
+    if (semitones == m_shim_semi_cache && detune == m_shim_detune_cache) { return; }
+    m_shim_semi_cache = semitones;
+    m_shim_detune_cache = detune;
+
+    const auto [ca, cb] = shimmer_detune_to_cents(detune);
+    m_pitch_a.set_pitch(semitones, ca);
+    m_pitch_b.set_pitch(semitones, cb);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
