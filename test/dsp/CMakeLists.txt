@@ -9,6 +9,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_RingBuffer.cpp
 	test_Limiter.cpp
 	test_LinearSmootherBank.cpp
+	test_MorphFilter.cpp
 	test_StereoFDN.cpp
 	test_InternalTransportClock.cpp
 	test_MetronomePlayer.cpp

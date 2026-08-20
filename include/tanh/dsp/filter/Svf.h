@@ -70,6 +70,23 @@ public:
         return select<mode>(hp, bp, lp);
     }
 
+    struct TapOutputs {
+        float m_hp;
+        float m_bp;
+        float m_lp;
+    };
+
+    // Single step returning every tap — for output-morphing filters that blend
+    // low/band/high from the same state (see MorphFilter).
+    TapOutputs process_all(float in) {
+        const float hp = (in - m_r * m_state_1 - m_g * m_state_1 - m_state_2) * m_h;
+        const float bp = m_g * hp + m_state_1;
+        m_state_1 = m_g * hp + bp;
+        const float lp = m_g * bp + m_state_2;
+        m_state_2 = m_g * bp + lp;
+        return {.m_hp = hp, .m_bp = bp, .m_lp = lp};
+    }
+
     template <FilterMode mode>
     void process(const thl::dsp::audio::ConstAudioBufferView& in,
                  thl::dsp::audio::AudioBufferView out) {
