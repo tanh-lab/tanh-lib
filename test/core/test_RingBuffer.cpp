@@ -205,6 +205,13 @@ TEST(RingBufferTyped, ZeroCapacityIsGraceful) {
     EXPECT_EQ(rb.get_available_samples(0), 0u);
     EXPECT_FLOAT_EQ(rb.pop_sample(0), 0.0f);
     EXPECT_FLOAT_EQ(rb.get_future_sample(0, 0), 0.0f);
+    EXPECT_EQ(rb.get_available_past_samples(0), 0u);
+    const float in[] = {1.0f, 2.0f};
+    rb.push_block(0, in, 2);
+    float out[2] = {9.0f, 9.0f};
+    rb.pop_block(0, out, 2);
+    EXPECT_FLOAT_EQ(out[0], 0.0f);
+    EXPECT_FLOAT_EQ(out[1], 0.0f);
     EXPECT_FLOAT_EQ(rb.get_past_sample(0, 0), 0.0f);
 }
 

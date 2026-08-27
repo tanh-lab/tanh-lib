@@ -105,7 +105,7 @@ public:
     /// samples beyond what is available are value-initialised (T{}).
     void pop_block(size_t channel, T* data, size_t count) {
         const size_t capacity = m_buffer.get_num_samples();
-        const size_t available = capacity == 0 ? 0 : get_available_samples(channel);
+        const size_t available = get_available_samples(channel);
         const size_t n = std::min(count, available);
 
         if (n > 0) {
@@ -136,7 +136,7 @@ public:
 
     size_t get_available_samples(size_t channel) const {
         const size_t capacity = m_buffer.get_num_samples();
-        if (m_is_full[channel]) { return capacity; }
+        if (capacity == 0 || m_is_full[channel]) { return capacity; }
         return (m_write_pos[channel] + capacity - m_read_pos[channel]) % capacity;
     }
 
