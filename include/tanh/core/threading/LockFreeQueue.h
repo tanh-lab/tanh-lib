@@ -46,11 +46,9 @@ class LockFreeQueue {
 public:
     using value_type = T;
 
-    LockFreeQueue() noexcept {
-        for (std::size_t i = 0; i < Capacity; ++i) {
-            m_cells[i].m_seq.store(i, std::memory_order_relaxed);
-        }
-    }
+    /// Constant-initialisable: a namespace-scope instance is ready before any
+    /// dynamic initialisation runs (declare it `constinit` to enforce this).
+    constexpr LockFreeQueue() noexcept = default;
 
     LockFreeQueue(const LockFreeQueue&) = delete;
     LockFreeQueue& operator=(const LockFreeQueue&) = delete;
@@ -66,8 +64,9 @@ public:
         std::size_t pos = m_enqueue_pos.load(std::memory_order_relaxed);
         Cell* cell = nullptr;
         for (;;) {
-            cell = &m_cells[pos & k_mask];
-            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire);
+            const std::size_t idx = pos & k_mask;
+            cell = &m_cells[idx];
+            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire) + idx;
             const auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos);
             if (diff == 0) {
                 if (m_enqueue_pos.compare_exchange_weak(pos,
@@ -83,7 +82,7 @@ public:
             }
         }
         cell->m_value = item;
-        cell->m_seq.store(pos + 1, std::memory_order_release);
+        cell->m_seq.store(pos + 1 - (pos & k_mask), std::memory_order_release);
         return true;
     }
 
@@ -107,8 +106,9 @@ public:
         std::size_t pos = m_dequeue_pos.load(std::memory_order_relaxed);
         Cell* cell = nullptr;
         for (;;) {
-            cell = &m_cells[pos & k_mask];
-            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire);
+            const std::size_t idx = pos & k_mask;
+            cell = &m_cells[idx];
+            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire) + idx;
             const auto diff =
                 static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos + 1);
             if (diff == 0) {
@@ -125,7 +125,7 @@ public:
             }
         }
         out = cell->m_value;
-        cell->m_seq.store(pos + k_mask + 1, std::memory_order_release);
+        cell->m_seq.store(pos + k_mask + 1 - (pos & k_mask), std::memory_order_release);
         return true;
     }
 
@@ -150,6 +150,9 @@ private:
     static constexpr std::size_t k_mask = Capacity - 1;
     static constexpr std::size_t k_cache_line = 64;
 
+    // Each cell stores its sequence number *relative to its own index*, so
+    // the all-zero initial state is the correct one and the constructor can
+    // be constexpr. Effective sequence = m_seq + index.
     struct Cell {
         std::atomic<std::size_t> m_seq{0};
         T m_value{};

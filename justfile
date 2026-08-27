@@ -39,11 +39,11 @@ rebuild: clean build
 
 # Run clang-format on source files
 format:
-    find src include examples -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format -i
+    find src include examples test -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format -i
 
 # Check formatting without modifying files
 format-check:
-    find src include examples -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format --dry-run --Werror
+    find src include examples test -name "*.cpp" -o -name "*.h" -o -name "*.mm" | xargs clang-format --dry-run --Werror
 
 # Run clang-tidy on source files (check only)
 tidy:

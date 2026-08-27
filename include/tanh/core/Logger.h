@@ -7,6 +7,7 @@
 #include <string>
 
 #include "tanh/core/Exports.h"
+#include "tanh/core/RtFormat.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 /// @namespace thl::Logger
@@ -203,12 +204,14 @@ static_assert((k_queue_capacity & (k_queue_capacity - 1)) == 0,
               "THL_LOG_RT_QUEUE_CAPACITY must be a power of two");
 
 /// printf-style real-time logging. Formatting uses thl::core::rt_vsnprintf,
-/// a locale-free subset of printf (see RtFormat.h).
+/// a locale-free subset of printf (see RtFormat.h for the supported
+/// conversions; the compiler checks the format string against the
+/// arguments where it can).
 // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
 TANH_API Status logf(LogLevel level,
                      const char* group,
                      const char* fmt,
-                     ...) noexcept TANH_NONBLOCKING_FUNCTION;
+                     ...) noexcept TANH_NONBLOCKING_FUNCTION THL_PRINTF_FORMAT(3, 4);
 
 /// Real-time logging of a preformatted message.
 TANH_API Status log(LogLevel level,

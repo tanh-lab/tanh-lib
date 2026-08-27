@@ -109,6 +109,7 @@ TEST(LockFreeQueue, StructPayload) {
 
 TEST(LockFreeQueue, TypeRequirements) {
     static_assert(std::is_trivially_destructible_v<LockFreeQueue<int, 4>>);
+    static_assert(std::is_nothrow_default_constructible_v<LockFreeQueue<int, 4>>);
     static_assert(!std::is_copy_constructible_v<LockFreeQueue<int, 4>>);
     static_assert(!std::is_move_constructible_v<LockFreeQueue<int, 4>>);
     SUCCEED();
@@ -130,7 +131,9 @@ TEST(LockFreeQueue, ManyProducersOneConsumer) {
         producers.emplace_back([&, p]() {
             while (!go.load(std::memory_order_acquire)) {}
             for (int i = 0; i < k_per_producer; ++i) {
-                while (!q->try_push(Item{.m_producer = p, .m_index = i})) { std::this_thread::yield(); }
+                while (!q->try_push(Item{.m_producer = p, .m_index = i})) {
+                    std::this_thread::yield();
+                }
             }
         });
     }
@@ -155,7 +158,9 @@ TEST(LockFreeQueue, ManyProducersOneConsumer) {
     for (auto& p : producers) { p.join(); }
     consumer.join();
 
-    for (int p = 0; p < k_producers; ++p) { EXPECT_EQ(next[static_cast<std::size_t>(p)], k_per_producer); }
+    for (int p = 0; p < k_producers; ++p) {
+        EXPECT_EQ(next[static_cast<std::size_t>(p)], k_per_producer);
+    }
     EXPECT_TRUE(q->empty_approx());
 }
 
@@ -176,7 +181,9 @@ TEST(LockFreeQueue, ManyProducersManyConsumers) {
         threads.emplace_back([&, p]() {
             while (!go.load(std::memory_order_acquire)) {}
             for (int i = 0; i < k_per_producer; ++i) {
-                while (!q->try_push(Item{.m_producer = p, .m_index = i})) { std::this_thread::yield(); }
+                while (!q->try_push(Item{.m_producer = p, .m_index = i})) {
+                    std::this_thread::yield();
+                }
             }
         });
     }
@@ -188,8 +195,8 @@ TEST(LockFreeQueue, ManyProducersManyConsumers) {
                     std::this_thread::yield();
                     continue;
                 }
-                const auto slot =
-                    static_cast<std::size_t>(item.m_producer) * k_per_producer + static_cast<std::size_t>(item.m_index);
+                const auto slot = static_cast<std::size_t>(item.m_producer) * k_per_producer +
+                                  static_cast<std::size_t>(item.m_index);
                 seen[slot].fetch_add(1, std::memory_order_relaxed);
                 received.fetch_add(1, std::memory_order_relaxed);
             }
@@ -230,7 +237,9 @@ TEST(LockFreeQueue, OverwriteUnderContentionNeverBlocks) {
 
 namespace {
 
-LockFreeQueue<Item, 64> g_rt_queue;
+// A namespace-scope queue must be usable from any static initialiser, so
+// the constructor has to be constexpr: constinit enforces that.
+constinit LockFreeQueue<Item, 64> g_rt_queue;
 
 void rt_producer(int i) TANH_NONBLOCKING_FUNCTION {
     (void)g_rt_queue.try_push(Item{.m_producer = 0, .m_index = i});

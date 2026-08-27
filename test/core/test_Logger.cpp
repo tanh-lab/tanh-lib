@@ -130,7 +130,8 @@ TEST_F(LoggerFixture, RuntimeLevelFiltersRealtimePath) {
 
 TEST_F(LoggerFixture, RtRecordIsDeliveredThroughCallbackSink) {
     EXPECT_TRUE(rt::is_running());
-    const auto status = rt::logf(LogLevel::Warning, "audio", "xrun after %d frames at %.1f kHz", 64, 48.0);
+    const auto status =
+        rt::logf(LogLevel::Warning, "audio", "xrun after %d frames at %.1f kHz", 64, 48.0);
     EXPECT_EQ(status, rt::Status::Ok);
 
     ASSERT_TRUE(wait_for_records(1));
@@ -348,7 +349,9 @@ TEST_F(LoggerFixture, ManyProducersNoLossNoDuplicates) {
         EXPECT_EQ(i, next[static_cast<std::size_t>(t)]) << "thread " << t;
         ++next[static_cast<std::size_t>(t)];
     }
-    for (int t = 0; t < k_threads; ++t) { EXPECT_EQ(next[static_cast<std::size_t>(t)], k_per_thread); }
+    for (int t = 0; t < k_threads; ++t) {
+        EXPECT_EQ(next[static_cast<std::size_t>(t)], k_per_thread);
+    }
 }
 
 TEST_F(LoggerFixture, StartStopWhileProducing) {
@@ -377,8 +380,12 @@ TEST_F(LoggerFixture, StartStopWhileProducing) {
 namespace {
 
 void audio_callback_that_logs(int block) TANH_NONBLOCKING_FUNCTION {
-    (void)rt::logf(LogLevel::Warning, "audio", "block %d: %zu missing, gain %.2f", block,
-                   static_cast<size_t>(480), 0.5);
+    (void)rt::logf(LogLevel::Warning,
+                   "audio",
+                   "block %d: %zu missing, gain %.2f",
+                   block,
+                   static_cast<size_t>(480),
+                   0.5);
     (void)rt::log(LogLevel::Info, "audio", "literal");
     (void)thl::Logger::is_enabled(LogLevel::Debug);
     (void)rt::dropped_count();

@@ -4,6 +4,7 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
+#include <climits>
 #include <cmath>
 #include <cstdarg>
 #include <cstddef>
@@ -20,16 +21,31 @@
 /// Supported: flags `-`, `+`, ` `, `0`; width and precision (literal or `*`);
 /// length modifiers `hh h l ll z j t` (parsed, value read at the matching
 /// width); conversions `d i u x X o c s p %` and `f F e E g G`.
-/// Not supported (emitted verbatim): `%n`, `%a`, wide strings.
+///
+/// Not supported: `%n`, `%a`, wide strings (`%ls`, `%lc`). An unsupported
+/// conversion is emitted verbatim and consumes **no** argument, which
+/// desynchronises every later conversion from its argument. Format strings
+/// must therefore stick to the supported set; both entry points carry the
+/// compiler's printf format check (THL_PRINTF_FORMAT) so mismatched
+/// arguments are diagnosed at compile time where the toolchain supports it.
 ///
 /// Floating-point output matches the C library (round-to-nearest, ties to
-/// even on the exact binary value) for up to 17 fractional digits and
-/// magnitudes below 1e18 in fixed notation; beyond that the last digit may
-/// differ, or fixed notation falls back to exponent notation.
+/// even on the exact binary value) up to 15 fractional digits in fixed
+/// notation and 15 significant digits in exponent notation; requests for
+/// more digits are clamped to those limits (the C library would print up
+/// to 17). Fixed notation of magnitudes >= 1e18 falls back to exponent
+/// notation. Width and precision are clamped to 1 << 20.
 ///
 /// Semantics match snprintf: the output is always NUL-terminated when
 /// `capacity > 0`, and the return value is the length the full output would
 /// have had, so `result >= capacity` signals truncation.
+#if defined(__GNUC__) || defined(__clang__)
+#define THL_PRINTF_FORMAT(fmt_index, first_arg) \
+    __attribute__((format(printf, fmt_index, first_arg)))
+#else
+#define THL_PRINTF_FORMAT(fmt_index, first_arg)
+#endif
+
 namespace thl::core {
 
 int rt_vsnprintf(char* out,
@@ -38,10 +54,8 @@ int rt_vsnprintf(char* out,
                  va_list args) noexcept TANH_NONBLOCKING_FUNCTION;
 
 // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
-int rt_snprintf(char* out,
-                size_t capacity,
-                const char* fmt,
-                ...) noexcept TANH_NONBLOCKING_FUNCTION;
+int rt_snprintf(char* out, size_t capacity, const char* fmt, ...) noexcept TANH_NONBLOCKING_FUNCTION
+    THL_PRINTF_FORMAT(3, 4);
 
 // ---------------------------------------------------------------------------
 // Implementation
@@ -51,6 +65,7 @@ namespace rt_format_detail {
 
 constexpr size_t k_digits_cap = 24;
 using DigitBuf = std::array<char, k_digits_cap>;
+constexpr int k_max_width = 1 << 20;  // clamp for width and precision fields
 
 struct Sink {
     char* m_out = nullptr;
@@ -225,21 +240,34 @@ inline uint64_t scaled_round(double v, int k) noexcept TANH_NONBLOCKING_FUNCTION
 }
 
 /// Fixed notation of a finite v >= 0 into buf. Returns the length written.
+/// Largest fractional digit count for which frac * 10^p stays below 2^53,
+/// where scaled_round's floor/tie logic is exact.
+constexpr int k_max_fixed_precision = 15;
+/// Same bound for exponent notation: precision + 1 significant digits.
+constexpr int k_max_exp_precision = 14;
+
 inline size_t fixed_to_chars(double v,
                              int precision,
                              char* buf,
                              size_t cap) noexcept TANH_NONBLOCKING_FUNCTION {
-    if (precision > 17) { precision = 17; }
+    if (precision > k_max_fixed_precision) { precision = k_max_fixed_precision; }
 
     // Split into integer and fractional part; both steps are exact.
     auto int_part = static_cast<uint64_t>(v);
     const double frac = v - static_cast<double>(int_part);
 
-    uint64_t frac_digits = scaled_round(frac, precision);
-    const uint64_t frac_limit = pow10_u64(precision);
-    if (frac_digits >= frac_limit) {  // rounded up to the next integer
-        frac_digits -= frac_limit;
-        ++int_part;
+    uint64_t frac_digits = 0;
+    if (precision == 0) {
+        // Ties-to-even must look at the integer part's parity here; the
+        // fraction alone (what scaled_round sees) is always "even".
+        if (frac > 0.5 || (frac == 0.5 && (int_part & 1U) != 0U)) { ++int_part; }
+    } else {
+        frac_digits = scaled_round(frac, precision);
+        const uint64_t frac_limit = pow10_u64(precision);
+        if (frac_digits >= frac_limit) {  // rounded up to the next integer
+            frac_digits -= frac_limit;
+            ++int_part;
+        }
     }
 
     DigitBuf digits{};
@@ -279,7 +307,7 @@ struct ExpDigits {
 
 /// Mantissa digits and exponent for %e with `precision` fractional digits.
 inline ExpDigits exp_digits(double v, int precision) noexcept TANH_NONBLOCKING_FUNCTION {
-    if (precision > 17) { precision = 17; }
+    if (precision > k_max_exp_precision) { precision = k_max_exp_precision; }
     ExpDigits r;
     if (v == 0.0) { return r; }
     r.m_exponent = decimal_exponent(v);
@@ -300,7 +328,7 @@ inline size_t exp_to_chars(const ExpDigits& d,
                            bool upper,
                            char* buf,
                            size_t cap) noexcept TANH_NONBLOCKING_FUNCTION {
-    if (precision > 17) { precision = 17; }
+    if (precision > k_max_exp_precision) { precision = k_max_exp_precision; }
     DigitBuf md{};
     const size_t mstart = to_digits(d.m_mantissa, 10, false, md);
     const size_t mlen = md.size() - mstart;
@@ -377,7 +405,7 @@ inline void emit_double(Sink& sink,
         // Exponent as %e with P-1 digits would print it (rounding included).
         const ExpDigits d = exp_digits(v, precision - 1);
         const int x = d.m_exponent;
-        if (x < -4 || x >= precision) {
+        if (x < -4 || x >= precision || v >= 1e18) {
             len = exp_to_chars(d, precision - 1, upper, body.data(), body.size());
         } else {
             len = fixed_to_chars(v, precision - 1 - x, body.data(), body.size());
@@ -460,18 +488,21 @@ inline int rt_vsnprintf(char* out,
             }
         }
         if (*p == '*') {
-            spec.m_width = va_arg(args, int);
-            if (spec.m_width < 0) {
+            const int w = va_arg(args, int);
+            if (w < 0) {
                 spec.m_left = true;
-                spec.m_width = -spec.m_width;
+                spec.m_width = w == INT_MIN ? k_max_width : -w;
+            } else {
+                spec.m_width = w;
             }
             ++p;
         } else {
             while (*p >= '0' && *p <= '9') {
-                spec.m_width = spec.m_width * 10 + (*p - '0');
+                if (spec.m_width < k_max_width) { spec.m_width = spec.m_width * 10 + (*p - '0'); }
                 ++p;
             }
         }
+        if (spec.m_width > k_max_width) { spec.m_width = k_max_width; }
         if (*p == '.') {
             ++p;
             spec.m_precision = 0;
@@ -481,10 +512,13 @@ inline int rt_vsnprintf(char* out,
                 ++p;
             } else {
                 while (*p >= '0' && *p <= '9') {
-                    spec.m_precision = spec.m_precision * 10 + (*p - '0');
+                    if (spec.m_precision < k_max_width) {
+                        spec.m_precision = spec.m_precision * 10 + (*p - '0');
+                    }
                     ++p;
                 }
             }
+            if (spec.m_precision > k_max_width) { spec.m_precision = k_max_width; }
         }
 
         int length = 0;

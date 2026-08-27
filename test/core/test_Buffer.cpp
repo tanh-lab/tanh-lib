@@ -496,3 +496,38 @@ TEST(BufferDouble, BasicOperations) {
     buffer.clear();
     EXPECT_DOUBLE_EQ(buffer.get_sample(0, 0), 0.0);
 }
+
+TEST(Buffer, CopyOfZeroFrameBufferKeepsChannelPointers) {
+    // Review regression: the copy ctor / copy assignment used to skip the
+    // channel-pointer array when there were no frames, leaving m_channels
+    // null while num_channels == 2.
+    Buffer<float> a;
+    a.resize(2, 0);
+    ASSERT_NE(a.get_array_of_write_pointers(), nullptr);
+
+    const Buffer<float> b = a;
+    EXPECT_EQ(b.get_num_channels(), 2U);
+    EXPECT_EQ(b.get_num_samples(), 0U);
+    EXPECT_NE(b.get_array_of_read_pointers(), nullptr);
+
+    Buffer<float> c;
+    c = a;
+    EXPECT_NE(c.get_array_of_write_pointers(), nullptr);
+
+    // Growing the copy afterwards must work normally.
+    c.resize(2, 8);
+    c.clear();
+    EXPECT_EQ(c.get_num_samples(), 8U);
+    EXPECT_NE(c.get_write_pointer(1), nullptr);
+}
+
+TEST(MemoryBlock, ResizeToZeroReportsZero) {
+    MemoryBlock<float> m(16);
+    EXPECT_EQ(m.size(), 16U);
+    m.resize(0);
+    EXPECT_EQ(m.size(), 0U);
+    EXPECT_EQ(m.data(), nullptr);
+    m.resize(4);
+    EXPECT_EQ(m.size(), 4U);
+    EXPECT_NE(m.data(), nullptr);
+}

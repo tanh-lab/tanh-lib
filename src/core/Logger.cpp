@@ -87,7 +87,7 @@ struct RtRecord {
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) intentional: RT path
-thl::core::LockFreeQueue<RtRecord, rt::k_queue_capacity> g_rt_queue;
+constinit thl::core::LockFreeQueue<RtRecord, rt::k_queue_capacity> g_rt_queue;
 
 /// Bounded copy of a C string into a fixed array (always NUL-terminated).
 template <std::size_t N>
@@ -328,6 +328,11 @@ void stop_drain_thread();
 
 struct LoggerState {
     ~LoggerState() noexcept {
+        // The atexit hook is registered before this object is constructed and
+        // therefore runs *after* it is destroyed; flag the shutdown here so a
+        // log call from a later static destructor takes the stderr fallback
+        // instead of touching this object (or spawning a drain thread on it).
+        mark_logging_shutdown();
         try {
             stop_drain_thread();
         } catch (...) {}  // NOLINT(bugprone-empty-catch) nothing sensible left to do at teardown
@@ -356,7 +361,7 @@ struct LoggerState {
     std::mutex m_rt_mutex;
     std::condition_variable m_rt_cv;
     std::thread m_rt_thread;
-    bool m_rt_enabled = true;
+    std::atomic<bool> m_rt_enabled{true};
     std::atomic<std::uint32_t> m_rt_drain_interval_ms{10};
 };
 
@@ -561,11 +566,15 @@ void drain_thread_main() {
     }
 }
 
-void start_drain_thread() {
+/// `only_if_enabled`: the lazy start re-checks m_rt_enabled under m_rt_mutex,
+/// so a concurrent set_config(rt_enabled = false) cannot be undone by a
+/// log() call that read the flag just before it was cleared.
+void start_drain_thread(bool only_if_enabled) {
     auto& s = state();
     std::scoped_lock const lock(s.m_rt_mutex);
     if (s.m_rt_thread.joinable()) { return; }
     if (logging_shutdown_started()) { return; }
+    if (only_if_enabled && !s.m_rt_enabled.load(std::memory_order_relaxed)) { return; }
     g_rt_running.store(true, std::memory_order_release);
     try {
         s.m_rt_thread = std::thread(drain_thread_main);
@@ -600,13 +609,8 @@ void stop_drain_thread() {
 
 void ensure_drain_thread_if_enabled() {
     if (g_rt_running.load(std::memory_order_acquire)) { return; }
-    auto& s = state();
-    bool enabled = false;
-    {
-        std::scoped_lock const lock(s.m_config_mutex);
-        enabled = s.m_rt_enabled;
-    }
-    if (enabled) { start_drain_thread(); }
+    if (!state().m_rt_enabled.load(std::memory_order_relaxed)) { return; }
+    start_drain_thread(true);
 }
 
 }  // namespace
@@ -699,10 +703,12 @@ Status log(LogLevel level,
 }
 
 void start() {
-    start_drain_thread();
+    state().m_rt_enabled.store(true, std::memory_order_relaxed);
+    start_drain_thread(false);
 }
 
 void stop() {
+    state().m_rt_enabled.store(false, std::memory_order_relaxed);
     stop_drain_thread();
 }
 
@@ -741,7 +747,7 @@ void set_config(const LoggerConfig& config) {
         s.m_file_enabled = config.m_file_enabled;
         s.m_callback_enabled = config.m_callback_enabled;
         s.m_early_buffer_capacity = config.m_early_buffer_capacity;
-        s.m_rt_enabled = config.m_rt_enabled;
+        s.m_rt_enabled.store(config.m_rt_enabled, std::memory_order_relaxed);
         s.m_rt_drain_interval_ms.store(
             config.m_rt_drain_interval_ms == 0 ? 1U : config.m_rt_drain_interval_ms,
             std::memory_order_relaxed);
@@ -765,7 +771,7 @@ void set_config(const LoggerConfig& config) {
     for (const auto& record : file_buffered) { emit_file(record); }
 
     if (config.m_rt_enabled) {
-        start_drain_thread();
+        start_drain_thread(true);
     } else {
         stop_drain_thread();
     }
@@ -781,7 +787,7 @@ LoggerConfig get_config() {
         config.m_file_enabled = s.m_file_enabled;
         config.m_callback_enabled = s.m_callback_enabled;
         config.m_early_buffer_capacity = s.m_early_buffer_capacity;
-        config.m_rt_enabled = s.m_rt_enabled;
+        config.m_rt_enabled = s.m_rt_enabled.load(std::memory_order_relaxed);
         config.m_rt_drain_interval_ms = s.m_rt_drain_interval_ms.load(std::memory_order_relaxed);
     }
     {

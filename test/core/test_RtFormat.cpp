@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <climits>
 #include <cstdio>
 #include <limits>
 #include <string>
@@ -199,9 +200,60 @@ TEST(RtFormat, NullFormat) {
 }
 
 TEST(RtFormat, MixedRealisticMessages) {
-    EXPECT_EQ(fmt("Missing samples: %zu in session %d for tensor %u", static_cast<size_t>(480), 3, 1U),
-              "Missing samples: 480 in session 3 for tensor 1");
+    EXPECT_EQ(
+        fmt("Missing samples: %zu in session %d for tensor %u", static_cast<size_t>(480), 3, 1U),
+        "Missing samples: 480 in session 3 for tensor 1");
     EXPECT_EQ(fmt("xrun: %.2f ms late (%d frames @ %.1f kHz)", 1.2345, 64, 48.0),
               "xrun: 1.23 ms late (64 frames @ 48.0 kHz)");
     EXPECT_EQ(fmt("%s=%g", "gain", 0.5), "gain=0.5");
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests from code review
+// ---------------------------------------------------------------------------
+
+TEST(RtFormat, PrecisionZeroTiesToEvenUsesIntegerParity) {
+    expect_same_as_libc("%.0f", 0.5);
+    expect_same_as_libc("%.0f", 1.5);
+    expect_same_as_libc("%.0f", 2.5);
+    expect_same_as_libc("%.0f", 3.5);
+    expect_same_as_libc("%.0f", -1.5);
+    expect_same_as_libc("%.0f", 136343.5);
+    expect_same_as_libc("%.0e", 1.5);
+    expect_same_as_libc("%.0e", 2.5);
+    expect_same_as_libc("%g", 136343.5);
+}
+
+TEST(RtFormat, GeneralHugeMagnitudeFallsBackToExponent) {
+    // Would otherwise cast 1e20 to uint64_t (UB). We clamp digits, so only
+    // check the shape.
+    const std::string a = fmt("%.21g", 1e20);
+    EXPECT_NE(a.find("e+20"), std::string::npos) << a;
+    EXPECT_EQ(a.substr(0, 1), "1");
+    const std::string b = fmt("%.25g", 1e22);
+    EXPECT_NE(b.find("e+22"), std::string::npos) << b;
+}
+
+TEST(RtFormat, HighPrecisionIsClampedNotGarbage) {
+    // 15 fractional / significant digits is the documented limit; beyond
+    // that we clamp rather than emit a wrong last digit.
+    EXPECT_EQ(fmt("%.17f", 0.1), fmt("%.15f", 0.1));
+    EXPECT_EQ(fmt("%.16e", 0.3), fmt("%.14e", 0.3));
+    expect_same_as_libc("%.15f", 0.1);
+    expect_same_as_libc("%.14e", 0.3);
+    expect_same_as_libc("%.15g", 0.1);
+}
+
+TEST(RtFormat, WidthAndPrecisionOverflowAreClamped) {
+    std::array<char, 64> buf{};
+    // Digit accumulation must not overflow int; output is just truncated.
+    const int n = rt_snprintf(buf.data(), buf.size(), "%99999999999d", 1);
+    EXPECT_EQ(n, (1 << 20));
+    EXPECT_EQ(buf[0], ' ');
+    const int m = rt_snprintf(buf.data(), buf.size(), "%.99999999999d", 1);
+    EXPECT_EQ(m, 24) << "integer precision is bounded by the digit buffer";
+    // '*' with INT_MIN must not negate (UB); treated as huge left-justify.
+    const int k = rt_snprintf(buf.data(), buf.size(), "%*d", INT_MIN, 7);
+    EXPECT_EQ(k, (1 << 20));
+    EXPECT_EQ(buf[0], '7');
 }

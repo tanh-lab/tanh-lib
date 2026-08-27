@@ -40,7 +40,7 @@ public:
         , m_size(other.m_size)
         , m_sample_rate(other.m_sample_rate)
         , m_data(other.m_data) {
-        if (m_num_channels > 0 && m_size > 0) { malloc_channels(); }
+        if (m_num_channels > 0) { malloc_channels(); }
     }
 
     Buffer(Buffer&& other) noexcept
@@ -65,7 +65,7 @@ public:
             m_size = other.m_size;
             m_sample_rate = other.m_sample_rate;
             m_data = other.m_data;
-            if (m_num_channels > 0 && m_size > 0) { malloc_channels(); }
+            if (m_num_channels > 0) { malloc_channels(); }
         }
         return *this;
     }
