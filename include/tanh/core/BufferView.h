@@ -5,36 +5,36 @@
 #include <span>
 #include <type_traits>
 
-namespace thl::dsp::audio {
+namespace thl::core {
 
 template <typename T>
 class Buffer;
 
 template <typename T>
-class BasicAudioBufferView {
+class BasicBufferView {
     static_assert(std::is_same_v<T, float> || std::is_same_v<T, const float>,
                   "T must be float or const float");
 
 public:
-    BasicAudioBufferView() = default;
+    BasicBufferView() = default;
 
-    BasicAudioBufferView(T* const* channels, size_t num_channels, size_t num_frames)
+    BasicBufferView(T* const* channels, size_t num_channels, size_t num_frames)
         : m_channels(channels), m_num_channels(num_channels), m_num_frames(num_frames) {}
 
-    BasicAudioBufferView(T* mono, size_t num_frames)
+    BasicBufferView(T* mono, size_t num_frames)
         : m_inline_channel(mono)
         , m_channels(&m_inline_channel)
         , m_num_channels(1)
         , m_num_frames(num_frames) {}
 
-    BasicAudioBufferView(Buffer<std::remove_const_t<T>>& buffer)
+    BasicBufferView(Buffer<std::remove_const_t<T>>& buffer)
         : m_channels(buffer.get_array_of_write_pointers())
         , m_num_channels(buffer.get_num_channels())
         , m_num_frames(buffer.get_num_samples()) {}
 
     template <typename U = T>
         requires(std::is_const_v<U>)
-    BasicAudioBufferView(const Buffer<std::remove_const_t<T>>& buffer)
+    BasicBufferView(const Buffer<std::remove_const_t<T>>& buffer)
         : m_channels(reinterpret_cast<const float* const*>(buffer.get_array_of_read_pointers()))
         , m_num_channels(buffer.get_num_channels())
         , m_num_frames(buffer.get_num_samples()) {}
@@ -42,7 +42,7 @@ public:
     // Implicit conversion: mutable view -> const view
     template <typename U = T>
         requires(std::is_const_v<U>)
-    BasicAudioBufferView(const BasicAudioBufferView<float>& other)
+    BasicBufferView(const BasicBufferView<float>& other)
         : m_frame_offset(other.get_frame_offset())
         , m_num_channels(other.get_num_channels())
         , m_num_frames(other.get_num_samples()) {
@@ -56,7 +56,7 @@ public:
     }
 
     // Copy constructor with mono fixup
-    BasicAudioBufferView(const BasicAudioBufferView& other)
+    BasicBufferView(const BasicBufferView& other)
         : m_inline_channel(other.m_inline_channel)
         , m_channels(other.m_channels)
         , m_frame_offset(other.m_frame_offset)
@@ -66,7 +66,7 @@ public:
     }
 
     // Move constructor with mono fixup
-    BasicAudioBufferView(BasicAudioBufferView&& other) noexcept
+    BasicBufferView(BasicBufferView&& other) noexcept
         : m_inline_channel(other.m_inline_channel)
         , m_channels(other.m_channels)
         , m_frame_offset(other.m_frame_offset)
@@ -76,7 +76,7 @@ public:
     }
 
     // Copy assignment with mono fixup
-    BasicAudioBufferView& operator=(const BasicAudioBufferView& other) {
+    BasicBufferView& operator=(const BasicBufferView& other) {
         if (this != &other) {
             m_inline_channel = other.m_inline_channel;
             m_channels = other.m_channels;
@@ -89,7 +89,7 @@ public:
     }
 
     // Move assignment with mono fixup
-    BasicAudioBufferView& operator=(BasicAudioBufferView&& other) noexcept {
+    BasicBufferView& operator=(BasicBufferView&& other) noexcept {
         if (this != &other) {
             m_inline_channel = other.m_inline_channel;
             m_channels = other.m_channels;
@@ -111,10 +111,6 @@ public:
 
     size_t get_num_channels() const { return m_num_channels; }
     size_t get_num_samples() const { return m_num_frames; }
-    [[deprecated("Use get_num_samples() instead")]]
-    size_t get_num_frames() const {
-        return m_num_frames;
-    }
 
     std::span<T> operator[](size_t channel) {
         return std::span<T>(m_channels[channel] + m_frame_offset, m_num_frames);
@@ -129,12 +125,11 @@ public:
 
     bool is_mono_inline() const { return m_channels == &m_inline_channel; }
 
-    BasicAudioBufferView sub_block(size_t start_frame, size_t num_frames) const {
+    BasicBufferView sub_block(size_t start_frame, size_t num_frames) const {
         if (is_mono_inline()) {
-            return BasicAudioBufferView(m_inline_channel + m_frame_offset + start_frame,
-                                        num_frames);
+            return BasicBufferView(m_inline_channel + m_frame_offset + start_frame, num_frames);
         }
-        BasicAudioBufferView result;
+        BasicBufferView result;
         result.m_channels = m_channels;
         result.m_frame_offset = m_frame_offset + start_frame;
         result.m_num_channels = m_num_channels;
@@ -150,7 +145,7 @@ private:
     size_t m_num_frames = 0;
 };
 
-using AudioBufferView = BasicAudioBufferView<float>;
-using ConstAudioBufferView = BasicAudioBufferView<const float>;
+using BufferView = BasicBufferView<float>;
+using ConstBufferView = BasicBufferView<const float>;
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::core

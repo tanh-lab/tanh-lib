@@ -10,7 +10,7 @@
 
 #include "DataSourceImpl.h"
 #include "tanh/audio-io/DataSource.h"
-#include "tanh/dsp/audio/AudioBuffer.h"
+#include "tanh/core/Buffer.h"
 
 namespace thl::audio_io {
 
@@ -18,7 +18,7 @@ namespace {
 
 constexpr ma_uint64 k_read_chunk_frames = 4096;
 
-dsp::audio::AudioBuffer decode_with_decoder(ma_decoder& decoder, double /*target_sample_rate*/) {
+core::BufferF decode_with_decoder(ma_decoder& decoder, double /*target_sample_rate*/) {
     ma_uint64 total_frames = 0;
     ma_decoder_get_length_in_pcm_frames(&decoder, &total_frames);
 
@@ -49,7 +49,7 @@ dsp::audio::AudioBuffer decode_with_decoder(ma_decoder& decoder, double /*target
 
     size_t const num_frames = interleaved.size() / channels;
 
-    return dsp::audio::from_interleaved(interleaved.data(), channels, num_frames, sample_rate);
+    return core::from_interleaved(interleaved.data(), channels, num_frames, sample_rate);
 }
 
 }  // namespace
@@ -107,7 +107,7 @@ bool AudioFileLoader::init_resource_manager_data_source(DataSource::Impl& impl,
     return true;
 }
 
-dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl) {
+core::BufferF AudioFileLoader::read_all_frames(DataSource::Impl& impl) {
     auto channels = static_cast<size_t>(impl.m_channels);
     auto sample_rate = static_cast<double>(impl.m_sample_rate);
 
@@ -139,12 +139,12 @@ dsp::audio::AudioBuffer AudioFileLoader::read_all_frames(DataSource::Impl& impl)
     if (interleaved.empty()) { return {}; }
 
     size_t const num_frames = interleaved.size() / channels;
-    return dsp::audio::from_interleaved(interleaved.data(), channels, num_frames, sample_rate);
+    return core::from_interleaved(interleaved.data(), channels, num_frames, sample_rate);
 }
 
-dsp::audio::AudioBuffer AudioFileLoader::load_from_file(const std::string& file_path,
-                                                        double target_sample_rate,
-                                                        uint32_t target_channels) {
+core::BufferF AudioFileLoader::load_from_file(const std::string& file_path,
+                                              double target_sample_rate,
+                                              uint32_t target_channels) {
     if (file_path.empty()) { return {}; }
 
     DataSource::Impl impl;
@@ -162,10 +162,10 @@ dsp::audio::AudioBuffer AudioFileLoader::load_from_file(const std::string& file_
     return read_all_frames(impl);
 }
 
-dsp::audio::AudioBuffer AudioFileLoader::load_from_memory(const void* data,
-                                                          size_t size,
-                                                          double target_sample_rate,
-                                                          uint32_t target_channels) {
+core::BufferF AudioFileLoader::load_from_memory(const void* data,
+                                                size_t size,
+                                                double target_sample_rate,
+                                                uint32_t target_channels) {
     if (data == nullptr || size == 0) { return {}; }
 
     ma_decoder_config const config = ma_decoder_config_init(

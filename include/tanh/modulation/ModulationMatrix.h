@@ -97,7 +97,14 @@ public:
     // reclaiming retired VoiceBuffers / MonoBuffers while the audio thread
     // still references them.
     //
+    // Register the calling thread as an RCU reader. Call once from every
+    // thread that will open read scopes (e.g. the audio thread, during setup)
+    // so the reader node is allocated outside the real-time path. The
+    // constructing thread is registered automatically.
+    void ensure_thread_registered() const { m_config.register_reader_thread(); }
+
     // Usage on the audio thread:
+    //   matrix.ensure_thread_registered();  // once, during setup
     //   auto scope = matrix.read_scope();
     //   matrix.process_with_scope(scope.data(), num_samples);
     //   processor_manager.process(buffer);  // SmartHandle reads safe here

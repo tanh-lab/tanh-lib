@@ -23,7 +23,7 @@ enum class ConstellationReverbChannelMode : int {
  * Constellation reverb processor — a Dattorro plate reverb with asymmetric
  * shimmer pitch shifting and per-side single-sideband frequency shifting.
  *
- * All delay memory is heap-allocated via DynamicDelayLine (AudioBuffer backed).
+ * All delay memory is heap-allocated via DynamicDelayLine (BufferF backed).
  * Internal modulation (LFO rates, Brownian rates, excursion depths) is
  * hardcoded to curated values. The public interface focuses on tonal shaping.
  *
@@ -59,7 +59,7 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
 
-    void process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset = 0) override;
+    void process(thl::core::BufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
     enum Parameter {

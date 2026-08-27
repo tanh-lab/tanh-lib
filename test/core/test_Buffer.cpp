@@ -6,9 +6,9 @@
 #include <cstring>
 #include <vector>
 
-#include "tanh/dsp/audio/AudioBuffer.h"
+#include "tanh/core/Buffer.h"
 
-using namespace thl::dsp::audio;
+using namespace thl::core;
 
 // =============================================================================
 // MemoryBlock Tests
@@ -148,35 +148,35 @@ TEST(MemoryBlock, SubscriptOperator) {
 }
 
 // =============================================================================
-// Buffer<T> / AudioBuffer Tests
+// Buffer<T> / BufferF Tests
 // =============================================================================
 
-TEST(AudioBuffer, DefaultConstruction) {
-    AudioBuffer buffer;
+TEST(BufferF, DefaultConstruction) {
+    BufferF buffer;
     EXPECT_EQ(buffer.get_num_channels(), 0u);
     EXPECT_EQ(buffer.get_num_samples(), 0u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 0.0);
     EXPECT_TRUE(buffer.empty());
 }
 
-TEST(AudioBuffer, SizedConstruction) {
-    AudioBuffer buffer(2, 128, 44100.0);
+TEST(BufferF, SizedConstruction) {
+    BufferF buffer(2, 128, 44100.0);
     EXPECT_EQ(buffer.get_num_channels(), 2u);
     EXPECT_EQ(buffer.get_num_samples(), 128u);
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 44100.0);
     EXPECT_FALSE(buffer.empty());
 }
 
-TEST(AudioBuffer, ConstructionInitialisesZero) {
-    AudioBuffer buffer(2, 64, 48000.0);
+TEST(BufferF, ConstructionInitialisesZero) {
+    BufferF buffer(2, 64, 48000.0);
     for (size_t ch = 0; ch < 2; ++ch) {
         const float* ptr = buffer.get_read_pointer(ch);
         for (size_t f = 0; f < 64; ++f) { EXPECT_FLOAT_EQ(ptr[f], 0.0f); }
     }
 }
 
-TEST(AudioBuffer, WriteAndReadPointers) {
-    AudioBuffer buffer(2, 64, 48000.0);
+TEST(BufferF, WriteAndReadPointers) {
+    BufferF buffer(2, 64, 48000.0);
 
     float* ch0 = buffer.get_write_pointer(0);
     float* ch1 = buffer.get_write_pointer(1);
@@ -195,8 +195,8 @@ TEST(AudioBuffer, WriteAndReadPointers) {
     }
 }
 
-TEST(AudioBuffer, ReadWritePointerWithOffset) {
-    AudioBuffer buffer(1, 128, 48000.0);
+TEST(BufferF, ReadWritePointerWithOffset) {
+    BufferF buffer(1, 128, 48000.0);
     float* ptr = buffer.get_write_pointer(0);
     for (size_t f = 0; f < 128; ++f) { ptr[f] = static_cast<float>(f); }
 
@@ -207,8 +207,8 @@ TEST(AudioBuffer, ReadWritePointerWithOffset) {
     EXPECT_FLOAT_EQ(*w_offset, 64.0f);
 }
 
-TEST(AudioBuffer, GetSetSample) {
-    AudioBuffer buffer(2, 32, 48000.0);
+TEST(BufferF, GetSetSample) {
+    BufferF buffer(2, 32, 48000.0);
     buffer.set_sample(0, 10, 0.5f);
     buffer.set_sample(1, 20, -0.75f);
 
@@ -217,8 +217,8 @@ TEST(AudioBuffer, GetSetSample) {
     EXPECT_FLOAT_EQ(buffer.get_sample(0, 0), 0.0f);
 }
 
-TEST(AudioBuffer, Clear) {
-    AudioBuffer buffer(2, 64, 48000.0);
+TEST(BufferF, Clear) {
+    BufferF buffer(2, 64, 48000.0);
     float* ch0 = buffer.get_write_pointer(0);
     for (size_t f = 0; f < 64; ++f) { ch0[f] = 1.0f; }
 
@@ -227,8 +227,8 @@ TEST(AudioBuffer, Clear) {
     for (size_t f = 0; f < 64; ++f) { EXPECT_FLOAT_EQ(buffer.get_sample(0, f), 0.0f); }
 }
 
-TEST(AudioBuffer, SetSize) {
-    AudioBuffer buffer;
+TEST(BufferF, SetSize) {
+    BufferF buffer;
     buffer.set_size(3, 256, 96000.0);
 
     EXPECT_EQ(buffer.get_num_channels(), 3u);
@@ -237,8 +237,8 @@ TEST(AudioBuffer, SetSize) {
     EXPECT_FALSE(buffer.empty());
 }
 
-TEST(AudioBuffer, Resize) {
-    AudioBuffer buffer(2, 64, 48000.0);
+TEST(BufferF, Resize) {
+    BufferF buffer(2, 64, 48000.0);
     buffer.resize(4, 128);
 
     EXPECT_EQ(buffer.get_num_channels(), 4u);
@@ -246,14 +246,14 @@ TEST(AudioBuffer, Resize) {
     EXPECT_DOUBLE_EQ(buffer.get_sample_rate(), 48000.0);
 }
 
-TEST(AudioBuffer, CopyConstruction) {
-    AudioBuffer original(2, 64, 44100.0);
+TEST(BufferF, CopyConstruction) {
+    BufferF original(2, 64, 44100.0);
     for (size_t ch = 0; ch < 2; ++ch) {
         float* ptr = original.get_write_pointer(ch);
         for (size_t f = 0; f < 64; ++f) { ptr[f] = static_cast<float>(ch * 64 + f); }
     }
 
-    AudioBuffer copy(original);
+    BufferF copy(original);
     EXPECT_EQ(copy.get_num_channels(), 2u);
     EXPECT_EQ(copy.get_num_samples(), 64u);
     EXPECT_DOUBLE_EQ(copy.get_sample_rate(), 44100.0);
@@ -267,23 +267,23 @@ TEST(AudioBuffer, CopyConstruction) {
     }
 }
 
-TEST(AudioBuffer, CopyAssignment) {
-    AudioBuffer original(2, 32, 44100.0);
+TEST(BufferF, CopyAssignment) {
+    BufferF original(2, 32, 44100.0);
     original.set_sample(0, 0, 42.0f);
 
-    AudioBuffer copy;
+    BufferF copy;
     copy = original;
     EXPECT_EQ(copy.get_num_channels(), 2u);
     EXPECT_EQ(copy.get_num_samples(), 32u);
     EXPECT_FLOAT_EQ(copy.get_sample(0, 0), 42.0f);
 }
 
-TEST(AudioBuffer, MoveConstruction) {
-    AudioBuffer original(2, 64, 48000.0);
+TEST(BufferF, MoveConstruction) {
+    BufferF original(2, 64, 48000.0);
     original.set_sample(0, 0, 7.0f);
     float* original_data = original.data();
 
-    AudioBuffer moved(std::move(original));
+    BufferF moved(std::move(original));
     EXPECT_EQ(moved.get_num_channels(), 2u);
     EXPECT_EQ(moved.get_num_samples(), 64u);
     EXPECT_DOUBLE_EQ(moved.get_sample_rate(), 48000.0);
@@ -291,18 +291,18 @@ TEST(AudioBuffer, MoveConstruction) {
     EXPECT_FLOAT_EQ(moved.get_sample(0, 0), 7.0f);
 }
 
-TEST(AudioBuffer, MoveAssignment) {
-    AudioBuffer original(2, 64, 48000.0);
+TEST(BufferF, MoveAssignment) {
+    BufferF original(2, 64, 48000.0);
     original.set_sample(1, 10, 3.14f);
 
-    AudioBuffer moved;
+    BufferF moved;
     moved = std::move(original);
     EXPECT_EQ(moved.get_num_channels(), 2u);
     EXPECT_FLOAT_EQ(moved.get_sample(1, 10), 3.14f);
 }
 
-TEST(AudioBuffer, SelfCopyAssignment) {
-    AudioBuffer buffer(2, 32, 44100.0);
+TEST(BufferF, SelfCopyAssignment) {
+    BufferF buffer(2, 32, 44100.0);
     buffer.set_sample(0, 0, 1.0f);
 
 #pragma clang diagnostic push
@@ -314,8 +314,8 @@ TEST(AudioBuffer, SelfCopyAssignment) {
     EXPECT_FLOAT_EQ(buffer.get_sample(0, 0), 1.0f);
 }
 
-TEST(AudioBuffer, SelfMoveAssignment) {
-    AudioBuffer buffer(2, 32, 44100.0);
+TEST(BufferF, SelfMoveAssignment) {
+    BufferF buffer(2, 32, 44100.0);
     buffer.set_sample(0, 0, 1.0f);
 
 #pragma clang diagnostic push
@@ -327,8 +327,8 @@ TEST(AudioBuffer, SelfMoveAssignment) {
     EXPECT_FLOAT_EQ(buffer.get_sample(0, 0), 1.0f);
 }
 
-TEST(AudioBuffer, ArrayOfPointers) {
-    AudioBuffer buffer(3, 64, 48000.0);
+TEST(BufferF, ArrayOfPointers) {
+    BufferF buffer(3, 64, 48000.0);
     for (size_t ch = 0; ch < 3; ++ch) { buffer.set_sample(ch, 0, static_cast<float>(ch + 1)); }
 
     const float* const* read_ptrs = buffer.get_array_of_read_pointers();
@@ -341,15 +341,15 @@ TEST(AudioBuffer, ArrayOfPointers) {
     EXPECT_FLOAT_EQ(buffer.get_sample(0, 0), 10.0f);
 }
 
-TEST(AudioBuffer, DataPointer) {
-    AudioBuffer buffer(2, 32, 48000.0);
+TEST(BufferF, DataPointer) {
+    BufferF buffer(2, 32, 48000.0);
     EXPECT_NE(buffer.data(), nullptr);
     EXPECT_EQ(buffer.data(), buffer.get_memory_block().data());
 }
 
-TEST(AudioBuffer, SwapDataBuffers) {
-    AudioBuffer a(2, 32, 48000.0);
-    AudioBuffer b(2, 32, 48000.0);
+TEST(BufferF, SwapDataBuffers) {
+    BufferF a(2, 32, 48000.0);
+    BufferF b(2, 32, 48000.0);
 
     for (size_t ch = 0; ch < 2; ++ch) {
         for (size_t f = 0; f < 32; ++f) {
@@ -364,8 +364,8 @@ TEST(AudioBuffer, SwapDataBuffers) {
     EXPECT_FLOAT_EQ(b.get_sample(0, 0), 1.0f);
 }
 
-TEST(AudioBuffer, SwapDataMemoryBlock) {
-    AudioBuffer buffer(1, 4, 48000.0);
+TEST(BufferF, SwapDataMemoryBlock) {
+    BufferF buffer(1, 4, 48000.0);
     for (size_t f = 0; f < 4; ++f) { buffer.set_sample(0, f, 1.0f); }
 
     MemoryBlock<float> block(4);
@@ -379,8 +379,8 @@ TEST(AudioBuffer, SwapDataMemoryBlock) {
     }
 }
 
-TEST(AudioBuffer, SwapDataRawPointer) {
-    AudioBuffer buffer(1, 4, 48000.0);
+TEST(BufferF, SwapDataRawPointer) {
+    BufferF buffer(1, 4, 48000.0);
     for (size_t f = 0; f < 4; ++f) { buffer.set_sample(0, f, 1.0f); }
 
     auto* raw = static_cast<float*>(std::malloc(4 * sizeof(float)));
@@ -396,8 +396,8 @@ TEST(AudioBuffer, SwapDataRawPointer) {
     std::free(raw);
 }
 
-TEST(AudioBuffer, ResetChannelPointers) {
-    AudioBuffer buffer(2, 32, 48000.0);
+TEST(BufferF, ResetChannelPointers) {
+    BufferF buffer(2, 32, 48000.0);
     float* ch0_before = buffer.get_write_pointer(0);
 
     buffer.reset_channel_ptr();
@@ -406,8 +406,8 @@ TEST(AudioBuffer, ResetChannelPointers) {
     EXPECT_EQ(buffer.get_write_pointer(1), buffer.data() + 32);
 }
 
-TEST(AudioBuffer, PlanarLayout) {
-    AudioBuffer buffer(3, 16, 48000.0);
+TEST(BufferF, PlanarLayout) {
+    BufferF buffer(3, 16, 48000.0);
     float* raw = buffer.data();
 
     buffer.set_sample(0, 5, 10.0f);
@@ -423,8 +423,8 @@ TEST(AudioBuffer, PlanarLayout) {
 // Interleave / De-interleave Free Functions
 // =============================================================================
 
-TEST(AudioBuffer, ToInterleaved) {
-    AudioBuffer buffer(2, 4, 48000.0);
+TEST(BufferF, ToInterleaved) {
+    BufferF buffer(2, 4, 48000.0);
     for (size_t f = 0; f < 4; ++f) {
         buffer.set_sample(0, f, static_cast<float>(f));
         buffer.set_sample(1, f, static_cast<float>(f) + 10.0f);
@@ -443,9 +443,9 @@ TEST(AudioBuffer, ToInterleaved) {
     EXPECT_FLOAT_EQ(interleaved[7], 13.0f);
 }
 
-TEST(AudioBuffer, FromInterleaved) {
+TEST(BufferF, FromInterleaved) {
     std::array<float, 8> data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
-    AudioBuffer buffer = from_interleaved(data.data(), 2, 4, 44100.0);
+    BufferF buffer = from_interleaved(data.data(), 2, 4, 44100.0);
 
     EXPECT_EQ(buffer.get_num_channels(), 2u);
     EXPECT_EQ(buffer.get_num_samples(), 4u);
@@ -461,8 +461,8 @@ TEST(AudioBuffer, FromInterleaved) {
     EXPECT_FLOAT_EQ(buffer.get_sample(1, 3), 8.0f);
 }
 
-TEST(AudioBuffer, InterleavedRoundTrip) {
-    AudioBuffer original(2, 64, 48000.0);
+TEST(BufferF, InterleavedRoundTrip) {
+    BufferF original(2, 64, 48000.0);
     for (size_t ch = 0; ch < 2; ++ch) {
         for (size_t f = 0; f < 64; ++f) {
             original.set_sample(ch, f, std::sin(static_cast<float>(ch * 64 + f) * 0.1f));
@@ -470,7 +470,7 @@ TEST(AudioBuffer, InterleavedRoundTrip) {
     }
 
     std::vector<float> interleaved = to_interleaved(original);
-    AudioBuffer reconstructed = from_interleaved(interleaved.data(), 2, 64, 48000.0);
+    BufferF reconstructed = from_interleaved(interleaved.data(), 2, 64, 48000.0);
 
     for (size_t ch = 0; ch < 2; ++ch) {
         for (size_t f = 0; f < 64; ++f) {
@@ -495,4 +495,39 @@ TEST(BufferDouble, BasicOperations) {
 
     buffer.clear();
     EXPECT_DOUBLE_EQ(buffer.get_sample(0, 0), 0.0);
+}
+
+TEST(Buffer, CopyOfZeroFrameBufferKeepsChannelPointers) {
+    // Review regression: the copy ctor / copy assignment used to skip the
+    // channel-pointer array when there were no frames, leaving m_channels
+    // null while num_channels == 2.
+    Buffer<float> a;
+    a.resize(2, 0);
+    ASSERT_NE(a.get_array_of_write_pointers(), nullptr);
+
+    const Buffer<float> b = a;
+    EXPECT_EQ(b.get_num_channels(), 2U);
+    EXPECT_EQ(b.get_num_samples(), 0U);
+    EXPECT_NE(b.get_array_of_read_pointers(), nullptr);
+
+    Buffer<float> c;
+    c = a;
+    EXPECT_NE(c.get_array_of_write_pointers(), nullptr);
+
+    // Growing the copy afterwards must work normally.
+    c.resize(2, 8);
+    c.clear();
+    EXPECT_EQ(c.get_num_samples(), 8U);
+    EXPECT_NE(c.get_write_pointer(1), nullptr);
+}
+
+TEST(MemoryBlock, ResizeToZeroReportsZero) {
+    MemoryBlock<float> m(16);
+    EXPECT_EQ(m.size(), 16U);
+    m.resize(0);
+    EXPECT_EQ(m.size(), 0U);
+    EXPECT_EQ(m.data(), nullptr);
+    m.resize(4);
+    EXPECT_EQ(m.size(), 4U);
+    EXPECT_NE(m.data(), nullptr);
 }

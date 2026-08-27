@@ -28,9 +28,9 @@
 
 #pragma once
 
+#include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/analysis/Follower.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
@@ -47,9 +47,9 @@ public:
     ~RingsFmVoice() = default;
 
     void prepare(float sample_rate = thl::dsp::resonator::k_default_sample_rate);
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out,
-                 thl::dsp::audio::AudioBufferView aux);
+    void process(const thl::core::ConstBufferView& in,
+                 thl::core::BufferView out,
+                 thl::core::BufferView aux);
 
     inline void set_frequency(float frequency) { m_carrier_frequency = frequency; }
 

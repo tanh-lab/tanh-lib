@@ -1,14 +1,14 @@
 #pragma once
 
+#include <tanh/core/Buffer.h>
 #include <tanh/core/Exports.h>
-#include <tanh/dsp/audio/AudioBuffer.h>
 
 #include <cstddef>
 
 namespace thl::dsp::utils {
 
 /**
- * Variable-length float delay line backed by an AudioBuffer (heap-allocated).
+ * Variable-length float delay line backed by an BufferF (heap-allocated).
  *
  * Mirrors the API of DelayLine<float, N> but with runtime buffer sizing.
  * Also exposes tap() for reading relative to the most recent write, as
@@ -50,7 +50,7 @@ public:
 private:
     float read_at(size_t delay) const;
 
-    thl::dsp::audio::Buffer<float> m_buf;
+    thl::core::Buffer<float> m_buf;
     size_t m_max_delay = 1;  // requested usable bound
     size_t m_capacity = 1;   // physical ring size, power of two
     size_t m_mask = 0;       // m_capacity - 1

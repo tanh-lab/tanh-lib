@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/DspMath.h>
 
 #include <algorithm>
@@ -43,7 +43,7 @@ public:
 
     void prepare() { m_peak = 0.5f; }
 
-    void process(thl::dsp::audio::AudioBufferView stereo, float pre_gain) {
+    void process(thl::core::BufferView stereo, float pre_gain) {
         float* l = stereo.get_write_pointer(0);  // NOLINT(misc-const-correctness)
         float* r = stereo.get_write_pointer(1);  // NOLINT(misc-const-correctness)
         size_t size = stereo.get_num_samples();

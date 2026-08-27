@@ -28,8 +28,8 @@
 
 #pragma once
 
+#include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
@@ -161,9 +161,9 @@ public:
     // Process a block of `size` samples.  Excitation is read from `in`;
     // the primary string output is accumulated into `out` and a comb-
     // filtered pickup signal (position-dependent tap) into `aux`.
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 const thl::dsp::audio::AudioBufferView& out,
-                 const thl::dsp::audio::AudioBufferView& aux);
+    void process(const thl::core::ConstBufferView& in,
+                 const thl::core::BufferView& out,
+                 const thl::core::BufferView& aux);
 
     inline void set_frequency(float frequency) { m_frequency = frequency; }
 
@@ -195,9 +195,9 @@ private:
     // path so the compiler can eliminate allpass / curved-bridge logic
     // when it is not needed.
     template <bool enable_dispersion>
-    void process_internal(const thl::dsp::audio::ConstAudioBufferView& in,
-                          thl::dsp::audio::AudioBufferView out,
-                          thl::dsp::audio::AudioBufferView aux);
+    void process_internal(const thl::core::ConstBufferView& in,
+                          thl::core::BufferView out,
+                          thl::core::BufferView aux);
 
     float m_sample_rate = k_default_sample_rate;
     float m_frequency = 0.0f;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 
 #include <cstddef>
 
@@ -19,7 +19,7 @@ public:
         m_y = 0.0f;
     }
 
-    void process(thl::dsp::audio::AudioBufferView in_out) {
+    void process(thl::core::BufferView in_out) {
         float* ptr = in_out.get_write_pointer(0);  // NOLINT(misc-const-correctness)
         size_t size = in_out.get_num_samples();
         float x = m_x;

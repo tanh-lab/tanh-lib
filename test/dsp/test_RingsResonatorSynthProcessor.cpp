@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/synth/RingsResonatorSynthProcessor.h>
 
 #include <algorithm>
@@ -48,8 +48,8 @@ float process_and_measure_energy(TestResonator& synth, int num_blocks = 4) {
         std::array<float, k_block_size> input = {};
         std::array<float, k_block_size> output = {};
         if (b == 0) { input[0] = 1.0f; }
-        synth.process(thl::dsp::audio::ConstAudioBufferView(input.data(), k_block_size),
-                      thl::dsp::audio::AudioBufferView(output.data(), k_block_size));
+        synth.process(thl::core::ConstBufferView(input.data(), k_block_size),
+                      thl::core::BufferView(output.data(), k_block_size));
         for (float v : output) { energy += v * v; }
     }
     return energy;
@@ -97,8 +97,8 @@ TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {
         std::array<float, k_block_size> input = {};
         if (b == 0) { input[0] = 1.0f; }
         float* out_ptr = out_zero.data() + static_cast<size_t>(b) * k_block_size;
-        m_synth.process(thl::dsp::audio::ConstAudioBufferView(input.data(), k_block_size),
-                        thl::dsp::audio::AudioBufferView(out_ptr, k_block_size));
+        m_synth.process(thl::core::ConstBufferView(input.data(), k_block_size),
+                        thl::core::BufferView(out_ptr, k_block_size));
     }
 
     TestResonator synth2;
@@ -111,8 +111,8 @@ TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {
         std::array<float, k_block_size> input = {};
         if (b == 0) { input[0] = 1.0f; }
         float* out_ptr = out_one.data() + static_cast<size_t>(b) * k_block_size;
-        synth2.process(thl::dsp::audio::ConstAudioBufferView(input.data(), k_block_size),
-                       thl::dsp::audio::AudioBufferView(out_ptr, k_block_size));
+        synth2.process(thl::core::ConstBufferView(input.data(), k_block_size),
+                       thl::core::BufferView(out_ptr, k_block_size));
     }
 
     float diff = 0.0f;
@@ -146,8 +146,8 @@ TEST_F(RingsResonatorSynthProcessorTest, DryWetZeroPassesDrySignal) {
         std::array<float, k_block_size> input;
         input.fill(0.5f);
         float* out_ptr = output.data() + static_cast<size_t>(b) * k_block_size;
-        m_synth.process(thl::dsp::audio::ConstAudioBufferView(input.data(), k_block_size),
-                        thl::dsp::audio::AudioBufferView(out_ptr, k_block_size));
+        m_synth.process(thl::core::ConstBufferView(input.data(), k_block_size),
+                        thl::core::BufferView(out_ptr, k_block_size));
     }
 
     int count_near_dry = 0;
@@ -184,10 +184,10 @@ TEST_F(RingsResonatorSynthProcessorTest, DeterministicOutput) {
         std::array<float, k_block_size> input_copy;
         std::ranges::copy(input, input_copy.begin());
 
-        synth_a.process(thl::dsp::audio::ConstAudioBufferView(input.data(), k_block_size),
-                        thl::dsp::audio::AudioBufferView(out_a.data(), k_block_size));
-        synth_b.process(thl::dsp::audio::ConstAudioBufferView(input_copy.data(), k_block_size),
-                        thl::dsp::audio::AudioBufferView(out_b.data(), k_block_size));
+        synth_a.process(thl::core::ConstBufferView(input.data(), k_block_size),
+                        thl::core::BufferView(out_a.data(), k_block_size));
+        synth_b.process(thl::core::ConstBufferView(input_copy.data(), k_block_size),
+                        thl::core::BufferView(out_b.data(), k_block_size));
 
         for (int i = 0; i < k_block_size; ++i) {
             ASSERT_EQ(out_a[i], out_b[i]) << "Mismatch at block " << b << " sample " << i;
@@ -231,10 +231,10 @@ TEST_F(RingsResonatorSynthProcessorTest, WrapperOutputMatchesManualBlend) {
 
         std::array<float, k_block_size> out1 = {};
         std::array<float, k_block_size> out2 = {};
-        m_synth.process(thl::dsp::audio::ConstAudioBufferView(input.data(), k_block_size),
-                        thl::dsp::audio::AudioBufferView(out1.data(), k_block_size));
-        synth2.process(thl::dsp::audio::ConstAudioBufferView(input2.data(), k_block_size),
-                       thl::dsp::audio::AudioBufferView(out2.data(), k_block_size));
+        m_synth.process(thl::core::ConstBufferView(input.data(), k_block_size),
+                        thl::core::BufferView(out1.data(), k_block_size));
+        synth2.process(thl::core::ConstBufferView(input2.data(), k_block_size),
+                       thl::core::BufferView(out2.data(), k_block_size));
 
         for (int i = 0; i < k_block_size; ++i) {
             ASSERT_FLOAT_EQ(out1[i], out2[i])
@@ -305,8 +305,8 @@ TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
     for (int b = 0; b < kWrapperWarmUpBlocks; ++b) {
         std::array<float, kWrapperProcessBlockSize> in = {};
         std::array<float, kWrapperProcessBlockSize> out = {};
-        synth.process(thl::dsp::audio::ConstAudioBufferView(in.data(), kWrapperProcessBlockSize),
-                      thl::dsp::audio::AudioBufferView(out.data(), kWrapperProcessBlockSize));
+        synth.process(thl::core::ConstBufferView(in.data(), kWrapperProcessBlockSize),
+                      thl::core::BufferView(out.data(), kWrapperProcessBlockSize));
     }
 
     for (int b = 0; b < kWrapperNumBlocks; ++b) {
@@ -317,8 +317,8 @@ TEST_P(RingsWrapperReferenceTest, MatchesOriginalWrapper) {
         std::array<float, kWrapperProcessBlockSize> in;
         std::copy(in_ptr, in_ptr + kWrapperProcessBlockSize, in.begin());
 
-        synth.process(thl::dsp::audio::ConstAudioBufferView(in.data(), kWrapperProcessBlockSize),
-                      thl::dsp::audio::AudioBufferView(out.data(), kWrapperProcessBlockSize));
+        synth.process(thl::core::ConstBufferView(in.data(), kWrapperProcessBlockSize),
+                      thl::core::BufferView(out.data(), kWrapperProcessBlockSize));
 
         for (int i = 0; i < kWrapperProcessBlockSize; ++i) {
             size_t idx = static_cast<size_t>(b) * kWrapperProcessBlockSize + i;

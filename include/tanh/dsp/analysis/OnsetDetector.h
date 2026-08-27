@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DspMath.h>
 
@@ -149,19 +149,19 @@ public:
         m_onset_df = 0.0f;
     }
 
-    bool process(const thl::dsp::audio::ConstAudioBufferView& samples) {
+    bool process(const thl::core::ConstBufferView& samples) {
         const float* samples_ptr = samples.get_read_pointer(0);
         const size_t size = samples.get_num_samples();
         // Automatic gain control.
         m_compressor.process(samples_ptr, m_bands[0].data(), size);
 
         // Quick and dirty filter bank - split the signal in three bands.
-        m_mid_high_filter.split(thl::dsp::audio::ConstAudioBufferView(m_bands[0].data(), size),
-                                thl::dsp::audio::AudioBufferView(m_bands[1].data(), size),
-                                thl::dsp::audio::AudioBufferView(m_bands[2].data(), size));
-        m_low_mid_filter.split(thl::dsp::audio::ConstAudioBufferView(m_bands[1].data(), size),
-                               thl::dsp::audio::AudioBufferView(m_bands[0].data(), size),
-                               thl::dsp::audio::AudioBufferView(m_bands[1].data(), size));
+        m_mid_high_filter.split(thl::core::ConstBufferView(m_bands[0].data(), size),
+                                thl::core::BufferView(m_bands[1].data(), size),
+                                thl::core::BufferView(m_bands[2].data(), size));
+        m_low_mid_filter.split(thl::core::ConstBufferView(m_bands[1].data(), size),
+                               thl::core::BufferView(m_bands[0].data(), size),
+                               thl::core::BufferView(m_bands[1].data(), size));
 
         // Compute low-pass energy and onset detection function
         // (derivative of energy) in each band.

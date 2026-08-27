@@ -36,8 +36,8 @@
 #include <cmath>
 #include <cstddef>
 
+#include "tanh/core/BufferView.h"
 #include "tanh/dsp/DspTypes.h"
-#include "tanh/dsp/audio/AudioBufferView.h"
 #include "tanh/dsp/filter/OnePole.h"
 
 namespace thl::dsp::resonator {
@@ -109,9 +109,9 @@ void RingsString::prepare_coefficients(float delay, float src_ratio, size_t size
 }
 
 template <bool enable_dispersion>
-void RingsString::process_internal(const thl::dsp::audio::ConstAudioBufferView& in,
-                                   thl::dsp::audio::AudioBufferView out,
-                                   thl::dsp::audio::AudioBufferView aux) {
+void RingsString::process_internal(const thl::core::ConstBufferView& in,
+                                   thl::core::BufferView out,
+                                   thl::core::BufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);  // NOLINT(misc-const-correctness)
     float* aux_ptr = aux.get_write_pointer(0);  // NOLINT(misc-const-correctness)
@@ -194,7 +194,7 @@ void RingsString::process_internal(const thl::dsp::audio::ConstAudioBufferView& 
                     s = m_string.read_hermite(delay);
                 }
                 float s_ac = s;
-                thl::dsp::audio::AudioBufferView const dc_view(&s_ac, 1);
+                thl::core::BufferView const dc_view(&s_ac, 1);
                 m_dc_blocker.process(dc_view);
                 s += ac_blocking_amount * (s_ac - s);
 
@@ -233,9 +233,9 @@ void RingsString::process_internal(const thl::dsp::audio::ConstAudioBufferView& 
     }
 }
 
-void RingsString::process(const thl::dsp::audio::ConstAudioBufferView& in,
-                          const thl::dsp::audio::AudioBufferView& out,
-                          const thl::dsp::audio::AudioBufferView& aux) {
+void RingsString::process(const thl::core::ConstBufferView& in,
+                          const thl::core::BufferView& out,
+                          const thl::core::BufferView& aux) {
     if (m_enable_dispersion) {
         process_internal<true>(in, out, aux);
     } else {

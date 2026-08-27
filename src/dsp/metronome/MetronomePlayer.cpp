@@ -1,4 +1,4 @@
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/transport/TransportClock.h>
 
@@ -48,8 +48,7 @@ void MetronomePlayerImpl::prepare(const double& sample_rate,
     m_sample_rate = sample_rate;
 }
 
-void MetronomePlayerImpl::process(thl::dsp::audio::AudioBufferView buffer,
-                                  uint32_t modulation_offset) {
+void MetronomePlayerImpl::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     const auto frame_count = static_cast<uint32_t>(buffer.get_num_samples());
     const auto num_channels = buffer.get_num_channels();
     const bool enabled = get_parameter_bool(Enabled, modulation_offset);

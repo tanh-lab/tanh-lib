@@ -1,4 +1,4 @@
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/fx/StereoFDN.h>
 
 #include <algorithm>
@@ -196,7 +196,7 @@ void StereoFDN::prepare(const double& sample_rate,
     reset();
 }
 
-void StereoFDN::process(thl::dsp::audio::AudioBufferView buffer, uint32_t modulation_offset) {
+void StereoFDN::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     if (!m_prepared || buffer.get_num_channels() < k_num_audio_channels ||
         buffer.get_num_samples() == 0) {
         return;

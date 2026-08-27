@@ -6,7 +6,7 @@
 namespace thl::dsp::utils {
 
 /**
- * Allpass filter with heap-allocated (AudioBuffer-backed) delay line.
+ * Allpass filter with heap-allocated (BufferF-backed) delay line.
  *
  * Mirrors Allpass<float, N> but with runtime buffer size.
  * Lattice form: w[n] = x[n] + c·d[n-N],  y[n] = -c·w[n] + d[n-N]

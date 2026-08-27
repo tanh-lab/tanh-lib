@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace thl::dsp::audio {
+namespace thl::core {
 
 template <typename T>
 class MemoryBlock {
@@ -90,8 +90,18 @@ public:
     const T* data() const { return m_data; }
     size_t size() const { return m_size; }
 
+    /// Resize the block. On allocation failure the block is left unchanged
+    /// (old data and old size) and an error is logged, so size() never
+    /// claims more elements than data() actually holds.
     void resize(size_t size) {
-        m_size = size;
+        if (size == 0) {
+            // malloc(0)/realloc(p, 0) are implementation-defined; release
+            // explicitly so a zero-sized block is always the null block.
+            std::free(m_data);
+            m_data = nullptr;
+            m_size = 0;
+            return;
+        }
         void* data;
         if (m_data != nullptr) {
             data = std::realloc(m_data, sizeof(T) * size);
@@ -101,9 +111,10 @@ public:
 
         if (data != nullptr) {
             m_data = static_cast<T*>(data);
+            m_size = size;
         } else {
-            thl::Logger::error("thl.dsp.audio.memory_block",
-                               "MemoryBlock: failed to reallocate memory");
+            thl::Logger::error("thl.core.memory_block",
+                               "MemoryBlock: failed to reallocate memory; size unchanged");
         }
     }
 
@@ -138,4 +149,4 @@ private:
     size_t m_size = 0;
 };
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::core

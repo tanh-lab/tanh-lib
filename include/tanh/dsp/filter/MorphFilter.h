@@ -1,7 +1,7 @@
 #pragma once
 
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/DspTypes.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/OnePole.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
@@ -142,8 +142,7 @@ public:
         return y_lo + frac * (y_hi - y_lo);
     }
 
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out) {
+    void process(const thl::core::ConstBufferView& in, thl::core::BufferView out) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
         const size_t size = in.get_num_samples();

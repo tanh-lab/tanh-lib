@@ -35,7 +35,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "tanh/dsp/audio/AudioBufferView.h"
+#include "tanh/core/BufferView.h"
 
 namespace thl::dsp::synth {
 
@@ -95,9 +95,9 @@ void RingsFmVoice::prepare_coefficients() {
     m_feedback = (m_feedback_amount - 0.5f) * 2.0f;
 }
 
-void RingsFmVoice::process(const thl::dsp::audio::ConstAudioBufferView& in,
-                           thl::dsp::audio::AudioBufferView out,
-                           thl::dsp::audio::AudioBufferView aux) {
+void RingsFmVoice::process(const thl::core::ConstBufferView& in,
+                           thl::core::BufferView out,
+                           thl::core::BufferView aux) {
     const float* const in_ptr = in.get_read_pointer(0);
     float* const out_ptr = out.get_write_pointer(0);
     float* const aux_ptr = aux.get_write_pointer(0);

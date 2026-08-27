@@ -28,9 +28,9 @@
 
 #pragma once
 
+#include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/analysis/NoteFilter.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
 #include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsFmVoice.h>
@@ -77,9 +77,9 @@ public:
 
     void process(const thl::dsp::resonator::RingsPerformanceState& performance_state,
                  const thl::dsp::resonator::RingsPatch& patch,
-                 const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out,
-                 thl::dsp::audio::AudioBufferView aux);
+                 const thl::core::ConstBufferView& in,
+                 thl::core::BufferView out,
+                 thl::core::BufferView aux);
 
     inline bool bypass() const { return m_bypass; }
     inline void set_bypass(bool bypass) { m_bypass = bypass; }

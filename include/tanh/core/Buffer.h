@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
-#include <tanh/dsp/audio/MemoryBlock.h>
+#include <tanh/core/BufferView.h>
+#include <tanh/core/MemoryBlock.h>
 
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
 
-namespace thl::dsp::audio {
+namespace thl::core {
 
 /**
  * Planar audio buffer backed by a contiguous MemoryBlock with cached
@@ -40,7 +40,7 @@ public:
         , m_size(other.m_size)
         , m_sample_rate(other.m_sample_rate)
         , m_data(other.m_data) {
-        if (m_num_channels > 0 && m_size > 0) { malloc_channels(); }
+        if (m_num_channels > 0) { malloc_channels(); }
     }
 
     Buffer(Buffer&& other) noexcept
@@ -65,7 +65,7 @@ public:
             m_size = other.m_size;
             m_sample_rate = other.m_sample_rate;
             m_data = other.m_data;
-            if (m_num_channels > 0 && m_size > 0) { malloc_channels(); }
+            if (m_num_channels > 0) { malloc_channels(); }
         }
         return *this;
     }
@@ -89,10 +89,6 @@ public:
     // -- Dimensions and metadata ------------------------------------------
 
     size_t get_num_samples() const { return m_size; }
-    [[deprecated("Use get_num_samples() instead")]]
-    size_t get_num_frames() const {
-        return m_size;
-    }
     size_t get_num_channels() const { return m_num_channels; }
     double get_sample_rate() const { return m_sample_rate; }
     bool empty() const { return m_size == 0 || m_num_channels == 0; }
@@ -199,8 +195,8 @@ public:
         for (size_t i = 0; i < m_num_channels; ++i) { m_channels[i] = m_data.data() + i * m_size; }
     }
 
-    BasicAudioBufferView<T> view() { return BasicAudioBufferView<T>(*this); }
-    BasicAudioBufferView<const T> view() const { return BasicAudioBufferView<const T>(*this); }
+    BasicBufferView<T> view() { return BasicBufferView<T>(*this); }
+    BasicBufferView<const T> view() const { return BasicBufferView<const T>(*this); }
 
 private:
     void malloc_channels() {
@@ -223,10 +219,10 @@ private:
     MemoryBlock<T> m_data;
 };
 
-using AudioBuffer = Buffer<float>;
+using BufferF = Buffer<float>;
 
 /// Copy planar buffer to an interleaved float vector.
-inline std::vector<float> to_interleaved(const AudioBuffer& buffer) {
+inline std::vector<float> to_interleaved(const BufferF& buffer) {
     const size_t num_channels = buffer.get_num_channels();
     const size_t num_frames = buffer.get_num_samples();
     std::vector<float> interleaved(num_frames * num_channels);
@@ -237,12 +233,12 @@ inline std::vector<float> to_interleaved(const AudioBuffer& buffer) {
     return interleaved;
 }
 
-/// Build a planar AudioBuffer from interleaved float data.
-inline AudioBuffer from_interleaved(const float* data,
-                                    size_t num_channels,
-                                    size_t num_frames,
-                                    double sample_rate) {
-    AudioBuffer buffer(num_channels, num_frames, sample_rate);
+/// Build a planar BufferF from interleaved float data.
+inline BufferF from_interleaved(const float* data,
+                                size_t num_channels,
+                                size_t num_frames,
+                                double sample_rate) {
+    BufferF buffer(num_channels, num_frames, sample_rate);
     for (size_t ch = 0; ch < num_channels; ++ch) {
         float* dst = buffer.get_write_pointer(ch);
         for (size_t f = 0; f < num_frames; ++f) { dst[f] = data[f * num_channels + ch]; }
@@ -250,4 +246,4 @@ inline AudioBuffer from_interleaved(const float* data,
     return buffer;
 }
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::core

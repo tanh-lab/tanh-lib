@@ -12,7 +12,7 @@
 //     audible as clicks.
 
 #include <gtest/gtest.h>
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/Limiter.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>

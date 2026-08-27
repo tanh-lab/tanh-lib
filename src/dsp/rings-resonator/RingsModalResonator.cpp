@@ -35,8 +35,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "tanh/core/BufferView.h"
 #include "tanh/dsp/DspTypes.h"
-#include "tanh/dsp/audio/AudioBufferView.h"
 #include "tanh/dsp/filter/OnePole.h"
 
 namespace thl::dsp::resonator {
@@ -100,9 +100,9 @@ int32_t RingsModalResonator::compute_filters() {
     return num_modes;
 }
 
-void RingsModalResonator::process(const thl::dsp::audio::ConstAudioBufferView& in,
-                                  thl::dsp::audio::AudioBufferView out,
-                                  thl::dsp::audio::AudioBufferView aux) {
+void RingsModalResonator::process(const thl::core::ConstBufferView& in,
+                                  thl::core::BufferView out,
+                                  thl::core::BufferView aux) {
     const float* in_ptr = in.get_read_pointer(0);
     float* out_ptr = out.get_write_pointer(0);  // NOLINT(misc-const-correctness)
     float* aux_ptr = aux.get_write_pointer(0);  // NOLINT(misc-const-correctness)

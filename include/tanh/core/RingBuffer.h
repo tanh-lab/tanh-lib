@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-#include <tanh/dsp/audio/AudioBuffer.h>
+#include <tanh/core/Buffer.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::audio {
+namespace thl::core {
 
 /**
  * Multi-channel ring buffer over an arbitrary element type.
@@ -52,6 +52,7 @@ public:
 
     void push_sample(size_t channel, T sample) {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0) { return; }
         m_buffer.get_write_pointer(channel)[m_write_pos[channel]] = sample;
         m_write_pos[channel] = (m_write_pos[channel] + 1) % capacity;
         if (m_is_full[channel]) {
@@ -71,50 +72,71 @@ public:
         return sample;
     }
 
+    /// Push `count` samples. Equivalent to `count` calls of push_sample(), but
+    /// copies in at most two contiguous chunks. If `count` exceeds the capacity
+    /// only the last `capacity` samples are retained.
     void push_block(size_t channel, const T* data, size_t count) {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0 || count == 0) { return; }
         T* buf = m_buffer.get_write_pointer(channel);
-        for (size_t i = 0; i < count; ++i) {
-            buf[m_write_pos[channel]] = data[i];
-            m_write_pos[channel] = (m_write_pos[channel] + 1) % capacity;
-            if (m_is_full[channel]) {
-                m_read_pos[channel] = m_write_pos[channel];
-            } else {
-                if (m_num_valid[channel] < capacity) { ++m_num_valid[channel]; }
-            }
-            m_is_full[channel] = (m_write_pos[channel] == m_read_pos[channel]);
+        const size_t free = capacity - get_available_samples(channel);
+
+        // Only the tail of an oversized block can survive; skip the rest.
+        size_t start = m_write_pos[channel];
+        if (count > capacity) {
+            data += count - capacity;
+            start = (start + (count - capacity)) % capacity;
+            count = capacity;
         }
+
+        copy_wrapped(data, buf, start, count, capacity);
+        m_write_pos[channel] = (start + count) % capacity;
+
+        if (count >= free) {
+            // Reached or overran the read position: the ring is now full and
+            // the oldest retained sample sits right after the write head.
+            m_read_pos[channel] = m_write_pos[channel];
+            m_is_full[channel] = true;
+        }
+        m_num_valid[channel] = std::min(m_num_valid[channel] + count, capacity);
     }
 
+    /// Pop `count` samples. Equivalent to `count` calls of pop_sample(): any
+    /// samples beyond what is available are value-initialised (T{}).
     void pop_block(size_t channel, T* data, size_t count) {
         const size_t capacity = m_buffer.get_num_samples();
-        const T* buf = m_buffer.get_read_pointer(channel);
-        for (size_t i = 0; i < count; ++i) {
-            if (empty(channel)) {
-                data[i] = T{};
-                continue;
-            }
-            data[i] = buf[m_read_pos[channel]];
-            m_read_pos[channel] = (m_read_pos[channel] + 1) % capacity;
+        const size_t available = get_available_samples(channel);
+        const size_t n = std::min(count, available);
+
+        if (n > 0) {
+            const T* buf = m_buffer.get_read_pointer(channel);
+            const size_t start = m_read_pos[channel];
+            const size_t first = std::min(n, capacity - start);
+            std::copy_n(buf + start, first, data);
+            std::copy_n(buf, n - first, data + first);
+            m_read_pos[channel] = (start + n) % capacity;
             m_is_full[channel] = false;
         }
+        std::fill_n(data + n, count - n, T{});
     }
 
     T get_future_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0) { return T{}; }
         size_t const pos = (m_read_pos[channel] + offset) % capacity;
         return m_buffer.get_read_pointer(channel)[pos];
     }
 
     T get_past_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0) { return T{}; }
         size_t const pos = (m_read_pos[channel] + capacity - offset) % capacity;
         return m_buffer.get_read_pointer(channel)[pos];
     }
 
     size_t get_available_samples(size_t channel) const {
         const size_t capacity = m_buffer.get_num_samples();
-        if (m_is_full[channel]) { return capacity; }
+        if (capacity == 0 || m_is_full[channel]) { return capacity; }
         return (m_write_pos[channel] + capacity - m_read_pos[channel]) % capacity;
     }
 
@@ -126,6 +148,14 @@ public:
     size_t get_num_samples() const { return m_buffer.get_num_samples(); }
 
 private:
+    /// Copy `count` elements from `src` into the ring starting at `start`,
+    /// wrapping at `capacity`. Requires count <= capacity.
+    static void copy_wrapped(const T* src, T* ring, size_t start, size_t count, size_t capacity) {
+        const size_t first = std::min(count, capacity - start);
+        std::copy_n(src, first, ring + start);
+        std::copy_n(src + first, count - first, ring);
+    }
+
     bool empty(size_t channel) const {
         return m_buffer.get_num_samples() == 0 ||
                (!m_is_full[channel] && m_read_pos[channel] == m_write_pos[channel]);
@@ -140,4 +170,4 @@ private:
 
 using RingBufferF = RingBuffer<float>;
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::core

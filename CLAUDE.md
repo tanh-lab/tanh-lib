@@ -42,7 +42,7 @@ Run a single test binary directly:
 
 Five library targets with inter-component dependencies:
 
-- **tanh_core** (`src/core/`, `include/tanh/core/`) — Dispatcher (event messaging), Logger, RCU (lock-free read-copy-update). Foundation for all other components.
+- **tanh_core** (`src/core/`, `include/tanh/core/`) — Dispatcher (event messaging), Logger (with RT-safe `Logger::rt` path), RCU (lock-free read-copy-update), `LockFreeQueue` (bounded lock-free MPMC), generic buffers. Foundation for all other components.
 - **tanh_state** (`src/state/`, `include/tanh/state/`) — Hierarchical parameter storage with dot-separated paths (e.g. `"oscillator.frequency"`). RCU-protected reads for real-time safety. JSON serialization via nlohmann_json. Depends on core.
 - **tanh_dsp** (`src/dsp/`, `include/tanh/dsp/`) — DSP processors (synth, effects, granular, Rings resonator model). All processors inherit `BaseProcessor` with `prepare()`/`process()` interface. Modulation via change points for sample-accurate automation. Depends on core.
 - **tanh_modulation** (`src/modulation/`, `include/tanh/modulation/`) — Modulation matrix routing sources (LFO, etc.) to DSP parameters. Change-point-driven sub-blocking. Depends on core, state, dsp.
@@ -70,6 +70,7 @@ When running clang-tidy, use multithreading via `run-clang-tidy` (or the `-j` fl
 - `process()` methods are marked `TANH_NONBLOCKING_FUNCTION` and must not allocate or block
 - Threads must call `ensure_thread_registered()` before RT access to State/StateGroup
 - Numeric parameter types (double, float, int, bool) are fully RT-safe; strings may allocate beyond SSO
+- `thl::Logger::log/logf/...` are **not** RT-safe. From RT code use `thl::Logger::rt::logf()` / `rt::log()` (lock-free queue, drained by a background thread into the normal sinks). `thl::core::rt_snprintf` is the RT-safe formatter behind it
 - Enable RealtimeSanitizer with `-DTANH_WITH_RTSAN=ON` (requires Clang 20+)
 
 ## Dependencies (via CMake FetchContent)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/dsp/audio/AudioBufferView.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/OnePole.h>
 
 #include <cstddef>
@@ -88,8 +88,7 @@ public:
     }
 
     template <FilterMode mode>
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out) {
+    void process(const thl::core::ConstBufferView& in, thl::core::BufferView out) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
         const size_t size = in.get_num_samples();
@@ -108,8 +107,8 @@ public:
     }
 
     template <FilterMode mode>
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out,
+    void process(const thl::core::ConstBufferView& in,
+                 thl::core::BufferView out,
                  size_t stride,
                  size_t num_iterations) {
         const float* const in_ptr = in.get_read_pointer(0);
@@ -129,8 +128,8 @@ public:
         m_state_2 = state_2;
     }
 
-    void process_multimode(const thl::dsp::audio::ConstAudioBufferView& in,
-                           thl::dsp::audio::AudioBufferView out,
+    void process_multimode(const thl::core::ConstBufferView& in,
+                           thl::core::BufferView out,
                            float mode) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
@@ -156,9 +155,9 @@ public:
     }
 
     template <FilterMode mode>
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out_1,
-                 thl::dsp::audio::AudioBufferView out_2,
+    void process(const thl::core::ConstBufferView& in,
+                 thl::core::BufferView out_1,
+                 thl::core::BufferView out_2,
                  float gain_1,
                  float gain_2) {
         const float* const in_ptr = in.get_read_pointer(0);
@@ -245,8 +244,7 @@ public:
     float bp() const { return m_bp; }
 
     template <FilterMode mode>
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out) {
+    void process(const thl::core::ConstBufferView& in, thl::core::BufferView out) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
         const size_t size = in.get_num_samples();
@@ -264,9 +262,9 @@ public:
         m_bp = bp;
     }
 
-    void split(const thl::dsp::audio::ConstAudioBufferView& in,
-               thl::dsp::audio::AudioBufferView low,
-               thl::dsp::audio::AudioBufferView high) {
+    void split(const thl::core::ConstBufferView& in,
+               thl::core::BufferView low,
+               thl::core::BufferView high) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const low_ptr = low.get_write_pointer(0);
         float* const high_ptr = high.get_write_pointer(0);
@@ -287,9 +285,7 @@ public:
     }
 
     template <FilterMode mode>
-    void process(const thl::dsp::audio::ConstAudioBufferView& in,
-                 thl::dsp::audio::AudioBufferView out,
-                 size_t decimate) {
+    void process(const thl::core::ConstBufferView& in, thl::core::BufferView out, size_t decimate) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
         const size_t size = in.get_num_samples();
