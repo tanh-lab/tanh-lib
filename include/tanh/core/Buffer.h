@@ -4,9 +4,11 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/core/MemoryBlock.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #include <vector>
 
 namespace thl::core {
@@ -20,6 +22,11 @@ namespace thl::core {
  *
  * Supports zero-copy swap_data() operations and direct channel-pointer
  * array access for interoperability with C-style audio APIs.
+ *
+ * Failure semantics (no logging, no platform dependencies):
+ *  - Allocation failure throws std::bad_alloc.
+ *  - swap_data() with mismatched dimensions is a contract violation: it
+ *    asserts in debug builds and is a no-op in release builds.
  */
 template <typename T>
 class Buffer {
@@ -156,39 +163,34 @@ public:
 
     // -- Zero-copy swap ---------------------------------------------------
 
+    /// Precondition: same channel count and frame count.
     void swap_data(Buffer& other) {
-        if (this != &other) {
-            if (m_num_channels == other.m_num_channels && m_size == other.m_size) {
-                m_data.swap_data(other.m_data);
-                T** temp = m_channels;
-                m_channels = other.m_channels;
-                other.m_channels = temp;
-            } else {
-                thl::Logger::error("thl.dsp.audio.audio_buffer",
-                                   "Buffer: cannot swap data, buffers have "
-                                   "different dimensions");
-            }
-        }
+        if (this == &other) { return; }
+        const bool same_dims = m_num_channels == other.m_num_channels && m_size == other.m_size;
+        assert(same_dims && "Buffer: cannot swap data, buffers have different dimensions");
+        if (!same_dims) { return; }
+        m_data.swap_data(other.m_data);
+        T** temp = m_channels;
+        m_channels = other.m_channels;
+        other.m_channels = temp;
     }
 
+    /// Precondition: other.size() == get_num_channels() * get_num_samples().
     void swap_data(MemoryBlock<T>& other) {
-        if (other.size() == m_num_channels * m_size) {
-            m_data.swap_data(other);
-            reset_channel_ptr();
-        } else {
-            thl::Logger::error("thl.dsp.audio.audio_buffer",
-                               "Buffer: cannot swap data, MemoryBlock has different size");
-        }
+        const bool same_size = other.size() == m_num_channels * m_size;
+        assert(same_size && "Buffer: cannot swap data, MemoryBlock has different size");
+        if (!same_size) { return; }
+        m_data.swap_data(other);
+        reset_channel_ptr();
     }
 
+    /// Precondition: size == get_num_channels() * get_num_samples().
     void swap_data(T*& raw_data, size_t size) {
-        if (size == m_num_channels * m_size) {
-            m_data.swap_data(raw_data, size);
-            reset_channel_ptr();
-        } else {
-            thl::Logger::error("thl.dsp.audio.audio_buffer",
-                               "Buffer: cannot swap data, size mismatch");
-        }
+        const bool same_size = size == m_num_channels * m_size;
+        assert(same_size && "Buffer: cannot swap data, size mismatch");
+        if (!same_size) { return; }
+        m_data.swap_data(raw_data, size);
+        reset_channel_ptr();
     }
 
     void reset_channel_ptr() {
@@ -202,13 +204,8 @@ private:
     void malloc_channels() {
         if (m_num_channels == 0) { return; }
         void* channels = std::malloc(m_num_channels * sizeof(T*));
-        if (channels != nullptr) {
-            m_channels = static_cast<T**>(channels);
-        } else {
-            thl::Logger::error("thl.dsp.audio.audio_buffer",
-                               "Buffer: failed to allocate channel pointers");
-            return;
-        }
+        if (channels == nullptr) { throw std::bad_alloc(); }
+        m_channels = static_cast<T**>(channels);
         for (size_t i = 0; i < m_num_channels; ++i) { m_channels[i] = m_data.data() + i * m_size; }
     }
 

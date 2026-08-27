@@ -531,3 +531,84 @@ TEST(MemoryBlock, ResizeToZeroReportsZero) {
     EXPECT_EQ(m.size(), 4U);
     EXPECT_NE(m.data(), nullptr);
 }
+
+// =============================================================================
+// Failure semantics: no logging, bad_alloc on allocation failure, contract
+// violations assert in debug and are no-ops in release.
+// =============================================================================
+
+// The sanitizer runtimes (ASan/TSan/LSan/MSan) abort on an allocation request
+// above their supported maximum instead of returning nullptr, so the
+// allocation-failure tests only run in plain builds.
+#if !defined(TANH_WITH_ASAN) && !defined(TANH_WITH_TSAN) && !defined(TANH_WITH_LSAN) && \
+    !defined(TANH_WITH_MSAN)
+namespace {
+// Larger than any allocator will hand out; malloc returns nullptr.
+constexpr size_t k_impossible_count = static_cast<size_t>(-1) / (2 * sizeof(float));
+}  // namespace
+
+TEST(MemoryBlockFailure, ConstructionThrowsBadAllocOnFailure) {
+    EXPECT_THROW(MemoryBlock<float> block(k_impossible_count), std::bad_alloc);
+}
+
+TEST(MemoryBlockFailure, ResizeThrowsBadAllocAndLeavesBlockUnchanged) {
+    MemoryBlock<float> block(16);
+    block[0] = 1.0F;
+    block[15] = 15.0F;
+
+    EXPECT_THROW(block.resize(k_impossible_count), std::bad_alloc);
+
+    // A failed realloc leaves the original allocation valid: size and
+    // contents are untouched and the storage is still addressable.
+    EXPECT_EQ(block.size(), 16u);
+    ASSERT_NE(block.data(), nullptr);
+    EXPECT_FLOAT_EQ(block[0], 1.0F);
+    EXPECT_FLOAT_EQ(block[15], 15.0F);
+}
+
+TEST(BufferFailure, ConstructionThrowsBadAllocOnFailure) {
+    EXPECT_THROW(Buffer<float> buffer(1, k_impossible_count), std::bad_alloc);
+}
+#endif
+
+#ifdef NDEBUG
+TEST(MemoryBlockFailure, SwapDataSizeMismatchIsNoOp) {
+    MemoryBlock<float> a(4);
+    MemoryBlock<float> b(8);
+    float* const a_data = a.data();
+    float* const b_data = b.data();
+
+    a.swap_data(b);
+
+    EXPECT_EQ(a.size(), 4u);
+    EXPECT_EQ(b.size(), 8u);
+    EXPECT_EQ(a.data(), a_data);
+    EXPECT_EQ(b.data(), b_data);
+}
+
+TEST(BufferFailure, SwapDataDimensionMismatchIsNoOp) {
+    Buffer<float> a(2, 4);
+    Buffer<float> b(2, 8);
+    a.set_sample(1, 3, 42.0F);
+    const float* const a_ch1 = a.get_read_pointer(1);
+
+    a.swap_data(b);
+
+    EXPECT_EQ(a.get_num_samples(), 4u);
+    EXPECT_EQ(b.get_num_samples(), 8u);
+    EXPECT_EQ(a.get_read_pointer(1), a_ch1);
+    EXPECT_FLOAT_EQ(a.get_sample(1, 3), 42.0F);
+}
+#elif GTEST_HAS_DEATH_TEST
+TEST(MemoryBlockFailureDeathTest, SwapDataSizeMismatchAsserts) {
+    MemoryBlock<float> a(4);
+    MemoryBlock<float> b(8);
+    EXPECT_DEATH(a.swap_data(b), "different sizes");
+}
+
+TEST(BufferFailureDeathTest, SwapDataDimensionMismatchAsserts) {
+    Buffer<float> a(2, 4);
+    Buffer<float> b(2, 8);
+    EXPECT_DEATH(a.swap_data(b), "different dimensions");
+}
+#endif

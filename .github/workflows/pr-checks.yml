@@ -105,6 +105,57 @@ jobs:
         with:
           PRESET: ${{ matrix.preset }}
 
+  # Install tree completeness: build + install the core component (the way a
+  # permissively licensed embedder consumes it), then build an external project
+  # against the prefix with find_package(tanh COMPONENTS Core) and run it.
+  install:
+    name: Install & Consume (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux-x86_64-shared
+            os: ubuntu-24.04
+            shared: ON
+          - name: Linux-x86_64-static
+            os: ubuntu-24.04
+            shared: OFF
+          - name: macOS-arm64-shared
+            os: macos-15
+            shared: ON
+          - name: Windows-x86_64-shared
+            os: windows-2025
+            shared: ON
+          - name: Windows-x86_64-static
+            os: windows-2025
+            shared: OFF
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@main
+      - name: build and install tanh::Core
+        shell: bash
+        run: |
+          cmake -S . -B build-install -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=${{ matrix.shared }} \
+            -DTANH_BUILD_STATE=OFF -DTANH_BUILD_DSP=OFF -DTANH_BUILD_MODULATION=OFF -DTANH_BUILD_AUDIO_IO=OFF \
+            -DTANH_WITH_TESTS=OFF -DTANH_WITH_EXAMPLES=OFF -DTANH_WITH_DOCS=OFF \
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/prefix"
+          cmake --build build-install --parallel
+          cmake --install build-install
+          find prefix -type f | sort
+      - name: build and run the consumer against the prefix
+        shell: bash
+        run: |
+          cmake -S test/install -B build-consumer -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/prefix"
+          cmake --build build-consumer --parallel
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            PATH="${{ github.workspace }}/prefix/bin:$PATH" ./build-consumer/consumer.exe
+          else
+            ./build-consumer/consumer
+          fi
+
   sanitizer-asan:
     name: ASan/UBSan
     runs-on: ubuntu-24.04

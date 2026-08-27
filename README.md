@@ -27,6 +27,9 @@ cmake --build build
 | `TANH_BUILD_DSP` | ON | Build DSP component |
 | `TANH_BUILD_AUDIO_IO` | ON | Build AudioIO component |
 | `TANH_WITH_RTSAN` | OFF | Enable RealtimeSanitizer (requires clang 20) |
+| `TANH_WITH_INSTALL` | ON | Add install targets and the `tanh` CMake package |
+| `TANH_WITH_PACKAGING` | OFF | Add CPack targets (top-level builds only) |
+| `TANH_WITH_JOURNALD` | OFF | Linux: route platform logs to systemd-journald (links libsystemd via pkg-config); otherwise stdout/stderr |
 
 When consumed as a subdirectory, disable tests and docs:
 
@@ -35,6 +38,33 @@ set(TANH_WITH_TESTS OFF)
 set(TANH_WITH_DOCS OFF)
 add_subdirectory(modules/tanh-lib)
 ```
+
+`tanh::Core` links no platform-specific system library by default (the Android
+log library is the only exception), so it can be embedded by permissively
+licensed projects without extra system dependencies. Emscripten builds are
+detected as their own platform and use the plain stdout/stderr log sink.
+
+### Install and `find_package`
+
+```bash
+cmake . -B build -DTANH_WITH_TESTS=OFF -DTANH_WITH_EXAMPLES=OFF -DTANH_WITH_DOCS=OFF
+cmake --build build
+cmake --install build --prefix /opt/tanh
+```
+
+```cmake
+find_package(tanh REQUIRED COMPONENTS Core)   # Core State DSP Resonator Modulation AudioIO
+target_link_libraries(app PRIVATE tanh::Core)
+```
+
+`test/install` is a minimal consumer of the installed package; CI builds it
+against a fresh install prefix on every push (`just test-install` locally).
+The exported target names match the in-tree `ALIAS` targets, so consumers link
+the same `tanh::<Component>` whether they `add_subdirectory` or `find_package`.
+A parent project that embeds tanh-lib via FetchContent and installs its own
+package can leave `TANH_WITH_INSTALL` on: the components join its install
+prefix and the parent's `Config.cmake` re-resolves them with
+`find_dependency(tanh COMPONENTS Core)`.
 
 ## Testing
 
