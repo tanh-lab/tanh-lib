@@ -40,11 +40,13 @@ option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 # Get project version
 # ==============================================================================
 
-# Set a default version if not in git or git not available
+# Version: numeric part from the nearest tag (vX.Y.Z), descriptive part from
+# `git describe`. Without any tag the numeric version stays 0.0.0 (CMake and
+# find_package(tanh X.Y) need digits) and the full version carries the commit
+# hash instead, e.g. "0.0.0+g0fd2f8b" or "0.0.0+g0fd2f8b-dirty".
 set(PROJECT_VERSION_SHORT "0.0.0")
 set(PROJECT_VERSION_FULL "0.0.0")
 
-# Try to get version from git if available
 execute_process(COMMAND git describe --tags --abbrev=0
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 OUTPUT_VARIABLE GIT_VERSION_SHORT
@@ -52,23 +54,33 @@ execute_process(COMMAND git describe --tags --abbrev=0
                 ERROR_QUIET)
 
 if(GIT_VERSION_SHORT)
-    execute_process(COMMAND git describe --dirty
+    execute_process(COMMAND git describe --tags --dirty
                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                     OUTPUT_VARIABLE GIT_VERSION_FULL
                     OUTPUT_STRIP_TRAILING_WHITESPACE
                     ERROR_QUIET)
-    
+
     # Remove the 'v' prefix if present
     if(GIT_VERSION_SHORT MATCHES "^v(.+)$")
         string(SUBSTRING ${GIT_VERSION_SHORT} 1 -1 PROJECT_VERSION_SHORT)
     else()
         set(PROJECT_VERSION_SHORT ${GIT_VERSION_SHORT})
     endif()
-    
+
     if(GIT_VERSION_FULL MATCHES "^v(.+)$")
         string(SUBSTRING ${GIT_VERSION_FULL} 1 -1 PROJECT_VERSION_FULL)
     else()
         set(PROJECT_VERSION_FULL ${GIT_VERSION_FULL})
+    endif()
+else()
+    # No tag reachable (or not a git checkout): fall back to the commit hash.
+    execute_process(COMMAND git describe --always --dirty
+                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                    OUTPUT_VARIABLE GIT_COMMIT_DESCRIPTION
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    if(GIT_COMMIT_DESCRIPTION)
+        set(PROJECT_VERSION_FULL "${PROJECT_VERSION_SHORT}+g${GIT_COMMIT_DESCRIPTION}")
     endif()
 endif()
 
