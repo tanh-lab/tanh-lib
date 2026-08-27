@@ -303,7 +303,7 @@ tanh-lib is licensed per component:
 - **Apache-2.0** — the **core component** (`tanh::Core`): generic containers
   (`Buffer<T>`, `BufferView`, `RingBuffer<T>`, `MemoryBlock<T>`), `Logger`
   (including the real-time `Logger::rt` path and `rt_snprintf`),
-  `Dispatcher`, threading utilities (RCU), and small helpers — everything under
+  `Dispatcher`, threading utilities (RCU, `LockFreeQueue`), and small helpers — everything under
   `include/tanh/core/`, `include/tanh/core.h`, `src/core/`, `src/core.cpp` —
   plus the binary-data CMake helpers (`cmake/binary_data.cmake`,
   `cmake/bin2cpp.cmake`). One target, one license: linking `tanh::Core` pulls

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <tanh/core/Logger.h>
 #include <tanh/core/RtFormat.h>
+#include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -85,87 +86,8 @@ struct RtRecord {
     std::array<char, rt::k_message_capacity> m_message{};
 };
 
-/// Bounded multi-producer / multi-consumer ring (Dmitry Vyukov's sequence
-/// scheme). Producers never wait: a full ring fails the push. Constant-
-/// initialised; the cell sequence numbers are set up once by init().
-class RtQueue {
-public:
-    constexpr RtQueue() = default;
-
-    void init() {
-        for (std::size_t i = 0; i < rt::k_queue_capacity; ++i) {
-            m_cells[i].m_seq.store(i, std::memory_order_relaxed);
-        }
-        m_enqueue_pos.store(0, std::memory_order_relaxed);
-        m_dequeue_pos.store(0, std::memory_order_relaxed);
-    }
-
-    bool try_push(const RtRecord& record) noexcept TANH_NONBLOCKING_FUNCTION {
-        std::size_t pos = m_enqueue_pos.load(std::memory_order_relaxed);
-        Cell* cell = nullptr;
-        for (;;) {
-            cell = &m_cells[pos & k_mask];
-            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire);
-            const auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos);
-            if (diff == 0) {
-                if (m_enqueue_pos.compare_exchange_weak(pos,
-                                                        pos + 1,
-                                                        std::memory_order_relaxed,
-                                                        std::memory_order_relaxed)) {
-                    break;
-                }
-            } else if (diff < 0) {
-                return false;  // full
-            } else {
-                pos = m_enqueue_pos.load(std::memory_order_relaxed);
-            }
-        }
-        cell->m_record = record;
-        cell->m_seq.store(pos + 1, std::memory_order_release);
-        return true;
-    }
-
-    bool try_pop(RtRecord& out) noexcept {
-        std::size_t pos = m_dequeue_pos.load(std::memory_order_relaxed);
-        Cell* cell = nullptr;
-        for (;;) {
-            cell = &m_cells[pos & k_mask];
-            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire);
-            const auto diff =
-                static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos + 1);
-            if (diff == 0) {
-                if (m_dequeue_pos.compare_exchange_weak(pos,
-                                                        pos + 1,
-                                                        std::memory_order_relaxed,
-                                                        std::memory_order_relaxed)) {
-                    break;
-                }
-            } else if (diff < 0) {
-                return false;  // empty
-            } else {
-                pos = m_dequeue_pos.load(std::memory_order_relaxed);
-            }
-        }
-        out = cell->m_record;
-        cell->m_seq.store(pos + k_mask + 1, std::memory_order_release);
-        return true;
-    }
-
-private:
-    static constexpr std::size_t k_mask = rt::k_queue_capacity - 1;
-
-    struct Cell {
-        std::atomic<std::size_t> m_seq{0};
-        RtRecord m_record;
-    };
-
-    alignas(64) std::atomic<std::size_t> m_enqueue_pos{0};
-    alignas(64) std::atomic<std::size_t> m_dequeue_pos{0};
-    std::array<Cell, rt::k_queue_capacity> m_cells{};
-};
-
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) intentional: RT path
-RtQueue g_rt_queue;
+thl::core::LockFreeQueue<RtRecord, rt::k_queue_capacity> g_rt_queue;
 
 /// Bounded copy of a C string into a fixed array (always NUL-terminated).
 template <std::size_t N>
@@ -644,7 +566,6 @@ void start_drain_thread() {
     std::scoped_lock const lock(s.m_rt_mutex);
     if (s.m_rt_thread.joinable()) { return; }
     if (logging_shutdown_started()) { return; }
-    if (!g_rt_manual_drain.load(std::memory_order_relaxed)) { g_rt_queue.init(); }
     g_rt_running.store(true, std::memory_order_release);
     try {
         s.m_rt_thread = std::thread(drain_thread_main);
@@ -796,10 +717,6 @@ std::size_t drain() {
 void enable_manual_drain(bool enabled) {
     auto& s = state();
     std::scoped_lock const lock(s.m_rt_mutex);
-    if (enabled && !g_rt_manual_drain.load(std::memory_order_relaxed) &&
-        !g_rt_running.load(std::memory_order_relaxed)) {
-        g_rt_queue.init();
-    }
     g_rt_manual_drain.store(enabled, std::memory_order_release);
 }
 

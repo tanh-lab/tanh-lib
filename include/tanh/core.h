@@ -10,6 +10,7 @@
 #include "core/MemoryBlock.h"
 #include "core/RingBuffer.h"
 #include "core/RtFormat.h"
+#include "core/threading/LockFreeQueue.h"
 #include "core/threading/RCU.h"
 
 // Core utility functions available to all components
