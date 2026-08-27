@@ -92,6 +92,13 @@ public:
 
     void resize(size_t size) {
         m_size = size;
+        if (size == 0) {
+            // malloc(0)/realloc(p, 0) are implementation-defined; release
+            // explicitly so a zero-sized block is always the null block.
+            std::free(m_data);
+            m_data = nullptr;
+            return;
+        }
         void* data;
         if (m_data != nullptr) {
             data = std::realloc(m_data, sizeof(T) * size);
