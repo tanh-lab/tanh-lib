@@ -34,6 +34,19 @@ namespace thl::core {
  *
  * Objects of this type have trivial destructors; a namespace-scope instance
  * therefore stays valid during static teardown.
+ *
+ * Progress and memory ordering (why the code looks the way it does):
+ * - The queue is lock-free, not wait-free. try_push()/try_pop() retry only
+ *   when a competing thread has just claimed the same position (the CAS
+ *   lost, or the local position turned out stale), i.e. every retry means
+ *   someone else made progress. A slot that is full/empty is reported
+ *   immediately -- nobody spins waiting for a preempted producer or
+ *   consumer, which is the property real-time callers rely on.
+ * - The CAS on the position counter decides *ownership* of a slot and is
+ *   relaxed: the counter never carries payload.
+ * - The per-cell sequence number carries the payload handoff: the owner
+ *   publishes with a release store after writing the value, the other side
+ *   reads it with an acquire load before reading the value.
  */
 template <typename T, std::size_t Capacity>
 class LockFreeQueue {
