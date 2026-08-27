@@ -543,15 +543,20 @@ TEST(MemoryBlock, ResizeToZeroReportsZero) {
 #if !defined(TANH_WITH_ASAN) && !defined(TANH_WITH_TSAN) && !defined(TANH_WITH_LSAN) && \
     !defined(TANH_WITH_MSAN)
 namespace {
-// Larger than any allocator will hand out; malloc returns nullptr.
+// Larger than any allocator will hand out; malloc returns nullptr. Only
+// meaningful with a 64-bit size_t: on 32-bit targets this is ~2 GiB, which an
+// overcommitting kernel may grant, so the tests skip there.
 constexpr size_t k_impossible_count = static_cast<size_t>(-1) / (2 * sizeof(float));
+constexpr bool k_can_force_alloc_failure = sizeof(size_t) >= 8;
 }  // namespace
 
 TEST(MemoryBlockFailure, ConstructionThrowsBadAllocOnFailure) {
+    if (!k_can_force_alloc_failure) { GTEST_SKIP() << "needs a 64-bit size_t"; }
     EXPECT_THROW(MemoryBlock<float> block(k_impossible_count), std::bad_alloc);
 }
 
 TEST(MemoryBlockFailure, ResizeThrowsBadAllocAndLeavesBlockUnchanged) {
+    if (!k_can_force_alloc_failure) { GTEST_SKIP() << "needs a 64-bit size_t"; }
     MemoryBlock<float> block(16);
     block[0] = 1.0F;
     block[15] = 15.0F;
@@ -567,7 +572,23 @@ TEST(MemoryBlockFailure, ResizeThrowsBadAllocAndLeavesBlockUnchanged) {
 }
 
 TEST(BufferFailure, ConstructionThrowsBadAllocOnFailure) {
+    if (!k_can_force_alloc_failure) { GTEST_SKIP() << "needs a 64-bit size_t"; }
     EXPECT_THROW(Buffer<float> buffer(1, k_impossible_count), std::bad_alloc);
+}
+
+TEST(BufferFailure, ResizeThrowsBadAllocAndLeavesBufferUnchanged) {
+    if (!k_can_force_alloc_failure) { GTEST_SKIP() << "needs a 64-bit size_t"; }
+    Buffer<float> buffer(2, 16);
+    buffer.set_sample(1, 15, 3.0F);
+
+    EXPECT_THROW(buffer.resize(2, k_impossible_count), std::bad_alloc);
+
+    // Dimensions, storage and channel table are all still the old ones.
+    EXPECT_EQ(buffer.get_num_channels(), 2u);
+    EXPECT_EQ(buffer.get_num_samples(), 16u);
+    ASSERT_NE(buffer.get_read_pointer(1), nullptr);
+    EXPECT_EQ(buffer.get_read_pointer(1), buffer.data() + 16);
+    EXPECT_FLOAT_EQ(buffer.get_sample(1, 15), 3.0F);
 }
 #endif
 

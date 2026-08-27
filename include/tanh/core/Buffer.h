@@ -64,15 +64,11 @@ public:
 
     ~Buffer() { std::free(static_cast<void*>(m_channels)); }
 
+    /// Copy-and-swap: if the copy throws (std::bad_alloc) *this is unchanged.
     Buffer& operator=(const Buffer& other) {
         if (this != &other) {
-            std::free(static_cast<void*>(m_channels));
-            m_channels = nullptr;
-            m_num_channels = other.m_num_channels;
-            m_size = other.m_size;
-            m_sample_rate = other.m_sample_rate;
-            m_data = other.m_data;
-            if (m_num_channels > 0) { malloc_channels(); }
+            Buffer copy(other);
+            *this = std::move(copy);
         }
         return *this;
     }
@@ -140,23 +136,32 @@ public:
 
     // -- Resize / clear ---------------------------------------------------
 
+    /// Resize and set the sample rate. Contents are not preserved: the buffer
+    /// is zeroed. If the allocation fails (std::bad_alloc) the buffer is left
+    /// unchanged.
     void set_size(size_t num_channels, size_t num_frames, double sample_rate) {
-        m_num_channels = num_channels;
-        m_size = num_frames;
+        resize(num_channels, num_frames);
         m_sample_rate = sample_rate;
-        m_data.resize(num_channels * num_frames);
-        std::free(static_cast<void*>(m_channels));
-        m_channels = nullptr;
-        malloc_channels();
     }
 
+    /// Resize; see set_size(). Leaves the buffer unchanged if allocation fails.
     void resize(size_t num_channels, size_t num_frames) {
+        // Allocate everything that can fail before touching any member, so a
+        // caught std::bad_alloc never leaves the dimensions ahead of the data.
+        MemoryBlock<T> data(num_channels * num_frames);
+        data.clear();
+        T** channels = nullptr;
+        if (num_channels > 0) {
+            void* raw = std::malloc(num_channels * sizeof(T*));
+            if (raw == nullptr) { throw std::bad_alloc(); }
+            channels = static_cast<T**>(raw);
+        }
+        std::free(static_cast<void*>(m_channels));
+        m_channels = channels;
+        m_data = std::move(data);
         m_num_channels = num_channels;
         m_size = num_frames;
-        m_data.resize(num_channels * num_frames);
-        std::free(static_cast<void*>(m_channels));
-        m_channels = nullptr;
-        malloc_channels();
+        reset_channel_ptr();
     }
 
     void clear() { m_data.clear(); }
