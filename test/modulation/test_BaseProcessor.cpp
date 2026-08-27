@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <tanh/dsp/BaseProcessor.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/dsp/BaseProcessor.h>
 
 #include <span>
 #include <vector>
@@ -19,8 +19,7 @@ public:
         m_block_sizes.reserve(samples_per_block);
     }
 
-    void process(thl::core::BufferView buffer,
-                 uint32_t /*modulation_offset*/ = 0) override {
+    void process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/ = 0) override {
         m_block_sizes.push_back(buffer.get_num_samples());
     }
 };

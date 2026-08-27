@@ -62,12 +62,9 @@ TEST_P(RingsResonatorModelTest, SilenceInputProducesFiniteOutput) {
     for (int block = 0; block < 8; ++block) {
         std::ranges::fill(out, 0.0f);
         std::ranges::fill(aux, 0.0f);
-        thl::core::ConstBufferView in_view(in.data(),
-                                                      thl::dsp::resonator::k_max_block_size);
-        thl::core::BufferView out_view(out.data(),
-                                                  thl::dsp::resonator::k_max_block_size);
-        thl::core::BufferView aux_view(aux.data(),
-                                                  thl::dsp::resonator::k_max_block_size);
+        thl::core::ConstBufferView in_view(in.data(), thl::dsp::resonator::k_max_block_size);
+        thl::core::BufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
+        thl::core::BufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
 
@@ -95,24 +92,18 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
     for (int block = 0; block < 4; ++block) {
         std::ranges::fill(out, 0.0f);
         std::ranges::fill(aux, 0.0f);
-        thl::core::ConstBufferView sil_view(silence.data(),
-                                                       thl::dsp::resonator::k_max_block_size);
-        thl::core::BufferView out_view(out.data(),
-                                                  thl::dsp::resonator::k_max_block_size);
-        thl::core::BufferView aux_view(aux.data(),
-                                                  thl::dsp::resonator::k_max_block_size);
+        thl::core::ConstBufferView sil_view(silence.data(), thl::dsp::resonator::k_max_block_size);
+        thl::core::BufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
+        thl::core::BufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, sil_view, out_view, aux_view);
     }
 
     in.fill(0.0f);
     in[0] = 1.0f;
     {
-        thl::core::ConstBufferView in_view(in.data(),
-                                                      thl::dsp::resonator::k_max_block_size);
-        thl::core::BufferView out_view(out.data(),
-                                                  thl::dsp::resonator::k_max_block_size);
-        thl::core::BufferView aux_view(aux.data(),
-                                                  thl::dsp::resonator::k_max_block_size);
+        thl::core::ConstBufferView in_view(in.data(), thl::dsp::resonator::k_max_block_size);
+        thl::core::BufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
+        thl::core::BufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
         part.process(state, patch, in_view, out_view, aux_view);
     }
 
@@ -123,11 +114,9 @@ TEST_P(RingsResonatorModelTest, ImpulseProducesEnergy) {
             std::ranges::fill(out, 0.0f);
             std::ranges::fill(aux, 0.0f);
             thl::core::ConstBufferView sil_view(silence.data(),
-                                                           thl::dsp::resonator::k_max_block_size);
-            thl::core::BufferView out_view(out.data(),
-                                                      thl::dsp::resonator::k_max_block_size);
-            thl::core::BufferView aux_view(aux.data(),
-                                                      thl::dsp::resonator::k_max_block_size);
+                                                thl::dsp::resonator::k_max_block_size);
+            thl::core::BufferView out_view(out.data(), thl::dsp::resonator::k_max_block_size);
+            thl::core::BufferView aux_view(aux.data(), thl::dsp::resonator::k_max_block_size);
             part.process(state, patch, sil_view, out_view, aux_view);
         }
         for (size_t i = 0; i < thl::dsp::resonator::k_max_block_size; ++i) {
