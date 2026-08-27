@@ -70,6 +70,7 @@ When running clang-tidy, use multithreading via `run-clang-tidy` (or the `-j` fl
 - `process()` methods are marked `TANH_NONBLOCKING_FUNCTION` and must not allocate or block
 - Threads must call `ensure_thread_registered()` before RT access to State/StateGroup
 - Numeric parameter types (double, float, int, bool) are fully RT-safe; strings may allocate beyond SSO
+- `thl::Logger::log/logf/...` are **not** RT-safe. From RT code use `thl::Logger::rt::logf()` / `rt::log()` (lock-free queue, drained by a background thread into the normal sinks). `thl::core::rt_snprintf` is the RT-safe formatter behind it
 - Enable RealtimeSanitizer with `-DTANH_WITH_RTSAN=ON` (requires Clang 20+)
 
 ## Dependencies (via CMake FetchContent)

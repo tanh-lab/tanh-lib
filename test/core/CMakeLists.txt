@@ -8,6 +8,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_Buffer.cpp
 	test_BufferView.cpp
 	test_RingBuffer.cpp
+	test_RtFormat.cpp
+	test_Logger.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

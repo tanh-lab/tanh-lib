@@ -301,7 +301,8 @@ processing in the duplex callback.
 tanh-lib is licensed per component:
 
 - **Apache-2.0** — the **core component** (`tanh::Core`): generic containers
-  (`Buffer<T>`, `BufferView`, `RingBuffer<T>`, `MemoryBlock<T>`), `Logger`,
+  (`Buffer<T>`, `BufferView`, `RingBuffer<T>`, `MemoryBlock<T>`), `Logger`
+  (including the real-time `Logger::rt` path and `rt_snprintf`),
   `Dispatcher`, threading utilities (RCU), and small helpers — everything under
   `include/tanh/core/`, `include/tanh/core.h`, `src/core/`, `src/core.cpp` —
   plus the binary-data CMake helpers (`cmake/binary_data.cmake`,
