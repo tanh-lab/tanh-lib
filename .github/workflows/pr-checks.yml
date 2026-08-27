@@ -124,6 +124,9 @@ jobs:
           - name: macOS-arm64-shared
             os: macos-15
             shared: ON
+          - name: Windows-x86_64-shared
+            os: windows-2025
+            shared: ON
           - name: Windows-x86_64-static
             os: windows-2025
             shared: OFF

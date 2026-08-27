@@ -6,6 +6,7 @@
 #include "core/Buffer.h"
 #include "core/BufferView.h"
 #include "core/Dispatcher.h"
+#include "core/Exports.h"
 #include "core/Logger.h"
 #include "core/MemoryBlock.h"
 #include "core/RingBuffer.h"
@@ -18,6 +19,6 @@ namespace thl::core {
 /**
  * @brief Get the library version
  */
-std::string get_version();
+TANH_API std::string get_version();
 
 }  // namespace thl::core
