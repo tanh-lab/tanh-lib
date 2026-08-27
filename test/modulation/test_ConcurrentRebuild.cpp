@@ -64,6 +64,7 @@ TEST(ConcurrentRebuild, NoNullDerefUnderConcurrentRoutingChurn) {
     std::atomic<uint64_t> writer_iterations{0};
 
     std::thread audio_thread([&]() {
+        matrix.ensure_thread_registered();
         while (!stop.load(std::memory_order_relaxed)) {
             auto scope = matrix.read_scope();
             matrix.process_with_scope(scope.data(), k_block_size);
@@ -82,6 +83,8 @@ TEST(ConcurrentRebuild, NoNullDerefUnderConcurrentRoutingChurn) {
         uint32_t seed = 1;
         std::vector<uint32_t> live_routing_ids;
         live_routing_ids.reserve(32);
+        // add_routing() checks State::is_modulatable(), a nonblocking read.
+        state.ensure_thread_registered();
 
         while (!stop.load(std::memory_order_relaxed)) {
             seed = seed * 1103515245U + 12345U;
@@ -156,6 +159,7 @@ TEST(ConcurrentRebuild, RepeatedAddRemoveSingleRouting) {
     std::atomic<uint64_t> audio_iterations{0};
 
     std::thread audio_thread([&]() {
+        matrix.ensure_thread_registered();
         while (!stop.load(std::memory_order_relaxed)) {
             auto scope = matrix.read_scope();
             matrix.process_with_scope(scope.data(), k_block_size);
@@ -166,6 +170,7 @@ TEST(ConcurrentRebuild, RepeatedAddRemoveSingleRouting) {
     });
 
     std::thread writer_thread([&]() {
+        state.ensure_thread_registered();
         while (!stop.load(std::memory_order_relaxed)) {
             const uint32_t id = matrix.add_routing({"lfo", "freq", 50.0f});
             if (id != k_invalid_routing_id) { matrix.remove_routing(id); }

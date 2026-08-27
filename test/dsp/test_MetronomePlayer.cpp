@@ -24,7 +24,12 @@ using thl::dsp::transport::InternalTransportClock;
 // without relying on the audible voice rendering.
 class TestMetronome : public MetronomePlayerImpl {
 public:
-    explicit TestMetronome(InternalTransportClock& clock) : MetronomePlayerImpl(clock) {}
+    explicit TestMetronome(InternalTransportClock& clock) : MetronomePlayerImpl(clock) {
+        // process()/trigger_*() run in a nonblocking context; reserve up front so
+        // the recording push_backs below never allocate under RTSan.
+        events.reserve(k_max_recorded);
+        modulation_offsets.reserve(k_max_recorded);
+    }
 
     using MetronomePlayerImpl::Enabled;
     using MetronomePlayerImpl::Gain;
@@ -40,6 +45,7 @@ public:
         bool accent;          // false → click
         uint32_t sample_pos;  // absolute sample within the buffer
     };
+    static constexpr size_t k_max_recorded = 1024;
     std::vector<Event> events;
     std::vector<uint32_t> modulation_offsets;  // captured per process() invocation
 
