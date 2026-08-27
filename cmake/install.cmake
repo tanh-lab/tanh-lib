@@ -33,12 +33,13 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/utils
     COMPONENT dev
 )
 
-# Component -> (header directory, umbrella header) under include/tanh/.
+# Component -> (header directory, umbrella header) under include/tanh/. The
+# resonator headers live inside dsp/ and are installed by the DSP entry (the
+# Resonator component is only ever built together with DSP).
 set(_tanh_header_dirs
     "${PROJECT_NAME}_core=core"
     "${PROJECT_NAME}_state=state"
     "${PROJECT_NAME}_dsp=dsp"
-    "${PROJECT_NAME}_resonator=dsp/rings-resonator"
     "${PROJECT_NAME}_modulation=modulation"
     "${PROJECT_NAME}_audio_io=audio-io")
 set(_tanh_umbrella_headers
@@ -54,7 +55,7 @@ foreach(target IN LISTS TANH_BUILT_COMPONENTS)
         list(GET _entry 1 _entry_dir)
         if(_entry_target STREQUAL target)
             install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/${_entry_dir}
-                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/${_entry_dir}/..
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh
                 COMPONENT dev
             )
         endif()
