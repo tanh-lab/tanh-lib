@@ -537,6 +537,11 @@ TEST(MemoryBlock, ResizeToZeroReportsZero) {
 // violations assert in debug and are no-ops in release.
 // =============================================================================
 
+// The sanitizer runtimes (ASan/TSan/LSan/MSan) abort on an allocation request
+// above their supported maximum instead of returning nullptr, so the
+// allocation-failure tests only run in plain builds.
+#if !defined(TANH_WITH_ASAN) && !defined(TANH_WITH_TSAN) && !defined(TANH_WITH_LSAN) && \
+    !defined(TANH_WITH_MSAN)
 namespace {
 // Larger than any allocator will hand out; malloc returns nullptr.
 constexpr size_t k_impossible_count = static_cast<size_t>(-1) / (2 * sizeof(float));
@@ -563,6 +568,7 @@ TEST(MemoryBlockFailure, ResizeThrowsBadAllocAndLeavesBlockUnchanged) {
 TEST(BufferFailure, ConstructionThrowsBadAllocOnFailure) {
     EXPECT_THROW(Buffer<float> buffer(1, k_impossible_count), std::bad_alloc);
 }
+#endif
 
 #ifdef NDEBUG
 TEST(MemoryBlockFailure, SwapDataSizeMismatchIsNoOp) {
@@ -592,7 +598,7 @@ TEST(BufferFailure, SwapDataDimensionMismatchIsNoOp) {
     EXPECT_EQ(a.get_read_pointer(1), a_ch1);
     EXPECT_FLOAT_EQ(a.get_sample(1, 3), 42.0F);
 }
-#else
+#elif GTEST_HAS_DEATH_TEST
 TEST(MemoryBlockFailureDeathTest, SwapDataSizeMismatchAsserts) {
     MemoryBlock<float> a(4);
     MemoryBlock<float> b(8);
