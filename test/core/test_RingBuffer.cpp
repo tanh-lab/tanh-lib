@@ -355,3 +355,43 @@ TEST(RingBufferBulk, ZeroCountIsNoOp) {
     rb.pop_block(0, nullptr, 0);
     EXPECT_EQ(rb.get_available_samples(0), 1U);
 }
+
+// =============================================================================
+// Index wrapping is done with compare-and-subtract; these pin the behaviour
+// against the plain modulo definition, including offsets at and beyond the
+// capacity where a single subtract would not be enough.
+// =============================================================================
+
+TEST(RingBufferWrap, FutureAndPastOffsetsMatchModuloReference) {
+    constexpr size_t k_capacity = 7;
+    RingBuffer<int> rb;
+    rb.initialise_with_positions(1, k_capacity);
+    // Leave the read position mid-buffer so every offset crosses the end.
+    for (int i = 0; i < 5; ++i) { rb.push_sample(0, i); }
+    for (int i = 0; i < 3; ++i) { (void)rb.pop_sample(0); }
+    for (int i = 5; i < 5 + static_cast<int>(k_capacity); ++i) { rb.push_sample(0, i); }
+    // Ring now holds the last k_capacity pushes (5..11) starting at read_pos.
+
+    std::array<int, k_capacity> expected{};
+    for (size_t i = 0; i < k_capacity; ++i) { expected[i] = rb.get_future_sample(0, i); }
+
+    for (size_t offset = 0; offset < 4 * k_capacity; ++offset) {
+        EXPECT_EQ(rb.get_future_sample(0, offset), expected[offset % k_capacity])
+            << "future offset " << offset;
+        const size_t past_index = (k_capacity - (offset % k_capacity)) % k_capacity;
+        EXPECT_EQ(rb.get_past_sample(0, offset), expected[past_index]) << "past offset " << offset;
+    }
+}
+
+TEST(RingBufferWrap, AvailableSamplesAcrossTheSeam) {
+    constexpr size_t k_capacity = 8;
+    RingBuffer<int> rb;
+    rb.initialise_with_positions(1, k_capacity);
+    // Move both positions past the seam without ever filling the ring.
+    for (int round = 0; round < 5; ++round) {
+        for (int i = 0; i < 6; ++i) { rb.push_sample(0, i); }
+        EXPECT_EQ(rb.get_available_samples(0), 6u);
+        for (int i = 0; i < 6; ++i) { EXPECT_EQ(rb.pop_sample(0), i); }
+        EXPECT_EQ(rb.get_available_samples(0), 0u);
+    }
+}

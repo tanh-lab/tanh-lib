@@ -65,6 +65,14 @@ Configured in `.clang-format` (Google-based): 100-char line limit, 4-space inden
 
 When running clang-tidy, use multithreading via `run-clang-tidy` (or the `-j` flag) to parallelize across translation units.
 
+## Platform Detection and System Dependencies
+
+CMake sets exactly one `THL_PLATFORM_*` define (iOS, Android, macOS, Emscripten, Linux, Windows — in that order of detection; Emscripten must be checked before the generic `UNIX` branch). `tanh_core` must not link platform system libraries by default: the Linux journald sink is opt-in via `TANH_WITH_JOURNALD` (`THL_WITH_JOURNALD`), and the core containers (`Buffer`, `MemoryBlock`, `RingBuffer`) must stay header-only and free of `Logger` so permissively licensed consumers (anira) can embed `tanh::Core` unchanged. Allocation failure in the containers throws `std::bad_alloc`; contract violations `assert`.
+
+## Install and Export
+
+`cmake/install.cmake` installs the built components and the `tanh` CMake package. Exported target names equal the in-tree aliases (`tanh::Core`, `tanh::State`, ...) via `EXPORT_NAME`; `Config.cmake.in` validates requested components against `TANH_EXPORTED_COMPONENTS`. Keep both in sync when adding a component.
+
 ## Real-Time Safety
 
 - `process()` methods are marked `TANH_NONBLOCKING_FUNCTION` and must not allocate or block

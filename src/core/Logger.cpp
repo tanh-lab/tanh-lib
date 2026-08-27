@@ -31,7 +31,7 @@
 #include <os/log.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
-#elif defined(THL_PLATFORM_LINUX)
+#elif defined(THL_PLATFORM_LINUX) && defined(THL_WITH_JOURNALD)
 #include <sys/syslog.h>
 #include <systemd/sd-journal.h>
 #endif
@@ -259,7 +259,7 @@ bool emit_platform(const LogRecord& record) {
     __android_log_print(android_level, "thl", "[%s][%s] %s", source, group, message);
     return true;
 
-#elif defined(THL_PLATFORM_LINUX)
+#elif defined(THL_PLATFORM_LINUX) && defined(THL_WITH_JOURNALD)
     int priority = LOG_INFO;
     switch (clamp_level(record.m_level)) {
         case static_cast<std::uint32_t>(LogLevel::Error): priority = LOG_ERR; break;
@@ -315,6 +315,8 @@ bool emit_platform(const LogRecord& record) {
 #endif
     return true;
 #else
+    // Linux without the journald opt-in, Emscripten, Windows and any other
+    // platform: plain stdout/stderr, no platform library involved.
     write_to_default_sink(record);
     return true;
 #endif

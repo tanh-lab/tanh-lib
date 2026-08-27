@@ -19,6 +19,11 @@ namespace thl::core {
  *
  * The element type only needs to be copyable and value-initializable; float
  * for audio, integer types for token/index streams, etc.
+ *
+ * Index arithmetic wraps with a compare-and-subtract instead of `%`: the
+ * capacity is a runtime value, so a modulo would be a real integer division
+ * on every push/pop -- and anira-style consumers push per sample on targets
+ * without a hardware divider (armv7l).
  */
 template <typename T>
 class RingBuffer {
@@ -54,7 +59,7 @@ public:
         const size_t capacity = m_buffer.get_num_samples();
         if (capacity == 0) { return; }
         m_buffer.get_write_pointer(channel)[m_write_pos[channel]] = sample;
-        m_write_pos[channel] = (m_write_pos[channel] + 1) % capacity;
+        m_write_pos[channel] = advance(m_write_pos[channel], 1, capacity);
         if (m_is_full[channel]) {
             m_read_pos[channel] = m_write_pos[channel];
         } else {
@@ -67,7 +72,7 @@ public:
         if (empty(channel)) { return T{}; }
         const size_t capacity = m_buffer.get_num_samples();
         T const sample = m_buffer.get_read_pointer(channel)[m_read_pos[channel]];
-        m_read_pos[channel] = (m_read_pos[channel] + 1) % capacity;
+        m_read_pos[channel] = advance(m_read_pos[channel], 1, capacity);
         m_is_full[channel] = false;
         return sample;
     }
@@ -85,12 +90,12 @@ public:
         size_t start = m_write_pos[channel];
         if (count > capacity) {
             data += count - capacity;
-            start = (start + (count - capacity)) % capacity;
+            start = advance(start, wrap(count - capacity, capacity), capacity);
             count = capacity;
         }
 
         copy_wrapped(data, buf, start, count, capacity);
-        m_write_pos[channel] = (start + count) % capacity;
+        m_write_pos[channel] = advance(start, count, capacity);
 
         if (count >= free) {
             // Reached or overran the read position: the ring is now full and
@@ -114,7 +119,7 @@ public:
             const size_t first = std::min(n, capacity - start);
             std::copy_n(buf + start, first, data);
             std::copy_n(buf, n - first, data + first);
-            m_read_pos[channel] = (start + n) % capacity;
+            m_read_pos[channel] = advance(start, n, capacity);
             m_is_full[channel] = false;
         }
         std::fill_n(data + n, count - n, T{});
@@ -123,21 +128,22 @@ public:
     T get_future_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
         if (capacity == 0) { return T{}; }
-        size_t const pos = (m_read_pos[channel] + offset) % capacity;
+        size_t const pos = advance(m_read_pos[channel], wrap(offset, capacity), capacity);
         return m_buffer.get_read_pointer(channel)[pos];
     }
 
     T get_past_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
         if (capacity == 0) { return T{}; }
-        size_t const pos = (m_read_pos[channel] + capacity - offset) % capacity;
+        size_t const pos =
+            advance(m_read_pos[channel], capacity - wrap(offset, capacity), capacity);
         return m_buffer.get_read_pointer(channel)[pos];
     }
 
     size_t get_available_samples(size_t channel) const {
         const size_t capacity = m_buffer.get_num_samples();
         if (capacity == 0 || m_is_full[channel]) { return capacity; }
-        return (m_write_pos[channel] + capacity - m_read_pos[channel]) % capacity;
+        return advance(m_write_pos[channel], capacity - m_read_pos[channel], capacity);
     }
 
     size_t get_available_past_samples(size_t channel) const {
@@ -148,6 +154,19 @@ public:
     size_t get_num_samples() const { return m_buffer.get_num_samples(); }
 
 private:
+    /// `pos + step` wrapped into [0, capacity). Requires pos < capacity and
+    /// step <= capacity, so a single compare-and-subtract suffices.
+    static size_t advance(size_t pos, size_t step, size_t capacity) {
+        const size_t next = pos + step;
+        return next >= capacity ? next - capacity : next;
+    }
+
+    /// Reduce an arbitrary offset into [0, capacity). Offsets within the
+    /// capacity -- the common case -- take the branch, never the division.
+    static size_t wrap(size_t offset, size_t capacity) {
+        return offset < capacity ? offset : offset % capacity;
+    }
+
     /// Copy `count` elements from `src` into the ring starting at `start`,
     /// wrapping at `capacity`. Requires count <= capacity.
     static void copy_wrapped(const T* src, T* ring, size_t start, size_t count, size_t capacity) {

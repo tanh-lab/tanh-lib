@@ -7,6 +7,7 @@ cmake_minimum_required(VERSION 3.25)
 # Shall the library be built as a shared library?
 option(BUILD_SHARED_LIBS "Build the library as a shared library" ON)
 option(TANH_WITH_INSTALL "Add install targets" ON)
+option(TANH_WITH_PACKAGING "Add CPack packaging targets (top-level builds only)" OFF)
 option(TANH_WITH_TESTS "Add Build Tests" ON)
 option(TANH_WITH_EXAMPLES "Add Build Examples" ON)
 option(TANH_WITH_DOCS "Add Build Documentation" ON)
@@ -17,6 +18,13 @@ option(TANH_WITH_USAN "Enable UndefinedBehaviorSanitizer (usan) checks" OFF)
 option(TANH_WITH_TSAN "Enable ThreadSanitizer (tsan) checks" OFF)
 option(TANH_WITH_MSAN "Enable MemorySanitizer (msan) checks" OFF)
 option(TANH_WITH_LSAN "Enable LeakSanitizer (lsan) checks" OFF)
+
+# Platform log sinks. The core component links nothing platform-specific by
+# default so that permissively licensed consumers (e.g. anira) can embed
+# tanh::Core without pulling in system libraries. On Linux, the journald sink
+# is opt-in: it links libsystemd (found via pkg-config) and routes the platform
+# sink through sd_journal_send(); without it, Linux logs go to stdout/stderr.
+option(TANH_WITH_JOURNALD "Linux: send platform logs to systemd-journald (links libsystemd)" OFF)
 
 # Define available components
 set(TANH_COMPONENTS Core State DSP AudioIO)
@@ -91,6 +99,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(TANH_OPERATING_SYSTEM "macOS")
     set(TANH_PLATFORM_DEFINE "THL_PLATFORM_MACOS")
+elseif(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # Emscripten reports UNIX=TRUE; keep it out of the Linux branch so no
+    # Linux-only system libraries or sinks are ever selected for WASM.
+    set(TANH_OPERATING_SYSTEM "Emscripten")
+    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_EMSCRIPTEN")
 elseif(UNIX)
     set(TANH_OPERATING_SYSTEM "Linux")
     set(TANH_PLATFORM_DEFINE "THL_PLATFORM_LINUX")
@@ -102,6 +115,10 @@ else()
 endif()
 
 message(STATUS "Project version: ${PROJECT_VERSION_SHORT} (${PROJECT_VERSION_FULL})")
+
+# CMAKE_INSTALL_INCLUDEDIR & co. are referenced in the targets' install
+# interfaces below, so they must be defined before the first add_library().
+include(GNUInstallDirs)
 
 # Sets the minimum macOS/iOS version, c++20 is only available from macOS 11.0
 if (APPLE)
@@ -205,8 +222,11 @@ if(TANH_BUILD_CORE)
 
     if(TANH_OPERATING_SYSTEM STREQUAL "Android")
         target_link_libraries(${PROJECT_NAME}_core PRIVATE log)
-    elseif(TANH_OPERATING_SYSTEM STREQUAL "Linux")
-        target_link_libraries(${PROJECT_NAME}_core PRIVATE systemd)
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Linux" AND TANH_WITH_JOURNALD)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+        target_link_libraries(${PROJECT_NAME}_core PRIVATE PkgConfig::SYSTEMD)
+        target_compile_definitions(${PROJECT_NAME}_core PRIVATE THL_WITH_JOURNALD=1)
     endif()
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
@@ -218,8 +238,12 @@ if(TANH_BUILD_STATE)
         message(FATAL_ERROR "State component requires Core component")
     endif()
 
-    # Enable installation for nlohmann_json so it can be exported with tanh_state
-    # set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
+    # nlohmann_json is a PUBLIC dependency of State: when tanh installs, install
+    # its headers + CMake package too so tanhConfig.cmake's
+    # find_dependency(nlohmann_json) resolves for consumers.
+    if(TANH_WITH_INSTALL)
+        set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
+    endif()
     
     # Fetch the release tarball instead of cloning the repo — the full git
     # history is ~150MB while the release archive is a few MB, and the tarball
@@ -402,17 +426,23 @@ if(TANH_BUILD_MODULATION)
 
     add_library(${PROJECT_NAME}::Modulation ALIAS ${PROJECT_NAME}_modulation)
 
+    # readerwriterqueue is used in a public header (InputEventQueue.h). Its
+    # INTERFACE target carries a bare source-tree include path that cannot be
+    # exported, so add the directory ourselves: the build tree reads it from
+    # the FetchContent checkout, an installed package from the headers that
+    # readerwriterqueue's own install rule places under include/readerwriterqueue.
     target_include_directories(${PROJECT_NAME}_modulation
         PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${readerwriterqueue_SOURCE_DIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/readerwriterqueue>
     )
 
     target_link_libraries(${PROJECT_NAME}_modulation
         PUBLIC
         ${PROJECT_NAME}_dsp
         ${PROJECT_NAME}_state
-        readerwriterqueue
     )
 
     target_compile_definitions(${PROJECT_NAME}_modulation
@@ -501,11 +531,13 @@ if(TANH_BUILD_AUDIO_IO)
 
     add_library(${PROJECT_NAME}::AudioIO ALIAS ${PROJECT_NAME}_audio_io)
 
+    # miniaudio is an implementation detail (no public header includes it);
+    # expose it in the build tree only so the exported target stays relocatable.
     target_include_directories(${PROJECT_NAME}_audio_io
         PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${miniaudio_SOURCE_DIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-        ${miniaudio_SOURCE_DIR}
     )
 
     target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC ${PROJECT_NAME}_core)
@@ -593,10 +625,33 @@ endforeach()
 # Add install targets for the library
 # ==============================================================================
 
-#if(TANH_WITH_INSTALL)
-#    include(cmake/install.cmake)
-#    include(cmake/package.cmake)
-#endif()
+# Exported (installed) target names: tanh::Core, tanh::State, ... — the same
+# names the build-tree ALIAS targets use, so `find_package(tanh COMPONENTS Core)`
+# and `add_subdirectory(tanh-lib)` consumers link identically.
+foreach(_pair
+        "${PROJECT_NAME}_core=Core"
+        "${PROJECT_NAME}_state=State"
+        "${PROJECT_NAME}_dsp=DSP"
+        "${PROJECT_NAME}_resonator=Resonator"
+        "${PROJECT_NAME}_modulation=Modulation"
+        "${PROJECT_NAME}_audio_io=AudioIO")
+    string(REPLACE "=" ";" _pair "${_pair}")
+    list(GET _pair 0 _target)
+    list(GET _pair 1 _export_name)
+    if(TARGET ${_target})
+        set_target_properties(${_target} PROPERTIES EXPORT_NAME ${_export_name})
+    endif()
+endforeach()
+
+if(TANH_WITH_INSTALL)
+    include(cmake/install.cmake)
+endif()
+if(TANH_WITH_PACKAGING)
+    if(NOT PROJECT_IS_TOP_LEVEL)
+        message(FATAL_ERROR "TANH_WITH_PACKAGING is only supported when tanh-lib is the top-level project")
+    endif()
+    include(cmake/package.cmake)
+endif()
 
 # ==============================================================================
 # Add tests, examples, and documentation
