@@ -393,34 +393,6 @@ inline void emit_double(Sink& sink,
     emit_padded(sink, body.data(), len, sign, spec, true);
 }
 
-// --- argument fetching -------------------------------------------------------
-
-// Length modifier: 0 = int, 1 = long, 2 = long long, 3 = size_t/ptrdiff/intmax,
-// -1 = short, -2 = char.
-inline int64_t fetch_signed(va_list& args, int length) noexcept TANH_NONBLOCKING_FUNCTION {
-    switch (length) {
-        case 2: return va_arg(args, long long);
-        case 1: return va_arg(args, long);
-        case 3: return static_cast<int64_t>(va_arg(args, ptrdiff_t));
-        case -1: return static_cast<short>(va_arg(args, int));
-        case -2:
-            return static_cast<signed char>(
-                va_arg(args, int));  // NOLINT(bugprone-signed-char-misuse)
-        default: return va_arg(args, int);
-    }
-}
-
-inline uint64_t fetch_unsigned(va_list& args, int length) noexcept TANH_NONBLOCKING_FUNCTION {
-    switch (length) {
-        case 2: return va_arg(args, unsigned long long);
-        case 1: return va_arg(args, unsigned long);
-        case 3: return static_cast<uint64_t>(va_arg(args, size_t));
-        case -1: return static_cast<unsigned short>(va_arg(args, unsigned));
-        case -2: return static_cast<unsigned char>(va_arg(args, unsigned));
-        default: return va_arg(args, unsigned);
-    }
-}
-
 }  // namespace rt_format_detail
 
 inline int rt_vsnprintf(char* out,
@@ -433,6 +405,33 @@ inline int rt_vsnprintf(char* out,
         sink.finish();
         return 0;
     }
+
+    // Argument fetchers capture `args` directly: va_list is an array type on
+    // some ABIs (x86-64) and a struct on others (AArch64), so it cannot be
+    // passed to a helper by reference portably. Length modifier: 0 = int,
+    // 1 = long, 2 = long long, 3 = size_t/ptrdiff/intmax, -1 = short, -2 = char.
+    const auto fetch_signed = [&args](int length) noexcept -> int64_t {
+        switch (length) {
+            case 2: return va_arg(args, long long);
+            case 1: return va_arg(args, long);
+            case 3: return static_cast<int64_t>(va_arg(args, ptrdiff_t));
+            case -1: return static_cast<short>(va_arg(args, int));
+            case -2:
+                return static_cast<signed char>(
+                    va_arg(args, int));  // NOLINT(bugprone-signed-char-misuse)
+            default: return va_arg(args, int);
+        }
+    };
+    const auto fetch_unsigned = [&args](int length) noexcept -> uint64_t {
+        switch (length) {
+            case 2: return va_arg(args, unsigned long long);
+            case 1: return va_arg(args, unsigned long);
+            case 3: return static_cast<uint64_t>(va_arg(args, size_t));
+            case -1: return static_cast<unsigned short>(va_arg(args, unsigned));
+            case -2: return static_cast<unsigned char>(va_arg(args, unsigned));
+            default: return va_arg(args, unsigned);
+        }
+    };
 
     for (const char* p = fmt; *p != '\0'; ++p) {
         if (*p != '%') {
@@ -512,7 +511,7 @@ inline int rt_vsnprintf(char* out,
         switch (conv) {
             case 'd':
             case 'i': {
-                const int64_t v = fetch_signed(args, length);
+                const int64_t v = fetch_signed(length);
                 const bool neg = v < 0;
                 const uint64_t mag =
                     neg ? (~static_cast<uint64_t>(v) + 1U) : static_cast<uint64_t>(v);
@@ -523,7 +522,7 @@ inline int rt_vsnprintf(char* out,
             case 'x':
             case 'X':
             case 'o': {
-                const uint64_t v = fetch_unsigned(args, length);
+                const uint64_t v = fetch_unsigned(length);
                 const unsigned base = conv == 'u' ? 10U : (conv == 'o' ? 8U : 16U);
                 Spec s = spec;
                 s.m_plus = false;
