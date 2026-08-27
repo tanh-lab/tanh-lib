@@ -242,10 +242,19 @@ bool is_debugger_attached() {
 }
 #endif
 
+// Platforms with a native sink; everything else uses the plain default sink.
+#if defined(THL_PLATFORM_ANDROID) ||                                                              \
+    (defined(THL_PLATFORM_LINUX) && defined(THL_WITH_JOURNALD)) || defined(THL_PLATFORM_MACOS) || \
+    defined(THL_PLATFORM_IOS)
+#define THL_HAS_NATIVE_LOG_SINK 1
+#endif
+
 bool emit_platform(const LogRecord& record) {
+#if defined(THL_HAS_NATIVE_LOG_SINK)
     const char* source = record.m_source.empty() ? "native" : record.m_source.c_str();
     const char* group = record.m_group.empty() ? "default" : record.m_group.c_str();
     const char* message = record.m_message.c_str();
+#endif
 
 #if defined(THL_PLATFORM_ANDROID)
     int android_level = ANDROID_LOG_INFO;

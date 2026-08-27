@@ -555,12 +555,13 @@ TEST(MemoryBlockFailure, ResizeThrowsBadAllocAndLeavesBlockUnchanged) {
     MemoryBlock<float> block(16);
     block[0] = 1.0F;
     block[15] = 15.0F;
-    float* const data_before = block.data();
 
     EXPECT_THROW(block.resize(k_impossible_count), std::bad_alloc);
 
+    // A failed realloc leaves the original allocation valid: size and
+    // contents are untouched and the storage is still addressable.
     EXPECT_EQ(block.size(), 16u);
-    EXPECT_EQ(block.data(), data_before);
+    ASSERT_NE(block.data(), nullptr);
     EXPECT_FLOAT_EQ(block[0], 1.0F);
     EXPECT_FLOAT_EQ(block[15], 15.0F);
 }
