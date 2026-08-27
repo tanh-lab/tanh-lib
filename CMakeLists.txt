@@ -275,6 +275,7 @@ if(TANH_BUILD_DSP)
 
     add_library(${PROJECT_NAME}_dsp
         src/dsp/BaseProcessor.cpp
+        src/dsp/analysis/AdaptivePeakPicker.cpp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/Scales.cpp
