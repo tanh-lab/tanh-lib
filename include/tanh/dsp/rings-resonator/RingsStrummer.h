@@ -28,8 +28,8 @@
 
 #pragma once
 
-#include <tanh/dsp/analysis/OnsetDetector.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/dsp/analysis/OnsetDetector.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
 
 #include <cmath>
@@ -52,8 +52,7 @@ public:
         m_previous_note = 69.0f;
     }
 
-    void process(const thl::core::ConstBufferView& in,
-                 RingsPerformanceState* performance_state) {
+    void process(const thl::core::ConstBufferView& in, RingsPerformanceState* performance_state) {
         const bool has_onset = in.get_num_samples() > 0 && m_onset_detector.process(in);
         const bool note_changed = std::fabs(performance_state->m_note - m_previous_note) > 0.4f;
 

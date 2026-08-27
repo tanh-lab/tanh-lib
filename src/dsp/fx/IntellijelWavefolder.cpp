@@ -91,8 +91,7 @@ void IntellijelWavefolderImpl::prepare(const double& sample_rate,
     m_output_env.assign(num_channels, 0.0f);
 }
 
-void IntellijelWavefolderImpl::process(thl::core::BufferView buffer,
-                                       uint32_t modulation_offset) {
+void IntellijelWavefolderImpl::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     m_smoothed_drive.set_target_value(
         std::clamp(get_parameter<float>(Drive, modulation_offset), 0.1f, 20.0f));
     m_smoothed_folds.set_target_value(

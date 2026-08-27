@@ -1,8 +1,9 @@
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
 
+#include <algorithm>
+#include <bit>
 #include <cstddef>
-#include <cstdint>
 
 namespace thl::dsp::utils {
 
@@ -11,7 +12,10 @@ DynamicDelayLine::~DynamicDelayLine() = default;
 
 void DynamicDelayLine::prepare(size_t max_delay) {
     m_max_delay = max_delay;
-    m_buf.resize(1, max_delay);
+    // Power-of-two capacity so wrapping is a mask instead of a division.
+    m_capacity = std::bit_ceil(std::max<size_t>(max_delay, 1));
+    m_mask = m_capacity - 1;
+    m_buf.resize(1, m_capacity);
     m_buf.clear();
     m_write_ptr = 0;
     m_delay = 1;
@@ -28,7 +32,8 @@ void DynamicDelayLine::set_delay(size_t delay) {
 
 void DynamicDelayLine::write(float sample) {
     m_buf.get_write_pointer(0)[m_write_ptr] = sample;
-    m_write_ptr = (m_write_ptr + m_max_delay - 1) % m_max_delay;
+    // Unsigned underflow at 0 wraps to all-ones; the mask folds it to capacity-1.
+    m_write_ptr = (m_write_ptr - 1) & m_mask;
 }
 
 float DynamicDelayLine::write_read(float sample, float delay) {
@@ -53,11 +58,12 @@ float DynamicDelayLine::read(float delay) const {
 
 float DynamicDelayLine::read_hermite(float delay) const {
     const auto [i, f] = split_integral_fractional(delay);
-    const int32_t t = static_cast<int32_t>(m_write_ptr) + i + static_cast<int32_t>(m_max_delay);
-    const float xm1 = m_buf.get_read_pointer(0)[static_cast<size_t>(t - 1) % m_max_delay];
-    const float x0 = m_buf.get_read_pointer(0)[static_cast<size_t>(t) % m_max_delay];
-    const float x1 = m_buf.get_read_pointer(0)[static_cast<size_t>(t + 1) % m_max_delay];
-    const float x2 = m_buf.get_read_pointer(0)[static_cast<size_t>(t + 2) % m_max_delay];
+    const size_t t = m_write_ptr + static_cast<size_t>(i);
+    const float* buf = m_buf.get_read_pointer(0);
+    const float xm1 = buf[(t - 1) & m_mask];
+    const float x0 = buf[t & m_mask];
+    const float x1 = buf[(t + 1) & m_mask];
+    const float x2 = buf[(t + 2) & m_mask];
     const float c = (x1 - xm1) * 0.5f;
     const float v = x0 - x1;
     const float w = c + v;
@@ -75,7 +81,7 @@ float DynamicDelayLine::tap(size_t offset) const {
 }
 
 float DynamicDelayLine::read_at(size_t delay) const {
-    return m_buf.get_read_pointer(0)[(m_write_ptr + delay) % m_max_delay];
+    return m_buf.get_read_pointer(0)[(m_write_ptr + delay) & m_mask];
 }
 
 }  // namespace thl::dsp::utils

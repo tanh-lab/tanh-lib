@@ -28,9 +28,9 @@
 
 #pragma once
 
+#include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/analysis/NoteFilter.h>
-#include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsPatch.h>

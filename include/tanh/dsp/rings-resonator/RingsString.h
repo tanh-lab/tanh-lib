@@ -28,8 +28,8 @@
 
 #pragma once
 
-#include <tanh/core/Exports.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/core/Exports.h>
 #include <tanh/dsp/filter/DCBlocker.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>

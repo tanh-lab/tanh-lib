@@ -235,9 +235,9 @@ inline std::vector<float> to_interleaved(const BufferF& buffer) {
 
 /// Build a planar BufferF from interleaved float data.
 inline BufferF from_interleaved(const float* data,
-                                    size_t num_channels,
-                                    size_t num_frames,
-                                    double sample_rate) {
+                                size_t num_channels,
+                                size_t num_frames,
+                                double sample_rate) {
     BufferF buffer(num_channels, num_frames, sample_rate);
     for (size_t ch = 0; ch < num_channels; ++ch) {
         float* dst = buffer.get_write_pointer(ch);

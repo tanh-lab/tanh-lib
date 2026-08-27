@@ -39,8 +39,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "tanh/dsp/DspTypes.h"
 #include "tanh/core/BufferView.h"
+#include "tanh/dsp/DspTypes.h"
 #include "tanh/dsp/filter/OnePole.h"
 #include "tanh/dsp/rings-resonator/RingsDsp.h"
 #include "tanh/dsp/rings-resonator/RingsPatch.h"
@@ -325,9 +325,7 @@ void RingsVoiceManager::render_modal_voice(
     r.set_damping(patch.m_damping);
     thl::core::BufferView const out_view(m_out_buffer.data(), size);
     thl::core::BufferView const aux_view(m_aux_buffer.data(), size);
-    r.process(thl::core::ConstBufferView(m_resonator_input.data(), size),
-              out_view,
-              aux_view);
+    r.process(thl::core::ConstBufferView(m_resonator_input.data(), size), out_view, aux_view);
 }
 
 void RingsVoiceManager::render_fm_voice(

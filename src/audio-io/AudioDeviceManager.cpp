@@ -308,7 +308,9 @@ static AndroidBufferConfig configure_android_buffering(ma_context& context,
     result.burstSize = probeAAudioBurstSize(context, devConfig);
 
     if (result.burstSize > 0) {
-        if (bufferSizeInFrames == 0) { bufferSizeInFrames = result.burstSize * 4; }
+        // Auto default: favour stability over latency — 16 bursts total
+        // (2 periods of 8 bursts, ~32 ms at 48 kHz with a 96-frame burst).
+        if (bufferSizeInFrames == 0) { bufferSizeInFrames = result.burstSize * 16; }
 
         // Round up to nearest power-of-two multiple of burst.
         uint32_t m = bufferSizeInFrames / result.burstSize;

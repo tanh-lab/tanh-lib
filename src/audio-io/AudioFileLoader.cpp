@@ -143,8 +143,8 @@ core::BufferF AudioFileLoader::read_all_frames(DataSource::Impl& impl) {
 }
 
 core::BufferF AudioFileLoader::load_from_file(const std::string& file_path,
-                                                        double target_sample_rate,
-                                                        uint32_t target_channels) {
+                                              double target_sample_rate,
+                                              uint32_t target_channels) {
     if (file_path.empty()) { return {}; }
 
     DataSource::Impl impl;
@@ -163,9 +163,9 @@ core::BufferF AudioFileLoader::load_from_file(const std::string& file_path,
 }
 
 core::BufferF AudioFileLoader::load_from_memory(const void* data,
-                                                          size_t size,
-                                                          double target_sample_rate,
-                                                          uint32_t target_channels) {
+                                                size_t size,
+                                                double target_sample_rate,
+                                                uint32_t target_channels) {
     if (data == nullptr || size == 0) { return {}; }
 
     ma_decoder_config const config = ma_decoder_config_init(

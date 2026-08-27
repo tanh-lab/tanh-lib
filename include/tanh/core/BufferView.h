@@ -127,8 +127,7 @@ public:
 
     BasicBufferView sub_block(size_t start_frame, size_t num_frames) const {
         if (is_mono_inline()) {
-            return BasicBufferView(m_inline_channel + m_frame_offset + start_frame,
-                                        num_frames);
+            return BasicBufferView(m_inline_channel + m_frame_offset + start_frame, num_frames);
         }
         BasicBufferView result;
         result.m_channels = m_channels;

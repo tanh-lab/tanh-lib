@@ -1,7 +1,7 @@
 #pragma once
 
-#include <tanh/core/Exports.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
@@ -20,8 +20,7 @@ public:
                          uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION = 0;
 
     // Self-driven: calls get_change_points() to obtain split positions
-    void process_modulated(const thl::core::BufferView& buffer)
-        TANH_NONBLOCKING_FUNCTION;
+    void process_modulated(const thl::core::BufferView& buffer) TANH_NONBLOCKING_FUNCTION;
 
     // Caller-injected: uses externally supplied change points
     void process_modulated(const thl::core::BufferView& buffer,

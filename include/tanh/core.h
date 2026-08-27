@@ -6,9 +6,9 @@
 #include "core/Buffer.h"
 #include "core/BufferView.h"
 #include "core/Dispatcher.h"
+#include "core/Logger.h"
 #include "core/MemoryBlock.h"
 #include "core/RingBuffer.h"
-#include "core/Logger.h"
 #include "core/threading/RCU.h"
 
 // Core utility functions available to all components

@@ -34,8 +34,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "tanh/dsp/DspTypes.h"
 #include "tanh/core/BufferView.h"
+#include "tanh/dsp/DspTypes.h"
 #include "tanh/dsp/filter/OnePole.h"
 #include "tanh/dsp/rings-resonator/RingsPatch.h"
 #include "tanh/dsp/rings-resonator/RingsPerformanceState.h"

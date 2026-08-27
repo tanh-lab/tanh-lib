@@ -1,6 +1,7 @@
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/PitchShifter.h>
 
+#include <bit>
 #include <cmath>
 #include <cstddef>
 
@@ -10,7 +11,9 @@ PitchShifter::PitchShifter() = default;
 
 void PitchShifter::prepare(int window_size) {
     m_window_size = window_size;
-    m_buf_size = window_size * 2;
+    // Power-of-two ring so wrapping is a mask instead of a division.
+    m_buf_size = static_cast<int>(std::bit_ceil(static_cast<unsigned>(window_size * 2)));
+    m_buf_mask = m_buf_size - 1;
     m_buf.resize(1, static_cast<size_t>(m_buf_size));
     reset();
 }
@@ -35,7 +38,8 @@ float PitchShifter::process(float x) {
     buf[m_write_pos] = x;
 
     const float phase_a = m_phase;
-    const float phase_b = std::fmod(m_phase + 0.5f, 1.0f);
+    float phase_b = m_phase + 0.5f;
+    if (phase_b >= 1.0f) { phase_b -= 1.0f; }
     const auto n = static_cast<float>(m_window_size);
 
     const float delay_a = m_pitch_up ? (1.0f - phase_a) * n : phase_a * n;
@@ -48,8 +52,9 @@ float PitchShifter::process(float x) {
     const float val_a = read_interp(buf, delay_a);
     const float val_b = read_interp(buf, delay_b);
 
-    m_phase = std::fmod(m_phase + m_phase_inc, 1.0f);
-    m_write_pos = (m_write_pos + 1) % m_buf_size;
+    m_phase += m_phase_inc;
+    if (m_phase >= 1.0f) { m_phase -= 1.0f; }
+    m_write_pos = (m_write_pos + 1) & m_buf_mask;
 
     return w_a * val_a + w_b * val_b;
 }
@@ -64,8 +69,9 @@ float PitchShifter::read_interp(const float* buf, float delay) const {
     const float pos = static_cast<float>(m_write_pos) - delay;
     const int idx = static_cast<int>(std::floor(pos));
     const float frac = pos - static_cast<float>(idx);
-    const int i0 = ((idx % m_buf_size) + m_buf_size) % m_buf_size;
-    const int i1 = (((idx + 1) % m_buf_size) + m_buf_size) % m_buf_size;
+    // Two's-complement AND wraps negative indices correctly for pow2 sizes.
+    const int i0 = idx & m_buf_mask;
+    const int i1 = (idx + 1) & m_buf_mask;
     return buf[i0] + frac * (buf[i1] - buf[i0]);
 }
 

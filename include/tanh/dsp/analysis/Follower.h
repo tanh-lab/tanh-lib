@@ -94,6 +94,35 @@ public:
         *centroid = m_centroid;
     }
 
+    /// Band-split + detector update only — for callers that read the bands
+    /// via band() and don't need the summed envelope or the spectral
+    /// centroid (whose per-sample smoothing process() always pays).
+    void process_bands(float sample) {
+        std::array<float, 3> bands = {0.0f, 0.0f, 0.0f};
+
+        bands[2] = m_mid_high_filter.process<thl::dsp::filter::FilterMode::HighPass>(sample);
+        bands[1] = m_low_mid_filter.process<thl::dsp::filter::FilterMode::HighPass>(
+            m_mid_high_filter.lp());
+        bands[0] = m_low_mid_filter.lp();
+
+        for (int32_t i = 0; i < 3; ++i) {
+            thl::dsp::utils::slope<float>(m_detector[i],
+                                          std::fabs(bands[i]),
+                                          m_attack[i],
+                                          m_decay[i]);
+        }
+    }
+
+    /// Detector level for one band (0 = low, 1 = mid, 2 = high), as updated
+    /// by the last process() / process_bands() call. Already envelope-shaped
+    /// by the per-band attack/decay slopes (this is the follower's ballistic
+    /// state, not the instantaneous band amplitude); any additional smoothing
+    /// a consumer applies (e.g. frame-rate de-aliasing in a UI poll) is on
+    /// top of that. Exposes the per-band split the summed envelope hides.
+    [[nodiscard]] float band(size_t index) const {
+        return index < m_detector.size() ? m_detector[index] : 0.0f;
+    }
+
     Follower(const Follower&) = delete;
     Follower& operator=(const Follower&) = delete;
 

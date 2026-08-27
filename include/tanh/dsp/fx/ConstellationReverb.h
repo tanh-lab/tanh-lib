@@ -102,6 +102,19 @@ private:
     float sr_scale(int base) const;
     float scaled(int base) const;
 
+    // Per-sample linear ramp toward a once-per-block control target.
+    struct ControlRamp {
+        float m_value = 0.0f;
+        float m_step = 0.0f;
+        void set_target(float target, float inv_frames) {
+            m_step = (target - m_value) * inv_frames;
+        }
+        float next() {
+            m_value += m_step;
+            return m_value;
+        }
+    };
+
     static std::pair<float, float> shimmer_detune_to_cents(float d);
     static std::pair<float, float> fshift_detune_to_hz(float d);
 
@@ -139,6 +152,20 @@ private:
     float m_p_fshift_hz = 132.0f;
     float m_p_fshift_det = 0.2f;
     float m_p_fshift_mod = 40.0f;
+
+    // ── Control-rate modulation ramps (targets set once per block) ────────
+    ControlRamp m_ramp_exc_a, m_ramp_exc_b;
+    ControlRamp m_ramp_delay_a1, m_ramp_delay_a2;
+    ControlRamp m_ramp_delay_b1, m_ramp_delay_b2;
+    ControlRamp m_ramp_ap_a2, m_ramp_ap_b2;
+
+    // Input allpass delays are fixed per sample rate; cached to avoid
+    // std::round in the per-sample path.
+    std::array<float, 4> m_input_ap_delay = {142.0f, 107.0f, 379.0f, 277.0f};
+
+    // Cached shimmer pitch inputs so set_pitch's pow() only runs on change.
+    float m_shim_semi_cache = -1000.0f;
+    float m_shim_detune_cache = -1000.0f;
 
     // ── Input stage ───────────────────────────────────────────────────────
     std::array<utils::DynamicAllpass, 4> m_input_ap;

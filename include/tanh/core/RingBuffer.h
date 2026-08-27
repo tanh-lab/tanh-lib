@@ -44,7 +44,8 @@ public:
         std::ranges::fill(m_read_pos, 0);
         std::fill(m_is_full.begin(), m_is_full.end(), false);  // NOLINT(modernize-use-ranges)
                                                                // std::vector<bool> specialization
-                                                               // doesn't work with std::ranges::fill
+                                                               // doesn't work with
+                                                               // std::ranges::fill
         std::ranges::fill(m_write_pos, 0);
         std::ranges::fill(m_num_valid, 0);
     }

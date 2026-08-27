@@ -36,8 +36,8 @@
 #include <cmath>
 #include <cstddef>
 
-#include "tanh/dsp/DspTypes.h"
 #include "tanh/core/BufferView.h"
+#include "tanh/dsp/DspTypes.h"
 #include "tanh/dsp/filter/OnePole.h"
 
 namespace thl::dsp::resonator {

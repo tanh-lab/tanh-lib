@@ -72,8 +72,14 @@ public:
     // and caches 1/(1+g) for use in process().
     template <Approximation approximation>
     void set_f(float f) {
-        m_g = tan<approximation>(f);
-        m_gi = 1.0f / (1.0f + m_g);
+        set_g(tan<approximation>(f));
+    }
+
+    // Set the prewarped integrator gain directly — for callers that already
+    // computed tan(pi * f / f_s) for other filters at the same cutoff.
+    void set_g(float g) {
+        m_g = g;
+        m_gi = 1.0f / (1.0f + g);
     }
 
     template <FilterMode mode>

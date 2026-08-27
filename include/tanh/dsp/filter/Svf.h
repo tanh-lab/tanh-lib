@@ -70,9 +70,25 @@ public:
         return select<mode>(hp, bp, lp);
     }
 
+    struct TapOutputs {
+        float m_hp;
+        float m_bp;
+        float m_lp;
+    };
+
+    // Single step returning every tap — for output-morphing filters that blend
+    // low/band/high from the same state (see MorphFilter).
+    TapOutputs process_all(float in) {
+        const float hp = (in - m_r * m_state_1 - m_g * m_state_1 - m_state_2) * m_h;
+        const float bp = m_g * hp + m_state_1;
+        m_state_1 = m_g * hp + bp;
+        const float lp = m_g * bp + m_state_2;
+        m_state_2 = m_g * bp + lp;
+        return {.m_hp = hp, .m_bp = bp, .m_lp = lp};
+    }
+
     template <FilterMode mode>
-    void process(const thl::core::ConstBufferView& in,
-                 thl::core::BufferView out) {
+    void process(const thl::core::ConstBufferView& in, thl::core::BufferView out) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
         const size_t size = in.get_num_samples();
@@ -228,8 +244,7 @@ public:
     float bp() const { return m_bp; }
 
     template <FilterMode mode>
-    void process(const thl::core::ConstBufferView& in,
-                 thl::core::BufferView out) {
+    void process(const thl::core::ConstBufferView& in, thl::core::BufferView out) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
         const size_t size = in.get_num_samples();
@@ -270,9 +285,7 @@ public:
     }
 
     template <FilterMode mode>
-    void process(const thl::core::ConstBufferView& in,
-                 thl::core::BufferView out,
-                 size_t decimate) {
+    void process(const thl::core::ConstBufferView& in, thl::core::BufferView out, size_t decimate) {
         const float* const in_ptr = in.get_read_pointer(0);
         float* const out_ptr = out.get_write_pointer(0);
         const size_t size = in.get_num_samples();

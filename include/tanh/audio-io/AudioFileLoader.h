@@ -1,8 +1,8 @@
 #pragma once
 
 #include <tanh/audio-io/DataSource.h>
-#include <tanh/core/Exports.h>
 #include <tanh/core/Buffer.h>
+#include <tanh/core/Exports.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -34,8 +34,8 @@ public:
      * @return Planar BufferF, or an empty buffer on failure.
      */
     core::BufferF load_from_file(const std::string& file_path,
-                                           double target_sample_rate = 0.0,
-                                           uint32_t target_channels = 0);
+                                 double target_sample_rate = 0.0,
+                                 uint32_t target_channels = 0);
 
     /**
      * Decode audio from an in-memory buffer (e.g. embedded binary data).
@@ -47,9 +47,9 @@ public:
      * @return Planar BufferF, or an empty buffer on failure.
      */
     core::BufferF load_from_memory(const void* data,
-                                             size_t size,
-                                             double target_sample_rate = 0.0,
-                                             uint32_t target_channels = 0);
+                                   size_t size,
+                                   double target_sample_rate = 0.0,
+                                   uint32_t target_channels = 0);
 
     /**
      * Open an audio file and return a streaming DataSource.
