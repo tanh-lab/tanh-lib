@@ -57,6 +57,8 @@ find_package(tanh REQUIRED COMPONENTS Core)   # Core State DSP Resonator Modulat
 target_link_libraries(app PRIVATE tanh::Core)
 ```
 
+`test/install` is a minimal consumer of the installed package; CI builds it
+against a fresh install prefix on every push (`just test-install` locally).
 The exported target names match the in-tree `ALIAS` targets, so consumers link
 the same `tanh::<Component>` whether they `add_subdirectory` or `find_package`.
 A parent project that embeds tanh-lib via FetchContent and installs its own

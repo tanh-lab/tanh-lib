@@ -14,6 +14,13 @@ build: configure
 test: build
     ctest --preset desktop-debug
 
+# Install the core component into build/install-prefix and build test/install against it
+test-install:
+    cmake -S . -B build/install -DCMAKE_BUILD_TYPE=Release -DTANH_BUILD_STATE=OFF -DTANH_BUILD_DSP=OFF -DTANH_BUILD_MODULATION=OFF -DTANH_BUILD_AUDIO_IO=OFF -DTANH_WITH_TESTS=OFF -DTANH_WITH_EXAMPLES=OFF -DTANH_WITH_DOCS=OFF -DCMAKE_INSTALL_PREFIX=build/install-prefix
+    cmake --build build/install --parallel && cmake --install build/install
+    cmake -S test/install -B build/install-consumer -DCMAKE_PREFIX_PATH=$(pwd)/build/install-prefix
+    cmake --build build/install-consumer --parallel && ./build/install-consumer/consumer
+
 # Run tests with verbose output
 test-verbose: build
     ctest --preset desktop-debug --verbose
