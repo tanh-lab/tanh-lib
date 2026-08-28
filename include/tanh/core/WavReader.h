@@ -174,9 +174,9 @@ inline BufferF read_wav_from_memory(const void* data, size_t size, std::string* 
                         value = static_cast<float>(static_cast<int16_t>(read_u16(src))) / 32768.0F;
                         break;
                     case 24: {
-                        int32_t s = static_cast<int32_t>((static_cast<uint32_t>(src[0]) << 8) |
-                                                         (static_cast<uint32_t>(src[1]) << 16) |
-                                                         (static_cast<uint32_t>(src[2]) << 24));
+                        const auto s = static_cast<int32_t>((static_cast<uint32_t>(src[0]) << 8) |
+                                                            (static_cast<uint32_t>(src[1]) << 16) |
+                                                            (static_cast<uint32_t>(src[2]) << 24));
                         value = static_cast<float>(s >> 8) / 8388608.0F;
                         break;
                     }
