@@ -7,6 +7,7 @@
 #include <tanh/core/threading/Thread.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <array>  // IWYU pragma: keep (Linux thread name)
 #include <atomic>
 #include <cerrno>
 #include <cstring>
@@ -112,13 +113,16 @@ bool apply_priority(ThreadPriority priority) noexcept {
         case ThreadPriority::Low: return set_nice(10);
         case ThreadPriority::High: return set_nice(-5);
         case ThreadPriority::Background: {
-            sched_param params{};
+            // sched_param comes portably from <sched.h>, not the glibc-internal <bits/...>
+            // NOLINTNEXTLINE(misc-include-cleaner)
+            const sched_param params{};
             if (sched_setscheduler(0, SCHED_IDLE, &params) == 0) { return true; }
             THL_LOG_WARNING(k_group, "SCHED_IDLE refused, errno %d", errno);
             set_nice(19);
             return false;
         }
         case ThreadPriority::RealTime: {
+            // NOLINTNEXTLINE(misc-include-cleaner) see above
             sched_param params{};
             // PipeWire uses SCHED_FIFO 60 and the JUCE plugin host 55: stay below both.
             params.sched_priority = 50;
@@ -136,9 +140,9 @@ bool apply_priority(ThreadPriority priority) noexcept {
 }
 
 bool apply_name(const char* name) noexcept {
-    char truncated[16] = {};
-    std::strncpy(truncated, name, sizeof(truncated) - 1);
-    return pthread_setname_np(pthread_self(), truncated) == 0;
+    std::array<char, 16> truncated{};
+    std::strncpy(truncated.data(), name, truncated.size() - 1);
+    return pthread_setname_np(pthread_self(), truncated.data()) == 0;
 }
 
 #else  // Emscripten and anything else: no scheduling control.

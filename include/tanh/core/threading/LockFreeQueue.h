@@ -205,8 +205,9 @@ public:
     using value_type = T;
 
     explicit DynamicLockFreeQueue(std::size_t capacity)
-        : m_mask(round_up_pow2(capacity) - 1), m_cells(new Cell[m_mask + 1]) {}  // NOLINT(modernize-avoid-c-arrays)
-                                                                                 // sized at runtime
+        : m_mask(round_up_pow2(capacity) - 1)
+        , m_cells(new Cell[m_mask + 1]) {}  // NOLINT(modernize-avoid-c-arrays)
+                                            // sized at runtime
 
     DynamicLockFreeQueue(const DynamicLockFreeQueue&) = delete;
     DynamicLockFreeQueue& operator=(const DynamicLockFreeQueue&) = delete;
