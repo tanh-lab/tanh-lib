@@ -362,6 +362,125 @@ TEST(RingBufferBulk, ZeroCountIsNoOp) {
 // capacity where a single subtract would not be enough.
 // =============================================================================
 
+TEST(RingBufferBulk, PushFillMatchesRepeatedPush) {
+    RingBuffer<float> rb;
+    rb.initialise_with_positions(1, 8);
+    rb.push_sample(0, 1.0f);
+    rb.push_sample(0, 2.0f);
+    rb.pop_sample(0);
+    rb.push_fill(0, 0.5f, 5);  // wraps around the seam
+    EXPECT_EQ(rb.get_available_samples(0), 6u);
+    std::array<float, 6> out = {};
+    rb.pop_block(0, out.data(), 6);
+    EXPECT_FLOAT_EQ(out[0], 2.0f);
+    for (size_t i = 1; i < 6; ++i) { EXPECT_FLOAT_EQ(out[i], 0.5f) << i; }
+
+    // Larger than the capacity: only the last `capacity` survive, ring is full.
+    rb.push_fill(0, 7.0f, 20);
+    EXPECT_EQ(rb.get_available_samples(0), 8u);
+    for (size_t i = 0; i < 8; ++i) { EXPECT_FLOAT_EQ(rb.get_future_sample(0, i), 7.0f) << i; }
+}
+
+TEST(RingBufferBulk, DiscardMatchesRepeatedPop) {
+    RingBuffer<float> rb;
+    rb.initialise_with_positions(1, 8);
+    for (int i = 0; i < 6; ++i) { rb.push_sample(0, static_cast<float>(i)); }
+    EXPECT_EQ(rb.discard(0, 4), 4u);
+    EXPECT_EQ(rb.get_available_samples(0), 2u);
+    EXPECT_EQ(rb.get_available_past_samples(0), 4u);
+    EXPECT_FLOAT_EQ(rb.pop_sample(0), 4.0f);
+    EXPECT_EQ(rb.discard(0, 10), 1u);  // clamps to what is available
+    EXPECT_EQ(rb.get_available_samples(0), 0u);
+    EXPECT_EQ(rb.discard(0, 1), 0u);
+}
+
+TEST(RingBufferBulk, PeekPastBlockMatchesGetPastSample) {
+    RingBuffer<float> rb;
+    rb.initialise_with_positions(1, 8);
+    for (int i = 0; i < 8; ++i) { rb.push_sample(0, static_cast<float>(i)); }
+    rb.discard(0, 5);  // history = 0 1 2 3 4, read position on 5
+
+    std::array<float, 3> past = {};
+    rb.peek_past_block(0, past.data(), 3);
+    EXPECT_FLOAT_EQ(past[0], 2.0f);
+    EXPECT_FLOAT_EQ(past[1], 3.0f);
+    EXPECT_FLOAT_EQ(past[2], 4.0f);
+    for (size_t k = 0; k < 3; ++k) { EXPECT_FLOAT_EQ(past[k], rb.get_past_sample(0, 3 - k)); }
+
+    // Reading further back than the capacity wraps like get_past_sample() does.
+    std::array<float, 11> wrapped = {};
+    rb.peek_past_block(0, wrapped.data(), 11);
+    for (size_t k = 0; k < 11; ++k) {
+        EXPECT_FLOAT_EQ(wrapped[k], rb.get_past_sample(0, 11 - k)) << k;
+    }
+    EXPECT_EQ(rb.get_available_samples(0), 3u);  // peek does not consume
+}
+
+// push_fill / discard / peek_past_block against the per-sample API itself, with
+// the fresh-plus-history window read an anira-style pre-processor performs.
+TEST(RingBufferBulk, FillDiscardPeekDifferentialAgainstPerSample) {
+    std::mt19937 rng(0xF00D);
+    for (const size_t capacity : {1U, 2U, 3U, 7U, 8U, 64U}) {
+        RingBuffer<float> per_sample;
+        RingBuffer<float> bulk;
+        per_sample.initialise_with_positions(1, capacity);
+        bulk.initialise_with_positions(1, capacity);
+        std::uniform_int_distribution<size_t> len(0, capacity * 2 + 3);
+        std::uniform_int_distribution<int> op(0, 3);
+        float next = 1.0f;
+
+        for (int step = 0; step < 2000; ++step) {
+            const size_t n = len(rng);
+            switch (op(rng)) {
+                case 0: {
+                    for (size_t i = 0; i < n; ++i) { per_sample.push_sample(0, next); }
+                    bulk.push_fill(0, next, n);
+                    next += 1.0f;
+                    break;
+                }
+                case 1: {
+                    std::vector<float> in(n);
+                    for (auto& v : in) { v = next++; }
+                    for (const float v : in) { per_sample.push_sample(0, v); }
+                    bulk.push_block(0, in.data(), n);
+                    break;
+                }
+                case 2: {
+                    for (size_t i = 0; i < n; ++i) { per_sample.pop_sample(0); }
+                    bulk.discard(0, n);
+                    break;
+                }
+                default: {
+                    // Window = [num_old history][num_new fresh]; never asks for more
+                    // fresh samples than are available (the caller's contract).
+                    const size_t num_new = n % (per_sample.get_available_samples(0) + 1);
+                    const size_t num_old = len(rng);
+                    std::vector<float> expected(num_old + num_new);
+                    std::vector<float> actual(num_old + num_new);
+                    for (size_t k = 0; k < num_old; ++k) {
+                        expected[k] = per_sample.get_past_sample(0, num_old - k);
+                    }
+                    for (size_t k = 0; k < num_new; ++k) {
+                        expected[num_old + k] = per_sample.pop_sample(0);
+                    }
+                    bulk.peek_past_block(0, actual.data(), num_old);
+                    bulk.pop_block(0, actual.data() + num_old, num_new);
+                    ASSERT_EQ(actual, expected) << "cap=" << capacity << " step=" << step;
+                    break;
+                }
+            }
+            ASSERT_EQ(bulk.get_available_samples(0), per_sample.get_available_samples(0))
+                << "cap=" << capacity << " step=" << step;
+            ASSERT_EQ(bulk.get_available_past_samples(0), per_sample.get_available_past_samples(0))
+                << "cap=" << capacity << " step=" << step;
+            for (size_t off = 0; off < capacity; ++off) {
+                ASSERT_EQ(bulk.get_future_sample(0, off), per_sample.get_future_sample(0, off));
+                ASSERT_EQ(bulk.get_past_sample(0, off), per_sample.get_past_sample(0, off));
+            }
+        }
+    }
+}
+
 TEST(RingBufferWrap, FutureAndPastOffsetsMatchModuloReference) {
     constexpr size_t k_capacity = 7;
     RingBuffer<int> rb;
