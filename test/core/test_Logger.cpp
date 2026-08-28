@@ -440,3 +440,13 @@ TEST_F(LoggerFixture, MacrosRespectRuntimeLevel) {
     ASSERT_EQ(got.size(), 1U);
     EXPECT_EQ(got[0].m_message, "kept");
 }
+
+TEST_F(LoggerFixture, SyncMacroDoesNotEvaluateArgumentsWhenFiltered) {
+    thl::Logger::set_level(LogLevel::Error);
+    int evaluations = 0;
+    THL_LOG_INFO("macro", "%d", ++evaluations);
+    THL_LOG_ERROR("macro", "%d", ++evaluations);
+    ASSERT_TRUE(wait_for_records(1));
+    EXPECT_EQ(evaluations, 1);
+    EXPECT_EQ(records()[0].m_message, "1");
+}

@@ -262,8 +262,13 @@ TANH_API std::uint64_t dropped_count() noexcept TANH_NONBLOCKING_FUNCTION;
 #define THL_LOG_IMPL(level, group, ...) static_cast<void>(0)
 #define THL_LOG_RT_IMPL(level, group, ...) static_cast<void>(0)
 #else
-#define THL_LOG_IMPL(level, group, ...) \
-    ::thl::Logger::logf(::thl::Logger::LogLevel::level, group, __VA_ARGS__)
+// Gated on is_enabled() so a filtered call neither evaluates its arguments nor formats.
+#define THL_LOG_IMPL(level, group, ...)                                              \
+    do {                                                                             \
+        if (::thl::Logger::is_enabled(::thl::Logger::LogLevel::level)) {             \
+            ::thl::Logger::logf(::thl::Logger::LogLevel::level, group, __VA_ARGS__); \
+        }                                                                            \
+    } while (false)
 #define THL_LOG_RT_IMPL(level, group, ...) \
     static_cast<void>(::thl::Logger::rt::logf(::thl::Logger::LogLevel::level, group, __VA_ARGS__))
 #endif
