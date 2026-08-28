@@ -11,6 +11,7 @@
 #include "core/MemoryBlock.h"
 #include "core/RingBuffer.h"
 #include "core/RtFormat.h"
+#include "core/WavReader.h"
 #include "core/threading/LockFreeQueue.h"
 #include "core/threading/RCU.h"
 
