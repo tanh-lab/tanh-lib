@@ -450,3 +450,109 @@ TEST_F(LoggerFixture, SyncMacroDoesNotEvaluateArgumentsWhenFiltered) {
     EXPECT_EQ(evaluations, 1);
     EXPECT_EQ(records()[0].m_message, "1");
 }
+
+// ---------------------------------------------------------------------------
+// Owned queues and drain threads
+// ---------------------------------------------------------------------------
+
+TEST_F(LoggerFixture, OwnedQueueDeliversOnDrain) {
+    rt::Queue queue(100);
+    EXPECT_EQ(queue.capacity(), 128U);  // rounded up
+    EXPECT_TRUE(queue.is_accepting());
+    EXPECT_EQ(queue.logf(LogLevel::Info, "owned", "value %d", 7), rt::Status::Ok);
+    EXPECT_EQ(queue.log(LogLevel::Warning, "owned", "plain"), rt::Status::Ok);
+    EXPECT_TRUE(rt_records().empty());  // nothing until someone drains
+    EXPECT_EQ(queue.drain(), 2U);
+    const auto got = rt_records("owned");
+    ASSERT_EQ(got.size(), 2U);
+    EXPECT_EQ(got[0].m_message, "value 7");
+    EXPECT_EQ(got[1].m_message, "plain");
+    EXPECT_EQ(got[1].m_level, static_cast<std::uint32_t>(LogLevel::Warning));
+}
+
+TEST_F(LoggerFixture, OwnedQueueCountsDropsAndReportsThem) {
+    rt::Queue queue(4);
+    for (int i = 0; i < 6; ++i) { queue.logf(LogLevel::Info, "owned", "%d", i); }
+    EXPECT_EQ(queue.dropped_count(), 2U);
+    EXPECT_EQ(queue.drain(), 4U);
+    EXPECT_EQ(queue.dropped_count(), 0U);
+    const auto all = records();
+    ASSERT_FALSE(all.empty());
+    EXPECT_NE(all.back().m_message.find("2 real-time log message(s) dropped"), std::string::npos);
+}
+
+TEST_F(LoggerFixture, OwnedQueueNotAcceptingReturnsNoConsumer) {
+    rt::Queue queue(8);
+    queue.set_accepting(false);
+    EXPECT_EQ(queue.logf(LogLevel::Error, "owned", "lost"), rt::Status::NoConsumer);
+    EXPECT_EQ(queue.drain(), 0U);
+    queue.set_accepting(true);
+    EXPECT_EQ(queue.logf(LogLevel::Error, "owned", "kept"), rt::Status::Ok);
+    EXPECT_EQ(queue.drain(), 1U);
+}
+
+TEST_F(LoggerFixture, OwnedQueueIsIndependentOfTheDefaultOne) {
+    rt::stop();  // default consumer gone ...
+    rt::Queue queue(8);
+    EXPECT_EQ(queue.logf(LogLevel::Error, "owned", "still fine"), rt::Status::Ok);  // ... ours is
+                                                                                    // not
+    EXPECT_EQ(rt::logf(LogLevel::Error, "default", "lost"), rt::Status::NoConsumer);
+    EXPECT_EQ(queue.drain(), 1U);
+    rt::start();
+}
+
+TEST_F(LoggerFixture, DrainThreadDeliversAndStopsOnDestruction) {
+    rt::Queue queue(16);
+    {
+        rt::DrainThread::Options options;
+        options.m_interval_ms = 1;
+        rt::DrainThread drain(queue, options);
+        EXPECT_TRUE(drain.is_running());
+        EXPECT_FALSE(drain.is_current_thread());
+        queue.logf(LogLevel::Info, "owned", "from thread");
+        ASSERT_TRUE(wait_for_records(1));
+        // Queued right before destruction: the destructor's final drain delivers it.
+        queue.logf(LogLevel::Info, "owned", "last one");
+    }
+    const auto got = rt_records("owned");
+    ASSERT_EQ(got.size(), 2U);
+    EXPECT_EQ(got[1].m_message, "last one");
+}
+
+TEST_F(LoggerFixture, SequenceNumbersInterleaveAcrossQueues) {
+    rt::Queue a(8);
+    rt::Queue b(8);
+    a.logf(LogLevel::Info, "seq", "a1");
+    b.logf(LogLevel::Info, "seq", "b1");
+    thl::Logger::info("seq", "sync");
+    a.logf(LogLevel::Info, "seq", "a2");
+    b.drain();
+    a.drain();
+    auto got = records();
+    std::sort(got.begin(), got.end(), [](const LogRecord& x, const LogRecord& y) {
+        return x.m_seq < y.m_seq;
+    });
+    std::vector<std::string> messages;
+    for (const auto& r : got) {
+        if (r.m_group == "seq") { messages.push_back(r.m_message); }
+    }
+    EXPECT_EQ(messages, (std::vector<std::string>{"a1", "b1", "sync", "a2"}));
+}
+
+TEST_F(LoggerFixture, DefaultDrainThreadIsNeverStartedImplicitly) {
+    rt::stop();
+    EXPECT_FALSE(rt::is_running());
+    thl::Logger::info("test", "a synchronous record");
+    thl::Logger::set_callback([](const LogRecord&) {});
+    EXPECT_FALSE(rt::is_running());
+    EXPECT_EQ(rt::logf(LogLevel::Error, "test", "lost"), rt::Status::NoConsumer);
+    rt::start();
+    EXPECT_TRUE(rt::is_running());
+}
+
+TEST_F(LoggerFixture, StopLeavesRtEnabledConfigAlone) {
+    EXPECT_TRUE(thl::Logger::get_config().m_rt_enabled);
+    rt::stop();
+    EXPECT_TRUE(thl::Logger::get_config().m_rt_enabled);
+    rt::start();
+}

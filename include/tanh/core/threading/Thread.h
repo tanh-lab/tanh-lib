@@ -67,6 +67,10 @@ public:
     /// Wait for the body to return. Safe to call when not running.
     void join();
 
+    /// Give up ownership of the OS thread without waiting for it. For the one
+    /// case join() cannot serve: tearing the Thread down from its own body.
+    void detach();
+
     /// True after request_stop() (or ~Thread). Real-time safe.
     [[nodiscard]] bool should_stop() const noexcept TANH_NONBLOCKING_FUNCTION;
 

@@ -5,10 +5,13 @@
 
 #include <tanh/core/Logger.h>
 #include <tanh/core/threading/Thread.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <exception>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,6 +26,7 @@
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <pthread.h>
+#include <pthread/qos.h>
 #include <sys/qos.h>
 #elif defined(__linux__)
 #include <pthread.h>
@@ -170,10 +174,15 @@ bool Thread::start(const ThreadOptions& options, Body body) {
     try {
         const std::string name = options.m_name != nullptr ? options.m_name : "";
         const ThreadPriority priority = options.m_priority;
+        // NOLINTNEXTLINE(bugprone-exception-escape) only the error log itself could throw
         m_impl->m_thread = std::thread([this, name, priority, body = std::move(body)]() {
             if (!name.empty()) { apply_name(name.c_str()); }
             apply_priority(priority);
-            body(*this);
+            try {
+                body(*this);
+            } catch (const std::exception& e) {
+                THL_LOG_ERROR(k_group, "thread body threw: %s", e.what());
+            } catch (...) { THL_LOG_ERROR(k_group, "thread body threw a non-std exception"); }
             m_impl->m_is_running.store(false, std::memory_order_release);
         });
     } catch (const std::exception& e) {
@@ -190,6 +199,10 @@ void Thread::request_stop() noexcept TANH_NONBLOCKING_FUNCTION {
 
 void Thread::join() {
     if (m_impl->m_thread.joinable()) { m_impl->m_thread.join(); }
+}
+
+void Thread::detach() {
+    if (m_impl->m_thread.joinable()) { m_impl->m_thread.detach(); }
 }
 
 bool Thread::should_stop() const noexcept TANH_NONBLOCKING_FUNCTION {

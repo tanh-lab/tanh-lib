@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <memory>
 #include <type_traits>
 
 namespace thl::core {
@@ -174,6 +175,120 @@ private:
     alignas(k_cache_line) std::atomic<std::size_t> m_enqueue_pos{0};
     alignas(k_cache_line) std::atomic<std::size_t> m_dequeue_pos{0};
     alignas(k_cache_line) std::array<Cell, Capacity> m_cells{};
+};
+
+/// Rounds `capacity` up to the next power of two, with a floor of 2.
+constexpr std::size_t round_up_pow2(std::size_t capacity) noexcept {
+    std::size_t n = 2;
+    while (n < capacity) { n <<= 1U; }
+    return n;
+}
+
+/**
+ * LockFreeQueue with the capacity chosen at construction.
+ *
+ * Same algorithm and guarantees as LockFreeQueue, but the slots are
+ * allocated once in the constructor (never on the push/pop paths), so the
+ * capacity can come from a runtime configuration. The requested capacity is
+ * rounded up to a power of two (minimum 2). Not constant-initialisable; for
+ * a namespace-scope queue that must be ready during static initialisation
+ * use LockFreeQueue.
+ */
+template <typename T>
+class DynamicLockFreeQueue {
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "DynamicLockFreeQueue requires a trivially copyable T");
+    static_assert(std::is_nothrow_default_constructible_v<T>,
+                  "DynamicLockFreeQueue requires a nothrow default constructible T");
+
+public:
+    using value_type = T;
+
+    explicit DynamicLockFreeQueue(std::size_t capacity)
+        : m_mask(round_up_pow2(capacity) - 1), m_cells(new Cell[m_mask + 1]) {}  // NOLINT(modernize-avoid-c-arrays)
+                                                                                 // sized at runtime
+
+    DynamicLockFreeQueue(const DynamicLockFreeQueue&) = delete;
+    DynamicLockFreeQueue& operator=(const DynamicLockFreeQueue&) = delete;
+    DynamicLockFreeQueue(DynamicLockFreeQueue&&) = delete;
+    DynamicLockFreeQueue& operator=(DynamicLockFreeQueue&&) = delete;
+    ~DynamicLockFreeQueue() = default;
+
+    std::size_t capacity() const noexcept { return m_mask + 1; }
+
+    bool try_push(const T& item) noexcept TANH_NONBLOCKING_FUNCTION {
+        std::size_t pos = m_enqueue_pos.load(std::memory_order_relaxed);
+        Cell* cell = nullptr;
+        for (;;) {
+            const std::size_t idx = pos & m_mask;
+            cell = &m_cells[idx];
+            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire) + idx;
+            const auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos);
+            if (diff == 0) {
+                if (m_enqueue_pos.compare_exchange_weak(pos,
+                                                        pos + 1,
+                                                        std::memory_order_relaxed,
+                                                        std::memory_order_relaxed)) {
+                    break;
+                }
+            } else if (diff < 0) {
+                return false;  // full
+            } else {
+                pos = m_enqueue_pos.load(std::memory_order_relaxed);
+            }
+        }
+        cell->m_value = item;
+        cell->m_seq.store(pos + 1 - (pos & m_mask), std::memory_order_release);
+        return true;
+    }
+
+    bool try_pop(T& out) noexcept TANH_NONBLOCKING_FUNCTION {
+        std::size_t pos = m_dequeue_pos.load(std::memory_order_relaxed);
+        Cell* cell = nullptr;
+        for (;;) {
+            const std::size_t idx = pos & m_mask;
+            cell = &m_cells[idx];
+            const std::size_t seq = cell->m_seq.load(std::memory_order_acquire) + idx;
+            const auto diff =
+                static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos + 1);
+            if (diff == 0) {
+                if (m_dequeue_pos.compare_exchange_weak(pos,
+                                                        pos + 1,
+                                                        std::memory_order_relaxed,
+                                                        std::memory_order_relaxed)) {
+                    break;
+                }
+            } else if (diff < 0) {
+                return false;  // empty
+            } else {
+                pos = m_dequeue_pos.load(std::memory_order_relaxed);
+            }
+        }
+        out = cell->m_value;
+        cell->m_seq.store(pos + m_mask + 1 - (pos & m_mask), std::memory_order_release);
+        return true;
+    }
+
+    std::size_t size_approx() const noexcept TANH_NONBLOCKING_FUNCTION {
+        const std::size_t head = m_dequeue_pos.load(std::memory_order_relaxed);
+        const std::size_t tail = m_enqueue_pos.load(std::memory_order_relaxed);
+        return tail >= head ? tail - head : 0;
+    }
+
+    bool empty_approx() const noexcept TANH_NONBLOCKING_FUNCTION { return size_approx() == 0; }
+
+private:
+    static constexpr std::size_t k_cache_line = 64;
+
+    struct Cell {
+        std::atomic<std::size_t> m_seq{0};
+        T m_value{};
+    };
+
+    alignas(k_cache_line) std::atomic<std::size_t> m_enqueue_pos{0};
+    std::size_t m_mask;
+    std::unique_ptr<Cell[]> m_cells;  // NOLINT(modernize-avoid-c-arrays) sized at runtime
+    alignas(k_cache_line) std::atomic<std::size_t> m_dequeue_pos{0};
 };
 
 }  // namespace thl::core

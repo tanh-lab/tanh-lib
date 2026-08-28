@@ -2,6 +2,7 @@
 #include <tanh/core/Logger.h>
 #include <tanh/core/RtFormat.h>
 #include <tanh/core/threading/LockFreeQueue.h>
+#include <tanh/core/threading/Thread.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -18,8 +19,10 @@
 #include <fstream>
 #include <iomanip>
 #include <ios>
+#include <memory>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -69,9 +72,11 @@ bool should_log_compiled(std::uint32_t level) {
 
 std::atomic<std::uint32_t> g_runtime_level{static_cast<std::uint32_t>(LogLevel::Debug)};
 std::atomic<std::uint64_t> g_next_seq{1};
+// Default-queue consumer state, constant-initialised so the real-time producers
+// can read it before the default queue exists (it is constructed on the first
+// non-real-time call: start(), enable_manual_drain(), drain()).
 std::atomic<bool> g_rt_running{false};
 std::atomic<bool> g_rt_manual_drain{false};
-std::atomic<std::uint64_t> g_rt_dropped{0};
 
 bool passes_runtime_level(std::uint32_t level) TANH_NONBLOCKING_FUNCTION {
     return clamp_level(level) <= g_runtime_level.load(std::memory_order_relaxed);
@@ -85,9 +90,6 @@ struct RtRecord {
     std::array<char, rt::k_group_capacity> m_group{};
     std::array<char, rt::k_message_capacity> m_message{};
 };
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) intentional: RT path
-constinit thl::core::LockFreeQueue<RtRecord, rt::k_queue_capacity> g_rt_queue;
 
 /// Bounded copy of a C string into a fixed array (always NUL-terminated).
 template <std::size_t N>
@@ -367,11 +369,10 @@ struct LoggerState {
     std::string m_file_path;
     std::ofstream m_file_stream;
 
-    // Real-time drain thread. Protected by m_rt_mutex; g_rt_running is the
-    // lock-free view producers read.
+    // Default real-time drain thread. Protected by m_rt_mutex; g_rt_running is
+    // the lock-free view producers read.
     std::mutex m_rt_mutex;
-    std::condition_variable m_rt_cv;
-    std::thread m_rt_thread;
+    std::unique_ptr<rt::DrainThread> m_rt_drain;
     std::atomic<bool> m_rt_enabled{true};
     std::atomic<std::uint32_t> m_rt_drain_interval_ms{10};
 };
@@ -539,89 +540,62 @@ LogRecord to_log_record(const RtRecord& rt_record) {
     return record;
 }
 
-std::size_t drain_rt_queue() {
-    std::size_t delivered = 0;
-    RtRecord rt_record;
-    while (g_rt_queue.try_pop(rt_record)) {
-        dispatch_record(to_log_record(rt_record));
-        ++delivered;
-    }
-
-    const std::uint64_t dropped = g_rt_dropped.exchange(0, std::memory_order_relaxed);
-    if (dropped > 0) {
-        std::array<char, 96> msg{};
-        std::snprintf(msg.data(),
-                      msg.size(),
-                      "%llu real-time log message(s) dropped (queue full)",
-                      static_cast<unsigned long long>(dropped));
-        dispatch_record(make_record(static_cast<std::uint32_t>(LogLevel::Warning),
-                                    "rt",
-                                    "thl.logger",
-                                    msg.data()));
-    }
-    return delivered;
+/// The process-wide default queue. Constructed on first use from a non-real-time
+/// call; producers never reach it before g_rt_running / g_rt_manual_drain is set,
+/// which only those calls do.
+rt::Queue& default_queue() {
+    // Never destroyed: LoggerState's destructor (which may run after this
+    // object would have been torn down, being constructed earlier) still drains
+    // it, and a real-time producer during static teardown must find a valid
+    // object. Same lifetime the old constinit global had.
+    static auto* const k_instance = new rt::Queue(rt::k_queue_capacity);
+    return *k_instance;
 }
 
-void drain_thread_main() {
-    auto& s = state();
-    std::unique_lock lock(s.m_rt_mutex);
-    while (g_rt_running.load(std::memory_order_relaxed)) {
-        lock.unlock();
-        drain_rt_queue();
-        lock.lock();
-        const auto interval =
-            std::chrono::milliseconds(s.m_rt_drain_interval_ms.load(std::memory_order_relaxed));
-        s.m_rt_cv.wait_for(lock, interval, [] {
-            return !g_rt_running.load(std::memory_order_relaxed);
-        });
-    }
+void update_default_accepting() {
+    default_queue().set_accepting(g_rt_running.load(std::memory_order_relaxed) ||
+                                  g_rt_manual_drain.load(std::memory_order_relaxed));
 }
 
-/// `only_if_enabled`: the lazy start re-checks m_rt_enabled under m_rt_mutex,
-/// so a concurrent set_config(rt_enabled = false) cannot be undone by a
-/// log() call that read the flag just before it was cleared.
+/// `only_if_enabled`: set_config() starts the thread only when the config says so.
 void start_drain_thread(bool only_if_enabled) {
     auto& s = state();
     std::scoped_lock const lock(s.m_rt_mutex);
-    if (s.m_rt_thread.joinable()) { return; }
+    if (s.m_rt_drain) { return; }
     if (logging_shutdown_started()) { return; }
     if (only_if_enabled && !s.m_rt_enabled.load(std::memory_order_relaxed)) { return; }
-    g_rt_running.store(true, std::memory_order_release);
     try {
-        s.m_rt_thread = std::thread(drain_thread_main);
+        rt::DrainThread::Options options;
+        options.m_interval_ms = s.m_rt_drain_interval_ms.load(std::memory_order_relaxed);
+        s.m_rt_drain = std::make_unique<rt::DrainThread>(default_queue(), options);
     } catch (...) {
-        g_rt_running.store(false, std::memory_order_release);
         write_to_stderr_fallback(static_cast<std::uint32_t>(LogLevel::Error),
                                  "native",
                                  "thl.logger",
                                  "failed to start real-time log drain thread");
+        return;
     }
+    g_rt_running.store(true, std::memory_order_release);
+    update_default_accepting();
 }
 
 void stop_drain_thread() {
     auto& s = state();
-    std::thread to_join;
+    std::unique_ptr<rt::DrainThread> to_stop;
     {
         std::scoped_lock const lock(s.m_rt_mutex);
+        to_stop.swap(s.m_rt_drain);
         g_rt_running.store(false, std::memory_order_release);
-        s.m_rt_cv.notify_all();
-        to_join.swap(s.m_rt_thread);
+        update_default_accepting();
     }
-    if (to_join.joinable()) {
-        if (to_join.get_id() == std::this_thread::get_id()) {
-            to_join.detach();  // stop() called from inside a sink callback
-        } else {
-            to_join.join();
-        }
+    if (!to_stop) { return; }
+    if (to_stop->is_current_thread()) {
+        // stop() called from inside a sink callback on the drain thread: it cannot
+        // join itself. Let it run out; the flag is already down.
+        to_stop.release();  // NOLINT(bugprone-unused-return-value) intentional leak
+        return;
     }
-    // Deliver whatever arrived after the thread's last pass.
-    drain_rt_queue();
-}
-
-void ensure_drain_thread_if_enabled() {
-    if (g_rt_running.load(std::memory_order_acquire)) { return; }
-    if (!state().m_rt_enabled.load(std::memory_order_relaxed)) { return; }
-    start_drain_thread(true);
+    to_stop.reset();  // joins and delivers what arrived after the thread's last pass
 }
 
 }  // namespace
@@ -650,18 +624,31 @@ bool is_enabled(LogLevel level) TANH_NONBLOCKING_FUNCTION {
 
 namespace rt {
 
-namespace {
+// ---------------------------------------------------------------------------
+// Queue
+// ---------------------------------------------------------------------------
 
-Status enqueue(std::uint32_t level,
-               const char* group,
-               const char* fmt,
-               va_list args,
-               bool preformatted) noexcept TANH_NONBLOCKING_FUNCTION {
-    if (!should_log_compiled(level) || !passes_runtime_level(level)) { return Status::Filtered; }
-    if (!g_rt_running.load(std::memory_order_relaxed) &&
-        !g_rt_manual_drain.load(std::memory_order_relaxed)) {
-        return Status::NoConsumer;
+struct Queue::Impl {
+    explicit Impl(std::size_t capacity) : m_queue(capacity) {}
+
+    thl::core::DynamicLockFreeQueue<RtRecord> m_queue;
+    std::atomic<std::uint64_t> m_dropped{0};
+    std::atomic<bool> m_accepting{true};
+};
+
+Queue::Queue(std::size_t capacity) : m_impl(std::make_unique<Impl>(capacity)) {}
+
+Queue::~Queue() = default;
+
+Status Queue::vlogf(LogLevel level,
+                    const char* group,
+                    const char* fmt,
+                    va_list args) noexcept TANH_NONBLOCKING_FUNCTION {
+    const auto numeric_level = static_cast<std::uint32_t>(level);
+    if (!should_log_compiled(numeric_level) || !passes_runtime_level(numeric_level)) {
+        return Status::Filtered;
     }
+    if (!m_impl->m_accepting.load(std::memory_order_relaxed)) { return Status::NoConsumer; }
 
     RtRecord record;
     record.m_seq = g_next_seq.fetch_add(1, std::memory_order_relaxed);
@@ -672,36 +659,171 @@ Status enqueue(std::uint32_t level,
         static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                        std::chrono::steady_clock::now().time_since_epoch())
                                        .count());
-    record.m_level = clamp_level(level);
+    record.m_level = clamp_level(numeric_level);
     copy_bounded(record.m_group, group);
 
     bool truncated = false;
-    if (preformatted) {
-        copy_bounded(record.m_message, fmt);
-        truncated = fmt != nullptr && std::strlen(fmt) >= k_message_capacity;
+    if (fmt == nullptr) {
+        record.m_message[0] = '\0';
     } else {
         const int n =
             thl::core::rt_vsnprintf(record.m_message.data(), k_message_capacity, fmt, args);
         truncated = n < 0 || std::cmp_greater_equal(n, k_message_capacity);
     }
 
-    if (!g_rt_queue.try_push(record)) {
-        g_rt_dropped.fetch_add(1, std::memory_order_relaxed);
+    if (!m_impl->m_queue.try_push(record)) {
+        m_impl->m_dropped.fetch_add(1, std::memory_order_relaxed);
         return Status::QueueFull;
     }
     return truncated ? Status::Truncated : Status::Ok;
 }
 
-}  // namespace
+// NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+Status Queue::logf(LogLevel level,
+                   const char* group,
+                   const char* fmt,
+                   ...) noexcept TANH_NONBLOCKING_FUNCTION {
+    va_list args;
+    va_start(args, fmt);
+    const Status status = vlogf(level, group, fmt, args);
+    va_end(args);
+    return status;
+}
+
+Status Queue::log(LogLevel level,
+                  const char* group,
+                  const char* message) noexcept TANH_NONBLOCKING_FUNCTION {
+    // "%s" through the RT formatter keeps one code path; the message is bounded
+    // by the record either way.
+    return logf(level, group, "%s", message == nullptr ? "" : message);
+}
+
+std::size_t Queue::drain() {
+    std::size_t delivered = 0;
+    RtRecord rt_record;
+    while (m_impl->m_queue.try_pop(rt_record)) {
+        dispatch_record(to_log_record(rt_record));
+        ++delivered;
+    }
+
+    const std::uint64_t dropped = m_impl->m_dropped.exchange(0, std::memory_order_relaxed);
+    if (dropped > 0) {
+        std::array<char, 96> msg{};
+        std::snprintf(msg.data(),
+                      msg.size(),
+                      "%llu real-time log message(s) dropped (queue full)",
+                      static_cast<unsigned long long>(dropped));
+        dispatch_record(make_record(static_cast<std::uint32_t>(LogLevel::Warning),
+                                    "rt",
+                                    "thl.logger",
+                                    msg.data()));
+    }
+    return delivered;
+}
+
+void Queue::set_accepting(bool accepting) noexcept {
+    m_impl->m_accepting.store(accepting, std::memory_order_release);
+}
+
+bool Queue::is_accepting() const noexcept TANH_NONBLOCKING_FUNCTION {
+    return m_impl->m_accepting.load(std::memory_order_relaxed);
+}
+
+std::uint64_t Queue::dropped_count() const noexcept TANH_NONBLOCKING_FUNCTION {
+    return m_impl->m_dropped.load(std::memory_order_relaxed);
+}
+
+std::size_t Queue::capacity() const noexcept {
+    return m_impl->m_queue.capacity();
+}
+
+// ---------------------------------------------------------------------------
+// DrainThread
+// ---------------------------------------------------------------------------
+
+struct DrainThread::Impl {
+    explicit Impl(Queue& queue) : m_queue(queue) {}
+
+    Queue& m_queue;
+    thl::core::Thread m_thread;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::atomic<std::uint32_t> m_interval_ms{10};
+    std::atomic<std::thread::id> m_thread_id{};
+};
+
+DrainThread::DrainThread(Queue& queue) : DrainThread(queue, Options{}) {}
+
+DrainThread::DrainThread(Queue& queue, const Options& options)
+    : m_impl(std::make_unique<Impl>(queue)) {
+    m_impl->m_interval_ms.store(options.m_interval_ms == 0 ? 1U : options.m_interval_ms,
+                                std::memory_order_relaxed);
+    thl::core::ThreadOptions thread_options;
+    thread_options.m_priority = options.m_priority;
+    thread_options.m_name = options.m_name;
+    Impl* impl = m_impl.get();
+    const bool started =
+        m_impl->m_thread.start(thread_options, [impl](const thl::core::Thread& self) {
+            impl->m_thread_id.store(std::this_thread::get_id(), std::memory_order_relaxed);
+            std::unique_lock lock(impl->m_mutex);
+            while (!self.should_stop()) {
+                lock.unlock();
+                impl->m_queue.drain();
+                lock.lock();
+                const auto interval =
+                    std::chrono::milliseconds(impl->m_interval_ms.load(std::memory_order_relaxed));
+                impl->m_cv.wait_for(lock, interval, [&self] { return self.should_stop(); });
+            }
+        });
+    if (!started) { throw std::runtime_error("thl::Logger::rt::DrainThread: thread refused"); }
+}
+
+DrainThread::~DrainThread() noexcept {
+    m_impl->m_thread.request_stop();
+    {
+        std::scoped_lock const lock(m_impl->m_mutex);
+        m_impl->m_cv.notify_all();
+    }
+    if (is_current_thread()) {
+        m_impl->m_thread.detach();
+        return;
+    }
+    m_impl->m_thread.join();
+    try {
+        m_impl->m_queue.drain();  // whatever arrived after the thread's last pass
+    } catch (...) {}              // NOLINT(bugprone-empty-catch) sinks already fell back to stderr
+}
+
+bool DrainThread::is_running() const noexcept TANH_NONBLOCKING_FUNCTION {
+    return m_impl->m_thread.is_running();
+}
+
+bool DrainThread::is_current_thread() const noexcept {
+    return m_impl->m_thread_id.load(std::memory_order_relaxed) == std::this_thread::get_id();
+}
+
+void DrainThread::set_interval_ms(std::uint32_t interval_ms) noexcept {
+    m_impl->m_interval_ms.store(interval_ms == 0 ? 1U : interval_ms, std::memory_order_relaxed);
+}
+
+// ---------------------------------------------------------------------------
+// Process-wide default queue
+// ---------------------------------------------------------------------------
 
 // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
 Status logf(LogLevel level,
             const char* group,
             const char* fmt,
             ...) noexcept TANH_NONBLOCKING_FUNCTION {
+    // Checked before touching default_queue(): its construction is not real-time
+    // safe and happens on the non-real-time call that raised one of these flags.
+    if (!g_rt_running.load(std::memory_order_relaxed) &&
+        !g_rt_manual_drain.load(std::memory_order_relaxed)) {
+        return Status::NoConsumer;
+    }
     va_list args;
     va_start(args, fmt);
-    const Status status = enqueue(static_cast<std::uint32_t>(level), group, fmt, args, false);
+    const Status status = default_queue().vlogf(level, group, fmt, args);
     va_end(args);
     return status;
 }
@@ -709,22 +831,20 @@ Status logf(LogLevel level,
 Status log(LogLevel level,
            const char* group,
            const char* message) noexcept TANH_NONBLOCKING_FUNCTION {
-    va_list unused{};
-    return enqueue(static_cast<std::uint32_t>(level), group, message, unused, true);
+    if (!g_rt_running.load(std::memory_order_relaxed) &&
+        !g_rt_manual_drain.load(std::memory_order_relaxed)) {
+        return Status::NoConsumer;
+    }
+    return default_queue().log(level, group, message);
 }
 
 void start() {
-    // After LoggerState's destructor ran, state() is a dead object: nothing to start.
     if (logging_shutdown_started()) { return; }
-    state().m_rt_enabled.store(true, std::memory_order_relaxed);
     start_drain_thread(false);
 }
 
 void stop() {
-    // LoggerState's destructor already stopped and joined the thread; a client's
-    // later static destructor or unload hook calling stop() must not touch it.
     if (logging_shutdown_started()) { return; }
-    state().m_rt_enabled.store(false, std::memory_order_relaxed);
     stop_drain_thread();
 }
 
@@ -733,7 +853,8 @@ bool is_running() noexcept TANH_NONBLOCKING_FUNCTION {
 }
 
 std::size_t drain() {
-    return drain_rt_queue();
+    if (logging_shutdown_started()) { return 0; }
+    return default_queue().drain();
 }
 
 void enable_manual_drain(bool enabled) {
@@ -741,10 +862,15 @@ void enable_manual_drain(bool enabled) {
     auto& s = state();
     std::scoped_lock const lock(s.m_rt_mutex);
     g_rt_manual_drain.store(enabled, std::memory_order_release);
+    update_default_accepting();
 }
 
 std::uint64_t dropped_count() noexcept TANH_NONBLOCKING_FUNCTION {
-    return g_rt_dropped.load(std::memory_order_relaxed);
+    if (!g_rt_running.load(std::memory_order_relaxed) &&
+        !g_rt_manual_drain.load(std::memory_order_relaxed)) {
+        return 0;
+    }
+    return default_queue().dropped_count();
 }
 
 }  // namespace rt
@@ -787,6 +913,12 @@ void set_config(const LoggerConfig& config) {
     // Replay buffered records into the file sink now that the path is set.
     for (const auto& record : file_buffered) { emit_file(record); }
 
+    {
+        std::scoped_lock const lock(s.m_rt_mutex);
+        if (s.m_rt_drain) {
+            s.m_rt_drain->set_interval_ms(s.m_rt_drain_interval_ms.load(std::memory_order_relaxed));
+        }
+    }
     if (config.m_rt_enabled) {
         start_drain_thread(true);
     } else {
@@ -819,7 +951,6 @@ LoggerConfig get_config() {
 // ---------------------------------------------------------------------------
 
 void set_callback(const Callback& cb) {
-    ensure_drain_thread_if_enabled();
     std::vector<LogRecord> buffered;
     {
         auto& s = state();
@@ -889,7 +1020,6 @@ void log_with_source(LogLevel level, const char* source, const char* group, cons
         return;
     }
     if (!passes_runtime_level(numeric_level)) { return; }
-    ensure_drain_thread_if_enabled();
 
     try {
         dispatch_record(make_record(numeric_level, source, group, message));
