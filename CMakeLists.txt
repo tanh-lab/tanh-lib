@@ -137,13 +137,21 @@ if (APPLE)
 	# For iOS builds, use 14.0 as minimum (required for SwiftUI @main)
 	# For macOS builds, use 12.0 as minimum
 	if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET LESS "14.0")
+		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 			set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum iOS deployment version")
+		elseif(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "14.0")
+			message(WARNING "tanh-lib requires iOS 14.0 or newer; CMAKE_OSX_DEPLOYMENT_TARGET is ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 		endif()
 		message(STATUS "The minimum iOS version is set to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 	else()
-		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET LESS "12.0")
-			set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version" FORCE)
+		# Only pick a default when nobody set one. Never FORCE it: as a
+		# sub-project (FetchContent/add_subdirectory) the cache entry would
+		# silently raise the embedding project's own minimum, since the
+		# variable is read at generate time for every target in the build.
+		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+			set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
+		elseif(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "12.0")
+			message(WARNING "tanh-lib requires macOS 12.0 or newer; CMAKE_OSX_DEPLOYMENT_TARGET is ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 		endif()
 		message(STATUS "The minimum macOS version is set to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 	endif()
@@ -163,7 +171,7 @@ if(TANH_OPERATING_SYSTEM STREQUAL "macOS" AND NOT CMAKE_OSX_SYSROOT)
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
     if(_osx_sysroot)
-        set(CMAKE_OSX_SYSROOT "${_osx_sysroot}" CACHE PATH "macOS SDK path" FORCE)
+        set(CMAKE_OSX_SYSROOT "${_osx_sysroot}" CACHE PATH "macOS SDK path")
     endif()
 endif()
 
