@@ -8,6 +8,7 @@
 #include "core/Dispatcher.h"
 #include "core/Exports.h"
 #include "core/Logger.h"
+#include "core/threading/Thread.h"
 #include "core/MemoryBlock.h"
 #include "core/RingBuffer.h"
 #include "core/RtFormat.h"
