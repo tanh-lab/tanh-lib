@@ -714,11 +714,16 @@ Status log(LogLevel level,
 }
 
 void start() {
+    // After LoggerState's destructor ran, state() is a dead object: nothing to start.
+    if (logging_shutdown_started()) { return; }
     state().m_rt_enabled.store(true, std::memory_order_relaxed);
     start_drain_thread(false);
 }
 
 void stop() {
+    // LoggerState's destructor already stopped and joined the thread; a client's
+    // later static destructor or unload hook calling stop() must not touch it.
+    if (logging_shutdown_started()) { return; }
     state().m_rt_enabled.store(false, std::memory_order_relaxed);
     stop_drain_thread();
 }
@@ -732,6 +737,7 @@ std::size_t drain() {
 }
 
 void enable_manual_drain(bool enabled) {
+    if (logging_shutdown_started()) { return; }
     auto& s = state();
     std::scoped_lock const lock(s.m_rt_mutex);
     g_rt_manual_drain.store(enabled, std::memory_order_release);

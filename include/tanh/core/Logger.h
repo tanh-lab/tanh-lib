@@ -218,12 +218,16 @@ TANH_API Status log(LogLevel level,
                     const char* group,
                     const char* message) noexcept TANH_NONBLOCKING_FUNCTION;
 
-/// Start the drain thread if it is not running. Not real-time safe.
+/// Start the drain thread if it is not running. Not real-time safe. A no-op
+/// once the logger's static state has been torn down (process exit, library
+/// unload), so it may be called from a client's own static destructor.
 TANH_API void start();
 
 /// Stop and join the drain thread, flushing what is queued. Not real-time
 /// safe. After this, logf() returns NoConsumer until start() is called
-/// again or the host pumps drain() itself.
+/// again or the host pumps drain() itself. A no-op once the logger's static
+/// state has been torn down (its destructor stopped the thread already), so
+/// it may be called from a client's own static destructor or unload hook.
 TANH_API void stop();
 
 /// True while the drain thread is running.
@@ -247,3 +251,30 @@ TANH_API std::uint64_t dropped_count() noexcept TANH_NONBLOCKING_FUNCTION;
 }  // namespace rt
 
 }  // namespace thl::Logger
+
+/// @name Convenience macros
+/// @brief printf-style shorthands over thl::Logger::logf (synchronous) and
+///        thl::Logger::rt::logf (real-time safe): `THL_LOG_ERROR(group, fmt, ...)`,
+///        `THL_LOG_RT_WARNING(group, fmt, ...)`. Define THL_LOGGING_DISABLED to
+///        compile every use out (arguments are not evaluated).
+/// @{
+#ifdef THL_LOGGING_DISABLED
+#define THL_LOG_IMPL(level, group, ...) static_cast<void>(0)
+#define THL_LOG_RT_IMPL(level, group, ...) static_cast<void>(0)
+#else
+#define THL_LOG_IMPL(level, group, ...) \
+    ::thl::Logger::logf(::thl::Logger::LogLevel::level, group, __VA_ARGS__)
+#define THL_LOG_RT_IMPL(level, group, ...) \
+    static_cast<void>(::thl::Logger::rt::logf(::thl::Logger::LogLevel::level, group, __VA_ARGS__))
+#endif
+
+#define THL_LOG_DEBUG(group, ...) THL_LOG_IMPL(Debug, group, __VA_ARGS__)
+#define THL_LOG_INFO(group, ...) THL_LOG_IMPL(Info, group, __VA_ARGS__)
+#define THL_LOG_WARNING(group, ...) THL_LOG_IMPL(Warning, group, __VA_ARGS__)
+#define THL_LOG_ERROR(group, ...) THL_LOG_IMPL(Error, group, __VA_ARGS__)
+
+#define THL_LOG_RT_DEBUG(group, ...) THL_LOG_RT_IMPL(Debug, group, __VA_ARGS__)
+#define THL_LOG_RT_INFO(group, ...) THL_LOG_RT_IMPL(Info, group, __VA_ARGS__)
+#define THL_LOG_RT_WARNING(group, ...) THL_LOG_RT_IMPL(Warning, group, __VA_ARGS__)
+#define THL_LOG_RT_ERROR(group, ...) THL_LOG_RT_IMPL(Error, group, __VA_ARGS__)
+/// @}

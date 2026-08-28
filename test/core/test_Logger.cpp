@@ -409,3 +409,34 @@ TEST_F(LoggerFixture, RtLogIsNonblockingEvenWhenQueueFull) {
     rt::enable_manual_drain(false);
     rt::start();
 }
+
+// ---------------------------------------------------------------------------
+// Convenience macros
+// ---------------------------------------------------------------------------
+
+TEST_F(LoggerFixture, MacrosForwardToSyncAndRtPaths) {
+    THL_LOG_WARNING("macro", "sync %d", 1);
+    THL_LOG_RT_ERROR("macro", "rt %s", "two");
+    ASSERT_TRUE(wait_for_records(2));
+    const auto got = records();
+    ASSERT_EQ(got.size(), 2U);
+    EXPECT_EQ(got[0].m_message, "sync 1");
+    EXPECT_EQ(got[0].m_group, "macro");
+    EXPECT_EQ(got[0].m_level, static_cast<std::uint32_t>(LogLevel::Warning));
+    EXPECT_EQ(got[0].m_source, "native");
+    EXPECT_EQ(got[1].m_message, "rt two");
+    EXPECT_EQ(got[1].m_level, static_cast<std::uint32_t>(LogLevel::Error));
+    EXPECT_EQ(got[1].m_source, "rt");
+}
+
+TEST_F(LoggerFixture, MacrosRespectRuntimeLevel) {
+    thl::Logger::set_level(LogLevel::Error);
+    THL_LOG_INFO("macro", "filtered");
+    THL_LOG_RT_WARNING("macro", "filtered too");
+    THL_LOG_ERROR("macro", "kept");
+    ASSERT_TRUE(wait_for_records(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    const auto got = records();
+    ASSERT_EQ(got.size(), 1U);
+    EXPECT_EQ(got[0].m_message, "kept");
+}
