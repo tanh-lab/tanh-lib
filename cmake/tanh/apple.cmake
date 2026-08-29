@@ -3,9 +3,10 @@
 #
 #   tanh_apple_deployment_target([MACOS <ver>] [IOS <ver>])
 #     Sets CMAKE_OSX_DEPLOYMENT_TARGET (cache — the variable is read at generate time
-#     for every target, which is why it must live in the cache) only when nobody set
-#     it, never FORCE: as a sub-project the FORCE would silently raise the embedding
-#     project's own minimum. Reports a lower value as STATUS, not as an error.
+#     for every target, which is why it must live in the cache) only when it is empty,
+#     never over a value somebody chose: as a sub-project that would silently raise
+#     the embedding project's own minimum. Reports a lower value as STATUS, not as an
+#     error.
 #   tanh_apple_sysroot_from_xcrun()
 #     macOS with a non-Apple clang: CMake sets no sysroot, so the compile database
 #     lacks -isysroot and clang-tidy cannot find system headers. Fills CMAKE_OSX_SYSROOT
@@ -45,7 +46,10 @@ function(tanh_apple_deployment_target)
         return()
     endif()
     if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-        set(CMAKE_OSX_DEPLOYMENT_TARGET "${_min}" CACHE STRING "Minimum ${_what} deployment version")
+        # CMake's Darwin initialisation pre-creates the cache entry with an empty value,
+        # so a plain set(CACHE) would never take effect; FORCE here only ever replaces
+        # that empty value, never a version somebody chose.
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "${_min}" CACHE STRING "Minimum ${_what} deployment version" FORCE)
     elseif(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS _min)
         message(STATUS "${PROJECT_NAME} is built and tested for ${_what} >= ${_min}; CMAKE_OSX_DEPLOYMENT_TARGET is ${CMAKE_OSX_DEPLOYMENT_TARGET}")
     endif()
@@ -59,7 +63,9 @@ function(tanh_apple_sysroot_from_xcrun)
     execute_process(COMMAND xcrun --show-sdk-path
         OUTPUT_VARIABLE _sysroot OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
     if(_sysroot)
-        set(CMAKE_OSX_SYSROOT "${_sysroot}" CACHE PATH "macOS SDK path")
+        # Same as the deployment target: the cache entry pre-exists empty, so FORCE is
+        # needed to write it — and it only ever replaces an empty value.
+        set(CMAKE_OSX_SYSROOT "${_sysroot}" CACHE PATH "macOS SDK path" FORCE)
     endif()
 endfunction()
 
