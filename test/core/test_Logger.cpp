@@ -46,6 +46,12 @@ protected:
     }
 
     void TearDown() override {
+        // The drain thread invokes a *copy* of the callback outside the
+        // config mutex, so clear_callback() alone cannot stop a delivery that
+        // is already in flight — it would land in m_records while the fixture
+        // is being destroyed. Join the drain thread first; stop() flushes the
+        // leftovers synchronously while the fixture is still alive.
+        rt::stop();
         thl::Logger::clear_callback();
         thl::Logger::set_level(LogLevel::Debug);
         thl::Logger::LoggerConfig config;
