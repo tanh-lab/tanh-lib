@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "tanh/core/Exports.h"
 #include "tanh/core/RtFormat.h"
+#include "tanh/core/threading/Thread.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 /// @namespace thl::Logger
@@ -60,9 +63,11 @@ struct LoggerConfig {
     /// replayed synchronously.  Set to 0 to disable buffering.
     std::size_t m_early_buffer_capacity = 64;
 
-    /// Start the real-time drain thread (see thl::Logger::rt) when this
-    /// config is applied. When false, rt::logf() reports NoConsumer until
-    /// rt::start() is called explicitly or the host pumps rt::drain().
+    /// Start the process-wide real-time drain thread (see thl::Logger::rt)
+    /// when this config is applied, and stop it when applied with false. The
+    /// thread is never started implicitly: without set_config() or
+    /// rt::start(), rt::logf() reports NoConsumer unless the host pumps
+    /// rt::drain() itself (rt::enable_manual_drain()).
     bool m_rt_enabled = true;
 
     /// Interval at which the drain thread flushes real-time records into the
@@ -154,24 +159,29 @@ TANH_API void debug(const char* group, const char* message);
 /// @namespace thl::Logger::rt
 /// @brief Real-time safe logging.
 ///
-/// `logf()` / `log()` may be called from any number of real-time threads
-/// concurrently. They never allocate, lock, or make system calls: the message
-/// is formatted into a fixed-size record on the caller's stack and pushed
-/// into a bounded lock-free queue. A background drain thread pops the queue
-/// every `LoggerConfig::m_rt_drain_interval_ms` and forwards each record to
-/// the regular sinks with `source = "rt"`, so real-time messages show up in
-/// the platform log, the file sink and the callback like any other record,
-/// a few milliseconds late.
+/// A rt::Queue is a bounded lock-free queue of fixed-size records: `logf()` /
+/// `log()` may be called from any number of real-time threads concurrently and
+/// never allocate, lock, or make system calls — the message is formatted on the
+/// caller's stack and pushed into a pre-allocated slot. Somebody must consume
+/// the queue: a rt::DrainThread (a low-priority thl::core::Thread that pops it
+/// every few milliseconds), or the owner calling `drain()` from its own loop.
+/// Records reach the regular sinks with `source = "rt"`.
+///
+/// Two ways to use it:
+/// - **Own a queue.** A library or host constructs a rt::Queue (capacity of its
+///   choosing) and, if it wants a thread, a rt::DrainThread over it; both live
+///   exactly as long as their owner decides, which is what a plugin that may be
+///   unloaded at any time needs. Nothing is shared with anyone else.
+/// - **The process-wide default.** The free functions below operate on one
+///   default queue and one optional drain thread, started by rt::start() or
+///   set_config(m_rt_enabled = true) and stopped by rt::stop() /
+///   set_config(m_rt_enabled = false). Never started implicitly.
 ///
 /// Guarantees and limits:
-/// - If the queue is full the message is dropped and counted; the drain
-///   thread emits a single "N messages dropped" warning afterwards.
+/// - If the queue is full the message is dropped and counted; the next drain
+///   emits a single "N messages dropped" warning.
 /// - Messages longer than `k_message_capacity - 1` are truncated.
-/// - If no consumer is running (drain thread stopped and nobody calls
-///   drain()), `logf()` returns NoConsumer immediately without formatting.
-///   The drain thread starts on the first non-real-time logger call
-///   (set_config(), set_callback(), log(), ...) or via start().
-/// - Sequence numbers are shared with the synchronous path, so RT and non-RT
+/// - Sequence numbers are shared by every queue and the synchronous path, so
 ///   records interleave in causal order in the file sink.
 namespace rt {
 
@@ -203,47 +213,175 @@ inline constexpr std::size_t k_queue_capacity = THL_LOG_RT_QUEUE_CAPACITY;
 static_assert((k_queue_capacity & (k_queue_capacity - 1)) == 0,
               "THL_LOG_RT_QUEUE_CAPACITY must be a power of two");
 
-/// printf-style real-time logging. Formatting uses thl::core::rt_vsnprintf,
-/// a locale-free subset of printf (see RtFormat.h for the supported
-/// conversions; the compiler checks the format string against the
-/// arguments where it can).
+/// @brief A bounded lock-free queue of log records with real-time safe producers.
+class TANH_API Queue {
+public:
+    /// @param capacity Number of records; rounded up to a power of two (min 2).
+    ///        The slots are allocated here and never again.
+    explicit Queue(std::size_t capacity = k_queue_capacity);
+    ~Queue();
+    Queue(const Queue&) = delete;
+    Queue& operator=(const Queue&) = delete;
+    Queue(Queue&&) = delete;
+    Queue& operator=(Queue&&) = delete;
+
+    /// printf-style real-time logging. Formatting uses thl::core::rt_vsnprintf,
+    /// a locale-free subset of printf (see RtFormat.h for the supported
+    /// conversions; the compiler checks the format string where it can).
+    // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+    Status logf(LogLevel level,
+                const char* group,
+                const char* fmt,
+                ...) noexcept TANH_NONBLOCKING_FUNCTION THL_PRINTF_FORMAT(4, 5);
+
+    /// va_list variant of logf().
+    Status vlogf(LogLevel level,
+                 const char* group,
+                 const char* fmt,
+                 va_list args) noexcept TANH_NONBLOCKING_FUNCTION;
+
+    /// Real-time logging of a preformatted message.
+    Status log(LogLevel level,
+               const char* group,
+               const char* message) noexcept TANH_NONBLOCKING_FUNCTION;
+
+    /// Forward every queued record to the sinks on the calling thread and
+    /// report drops. Returns the number of records delivered. Not real-time safe.
+    std::size_t drain();
+
+    /// While false, logf()/log() return NoConsumer without formatting. A queue
+    /// starts accepting; owners that have no consumer yet may switch it off.
+    void set_accepting(bool accepting) noexcept;
+    [[nodiscard]] bool is_accepting() const noexcept TANH_NONBLOCKING_FUNCTION;
+
+    /// Records dropped because the queue was full, since the last drain().
+    [[nodiscard]] std::uint64_t dropped_count() const noexcept TANH_NONBLOCKING_FUNCTION;
+
+    [[nodiscard]] std::size_t capacity() const noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
+/// @brief A thread that drains a Queue periodically.
+///
+/// Runs at thl::core::ThreadPriority::Low by default: below UI work, but not
+/// starved like a background class would be, so delivery latency stays bounded
+/// by the interval. The destructor stops the thread, joins it and drains what
+/// arrived after its last pass; it must not run on the drain thread itself
+/// (i.e. from inside a sink callback).
+class TANH_API DrainThread {
+public:
+    struct Options {
+        std::uint32_t m_interval_ms = 10;
+        thl::core::ThreadPriority m_priority = thl::core::ThreadPriority::Low;
+        const char* m_name = "thl-log-drain";
+    };
+
+    /// Starts the thread. `queue` must outlive this object.
+    explicit DrainThread(Queue& queue);
+    DrainThread(Queue& queue, const Options& options);
+    ~DrainThread() noexcept;
+    DrainThread(const DrainThread&) = delete;
+    DrainThread& operator=(const DrainThread&) = delete;
+    DrainThread(DrainThread&&) = delete;
+    DrainThread& operator=(DrainThread&&) = delete;
+
+    [[nodiscard]] bool is_running() const noexcept TANH_NONBLOCKING_FUNCTION;
+
+    /// True when called from the drain thread itself.
+    [[nodiscard]] bool is_current_thread() const noexcept;
+
+    /// Change the drain interval of the running thread.
+    void set_interval_ms(std::uint32_t interval_ms) noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
+/// @name Process-wide default queue
+/// The free functions operate on one default Queue (capacity
+/// THL_LOG_RT_QUEUE_CAPACITY) and, between start() and stop(), one DrainThread.
+/// @{
+
+/// printf-style real-time logging into the default queue (see Queue::logf).
 // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
 TANH_API Status logf(LogLevel level,
                      const char* group,
                      const char* fmt,
                      ...) noexcept TANH_NONBLOCKING_FUNCTION THL_PRINTF_FORMAT(3, 4);
 
-/// Real-time logging of a preformatted message.
+/// Real-time logging of a preformatted message into the default queue.
 TANH_API Status log(LogLevel level,
                     const char* group,
                     const char* message) noexcept TANH_NONBLOCKING_FUNCTION;
 
-/// Start the drain thread if it is not running. Not real-time safe.
+/// Start the default drain thread if it is not running. Not real-time safe.
+/// A no-op once the logger's static state has been torn down (process exit,
+/// library unload), so it may be called from a client's own static destructor.
 TANH_API void start();
 
-/// Stop and join the drain thread, flushing what is queued. Not real-time
-/// safe. After this, logf() returns NoConsumer until start() is called
-/// again or the host pumps drain() itself.
+/// Stop and join the default drain thread, flushing what is queued. Not
+/// real-time safe. Leaves LoggerConfig::m_rt_enabled untouched. After this,
+/// logf() returns NoConsumer until start() is called again or the host pumps
+/// drain() itself. A no-op once the logger's static state has been torn down
+/// (its destructor stopped the thread already), so it may be called from a
+/// client's own static destructor or unload hook.
 TANH_API void stop();
 
-/// True while the drain thread is running.
+/// True while the default drain thread is running.
 TANH_API bool is_running() noexcept TANH_NONBLOCKING_FUNCTION;
 
-/// Forward all queued records to the sinks on the calling thread. Returns
-/// the number of records delivered. Hosts that want to own every thread can
-/// call stop() and pump this from their own message loop; the queue accepts
-/// records whenever either the drain thread runs or `enable_manual_drain()`
-/// was set.
+/// Drain the default queue on the calling thread (see Queue::drain). Hosts
+/// that want to own every thread call stop() and pump this from their own
+/// message loop; the queue accepts records whenever either the drain thread
+/// runs or `enable_manual_drain()` was set.
 TANH_API std::size_t drain();
 
 /// Declare that the host will call drain() itself. Makes logf() enqueue even
 /// while the drain thread is stopped. Pass false to revert.
 TANH_API void enable_manual_drain(bool enabled);
 
-/// Number of messages dropped because the queue was full since the counter
-/// was last reported by drain(). Diagnostic; safe from any thread.
+/// Number of messages dropped from the default queue because it was full,
+/// since the counter was last reported by drain(). Safe from any thread.
 TANH_API std::uint64_t dropped_count() noexcept TANH_NONBLOCKING_FUNCTION;
+
+/// @}
 
 }  // namespace rt
 
 }  // namespace thl::Logger
+
+/// @name Convenience macros
+/// @brief printf-style shorthands over thl::Logger::logf (synchronous) and
+///        thl::Logger::rt::logf (real-time safe): `THL_LOG_ERROR(group, fmt, ...)`,
+///        `THL_LOG_RT_WARNING(group, fmt, ...)`. Define THL_LOGGING_DISABLED to
+///        compile every use out (arguments are not evaluated).
+/// @{
+#ifdef THL_LOGGING_DISABLED
+#define THL_LOG_IMPL(level, group, ...) static_cast<void>(0)
+#define THL_LOG_RT_IMPL(level, group, ...) static_cast<void>(0)
+#else
+// Gated on is_enabled() so a filtered call neither evaluates its arguments nor formats.
+#define THL_LOG_IMPL(level, group, ...)                                              \
+    do {                                                                             \
+        if (::thl::Logger::is_enabled(::thl::Logger::LogLevel::level)) {             \
+            ::thl::Logger::logf(::thl::Logger::LogLevel::level, group, __VA_ARGS__); \
+        }                                                                            \
+    } while (false)
+#define THL_LOG_RT_IMPL(level, group, ...) \
+    static_cast<void>(::thl::Logger::rt::logf(::thl::Logger::LogLevel::level, group, __VA_ARGS__))
+#endif
+
+#define THL_LOG_DEBUG(group, ...) THL_LOG_IMPL(Debug, group, __VA_ARGS__)
+#define THL_LOG_INFO(group, ...) THL_LOG_IMPL(Info, group, __VA_ARGS__)
+#define THL_LOG_WARNING(group, ...) THL_LOG_IMPL(Warning, group, __VA_ARGS__)
+#define THL_LOG_ERROR(group, ...) THL_LOG_IMPL(Error, group, __VA_ARGS__)
+
+#define THL_LOG_RT_DEBUG(group, ...) THL_LOG_RT_IMPL(Debug, group, __VA_ARGS__)
+#define THL_LOG_RT_INFO(group, ...) THL_LOG_RT_IMPL(Info, group, __VA_ARGS__)
+#define THL_LOG_RT_WARNING(group, ...) THL_LOG_RT_IMPL(Warning, group, __VA_ARGS__)
+#define THL_LOG_RT_ERROR(group, ...) THL_LOG_RT_IMPL(Error, group, __VA_ARGS__)
+/// @}

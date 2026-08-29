@@ -12,6 +12,7 @@
 #include "tanh/core/threading/LockFreeQueue.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
+using thl::core::DynamicLockFreeQueue;
 using thl::core::LockFreeQueue;
 
 namespace {
@@ -258,4 +259,65 @@ TEST(LockFreeQueue, OperationsAreNonblocking) {
     for (int i = 0; i < 200; ++i) { rt_producer(i); }
     rt_consumer();
     EXPECT_TRUE(g_rt_queue.empty_approx());
+}
+
+TEST(DynamicLockFreeQueue, RoundsCapacityUpToPowerOfTwo) {
+    EXPECT_EQ(DynamicLockFreeQueue<int>(1).capacity(), 2U);
+    EXPECT_EQ(DynamicLockFreeQueue<int>(5).capacity(), 8U);
+    EXPECT_EQ(DynamicLockFreeQueue<int>(512).capacity(), 512U);
+}
+
+TEST(DynamicLockFreeQueue, FifoAndFull) {
+    DynamicLockFreeQueue<int> q(4);
+    for (int i = 0; i < 4; ++i) { EXPECT_TRUE(q.try_push(i)); }
+    EXPECT_FALSE(q.try_push(99));
+    for (int i = 0; i < 4; ++i) {
+        int v = -1;
+        ASSERT_TRUE(q.try_pop(v));
+        EXPECT_EQ(v, i);
+    }
+    int v = 7;
+    EXPECT_FALSE(q.try_pop(v));
+    EXPECT_EQ(v, 7);
+}
+
+TEST(DynamicLockFreeQueue, WrapsAroundManyTimes) {
+    DynamicLockFreeQueue<int> q(4);
+    for (int round = 0; round < 1000; ++round) {
+        for (int i = 0; i < 3; ++i) { ASSERT_TRUE(q.try_push(round * 3 + i)); }
+        for (int i = 0; i < 3; ++i) {
+            int v = -1;
+            ASSERT_TRUE(q.try_pop(v));
+            EXPECT_EQ(v, round * 3 + i);
+        }
+    }
+}
+
+TEST(DynamicLockFreeQueue, ManyProducersOneConsumerNoLoss) {
+    DynamicLockFreeQueue<Item> q(64);
+    constexpr int k_producers = 4;
+    constexpr int k_per_producer = 5000;
+    std::atomic<bool> go{false};
+    std::vector<std::thread> producers;
+    for (int p = 0; p < k_producers; ++p) {
+        producers.emplace_back([&, p] {
+            while (!go.load()) {}
+            for (int i = 0; i < k_per_producer; ++i) {
+                Item item{p, i};
+                while (!q.try_push(item)) { std::this_thread::yield(); }
+            }
+        });
+    }
+    std::array<int, k_producers> next{};
+    int received = 0;
+    go = true;
+    while (received < k_producers * k_per_producer) {
+        Item item;
+        if (q.try_pop(item)) {
+            EXPECT_EQ(item.m_index, next[static_cast<std::size_t>(item.m_producer)]++);
+            ++received;
+        }
+    }
+    for (auto& t : producers) { t.join(); }
+    EXPECT_TRUE(q.empty_approx());
 }

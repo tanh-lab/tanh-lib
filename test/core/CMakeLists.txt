@@ -11,6 +11,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_LockFreeQueue.cpp
 	test_RtFormat.cpp
 	test_Logger.cpp
+	test_Thread.cpp
 	test_WavReader.cpp
 )
 
