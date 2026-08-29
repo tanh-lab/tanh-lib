@@ -361,10 +361,9 @@ BENCHMARK(bm_is_empty);
 
 // =============================================================================
 // Multi-threaded Read Benchmarks
-// NOTE: Uses manual threading to avoid deadlock in RCU thread-local cleanup
-// that occurs with benchmark::State::Threads(). Google Benchmark's worker
-// threads trigger RCU::ThreadRCUState destruction on exit, which can spin
-// indefinitely waiting for read_generation to reach 0.
+// NOTE: Uses manual threading instead of benchmark::State::Threads() so the
+// RCU reader registration (thl::detail::RcuThreadState, torn down at thread
+// exit) is under the benchmark's own control.
 // =============================================================================
 
 static void bm_concurrent_reads(benchmark::State& bm_state) {

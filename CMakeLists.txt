@@ -196,6 +196,7 @@ if(TANH_BUILD_CORE)
         src/core/Dispatcher.cpp
         src/core/Logger.cpp
         src/core/Thread.cpp
+        src/core/RCU.cpp
     )
     
     # enable position independent code because otherwise the static library cannot be linked into a shared library
