@@ -40,49 +40,12 @@ option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 # Get project version
 # ==============================================================================
 
-# Version: numeric part from the nearest tag (vX.Y.Z), descriptive part from
-# `git describe`. Without any tag the numeric version stays 0.0.0 (CMake and
-# find_package(tanh X.Y) need digits) and the full version carries the commit
-# hash instead, e.g. "0.0.0+g0fd2f8b" or "0.0.0+g0fd2f8b-dirty".
-set(PROJECT_VERSION_SHORT "0.0.0")
-set(PROJECT_VERSION_FULL "0.0.0")
-
-execute_process(COMMAND git describe --tags --abbrev=0
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                OUTPUT_VARIABLE GIT_VERSION_SHORT
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                ERROR_QUIET)
-
-if(GIT_VERSION_SHORT)
-    execute_process(COMMAND git describe --tags --dirty
-                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                    OUTPUT_VARIABLE GIT_VERSION_FULL
-                    OUTPUT_STRIP_TRAILING_WHITESPACE
-                    ERROR_QUIET)
-
-    # Remove the 'v' prefix if present
-    if(GIT_VERSION_SHORT MATCHES "^v(.+)$")
-        string(SUBSTRING ${GIT_VERSION_SHORT} 1 -1 PROJECT_VERSION_SHORT)
-    else()
-        set(PROJECT_VERSION_SHORT ${GIT_VERSION_SHORT})
-    endif()
-
-    if(GIT_VERSION_FULL MATCHES "^v(.+)$")
-        string(SUBSTRING ${GIT_VERSION_FULL} 1 -1 PROJECT_VERSION_FULL)
-    else()
-        set(PROJECT_VERSION_FULL ${GIT_VERSION_FULL})
-    endif()
-else()
-    # No tag reachable (or not a git checkout): fall back to the commit hash.
-    execute_process(COMMAND git describe --always --dirty
-                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                    OUTPUT_VARIABLE GIT_COMMIT_DESCRIPTION
-                    OUTPUT_STRIP_TRAILING_WHITESPACE
-                    ERROR_QUIET)
-    if(GIT_COMMIT_DESCRIPTION)
-        set(PROJECT_VERSION_FULL "${PROJECT_VERSION_SHORT}+g${GIT_COMMIT_DESCRIPTION}")
-    endif()
-endif()
+# Version from git (cmake/tanh/git-version.cmake): numeric part of the nearest tag
+# for CMake, the full `git describe` for humans; "0.0.0+g<hash>" without a tag.
+include(cmake/tanh/git-version.cmake)
+tanh_git_version(${CMAKE_CURRENT_SOURCE_DIR})
+set(PROJECT_VERSION_SHORT "${TANH_VERSION_SHORT}")
+set(PROJECT_VERSION_FULL "${TANH_VERSION_FULL}")
 
 # ==============================================================================
 # Setup the project
@@ -92,39 +55,19 @@ set (PROJECT_NAME tanh)
 
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_SHORT})
 
-# Exposed for downstream consumers (e.g. cosmos) that want to reuse our
-# shared CMake helpers like gtest-deps.cmake.
+# The shared CMake modules (cmake/tanh/, installed verbatim from a pinned tanh-tooling
+# release — never edit them here). TANH_CMAKE_DIR is kept for downstream projects
+# that include our helpers by path (cosmos-backend: gtest-deps.cmake forwarder).
 set(TANH_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake" CACHE INTERNAL
-    "Path to tanh-lib's shared CMake helpers")
+    "Path to tanh-lib's CMake helpers")
 
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    set(TANH_OPERATING_SYSTEM "iOS")
-    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_IOS")
-    if(THL_IOS_PLATFORM STREQUAL "DEVICE")
-        set(TANH_IOS_PLATFORM_DEFINE "THL_PLATFORM_IOS_DEVICE")
-    elseif(THL_IOS_PLATFORM STREQUAL "SIMULATOR")
-        set(TANH_IOS_PLATFORM_DEFINE "THL_PLATFORM_IOS_SIMULATOR")
-    endif()
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    set(TANH_OPERATING_SYSTEM "Android")
-    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_ANDROID")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    set(TANH_OPERATING_SYSTEM "macOS")
-    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_MACOS")
-elseif(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    # Emscripten reports UNIX=TRUE; keep it out of the Linux branch so no
-    # Linux-only system libraries or sinks are ever selected for WASM.
-    set(TANH_OPERATING_SYSTEM "Emscripten")
-    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_EMSCRIPTEN")
-elseif(UNIX)
-    set(TANH_OPERATING_SYSTEM "Linux")
-    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_LINUX")
-elseif(WIN32)
-    set(TANH_OPERATING_SYSTEM "Windows")
-    set(TANH_PLATFORM_DEFINE "THL_PLATFORM_WINDOWS")
-else()
-    set(TANH_OPERATING_SYSTEM "Unknown")
+# Platform axes: TANH_OPERATING_SYSTEM, TANH_BINARY_FORMAT, TANH_IOS_PLATFORM and the
+# THL_PLATFORM_* definitions tanh::Core exposes. The iOS toolchain sets
+# TANH_IOS_PLATFORM; the former spelling THL_IOS_PLATFORM is still honoured.
+if(DEFINED THL_IOS_PLATFORM AND NOT DEFINED TANH_IOS_PLATFORM)
+    set(TANH_IOS_PLATFORM "${THL_IOS_PLATFORM}")
 endif()
+include(cmake/tanh/platform.cmake)
 
 message(STATUS "Project version: ${PROJECT_VERSION_SHORT} (${PROJECT_VERSION_FULL})")
 
@@ -132,48 +75,19 @@ message(STATUS "Project version: ${PROJECT_VERSION_SHORT} (${PROJECT_VERSION_FUL
 # interfaces below, so they must be defined before the first add_library().
 include(GNUInstallDirs)
 
-# Sets the minimum macOS/iOS version, c++20 is only available from macOS 11.0
-if (APPLE)
-	# For iOS builds, use 14.0 as minimum (required for SwiftUI @main)
-	# For macOS builds, use 12.0 as minimum
-	if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-			set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum iOS deployment version")
-		elseif(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "14.0")
-			message(STATUS "tanh-lib is built and tested for iOS >= 14.0; CMAKE_OSX_DEPLOYMENT_TARGET is ${CMAKE_OSX_DEPLOYMENT_TARGET}")
-		endif()
-		message(STATUS "The minimum iOS version is set to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
-	else()
-		# Only pick a default when nobody set one. Never FORCE it: as a
-		# sub-project (FetchContent/add_subdirectory) the cache entry would
-		# silently raise the embedding project's own minimum, since the
-		# variable is read at generate time for every target in the build.
-		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-			set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
-		elseif(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "12.0")
-			message(STATUS "tanh-lib is built and tested for macOS >= 12.0; CMAKE_OSX_DEPLOYMENT_TARGET is ${CMAKE_OSX_DEPLOYMENT_TARGET}")
-		endif()
-		message(STATUS "The minimum macOS version is set to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
-	endif()
-endif ()
+# macOS 12.0 / iOS 14.0 minimum (C++20 needs macOS >= 11; SwiftUI @main needs iOS >= 14).
+# Only a default when nobody set one — never FORCE'd, so that as a sub-project the
+# embedding project's own minimum is left alone.
+include(cmake/tanh/apple.cmake)
+tanh_apple_deployment_target(MACOS 12.0 IOS 14.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# When using non-Apple Clang on macOS, CMake does not set the sysroot
-# automatically. Without it the compilation database lacks -isysroot and
-# tools like clang-tidy cannot find system headers (e.g. pthread.h).
-if(TANH_OPERATING_SYSTEM STREQUAL "macOS" AND NOT CMAKE_OSX_SYSROOT)
-    execute_process(
-        COMMAND xcrun --show-sdk-path
-        OUTPUT_VARIABLE _osx_sysroot
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(_osx_sysroot)
-        set(CMAKE_OSX_SYSROOT "${_osx_sysroot}" CACHE PATH "macOS SDK path")
-    endif()
-endif()
+# Non-Apple clang on macOS gets no sysroot from CMake; without it the compile
+# database lacks -isysroot and clang-tidy cannot find system headers.
+tanh_apple_sysroot_from_xcrun()
 
 ## ==============================================================================
 # Fetch dependencies
@@ -199,9 +113,7 @@ if(TANH_BUILD_CORE)
         src/core/RCU.cpp
     )
     
-    # enable position independent code because otherwise the static library cannot be linked into a shared library
-    set_target_properties(${PROJECT_NAME}_core PROPERTIES 
-        POSITION_INDEPENDENT_CODE ON 
+    set_target_properties(${PROJECT_NAME}_core PROPERTIES
         VERSION ${PROJECT_VERSION} 
         SOVERSION ${PROJECT_VERSION_MAJOR})
 
@@ -225,13 +137,8 @@ if(TANH_BUILD_CORE)
         $<$<NOT:$<CONFIG:Release>>:THL_LOG_COMPILED_MAX_LEVEL=4>
     )
 
-    # Platform compile definitions
-    if(TANH_PLATFORM_DEFINE)
-        target_compile_definitions(${PROJECT_NAME}_core PUBLIC ${TANH_PLATFORM_DEFINE}=1)
-    endif()
-    if(TANH_IOS_PLATFORM_DEFINE)
-        target_compile_definitions(${PROJECT_NAME}_core PUBLIC ${TANH_IOS_PLATFORM_DEFINE}=1)
-    endif()
+    # Platform compile definitions (THL_PLATFORM_<OS>=1, THL_PLATFORM_IOS_<DEVICE|SIMULATOR>=1)
+    target_compile_definitions(${PROJECT_NAME}_core PUBLIC ${TANH_PLATFORM_COMPILE_DEFINITIONS})
 
     # Build type definitions
     target_compile_definitions(${PROJECT_NAME}_core
@@ -286,7 +193,6 @@ if(TANH_BUILD_STATE)
     )
     
     set_target_properties(${PROJECT_NAME}_state PROPERTIES 
-        POSITION_INDEPENDENT_CODE ON 
         VERSION ${PROJECT_VERSION} 
         SOVERSION ${PROJECT_VERSION_MAJOR})
     
@@ -348,7 +254,6 @@ if(TANH_BUILD_DSP)
     )
 
     set_target_properties(${PROJECT_NAME}_dsp PROPERTIES 
-        POSITION_INDEPENDENT_CODE ON 
         VERSION ${PROJECT_VERSION} 
         SOVERSION ${PROJECT_VERSION_MAJOR})
 
@@ -383,7 +288,6 @@ if(TANH_BUILD_DSP)
     )
 
     set_target_properties(${PROJECT_NAME}_resonator PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR})
 
@@ -442,7 +346,6 @@ if(TANH_BUILD_MODULATION)
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR})
 
@@ -508,15 +411,7 @@ if(TANH_BUILD_AUDIO_IO)
         )
 
         get_property(miniaudio_targets DIRECTORY ${miniaudio_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
-        foreach(target ${miniaudio_targets})
-            if(TARGET ${target})
-                set_target_properties(${target} PROPERTIES
-                    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
-                    XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
-                    XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
-                )
-            endif()
-        endforeach()
+        tanh_ios_disable_code_signing(${miniaudio_targets})
     endif()
 
 
@@ -547,7 +442,6 @@ if(TANH_BUILD_AUDIO_IO)
     endif()
 
     set_target_properties(${PROJECT_NAME}_audio_io PROPERTIES 
-        POSITION_INDEPENDENT_CODE ON 
         VERSION ${PROJECT_VERSION} 
         SOVERSION ${PROJECT_VERSION_MAJOR})
 
@@ -592,54 +486,49 @@ if(TANH_BUILD_AUDIO_IO)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
 endif()
 
-# Apply shared library export definitions to all components
-if(BUILD_SHARED_LIBS)
-    foreach(target ${TANH_BUILT_COMPONENTS})
-        target_compile_definitions(${target} PRIVATE TANH_BUILDING_SHARED)
-        target_compile_definitions(${target} PUBLIC TANH_SHARED)
-    endforeach()
-endif()
-
-# Apply common settings to all components
+# ==============================================================================
+# Symbol policy and common settings of every component (cmake/tanh/symbol-policy.cmake)
+# ==============================================================================
+#
+# Hidden visibility on every platform; TANH_API (include/tanh/core/Exports.h) is the
+# allowlist — TANH_BUILDING (PRIVATE) selects dllexport while a component is compiled,
+# TANH_STATIC (PUBLIC, so it reaches consumers through the CMake package) makes
+# TANH_API empty for static components, whose objects become part of the consumer and
+# must neither be exported from it nor be dllimport'ed. Shared components additionally
+# pin their export table to namespace thl at link time (generated version script /
+# -exported_symbols_list): -fvisibility=hidden cannot hide what a header stamps
+# default-visibility itself (libstdc++ wraps namespace std in visibility("default")),
+# and miniaudio, nlohmann::json and moodycamel must never leave the component that
+# embeds them. test/exports verifies the result in CTest. Static components in a
+# plugin are hidden by construction; the plugin's own export list does the rest.
+include(cmake/tanh/symbol-policy.cmake)
+include(cmake/tanh/sanitizers.cmake)
 
 foreach(target ${TANH_BUILT_COMPONENTS})
-    # Disable code signing for iOS library targets (only apps need signing)
-    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        set_target_properties(${target} PROPERTIES
-            XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
-            XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
-            XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
-        )
-    endif()
+    tanh_apply_symbol_policy(${target} EXPORT_PREFIX TANH)
+    tanh_set_export_allowlist(${target} NAMESPACE thl)
+
+    # Only apps need a signature on iOS.
+    tanh_ios_disable_code_signing(${target})
 
     if(TANH_WITH_RTSAN)
-        include(cmake/sanitizers.cmake)
-        tanh_realtime_sanitizer(${target})
+        tanh_add_sanitizer(${target} rtsan DEFINE TANH_WITH_RTSAN)
     endif()
-
     if(TANH_WITH_ASAN)
-        include(cmake/sanitizers.cmake)
-        tanh_address_sanitizer(${target})
+        tanh_add_sanitizer(${target} asan DEFINE TANH_WITH_ASAN
+            IGNORELIST "${CMAKE_CURRENT_SOURCE_DIR}/sanitizers/asan_ignorelist.txt")
     endif()
-
     if(TANH_WITH_USAN)
-        include(cmake/sanitizers.cmake)
-        tanh_undefined_sanitizer(${target})
+        tanh_add_sanitizer(${target} ubsan DEFINE TANH_WITH_USAN)
     endif()
-
     if(TANH_WITH_TSAN)
-        include(cmake/sanitizers.cmake)
-        tanh_thread_sanitizer(${target})
+        tanh_add_sanitizer(${target} tsan DEFINE TANH_WITH_TSAN)
     endif()
-
     if(TANH_WITH_MSAN)
-        include(cmake/sanitizers.cmake)
-        tanh_memory_sanitizer(${target})
+        tanh_add_sanitizer(${target} msan DEFINE TANH_WITH_MSAN)
     endif()
-
     if(TANH_WITH_LSAN)
-        include(cmake/sanitizers.cmake)
-        tanh_leak_sanitizer(${target})
+        tanh_add_sanitizer(${target} lsan DEFINE TANH_WITH_LSAN)
     endif()
 endforeach()
 
@@ -672,7 +561,12 @@ if(TANH_WITH_PACKAGING)
     if(NOT PROJECT_IS_TOP_LEVEL)
         message(FATAL_ERROR "TANH_WITH_PACKAGING is only supported when tanh-lib is the top-level project")
     endif()
-    include(cmake/package.cmake)
+    include(cmake/tanh/package.cmake)
+    tanh_cpack_debian(
+        VENDOR "tanh-lab"
+        CONTACT "fares.schulz@tu-berlin.de"
+        RUNTIME_DESCRIPTION "modular real-time-safe C++ audio library"
+        DEV_DESCRIPTION "headers and CMake package for libtanh${PROJECT_VERSION_MAJOR}")
 endif()
 
 # ==============================================================================
@@ -680,7 +574,12 @@ endif()
 # ==============================================================================
 
 if (TANH_WITH_TESTS)
-    include(cmake/test-deps.cmake)
+    # Suppress the CTest dashboard targets, then googletest / google benchmark once.
+    set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
+    include(CTest)
+    include(cmake/tanh/test-deps.cmake)
+    tanh_fetch_googletest(VERSION v1.14.0)
+    tanh_fetch_googlebenchmark(VERSION v1.9.1)
     if (TANH_BUILD_CORE)
         add_subdirectory(test/core)
     endif()
@@ -697,29 +596,22 @@ if (TANH_WITH_TESTS)
         add_subdirectory(test/audio-io)
     endif()
 
-    # On iOS, test executables become .app bundles and need a bundle identifier
-    # for simctl install/launch to work.
-    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
-        foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state benchmark_modulation)
-            if(TARGET ${_test})
-                # Bundle IDs must use hyphens, not underscores
-                string(REPLACE "_" "-" _bundle_suffix "${_test}")
-                set_target_properties(${_test} PROPERTIES
-                    MACOSX_BUNDLE TRUE
-                    MACOSX_BUNDLE_BUNDLE_NAME "${_test}"
-                    MACOSX_BUNDLE_GUI_IDENTIFIER "com.tanh.${_bundle_suffix}"
-                    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.tanh.${_bundle_suffix}"
-                )
-                if(DEVELOPMENT_TEAM)
-                    set_target_properties(${_test} PROPERTIES
-                        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
-                        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
-                        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}"
-                    )
-                endif()
-            endif()
-        endforeach()
+    # The export-table invariant, on the desktop formats where it can be inspected.
+    if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
+        add_subdirectory(test/exports)
     endif()
+
+    # On iOS, test executables become .app bundles and need a bundle identifier
+    # for simctl install/launch to work (no-op elsewhere).
+    set(_ios_team "")
+    if(DEVELOPMENT_TEAM)
+        set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
+    endif()
+    foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state benchmark_modulation)
+        if(TARGET ${_test})
+            tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
+        endif()
+    endforeach()
 endif()
 
 if(TANH_WITH_EXAMPLES AND TANH_OPERATING_SYSTEM STREQUAL "iOS")

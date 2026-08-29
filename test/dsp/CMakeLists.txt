@@ -35,7 +35,7 @@ if(TARGET tanh_resonator)
 	endif()
 
 	# Embed reference fixtures (only if they exist)
-	include(${CMAKE_SOURCE_DIR}/cmake/binary_data.cmake)
+	include(${CMAKE_SOURCE_DIR}/cmake/tanh/binary-data.cmake)
 	set(_fixtures_dir "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 	if(EXISTS "${_fixtures_dir}/modal.bin")
 		tanh_add_binary_data(rings_test_fixtures
@@ -75,7 +75,7 @@ if(TARGET tanh_resonator)
 	)
 endif()
 
-tanh_copy_dlls_for_tests(${PROJECT_NAME})
+tanh_copy_runtime_dlls(${PROJECT_NAME})
 
 if(CMAKE_CROSSCOMPILING)
 	gtest_add_tests(TARGET ${PROJECT_NAME})

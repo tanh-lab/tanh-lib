@@ -101,11 +101,8 @@ endif()
 # At install the rpath is cleared by default, so the installed shared
 # libraries need it re-set to find their sibling components. $ORIGIN (Linux)
 # and @loader_path (macOS) resolve to the directory of the loading library.
-if(TANH_OPERATING_SYSTEM STREQUAL "Linux")
-    set_target_properties(${TANH_BUILT_COMPONENTS} PROPERTIES INSTALL_RPATH "$ORIGIN")
-elseif(TANH_OPERATING_SYSTEM STREQUAL "macOS")
-    set_target_properties(${TANH_BUILT_COMPONENTS} PROPERTIES INSTALL_RPATH "@loader_path")
-endif()
+include(${CMAKE_CURRENT_LIST_DIR}/tanh/install-helpers.cmake)
+tanh_set_install_rpath(${TANH_BUILT_COMPONENTS})
 
 # ==============================================================================
 # Generate cmake config files

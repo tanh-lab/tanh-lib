@@ -23,7 +23,7 @@ target_link_libraries(${TARGET_NAME}
 # Code signing configuration
 # Pass -DDEVELOPMENT_TEAM=YOUR_TEAM_ID for automatic signing
 # Requires: Xcode > Settings > Accounts has your Apple ID logged in
-if(THL_IOS_PLATFORM STREQUAL "DEVICE")
+if(TANH_IOS_PLATFORM STREQUAL "DEVICE")
     set(CODE_SIGN_STYLE "Automatic")
     set(CODE_SIGN_IDENTITY "Apple Development")
 else()

@@ -162,8 +162,9 @@
       "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
-        "THL_IOS_PLATFORM": "SIMULATOR",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+        "TANH_IOS_PLATFORM": "SIMULATOR",
         "BUILD_SHARED_LIBS": "OFF"
       }
     },
@@ -173,8 +174,9 @@
       "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
-        "THL_IOS_PLATFORM": "SIMULATOR",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+        "TANH_IOS_PLATFORM": "SIMULATOR",
         "BUILD_SHARED_LIBS": "OFF"
       }
     },
@@ -184,8 +186,9 @@
       "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/ios-iphoneos",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
-        "THL_IOS_PLATFORM": "DEVICE",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+        "TANH_IOS_PLATFORM": "DEVICE",
         "BUILD_SHARED_LIBS": "OFF"
       }
     },
@@ -195,8 +198,9 @@
       "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/ios-iphoneos",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain/ios.toolchain.cmake",
-        "THL_IOS_PLATFORM": "DEVICE",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+        "TANH_IOS_PLATFORM": "DEVICE",
         "BUILD_SHARED_LIBS": "OFF"
       }
     }
