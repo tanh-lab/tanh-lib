@@ -63,6 +63,8 @@ Enforced by `.clang-tidy`:
 
 Configured in `.clang-format` (Google-based): 100-char line limit, 4-space indent, K&R braces.
 
+`.clang-format`, `.clang-tidy` and `.clangd` are installed verbatim from a pinned [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) release (`clang/install.sh`), and the `clang-config` CI job fails on any drift from that pin. Never edit these files by hand; style changes go to tanh-tooling. To update: run `install.sh` with the new tag (`TANH_TOOLING_REF=vX.Y.Z`), commit the rewritten files, and bump the `ref` in `.github/workflows/pr-checks.yml` in the same commit. See README, "Code style".
+
 When running clang-tidy, use multithreading via `run-clang-tidy` (or the `-j` flag) to parallelize across translation units.
 
 ## Platform Detection and System Dependencies
