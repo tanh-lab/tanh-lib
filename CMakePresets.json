@@ -305,37 +305,43 @@
       "name": "desktop-debug",
       "configurePreset": "desktop-debug",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "desktop-release",
       "configurePreset": "desktop-release",
       "configuration": "Release",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "macos-x64-debug",
       "configurePreset": "macos-x64-debug",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "macos-x64-release",
       "configurePreset": "macos-x64-release",
       "configuration": "Release",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "desktop-debug-asan",
       "configurePreset": "desktop-debug-asan",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "desktop-debug-tsan",
       "configurePreset": "desktop-debug-tsan",
       "configuration": "Debug",
       "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 },
       "environment": {
         "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
       }
@@ -344,43 +350,50 @@
       "name": "desktop-debug-msan",
       "configurePreset": "desktop-debug-msan",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "desktop-debug-lsan",
       "configurePreset": "desktop-debug-lsan",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "desktop-debug-rtsan",
       "configurePreset": "desktop-debug-rtsan",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "windows-debug",
       "configurePreset": "windows-debug",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "windows-release",
       "configurePreset": "windows-release",
       "configuration": "Release",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "ios-simulator-debug",
       "configurePreset": "ios-simulator-debug",
       "configuration": "Debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     },
     {
       "name": "ios-simulator-release",
       "configurePreset": "ios-simulator-release",
       "configuration": "Release",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 600 }
     }
   ]
 }

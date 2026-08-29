@@ -1,18 +1,69 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace thl {
+
+namespace detail {
+
+/// Per-thread, per-RCU-instance reader registration. Lock-free intrusive list
+/// node owned by the registering thread's RcuThreadState; the RCU instance
+/// only links it.
+struct RcuReaderNode {
+    std::atomic<uint64_t> m_read_generation{0};
+    std::atomic<RcuReaderNode*> m_next{nullptr};
+    std::atomic<bool> m_is_dead{false};  // Set when the owning thread exits
+};
+
+/// Thread-local registry mapping RCU instance -> this thread's reader node.
+///
+/// Deliberately a non-template type whose accessor is defined once in
+/// tanh_core (RCU.cpp) rather than a function-local `static thread_local`
+/// inside RCU<T>: a template-local thread_local is instantiated separately in
+/// every module that uses it, and on Windows shared-library builds each DLL
+/// and the executable then get their own copy. A read section opened in one
+/// module (e.g. an exported ReadScope factory inside a DLL) and closed in
+/// another (the ReadScope destructor instantiated in the executable) would
+/// look the node up in two different maps, silently skip the unlock and leave
+/// the node's generation stale — which pins every later synchronize() once the
+/// reader thread stops. One process-wide registry makes the lookup identical
+/// everywhere.
+class RcuThreadState {
+public:
+    RcuThreadState() = default;
+    ~RcuThreadState();
+    RcuThreadState(const RcuThreadState&) = delete;
+    RcuThreadState& operator=(const RcuThreadState&) = delete;
+    RcuThreadState(RcuThreadState&&) = delete;
+    RcuThreadState& operator=(RcuThreadState&&) = delete;
+
+    RcuReaderNode* get_node(const void* instance) const {
+        auto it = m_nodes.find(instance);
+        return it != m_nodes.end() ? it->second.get() : nullptr;
+    }
+
+    std::unordered_map<const void*, std::unique_ptr<RcuReaderNode>> m_nodes;
+};
+
+/// The calling thread's registry. Defined in tanh_core so that all modules
+/// share a single thread_local instance per thread.
+TANH_API RcuThreadState& rcu_thread_state();
+
+}  // namespace detail
 
 /**
  * @brief Generic RCU (Read-Copy-Update) container for lock-free reads
@@ -77,18 +128,19 @@ public:
         // threads from accessing a destroyed RCU instance
         const std::scoped_lock lock(m_writer_mutex);
 
-        const ReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
+        const detail::RcuReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
-            const ReaderNode* next = current->m_next.load(std::memory_order_relaxed);
+            const detail::RcuReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
             // Remove from thread-local state if the node is still tracked there
-            // Note: For live threads, the node ownership is in
-            // t_rcu_state().nodes We need to take ownership back before deleting
-            auto it = t_rcu_state().m_nodes.find(this);
-            if (it != t_rcu_state().m_nodes.end() && it->second.get() == current) {
+            // Note: For live threads, the node ownership is in the thread's
+            // RcuThreadState. We need to take ownership back before deleting
+            auto& nodes = detail::rcu_thread_state().m_nodes;
+            auto it = nodes.find(this);
+            if (it != nodes.end() && it->second.get() == current) {
                 // This is the current thread's node - transfer ownership back
                 it->second.release();
-                t_rcu_state().m_nodes.erase(it);
+                nodes.erase(it);
             }
 
             // For dead nodes or nodes from other threads (which released
@@ -248,15 +300,15 @@ public:
      * ```
      */
     void register_reader_thread() const {
-        if (!t_rcu_state().get_node(this)) {
+        if (!detail::rcu_thread_state().get_node(this)) {
             // Serialize with cleanup and count
             const std::scoped_lock lock(m_writer_mutex);
 
             // Allocate node on heap so it persists beyond thread lifetime
-            auto node = std::make_unique<ReaderNode>();
-            ReaderNode* node_ptr = node.get();
+            auto node = std::make_unique<detail::RcuReaderNode>();
+            detail::RcuReaderNode* node_ptr = node.get();
             // Lock-free registration using atomic compare-and-swap
-            ReaderNode* current_head = m_reader_head.load(std::memory_order_acquire);
+            detail::RcuReaderNode* current_head = m_reader_head.load(std::memory_order_acquire);
             do {
                 node->m_next.store(current_head, std::memory_order_relaxed);
             } while (!m_reader_head.compare_exchange_weak(current_head,
@@ -264,7 +316,7 @@ public:
                                                           std::memory_order_release,
                                                           std::memory_order_acquire));
 
-            t_rcu_state().m_nodes.emplace(this, std::move(node));
+            detail::rcu_thread_state().m_nodes.emplace(this, std::move(node));
         }
     }
 
@@ -272,7 +324,7 @@ public:
         // Serialize with cleanup and registration
         const std::scoped_lock lock(m_writer_mutex);
         unsigned int count = 0;
-        ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
+        detail::RcuReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
             if (!node->m_is_dead.load(std::memory_order_acquire)) { ++count; }
             node = node->m_next.load(std::memory_order_acquire);
@@ -351,63 +403,21 @@ private:
     size_t m_cleanup_threshold;    // Try harder to cleanup
     size_t m_emergency_threshold;  // Force blocking cleanup
 
-    // Lock-free linked list node for reader registration
-    struct ReaderNode {
-        std::atomic<uint64_t> m_read_generation{0};
-        std::atomic<ReaderNode*> m_next{nullptr};
-        std::atomic<bool> m_is_dead{false};  // Mark node as dead when thread
-                                             // exits
-    };
-
-    // Per-instance reader list head
-    mutable std::atomic<ReaderNode*> m_reader_head{nullptr};
-
-    // Thread-local RCU state with per-instance registration tracking
-    struct ThreadRCUState {
-        // Map from RCU instance pointer to this thread's reader node for that
-        // instance
-        std::unordered_map<const void*, std::unique_ptr<ReaderNode>> m_nodes;
-
-        ReaderNode* get_node(const void* instance) const {
-            auto it = m_nodes.find(instance);
-            return it != m_nodes.end() ? it->second.get() : nullptr;
-        }
-
-        // NOLINTNEXTLINE(modernize-use-equals-default) — destructor has real cleanup logic below.
-        ~ThreadRCUState() {
-            // Mark all nodes as dead - they'll be cleaned up by respective RCU
-            // instances.
-            //
-            // No need to wait for m_read_generation == 0: this thread is
-            // exiting, so it cannot be inside a read section. Spinning here
-            // would be unsafe in Windows DLL builds where cross-DLL template
-            // TLS duplication can leave orphaned nodes pointing to memory
-            // already freed by ~RCU() in a different DLL — MSVC debug mode
-            // fills freed heap with 0xDD, making m_read_generation appear
-            // permanently non-zero.
-            for (auto& [_, node] : m_nodes) {
-                if (node) {
-                    node->m_is_dead.store(true, std::memory_order_release);
-                    node.release();  // Let cleanup_dead_nodes handle deletion
-                }
-            }
-        }
-    };
-    static ThreadRCUState& t_rcu_state() {
-        static thread_local ThreadRCUState instance;
-        return instance;
-    }
+    // Per-instance reader list head. Nodes are owned by the registering
+    // thread's detail::RcuThreadState (see RcuThreadState for why that
+    // registry lives outside this template).
+    mutable std::atomic<detail::RcuReaderNode*> m_reader_head{nullptr};
 
     // RCU operations
     void rcu_read_lock() const {
-        if (auto* node = t_rcu_state().get_node(this)) {
+        if (auto* node = detail::rcu_thread_state().get_node(this)) {
             const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
             node->m_read_generation.store(current_period, std::memory_order_release);
         }
     }
 
     void rcu_read_unlock() const {
-        if (auto* node = t_rcu_state().get_node(this)) {
+        if (auto* node = detail::rcu_thread_state().get_node(this)) {
             node->m_read_generation.store(0, std::memory_order_release);
         }
     }
@@ -430,7 +440,7 @@ private:
         // Find minimum period any active reader is in
         uint64_t min_active_period = current_period;
 
-        const ReaderNode* node = m_reader_head.load(std::memory_order_acquire);
+        const detail::RcuReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
             if (!node->m_is_dead.load(std::memory_order_acquire)) {
                 const uint64_t reader_period =
@@ -467,23 +477,23 @@ private:
         const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
 
         // Wait for all live readers to finish their read sections
-        const ReaderNode* current = m_reader_head.load(std::memory_order_acquire);
+        const detail::RcuReaderNode* current = m_reader_head.load(std::memory_order_acquire);
         while (current != nullptr) {
-            // Skip dead nodes - they can't be in read sections
-            if (!current->m_is_dead.load(std::memory_order_acquire)) {
-                // Wait for the reader to exit its read section
-                while (true) {
-                    const uint64_t reader_period =
-                        current->m_read_generation.load(std::memory_order_acquire);
-                    if (reader_period == 0) {
-                        break;  // Truly idle - not reading and not starting
-                    }
-                    if (reader_period == current_period) {
-                        break;  // Reading current data, safe to proceed
-                    }
-                    // Yield to give readers a chance to complete
-                    std::this_thread::sleep_for(std::chrono::microseconds(1));
+            // Wait for the reader to exit its read section. The dead flag is
+            // re-checked on every pass: a thread that has exited cannot be
+            // inside a read section any more, so its node must never pin the
+            // writer — even if the generation it left behind is stale.
+            while (!current->m_is_dead.load(std::memory_order_acquire)) {
+                const uint64_t reader_period =
+                    current->m_read_generation.load(std::memory_order_acquire);
+                if (reader_period == 0) {
+                    break;  // Truly idle - not reading and not starting
                 }
+                if (reader_period == current_period) {
+                    break;  // Reading current data, safe to proceed
+                }
+                // Yield to give readers a chance to complete
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
             }
             current = current->m_next.load(std::memory_order_acquire);
         }
@@ -493,13 +503,13 @@ private:
     // Must be called while holding m_writer_mutex
     void cleanup_dead_nodes() {
         // Rebuild the list without dead nodes
-        std::vector<ReaderNode*> live_nodes;
-        std::vector<std::unique_ptr<ReaderNode>> dead_nodes;
+        std::vector<detail::RcuReaderNode*> live_nodes;
+        std::vector<std::unique_ptr<detail::RcuReaderNode>> dead_nodes;
 
-        ReaderNode* current =  // NOLINT(misc-const-correctness)
+        detail::RcuReaderNode* current =  // NOLINT(misc-const-correctness)
             m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
-            ReaderNode* next = current->m_next.load(std::memory_order_relaxed);
+            detail::RcuReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
             if (!current->m_is_dead.load(std::memory_order_acquire)) {
                 live_nodes.push_back(current);

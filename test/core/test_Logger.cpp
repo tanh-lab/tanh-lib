@@ -46,6 +46,12 @@ protected:
     }
 
     void TearDown() override {
+        // The drain thread invokes a *copy* of the callback outside the
+        // config mutex, so clear_callback() alone cannot stop a delivery that
+        // is already in flight — it would land in m_records while the fixture
+        // is being destroyed. Join the drain thread first; stop() flushes the
+        // leftovers synchronously while the fixture is still alive.
+        rt::stop();
         thl::Logger::clear_callback();
         thl::Logger::set_level(LogLevel::Debug);
         thl::Logger::LoggerConfig config;
@@ -369,8 +375,17 @@ TEST_F(LoggerFixture, StartStopWhileProducing) {
     stop.store(true, std::memory_order_relaxed);
     producer.join();
     EXPECT_TRUE(rt::is_running());
-    // No crash, no deadlock; records delivered are well-formed.
-    for (const auto& r : rt_records()) { EXPECT_EQ(r.m_group, "churn"); }
+    // No crash, no deadlock; records delivered are well-formed. The producer
+    // outruns a stopped consumer, so the drain legitimately reports the
+    // resulting drops as its own "thl.logger" record — everything else must
+    // be the producer's payload.
+    for (const auto& r : rt_records()) {
+        if (r.m_group == "thl.logger") {
+            EXPECT_NE(r.m_message.find("dropped"), std::string::npos) << r.m_message;
+            continue;
+        }
+        EXPECT_EQ(r.m_group, "churn");
+    }
 }
 
 // ---------------------------------------------------------------------------
