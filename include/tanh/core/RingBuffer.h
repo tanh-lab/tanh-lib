@@ -125,6 +125,73 @@ public:
         std::fill_n(data + n, count - n, T{});
     }
 
+    /// Push `count` copies of `value`. Equivalent to `count` calls of
+    /// push_sample(value) (e.g. priming a latency with silence) without
+    /// touching the elements one at a time.
+    void push_fill(size_t channel, T value, size_t count) {
+        const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0 || count == 0) { return; }
+        T* buf = m_buffer.get_write_pointer(channel);
+        const size_t free = capacity - get_available_samples(channel);
+
+        size_t start = m_write_pos[channel];
+        if (count > capacity) {
+            start = advance(start, wrap(count - capacity, capacity), capacity);
+            count = capacity;
+        }
+
+        const size_t first = std::min(count, capacity - start);
+        std::fill_n(buf + start, first, value);
+        std::fill_n(buf, count - first, value);
+        m_write_pos[channel] = advance(start, count, capacity);
+
+        if (count >= free) {
+            m_read_pos[channel] = m_write_pos[channel];
+            m_is_full[channel] = true;
+        }
+        m_num_valid[channel] = std::min(m_num_valid[channel] + count, capacity);
+    }
+
+    /// Drop up to `count` unread samples. Equivalent to `count` calls of
+    /// pop_sample() with the results ignored. Returns how many were dropped.
+    size_t discard(size_t channel, size_t count) {
+        const size_t capacity = m_buffer.get_num_samples();
+        const size_t n = std::min(count, get_available_samples(channel));
+        if (n > 0) {
+            m_read_pos[channel] = advance(m_read_pos[channel], n, capacity);
+            m_is_full[channel] = false;
+        }
+        return n;
+    }
+
+    /// Copy the `count` most recently consumed samples (history) into `data`,
+    /// oldest first, so data[count - 1] is the sample popped last. Equivalent
+    /// to get_past_sample(channel, count - k) for k in [0, count). Like
+    /// get_past_sample() the range is not checked against the retained
+    /// history, and a count beyond the capacity wraps the same way.
+    void peek_past_block(size_t channel, T* data, size_t count) const {
+        const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0 || count == 0) { return; }
+        const T* buf = m_buffer.get_read_pointer(channel);
+        // Oversized history: everything before the last `capacity` samples wraps
+        // onto the same slots get_past_sample() would read, one lap at a time.
+        while (count > capacity) {
+            const size_t lap = count - capacity;
+            const size_t start =
+                advance(m_read_pos[channel], capacity - wrap(lap, capacity), capacity);
+            const size_t n = std::min(lap, capacity);
+            const size_t first = std::min(n, capacity - start);
+            std::copy_n(buf + start, first, data);
+            std::copy_n(buf, n - first, data + first);
+            data += n;
+            count -= n;
+        }
+        const size_t start = advance(m_read_pos[channel], capacity - count, capacity);
+        const size_t first = std::min(count, capacity - start);
+        std::copy_n(buf + start, first, data);
+        std::copy_n(buf, count - first, data + first);
+    }
+
     T get_future_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
         if (capacity == 0) { return T{}; }
