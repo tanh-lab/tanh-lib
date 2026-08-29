@@ -42,7 +42,7 @@ Run a single test binary directly:
 
 Five library targets with inter-component dependencies:
 
-- **tanh_core** (`src/core/`, `include/tanh/core/`) — Dispatcher (event messaging), Logger (with RT-safe `Logger::rt` path), RCU (lock-free read-copy-update), `LockFreeQueue` (bounded lock-free MPMC), generic buffers. Foundation for all other components.
+- **tanh_core** (`src/core/`, `include/tanh/core/`) — Dispatcher (event messaging), Logger (with RT-safe `Logger::rt` path), RCU (lock-free read-copy-update), `LockFreeQueue` (bounded lock-free MPMC), generic buffers, header-only WAV decoder (`WavReader.h`). Foundation for all other components.
 - **tanh_state** (`src/state/`, `include/tanh/state/`) — Hierarchical parameter storage with dot-separated paths (e.g. `"oscillator.frequency"`). RCU-protected reads for real-time safety. JSON serialization via nlohmann_json. Depends on core.
 - **tanh_dsp** (`src/dsp/`, `include/tanh/dsp/`) — DSP processors (synth, effects, granular, Rings resonator model). All processors inherit `BaseProcessor` with `prepare()`/`process()` interface. Modulation via change points for sample-accurate automation. Depends on core.
 - **tanh_modulation** (`src/modulation/`, `include/tanh/modulation/`) — Modulation matrix routing sources (LFO, etc.) to DSP parameters. Change-point-driven sub-blocking. Depends on core, state, dsp.
@@ -62,6 +62,8 @@ Enforced by `.clang-tidy`:
 ## Code Style
 
 Configured in `.clang-format` (Google-based): 100-char line limit, 4-space indent, K&R braces.
+
+`.clang-format`, `.clang-tidy` and `.clangd` are installed verbatim from a pinned [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) release (`clang/install.sh`), and the `clang-config` CI job fails on any drift from that pin. Never edit these files by hand; style changes go to tanh-tooling. To update: run `install.sh` with the new tag (`TANH_TOOLING_REF=vX.Y.Z`), commit the rewritten files, and bump the `ref` in `.github/workflows/pr-checks.yml` in the same commit. See README, "Code style".
 
 When running clang-tidy, use multithreading via `run-clang-tidy` (or the `-j` flag) to parallelize across translation units.
 

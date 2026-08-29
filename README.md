@@ -101,6 +101,16 @@ cmake --build build --target test_dsp
 
 The fixture files are not checked into version control.
 
+## Code style
+
+`just format` / `just format-check` run clang-format, `just tidy` / `just tidy-fix` run clang-tidy. The configs they use — `.clang-format`, `.clang-tidy` and `.clangd` in the repository root — are shared across the tanh-lab projects and are **not maintained here**: they are installed verbatim from a pinned release of [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) (canonical copies in its `clang/` directory). Do not edit them by hand; the `clang-config` CI job re-downloads the pinned versions and fails if the committed files differ. Style changes belong in tanh-tooling.
+
+To move to a newer tanh-tooling release, run its installer with the new tag, commit the rewritten files, and bump the `ref` (and workflow version) in `.github/workflows/pr-checks.yml` to the same tag in the same commit:
+
+```bash
+TANH_TOOLING_REF=vX.Y.Z sh -c "$(curl -fsSL https://raw.githubusercontent.com/tanh-lab/tanh-tooling/vX.Y.Z/clang/install.sh)"
+```
+
 ## InputEventQueue and event spreading
 
 `InputEventQueue` (in `tanh_modulation`) is a composable utility for
@@ -331,7 +341,8 @@ processing in the duplex callback.
 tanh-lib is licensed per component:
 
 - **Apache-2.0** — the **core component** (`tanh::Core`): generic containers
-  (`Buffer<T>`, `BufferView`, `RingBuffer<T>`, `MemoryBlock<T>`), `Logger`
+  (`Buffer<T>`, `BufferView`, `RingBuffer<T>`, `MemoryBlock<T>`), the header-only
+  WAV decoder (`read_wav`), `Logger`
   (including the real-time `Logger::rt` path and `rt_snprintf`),
   `Dispatcher`, threading utilities (RCU, `LockFreeQueue`), and small helpers — everything under
   `include/tanh/core/`, `include/tanh/core.h`, `src/core/`, `src/core.cpp` —
