@@ -63,17 +63,21 @@ Enforced by `.clang-tidy`:
 
 Configured in `.clang-format` (Google-based): 100-char line limit, 4-space indent, K&R braces.
 
-`.clang-format`, `.clang-tidy` and `.clangd` are installed verbatim from a pinned [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) release (`clang/install.sh`), and the `clang-config` CI job fails on any drift from that pin. Never edit these files by hand; style changes go to tanh-tooling. To update: run `install.sh` with the new tag (`TANH_TOOLING_REF=vX.Y.Z`), commit the rewritten files, and bump the `ref` in `.github/workflows/pr-checks.yml` in the same commit. See README, "Code style".
+`.clang-format`, `.clang-tidy`, `.clangd` and every file under `cmake/tanh/` are installed verbatim from a pinned [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) release (`install.sh` families `clang cmake`), and the `tooling-config` CI job fails on any drift from that pin or on a foreign file in `cmake/tanh/`. Never edit these files by hand; changes go to tanh-tooling. To update: run the installer with the new tag (`curl -fsSL https://raw.githubusercontent.com/tanh-lab/tanh-tooling/vX.Y.Z/install.sh | sh -s -- clang cmake`), commit the rewritten files, and bump the `ref` in `.github/workflows/pr-checks.yml` in the same commit. anira pins the same modules and fetches tanh-lib: both repositories must pin the same tag. See README, "Shared tooling".
 
 When running clang-tidy, use multithreading via `run-clang-tidy` (or the `-j` flag) to parallelize across translation units.
 
 ## Platform Detection and System Dependencies
 
-CMake sets exactly one `THL_PLATFORM_*` define (iOS, Android, macOS, Emscripten, Linux, Windows — in that order of detection; Emscripten must be checked before the generic `UNIX` branch). `tanh_core` must not link platform system libraries by default: the Linux journald sink is opt-in via `TANH_WITH_JOURNALD` (`THL_WITH_JOURNALD`), and the core containers (`Buffer`, `MemoryBlock`, `RingBuffer`) must stay header-only and free of `Logger` so permissively licensed consumers (anira) can embed `tanh::Core` unchanged. Allocation failure in the containers throws `std::bad_alloc`; contract violations `assert`.
+`cmake/tanh/platform.cmake` sets `TANH_OPERATING_SYSTEM`, `TANH_BINARY_FORMAT` (ELF/Mach-O/PE/Wasm), `TANH_IOS_PLATFORM` and `TANH_PLATFORM_COMPILE_DEFINITIONS` — exactly one `THL_PLATFORM_*` define (iOS, Android, macOS, Emscripten, Linux, Windows; Emscripten is resolved before the generic `UNIX` branch), which `tanh_core` carries PUBLIC. Branch on `TANH_OPERATING_SYSTEM` / `TANH_BINARY_FORMAT`, never on `APPLE`/`UNIX`/`WIN32`. `tanh_core` must not link platform system libraries by default: the Linux journald sink is opt-in via `TANH_WITH_JOURNALD` (`THL_WITH_JOURNALD`), and the core containers (`Buffer`, `MemoryBlock`, `RingBuffer`) must stay header-only and free of `Logger` so permissively licensed consumers (anira) can embed `tanh::Core` unchanged. Allocation failure in the containers throws `std::bad_alloc`; contract violations `assert`.
 
 ## Install and Export
 
 `cmake/install.cmake` installs the built components and the `tanh` CMake package. Exported target names equal the in-tree aliases (`tanh::Core`, `tanh::State`, ...) via `EXPORT_NAME`; `Config.cmake.in` validates requested components against `TANH_EXPORTED_COMPONENTS`. Keep both in sync when adding a component.
+
+## Symbol Policy
+
+Every component gets `tanh_apply_symbol_policy(<target> EXPORT_PREFIX TANH)` and `tanh_set_export_allowlist(<target> NAMESPACE thl)` (loop in the top-level CMakeLists.txt): hidden visibility, `TANH_BUILDING`/`TANH_STATIC` driving `TANH_API` (`include/tanh/core/Exports.h`, a stub over `ExportMacros.h`), and a generated version script / exports list pinning shared components to `thl::`. Consequences: every class or free function that consumers use needs `TANH_API` (missing decoration = link error on every platform, not only Windows); a type thrown or `dynamic_cast` across the boundary needs it for its typeinfo; a `static`/`thread_local` inside an inline function of an undecorated header template is duplicated per DSO (the RCU registry lives in `src/core/RCU.cpp` for that reason). `test/exports` checks the export tables of every component and of a plugin-shaped module in CTest.
 
 ## Real-Time Safety
 

@@ -1,4 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
+# ==============================================================================
+# tanh-tooling · cmake/binary-data.cmake — embed files as C++ byte arrays.
+#
+#   tanh_add_binary_data(<target> NAMESPACE <ns> HEADER_NAME <Header.h> SOURCES <file>...)
+#
+# Creates a static library <target> whose generated sources hold each file as a byte
+# array (one .cpp per file, encoded at build time by bin2cpp.cmake next to this
+# module) and a header <Header.h> declaring `extern const char* <name>` plus
+# `<name>Size` for every file and a registry lookup by original file name. A
+# JUCE-style juce_add_binary_data workalike without JUCE.
+#
+# Requires CMake >= 3.18; include after project(). bin2cpp.cmake must sit next to
+# this file (the installer keeps them together).
+# ==============================================================================
+include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/modules-version.cmake")
+
 macro(tanh_make_absolute path)
     if(NOT IS_ABSOLUTE "${${path}}")
         get_filename_component(${path} "${${path}}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")

@@ -31,7 +31,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 include(GoogleTest)
-tanh_copy_dlls_for_tests(${PROJECT_NAME})
+tanh_copy_runtime_dlls(${PROJECT_NAME})
 
 if(CMAKE_CROSSCOMPILING)
 	gtest_add_tests(TARGET ${PROJECT_NAME})

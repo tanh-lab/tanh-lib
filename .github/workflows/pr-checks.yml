@@ -22,11 +22,13 @@ jobs:
         with:
           SOURCES: "src/ include/"
 
-  # Verify the committed .clang-* files still match the pinned tanh-tooling release.
-  clang-config:
-    uses: tanh-lab/tanh-tooling/.github/workflows/clang-check.yml@v0.1.4
+  # Verify the committed tanh-tooling files (.clang-*, cmake/tanh/) still match the
+  # pinned release; the same tag must be pinned by every project in one build (anira).
+  tooling-config:
+    uses: tanh-lab/tanh-tooling/.github/workflows/config-check.yml@v0.1.5
     with:
-      ref: v0.1.4
+      ref: v0.1.5
+      family: "clang cmake"
 
   build-and-test:
     name: Build & Test (${{ matrix.name }})

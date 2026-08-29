@@ -101,15 +101,21 @@ cmake --build build --target test_dsp
 
 The fixture files are not checked into version control.
 
-## Code style
+## Shared tooling (clang configs, CMake modules)
 
-`just format` / `just format-check` run clang-format, `just tidy` / `just tidy-fix` run clang-tidy. The configs they use — `.clang-format`, `.clang-tidy` and `.clangd` in the repository root — are shared across the tanh-lab projects and are **not maintained here**: they are installed verbatim from a pinned release of [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) (canonical copies in its `clang/` directory). Do not edit them by hand; the `clang-config` CI job re-downloads the pinned versions and fails if the committed files differ. Style changes belong in tanh-tooling.
+`just format` / `just format-check` run clang-format, `just tidy` / `just tidy-fix` run clang-tidy. Their configs — `.clang-format`, `.clang-tidy`, `.clangd` in the repository root — and the CMake modules under `cmake/tanh/` (platform detection, the symbol-export policy and its CTest check, git versioning, sanitizers, googletest/benchmark, Apple defaults, the iOS toolchain, CPack, install RPATHs, binary data) are shared across the tanh-lab projects and are **not maintained here**: they are installed verbatim from a pinned release of [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) (canonical copies in its `clang/` and `cmake/` directories, documented in its `cmake/README.md`). Do not edit them by hand and do not add files to `cmake/tanh/`; the `tooling-config` CI job re-downloads the pinned release and fails if the committed files differ. Changes belong in tanh-tooling.
 
-To move to a newer tanh-tooling release, run its installer with the new tag, commit the rewritten files, and bump the `ref` (and workflow version) in `.github/workflows/pr-checks.yml` to the same tag in the same commit:
+To move to a newer tanh-tooling release, run its installer with the new tag, commit the rewritten files, and bump the `ref` (and workflow version) in `.github/workflows/pr-checks.yml` to the same tag in the same commit. anira pins the same modules and fetches tanh-lib, so both repositories must move to the same tag together:
 
 ```bash
-TANH_TOOLING_REF=vX.Y.Z sh -c "$(curl -fsSL https://raw.githubusercontent.com/tanh-lab/tanh-tooling/vX.Y.Z/clang/install.sh)"
+curl -fsSL https://raw.githubusercontent.com/tanh-lab/tanh-tooling/vX.Y.Z/install.sh | sh -s -- clang cmake
 ```
+
+## Symbol visibility
+
+Every component is compiled with hidden symbol visibility; `TANH_API` (`include/tanh/core/Exports.h`, a stub over `tanh/core/ExportMacros.h`) is the allowlist of what a shared component exports, and a shared component additionally pins its export table to namespace `thl` at link time (`tanh_set_export_allowlist` in `cmake/tanh/symbol-policy.cmake`). So `libtanh_audio_io.so` exports `thl::` and nothing else — not miniaudio's `ma_*`, not `nlohmann::json`, not `moodycamel`, not libstdc++ instantiations — and cannot be interposed against a host application that ships its own copy of any of those. A static component is compiled without export decoration (`TANH_STATIC`, defined for consumers through the CMake package), so a plugin that embeds it exports nothing of tanh-lib either. `test/exports` verifies both shapes in CTest on Linux, macOS and Windows.
+
+Plugins should embed the **static** components. Sharing one `libtanh_*.so` between independently shipped plugins is only sound while every version carrying the same SONAME is ABI-compatible — the loader binds the first copy it sees to every later plugin — and every 0.x release has `SOVERSION 0` without such a promise.
 
 ## InputEventQueue and event spreading
 
@@ -347,8 +353,8 @@ tanh-lib is licensed per component:
   `Thread` (an OS thread with a requested scheduling class),
   `Dispatcher`, threading utilities (RCU, `LockFreeQueue`), and small helpers — everything under
   `include/tanh/core/`, `include/tanh/core.h`, `src/core/`, `src/core.cpp` —
-  plus the binary-data CMake helpers (`cmake/binary_data.cmake`,
-  `cmake/bin2cpp.cmake`). One target, one license: linking `tanh::Core` pulls
+  plus the binary-data CMake helpers (`cmake/tanh/binary-data.cmake`,
+  `cmake/tanh/bin2cpp.cmake`, from tanh-tooling). One target, one license: linking `tanh::Core` pulls
   in Apache-2.0 code only, so permissively licensed projects (e.g.
   [anira](https://github.com/anira-project/anira)) can depend on it. These
   files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
