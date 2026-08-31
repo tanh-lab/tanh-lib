@@ -33,11 +33,11 @@ jobs:
             preset: desktop-debug-rtsan
     steps:
       - uses: actions/checkout@v4
-      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.3
-      - uses: tanh-lab/ci-actions/cmake-build@v0.3.3
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.5
+      - uses: tanh-lab/ci-actions/cmake-build@v0.3.5
         with:
           PRESET: ${{ matrix.preset }}
-      - uses: tanh-lab/ci-actions/cmake-test@v0.3.3
+      - uses: tanh-lab/ci-actions/cmake-test@v0.3.5
         with:
           PRESET: ${{ matrix.preset }}
 
