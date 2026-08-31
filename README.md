@@ -1,5 +1,7 @@
 # tanh-lib
 
+[![codecov](https://codecov.io/gh/tanh-lab/tanh-lib/branch/main/graph/badge.svg)](https://codecov.io/gh/tanh-lab/tanh-lib)
+
 Modular C++ audio library with four independently buildable components:
 
 - **tanh_core** -- Dispatcher, threading utilities

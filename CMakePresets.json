@@ -223,6 +223,20 @@
                 "TANH_WITH_DOCS": "OFF",
                 "TANH_WITH_INSTALL": "OFF"
             }
+        },
+        {
+            "name": "desktop-coverage",
+            "displayName": "Desktop Coverage",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/desktop/Coverage",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_C_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
+                "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping"
+            },
+            "description": "Instrumented clang source-based coverage build for the CI coverage leg."
         }
     ],
     "buildPresets": [
@@ -330,6 +344,11 @@
         {
             "name": "wasm-release",
             "configurePreset": "wasm-release"
+        },
+        {
+            "name": "desktop-coverage",
+            "configurePreset": "desktop-coverage",
+            "configuration": "Debug"
         }
     ],
     "testPresets": [
@@ -472,6 +491,17 @@
             "name": "ios-simulator-release",
             "configurePreset": "ios-simulator-release",
             "configuration": "Release",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "desktop-coverage",
+            "configurePreset": "desktop-coverage",
+            "configuration": "Debug",
             "output": {
                 "outputOnFailure": true
             },
