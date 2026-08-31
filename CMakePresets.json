@@ -1,403 +1,513 @@
 {
-  "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 15,
-    "patch": 0
-  },
-  "configurePresets": [
-    {
-      "name": "desktop-debug",
-      "displayName": "Desktop Debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/desktop/Debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++"
-      }
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 15,
+        "patch": 0
     },
-    {
-      "name": "desktop-release",
-      "displayName": "Desktop Release",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/desktop/Release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++"
-      }
-    },
-    {
-      "name": "macos-x64-debug",
-      "displayName": "macOS x86_64 Debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/macos-x64/Debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_OSX_ARCHITECTURES": "x86_64"
-      }
-    },
-    {
-      "name": "macos-x64-release",
-      "displayName": "macOS x86_64 Release",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/macos-x64/Release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_OSX_ARCHITECTURES": "x86_64"
-      }
-    },
-    {
-      "name": "windows-debug",
-      "displayName": "Windows Debug",
-      "binaryDir": "${sourceDir}/build/windows"
-    },
-    {
-      "name": "windows-release",
-      "displayName": "Windows Release",
-      "binaryDir": "${sourceDir}/build/windows"
-    },
-    {
-      "name": "windows-arm64-debug",
-      "displayName": "Windows ARM64 Debug",
-      "binaryDir": "${sourceDir}/build/windows-arm64",
-      "architecture": {
-        "value": "ARM64",
-        "strategy": "set"
-      },
-      "cacheVariables": {
-        "TANH_WITH_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "android-debug",
-      "displayName": "Android Debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/android/Debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
-        "ANDROID_ABI": "arm64-v8a",
-        "ANDROID_PLATFORM": "android-24",
-        "BUILD_SHARED_LIBS": "OFF",
-        "TANH_WITH_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "android-release",
-      "displayName": "Android Release",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/android/Release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
-        "ANDROID_ABI": "arm64-v8a",
-        "ANDROID_PLATFORM": "android-24",
-        "BUILD_SHARED_LIBS": "OFF",
-        "TANH_WITH_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "android-emulator-debug",
-      "displayName": "Android Emulator Debug (x86_64)",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/android-emulator/Debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
-        "ANDROID_ABI": "x86_64",
-        "ANDROID_PLATFORM": "android-24",
-        "BUILD_SHARED_LIBS": "OFF"
-      }
-    },
-    {
-      "name": "desktop-debug-asan",
-      "displayName": "Desktop Debug + ASan/UBSan",
-      "inherits": "desktop-debug",
-      "cacheVariables": {
-        "TANH_WITH_ASAN": "ON",
-        "TANH_WITH_USAN": "ON"
-      }
-    },
-    {
-      "name": "desktop-debug-tsan",
-      "displayName": "Desktop Debug + TSan",
-      "inherits": "desktop-debug",
-      "cacheVariables": {
-        "TANH_WITH_TSAN": "ON"
-      }
-    },
-    {
-      "name": "desktop-debug-msan",
-      "displayName": "Desktop Debug + MSan",
-      "inherits": "desktop-debug",
-      "cacheVariables": {
-        "TANH_WITH_MSAN": "ON"
-      }
-    },
-    {
-      "name": "desktop-debug-lsan",
-      "displayName": "Desktop Debug + LSan",
-      "inherits": "desktop-debug",
-      "cacheVariables": {
-        "TANH_WITH_LSAN": "ON"
-      }
-    },
-    {
-      "name": "desktop-debug-rtsan",
-      "displayName": "Desktop Debug + RTSan",
-      "inherits": "desktop-debug",
-      "cacheVariables": {
-        "TANH_WITH_RTSAN": "ON"
-      }
-    },
-    {
-      "name": "ios-simulator-debug",
-      "displayName": "iOS Simulator Debug",
-      "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
-        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
-        "TANH_IOS_PLATFORM": "SIMULATOR",
-        "BUILD_SHARED_LIBS": "OFF"
-      }
-    },
-    {
-      "name": "ios-simulator-release",
-      "displayName": "iOS Simulator Release",
-      "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
-        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
-        "TANH_IOS_PLATFORM": "SIMULATOR",
-        "BUILD_SHARED_LIBS": "OFF"
-      }
-    },
-    {
-      "name": "ios-device-debug",
-      "displayName": "iOS Device Debug",
-      "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphoneos",
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
-        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
-        "TANH_IOS_PLATFORM": "DEVICE",
-        "BUILD_SHARED_LIBS": "OFF"
-      }
-    },
-    {
-      "name": "ios-device-release",
-      "displayName": "iOS Device Release",
-      "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/ios-iphoneos",
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
-        "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
-        "TANH_IOS_PLATFORM": "DEVICE",
-        "BUILD_SHARED_LIBS": "OFF"
-      }
-    }
-  ],
-  "buildPresets": [
-    {
-      "name": "desktop-debug",
-      "configurePreset": "desktop-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "desktop-release",
-      "configurePreset": "desktop-release",
-      "configuration": "Release"
-    },
-    {
-      "name": "macos-x64-debug",
-      "configurePreset": "macos-x64-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "macos-x64-release",
-      "configurePreset": "macos-x64-release",
-      "configuration": "Release"
-    },
-    {
-      "name": "windows-debug",
-      "configurePreset": "windows-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "windows-release",
-      "configurePreset": "windows-release",
-      "configuration": "Release"
-    },
-    {
-      "name": "windows-arm64-debug",
-      "configurePreset": "windows-arm64-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "android-debug",
-      "configurePreset": "android-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "android-release",
-      "configurePreset": "android-release",
-      "configuration": "Release"
-    },
-    {
-      "name": "android-emulator-debug",
-      "configurePreset": "android-emulator-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "desktop-debug-asan",
-      "configurePreset": "desktop-debug-asan",
-      "configuration": "Debug"
-    },
-    {
-      "name": "desktop-debug-tsan",
-      "configurePreset": "desktop-debug-tsan",
-      "configuration": "Debug"
-    },
-    {
-      "name": "desktop-debug-msan",
-      "configurePreset": "desktop-debug-msan",
-      "configuration": "Debug"
-    },
-    {
-      "name": "desktop-debug-lsan",
-      "configurePreset": "desktop-debug-lsan",
-      "configuration": "Debug"
-    },
-    {
-      "name": "desktop-debug-rtsan",
-      "configurePreset": "desktop-debug-rtsan",
-      "configuration": "Debug"
-    },
-    {
-      "name": "ios-simulator-debug",
-      "configurePreset": "ios-simulator-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "ios-simulator-release",
-      "configurePreset": "ios-simulator-release",
-      "configuration": "Release"
-    },
-    {
-      "name": "ios-device-debug",
-      "configurePreset": "ios-device-debug",
-      "configuration": "Debug",
-      "nativeToolOptions": ["-allowProvisioningUpdates"]
-    },
-    {
-      "name": "ios-device-release",
-      "configurePreset": "ios-device-release",
-      "configuration": "Release",
-      "nativeToolOptions": ["-allowProvisioningUpdates"]
-    }
-  ],
-  "testPresets": [
-    {
-      "name": "desktop-debug",
-      "configurePreset": "desktop-debug",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "desktop-release",
-      "configurePreset": "desktop-release",
-      "configuration": "Release",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "macos-x64-debug",
-      "configurePreset": "macos-x64-debug",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "macos-x64-release",
-      "configurePreset": "macos-x64-release",
-      "configuration": "Release",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "desktop-debug-asan",
-      "configurePreset": "desktop-debug-asan",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "desktop-debug-tsan",
-      "configurePreset": "desktop-debug-tsan",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 },
-      "environment": {
-        "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
-      }
-    },
-    {
-      "name": "desktop-debug-msan",
-      "configurePreset": "desktop-debug-msan",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "desktop-debug-lsan",
-      "configurePreset": "desktop-debug-lsan",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "desktop-debug-rtsan",
-      "configurePreset": "desktop-debug-rtsan",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "windows-debug",
-      "configurePreset": "windows-debug",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "windows-release",
-      "configurePreset": "windows-release",
-      "configuration": "Release",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "ios-simulator-debug",
-      "configurePreset": "ios-simulator-debug",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    },
-    {
-      "name": "ios-simulator-release",
-      "configurePreset": "ios-simulator-release",
-      "configuration": "Release",
-      "output": { "outputOnFailure": true },
-      "execution": { "timeout": 600 }
-    }
-  ]
+    "configurePresets": [
+        {
+            "name": "desktop-debug",
+            "displayName": "Desktop Debug",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/desktop/Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "desktop-release",
+            "displayName": "Desktop Release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/desktop/Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "macos-x64-debug",
+            "displayName": "macOS x86_64 Debug",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/macos-x64/Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_OSX_ARCHITECTURES": "x86_64"
+            }
+        },
+        {
+            "name": "macos-x64-release",
+            "displayName": "macOS x86_64 Release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/macos-x64/Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_OSX_ARCHITECTURES": "x86_64"
+            }
+        },
+        {
+            "name": "windows-debug",
+            "displayName": "Windows Debug",
+            "binaryDir": "${sourceDir}/build/windows"
+        },
+        {
+            "name": "windows-release",
+            "displayName": "Windows Release",
+            "binaryDir": "${sourceDir}/build/windows"
+        },
+        {
+            "name": "windows-arm64-debug",
+            "displayName": "Windows ARM64 Debug",
+            "binaryDir": "${sourceDir}/build/windows-arm64",
+            "architecture": {
+                "value": "ARM64",
+                "strategy": "set"
+            },
+            "cacheVariables": {
+                "TANH_WITH_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "android-debug",
+            "displayName": "Android Debug",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/android/Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+                "ANDROID_ABI": "arm64-v8a",
+                "ANDROID_PLATFORM": "android-24",
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_WITH_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "android-release",
+            "displayName": "Android Release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/android/Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+                "ANDROID_ABI": "arm64-v8a",
+                "ANDROID_PLATFORM": "android-24",
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_WITH_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "android-emulator-debug",
+            "displayName": "Android Emulator Debug (x86_64)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/android-emulator/Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+                "ANDROID_ABI": "x86_64",
+                "ANDROID_PLATFORM": "android-24",
+                "BUILD_SHARED_LIBS": "OFF"
+            }
+        },
+        {
+            "name": "desktop-debug-asan",
+            "displayName": "Desktop Debug + ASan/UBSan",
+            "inherits": "desktop-debug",
+            "cacheVariables": {
+                "TANH_WITH_ASAN": "ON",
+                "TANH_WITH_USAN": "ON"
+            }
+        },
+        {
+            "name": "desktop-debug-tsan",
+            "displayName": "Desktop Debug + TSan",
+            "inherits": "desktop-debug",
+            "cacheVariables": {
+                "TANH_WITH_TSAN": "ON"
+            }
+        },
+        {
+            "name": "desktop-debug-msan",
+            "displayName": "Desktop Debug + MSan",
+            "inherits": "desktop-debug",
+            "cacheVariables": {
+                "TANH_WITH_MSAN": "ON"
+            }
+        },
+        {
+            "name": "desktop-debug-lsan",
+            "displayName": "Desktop Debug + LSan",
+            "inherits": "desktop-debug",
+            "cacheVariables": {
+                "TANH_WITH_LSAN": "ON"
+            }
+        },
+        {
+            "name": "desktop-debug-rtsan",
+            "displayName": "Desktop Debug + RTSan",
+            "inherits": "desktop-debug",
+            "cacheVariables": {
+                "TANH_WITH_RTSAN": "ON"
+            }
+        },
+        {
+            "name": "ios-simulator-debug",
+            "displayName": "iOS Simulator Debug",
+            "generator": "Xcode",
+            "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+                "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+                "TANH_IOS_PLATFORM": "SIMULATOR",
+                "BUILD_SHARED_LIBS": "OFF"
+            }
+        },
+        {
+            "name": "ios-simulator-release",
+            "displayName": "iOS Simulator Release",
+            "generator": "Xcode",
+            "binaryDir": "${sourceDir}/build/ios-iphonesimulator",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+                "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+                "TANH_IOS_PLATFORM": "SIMULATOR",
+                "BUILD_SHARED_LIBS": "OFF"
+            }
+        },
+        {
+            "name": "ios-device-debug",
+            "displayName": "iOS Device Debug",
+            "generator": "Xcode",
+            "binaryDir": "${sourceDir}/build/ios-iphoneos",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+                "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+                "TANH_IOS_PLATFORM": "DEVICE",
+                "BUILD_SHARED_LIBS": "OFF"
+            }
+        },
+        {
+            "name": "ios-device-release",
+            "displayName": "iOS Device Release",
+            "generator": "Xcode",
+            "binaryDir": "${sourceDir}/build/ios-iphoneos",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
+                "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
+                "TANH_IOS_PLATFORM": "DEVICE",
+                "BUILD_SHARED_LIBS": "OFF"
+            }
+        },
+        {
+            "name": "wasm-release",
+            "displayName": "Wasm Release",
+            "description": "Core component under Emscripten - the build-only web leg. anira embeds tanh under emscripten; this catches wasm breakage upstream instead of downstream.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/wasm/Release",
+            "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_BUILD_STATE": "OFF",
+                "TANH_BUILD_DSP": "OFF",
+                "TANH_BUILD_MODULATION": "OFF",
+                "TANH_BUILD_AUDIO_IO": "OFF",
+                "TANH_WITH_TESTS": "OFF",
+                "TANH_WITH_EXAMPLES": "OFF",
+                "TANH_WITH_DOCS": "OFF",
+                "TANH_WITH_INSTALL": "OFF"
+            }
+        },
+        {
+            "name": "desktop-coverage",
+            "displayName": "Desktop Coverage",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/desktop/Coverage",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_C_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
+                "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping"
+            },
+            "description": "Instrumented clang source-based coverage build for the CI coverage leg."
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "desktop-debug",
+            "configurePreset": "desktop-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "desktop-release",
+            "configurePreset": "desktop-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "macos-x64-debug",
+            "configurePreset": "macos-x64-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macos-x64-release",
+            "configurePreset": "macos-x64-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-debug",
+            "configurePreset": "windows-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-release",
+            "configurePreset": "windows-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-arm64-debug",
+            "configurePreset": "windows-arm64-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "android-debug",
+            "configurePreset": "android-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "android-release",
+            "configurePreset": "android-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "android-emulator-debug",
+            "configurePreset": "android-emulator-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "desktop-debug-asan",
+            "configurePreset": "desktop-debug-asan",
+            "configuration": "Debug"
+        },
+        {
+            "name": "desktop-debug-tsan",
+            "configurePreset": "desktop-debug-tsan",
+            "configuration": "Debug"
+        },
+        {
+            "name": "desktop-debug-msan",
+            "configurePreset": "desktop-debug-msan",
+            "configuration": "Debug"
+        },
+        {
+            "name": "desktop-debug-lsan",
+            "configurePreset": "desktop-debug-lsan",
+            "configuration": "Debug"
+        },
+        {
+            "name": "desktop-debug-rtsan",
+            "configurePreset": "desktop-debug-rtsan",
+            "configuration": "Debug"
+        },
+        {
+            "name": "ios-simulator-debug",
+            "configurePreset": "ios-simulator-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "ios-simulator-release",
+            "configurePreset": "ios-simulator-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "ios-device-debug",
+            "configurePreset": "ios-device-debug",
+            "configuration": "Debug",
+            "nativeToolOptions": [
+                "-allowProvisioningUpdates"
+            ]
+        },
+        {
+            "name": "ios-device-release",
+            "configurePreset": "ios-device-release",
+            "configuration": "Release",
+            "nativeToolOptions": [
+                "-allowProvisioningUpdates"
+            ]
+        },
+        {
+            "name": "wasm-release",
+            "configurePreset": "wasm-release"
+        },
+        {
+            "name": "desktop-coverage",
+            "configurePreset": "desktop-coverage",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "desktop-debug",
+            "configurePreset": "desktop-debug",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "desktop-release",
+            "configurePreset": "desktop-release",
+            "configuration": "Release",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "macos-x64-debug",
+            "configurePreset": "macos-x64-debug",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "macos-x64-release",
+            "configurePreset": "macos-x64-release",
+            "configuration": "Release",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "desktop-debug-asan",
+            "configurePreset": "desktop-debug-asan",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "desktop-debug-tsan",
+            "configurePreset": "desktop-debug-tsan",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            },
+            "environment": {
+                "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
+            }
+        },
+        {
+            "name": "desktop-debug-msan",
+            "configurePreset": "desktop-debug-msan",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "desktop-debug-lsan",
+            "configurePreset": "desktop-debug-lsan",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "desktop-debug-rtsan",
+            "configurePreset": "desktop-debug-rtsan",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "windows-debug",
+            "configurePreset": "windows-debug",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "windows-release",
+            "configurePreset": "windows-release",
+            "configuration": "Release",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "ios-simulator-debug",
+            "configurePreset": "ios-simulator-debug",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "ios-simulator-release",
+            "configurePreset": "ios-simulator-release",
+            "configuration": "Release",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        },
+        {
+            "name": "desktop-coverage",
+            "configurePreset": "desktop-coverage",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600
+            }
+        }
+    ]
 }
