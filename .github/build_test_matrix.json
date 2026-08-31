@@ -1,0 +1,33 @@
+[
+ {
+  "name": "Linux-x86_64",
+  "os": "ubuntu-24.04",
+  "preset": "desktop-debug",
+  "pr": true
+ },
+ {
+  "name": "macOS-arm64",
+  "os": "macos-15",
+  "preset": "desktop-debug",
+  "pr": true
+ },
+ {
+  "name": "macOS-x86_64",
+  "os": "macos-15",
+  "preset": "macos-x64-debug",
+  "pr": false
+ },
+ {
+  "name": "Windows-x86_64",
+  "os": "windows-2025",
+  "preset": "windows-debug",
+  "pr": true
+ },
+ {
+  "name": "Windows-ARM64",
+  "os": "windows-2025",
+  "preset": "windows-arm64-debug",
+  "pr": false,
+  "build_only": true
+ }
+]

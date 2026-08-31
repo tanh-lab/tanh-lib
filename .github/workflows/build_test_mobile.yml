@@ -1,0 +1,65 @@
+name: build_test_mobile
+
+# Mobile build + test on the shared ci-actions mobile runners (same drivers as
+# anira). Android builds arm64-v8a (build-only; no accelerated arm emulator on
+# x86 hosts) and x86_64, then runs the suite on the emulator through
+# cmake-test-android; iOS builds for the simulator and runs each test bundle
+# through cmake-test-ios-simulator.
+
+on:
+  merge_group:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: build_test_mobile-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: iOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.1
+      - uses: tanh-lab/ci-actions/cmake-build@v0.3.1
+        with:
+          PRESET: ios-simulator-debug
+      - uses: tanh-lab/ci-actions/cmake-test-ios-simulator@v0.3.1
+        with:
+          PRESET: ios-simulator-debug
+
+  android:
+    name: Android
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.1
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27b
+      - name: build arm64-v8a
+        uses: tanh-lab/ci-actions/cmake-build@v0.3.1
+        with:
+          PRESET: android-debug
+      - name: build x86_64
+        uses: tanh-lab/ci-actions/cmake-build@v0.3.1
+        with:
+          PRESET: android-emulator-debug
+      - name: run x86_64 suite on the emulator
+        uses: tanh-lab/ci-actions/cmake-test-android@v0.3.1
+        with:
+          PRESET: android-emulator-debug
+
+  result:
+    name: mobile result
+    needs: [ios, android]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: aggregate
+        run: |
+          [ "${{ needs.ios.result }}" = "success" ] || exit 1
+          [ "${{ needs.android.result }}" = "success" ] || exit 1

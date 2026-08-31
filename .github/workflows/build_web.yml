@@ -1,0 +1,36 @@
+name: build_web
+
+# Build-only wasm leg through the shared cmake-build-wasm action (the emsdk
+# pin lives there). anira embeds tanh under emscripten — this catches wasm
+# breakage upstream instead of in anira's CI.
+
+on:
+  merge_group:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: build_web-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/cmake-build-wasm@v0.3.1
+        with:
+          PRESET: wasm-release
+
+  result:
+    name: web result
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: aggregate
+        run: |
+          [ "${{ needs.build.result }}" = "success" ] || exit 1

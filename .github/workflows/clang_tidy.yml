@@ -1,0 +1,38 @@
+name: clang_tidy
+
+# Full clang-tidy over the sources in the merge queue (the repo is small
+# enough for a full sweep). Advisory: "clang_tidy result" is not a required
+# status.
+
+on:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: clang_tidy-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.1
+      - uses: tanh-lab/ci-actions/cmake-build@v0.3.1
+        with:
+          PRESET: desktop-debug
+      - uses: tanh-lab/ci-actions/clang-tidy-check@v0.3.1
+        with:
+          SOURCES: "src/ test/"
+          PRESET: desktop-debug
+
+  result:
+    name: clang_tidy result
+    needs: tidy
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: aggregate
+        run: |
+          [ "${{ needs.tidy.result }}" = "success" ] || exit 1
