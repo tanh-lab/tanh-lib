@@ -1,0 +1,28 @@
+name: warm_caches
+
+# The push-to-main cache warmer — the logic lives in tanh-lab/ci-actions'
+# reusable warm-caches workflow; this file keeps only tanh-lib's legs. See the
+# reusable workflow's header for why warming must happen on main's scope
+# (cmake-build injects the sccache launchers in preset mode, so every leg
+# compiles through the cache).
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: warm_caches-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: warm
+    uses: tanh-lab/ci-actions/.github/workflows/warm-caches.yml@v0.3.3
+    with:
+      # One build-only leg per platform family (the PR-tier presets).
+      warm_matrix: >-
+        [{"name":"Linux-x86_64","os":"ubuntu-24.04","preset":"desktop-debug"},
+         {"name":"macOS-arm64","os":"macos-15","preset":"desktop-debug"},
+         {"name":"Windows-x86_64","os":"windows-2025","preset":"windows-debug"}]
