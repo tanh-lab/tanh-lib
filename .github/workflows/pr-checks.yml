@@ -1,6 +1,10 @@
 name: PR Checks
 
-on: [push]
+on:
+  push:
+  # Queue runs validate the exact merged result before it lands (the shared
+  # merge-queue setup from tanh-tooling github/, same style as anira).
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -229,3 +233,16 @@ jobs:
       - uses: tanh-lab/ci-actions/cmake-test@v0.1.0
         with:
           PRESET: desktop-debug-rtsan
+
+  # The queue's required status: green only when every job succeeded.
+  result:
+    name: pr-checks result
+    needs: [format, tooling-config, build-and-test, build, install, sanitizer-asan, sanitizer-tsan, sanitizer-lsan, sanitizer-rtsan]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: aggregate
+        run: |
+          for r in "${{ needs.format.result }}" "${{ needs.tooling-config.result }}" "${{ needs.build-and-test.result }}" "${{ needs.build.result }}" "${{ needs.install.result }}" "${{ needs.sanitizer-asan.result }}" "${{ needs.sanitizer-tsan.result }}" "${{ needs.sanitizer-lsan.result }}" "${{ needs.sanitizer-rtsan.result }}"; do
+            [ "$r" = "success" ] || exit 1
+          done
