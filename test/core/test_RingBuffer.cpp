@@ -137,11 +137,15 @@ TEST(RingBuffer, MultiChannelIndependence) {
 TEST(RingBuffer, ClearWithPositions) {
     RingBuffer<float> rb;
     rb.initialise_with_positions(1, 8);
-    rb.push_sample(0, 1.0f);
-    rb.push_sample(0, 2.0f);
+    for (int i = 0; i < 8; ++i) { rb.push_sample(0, static_cast<float>(i + 1)); }
     rb.clear_with_positions();
     EXPECT_EQ(rb.get_available_samples(0), 0u);
     EXPECT_EQ(rb.get_available_past_samples(0), 0u);
+    // Not just the positions: the storage itself is zeroed, so every slot of
+    // the ring reads back 0.
+    for (size_t off = 0; off < 8; ++off) {
+        EXPECT_FLOAT_EQ(rb.get_future_sample(0, off), 0.0f) << off;
+    }
 }
 
 TEST(RingBuffer, FullState) {

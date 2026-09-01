@@ -120,6 +120,19 @@ TEST(MemoryBlock, SwapData) {
     }
 }
 
+TEST(MemoryBlock, SwapDataIsZeroCopy) {
+    MemoryBlock<float> a(8);
+    MemoryBlock<float> b(8);
+    float* const a_data = a.data();
+    float* const b_data = b.data();
+
+    a.swap_data(b);
+
+    // The allocations themselves change hands; nothing is copied.
+    EXPECT_EQ(a.data(), b_data);
+    EXPECT_EQ(b.data(), a_data);
+}
+
 TEST(MemoryBlock, SwapDataRawPointer) {
     MemoryBlock<float> block(4);
     for (size_t i = 0; i < 4; ++i) { block[i] = 1.0f; }
@@ -364,6 +377,29 @@ TEST(BufferF, SwapDataBuffers) {
     EXPECT_FLOAT_EQ(b.get_sample(0, 0), 1.0f);
 }
 
+TEST(BufferF, SwapDataBuffersIsZeroCopy) {
+    BufferF a(2, 32, 48000.0);
+    BufferF b(2, 32, 48000.0);
+
+    float* const a_data = a.data();
+    float* const b_data = b.data();
+    const float* const a_ch0 = a.get_read_pointer(0);
+    const float* const a_ch1 = a.get_read_pointer(1);
+    const float* const b_ch0 = b.get_read_pointer(0);
+    const float* const b_ch1 = b.get_read_pointer(1);
+
+    a.swap_data(b);
+
+    // The storage and the channel pointers themselves change hands; nothing
+    // is copied.
+    EXPECT_EQ(a.data(), b_data);
+    EXPECT_EQ(b.data(), a_data);
+    EXPECT_EQ(a.get_read_pointer(0), b_ch0);
+    EXPECT_EQ(a.get_read_pointer(1), b_ch1);
+    EXPECT_EQ(b.get_read_pointer(0), a_ch0);
+    EXPECT_EQ(b.get_read_pointer(1), a_ch1);
+}
+
 TEST(BufferF, SwapDataMemoryBlock) {
     BufferF buffer(1, 4, 48000.0);
     for (size_t f = 0; f < 4; ++f) { buffer.set_sample(0, f, 1.0f); }
@@ -377,6 +413,23 @@ TEST(BufferF, SwapDataMemoryBlock) {
         EXPECT_FLOAT_EQ(buffer.get_sample(0, f), 5.0f);
         EXPECT_FLOAT_EQ(block[f], 1.0f);
     }
+}
+
+TEST(BufferF, SwapDataMemoryBlockIsZeroCopy) {
+    BufferF buffer(2, 16, 48000.0);
+    MemoryBlock<float> block(32);
+
+    float* const buffer_data = buffer.data();
+    float* const block_data = block.data();
+
+    buffer.swap_data(block);
+
+    // The blocks exchange their allocations and the channel pointers are
+    // rebuilt onto the adopted storage; nothing is copied.
+    EXPECT_EQ(buffer.data(), block_data);
+    EXPECT_EQ(block.data(), buffer_data);
+    EXPECT_EQ(buffer.get_read_pointer(0), block_data);
+    EXPECT_EQ(buffer.get_read_pointer(1), block_data + 16);
 }
 
 TEST(BufferF, SwapDataRawPointer) {
@@ -495,6 +548,49 @@ TEST(BufferDouble, BasicOperations) {
 
     buffer.clear();
     EXPECT_DOUBLE_EQ(buffer.get_sample(0, 0), 0.0);
+}
+
+// =============================================================================
+// Buffer<int> Template Instantiation
+// =============================================================================
+
+TEST(BufferInt, SwapDataBuffers) {
+    Buffer<int> a(2, 8);
+    Buffer<int> b(2, 8);
+    for (size_t f = 0; f < 8; ++f) {
+        a.set_sample(0, f, 1);
+        a.set_sample(1, f, 2);
+        b.set_sample(0, f, 3);
+        b.set_sample(1, f, 4);
+    }
+    int* const a_data = a.data();
+    int* const b_data = b.data();
+
+    a.swap_data(b);
+
+    EXPECT_EQ(a.data(), b_data);
+    EXPECT_EQ(b.data(), a_data);
+    EXPECT_EQ(a.get_sample(0, 0), 3);
+    EXPECT_EQ(a.get_sample(1, 7), 4);
+    EXPECT_EQ(b.get_sample(0, 0), 1);
+    EXPECT_EQ(b.get_sample(1, 7), 2);
+}
+
+TEST(BufferInt, SwapDataMemoryBlock) {
+    Buffer<int> buffer(1, 4);
+    for (size_t f = 0; f < 4; ++f) { buffer.set_sample(0, f, 1); }
+
+    MemoryBlock<int> block(4);
+    for (size_t i = 0; i < 4; ++i) { block[i] = 5; }
+    int* const block_data = block.data();
+
+    buffer.swap_data(block);
+
+    EXPECT_EQ(buffer.data(), block_data);
+    for (size_t f = 0; f < 4; ++f) {
+        EXPECT_EQ(buffer.get_sample(0, f), 5);
+        EXPECT_EQ(block[f], 1);
+    }
 }
 
 TEST(Buffer, CopyOfZeroFrameBufferKeepsChannelPointers) {
@@ -620,6 +716,36 @@ TEST(BufferFailure, SwapDataDimensionMismatchIsNoOp) {
     EXPECT_EQ(a.get_read_pointer(1), a_ch1);
     EXPECT_FLOAT_EQ(a.get_sample(1, 3), 42.0F);
 }
+
+TEST(BufferFailure, SwapDataChannelCountMismatchIsNoOp) {
+    Buffer<float> a(2, 4);
+    Buffer<float> b(4, 4);
+    a.set_sample(1, 3, 42.0F);
+    const float* const a_ch1 = a.get_read_pointer(1);
+
+    a.swap_data(b);
+
+    EXPECT_EQ(a.get_num_channels(), 2u);
+    EXPECT_EQ(b.get_num_channels(), 4u);
+    EXPECT_EQ(a.get_read_pointer(1), a_ch1);
+    EXPECT_FLOAT_EQ(a.get_sample(1, 3), 42.0F);
+}
+
+// Same TOTAL element count on both sides (2x4 vs 4x2, 8 each): a guard that only
+// compared total storage size would let this swap through.
+TEST(BufferFailure, SwapDataSameTotalDifferentShapeIsNoOp) {
+    Buffer<float> a(2, 4);
+    Buffer<float> b(4, 2);
+    a.set_sample(1, 3, 42.0F);
+    const float* const a_ch1 = a.get_read_pointer(1);
+
+    a.swap_data(b);
+
+    EXPECT_EQ(a.get_num_channels(), 2u);
+    EXPECT_EQ(a.get_num_samples(), 4u);
+    EXPECT_EQ(a.get_read_pointer(1), a_ch1);
+    EXPECT_FLOAT_EQ(a.get_sample(1, 3), 42.0F);
+}
 #elif GTEST_HAS_DEATH_TEST
 TEST(MemoryBlockFailureDeathTest, SwapDataSizeMismatchAsserts) {
     MemoryBlock<float> a(4);
@@ -630,6 +756,18 @@ TEST(MemoryBlockFailureDeathTest, SwapDataSizeMismatchAsserts) {
 TEST(BufferFailureDeathTest, SwapDataDimensionMismatchAsserts) {
     Buffer<float> a(2, 4);
     Buffer<float> b(2, 8);
+    EXPECT_DEATH(a.swap_data(b), "different dimensions");
+}
+
+TEST(BufferFailureDeathTest, SwapDataChannelCountMismatchAsserts) {
+    Buffer<float> a(2, 4);
+    Buffer<float> b(4, 4);
+    EXPECT_DEATH(a.swap_data(b), "different dimensions");
+}
+
+TEST(BufferFailureDeathTest, SwapDataSameTotalDifferentShapeAsserts) {
+    Buffer<float> a(2, 4);
+    Buffer<float> b(4, 2);
     EXPECT_DEATH(a.swap_data(b), "different dimensions");
 }
 #endif
