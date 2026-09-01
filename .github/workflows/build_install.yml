@@ -42,7 +42,7 @@ jobs:
             shared: OFF
     steps:
       - uses: actions/checkout@v4
-      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.6
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.7
       - name: build and install tanh::Core
         shell: bash
         run: |
@@ -55,16 +55,12 @@ jobs:
           cmake --install build-install
           find prefix -type f | sort
       - name: build and run the consumer against the prefix
-        shell: bash
-        run: |
-          cmake -S test/install -B build-consumer -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/prefix"
-          cmake --build build-consumer --parallel
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            PATH="${{ github.workspace }}/prefix/bin:$PATH" ./build-consumer/consumer.exe
-          else
-            ./build-consumer/consumer
-          fi
+        uses: tanh-lab/ci-actions/install-consume-check@v0.3.7
+        with:
+          PREFIX: ${{ github.workspace }}/prefix
+          CONSUMER_DIR: test/install
+          BINARIES: consumer
+          GENERATOR: Ninja
 
   result:
     name: install result
