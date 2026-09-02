@@ -22,7 +22,7 @@ concurrency:
 jobs:
   coverage:
     name: coverage
-    uses: tanh-lab/ci-actions/.github/workflows/coverage.yml@v0.3.7
+    uses: tanh-lab/ci-actions/.github/workflows/coverage.yml@v0.3.10
     permissions:
       contents: read
       id-token: write # Codecov's tokenless OIDC upload

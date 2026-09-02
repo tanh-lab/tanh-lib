@@ -24,7 +24,7 @@ concurrency:
 jobs:
   build_test:
     name: build_test
-    uses: tanh-lab/ci-actions/.github/workflows/build-test.yml@v0.3.7
+    uses: tanh-lab/ci-actions/.github/workflows/build-test.yml@v0.3.10
     with:
       tier: ${{ inputs.tier || '' }}
 
@@ -36,6 +36,12 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      # uses: refs cannot reference a variable, so single-point definition is
+      # impossible — assert the next-best property: one ci-actions version repo-wide.
+      - name: one ci-actions version repo-wide
+        run: |
+          test "$(grep -rho 'tanh-lab/ci-actions[^@]*@v[0-9.]*' .github/workflows/ | grep -o 'v[0-9.]*$' | sort -u | wc -l)" -eq 1
       - name: aggregate
         run: |
           echo "workflow result: ${{ needs.build_test.result }}"
