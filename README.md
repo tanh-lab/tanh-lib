@@ -107,7 +107,7 @@ The fixture files are not checked into version control.
 
 `just format` / `just format-check` run clang-format, `just tidy` / `just tidy-fix` run clang-tidy. Their configs — `.clang-format`, `.clang-tidy`, `.clangd` in the repository root — and the CMake modules under `cmake/tanh/` (platform detection, the symbol-export policy and its CTest check, git versioning, sanitizers, googletest/benchmark, Apple defaults, the iOS toolchain, CPack, install RPATHs, binary data) are shared across the tanh-lab projects and are **not maintained here**: they are installed verbatim from a pinned release of [tanh-tooling](https://github.com/tanh-lab/tanh-tooling) (canonical copies in its `clang/` and `cmake/` directories, documented in its `cmake/README.md`). Do not edit them by hand and do not add files to `cmake/tanh/`; the `tooling-config` CI job re-downloads the pinned release and fails if the committed files differ. Changes belong in tanh-tooling.
 
-To move to a newer tanh-tooling release, run its installer with the new tag, commit the rewritten files, and bump the `ref` (and workflow version) in `.github/workflows/pr-checks.yml` to the same tag in the same commit. anira pins the same modules and fetches tanh-lib, so both repositories must move to the same tag together:
+To move to a newer tanh-tooling release, run its installer with the new tag, commit the rewritten files, and bump the `ref` (and workflow version) in `.github/workflows/lint.yml` to the same tag in the same commit. anira pins the same modules and fetches tanh-lib, so both repositories must move to the same tag together:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/tanh-lab/tanh-tooling/vX.Y.Z/install.sh | sh -s -- clang cmake
