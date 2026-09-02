@@ -55,6 +55,19 @@ void GrainProcessorImpl::reset_grains() {
     m_last_playing_state = false;
     m_playback_elapsed_samples = 0;
     m_envelope.reset();
+    reset_player();
+    m_mode_fade_out = false;
+    m_mode_gain = 1.0f;
+}
+
+void GrainProcessorImpl::reset_player() {
+    if (m_player_started) {
+        for (auto* l : m_viz_listeners) { l->on_grain_finished(0); }
+    }
+    m_player_started = false;
+    m_play_head = 0.0;
+    m_fade_head = 0.0;
+    m_fade_remaining = 0;
 }
 
 void GrainProcessorImpl::prepare(const double& sample_rate,
@@ -67,6 +80,21 @@ void GrainProcessorImpl::prepare(const double& sample_rate,
         grain.m_envelope.set_sample_rate(static_cast<float>(m_sample_rate));
     }
     m_next_grain_time = 0;
+
+    // Mode / player timing. The active mode seeds from the parameter so a
+    // preset that boots in Sample mode doesn't run one block of grains first.
+    m_mode_gain_step =
+        1.0f / std::max(1.0f, k_mode_change_fade_duration * static_cast<float>(m_sample_rate));
+    m_fade_length = std::max(
+        static_cast<size_t>(1),
+        static_cast<size_t>(k_player_crossfade_duration * static_cast<float>(m_sample_rate)));
+    m_active_mode =
+        static_cast<EngineMode>(std::clamp(get_parameter<int>(EngineModeParam),
+                                           0,
+                                           static_cast<int>(EngineMode::NumEngineModes) - 1));
+    m_mode_gain = 1.0f;
+    m_mode_fade_out = false;
+    reset_player();
 
     m_envelope.set_sample_rate(static_cast<float>(m_sample_rate));
     m_envelope.set_parameters(get_parameter<float>(EnvelopeAttack),
@@ -87,8 +115,10 @@ void GrainProcessorImpl::process(thl::core::BufferView buffer, uint32_t modulati
     for (size_t ch = 0; ch < num_channels; ++ch) {
         channel_ptrs[ch] = buffer.get_write_pointer(ch);
     }
+    m_block_channels = num_channels;
 
     update_envelope_if_needed(modulation_offset);
+    update_mode_fade(modulation_offset);
 
     bool const playing = get_parameter<bool>(Playing, modulation_offset);
 
@@ -99,6 +129,7 @@ void GrainProcessorImpl::process(thl::core::BufferView buffer, uint32_t modulati
         m_sequential_position = 0;  // Reset sequential position when starting
                                     // playback
         m_playback_elapsed_samples = 0;
+        reset_player();  // Sample head restarts at region start on note-on
     } else if (!playing && m_envelope.get_state() != utils::ADSR::State::IDLE &&
                m_envelope.get_state() != utils::ADSR::State::RELEASE) {
         m_envelope.note_off();
@@ -124,17 +155,276 @@ void GrainProcessorImpl::process(thl::core::BufferView buffer, uint32_t modulati
             }
             for (auto* l : m_viz_listeners) { l->on_master_envelope_updated(0.f); }
         }
+        reset_player();
         return;
     }
 
-    // Process existing grains and generate new ones
-    update_grains(channel_ptrs.data(), num_samples, modulation_offset);
+    // Head policy: one continuous head (Sample) or the grain scheduler
+    // (Position / Loop — they differ only inside calculate_start_position).
+    if (m_active_mode == EngineMode::Sample) {
+        render_player(channel_ptrs.data(), num_samples, modulation_offset);
+    } else {
+        update_grains(channel_ptrs.data(), num_samples, modulation_offset);
+    }
 
-    // Apply master volume
+    // Apply master volume, ADSR and the mode-change fade. The fade ramps
+    // linearly toward 0 while a mode switch is pending and back to 1 after
+    // the switch has happened (see update_mode_fade).
+    float const mode_target = m_mode_fade_out ? 0.0f : 1.0f;
     for (size_t i = 0; i < num_samples; i++) {
-        float const grain_volume = volume * m_envelope.process();
+        if (m_mode_gain < mode_target) {
+            m_mode_gain = std::min(mode_target, m_mode_gain + m_mode_gain_step);
+        } else if (m_mode_gain > mode_target) {
+            m_mode_gain = std::max(mode_target, m_mode_gain - m_mode_gain_step);
+        }
+        float const grain_volume = volume * m_envelope.process() * m_mode_gain;
         for (size_t ch = 0; ch < num_channels; ++ch) { channel_ptrs[ch][i] *= grain_volume; }
     }
+
+    // Player visualization — per block, NOT rate-limited like the grain path
+    // (48 grains per voice earn a limit; one head doesn't), and AFTER the
+    // envelope loop so the reported level is this block's, not the previous
+    // one's. Both halves of the old scheme painted a fade-in the ADSR never
+    // produced: on_grain_triggered seeds the slot's envelope to 0 (right for
+    // a Hann grain, wrong for an instantly-loud head), and at note-on the
+    // pre-block master level still read 0.
+    if (m_active_mode == EngineMode::Sample && m_player_started && !m_viz_listeners.empty() &&
+        m_player_total_frames > 0) {
+        float const master_env = m_envelope.get_current_level();
+        float const norm_pos =
+            static_cast<float>(m_play_head) / static_cast<float>(m_player_total_frames);
+        for (auto* l : m_viz_listeners) {
+            l->on_master_envelope_updated(master_env);
+            l->on_grain_updated(0, norm_pos, 1.0f);
+        }
+    }
+}
+
+void GrainProcessorImpl::update_mode_fade(uint32_t modulation_offset) {
+    auto const requested =
+        static_cast<EngineMode>(std::clamp(get_parameter<int>(EngineModeParam, modulation_offset),
+                                           0,
+                                           static_cast<int>(EngineMode::NumEngineModes) - 1));
+    if (requested == m_active_mode) {
+        m_mode_fade_out = false;
+        return;
+    }
+    // A sounding voice fades to silence first; a silent one (or one whose
+    // fade has landed) switches right away and ramps back up.
+    if (m_envelope.is_active() && m_mode_gain > 0.0f) {
+        m_mode_fade_out = true;
+        return;
+    }
+    m_active_mode = requested;
+    m_mode_fade_out = false;
+    if (!m_envelope.is_active()) { m_mode_gain = 1.0f; }
+    for (size_t gi = 0; gi < m_grains.size(); ++gi) {
+        if (m_grains[gi].m_active) {
+            m_grains[gi].m_active = false;
+            for (auto* l : m_viz_listeners) { l->on_grain_finished(static_cast<int>(gi)); }
+        }
+    }
+    m_sequential_position = 0;
+    m_next_grain_time = 0;
+    reset_player();
+}
+
+// ── Sample mode ──────────────────────────────────────────────────────────────
+
+void GrainProcessorImpl::start_player_crossfade(size_t old_sample_index) {
+    m_fade_head = m_play_head;
+    m_fade_sample_index = old_sample_index;
+    m_fade_remaining = m_fade_length;
+}
+
+void GrainProcessorImpl::read_player_frame(double position,
+                                           size_t sample_index,
+                                           size_t source_channels,
+                                           ChannelMode mode,
+                                           float width,
+                                           std::array<float, k_max_channel_support>& out) {
+    out.fill(0.0f);
+    switch (mode) {
+        case ChannelMode::MonoToStereo: {
+            // One head has no per-grain pan to spread, so the mono sum sits
+            // centred; Spread has nothing to widen here.
+            float mono = 0.0f;
+            for (size_t ch = 0; ch < source_channels; ++ch) {
+                float s = 0.0f;
+                read_sample_exact(position, sample_index, ch, s);
+                mono += s;
+            }
+            if (source_channels > 1) { mono /= static_cast<float>(source_channels); }
+            out[0] = mono;
+            out[1] = mono;
+            break;
+        }
+        case ChannelMode::TrueStereo: {
+            float s0 = 0.0f, s1 = 0.0f;
+            read_sample_exact(position, sample_index, 0, s0);
+            if (source_channels > 1) {
+                read_sample_exact(position, sample_index, 1, s1);
+            } else {
+                s1 = s0;
+            }
+            // Spread as mid/side width: 0 collapses to mono, 1 keeps the
+            // source's own image.
+            float const mid = 0.5f * (s0 + s1);
+            float const side = 0.5f * (s0 - s1) * width;
+            out[0] = mid + side;
+            out[1] = mid - side;
+            break;
+        }
+        case ChannelMode::TrueMultichannel: {
+            size_t const out_channels = std::min(m_channels, source_channels);
+            for (size_t ch = 0; ch < out_channels; ++ch) {
+                read_sample_exact(position, sample_index, ch, out[ch]);
+            }
+            // Width per L/R pair (0,1), (2,3), ...
+            for (size_t ch = 0; ch + 1 < out_channels; ch += 2) {
+                float const mid = 0.5f * (out[ch] + out[ch + 1]);
+                float const side = 0.5f * (out[ch] - out[ch + 1]) * width;
+                out[ch] = mid + side;
+                out[ch + 1] = mid - side;
+            }
+            break;
+        }
+        default: break;
+    }
+}
+
+void GrainProcessorImpl::render_player(float** buffer,
+                                       size_t n_buffer_frames,
+                                       uint32_t modulation_offset) {
+    // Every silent early-out resets the player: leaving m_player_started set
+    // keeps the post-block viz painting a frozen head as if it were sounding.
+    const auto& audio_data = m_audio_store.get_buffer();
+    if (audio_data.empty()) {
+        reset_player();
+        return;
+    }
+
+    size_t const sample_index =
+        static_cast<size_t>(std::clamp(get_parameter<int>(SampleIndex, modulation_offset),
+                                       0,
+                                       static_cast<int>(audio_data.size()) - 1));
+    // Only the selected semitones are rendered; an unselected slot is an
+    // empty buffer and the voice stays silent rather than reading it.
+    if (audio_data[sample_index].empty()) {
+        reset_player();
+        return;
+    }
+    const auto& buf = audio_data[sample_index];
+    size_t const total_frames = buf.get_num_samples();
+    size_t const source_channels = buf.get_num_channels();
+    if (total_frames == 0) {
+        reset_player();
+        return;
+    }
+
+    auto const region = compute_sample_region(total_frames, modulation_offset);
+    if (region.size() == 0) {
+        reset_player();
+        return;
+    }
+
+    // Velocity is the head's own rate here (varispeed). Modulation may push
+    // it past the range; keep it forward and finite.
+    float const velocity =
+        std::clamp(get_parameter<float>(Velocity, modulation_offset), 0.01f, 8.0f);
+    auto const mode =
+        static_cast<ChannelMode>(std::clamp(get_parameter<int>(ChannelModeParam, modulation_offset),
+                                            0,
+                                            static_cast<int>(ChannelMode::NumChannelModes) - 1));
+    float const width = std::clamp(get_parameter<float>(Spread, modulation_offset), 0.0f, 1.0f);
+
+    auto const total_f = static_cast<float>(total_frames);
+    if (!m_player_started) {
+        m_player_started = true;
+        m_play_head = static_cast<double>(region.m_start);
+        m_player_sample_index = sample_index;
+        m_fade_remaining = 0;
+        // The head occupies grain slot 0 in the visualisation.
+        for (auto* l : m_viz_listeners) {
+            l->on_grain_triggered(
+                0,
+                static_cast<float>(region.m_start) / total_f,
+                static_cast<float>(region.size()) / total_f,
+                velocity,
+                static_cast<float>(region.size()) / static_cast<float>(m_sample_rate) * 1000.0f);
+        }
+    } else if (sample_index != m_player_sample_index) {
+        // Pitch-bank switch: the banks are equal-length and time-aligned, so
+        // the head position stays valid — only the waveform is discontinuous.
+        start_player_crossfade(m_player_sample_index);
+        m_player_sample_index = sample_index;
+    }
+
+    size_t fade_channels = 0;
+    if (m_fade_remaining > 0 && m_fade_sample_index < audio_data.size() &&
+        !audio_data[m_fade_sample_index].empty()) {
+        fade_channels = audio_data[m_fade_sample_index].get_num_channels();
+    }
+
+    auto const region_end = static_cast<double>(region.m_end);
+    // Enforce a minimum loop body (two crossfades, ~20 ms) so a Loop marker
+    // dragged onto End can't degenerate into per-frame fade restarts and a
+    // frozen output; a region smaller than that loops whole.
+    double const min_loop =
+        std::min(static_cast<double>(region.size()), 2.0 * static_cast<double>(m_fade_length));
+    double const loop_point =
+        std::min(static_cast<double>(region.m_loop_point), region_end - min_loop);
+    std::array<float, k_max_channel_support> frame{};
+    std::array<float, k_max_channel_support> fade_frame{};
+
+    for (size_t i = 0; i < n_buffer_frames; ++i) {
+        read_player_frame(m_play_head, sample_index, source_channels, mode, width, frame);
+
+        if (m_fade_remaining > 0) {
+            if (fade_channels > 0) {
+                read_player_frame(m_fade_head,
+                                  m_fade_sample_index,
+                                  fade_channels,
+                                  mode,
+                                  width,
+                                  fade_frame);
+            } else {
+                fade_frame.fill(0.0f);
+            }
+            float const t =
+                1.0f - static_cast<float>(m_fade_remaining) / static_cast<float>(m_fade_length);
+            float const gain_in = std::sin(t * std::numbers::pi_v<float> * 0.5f);
+            float const gain_out = std::cos(t * std::numbers::pi_v<float> * 0.5f);
+            for (size_t ch = 0; ch < m_channels; ++ch) {
+                frame[ch] = frame[ch] * gain_in + fade_frame[ch] * gain_out;
+            }
+            m_fade_head += velocity;
+            --m_fade_remaining;
+        }
+
+        size_t const write_channels = std::min(m_channels, m_block_channels);
+        for (size_t ch = 0; ch < write_channels; ++ch) { buffer[ch][i] = frame[ch]; }
+
+        m_play_head += velocity;
+        if (m_play_head >= region_end) {
+            // Loop wrap: the outgoing head rides out the crossfade (clamped to
+            // the sample's last frame by read_sample_exact) while the new one
+            // restarts at Loop, carrying the fractional overshoot so the seam
+            // is phase-exact. The overshoot is wrapped into the loop body (an
+            // End drag below the head can exceed it), and a crossfade already
+            // in flight is left to finish rather than pinned at t = 0.
+            double const loop_size = region_end - loop_point;
+            double const overshoot = std::fmod(m_play_head - region_end, loop_size);
+            if (m_fade_remaining == 0) {
+                start_player_crossfade(sample_index);
+                fade_channels = source_channels;
+            }
+            m_play_head = loop_point + overshoot;
+        }
+        m_playback_elapsed_samples++;
+    }
+
+    m_player_total_frames = total_frames;
 }
 
 void GrainProcessorImpl::update_envelope_if_needed(uint32_t modulation_offset) {
@@ -311,8 +601,12 @@ void GrainProcessorImpl::update_grains(float** buffer,
             }
         }
 
-        // Write to output buffer (planar layout)
-        for (size_t ch = 0; ch < m_channels; ++ch) { buffer[ch][i] = channel_accum[ch]; }
+        // Write to output buffer (planar layout). Clamped to the channels the
+        // block actually carries — a device switch can deliver fewer than
+        // prepare() promised, and the pointer array holds nullptr beyond them.
+        for (size_t ch = 0; ch < std::min(m_channels, m_block_channels); ++ch) {
+            buffer[ch][i] = channel_accum[ch];
+        }
 
         m_playback_elapsed_samples++;
     }
@@ -383,7 +677,8 @@ void GrainProcessorImpl::trigger_grain(const size_t sample_index, uint32_t modul
                 std::clamp(get_parameter<float>(TemperaturePosition, modulation_offset),
                            0.0f,
                            1.0f));
-            long const start_position = calculate_start_position(region, position_temperature);
+            long const start_position =
+                calculate_start_position(region, position_temperature, modulation_offset);
 
             // Truncate grain if it would overshoot past region end
             long const end_frame = static_cast<long>(region.m_end);
@@ -459,34 +754,59 @@ size_t GrainProcessorImpl::calculate_grain_size(float grain_size_param, float te
     return std::clamp(grain_size, min_size, max_size);
 }
 
-long GrainProcessorImpl::calculate_start_position(const SampleRegion& region, float temperature) {
-    long start_position = static_cast<long>(m_sequential_position);
-
-    // Apply temperature-based randomization to grain start position
+long GrainProcessorImpl::calculate_start_position(const SampleRegion& region,
+                                                  float temperature,
+                                                  uint32_t modulation_offset) {
     long const max_position = static_cast<long>(region.size());
     if (max_position <= 0) { return static_cast<long>(region.m_start); }
-    if (temperature == 0.f && start_position >= max_position) {
-        return static_cast<long>(region.m_loop_point);
+
+    bool const positional = m_active_mode == EngineMode::GranularPosition;
+    long start_position = 0;
+
+    if (positional) {
+        // The head is parked on Position. Each grain is drawn uniformly from
+        // the Spray window around it — a deliberate width, biased before (-)
+        // or after (+) the point by Tilt: the symmetric [-1, 1] window slides
+        // to [tilt - 1, tilt + 1] and is clipped. Variation's position
+        // temperature is then applied on top exactly as in Loop mode, so it
+        // can push a grain outside the window.
+        float const position =
+            std::clamp(get_parameter<float>(Position, modulation_offset), 0.0f, 1.0f);
+        float const spray = std::clamp(get_parameter<float>(Spray, modulation_offset), 0.0f, 1.0f);
+        float const tilt = std::clamp(get_parameter<float>(Tilt, modulation_offset), -1.0f, 1.0f);
+        float const window_lo = std::max(-1.0f, tilt - 1.0f);
+        float const window_hi = std::min(1.0f, tilt + 1.0f);
+        float const u = m_uni_dist(m_random_generator);  // [0, 1)
+        float const spray_offset = (window_lo + u * (window_hi - window_lo)) * spray;
+        start_position = static_cast<long>(position * static_cast<float>(max_position - 1)) +
+                         static_cast<long>(spray_offset * static_cast<float>(max_position));
+    } else {
+        start_position = static_cast<long>(m_sequential_position);
+        if (temperature == 0.f && start_position >= max_position) {
+            return static_cast<long>(region.m_loop_point);
+        }
     }
 
+    // Apply temperature-based randomization to grain start position
     float rand_value = m_uni_dist(m_random_generator);  // [0, 1)
     rand_value = (rand_value - 0.5f) * 2.f;             // [-1, 1)
     rand_value *= temperature;
     start_position += static_cast<long>(rand_value * static_cast<float>(max_position));
-    if (start_position >= max_position) {
-        start_position -= max_position;
-    } else if (start_position < 0) {
-        start_position += max_position;
-    }
+    // Spray + temperature can overshoot by up to two region lengths; wrap
+    // however many times it takes.
+    while (start_position >= max_position) { start_position -= max_position; }
+    while (start_position < 0) { start_position += max_position; }
 
     start_position += static_cast<long>(region.m_start);
 
-    // Advance sequential position and handle looping.
-    // Scanner traverses the full region (start → end), then restarts at loop_point.
-    m_sequential_position += static_cast<long>(m_min_grain_interval);
+    if (!positional) {
+        // Advance sequential position and handle looping.
+        // Scanner traverses the full region (start → end), then restarts at loop_point.
+        m_sequential_position += static_cast<long>(m_min_grain_interval);
 
-    if (std::cmp_greater_equal(m_sequential_position, max_position)) {
-        m_sequential_position = static_cast<long>(region.m_loop_point - region.m_start);
+        if (std::cmp_greater_equal(m_sequential_position, max_position)) {
+            m_sequential_position = static_cast<long>(region.m_loop_point - region.m_start);
+        }
     }
 
     return start_position;
@@ -521,6 +841,10 @@ float GrainProcessorImpl::apply_temperature_ramp(float temperature) const {
 GrainProcessorImpl::SampleRegion GrainProcessorImpl::compute_sample_region(
     size_t total_frames,
     uint32_t modulation_offset) {
+    // Position mode has no travelling head, so nothing to bound or return
+    // to: Position is absolute in the sample and the spray wraps across all
+    // of it. Start / Loop / End stay dormant (no hidden state on a switch).
+    if (m_active_mode == EngineMode::GranularPosition) { return SampleRegion{0, total_frames, 0}; }
     auto total_f = static_cast<float>(total_frames);
     // Clamp the normalized positions before the size_t casts: modulation may
     // push them negative, and a negative float -> size_t cast is UB (on x86 it
@@ -569,6 +893,33 @@ void GrainProcessorImpl::read_sample(float position,
 
     const float* ch_data = buf.get_read_pointer(source_channel);
     out_sample = ch_data[pos_floor] * (1.0f - frac) + ch_data[pos_ceil] * frac;
+}
+
+void GrainProcessorImpl::read_sample_exact(double position,
+                                           size_t sample_index,
+                                           size_t source_channel,
+                                           float& out_sample) {
+    out_sample = 0.0f;
+
+    const auto& audio_data = m_audio_store.get_buffer();
+    if (sample_index >= audio_data.size() || audio_data[sample_index].empty()) { return; }
+
+    const auto& buf = audio_data[sample_index];
+    if (source_channel >= buf.get_num_channels()) { return; }
+
+    size_t const num_frames = buf.get_num_samples();
+    if (num_frames == 0) { return; }
+
+    // Clamp (never wrap): the loop-fade head deliberately runs past the
+    // region end and must hold the sample's last frame, not alias back onto
+    // the frames the incoming head is playing.
+    double const pos = std::clamp(position, 0.0, static_cast<double>(num_frames - 1));
+    auto const frame_a = static_cast<size_t>(pos);
+    size_t const frame_b = std::min(frame_a + 1, num_frames - 1);
+    float const frac = static_cast<float>(pos - static_cast<double>(frame_a));
+
+    const float* ch_data = buf.get_read_pointer(source_channel);
+    out_sample = ch_data[frame_a] * (1.0f - frac) + ch_data[frame_b] * frac;
 }
 
 }  // namespace thl::dsp::granular

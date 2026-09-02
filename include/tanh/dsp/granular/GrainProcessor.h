@@ -7,6 +7,7 @@
 #include <tanh/dsp/utils/ADSR.h>
 #include <tanh/dsp/utils/HannWindow.h>
 
+#include <array>
 #include <random>
 #include <vector>
 
@@ -40,6 +41,22 @@ enum class ChannelMode : int {
                        // channels
     NumChannelModes
 };
+
+// Where the read head goes. All three modes share the same source buffer,
+// pitch bank, region maths, ADSR and channel handling; they differ only in
+// the head policy (see process()).
+enum class EngineMode : int {
+    GranularPosition,  // Grains sprayed around a fixed Position (no travelling head)
+    GranularLoop,      // Scan head runs Start -> End at 1x, restarts at Loop
+    Sample,            // One continuous interpolating head at Velocity, no grains
+    NumEngineModes
+};
+
+// Length of the equal-power crossfade the Sample head runs at a loop wrap
+// or a pitch-bank switch (seconds).
+constexpr float k_player_crossfade_duration = 0.010f;
+// Fade-through-zero when the engine mode changes on a sounding voice.
+constexpr float k_mode_change_fade_duration = 0.015f;
 
 // Structure to represent a single grain
 struct Grain {
@@ -96,6 +113,11 @@ protected:
         ChannelModeParam,
         Spread,
 
+        EngineModeParam,
+        Position,
+        Spray,
+        Tilt,
+
         EnvelopeAttack,
         EnvelopeDecay,
         EnvelopeSustain,
@@ -133,6 +155,10 @@ private:
 
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
+    // Channels actually filled for the current block (a device switch can
+    // hand us fewer channels than prepare() promised; writing to m_channels
+    // would dereference null pointers).
+    size_t m_block_channels = 2;
 
     // Grain management
     std::vector<Grain> m_grains;
@@ -160,13 +186,52 @@ private:
     // Sample index management
     size_t m_current_sample_index{0};
 
+    // Engine mode. The active mode only changes once the mode-change fade has
+    // reached silence, so a switch on a sounding voice never clicks.
+    EngineMode m_active_mode{EngineMode::GranularLoop};
+    float m_mode_gain{1.0f};
+    float m_mode_gain_step{1.0f};
+    bool m_mode_fade_out{false};
+
+    // Sample-mode read head. `m_play_head` is the live position in source
+    // frames; while `m_fade_remaining > 0` a second head (`m_fade_head`,
+    // reading `m_fade_sample_index`) rides out the crossfade.
+    double m_play_head{0.0};
+    double m_fade_head{0.0};
+    size_t m_fade_sample_index{0};
+    size_t m_fade_remaining{0};
+    size_t m_fade_length{0};
+    size_t m_player_sample_index{0};
+    size_t m_player_total_frames{0};  // for viz normalization after the block
+    bool m_player_started{false};
+    void render_player(float** buffer, size_t n_buffer_frames, uint32_t modulation_offset);
+    void start_player_crossfade(size_t old_sample_index);
+    void read_player_frame(double position,
+                           size_t sample_index,
+                           size_t source_channels,
+                           ChannelMode mode,
+                           float width,
+                           std::array<float, k_max_channel_support>& out);
+    void update_mode_fade(uint32_t modulation_offset);
+    void reset_player();
+
     // Grain generation and management
     void trigger_grain(const size_t sample_index, uint32_t modulation_offset);
     void update_grains(float** buffer, size_t n_buffer_frames, uint32_t modulation_offset);
     void read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample);
+    // Player variant: full double-precision addressing (a float head loses
+    // sample-exact positions past ~2^24 frames), and clamped to the last
+    // frame instead of wrapping — the outgoing loop-fade head must never fold
+    // back onto the material the incoming head is playing.
+    void read_sample_exact(double position,
+                           size_t sample_index,
+                           size_t source_channel,
+                           float& out_sample);
     size_t calculate_grain_size(float grain_size_param, float temperature);
     float calculate_velocity(float velocity, float temperature);
-    long calculate_start_position(const SampleRegion& region, float temperature);
+    long calculate_start_position(const SampleRegion& region,
+                                  float temperature,
+                                  uint32_t modulation_offset);
     float apply_temperature_ramp(float temperature) const;
     SampleRegion compute_sample_region(size_t total_frames, uint32_t modulation_offset);
 
