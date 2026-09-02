@@ -23,11 +23,11 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.7
-      - uses: tanh-lab/ci-actions/cmake-build@v0.3.7
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.10
+      - uses: tanh-lab/ci-actions/cmake-build@v0.3.10
         with:
           PRESET: ios-simulator-debug
-      - uses: tanh-lab/ci-actions/cmake-test-ios-simulator@v0.3.7
+      - uses: tanh-lab/ci-actions/cmake-test-ios-simulator@v0.3.10
         with:
           PRESET: ios-simulator-debug
 
@@ -36,20 +36,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.7
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.10
       - uses: nttld/setup-ndk@v1
         with:
           ndk-version: r27b
       - name: build arm64-v8a
-        uses: tanh-lab/ci-actions/cmake-build@v0.3.7
+        uses: tanh-lab/ci-actions/cmake-build@v0.3.10
         with:
           PRESET: android-debug
       - name: build x86_64
-        uses: tanh-lab/ci-actions/cmake-build@v0.3.7
+        uses: tanh-lab/ci-actions/cmake-build@v0.3.10
         with:
           PRESET: android-emulator-debug
       - name: run x86_64 suite on the emulator
-        uses: tanh-lab/ci-actions/cmake-test-android@v0.3.7
+        uses: tanh-lab/ci-actions/cmake-test-android@v0.3.10
         with:
           PRESET: android-emulator-debug
 
