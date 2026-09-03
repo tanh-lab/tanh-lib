@@ -7,6 +7,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-03
+
+First release with a changelog: earlier releases (v0.1.0, v0.2.0) are described only by their tag messages (`git tag -n1 v0.1.0 v0.2.0`).
+
 ### Added
 
 - `Logger`: configurable platform-sink identity. `LoggerConfig::m_platform_tag`
@@ -47,3 +51,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   count. Its message is now `real-time log queue overflowed` with the count in
   `m_dropped_before` (and in the rendered suffix), instead of
   `N real-time log message(s) dropped (queue full)` after every pass with drops.
+
+[Unreleased]: https://github.com/tanh-lab/tanh-lib/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.2.0...v0.3.0
