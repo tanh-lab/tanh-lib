@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -14,6 +15,8 @@
 #include "tanh/core/Logger.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
+using thl::Logger::k_flag_contract_violation;
+using thl::Logger::k_flag_realtime;
 using thl::Logger::LogLevel;
 using thl::Logger::LogRecord;
 namespace rt = thl::Logger::rt;
@@ -94,6 +97,31 @@ private:
     std::mutex m_mutex;
     std::vector<LogRecord> m_records;
 };
+
+/// A flag bit outside the reserved k_flag_* values, as a consumer would define.
+constexpr std::uint32_t k_consumer_bit = 1U << 8;
+
+/// Sum of LogRecord::m_dropped_before over @p records: the number of drops
+/// they report, counted the way a consumer counts them.
+std::uint64_t reported_drops(const std::vector<LogRecord>& records) {
+    std::uint64_t total = 0;
+    for (const auto& r : records) { total += r.m_dropped_before; }
+    return total;
+}
+
+/// The way a wrapper with its own `...` reaches Queue::vlogf with flags.
+rt::Status vlogf_with_flags(rt::Queue& queue,
+                            LogLevel level,
+                            std::uint32_t flags,
+                            const char* group,
+                            const char* fmt,
+                            ...) {
+    va_list args;
+    va_start(args, fmt);
+    const rt::Status status = queue.vlogf(level, flags, group, fmt, args);
+    va_end(args);
+    return status;
+}
 
 }  // namespace
 
@@ -271,7 +299,7 @@ TEST_F(LoggerFixture, ConfigCanDisableAndReenableDrainThread) {
 // Real-time path: overflow
 // ---------------------------------------------------------------------------
 
-TEST_F(LoggerFixture, QueueFullDropsAndReportsCount) {
+TEST_F(LoggerFixture, QueueFullDropsAndReportsCountOnTheFirstRecord) {
     rt::stop();
     rt::enable_manual_drain(true);
 
@@ -293,21 +321,82 @@ TEST_F(LoggerFixture, QueueFullDropsAndReportsCount) {
     EXPECT_EQ(rt::dropped_count(), 0U);
 
     const auto got = records();
-    // capacity RT records + one synthetic "dropped" warning.
-    ASSERT_EQ(got.size(), rt::k_queue_capacity + 1);
+    // capacity RT records and nothing else: the pass had a record to carry the
+    // count, so no synthetic warning is dispatched.
+    ASSERT_EQ(got.size(), rt::k_queue_capacity);
     EXPECT_EQ(got[0].m_message, "0");
-    EXPECT_EQ(got[rt::k_queue_capacity - 1].m_message, std::to_string(rt::k_queue_capacity - 1));
-    const auto& report = got.back();
-    EXPECT_EQ(report.m_level, static_cast<std::uint32_t>(LogLevel::Warning));
-    EXPECT_EQ(report.m_group, "thl.logger");
-    EXPECT_NE(report.m_message.find("10 real-time log message(s) dropped"), std::string::npos)
-        << report.m_message;
+    EXPECT_EQ(got[0].m_dropped_before, 10U);
+    EXPECT_EQ(got[0].m_flags & k_flag_realtime, k_flag_realtime);
+    EXPECT_EQ(got.back().m_message, std::to_string(rt::k_queue_capacity - 1));
+    for (std::size_t i = 1; i < got.size(); ++i) {
+        EXPECT_EQ(got[i].m_dropped_before, 0U) << "record " << i;
+    }
+    for (const auto& r : got) { EXPECT_NE(r.m_group, "thl.logger") << r.m_message; }
+    EXPECT_EQ(reported_drops(got), 10U) << "every drop reported exactly once";
 
-    // The ring is reusable after a full/empty cycle.
+    // The ring is reusable after a full/empty cycle, and the count taken by
+    // the previous pass is not reported again.
     EXPECT_EQ(rt::logf(LogLevel::Info, "test", "again"), rt::Status::Ok);
     EXPECT_EQ(rt::drain(), 1U);
+    const auto after = records();
+    ASSERT_EQ(after.size(), rt::k_queue_capacity + 1);
+    EXPECT_EQ(after.back().m_message, "again");
+    EXPECT_EQ(after.back().m_dropped_before, 0U);
+    EXPECT_EQ(reported_drops(after), 10U);
 
     rt::enable_manual_drain(false);
+    rt::start();
+}
+
+TEST_F(LoggerFixture, DrainWithNothingToDeliverReportsDropsOnOneSyntheticWarning) {
+    rt::stop();  // only this thread dispatches below
+    rt::Queue queue(2);
+    ASSERT_EQ(queue.capacity(), 2U);
+
+    // A pass takes the drop counter before it pops, so drops that happen while
+    // the pass runs are invisible to it. Produce them from inside the callback
+    // sink, i.e. from within queue.drain(): the pass then delivers every record
+    // (none carries a count) and the *next* pass finds the count but no record.
+    std::vector<LogRecord> got;
+    bool injected = false;
+    thl::Logger::set_callback([&](const LogRecord& record) {
+        got.push_back(record);
+        if (injected) { return; }
+        injected = true;
+        // The record being delivered freed one slot: fill it, then overflow.
+        EXPECT_EQ(queue.log(LogLevel::Info, "owned", "in-flight"), rt::Status::Ok);
+        EXPECT_EQ(queue.log(LogLevel::Info, "owned", "lost-1"), rt::Status::QueueFull);
+        EXPECT_EQ(queue.log(LogLevel::Info, "owned", "lost-2"), rt::Status::QueueFull);
+    });
+
+    EXPECT_EQ(queue.log(LogLevel::Info, "owned", "a"), rt::Status::Ok);
+    EXPECT_EQ(queue.log(LogLevel::Info, "owned", "b"), rt::Status::Ok);
+    EXPECT_EQ(queue.drain(), 3U);
+    ASSERT_EQ(got.size(), 3U);
+    EXPECT_EQ(got[0].m_message, "a");
+    EXPECT_EQ(got[1].m_message, "b");
+    EXPECT_EQ(got[2].m_message, "in-flight");
+    EXPECT_EQ(reported_drops(got), 0U) << "the drops happened after the pass took the counter";
+    EXPECT_EQ(queue.dropped_count(), 2U);
+
+    // Nothing queued: the count goes out on one synthetic warning.
+    EXPECT_EQ(queue.drain(), 0U) << "the synthetic record is not a delivered record";
+    ASSERT_EQ(got.size(), 4U);
+    const auto& report = got.back();
+    EXPECT_EQ(report.m_level, static_cast<std::uint32_t>(LogLevel::Warning));
+    EXPECT_EQ(report.m_source, "rt");
+    EXPECT_EQ(report.m_group, "thl.logger");
+    EXPECT_EQ(report.m_message, "real-time log queue overflowed");
+    EXPECT_EQ(report.m_dropped_before, 2U);
+    EXPECT_EQ(report.m_flags, k_flag_realtime);
+    EXPECT_EQ(queue.dropped_count(), 0U);
+
+    // Reported once: a further pass is silent.
+    EXPECT_EQ(queue.drain(), 0U);
+    EXPECT_EQ(got.size(), 4U);
+    EXPECT_EQ(reported_drops(got), 2U);
+
+    thl::Logger::clear_callback();
     rt::start();
 }
 
@@ -320,6 +409,7 @@ TEST_F(LoggerFixture, ManyProducersNoLossNoDuplicates) {
     constexpr int k_per_thread = 2000;
 
     std::atomic<bool> go{false};
+    std::atomic<std::uint64_t> retries{0};  // every QueueFull is one counted drop
     std::vector<std::thread> producers;
     producers.reserve(k_threads);
     for (int t = 0; t < k_threads; ++t) {
@@ -328,6 +418,7 @@ TEST_F(LoggerFixture, ManyProducersNoLossNoDuplicates) {
             for (int i = 0; i < k_per_thread; ++i) {
                 // Spin (never block) if the drain thread is behind.
                 while (rt::logf(LogLevel::Info, "p", "%d:%d", t, i) == rt::Status::QueueFull) {
+                    retries.fetch_add(1, std::memory_order_relaxed);
                     std::this_thread::yield();
                 }
             }
@@ -337,9 +428,12 @@ TEST_F(LoggerFixture, ManyProducersNoLossNoDuplicates) {
     for (auto& p : producers) { p.join(); }
 
     ASSERT_TRUE(wait_for_records(k_threads * k_per_thread, std::chrono::seconds(10)));
-    rt::drain();
-    // Producers that saw QueueFull retried, so those count as drops and the
-    // drain reports them; only look at the payload records here.
+    // Join the drain thread: a pass may still be delivering the record that
+    // carries the last drop count.
+    rt::stop();
+    // Producers that saw QueueFull retried, so those count as drops; the
+    // drain reports each of them exactly once, on whatever record it had.
+    EXPECT_EQ(reported_drops(rt_records()), retries.load(std::memory_order_relaxed));
     const auto got = rt_records("p");
     ASSERT_EQ(got.size(), static_cast<std::size_t>(k_threads * k_per_thread));
 
@@ -358,6 +452,7 @@ TEST_F(LoggerFixture, ManyProducersNoLossNoDuplicates) {
     for (int t = 0; t < k_threads; ++t) {
         EXPECT_EQ(next[static_cast<std::size_t>(t)], k_per_thread);
     }
+    rt::start();
 }
 
 TEST_F(LoggerFixture, StartStopWhileProducing) {
@@ -377,11 +472,14 @@ TEST_F(LoggerFixture, StartStopWhileProducing) {
     EXPECT_TRUE(rt::is_running());
     // No crash, no deadlock; records delivered are well-formed. The producer
     // outruns a stopped consumer, so the drain legitimately reports the
-    // resulting drops as its own "thl.logger" record — everything else must
-    // be the producer's payload.
+    // resulting drops — on the first "churn" record of a pass, or on its own
+    // "thl.logger" record when a pass had nothing else to deliver. Everything
+    // else must be the producer's payload.
     for (const auto& r : rt_records()) {
+        EXPECT_EQ(r.m_flags & k_flag_realtime, k_flag_realtime);
         if (r.m_group == "thl.logger") {
-            EXPECT_NE(r.m_message.find("dropped"), std::string::npos) << r.m_message;
+            EXPECT_GT(r.m_dropped_before, 0U) << r.m_message;
+            EXPECT_EQ(r.m_message, "real-time log queue overflowed");
             continue;
         }
         EXPECT_EQ(r.m_group, "churn");
@@ -402,6 +500,8 @@ void audio_callback_that_logs(int block) TANH_NONBLOCKING_FUNCTION {
                    static_cast<size_t>(480),
                    0.5);
     (void)rt::log(LogLevel::Info, "audio", "literal");
+    (void)rt::logf(LogLevel::Error, k_flag_contract_violation, "audio", "flagged %d", block);
+    (void)rt::log(LogLevel::Info, k_flag_contract_violation | k_consumer_bit, "audio", "flagged");
     (void)thl::Logger::is_enabled(LogLevel::Debug);
     (void)rt::dropped_count();
     (void)rt::is_running();
@@ -411,8 +511,8 @@ void audio_callback_that_logs(int block) TANH_NONBLOCKING_FUNCTION {
 
 TEST_F(LoggerFixture, RtLogIsNonblocking) {
     for (int i = 0; i < 100; ++i) { audio_callback_that_logs(i); }
-    ASSERT_TRUE(wait_for_records(200));
-    EXPECT_EQ(rt_records().size(), 200U);
+    ASSERT_TRUE(wait_for_records(400));
+    EXPECT_EQ(rt_records().size(), 400U);
 }
 
 TEST_F(LoggerFixture, RtLogIsNonblockingEvenWhenQueueFull) {
@@ -485,15 +585,26 @@ TEST_F(LoggerFixture, OwnedQueueDeliversOnDrain) {
     EXPECT_EQ(got[1].m_level, static_cast<std::uint32_t>(LogLevel::Warning));
 }
 
-TEST_F(LoggerFixture, OwnedQueueCountsDropsAndReportsThem) {
+TEST_F(LoggerFixture, OwnedQueueCountsDropsAndReportsThemOnce) {
     rt::Queue queue(4);
     for (int i = 0; i < 6; ++i) { queue.logf(LogLevel::Info, "owned", "%d", i); }
     EXPECT_EQ(queue.dropped_count(), 2U);
     EXPECT_EQ(queue.drain(), 4U);
     EXPECT_EQ(queue.dropped_count(), 0U);
-    const auto all = records();
-    ASSERT_FALSE(all.empty());
-    EXPECT_NE(all.back().m_message.find("2 real-time log message(s) dropped"), std::string::npos);
+    auto got = rt_records("owned");
+    ASSERT_EQ(got.size(), 4U);
+    EXPECT_EQ(got[0].m_message, "0");
+    EXPECT_EQ(got[0].m_dropped_before, 2U) << "the first record of the pass carries the count";
+    for (std::size_t i = 1; i < got.size(); ++i) { EXPECT_EQ(got[i].m_dropped_before, 0U); }
+    EXPECT_TRUE(rt_records("thl.logger").empty()) << "no synthetic warning beside a carrier";
+
+    // The next pass starts from zero.
+    queue.logf(LogLevel::Info, "owned", "later");
+    EXPECT_EQ(queue.drain(), 1U);
+    got = rt_records("owned");
+    ASSERT_EQ(got.size(), 5U);
+    EXPECT_EQ(got.back().m_dropped_before, 0U);
+    EXPECT_EQ(reported_drops(records()), 2U);
 }
 
 TEST_F(LoggerFixture, OwnedQueueNotAcceptingReturnsNoConsumer) {
@@ -570,4 +681,224 @@ TEST_F(LoggerFixture, StopLeavesRtEnabledConfigAlone) {
     rt::stop();
     EXPECT_TRUE(thl::Logger::get_config().m_rt_enabled);
     rt::start();
+}
+
+// ---------------------------------------------------------------------------
+// Record flags
+// ---------------------------------------------------------------------------
+
+TEST(LoggerRecord, FlagsAndDropCountDefaultToZero) {
+    static_assert(k_flag_realtime == 1U);
+    static_assert(k_flag_contract_violation == 2U);
+    static_assert((k_flag_realtime & k_flag_contract_violation) == 0U);
+    const LogRecord record{};
+    EXPECT_EQ(record.m_flags, 0U);
+    EXPECT_EQ(record.m_dropped_before, 0U);
+}
+
+TEST_F(LoggerFixture, SyncFlagsReachTheCallbackSink) {
+    thl::Logger::log_with_source(LogLevel::Warning,
+                                 k_flag_contract_violation,
+                                 "api",
+                                 "flags",
+                                 "misuse");
+    thl::Logger::logf(LogLevel::Error,
+                      k_flag_contract_violation | k_consumer_bit,
+                      "flags",
+                      "value %d",
+                      7);
+    thl::Logger::logf(LogLevel::Info, k_consumer_bit, "flags", nullptr);
+    thl::Logger::log_with_source(LogLevel::Info, "api", "flags", "plain");
+    thl::Logger::logf(LogLevel::Info, "flags", "plain %d", 1);
+    thl::Logger::info("flags", "shorthand");
+    THL_LOG_INFO("flags", "macro");
+
+    const auto got = records();
+    ASSERT_EQ(got.size(), 7U);
+    EXPECT_EQ(got[0].m_flags, k_flag_contract_violation);
+    EXPECT_EQ(got[0].m_source, "api");
+    EXPECT_EQ(got[0].m_message, "misuse");
+    EXPECT_EQ(got[0].m_level, static_cast<std::uint32_t>(LogLevel::Warning));
+    EXPECT_EQ(got[1].m_flags, k_flag_contract_violation | k_consumer_bit);
+    EXPECT_EQ(got[1].m_source, "native");
+    EXPECT_EQ(got[1].m_message, "value 7");
+    EXPECT_EQ(got[2].m_flags, k_consumer_bit);
+    EXPECT_EQ(got[2].m_message, "");
+    for (std::size_t i = 3; i < got.size(); ++i) {
+        EXPECT_EQ(got[i].m_flags, 0U) << "existing overloads pass no flags: " << got[i].m_message;
+    }
+    for (const auto& r : got) {
+        EXPECT_EQ(r.m_flags & k_flag_realtime, 0U) << "never set on the synchronous path";
+        EXPECT_EQ(r.m_dropped_before, 0U);
+    }
+}
+
+TEST_F(LoggerFixture, RtFlagsReachTheCallbackSinkWithRealtimeSet) {
+    rt::stop();
+    rt::enable_manual_drain(true);
+
+    EXPECT_EQ(rt::logf(LogLevel::Warning, k_flag_contract_violation, "flags", "misuse %d", 1),
+              rt::Status::Ok);
+    EXPECT_EQ(rt::log(LogLevel::Error, k_consumer_bit, "flags", "consumer bit"), rt::Status::Ok);
+    EXPECT_EQ(rt::logf(LogLevel::Info, "flags", "plain %d", 2), rt::Status::Ok);
+    EXPECT_EQ(rt::log(LogLevel::Info, "flags", "plain"), rt::Status::Ok);
+    THL_LOG_RT_INFO("flags", "macro");
+
+    EXPECT_EQ(rt::drain(), 5U);
+    const auto got = rt_records("flags");
+    ASSERT_EQ(got.size(), 5U);
+    EXPECT_EQ(got[0].m_flags, k_flag_contract_violation | k_flag_realtime);
+    EXPECT_EQ(got[0].m_message, "misuse 1");
+    EXPECT_EQ(got[1].m_flags, k_consumer_bit | k_flag_realtime);
+    EXPECT_EQ(got[1].m_message, "consumer bit");
+    for (std::size_t i = 2; i < got.size(); ++i) {
+        EXPECT_EQ(got[i].m_flags, k_flag_realtime) << "drain marks what it dispatches";
+    }
+    for (const auto& r : got) {
+        EXPECT_EQ(r.m_source, "rt");
+        EXPECT_EQ(r.m_dropped_before, 0U);
+    }
+
+    rt::enable_manual_drain(false);
+    rt::start();
+}
+
+TEST_F(LoggerFixture, OwnedQueueCarriesFlagsThroughEveryOverload) {
+    rt::Queue queue(8);
+    EXPECT_EQ(queue.logf(LogLevel::Info, k_flag_contract_violation, "owned", "%d", 1),
+              rt::Status::Ok);
+    EXPECT_EQ(queue.log(LogLevel::Info, k_consumer_bit, "owned", "two"), rt::Status::Ok);
+    EXPECT_EQ(vlogf_with_flags(queue,
+                               LogLevel::Info,
+                               k_flag_contract_violation | k_consumer_bit,
+                               "owned",
+                               "%s",
+                               "three"),
+              rt::Status::Ok);
+    EXPECT_EQ(queue.logf(LogLevel::Info, "owned", "%d", 4), rt::Status::Ok);
+    EXPECT_EQ(queue.log(LogLevel::Info, "owned", "five"), rt::Status::Ok);
+    EXPECT_EQ(queue.drain(), 5U);
+
+    const auto got = rt_records("owned");
+    ASSERT_EQ(got.size(), 5U);
+    EXPECT_EQ(got[0].m_flags, k_flag_contract_violation | k_flag_realtime);
+    EXPECT_EQ(got[0].m_message, "1");
+    EXPECT_EQ(got[1].m_flags, k_consumer_bit | k_flag_realtime);
+    EXPECT_EQ(got[1].m_message, "two");
+    EXPECT_EQ(got[2].m_flags, k_flag_contract_violation | k_consumer_bit | k_flag_realtime);
+    EXPECT_EQ(got[2].m_message, "three");
+    EXPECT_EQ(got[3].m_flags, k_flag_realtime);
+    EXPECT_EQ(got[4].m_flags, k_flag_realtime);
+}
+
+TEST_F(LoggerFixture, FlagsSurviveTruncationAndTheLevelFilter) {
+    rt::Queue queue(8);
+    const std::string long_msg(rt::k_message_capacity * 2, 'm');
+    EXPECT_EQ(queue.log(LogLevel::Info, k_flag_contract_violation, "owned", long_msg.c_str()),
+              rt::Status::Truncated);
+    thl::Logger::set_level(LogLevel::Error);
+    EXPECT_EQ(queue.log(LogLevel::Info, k_flag_contract_violation, "owned", "filtered"),
+              rt::Status::Filtered);
+    thl::Logger::logf(LogLevel::Info, k_flag_contract_violation, "owned", "filtered");
+    EXPECT_EQ(queue.drain(), 1U);
+    const auto got = records();
+    ASSERT_EQ(got.size(), 1U);
+    EXPECT_EQ(got[0].m_flags, k_flag_contract_violation | k_flag_realtime);
+    EXPECT_EQ(got[0].m_message.size(), rt::k_message_capacity - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Drop count rendering
+// ---------------------------------------------------------------------------
+
+TEST(LoggerFormat, DropCountIsRenderedOnlyWhenARecordCarriesOne) {
+    LogRecord record;
+    record.m_level = static_cast<std::uint32_t>(LogLevel::Warning);
+    record.m_source = "rt";
+    record.m_group = "audio";
+    record.m_message = "xrun";
+
+    EXPECT_EQ(thl::Logger::format_plain(record), "[warn][rt][audio] xrun");
+    std::string logfmt = thl::Logger::format_logfmt(record);
+    EXPECT_EQ(logfmt.find("dropped_before"), std::string::npos) << logfmt;
+    EXPECT_EQ(logfmt.substr(logfmt.size() - 12), "message=xrun") << logfmt;
+
+    record.m_dropped_before = 3;
+    EXPECT_EQ(thl::Logger::format_plain(record),
+              "[warn][rt][audio] xrun [3 real-time log message(s) dropped before this record]");
+    logfmt = thl::Logger::format_logfmt(record);
+    EXPECT_EQ(logfmt.substr(logfmt.size() - 29), "message=xrun dropped_before=3") << logfmt;
+
+    // Flags are not rendered by the text formatters.
+    record.m_flags = k_flag_realtime | k_flag_contract_violation;
+    EXPECT_EQ(thl::Logger::format_plain(record),
+              "[warn][rt][audio] xrun [3 real-time log message(s) dropped before this record]");
+    EXPECT_EQ(thl::Logger::format_logfmt(record), logfmt);
+}
+
+// ---------------------------------------------------------------------------
+// Platform sink identity
+// ---------------------------------------------------------------------------
+
+TEST_F(LoggerFixture, PlatformIdentityDefaultsAndRoundTripsThroughConfig) {
+    const thl::Logger::LoggerConfig defaults;
+    EXPECT_EQ(defaults.m_platform_tag, "thl");
+    EXPECT_EQ(defaults.m_platform_subsystem, "thl");
+    EXPECT_EQ(defaults.m_platform_category, "logger");
+
+    auto config = thl::Logger::get_config();
+    EXPECT_EQ(config.m_platform_tag, "thl") << "the fixture's config left the defaults in place";
+    EXPECT_EQ(config.m_platform_subsystem, "thl");
+    EXPECT_EQ(config.m_platform_category, "logger");
+
+    config.m_platform_tag = "anira";
+    config.m_platform_subsystem = "org.anira";
+    config.m_platform_category = "inference";
+    thl::Logger::set_config(config);
+    auto back = thl::Logger::get_config();
+    EXPECT_EQ(back.m_platform_tag, "anira");
+    EXPECT_EQ(back.m_platform_subsystem, "org.anira");
+    EXPECT_EQ(back.m_platform_category, "inference");
+    EXPECT_TRUE(back.m_rt_enabled) << "the rest of the config is untouched";
+    EXPECT_EQ(back.m_rt_drain_interval_ms, 1U);
+
+    // An empty string selects the default.
+    config.m_platform_tag.clear();
+    config.m_platform_subsystem.clear();
+    config.m_platform_category.clear();
+    thl::Logger::set_config(config);
+    back = thl::Logger::get_config();
+    EXPECT_EQ(back.m_platform_tag, "thl");
+    EXPECT_EQ(back.m_platform_subsystem, "thl");
+    EXPECT_EQ(back.m_platform_category, "logger");
+}
+
+TEST_F(LoggerFixture, PlatformSinkFilesRecordsUnderTheConfiguredIdentity) {
+    // What the platform sink does with the identity is only observable on the
+    // device (logcat tag, os_log subsystem/category); here the sink runs with
+    // a custom identity, then with a changed one — on Apple platforms the
+    // second record creates a new os_log_t — and every record must still
+    // reach the callback sink. On Linux without journald and on Windows the
+    // platform sink is plain stdout/stderr and ignores the identity.
+    auto config = thl::Logger::get_config();
+    config.m_platform_enabled = true;
+    config.m_platform_tag = "tanh-test";
+    config.m_platform_subsystem = "lab.tanh.test";
+    config.m_platform_category = "identity";
+    thl::Logger::set_config(config);
+    thl::Logger::info("identity", "filed under lab.tanh.test/identity (tag tanh-test)");
+
+    config.m_platform_category = "identity-changed";
+    thl::Logger::set_config(config);
+    thl::Logger::info("identity", "filed under lab.tanh.test/identity-changed");
+
+    config.m_platform_enabled = false;
+    thl::Logger::set_config(config);
+    thl::Logger::info("identity", "platform sink off again");
+
+    const auto got = records();
+    ASSERT_EQ(got.size(), 3U);
+    EXPECT_EQ(got[0].m_group, "identity");
+    EXPECT_EQ(got[2].m_message, "platform sink off again");
+    EXPECT_EQ(thl::Logger::get_config().m_platform_category, "identity-changed");
 }
