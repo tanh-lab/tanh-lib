@@ -25,6 +25,13 @@ option(TANH_WITH_LSAN "Enable LeakSanitizer (lsan) checks" OFF)
 # is opt-in: it links libsystemd (found via pkg-config) and routes the platform
 # sink through sd_journal_send(); without it, Linux logs go to stdout/stderr.
 option(TANH_WITH_JOURNALD "Linux: send platform logs to systemd-journald (links libsystemd)" OFF)
+# The most verbose log level compiled into the logger's call sites (THL_LOG_COMPILED_MAX_LEVEL):
+# 1 Error, 2 Warning, 3 Info, 4 Debug. "AUTO" keeps the historical rule: Error only in Release
+# builds, every level otherwise. An embedder that wants its runtime level to be the only filter
+# in a shipped build sets 4.
+set(TANH_LOG_COMPILED_MAX_LEVEL "AUTO" CACHE STRING
+    "Most verbose log level compiled in (1 Error .. 4 Debug), or AUTO (1 in Release, 4 otherwise)")
+set_property(CACHE TANH_LOG_COMPILED_MAX_LEVEL PROPERTY STRINGS AUTO 1 2 3 4)
 
 # Define available components
 set(TANH_COMPONENTS Core State DSP AudioIO)
@@ -131,11 +138,20 @@ if(TANH_BUILD_CORE)
         # Version number
         -DTANH_VERSION="${PROJECT_VERSION_FULL}"
     )
-    target_compile_definitions(${PROJECT_NAME}_core
-        PUBLIC
-        $<$<CONFIG:Release>:THL_LOG_COMPILED_MAX_LEVEL=1>
-        $<$<NOT:$<CONFIG:Release>>:THL_LOG_COMPILED_MAX_LEVEL=4>
-    )
+    if(TANH_LOG_COMPILED_MAX_LEVEL STREQUAL "AUTO")
+        target_compile_definitions(${PROJECT_NAME}_core
+            PUBLIC
+            $<$<CONFIG:Release>:THL_LOG_COMPILED_MAX_LEVEL=1>
+            $<$<NOT:$<CONFIG:Release>>:THL_LOG_COMPILED_MAX_LEVEL=4>
+        )
+    elseif(TANH_LOG_COMPILED_MAX_LEVEL MATCHES "^[1-4]$")
+        target_compile_definitions(${PROJECT_NAME}_core
+            PUBLIC THL_LOG_COMPILED_MAX_LEVEL=${TANH_LOG_COMPILED_MAX_LEVEL}
+        )
+    else()
+        message(FATAL_ERROR
+            "TANH_LOG_COMPILED_MAX_LEVEL must be AUTO or 1..4, got '${TANH_LOG_COMPILED_MAX_LEVEL}'")
+    endif()
 
     # Platform compile definitions (THL_PLATFORM_<OS>=1, THL_PLATFORM_IOS_<DEVICE|SIMULATOR>=1)
     target_compile_definitions(${PROJECT_NAME}_core PUBLIC ${TANH_PLATFORM_COMPILE_DEFINITIONS})

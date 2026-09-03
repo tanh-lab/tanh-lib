@@ -34,6 +34,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `[N real-time log message(s) dropped before this record]` and `format_logfmt()`
   a `dropped_before=N` field to a record that carries a count.
 
+- CMake: `TANH_LOG_COMPILED_MAX_LEVEL` (`AUTO`, or `1`..`4`) chooses the most verbose log
+  level compiled into the call sites. `AUTO`, the default, keeps the historical rule
+  (Error only in Release builds, every level otherwise); an embedder that wants its runtime
+  level to be the only filter in a shipped build sets `4` as a plain variable before the
+  fetch.
+
 ### Changed
 
 - `Logger`: the synthetic drop warning of `rt::Queue::drain()` (level Warning, source
