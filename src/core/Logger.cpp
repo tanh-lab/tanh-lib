@@ -87,6 +87,7 @@ struct RtRecord {
     std::int64_t m_timestamp_ms = 0;
     std::uint64_t m_monotonic_ns = 0;
     std::uint32_t m_level = 0;
+    std::uint32_t m_flags = 0;  // LogRecord::m_flags as passed by the producer
     std::array<char, rt::k_group_capacity> m_group{};
     std::array<char, rt::k_message_capacity> m_message{};
 };
@@ -211,6 +212,13 @@ std::string format_iso8601_utc_ms(std::int64_t timestamp_ms) {
     return out.str();
 }
 
+/// Suffix the human-readable sinks append to a record that carries a drop
+/// count (LogRecord::m_dropped_before, set by rt::Queue::drain()).
+std::string drop_note(const LogRecord& record) {
+    return " [" + std::to_string(record.m_dropped_before) +
+           " real-time log message(s) dropped before this record]";
+}
+
 void write_to_default_sink(const LogRecord& record) {
     try {
         const std::string line = format_plain(record);
@@ -229,12 +237,18 @@ void write_to_default_sink(const LogRecord& record) {
 // Platform sink
 // ---------------------------------------------------------------------------
 
-#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
-os_log_t platform_log_handle() {
-    static os_log_t handle = os_log_create("thl", "logger");
-    return handle;
-}
+/// What the platform sink files a record under (LoggerConfig::m_platform_*).
+/// dispatch_record() snapshots it under the config mutex together with the
+/// sink switches, so a set_config() racing a dispatch cannot tear it.
+struct PlatformIdentity {
+#if defined(THL_PLATFORM_ANDROID) || (defined(THL_PLATFORM_LINUX) && defined(THL_WITH_JOURNALD))
+    std::string m_tag;  // logcat tag / SYSLOG_IDENTIFIER
+#elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+    os_log_t m_log = nullptr;  // os_log_create(subsystem, category)
+#endif
+};
 
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
 bool is_debugger_attached() {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
     struct kinfo_proc info{};
@@ -251,11 +265,16 @@ bool is_debugger_attached() {
 #define THL_HAS_NATIVE_LOG_SINK 1
 #endif
 
-bool emit_platform(const LogRecord& record) {
+bool emit_platform(const LogRecord& record, [[maybe_unused]] const PlatformIdentity& identity) {
 #if defined(THL_HAS_NATIVE_LOG_SINK)
     const char* source = record.m_source.empty() ? "native" : record.m_source.c_str();
     const char* group = record.m_group.empty() ? "default" : record.m_group.c_str();
     const char* message = record.m_message.c_str();
+    std::string annotated;
+    if (record.m_dropped_before != 0) {
+        annotated = record.m_message + drop_note(record);
+        message = annotated.c_str();
+    }
 #endif
 
 #if defined(THL_PLATFORM_ANDROID)
@@ -267,7 +286,12 @@ bool emit_platform(const LogRecord& record) {
         case static_cast<std::uint32_t>(LogLevel::Debug): android_level = ANDROID_LOG_DEBUG; break;
         default: android_level = ANDROID_LOG_INFO; break;
     }
-    __android_log_print(android_level, "thl", "[%s][%s] %s", source, group, message);
+    __android_log_print(android_level,
+                        identity.m_tag.c_str(),
+                        "[%s][%s] %s",
+                        source,
+                        group,
+                        message);
     return true;
 
 #elif defined(THL_PLATFORM_LINUX) && defined(THL_WITH_JOURNALD)
@@ -286,7 +310,7 @@ bool emit_platform(const LogRecord& record) {
                     "PRIORITY=%i",
                     priority,
                     "SYSLOG_IDENTIFIER=%s",
-                    "thl",
+                    identity.m_tag.c_str(),
                     "THL_SOURCE=%s",
                     source,
                     "THL_GROUP=%s",
@@ -308,7 +332,7 @@ bool emit_platform(const LogRecord& record) {
     }
 #if defined(THL_PLATFORM_MACOS)
     if (!is_debugger_attached()) {
-        os_log_with_type(platform_log_handle(),
+        os_log_with_type(identity.m_log,
                          type,
                          "[%{public}s][%{public}s] %{public}s",
                          source,
@@ -317,7 +341,7 @@ bool emit_platform(const LogRecord& record) {
     }
     write_to_default_sink(record);
 #else
-    os_log_with_type(platform_log_handle(),
+    os_log_with_type(identity.m_log,
                      type,
                      "[%{public}s][%{public}s] %{public}s",
                      source,
@@ -363,6 +387,18 @@ struct LoggerState {
     std::vector<LogRecord> m_early_callback_buffer;
     std::vector<LogRecord> m_early_file_buffer;
 
+    // Platform sink identity (LoggerConfig::m_platform_*), protected by
+    // m_config_mutex. Never empty: set_config() substitutes the defaults.
+    std::string m_platform_tag = "thl";
+    std::string m_platform_subsystem = "thl";
+    std::string m_platform_category = "logger";
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+    // The os_log_t for the identity above: created on first use by
+    // platform_identity_locked(), reset to nullptr by set_config() when the
+    // subsystem or category change so the next record creates a new one.
+    os_log_t m_platform_log = nullptr;
+#endif
+
     // Protects file_path + file_stream.  Lock ordering: config_mutex
     // before file_mutex.
     std::mutex m_file_mutex;
@@ -381,6 +417,25 @@ LoggerState& state() {
     ensure_shutdown_hook_installed();
     static LoggerState instance;
     return instance;
+}
+
+/// The identity the platform sink files records under, for the current
+/// config. Requires m_config_mutex. On Apple platforms this creates the
+/// os_log_t on first use and again after set_config() changed the subsystem
+/// or category; os_log_t objects are never released, so a handle snapshotted
+/// by a dispatch that is still in flight stays valid across the change.
+PlatformIdentity platform_identity_locked([[maybe_unused]] LoggerState& s) {
+    PlatformIdentity identity;
+#if defined(THL_PLATFORM_ANDROID) || (defined(THL_PLATFORM_LINUX) && defined(THL_WITH_JOURNALD))
+    identity.m_tag = s.m_platform_tag;
+#elif defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+    if (s.m_platform_log == nullptr) {
+        s.m_platform_log =
+            os_log_create(s.m_platform_subsystem.c_str(), s.m_platform_category.c_str());
+    }
+    identity.m_log = s.m_platform_log;
+#endif
+    return identity;
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +474,7 @@ public:
 };
 
 LogRecord make_record(std::uint32_t level,
+                      std::uint32_t flags,
                       const char* source,
                       const char* group,
                       const char* message) {
@@ -434,6 +490,7 @@ LogRecord make_record(std::uint32_t level,
     record.m_source = source ? source : "native";
     record.m_group = group ? group : "default";
     record.m_message = message ? message : "";
+    record.m_flags = flags;
     return record;
 }
 
@@ -461,6 +518,7 @@ void dispatch_record(const LogRecord& record) {
     bool callback_on = false;
     std::size_t early_cap = 0;
     Callback callback_copy;
+    PlatformIdentity platform_identity;
     {
         std::scoped_lock const lock(state().m_config_mutex);
         platform_on = state().m_platform_enabled;
@@ -469,13 +527,14 @@ void dispatch_record(const LogRecord& record) {
         callback_on = state().m_callback_enabled;
         early_cap = state().m_early_buffer_capacity;
         callback_copy = state().m_callback;
+        if (platform_on) { platform_identity = platform_identity_locked(state()); }
     }
 
     bool any_sink_ran = false;
 
     // 1. Platform sink (lock-free, fire-and-forget).
     if (platform_on) {
-        if (emit_platform(record)) { any_sink_ran = true; }
+        if (emit_platform(record, platform_identity)) { any_sink_ran = true; }
     }
 
     // 2. Console sink (explicit stdout/stderr output).
@@ -537,6 +596,7 @@ LogRecord to_log_record(const RtRecord& rt_record) {
     record.m_source = "rt";
     record.m_group = rt_record.m_group.data();
     record.m_message = rt_record.m_message.data();
+    record.m_flags = rt_record.m_flags | k_flag_realtime;  // drain marks what it dispatches
     return record;
 }
 
@@ -641,6 +701,7 @@ Queue::Queue(std::size_t capacity) : m_impl(std::make_unique<Impl>(capacity)) {}
 Queue::~Queue() = default;
 
 Status Queue::vlogf(LogLevel level,
+                    std::uint32_t flags,
                     const char* group,
                     const char* fmt,
                     va_list args) noexcept TANH_NONBLOCKING_FUNCTION {
@@ -660,6 +721,7 @@ Status Queue::vlogf(LogLevel level,
                                        std::chrono::steady_clock::now().time_since_epoch())
                                        .count());
     record.m_level = clamp_level(numeric_level);
+    record.m_flags = flags;
     copy_bounded(record.m_group, group);
 
     bool truncated = false;
@@ -678,6 +740,26 @@ Status Queue::vlogf(LogLevel level,
     return truncated ? Status::Truncated : Status::Ok;
 }
 
+Status Queue::vlogf(LogLevel level,
+                    const char* group,
+                    const char* fmt,
+                    va_list args) noexcept TANH_NONBLOCKING_FUNCTION {
+    return vlogf(level, 0U, group, fmt, args);
+}
+
+// NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+Status Queue::logf(LogLevel level,
+                   std::uint32_t flags,
+                   const char* group,
+                   const char* fmt,
+                   ...) noexcept TANH_NONBLOCKING_FUNCTION {
+    va_list args;
+    va_start(args, fmt);
+    const Status status = vlogf(level, flags, group, fmt, args);
+    va_end(args);
+    return status;
+}
+
 // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
 Status Queue::logf(LogLevel level,
                    const char* group,
@@ -685,38 +767,50 @@ Status Queue::logf(LogLevel level,
                    ...) noexcept TANH_NONBLOCKING_FUNCTION {
     va_list args;
     va_start(args, fmt);
-    const Status status = vlogf(level, group, fmt, args);
+    const Status status = vlogf(level, 0U, group, fmt, args);
     va_end(args);
     return status;
 }
 
 Status Queue::log(LogLevel level,
+                  std::uint32_t flags,
                   const char* group,
                   const char* message) noexcept TANH_NONBLOCKING_FUNCTION {
     // "%s" through the RT formatter keeps one code path; the message is bounded
     // by the record either way.
-    return logf(level, group, "%s", message == nullptr ? "" : message);
+    return logf(level, flags, group, "%s", message == nullptr ? "" : message);
+}
+
+Status Queue::log(LogLevel level,
+                  const char* group,
+                  const char* message) noexcept TANH_NONBLOCKING_FUNCTION {
+    return log(level, 0U, group, message);
 }
 
 std::size_t Queue::drain() {
+    // Taken before the pop loop so the count can ride on this pass's first
+    // record; drops that happen while the pass runs are reported by the next.
+    std::uint64_t dropped = m_impl->m_dropped.exchange(0, std::memory_order_relaxed);
+
     std::size_t delivered = 0;
     RtRecord rt_record;
     while (m_impl->m_queue.try_pop(rt_record)) {
-        dispatch_record(to_log_record(rt_record));
+        LogRecord record = to_log_record(rt_record);
+        record.m_dropped_before = dropped;  // non-zero on the first record only
+        dropped = 0;
+        dispatch_record(record);
         ++delivered;
     }
 
-    const std::uint64_t dropped = m_impl->m_dropped.exchange(0, std::memory_order_relaxed);
     if (dropped > 0) {
-        std::array<char, 96> msg{};
-        std::snprintf(msg.data(),
-                      msg.size(),
-                      "%llu real-time log message(s) dropped (queue full)",
-                      static_cast<unsigned long long>(dropped));
-        dispatch_record(make_record(static_cast<std::uint32_t>(LogLevel::Warning),
-                                    "rt",
-                                    "thl.logger",
-                                    msg.data()));
+        // No record to carry the count: report it on one synthetic warning.
+        LogRecord record = make_record(static_cast<std::uint32_t>(LogLevel::Warning),
+                                       k_flag_realtime,
+                                       "rt",
+                                       "thl.logger",
+                                       "real-time log queue overflowed");
+        record.m_dropped_before = dropped;
+        dispatch_record(record);
     }
     return delivered;
 }
@@ -810,20 +904,38 @@ void DrainThread::set_interval_ms(std::uint32_t interval_ms) noexcept {
 // Process-wide default queue
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// True while somebody consumes the default queue. Checked before touching
+/// default_queue(): its construction is not real-time safe and happens on the
+/// non-real-time call that raised one of these flags.
+bool default_queue_has_consumer() noexcept TANH_NONBLOCKING_FUNCTION {
+    return g_rt_running.load(std::memory_order_relaxed) ||
+           g_rt_manual_drain.load(std::memory_order_relaxed);
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
 Status logf(LogLevel level,
             const char* group,
             const char* fmt,
             ...) noexcept TANH_NONBLOCKING_FUNCTION {
-    // Checked before touching default_queue(): its construction is not real-time
-    // safe and happens on the non-real-time call that raised one of these flags.
-    if (!g_rt_running.load(std::memory_order_relaxed) &&
-        !g_rt_manual_drain.load(std::memory_order_relaxed)) {
-        return Status::NoConsumer;
-    }
+    if (!default_queue_has_consumer()) { return Status::NoConsumer; }
     va_list args;
     va_start(args, fmt);
-    const Status status = default_queue().vlogf(level, group, fmt, args);
+    const Status status = default_queue().vlogf(level, 0U, group, fmt, args);
+    va_end(args);
+    return status;
+}
+
+// NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+Status logf(LogLevel level, std::uint32_t flags, const char* group, const char* fmt, ...) noexcept
+    TANH_NONBLOCKING_FUNCTION {
+    if (!default_queue_has_consumer()) { return Status::NoConsumer; }
+    va_list args;
+    va_start(args, fmt);
+    const Status status = default_queue().vlogf(level, flags, group, fmt, args);
     va_end(args);
     return status;
 }
@@ -831,11 +943,16 @@ Status logf(LogLevel level,
 Status log(LogLevel level,
            const char* group,
            const char* message) noexcept TANH_NONBLOCKING_FUNCTION {
-    if (!g_rt_running.load(std::memory_order_relaxed) &&
-        !g_rt_manual_drain.load(std::memory_order_relaxed)) {
-        return Status::NoConsumer;
-    }
-    return default_queue().log(level, group, message);
+    if (!default_queue_has_consumer()) { return Status::NoConsumer; }
+    return default_queue().log(level, 0U, group, message);
+}
+
+Status log(LogLevel level,
+           std::uint32_t flags,
+           const char* group,
+           const char* message) noexcept TANH_NONBLOCKING_FUNCTION {
+    if (!default_queue_has_consumer()) { return Status::NoConsumer; }
+    return default_queue().log(level, flags, group, message);
 }
 
 void start() {
@@ -866,10 +983,7 @@ void enable_manual_drain(bool enabled) {
 }
 
 std::uint64_t dropped_count() noexcept TANH_NONBLOCKING_FUNCTION {
-    if (!g_rt_running.load(std::memory_order_relaxed) &&
-        !g_rt_manual_drain.load(std::memory_order_relaxed)) {
-        return 0;
-    }
+    if (!default_queue_has_consumer()) { return 0; }
     return default_queue().dropped_count();
 }
 
@@ -894,6 +1008,20 @@ void set_config(const LoggerConfig& config) {
         s.m_rt_drain_interval_ms.store(
             config.m_rt_drain_interval_ms == 0 ? 1U : config.m_rt_drain_interval_ms,
             std::memory_order_relaxed);
+
+        // Platform sink identity; an empty string selects the default.
+        const std::string subsystem =
+            config.m_platform_subsystem.empty() ? "thl" : config.m_platform_subsystem;
+        const std::string category =
+            config.m_platform_category.empty() ? "logger" : config.m_platform_category;
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+        if (subsystem != s.m_platform_subsystem || category != s.m_platform_category) {
+            s.m_platform_log = nullptr;  // re-created for the new identity on the next record
+        }
+#endif
+        s.m_platform_tag = config.m_platform_tag.empty() ? "thl" : config.m_platform_tag;
+        s.m_platform_subsystem = subsystem;
+        s.m_platform_category = category;
 
         // Drain the file early buffer when a path becomes available.
         if (config.m_file_enabled && !config.m_file_path.empty()) {
@@ -938,6 +1066,9 @@ LoggerConfig get_config() {
         config.m_early_buffer_capacity = s.m_early_buffer_capacity;
         config.m_rt_enabled = s.m_rt_enabled.load(std::memory_order_relaxed);
         config.m_rt_drain_interval_ms = s.m_rt_drain_interval_ms.load(std::memory_order_relaxed);
+        config.m_platform_tag = s.m_platform_tag;
+        config.m_platform_subsystem = s.m_platform_subsystem;
+        config.m_platform_category = s.m_platform_category;
     }
     {
         std::scoped_lock const lock(s.m_file_mutex);
@@ -985,6 +1116,7 @@ std::string format_plain(const LogRecord& record) {
     out << '[' << level_name(record.m_level) << "]["
         << (record.m_source.empty() ? "native" : record.m_source) << "]["
         << (record.m_group.empty() ? "default" : record.m_group) << "] " << record.m_message;
+    if (record.m_dropped_before != 0) { out << drop_note(record); }
     return out.str();
 }
 
@@ -999,6 +1131,7 @@ std::string format_logfmt(const LogRecord& record) {
     append_logfmt_field(out, "group", record.m_group.empty() ? "default" : record.m_group);
     out << ' ';
     append_logfmt_field(out, "message", record.m_message);
+    if (record.m_dropped_before != 0) { out << " dropped_before=" << record.m_dropped_before; }
     return out.str();
 }
 
@@ -1011,6 +1144,14 @@ void log(LogLevel level, const char* group, const char* message) {
 }
 
 void log_with_source(LogLevel level, const char* source, const char* group, const char* message) {
+    log_with_source(level, 0U, source, group, message);
+}
+
+void log_with_source(LogLevel level,
+                     std::uint32_t flags,
+                     const char* source,
+                     const char* group,
+                     const char* message) {
     const auto numeric_level = static_cast<std::uint32_t>(level);
     if (!should_log_compiled(numeric_level)) { return; }
 
@@ -1022,30 +1163,50 @@ void log_with_source(LogLevel level, const char* source, const char* group, cons
     if (!passes_runtime_level(numeric_level)) { return; }
 
     try {
-        dispatch_record(make_record(numeric_level, source, group, message));
+        dispatch_record(make_record(numeric_level, flags, source, group, message));
     } catch (...) { write_to_stderr_fallback(numeric_level, source, group, message); }
 }
 
-void logf(LogLevel level, const char* group, const char* fmt, ...) {
-    if (!should_log_compiled(static_cast<std::uint32_t>(level))) { return; }
+namespace {
 
+void vlogf_sync(LogLevel level,
+                std::uint32_t flags,
+                const char* group,
+                const char* fmt,
+                va_list args) {
     if (!fmt) {
-        log(level, group, "");
+        log_with_source(level, flags, "native", group, "");
         return;
     }
 
     std::array<char, 1024> stack_buffer{};
-    va_list args;
-    va_start(args, fmt);
     const int written = std::vsnprintf(stack_buffer.data(), stack_buffer.size(), fmt, args);
-    va_end(args);
-
     if (written < 0) {
-        log(level, group, "logf formatting failed");
+        log_with_source(level, flags, "native", group, "logf formatting failed");
         return;
     }
 
-    log(level, group, stack_buffer.data());
+    log_with_source(level, flags, "native", group, stack_buffer.data());
+}
+
+}  // namespace
+
+// NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+void logf(LogLevel level, const char* group, const char* fmt, ...) {
+    if (!should_log_compiled(static_cast<std::uint32_t>(level))) { return; }
+    va_list args;
+    va_start(args, fmt);
+    vlogf_sync(level, 0U, group, fmt, args);
+    va_end(args);
+}
+
+// NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+void logf(LogLevel level, std::uint32_t flags, const char* group, const char* fmt, ...) {
+    if (!should_log_compiled(static_cast<std::uint32_t>(level))) { return; }
+    va_list args;
+    va_start(args, fmt);
+    vlogf_sync(level, flags, group, fmt, args);
+    va_end(args);
 }
 
 void error(const char* group, const char* message) {

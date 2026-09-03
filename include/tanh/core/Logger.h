@@ -32,15 +32,42 @@ enum class LogLevel : std::uint32_t {
     Debug = 4,
 };
 
+/// @name Record flags
+/// Bits of LogRecord::m_flags. They travel unchanged from the emitting site to
+/// the sinks; the console, file and platform sinks ignore them, the callback
+/// sink sees them on the record. Bits not listed here are free for consumers.
+/// @{
+
+/// The record came through a real-time queue: rt::Queue::drain() sets it on
+/// every record it dispatches (its source is "rt" as well).
+inline constexpr std::uint32_t k_flag_realtime = 1U;
+/// The emitting site reports a misuse of its API by the caller. Never set by
+/// the library on its own; passed by the caller of a flag-taking overload.
+inline constexpr std::uint32_t k_flag_contract_violation = 2U;
+
+/// @}
+
 /// A single log entry produced by the logger.
+///
+/// Used in-process only (no ABI promise across library versions). New members
+/// are appended at the end, with a default, so that existing brace
+/// initialisers and positional reads keep their meaning.
 struct LogRecord {
     std::uint64_t m_seq = 0;           ///< Monotonic sequence number.
     std::int64_t m_timestamp_ms = 0;   ///< Wall-clock UTC epoch (ms).
     std::uint64_t m_monotonic_ns = 0;  ///< Steady-clock epoch (ns).
     std::uint32_t m_level = static_cast<std::uint32_t>(LogLevel::Info);  ///< Severity level.
     std::string m_group;                                                 ///< Logical group tag.
-    std::string m_message;  ///< Formatted message body.
-    std::string m_source;   ///< Origin identifier (e.g. "native").
+    std::string m_message;      ///< Formatted message body.
+    std::string m_source;       ///< Origin identifier (e.g. "native").
+    std::uint32_t m_flags = 0;  ///< Bit set of k_flag_* values (see "Record flags").
+
+    /// Real-time records lost to a full queue that are reported on this
+    /// record: the count a rt::Queue::drain() pass took from its drop counter
+    /// rides on the first record the pass dispatches (see Queue::drain()). Zero
+    /// on every other record. Summing it over all records received counts
+    /// every drop exactly once.
+    std::uint64_t m_dropped_before = 0;
 };
 
 /// Signature for a user-provided log sink.
@@ -74,6 +101,25 @@ struct LoggerConfig {
     /// sinks. Bounds both delivery latency and the burst the queue must hold
     /// between two drains (queue capacity / interval = sustainable rate).
     std::uint32_t m_rt_drain_interval_ms = 10;
+
+    /// @name Platform sink identity
+    /// What the platform sink files records under, so a consumer that embeds
+    /// the logger can be found by its own name: `adb logcat -s <tag>` on
+    /// Android, `log stream --predicate 'subsystem == "<subsystem>"'` or a
+    /// Console.app filter on Apple platforms. Set them before the first record:
+    /// the sink reads the identity when it files each record, so records
+    /// logged earlier go out under the defaults. A later set_config() applies
+    /// to every record dispatched after it returns (a dispatch already in
+    /// flight may still use the previous identity); on Apple platforms each
+    /// change creates a new os_log_t, which the system never releases, so the
+    /// identity is configuration, not something to switch per record. An
+    /// empty string selects the default. Ignored by the plain stdout/stderr
+    /// platform sink (Linux without journald, Windows, Emscripten).
+    /// @{
+    std::string m_platform_tag = "thl";        ///< Android logcat tag; journald SYSLOG_IDENTIFIER.
+    std::string m_platform_subsystem = "thl";  ///< os_log subsystem (macOS, iOS).
+    std::string m_platform_category = "logger";  ///< os_log category (macOS, iOS).
+    /// @}
 };
 
 /// @name Runtime level filter
@@ -124,11 +170,14 @@ TANH_API void set_callback(const Callback& cb);
 TANH_API void clear_callback();
 
 /// Format a log record as a plain human-readable string:
-/// @c [level][source][group] message
+/// @c [level][source][group] message, followed by
+/// @c [N real-time log message(s) dropped before this record] when the record
+/// carries a drop count (LogRecord::m_dropped_before).
 TANH_API std::string format_plain(const LogRecord& record);
 
 /// Format a log record as a
-/// [logfmt](https://brandur.org/logfmt)-style string.
+/// [logfmt](https://brandur.org/logfmt)-style string. A record that carries a
+/// drop count gets a trailing @c dropped_before=N field.
 TANH_API std::string format_logfmt(const LogRecord& record);
 
 /// @name Core logging functions
@@ -143,8 +192,20 @@ TANH_API void log_with_source(LogLevel level,
                               const char* group,
                               const char* message);
 
+/// log_with_source() with record flags (see "Record flags"); @p flags is
+/// stored in LogRecord::m_flags as given.
+TANH_API void log_with_source(LogLevel level,
+                              std::uint32_t flags,
+                              const char* source,
+                              const char* group,
+                              const char* message);
+
 /// printf-style logging at the given @p level.
 TANH_API void logf(LogLevel level, const char* group, const char* fmt, ...);
+
+/// logf() with record flags (see "Record flags"); @p flags is stored in
+/// LogRecord::m_flags as given.
+TANH_API void logf(LogLevel level, std::uint32_t flags, const char* group, const char* fmt, ...);
 
 /// @}
 
@@ -179,7 +240,10 @@ TANH_API void debug(const char* group, const char* message);
 ///
 /// Guarantees and limits:
 /// - If the queue is full the message is dropped and counted; the next drain
-///   emits a single "N messages dropped" warning.
+///   reports the count on the first record it delivers
+///   (LogRecord::m_dropped_before), or on one synthetic warning when it has
+///   no record to deliver. Every record a drain dispatches carries
+///   k_flag_realtime.
 /// - Messages longer than `k_message_capacity - 1` are truncated.
 /// - Sequence numbers are shared by every queue and the synchronous path, so
 ///   records interleave in causal order in the file sink.
@@ -234,8 +298,24 @@ public:
                 const char* fmt,
                 ...) noexcept TANH_NONBLOCKING_FUNCTION THL_PRINTF_FORMAT(4, 5);
 
+    /// logf() with record flags (see "Record flags"): @p flags is copied into
+    /// the record unchanged and reaches the sinks in LogRecord::m_flags.
+    // NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+    Status logf(LogLevel level,
+                std::uint32_t flags,
+                const char* group,
+                const char* fmt,
+                ...) noexcept TANH_NONBLOCKING_FUNCTION THL_PRINTF_FORMAT(5, 6);
+
     /// va_list variant of logf().
     Status vlogf(LogLevel level,
+                 const char* group,
+                 const char* fmt,
+                 va_list args) noexcept TANH_NONBLOCKING_FUNCTION;
+
+    /// va_list variant of logf() with record flags.
+    Status vlogf(LogLevel level,
+                 std::uint32_t flags,
                  const char* group,
                  const char* fmt,
                  va_list args) noexcept TANH_NONBLOCKING_FUNCTION;
@@ -245,8 +325,25 @@ public:
                const char* group,
                const char* message) noexcept TANH_NONBLOCKING_FUNCTION;
 
+    /// log() with record flags.
+    Status log(LogLevel level,
+               std::uint32_t flags,
+               const char* group,
+               const char* message) noexcept TANH_NONBLOCKING_FUNCTION;
+
     /// Forward every queued record to the sinks on the calling thread and
     /// report drops. Returns the number of records delivered. Not real-time safe.
+    ///
+    /// Every record dispatched here carries k_flag_realtime (in addition to
+    /// its own flags) and source "rt". Drops are reported exactly once: the
+    /// pass takes the drop counter first and puts it into
+    /// LogRecord::m_dropped_before of the first record it dispatches; every
+    /// other record of the pass carries 0. Only when the pass has no record
+    /// to deliver does it dispatch one synthetic Warning record (group
+    /// "thl.logger", message "real-time log queue overflowed") that carries
+    /// the count instead. Drops that happen while the pass runs are reported
+    /// by the next pass. The count says how many records were lost before
+    /// this one was delivered, not where in the stream the gap lies.
     std::size_t drain();
 
     /// While false, logf()/log() return NoConsumer without formatting. A queue
@@ -313,8 +410,22 @@ TANH_API Status logf(LogLevel level,
                      const char* fmt,
                      ...) noexcept TANH_NONBLOCKING_FUNCTION THL_PRINTF_FORMAT(3, 4);
 
+/// logf() into the default queue with record flags (see "Record flags").
+// NOLINTNEXTLINE(modernize-avoid-variadic-functions,cert-dcl50-cpp) printf-compatible by design
+TANH_API Status logf(LogLevel level,
+                     std::uint32_t flags,
+                     const char* group,
+                     const char* fmt,
+                     ...) noexcept TANH_NONBLOCKING_FUNCTION THL_PRINTF_FORMAT(4, 5);
+
 /// Real-time logging of a preformatted message into the default queue.
 TANH_API Status log(LogLevel level,
+                    const char* group,
+                    const char* message) noexcept TANH_NONBLOCKING_FUNCTION;
+
+/// log() into the default queue with record flags.
+TANH_API Status log(LogLevel level,
+                    std::uint32_t flags,
                     const char* group,
                     const char* message) noexcept TANH_NONBLOCKING_FUNCTION;
 
