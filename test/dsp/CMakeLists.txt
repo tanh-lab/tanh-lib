@@ -10,6 +10,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_StereoFDN.cpp
 	test_InternalTransportClock.cpp
 	test_MetronomePlayer.cpp
+	test_Granular.cpp
 )
 
 if(TARGET tanh_resonator)

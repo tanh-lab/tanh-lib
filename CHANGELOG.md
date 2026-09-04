@@ -29,8 +29,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `SamplePlayer` (the Sample-mode head). `SampleReader`, `SampleRegion` and
   `channel_mixer` are the shared, header-only helpers. Constants and enums
   moved to `GranularTypes.h` (still reachable through `GrainProcessor.h`).
-  Behaviour is unchanged; the subclass contract (`Parameter` enum, the three
-  `get_parameter_*` hooks) is unchanged.
+  The subclass contract (`Parameter` enum, the three `get_parameter_*` hooks)
+  is unchanged. Behaviour differences: a Sustain change now retunes the decay
+  slope at once (the per-setter path left the rate stale until another
+  envelope parameter moved); lingering grains are always reported finished on
+  reset / silence; `prepare()` starts the voice from silence.
 
 ## [0.3.0] - 2026-09-03
 

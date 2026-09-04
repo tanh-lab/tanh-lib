@@ -36,9 +36,10 @@ public:
 
     bool is_started() const { return m_started; }
 
-    // Render one block. Silent early-outs reset the head so a stale one is
+    // Render one block. Returns false on a silent early-out (no bank, empty
+    // bank, empty region), which also resets the head so a stale one is
     // never painted.
-    void render(const AudioBlock& block, const VoiceParams& params);
+    bool render(const AudioBlock& block, const VoiceParams& params);
 
     // Per block, after the voice has applied its envelope.
     void report_visualization() const;

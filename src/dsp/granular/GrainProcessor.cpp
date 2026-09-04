@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -77,19 +78,24 @@ void GrainProcessorImpl::prepare(const double& sample_rate,
                               get_parameter<float>(EnvelopeAttackCurve),
                               get_parameter<float>(EnvelopeDecayCurve),
                               get_parameter<float>(EnvelopeReleaseCurve));
-    m_envelope.reset();
+    // A re-prepare (new sample rate / channel count) starts from silence.
+    reset_grains();
 }
 
 VoiceParams GrainProcessorImpl::read_params(uint32_t offset) {
-    auto unit = [this, offset](Parameter p) {
-        return std::clamp(get_parameter<float>(p, offset), 0.0f, 1.0f);
+    // The modulation system does not promise finite values; a NaN would
+    // reach size_t casts (UB) and the trigger clock. Fall back per field.
+    auto finite = [this, offset](Parameter p, float fallback) {
+        float const v = get_parameter<float>(p, offset);
+        return std::isfinite(v) ? v : fallback;
     };
+    auto unit = [&finite](Parameter p) { return std::clamp(finite(p, 0.0f), 0.0f, 1.0f); };
     VoiceParams v;
     v.m_playing = get_parameter<bool>(Playing, offset);
-    v.m_volume = get_parameter<float>(Volume, offset);
+    v.m_volume = finite(Volume, 0.0f);
     v.m_size = unit(Size);
     v.m_density = unit(Density);
-    v.m_velocity = get_parameter<float>(Velocity, offset);
+    v.m_velocity = finite(Velocity, 1.0f);
     v.m_temperature_size = unit(TemperatureSize);
     v.m_temperature_position = unit(TemperaturePosition);
     v.m_temperature_velocity = unit(TemperatureVelocity);
@@ -108,14 +114,14 @@ VoiceParams GrainProcessorImpl::read_params(uint32_t offset) {
                                            static_cast<int>(EngineMode::NumEngineModes) - 1));
     v.m_position = unit(Position);
     v.m_spray = unit(Spray);
-    v.m_tilt = std::clamp(get_parameter<float>(Tilt, offset), -1.0f, 1.0f);
-    v.m_env_attack = get_parameter<float>(EnvelopeAttack, offset);
-    v.m_env_decay = get_parameter<float>(EnvelopeDecay, offset);
-    v.m_env_sustain = get_parameter<float>(EnvelopeSustain, offset);
-    v.m_env_release = get_parameter<float>(EnvelopeRelease, offset);
-    v.m_env_attack_curve = get_parameter<float>(EnvelopeAttackCurve, offset);
-    v.m_env_decay_curve = get_parameter<float>(EnvelopeDecayCurve, offset);
-    v.m_env_release_curve = get_parameter<float>(EnvelopeReleaseCurve, offset);
+    v.m_tilt = std::clamp(finite(Tilt, 0.0f), -1.0f, 1.0f);
+    v.m_env_attack = finite(EnvelopeAttack, 0.0f);
+    v.m_env_decay = finite(EnvelopeDecay, 0.0f);
+    v.m_env_sustain = finite(EnvelopeSustain, 1.0f);
+    v.m_env_release = finite(EnvelopeRelease, 0.0f);
+    v.m_env_attack_curve = finite(EnvelopeAttackCurve, 0.0f);
+    v.m_env_decay_curve = finite(EnvelopeDecayCurve, 0.0f);
+    v.m_env_release_curve = finite(EnvelopeReleaseCurve, 0.0f);
     return v;
 }
 
@@ -155,7 +161,13 @@ void GrainProcessorImpl::handle_gate(const VoiceParams& params) {
         m_envelope.note_on();
         m_grain_engine.reset_schedule(m_active_mode);
         m_playback_elapsed_samples = 0;
-        m_player.note_on();
+        // Legato (crossfaded restart) only while the previous note still
+        // sounds; a head whose envelope has already died restarts cold.
+        if (envelope_active) {
+            m_player.note_on();
+        } else {
+            m_player.reset();
+        }
     } else if (!params.m_playing && m_envelope.get_state() != utils::ADSR::State::IDLE &&
                m_envelope.get_state() != utils::ADSR::State::RELEASE) {
         m_envelope.note_off();
@@ -176,12 +188,14 @@ void GrainProcessorImpl::silence() {
 
 void GrainProcessorImpl::render_engine(const AudioBlock& block, const VoiceParams& params) {
     m_viz.set_master_level(m_envelope.get_current_level());
+    bool rendered = true;
     if (m_active_mode == EngineMode::Sample) {
-        m_player.render(block, params);
+        rendered = m_player.render(block, params);
     } else {
         m_grain_engine.render(block, params, m_active_mode, m_playback_elapsed_samples);
     }
-    m_playback_elapsed_samples += block.m_num_frames;
+    // The temperature ramp counts sounding time only.
+    if (rendered) { m_playback_elapsed_samples += block.m_num_frames; }
 }
 
 void GrainProcessorImpl::apply_voice_gain(const AudioBlock& block, const VoiceParams& params) {

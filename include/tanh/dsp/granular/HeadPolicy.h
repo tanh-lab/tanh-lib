@@ -69,18 +69,18 @@ public:
         long const max_position = static_cast<long>(region.size());
         if (max_position <= 0) { return static_cast<long>(region.m_start); }
 
-        long const start = m_sequential_position;
-        if (temperature == 0.0f && start >= max_position) {
-            return static_cast<long>(region.m_loop_point);
-        }
+        long const loop = static_cast<long>(region.m_loop_point - region.m_start);
+        long start = m_sequential_position;
+        // The region shrank under the head (End dragged or modulated below
+        // it): restart at Loop and keep scanning from there. Returning Loop
+        // without advancing would pin every following grain to it.
+        if (start >= max_position) { start = loop; }
         long const picked = jitter_and_wrap(start, temperature, region, rng);
 
         // Scanner traverses the full region (start -> end), then restarts at
         // loop_point.
-        m_sequential_position += static_cast<long>(interval);
-        if (m_sequential_position >= max_position) {
-            m_sequential_position = static_cast<long>(region.m_loop_point - region.m_start);
-        }
+        m_sequential_position = start + static_cast<long>(interval);
+        if (m_sequential_position >= max_position) { m_sequential_position = loop; }
         return picked;
     }
 

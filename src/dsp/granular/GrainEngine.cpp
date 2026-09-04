@@ -29,7 +29,11 @@ void GrainEngine::prepare(double sample_rate, size_t num_channels) {
     for (auto& grain : m_grains) {
         grain.m_envelope.set_sample_rate(static_cast<float>(m_sample_rate));
     }
+    // Grains sized at the old rate must not survive a re-prepare.
+    deactivate_all();
     m_next_grain_time = 0;
+    m_loop_head.reset();
+    m_position_head.reset();
 }
 
 HeadPolicy& GrainEngine::head_for(EngineMode mode) {

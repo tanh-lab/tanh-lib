@@ -10,6 +10,7 @@
 #include <tanh/dsp/granular/VoiceParams.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <random>
 #include <vector>
 
@@ -25,6 +26,9 @@ public:
     GrainEngine(const SampleReader& reader, GrainVisualizer& viz);
 
     void prepare(double sample_rate, size_t num_channels);
+
+    // Reseed the jitter generator (tests: reproducible grain streams).
+    void seed(uint32_t value) { m_random_generator.seed(value); }
 
     // Restart the trigger clock and the mode's head (note-on, mode switch).
     void reset_schedule(EngineMode mode);

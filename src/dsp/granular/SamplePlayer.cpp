@@ -23,11 +23,7 @@ void SamplePlayer::prepare(double sample_rate, size_t num_channels) {
     m_fade_length = std::max(
         static_cast<size_t>(1),
         static_cast<size_t>(k_player_crossfade_duration * static_cast<float>(sample_rate)));
-    m_started = false;
-    m_restart = false;
-    m_play_head = 0.0;
-    m_fade_remaining = 0;
-    for (auto& o : m_outgoing) { o.m_remaining = 0; }
+    reset();
 }
 
 void SamplePlayer::reset() {
@@ -50,14 +46,14 @@ void SamplePlayer::note_on() {
     }
 }
 
-void SamplePlayer::render(const AudioBlock& block, const VoiceParams& params) {
+bool SamplePlayer::render(const AudioBlock& block, const VoiceParams& params) {
     Source src;
     if (!resolve_source(params, src)) {
         // Every silent early-out resets the player: leaving m_started set
         // keeps the post-block viz painting a frozen head as if it were
         // sounding.
         reset();
-        return;
+        return false;
     }
     begin_or_switch(src);
     refresh_outgoing_banks();
@@ -72,6 +68,7 @@ void SamplePlayer::render(const AudioBlock& block, const VoiceParams& params) {
         advance_head(src, loop_point);
     }
     m_total_frames = src.m_frames;
+    return true;
 }
 
 void SamplePlayer::report_visualization() const {
