@@ -1,3 +1,4 @@
+#include <tanh/core/Numbers.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
 #include <tanh/dsp/granular/GranularTypes.h>
@@ -9,7 +10,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <numbers>
 
 namespace thl::dsp::granular {
 
@@ -91,7 +91,7 @@ bool SamplePlayer::resolve_source(const VoiceParams& params, Source& out) const 
     if (out.m_region.size() == 0) { return false; }
     // Velocity is the head's own rate here (varispeed). Modulation may push
     // it past the range; keep it forward and finite.
-    out.m_velocity = std::clamp(params.m_velocity, 0.01f, 8.0f);
+    out.m_velocity = std::clamp(params.m_velocity, k_min_varispeed, k_max_varispeed);
     return true;
 }
 
@@ -154,7 +154,7 @@ void SamplePlayer::read_live_frame(const Source& src,
                                    m_channels,
                                    frame);
     if (m_fade_remaining == 0) { return; }
-    float const gain_in = fade_in_gain();
+    float const gain_in = fade_in_gain(m_fade_remaining);
     for (size_t ch = 0; ch < m_channels; ++ch) { frame[ch] *= gain_in; }
     --m_fade_remaining;
 }
@@ -165,9 +165,7 @@ void SamplePlayer::mix_outgoing_tails(const Source& src,
     channel_mixer::Frame tail{};
     for (auto& o : m_outgoing) {
         if (o.m_remaining == 0) { continue; }
-        float const t =
-            1.0f - static_cast<float>(o.m_remaining) / static_cast<float>(m_fade_length);
-        float const gain_out = o.m_gain * std::cos(t * std::numbers::pi_v<float> * 0.5f);
+        float const gain_out = o.m_gain * fade_out_gain(o.m_remaining);
         if (o.m_source_channels > 0) {
             channel_mixer::read_head_frame(m_reader,
                                            o.m_head,
@@ -199,10 +197,15 @@ void SamplePlayer::advance_head(const Source& src, double loop_point) {
     m_play_head = loop_point + overshoot;
 }
 
-float SamplePlayer::fade_in_gain() const {
-    if (m_fade_remaining == 0) { return 1.0f; }
-    float const t = 1.0f - static_cast<float>(m_fade_remaining) / static_cast<float>(m_fade_length);
+float SamplePlayer::fade_in_gain(size_t remaining) const {
+    if (remaining == 0) { return 1.0f; }
+    float const t = 1.0f - static_cast<float>(remaining) / static_cast<float>(m_fade_length);
     return std::sin(t * std::numbers::pi_v<float> * 0.5f);
+}
+
+float SamplePlayer::fade_out_gain(size_t remaining) const {
+    float const t = 1.0f - static_cast<float>(remaining) / static_cast<float>(m_fade_length);
+    return std::cos(t * std::numbers::pi_v<float> * 0.5f);
 }
 
 void SamplePlayer::start_crossfade(size_t old_sample_index, size_t old_source_channels) {
@@ -225,7 +228,7 @@ void SamplePlayer::start_crossfade(size_t old_sample_index, size_t old_source_ch
     slot->m_head = m_play_head;
     slot->m_sample_index = old_sample_index;
     slot->m_source_channels = old_source_channels;
-    slot->m_gain = fade_in_gain();
+    slot->m_gain = fade_in_gain(m_fade_remaining);
     slot->m_remaining = m_fade_length;
     m_fade_remaining = m_fade_length;
 }

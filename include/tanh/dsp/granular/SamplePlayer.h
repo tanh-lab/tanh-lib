@@ -7,6 +7,7 @@
 #include <tanh/dsp/granular/SampleReader.h>
 #include <tanh/dsp/granular/SampleRegion.h>
 #include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
 #include <cstddef>
@@ -24,6 +25,9 @@ namespace thl::dsp::granular {
 class TANH_API SamplePlayer {
 public:
     SamplePlayer(const SampleReader& reader, GrainVisualizer& viz);
+    // Holds references into its owner: never copied.
+    SamplePlayer(const SamplePlayer&) = delete;
+    SamplePlayer& operator=(const SamplePlayer&) = delete;
 
     void prepare(double sample_rate, size_t num_channels);
 
@@ -39,7 +43,7 @@ public:
     // Render one block. Returns false on a silent early-out (no bank, empty
     // bank, empty region), which also resets the head so a stale one is
     // never painted.
-    bool render(const AudioBlock& block, const VoiceParams& params);
+    bool render(const AudioBlock& block, const VoiceParams& params) TANH_NONBLOCKING_FUNCTION;
 
     // Per block, after the voice has applied its envelope.
     void report_visualization() const;
@@ -76,7 +80,9 @@ private:
                             channel_mixer::Frame& frame);
     void advance_head(const Source& src, double loop_point);
 
-    float fade_in_gain() const;
+    // Equal-power crossfade law, `remaining` frames of m_fade_length left.
+    float fade_in_gain(size_t remaining) const;
+    float fade_out_gain(size_t remaining) const;
     void start_crossfade(size_t old_sample_index, size_t old_source_channels);
 
     const SampleReader& m_reader;

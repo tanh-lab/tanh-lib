@@ -1,14 +1,21 @@
 #pragma once
 
-#include <tanh/dsp/utils/HannWindow.h>
+#include <tanh/core/Numbers.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 // Shared constants and enums of the granular voice. Every component of the
 // voice (GrainEngine, SamplePlayer, HeadPolicy, ChannelMixer) speaks these;
 // GrainProcessor.h re-exports them for the public facade.
 namespace thl::dsp::granular {
+
+// Signed frame position / offset in a bank. 64-bit everywhere (`long` is
+// 32-bit on Windows); unsigned bank lengths are size_t.
+using FramePos = std::int64_t;
 
 // Maximum number of output channels supported by the granular voice.
 constexpr size_t k_max_channel_support = 16;
@@ -30,6 +37,23 @@ constexpr size_t k_max_grains = 48;
 // Duration in seconds over which temperature ramps up from 0 to full at
 // playback start
 constexpr float k_temperature_ramp_duration = 1.0f;
+
+// Grain pitch (Velocity in the granular modes) after jitter never drops
+// below this: zero or negative would produce empty grains.
+constexpr float k_min_grain_pitch = 0.01f;
+// Sample-mode varispeed bounds: forward and finite under modulation.
+constexpr float k_min_varispeed = 0.01f;
+constexpr float k_max_varispeed = 8.0f;
+
+// Temperature response curves (exponents on [0, 1] temperature).
+constexpr float k_size_temperature_curve = 3.0f;
+constexpr float k_velocity_temperature_curve = 15.0f;
+// Upward size jitter is damped so small grains don't balloon.
+constexpr float k_size_jitter_upper_scale = 0.3f;
+// Velocity jitter reaches at most a perfect fifth: 2^(7/12).
+constexpr float k_velocity_jitter_ratio = 1.4983070768766815f;
+// Per-grain L/R energy compensation for the TrueStereo / multichannel pan.
+constexpr float k_stereo_energy_compensation = 2.0f;
 
 enum class ChannelMode : int {
     MonoToStereo,      // Read ch0 from source, spread across L/R
@@ -63,19 +87,29 @@ struct AudioBlock {
     size_t m_num_frames{0};
 };
 
-// Structure to represent a single grain
+// Hann window at `phase` in [0, 1): 0.5 * (1 - cos(2 pi phase)).
+inline float hann(float phase) {
+    phase = std::clamp(phase, 0.0f, 0.9999f);
+    return 0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> * phase));
+}
+
+// One grain of the pool.
 struct Grain {
-    size_t m_start_position;    // Starting position in the sample
-    size_t m_current_position;  // Current position within the grain
-    size_t m_grain_size;        // Size of the grain in samples
-    float m_velocity;           // Playback speed/velocity
-    float m_amplitude;          // Grain amplitude/volume
-    float m_gain;
-    float m_position_spread;                 // Pan position [0, 1] for MonoToStereo spread
-    bool m_active;                           // Whether the grain is currently active
-    thl::dsp::utils::HannWindow m_envelope;  // Hann window envelope for amplitude
-                                             // modulation
-    size_t m_sample_index;                   // Index of the sample in the audio data
+    size_t m_start_position{0};     // Start in the bank, frames
+    size_t m_current_position{0};   // Frames rendered so far
+    size_t m_grain_size{1};         // Length in output frames
+    float m_velocity{1.0f};         // Read rate (pitch)
+    float m_position_spread{0.5f};  // Pan position [0, 1]
+    bool m_active{false};
+    size_t m_sample_index{0};  // Bank the grain reads from
+
+    float phase() const {
+        return static_cast<float>(m_current_position) / static_cast<float>(m_grain_size);
+    }
+    float source_position() const {
+        return static_cast<float>(m_start_position) +
+               static_cast<float>(m_current_position) * m_velocity;
+    }
 };
 
 }  // namespace thl::dsp::granular

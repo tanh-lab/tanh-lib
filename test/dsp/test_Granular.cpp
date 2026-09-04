@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 #include <tanh/core/Buffer.h>
+#include <tanh/core/Numbers.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
 #include <tanh/dsp/granular/GrainEngine.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
@@ -17,7 +18,6 @@
 #include <tanh/dsp/granular/VoiceParams.h>
 
 #include <cmath>
-#include <numbers>
 #include <random>
 #include <utility>
 #include <vector>
@@ -206,12 +206,12 @@ TEST(Granular, LoopScanHeadResumesScanWhenRegionShrinksBelowHead) {
     for (int i = 0; i < 5; ++i) { head.pick_start(full, 0.0f, k_interval, params, rng); }
 
     SampleRegion const small{.m_start = 0, .m_end = 20000, .m_loop_point = 0};
-    long const first = head.pick_start(small, 0.0f, k_interval, params, rng);
-    long const second = head.pick_start(small, 0.0f, k_interval, params, rng);
-    long const third = head.pick_start(small, 0.0f, k_interval, params, rng);
-    EXPECT_EQ(first, 0L);
-    EXPECT_EQ(second, static_cast<long>(k_interval));
-    EXPECT_EQ(third, static_cast<long>(2 * k_interval));
+    FramePos const first = head.pick_start(small, 0.0f, k_interval, params, rng);
+    FramePos const second = head.pick_start(small, 0.0f, k_interval, params, rng);
+    FramePos const third = head.pick_start(small, 0.0f, k_interval, params, rng);
+    EXPECT_EQ(first, FramePos{0});
+    EXPECT_EQ(second, static_cast<FramePos>(k_interval));
+    EXPECT_EQ(third, static_cast<FramePos>(2 * k_interval));
 }
 
 TEST(Granular, PositionSprayHeadTiltClipsTheWindow) {
@@ -224,7 +224,7 @@ TEST(Granular, PositionSprayHeadTiltClipsTheWindow) {
     // should clip instead is an open product decision.
     params.m_spray = 0.4f;
     auto const region = SampleRegion::full(96000);
-    long const centre = static_cast<long>(0.5f * static_cast<float>(96000 - 1));
+    auto const centre = static_cast<FramePos>(0.5f * static_cast<float>(96000 - 1));
 
     params.m_tilt = 1.0f;
     for (int i = 0; i < 500; ++i) {

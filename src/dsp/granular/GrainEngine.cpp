@@ -1,3 +1,4 @@
+#include <tanh/core/Numbers.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainEngine.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
@@ -10,7 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <numbers>
 
 namespace thl::dsp::granular {
 
@@ -18,17 +18,11 @@ GrainEngine::GrainEngine(const SampleReader& reader, GrainVisualizer& viz)
     : m_reader(reader)
     , m_viz(viz)
     , m_random_generator(std::random_device{}())
-    , m_uni_dist(0.0f, 1.0f) {
-    m_grains.resize(k_max_grains);
-    for (auto& grain : m_grains) { grain.m_active = false; }
-}
+    , m_uni_dist(0.0f, 1.0f) {}
 
 void GrainEngine::prepare(double sample_rate, size_t num_channels) {
     m_sample_rate = sample_rate;
     m_channels = std::min(num_channels, k_max_channel_support);
-    for (auto& grain : m_grains) {
-        grain.m_envelope.set_sample_rate(static_cast<float>(m_sample_rate));
-    }
     // Grains sized at the old rate must not survive a re-prepare.
     deactivate_all();
     m_next_grain_time = 0;
@@ -60,11 +54,16 @@ void GrainEngine::render(const AudioBlock& block,
                          size_t playback_elapsed_samples) {
     update_trigger_rate(params.m_density);
     const Bank bank = select_bank(params.m_sample_index);
+    if (bank.m_index != m_current_bank) {
+        m_current_bank = bank.m_index;
+        m_next_grain_time = 0;  // a pitch-bank switch retriggers at once
+    }
     HeadPolicy& head = head_for(mode);
+    const SampleRegion region = head.region(bank.m_frames, params);
     size_t const write_channels = std::min(m_channels, block.m_num_channels);
 
     for (size_t i = 0; i < block.m_num_frames; ++i) {
-        trigger_due_grain(bank, params, head, playback_elapsed_samples + i);
+        trigger_due_grain(bank, region, params, head, playback_elapsed_samples + i);
 
         channel_mixer::Frame frame{};
         mix_grains_frame(bank, params, frame);
@@ -83,19 +82,16 @@ void GrainEngine::update_trigger_rate(float density) {
     m_min_grain_interval = static_cast<size_t>(m_sample_rate / rate);
 }
 
-GrainEngine::Bank GrainEngine::select_bank(int raw_sample_index) {
+GrainEngine::Bank GrainEngine::select_bank(int raw_sample_index) const {
     Bank bank;
     bank.m_index = m_reader.num_banks() > 0 ? m_reader.clamp_bank(raw_sample_index) : 0;
     bank.m_frames = m_reader.num_frames(bank.m_index);
     bank.m_channels = std::max<size_t>(1, m_reader.num_channels(bank.m_index));
-    if (m_current_bank != bank.m_index) {
-        m_current_bank = bank.m_index;
-        m_next_grain_time = 0;  // a pitch-bank switch retriggers at once
-    }
     return bank;
 }
 
 void GrainEngine::trigger_due_grain(const Bank& bank,
+                                    const SampleRegion& region,
                                     const VoiceParams& params,
                                     HeadPolicy& head,
                                     size_t playback_elapsed_samples) {
@@ -103,7 +99,7 @@ void GrainEngine::trigger_due_grain(const Bank& bank,
         m_next_grain_time--;
         return;
     }
-    trigger_grain(bank, params, head, playback_elapsed_samples);
+    trigger_grain(bank, region, params, head, playback_elapsed_samples);
     m_next_grain_time = m_min_grain_interval - 1;
 }
 
@@ -114,22 +110,11 @@ void GrainEngine::mix_grains_frame(const Bank& bank,
         auto& grain = m_grains[gi];
         if (!grain.m_active) { continue; }
 
-        // Window
-        float const normalized_position =
-            static_cast<float>(grain.m_current_position) / static_cast<float>(grain.m_grain_size);
-        float const envelope = grain.m_envelope.process_at_position(normalized_position);
-        if (!grain.m_envelope.is_active() || normalized_position >= 1.0f) {
-            grain.m_active = false;
-            m_viz.grain_finished(static_cast<int>(gi));
-            continue;
-        }
-
-        // Read, pan, accumulate
-        float const source_pos = static_cast<float>(grain.m_start_position) +
-                                 (static_cast<float>(grain.m_current_position) * grain.m_velocity);
+        // Window, read, pan, accumulate
+        float const envelope = hann(grain.phase());
         float const pan = 0.5f + (grain.m_position_spread - 0.5f) * params.m_spread;
         channel_mixer::accumulate_grain(m_reader,
-                                        source_pos,
+                                        grain.source_position(),
                                         grain.m_sample_index,
                                         bank.m_channels,
                                         params.m_channel_mode,
@@ -138,7 +123,7 @@ void GrainEngine::mix_grains_frame(const Bank& bank,
                                         m_channels,
                                         frame);
 
-        // Advance
+        // Advance; retire at the end of the window
         grain.m_current_position++;
         if (grain.m_current_position >= grain.m_grain_size) {
             grain.m_active = false;
@@ -152,20 +137,16 @@ void GrainEngine::report_visualization(size_t num_frames, const Bank& bank) {
     auto const total_f = static_cast<float>(bank.m_frames);
     m_viz.report_master_level();
     for (size_t gi = 0; gi < m_grains.size(); ++gi) {
-        auto& grain = m_grains[gi];
+        auto const& grain = m_grains[gi];
         if (!grain.m_active) { continue; }
-        float const current_pos =
-            (static_cast<float>(grain.m_start_position) +
-             static_cast<float>(grain.m_current_position) * grain.m_velocity) /
-            total_f;
-        float const normalized_position =
-            static_cast<float>(grain.m_current_position) / static_cast<float>(grain.m_grain_size);
-        float const envelope = grain.m_envelope.process_at_position(normalized_position);
-        m_viz.grain_updated(static_cast<int>(gi), current_pos, envelope);
+        m_viz.grain_updated(static_cast<int>(gi),
+                            grain.source_position() / total_f,
+                            hann(grain.phase()));
     }
 }
 
 void GrainEngine::trigger_grain(const Bank& bank,
+                                const SampleRegion& region,
                                 const VoiceParams& params,
                                 HeadPolicy& head,
                                 size_t playback_elapsed_samples) {
@@ -174,16 +155,14 @@ void GrainEngine::trigger_grain(const Bank& bank,
 
     // Draw order matters for the RNG stream: size, velocity, head, pan.
     size_t grain_size = calculate_grain_size(params.m_size, params.m_temperature_size);
-    // Modulation can drive velocity to zero or negative, which would
-    // produce empty grains (silence) via the size maths below.
     float const velocity =
-        std::max(calculate_velocity(params.m_velocity, params.m_temperature_velocity), 0.01f);
+        std::max(calculate_velocity(params.m_velocity, params.m_temperature_velocity),
+                 k_min_grain_pitch);
 
-    auto const region = head.region(bank.m_frames, params);
     if (region.size() == 0) { return; }
     float const temperature =
         apply_temperature_ramp(params.m_temperature_position, playback_elapsed_samples);
-    long const start =
+    FramePos const start =
         head.pick_start(region, temperature, m_min_grain_interval, params, m_random_generator);
 
     size_t const covered = fit_to_region(start, region, velocity, grain_size);
@@ -192,12 +171,13 @@ void GrainEngine::trigger_grain(const Bank& bank,
     start_grain(*grain, start, grain_size, velocity, bank.m_index);
 
     auto const total = static_cast<float>(bank.m_frames);
-    m_viz.grain_triggered(
-        static_cast<int>(grain - m_grains.data()),
-        static_cast<float>(start) / total,
-        static_cast<float>(covered) / total,
-        velocity,
-        static_cast<float>(grain_size) / static_cast<float>(m_sample_rate) * 1000.0f);
+    float const duration_ms =
+        static_cast<float>(grain_size) / static_cast<float>(m_sample_rate) * 1000.0f;
+    m_viz.grain_triggered(static_cast<int>(grain - m_grains.data()),
+                          static_cast<float>(start) / total,
+                          static_cast<float>(covered) / total,
+                          velocity,
+                          duration_ms);
 }
 
 Grain* GrainEngine::find_free_grain() {
@@ -207,15 +187,15 @@ Grain* GrainEngine::find_free_grain() {
     return nullptr;
 }
 
-size_t GrainEngine::fit_to_region(long start,
+size_t GrainEngine::fit_to_region(FramePos start,
                                   const SampleRegion& region,
                                   float velocity,
                                   size_t& grain_size) {
     auto covered = static_cast<size_t>(std::ceil(static_cast<float>(grain_size) * velocity));
-    long const end_frame = static_cast<long>(region.m_end);
-    long const grain_end = start + static_cast<long>(covered);
+    auto const end_frame = static_cast<FramePos>(region.m_end);
+    FramePos const grain_end = start + static_cast<FramePos>(covered);
     if (grain_end <= end_frame) { return covered; }
-    covered = static_cast<size_t>(std::max(0L, end_frame - start));
+    covered = static_cast<size_t>(std::max(FramePos{0}, end_frame - start));
     if (covered == 0) { return 0; }
     grain_size = std::max(static_cast<size_t>(1),
                           static_cast<size_t>(static_cast<float>(covered) / velocity));
@@ -223,7 +203,7 @@ size_t GrainEngine::fit_to_region(long start,
 }
 
 void GrainEngine::start_grain(Grain& grain,
-                              long start,
+                              FramePos start,
                               size_t grain_size,
                               float velocity,
                               size_t bank) {
@@ -234,12 +214,6 @@ void GrainEngine::start_grain(Grain& grain,
     grain.m_active = true;
     grain.m_sample_index = bank;
     grain.m_position_spread = m_uni_dist(m_random_generator);
-
-    float const duration_ms =
-        (static_cast<float>(grain_size) / static_cast<float>(m_sample_rate)) * 1000.0f;
-    grain.m_envelope.set_sample_rate(static_cast<float>(m_sample_rate));
-    grain.m_envelope.set_duration(duration_ms);
-    grain.m_envelope.start();
 }
 
 size_t GrainEngine::calculate_grain_size(float grain_size_param, float temperature) {
@@ -252,7 +226,7 @@ size_t GrainEngine::calculate_grain_size(float grain_size_param, float temperatu
     // Randomize grain size based on temperature
     float rand_value = m_uni_dist(m_random_generator);  // [0, 1)
     rand_value = (rand_value * 2.f - 1.f) / 2.f;        // [-0.5, 0.5)
-    rand_value *= std::pow(temperature, 3.f);
+    rand_value *= std::pow(temperature, k_size_temperature_curve);
     auto lower_interval = static_cast<float>(grain_size - min_size);
     auto upper_interval = static_cast<float>(max_size - grain_size);
     if (rand_value < 0.f) {
@@ -261,7 +235,7 @@ size_t GrainEngine::calculate_grain_size(float grain_size_param, float temperatu
     } else {
         // Do not make the grain size much larger for small values
         grain_size = static_cast<size_t>(static_cast<float>(grain_size) +
-                                         upper_interval * rand_value * 0.3f +
+                                         upper_interval * rand_value * k_size_jitter_upper_scale +
                                          static_cast<float>(grain_size) * rand_value);
     }
     return std::clamp(grain_size, min_size, max_size);
@@ -270,12 +244,11 @@ size_t GrainEngine::calculate_grain_size(float grain_size_param, float temperatu
 float GrainEngine::calculate_velocity(float velocity, float temperature) {
     float velocity_factor = m_uni_dist(m_random_generator);  // [0, 1)
     velocity_factor = (velocity_factor * 2.f - 1.f);         // [-1, 1)
-    velocity_factor *= std::pow(temperature, 15.f);
-    float const semitone_factor = std::pow(2.f, 7.f / 12.f);
+    velocity_factor *= std::pow(temperature, k_velocity_temperature_curve);
     if (velocity_factor < 0.f) {
-        velocity /= (1.f - velocity_factor * (semitone_factor - 1.f));
+        velocity /= (1.f - velocity_factor * (k_velocity_jitter_ratio - 1.f));
     } else {
-        velocity *= (1.f + velocity_factor * (semitone_factor - 1.f));
+        velocity *= (1.f + velocity_factor * (k_velocity_jitter_ratio - 1.f));
     }
     return velocity;
 }

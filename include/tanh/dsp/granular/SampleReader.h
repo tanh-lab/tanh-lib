@@ -2,6 +2,7 @@
 
 #include <tanh/core/Buffer.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
+#include <tanh/dsp/granular/GranularTypes.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -11,6 +12,9 @@ namespace thl::dsp::granular {
 
 // Read-only view over the voice's source material: the pitch banks in an
 // AudioDataStore. Stateless; every read is bounds-checked and interpolated.
+// Precondition: the host holds the store's read state around every call
+// (AudioDataStore::begin_read / end_read) — the loader replaces the banks
+// outside of it.
 class SampleReader {
 public:
     explicit SampleReader(const audio::AudioDataStore& store) : m_store(store) {}
@@ -44,15 +48,12 @@ public:
         if (channel >= buf.get_num_channels()) { return 0.0f; }
         size_t const num_frames = buf.get_num_samples();
 
-        long pos_floor = static_cast<long>(position);
-        long pos_ceil = pos_floor + 1;
+        auto pos_floor = static_cast<FramePos>(position);
+        FramePos pos_ceil = pos_floor + 1;
         float const frac = position - static_cast<float>(pos_floor);
-        while (std::cmp_greater_equal(pos_ceil, num_frames)) {
-            pos_ceil -= static_cast<long>(num_frames);
-        }
-        while (std::cmp_greater_equal(pos_floor, num_frames)) {
-            pos_floor -= static_cast<long>(num_frames);
-        }
+        auto const frames = static_cast<FramePos>(num_frames);
+        while (pos_ceil >= frames) { pos_ceil -= frames; }
+        while (pos_floor >= frames) { pos_floor -= frames; }
         const float* data = buf.get_read_pointer(channel);
         return data[pos_floor] * (1.0f - frac) + data[pos_ceil] * frac;
     }

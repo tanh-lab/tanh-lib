@@ -8,11 +8,12 @@
 #include <tanh/dsp/granular/SampleReader.h>
 #include <tanh/dsp/granular/SampleRegion.h>
 #include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <random>
-#include <vector>
 
 namespace thl::dsp::granular {
 
@@ -24,6 +25,9 @@ namespace thl::dsp::granular {
 class TANH_API GrainEngine {
 public:
     GrainEngine(const SampleReader& reader, GrainVisualizer& viz);
+    // Holds references into its owner: never copied.
+    GrainEngine(const GrainEngine&) = delete;
+    GrainEngine& operator=(const GrainEngine&) = delete;
 
     void prepare(double sample_rate, size_t num_channels);
 
@@ -40,7 +44,7 @@ public:
     void render(const AudioBlock& block,
                 const VoiceParams& params,
                 EngineMode mode,
-                size_t playback_elapsed_samples);
+                size_t playback_elapsed_samples) TANH_NONBLOCKING_FUNCTION;
 
 private:
     // The pitch bank this block reads from.
@@ -52,11 +56,13 @@ private:
 
     HeadPolicy& head_for(EngineMode mode);
 
-    // render() in order: update_trigger_rate, select_bank, then per frame
-    // trigger_due_grain + mix_grains_frame, then report_visualization.
+    // render() in order: update_trigger_rate, select_bank (+ retrigger on a
+    // bank change), region from the head, then per frame trigger_due_grain +
+    // mix_grains_frame, then report_visualization.
     void update_trigger_rate(float density);
-    Bank select_bank(int raw_sample_index);
+    Bank select_bank(int raw_sample_index) const;
     void trigger_due_grain(const Bank& bank,
+                           const SampleRegion& region,
                            const VoiceParams& params,
                            HeadPolicy& head,
                            size_t playback_elapsed_samples);
@@ -68,6 +74,7 @@ private:
     // trigger_grain() in order: find_free_grain, jitter size and velocity,
     // ask the head where, fit_to_region, start_grain.
     void trigger_grain(const Bank& bank,
+                       const SampleRegion& region,
                        const VoiceParams& params,
                        HeadPolicy& head,
                        size_t playback_elapsed_samples);
@@ -75,11 +82,11 @@ private:
     // Truncate a grain that would overshoot the region end. Returns the
     // frames it covers in the source (0 = nothing fits); `grain_size` is
     // shrunk to match.
-    static size_t fit_to_region(long start,
+    static size_t fit_to_region(FramePos start,
                                 const SampleRegion& region,
                                 float velocity,
                                 size_t& grain_size);
-    void start_grain(Grain& grain, long start, size_t grain_size, float velocity, size_t bank);
+    void start_grain(Grain& grain, FramePos start, size_t grain_size, float velocity, size_t bank);
     size_t calculate_grain_size(float grain_size_param, float temperature);
     float calculate_velocity(float velocity, float temperature);
     float apply_temperature_ramp(float temperature, size_t playback_elapsed_samples) const;
@@ -92,7 +99,7 @@ private:
     double m_sample_rate{48000.0};
     size_t m_channels{2};
 
-    std::vector<Grain> m_grains;
+    std::array<Grain, k_max_grains> m_grains{};
     size_t m_next_grain_time{0};
     size_t m_min_grain_interval{100};
     size_t m_current_bank{0};

@@ -1,3 +1,4 @@
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
 #include <tanh/dsp/granular/GrainProcessor.h>
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
@@ -10,8 +11,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-
-#include "tanh/core/BufferView.h"
 
 namespace thl::dsp::granular {
 
@@ -157,7 +156,7 @@ AudioBlock GrainProcessorImpl::begin_block(thl::core::BufferView buffer) {
 
 void GrainProcessorImpl::handle_gate(const VoiceParams& params) {
     bool const envelope_active = m_envelope.is_active();
-    if (params.m_playing && !envelope_active || params.m_playing && !m_last_playing_state) {
+    if (params.m_playing && (!envelope_active || !m_last_playing_state)) {
         m_envelope.note_on();
         m_grain_engine.reset_schedule(m_active_mode);
         m_playback_elapsed_samples = 0;

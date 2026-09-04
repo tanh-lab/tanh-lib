@@ -6,9 +6,9 @@
 namespace thl::dsp::granular {
 
 // The part of a bank a head may play, in source frames. Resolved once per
-// block by the active HeadPolicy — that resolution is the seam where a
-// slice source (slicer mode) plugs in: a slice replaces Start / End / Loop
-// with the slice's bounds and nothing below this struct needs to know.
+// block (GrainEngine::render via the HeadPolicy, SamplePlayer::render) —
+// that resolution is the seam where a slice source (slicer mode) plugs in: a slice replaces Start /
+// End / Loop with the slice's bounds and nothing below this struct needs to know.
 struct SampleRegion {
     size_t m_start{0};
     size_t m_end{0};

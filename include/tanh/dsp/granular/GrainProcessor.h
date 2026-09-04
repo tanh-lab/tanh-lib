@@ -27,6 +27,9 @@ class TANH_API GrainProcessorImpl : public thl::dsp::BaseProcessor {
 public:
     explicit GrainProcessorImpl(thl::dsp::audio::AudioDataStore& audio_store);
     ~GrainProcessorImpl() override;
+    // The engines hold references into this object: never copied.
+    GrainProcessorImpl(const GrainProcessorImpl&) = delete;
+    GrainProcessorImpl& operator=(const GrainProcessorImpl&) = delete;
 
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,

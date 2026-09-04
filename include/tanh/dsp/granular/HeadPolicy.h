@@ -9,6 +9,11 @@
 
 namespace thl::dsp::granular {
 
+// One draw in [0, 1).
+inline float unit_random(std::mt19937& rng) {
+    return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng);
+}
+
 // Where the grain scheduler's next grain comes from. The GrainEngine has no
 // idea which policy it runs; the voice hands it one per engine mode. Both
 // decisions a mode makes live here: the region (the slicer seam — a slice
@@ -22,30 +27,29 @@ public:
 
     // Next grain's start, absolute in source frames. `temperature` is the
     // (ramped) position temperature; `interval` the frames between triggers.
-    virtual long pick_start(const SampleRegion& region,
-                            float temperature,
-                            size_t interval,
-                            const VoiceParams& params,
-                            std::mt19937& rng) = 0;
+    virtual FramePos pick_start(const SampleRegion& region,
+                                float temperature,
+                                size_t interval,
+                                const VoiceParams& params,
+                                std::mt19937& rng) = 0;
 
     virtual void reset() = 0;
 
 protected:
     // Temperature jitter around `start` (relative to the region), wrapped
     // into the region however many times it takes, then made absolute.
-    static long jitter_and_wrap(long start,
-                                float temperature,
-                                const SampleRegion& region,
-                                std::mt19937& rng) {
-        long const max_position = static_cast<long>(region.size());
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        float rand_value = dist(rng);             // [0, 1)
+    static FramePos jitter_and_wrap(FramePos start,
+                                    float temperature,
+                                    const SampleRegion& region,
+                                    std::mt19937& rng) {
+        auto const max_position = static_cast<FramePos>(region.size());
+        float rand_value = unit_random(rng);      // [0, 1)
         rand_value = (rand_value - 0.5f) * 2.0f;  // [-1, 1)
         rand_value *= temperature;
-        start += static_cast<long>(rand_value * static_cast<float>(max_position));
+        start += static_cast<FramePos>(rand_value * static_cast<float>(max_position));
         while (start >= max_position) { start -= max_position; }
         while (start < 0) { start += max_position; }
-        return start + static_cast<long>(region.m_start);
+        return start + static_cast<FramePos>(region.m_start);
     }
 };
 
@@ -61,25 +65,25 @@ public:
                                              total_frames);
     }
 
-    long pick_start(const SampleRegion& region,
-                    float temperature,
-                    size_t interval,
-                    const VoiceParams& /*params*/,
-                    std::mt19937& rng) override {
-        long const max_position = static_cast<long>(region.size());
-        if (max_position <= 0) { return static_cast<long>(region.m_start); }
+    FramePos pick_start(const SampleRegion& region,
+                        float temperature,
+                        size_t interval,
+                        const VoiceParams& /*params*/,
+                        std::mt19937& rng) override {
+        FramePos const max_position = static_cast<FramePos>(region.size());
+        if (max_position <= 0) { return static_cast<FramePos>(region.m_start); }
 
-        long const loop = static_cast<long>(region.m_loop_point - region.m_start);
-        long start = m_sequential_position;
+        FramePos const loop = static_cast<FramePos>(region.m_loop_point - region.m_start);
+        FramePos start = m_sequential_position;
         // The region shrank under the head (End dragged or modulated below
         // it): restart at Loop and keep scanning from there. Returning Loop
         // without advancing would pin every following grain to it.
         if (start >= max_position) { start = loop; }
-        long const picked = jitter_and_wrap(start, temperature, region, rng);
+        FramePos const picked = jitter_and_wrap(start, temperature, region, rng);
 
         // Scanner traverses the full region (start -> end), then restarts at
         // loop_point.
-        m_sequential_position = start + static_cast<long>(interval);
+        m_sequential_position = start + static_cast<FramePos>(interval);
         if (m_sequential_position >= max_position) { m_sequential_position = loop; }
         return picked;
     }
@@ -87,7 +91,7 @@ public:
     void reset() override { m_sequential_position = 0; }
 
 private:
-    long m_sequential_position{0};
+    FramePos m_sequential_position{0};
 };
 
 // GranularPosition: the head is parked on Position (absolute in the sample,
@@ -102,21 +106,21 @@ public:
         return SampleRegion::full(total_frames);
     }
 
-    long pick_start(const SampleRegion& region,
-                    float temperature,
-                    size_t /*interval*/,
-                    const VoiceParams& p,
-                    std::mt19937& rng) override {
-        long const max_position = static_cast<long>(region.size());
-        if (max_position <= 0) { return static_cast<long>(region.m_start); }
+    FramePos pick_start(const SampleRegion& region,
+                        float temperature,
+                        size_t /*interval*/,
+                        const VoiceParams& p,
+                        std::mt19937& rng) override {
+        FramePos const max_position = static_cast<FramePos>(region.size());
+        if (max_position <= 0) { return static_cast<FramePos>(region.m_start); }
 
         float const window_lo = std::max(-1.0f, p.m_tilt - 1.0f);
         float const window_hi = std::min(1.0f, p.m_tilt + 1.0f);
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        float const u = dist(rng);  // [0, 1)
+        float const u = unit_random(rng);  // [0, 1)
         float const spray_offset = (window_lo + u * (window_hi - window_lo)) * p.m_spray;
-        long const start = static_cast<long>(p.m_position * static_cast<float>(max_position - 1)) +
-                           static_cast<long>(spray_offset * static_cast<float>(max_position));
+        FramePos const start =
+            static_cast<FramePos>(p.m_position * static_cast<float>(max_position - 1)) +
+            static_cast<FramePos>(spray_offset * static_cast<float>(max_position));
         return jitter_and_wrap(start, temperature, region, rng);
     }
 
