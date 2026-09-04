@@ -259,6 +259,8 @@ if(TANH_BUILD_DSP)
 
         src/dsp/synth/SineProcessor.cpp
         src/dsp/granular/GrainProcessor.cpp
+        src/dsp/granular/GrainEngine.cpp
+        src/dsp/granular/SamplePlayer.cpp
 
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp

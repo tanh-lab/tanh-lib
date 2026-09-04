@@ -7,6 +7,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `dsp::granular::GrainProcessorImpl`: engine modes — `EngineMode::GranularPosition`
+  (grains sprayed around a parked `Position` with `Spray` / `Tilt`),
+  `EngineMode::GranularLoop` (previous scan behaviour) and `EngineMode::Sample`
+  (one continuous varispeed head, no grains). New parameters `EngineModeParam`,
+  `Position`, `Spray`, `Tilt` extend the subclass `Parameter` enum; subclasses
+  must serve them from `get_parameter_*`. Mode switches on a sounding voice fade
+  through zero (`k_mode_change_fade_duration`).
+- Sample mode crossfades every head discontinuity — loop wrap, pitch-bank
+  switch and retrigger — with a small pool of outgoing heads, so a second
+  discontinuity inside a fade never hard-cuts.
+
+### Changed
+
+- `dsp::granular` split into components: `GrainProcessorImpl` is now the
+  per-voice facade (parameter snapshot `VoiceParams`, master ADSR, mode fade)
+  over a pre-allocated `GrainEngine` (grain pool + scheduler, told where to
+  start grains by a `HeadPolicy`: `LoopScanHead` / `PositionSprayHead`) and a
+  `SamplePlayer` (the Sample-mode head). `SampleReader`, `SampleRegion` and
+  `channel_mixer` are the shared, header-only helpers. Constants and enums
+  moved to `GranularTypes.h` (still reachable through `GrainProcessor.h`).
+  Behaviour is unchanged; the subclass contract (`Parameter` enum, the three
+  `get_parameter_*` hooks) is unchanged.
+
 ## [0.3.0] - 2026-09-03
 
 First release with a changelog: earlier releases (v0.1.0, v0.2.0) are described only by their tag messages (`git tag -n1 v0.1.0 v0.2.0`).
