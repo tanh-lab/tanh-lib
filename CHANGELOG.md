@@ -16,6 +16,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `Position`, `Spray`, `Tilt` extend the subclass `Parameter` enum; subclasses
   must serve them from `get_parameter_*`. Mode switches on a sounding voice fade
   through zero (`k_mode_change_fade_duration`).
+- Sample mode in `MonoToStereo` puts half the mono sum in each channel, the
+  level a centred grain has under the linear pan law, so a mode switch no
+  longer steps the level by 6 dB.
 - Sample mode crossfades every head discontinuity — loop wrap, pitch-bank
   switch and retrigger — with a small pool of outgoing heads, so a second
   discontinuity inside a fade never hard-cuts.

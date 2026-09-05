@@ -93,8 +93,10 @@ inline void read_head_frame(const SampleReader& reader,
     switch (mode) {
         case ChannelMode::MonoToStereo: {
             // One head has no per-grain pan to spread, so the mono sum sits
-            // centred; Spread has nothing to widen here.
-            float const mono = mono_sum_clamped(reader, position, bank, source_channels);
+            // centred; Spread has nothing to widen here. Half per side: that
+            // is what a centred grain gives under the linear pan law above,
+            // so a mode switch does not step the level.
+            float const mono = 0.5f * mono_sum_clamped(reader, position, bank, source_channels);
             out[0] = mono;
             out[1] = mono;
             break;
