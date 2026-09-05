@@ -4,6 +4,7 @@
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 #include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/dsp/utils/MorphWindow.h>
 
 #include <algorithm>
 #include <array>
@@ -115,6 +116,9 @@ VoiceParams GrainProcessorImpl::read_params(uint32_t offset) {
     v.m_position = unit(Position);
     v.m_spray = unit(Spray);
     v.m_tilt = std::clamp(finite(Tilt, 0.0f), -1.0f, 1.0f);
+    v.m_window_shape =
+        std::clamp(finite(GrainWindowShape, 4.0f), 0.0f, utils::MorphWindow::k_max_shape);
+    v.m_window_tilt = std::clamp(finite(GrainWindowTilt, 0.0f), -1.0f, 1.0f);
     v.m_env_attack = finite(EnvelopeAttack, 0.0f);
     v.m_env_decay = finite(EnvelopeDecay, 0.0f);
     v.m_env_sustain = finite(EnvelopeSustain, 1.0f);

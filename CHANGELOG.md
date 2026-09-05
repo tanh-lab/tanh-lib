@@ -9,6 +9,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `dsp::utils::MorphWindow`: a bank of eight grain windows (Rectangle,
+  Trapezoid, Half cosine, Triangle, Hann, Gaussian, Narrow, Impulse) morphed
+  by a continuous shape value — integers land exactly on a shape, fractions
+  blend the neighbours — and skewed by a tilt in [-1, 1] that moves the peak
+  by warping time around it. One shared instance, 512-point tables, peak 1,
+  silent end points. `GrainProcessorImpl` reads two new parameters,
+  `GrainWindowShape` and `GrainWindowTilt` (subclasses must serve them); a
+  grain keeps the window it was born with.
+
 - `dsp::granular::GrainProcessorImpl`: engine modes — `EngineMode::GranularPosition`
   (grains sprayed around a parked `Position` with `Spray` / `Tilt`),
   `EngineMode::GranularLoop` (previous scan behaviour) and `EngineMode::Sample`
@@ -27,8 +36,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - `dsp::granular::GrainEngine` render loop: bank pointers and pan gains are
   resolved once per block per grain, one channel-mode kernel is chosen per
-  block, and the window comes from the new `dsp::utils::HannTable` (4096
-  interpolated segments, error below float resolution, one shared instance).
+  block, and the window comes from the new `dsp::utils::MorphWindow`.
   Roughly half the CPU at a full pool; `test/dsp/benchmark_Granular.cpp`
   measures it. Idle voices no longer scan the pool and report to the
   visualiser every block.

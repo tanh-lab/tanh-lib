@@ -245,7 +245,7 @@ if(TANH_BUILD_DSP)
         src/dsp/BaseProcessor.cpp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
-        src/dsp/utils/HannTable.cpp
+        src/dsp/utils/MorphWindow.cpp
         src/dsp/utils/Scales.cpp
         src/dsp/utils/SmoothedValue.cpp
         src/dsp/utils/Limiter.cpp

@@ -71,6 +71,9 @@ protected:
         Spray,
         Tilt,
 
+        GrainWindowShape,
+        GrainWindowTilt,
+
         EnvelopeAttack,
         EnvelopeDecay,
         EnvelopeSustain,

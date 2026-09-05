@@ -100,6 +100,10 @@ struct Grain {
     // m_position_spread and Spread; refreshed by the engine every block.
     float m_gain_left{0.5f};
     float m_gain_right{0.5f};
+    // The window this grain was born with (shape morph position and tilt):
+    // a grain never changes window mid-life.
+    float m_window_shape{4.0f};
+    float m_window_tilt{0.0f};
 
     float phase() const {
         return static_cast<float>(m_current_position) / static_cast<float>(m_grain_size);

@@ -38,6 +38,11 @@ struct VoiceParams {
     float m_spray{0.0f};     // [0, 1]
     float m_tilt{0.0f};      // [-1, 1]
 
+    // Grain window: shape morph position [0, MorphWindow::k_max_shape]
+    // (integers = exact shapes, default Hann) and tilt [-1, 1].
+    float m_window_shape{4.0f};
+    float m_window_tilt{0.0f};
+
     // Master ADSR, as delivered (the ADSR validates its own inputs).
     float m_env_attack{0.0f};
     float m_env_decay{0.0f};

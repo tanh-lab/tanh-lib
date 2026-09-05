@@ -8,7 +8,7 @@
 #include <tanh/dsp/granular/SampleReader.h>
 #include <tanh/dsp/granular/SampleRegion.h>
 #include <tanh/dsp/granular/VoiceParams.h>
-#include <tanh/dsp/utils/HannTable.h>
+#include <tanh/dsp/utils/MorphWindow.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -96,14 +96,19 @@ private:
                                 const SampleRegion& region,
                                 float velocity,
                                 size_t& grain_size);
-    void start_grain(Grain& grain, FramePos start, size_t grain_size, float velocity, size_t bank);
+    void start_grain(Grain& grain,
+                     FramePos start,
+                     size_t grain_size,
+                     float velocity,
+                     size_t bank,
+                     const VoiceParams& params);
     size_t calculate_grain_size(float grain_size_param, float temperature);
     float calculate_velocity(float velocity, float temperature);
     float apply_temperature_ramp(float temperature, size_t playback_elapsed_samples) const;
 
     const SampleReader& m_reader;
     GrainVisualizer& m_viz;
-    const utils::HannTable& m_window{utils::HannTable::shared()};
+    const utils::MorphWindow& m_window{utils::MorphWindow::shared()};
     LoopScanHead m_loop_head;
     PositionSprayHead m_position_head;
 

@@ -123,7 +123,8 @@ void GrainEngine::render_frames(const AudioBlock& block,
             const BankView& view = m_grain_banks[gi];
 
             if (view.valid()) {
-                float const envelope = m_window.at(grain.phase());
+                float const envelope =
+                    m_window.at(grain.phase(), grain.m_window_shape, grain.m_window_tilt);
                 float const position = grain.source_position();
                 if constexpr (M == ChannelMode::MonoToStereo) {
                     float mono = 0.0f;
@@ -205,7 +206,7 @@ void GrainEngine::report_visualization(size_t num_frames, const Bank& bank) {
         if (!grain.m_active) { continue; }
         m_viz.grain_updated(static_cast<int>(gi),
                             grain.source_position() / total_f,
-                            m_window.at(grain.phase()));
+                            m_window.at(grain.phase(), grain.m_window_shape, grain.m_window_tilt));
     }
 }
 
@@ -232,7 +233,7 @@ void GrainEngine::trigger_grain(const Bank& bank,
     size_t const covered = fit_to_region(start, region, velocity, grain_size);
     if (covered == 0) { return; }
 
-    start_grain(*grain, start, grain_size, velocity, bank.m_index);
+    start_grain(*grain, start, grain_size, velocity, bank.m_index, params);
     prime_grain(static_cast<size_t>(grain - m_grains.data()), params);
 
     auto const total = static_cast<float>(bank.m_frames);
@@ -271,7 +272,8 @@ void GrainEngine::start_grain(Grain& grain,
                               FramePos start,
                               size_t grain_size,
                               float velocity,
-                              size_t bank) {
+                              size_t bank,
+                              const VoiceParams& params) {
     grain.m_start_position = static_cast<size_t>(start);
     grain.m_current_position = 0;
     grain.m_grain_size = grain_size;
@@ -279,6 +281,8 @@ void GrainEngine::start_grain(Grain& grain,
     grain.m_active = true;
     grain.m_sample_index = bank;
     grain.m_position_spread = m_uni_dist(m_random_generator);
+    grain.m_window_shape = params.m_window_shape;
+    grain.m_window_tilt = params.m_window_tilt;
 }
 
 size_t GrainEngine::calculate_grain_size(float grain_size_param, float temperature) {
