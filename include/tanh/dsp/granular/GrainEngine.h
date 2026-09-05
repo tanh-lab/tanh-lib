@@ -8,6 +8,7 @@
 #include <tanh/dsp/granular/SampleReader.h>
 #include <tanh/dsp/granular/SampleRegion.h>
 #include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/dsp/utils/HannTable.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -66,9 +67,18 @@ private:
                            const VoiceParams& params,
                            HeadPolicy& head,
                            size_t playback_elapsed_samples);
-    // Window every active grain at its current position, read the source,
-    // pan and accumulate into `frame`; grains that ended are retired.
-    void mix_grains_frame(const Bank& bank, const VoiceParams& params, channel_mixer::Frame& frame);
+    // Per block, per grain: resolve its bank to raw pointers and its pan to
+    // gains, so the frame loop does no validation and no switch.
+    void prime_grain(size_t index, const VoiceParams& params);
+    // The frame loop for one ChannelMode: trigger, then window / read / pan /
+    // accumulate every active grain, retire the ones that ended.
+    template <ChannelMode M>
+    void render_frames(const AudioBlock& block,
+                       const VoiceParams& params,
+                       const Bank& bank,
+                       const SampleRegion& region,
+                       HeadPolicy& head,
+                       size_t playback_elapsed_samples);
     void report_visualization(size_t num_frames, const Bank& bank);
 
     // trigger_grain() in order: find_free_grain, jitter size and velocity,
@@ -93,6 +103,7 @@ private:
 
     const SampleReader& m_reader;
     GrainVisualizer& m_viz;
+    const utils::HannTable& m_window{utils::HannTable::shared()};
     LoopScanHead m_loop_head;
     PositionSprayHead m_position_head;
 
@@ -100,6 +111,7 @@ private:
     size_t m_channels{2};
 
     std::array<Grain, k_max_grains> m_grains{};
+    std::array<BankView, k_max_grains> m_grain_banks{};  // valid within render()
     size_t m_next_grain_time{0};
     size_t m_min_grain_interval{100};
     size_t m_current_bank{0};

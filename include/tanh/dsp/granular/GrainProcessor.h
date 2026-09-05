@@ -121,6 +121,7 @@ private:
 
     // Note logic
     bool m_last_playing_state{false};
+    bool m_was_sounding{false};  // silence() runs once per idle stretch
     size_t m_playback_elapsed_samples{0};
 
     // Engine mode. The active mode only changes once the mode-change fade has

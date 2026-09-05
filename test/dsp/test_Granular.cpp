@@ -223,10 +223,7 @@ TEST(Granular, PositionSprayHeadTiltClipsTheWindow) {
     std::mt19937 rng(7);
     VoiceParams params;
     params.m_position = 0.5f;
-    // 0.4 keeps the tilted window inside the sample. A window past either
-    // edge currently wraps to the other end (jitter_and_wrap); whether that
-    // should clip instead is an open product decision.
-    params.m_spray = 0.4f;
+    params.m_spray = 1.0f;  // the window past the edge clips, never wraps
     auto const region = SampleRegion::full(96000);
     auto const centre = static_cast<FramePos>(0.5f * static_cast<float>(96000 - 1));
 
@@ -241,6 +238,14 @@ TEST(Granular, PositionSprayHeadTiltClipsTheWindow) {
     params.m_spray = 0.0f;
     for (int i = 0; i < 10; ++i) {
         EXPECT_EQ(head.pick_start(region, 0.0f, 0, params, rng), centre);
+    }
+    // Position at the very end with a forward spray: everything clips to
+    // the last frame instead of wrapping to the start.
+    params.m_position = 1.0f;
+    params.m_spray = 1.0f;
+    params.m_tilt = 1.0f;
+    for (int i = 0; i < 100; ++i) {
+        EXPECT_EQ(head.pick_start(region, 0.0f, 0, params, rng), FramePos{96000 - 1});
     }
 }
 

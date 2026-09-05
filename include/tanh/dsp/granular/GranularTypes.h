@@ -87,12 +87,6 @@ struct AudioBlock {
     size_t m_num_frames{0};
 };
 
-// Hann window at `phase` in [0, 1): 0.5 * (1 - cos(2 pi phase)).
-inline float hann(float phase) {
-    phase = std::clamp(phase, 0.0f, 0.9999f);
-    return 0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> * phase));
-}
-
 // One grain of the pool.
 struct Grain {
     size_t m_start_position{0};     // Start in the bank, frames
@@ -102,6 +96,10 @@ struct Grain {
     float m_position_spread{0.5f};  // Pan position [0, 1]
     bool m_active{false};
     size_t m_sample_index{0};  // Bank the grain reads from
+    // Left / right (even / odd channel) gains for the current block, from
+    // m_position_spread and Spread; refreshed by the engine every block.
+    float m_gain_left{0.5f};
+    float m_gain_right{0.5f};
 
     float phase() const {
         return static_cast<float>(m_current_position) / static_cast<float>(m_grain_size);

@@ -69,6 +69,18 @@ target_link_libraries(${PROJECT_NAME}
 			gtest
 	)
 
+# Benchmark target
+add_executable(benchmark_dsp
+	benchmark_Granular.cpp
+)
+target_link_libraries(benchmark_dsp
+	PRIVATE
+		tanh::DSP
+		tanh::Core
+		benchmark::benchmark
+)
+tanh_copy_runtime_dlls(benchmark_dsp)
+
 if(TARGET tanh_resonator)
 	target_link_libraries(${PROJECT_NAME}
 		PRIVATE

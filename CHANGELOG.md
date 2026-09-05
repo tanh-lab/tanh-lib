@@ -25,6 +25,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `dsp::granular::GrainEngine` render loop: bank pointers and pan gains are
+  resolved once per block per grain, one channel-mode kernel is chosen per
+  block, and the window comes from the new `dsp::utils::HannTable` (4096
+  interpolated segments, error below float resolution, one shared instance).
+  Roughly half the CPU at a full pool; `test/dsp/benchmark_Granular.cpp`
+  measures it. Idle voices no longer scan the pool and report to the
+  visualiser every block.
+- Position mode: a Spray window past either sample edge clips to the edge
+  instead of wrapping to the other end — what the waveform band shows.
+
 - `dsp::granular` split into components: `GrainProcessorImpl` is now the
   per-voice facade (parameter snapshot `VoiceParams`, master ADSR, mode fade)
   over a pre-allocated `GrainEngine` (grain pool + scheduler, told where to

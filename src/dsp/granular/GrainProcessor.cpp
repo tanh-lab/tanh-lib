@@ -42,6 +42,7 @@ void GrainProcessorImpl::reset_grains() {
     m_grain_engine.deactivate_all();
     m_grain_engine.reset_schedule(m_active_mode);
     m_last_playing_state = false;
+    m_was_sounding = false;
     m_playback_elapsed_samples = 0;
     m_envelope.reset();
     m_player.reset();
@@ -133,9 +134,13 @@ void GrainProcessorImpl::process(thl::core::BufferView buffer, uint32_t modulati
     handle_gate(params);
 
     if (!is_sounding()) {
-        silence();
+        // Once per idle stretch, not every block: idle voices would
+        // otherwise scan the pool and ping the visualiser 100 times a second.
+        if (m_was_sounding) { silence(); }
+        m_was_sounding = false;
         return;
     }
+    m_was_sounding = true;
 
     render_engine(block, params);
     apply_voice_gain(block, params);

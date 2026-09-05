@@ -98,8 +98,10 @@ private:
 // no travelling head, Start / Loop / End dormant). Each grain is drawn
 // uniformly from the Spray window around it — a deliberate width, biased
 // before (-) or after (+) the point by Tilt: the symmetric [-1, 1] window
-// slides to [tilt - 1, tilt + 1] and is clipped. Position temperature is
-// applied on top exactly as in Loop mode, so it can leave the window.
+// slides to [tilt - 1, tilt + 1] and is clipped. A window past either edge
+// of the sample is clipped to the edge (the waveform band shows exactly
+// this), never wrapped. Position temperature is applied on top exactly as
+// in Loop mode, so it can leave the window.
 class PositionSprayHead final : public HeadPolicy {
 public:
     SampleRegion region(size_t total_frames, const VoiceParams& /*params*/) const override {
@@ -119,8 +121,10 @@ public:
         float const u = unit_random(rng);  // [0, 1)
         float const spray_offset = (window_lo + u * (window_hi - window_lo)) * p.m_spray;
         FramePos const start =
-            static_cast<FramePos>(p.m_position * static_cast<float>(max_position - 1)) +
-            static_cast<FramePos>(spray_offset * static_cast<float>(max_position));
+            std::clamp(static_cast<FramePos>(p.m_position * static_cast<float>(max_position - 1)) +
+                           static_cast<FramePos>(spray_offset * static_cast<float>(max_position)),
+                       FramePos{0},
+                       max_position - 1);
         return jitter_and_wrap(start, temperature, region, rng);
     }
 

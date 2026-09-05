@@ -60,18 +60,111 @@ void GrainEngine::render(const AudioBlock& block,
     }
     HeadPolicy& head = head_for(mode);
     const SampleRegion region = head.region(bank.m_frames, params);
+    for (size_t gi = 0; gi < m_grains.size(); ++gi) {
+        if (m_grains[gi].m_active) { prime_grain(gi, params); }
+    }
+
+    switch (params.m_channel_mode) {
+        case ChannelMode::MonoToStereo:
+            render_frames<ChannelMode::MonoToStereo>(block,
+                                                     params,
+                                                     bank,
+                                                     region,
+                                                     head,
+                                                     playback_elapsed_samples);
+            break;
+        case ChannelMode::TrueStereo:
+            render_frames<ChannelMode::TrueStereo>(block,
+                                                   params,
+                                                   bank,
+                                                   region,
+                                                   head,
+                                                   playback_elapsed_samples);
+            break;
+        default:
+            render_frames<ChannelMode::TrueMultichannel>(block,
+                                                         params,
+                                                         bank,
+                                                         region,
+                                                         head,
+                                                         playback_elapsed_samples);
+            break;
+    }
+
+    report_visualization(block.m_num_frames, bank);
+}
+
+void GrainEngine::prime_grain(size_t index, const VoiceParams& params) {
+    Grain& grain = m_grains[index];
+    m_grain_banks[index] = m_reader.view(grain.m_sample_index);
+    float const pan = 0.5f + (grain.m_position_spread - 0.5f) * params.m_spread;
+    float const compensation =
+        params.m_channel_mode == ChannelMode::MonoToStereo ? 1.0f : k_stereo_energy_compensation;
+    grain.m_gain_left = (1.0f - pan) * compensation;
+    grain.m_gain_right = pan * compensation;
+}
+
+template <ChannelMode M>
+void GrainEngine::render_frames(const AudioBlock& block,
+                                const VoiceParams& params,
+                                const Bank& bank,
+                                const SampleRegion& region,
+                                HeadPolicy& head,
+                                size_t playback_elapsed_samples) {
     size_t const write_channels = std::min(m_channels, block.m_num_channels);
 
     for (size_t i = 0; i < block.m_num_frames; ++i) {
         trigger_due_grain(bank, region, params, head, playback_elapsed_samples + i);
 
         channel_mixer::Frame frame{};
-        mix_grains_frame(bank, params, frame);
+        for (size_t gi = 0; gi < m_grains.size(); ++gi) {
+            Grain& grain = m_grains[gi];
+            if (!grain.m_active) { continue; }
+            const BankView& view = m_grain_banks[gi];
+
+            if (view.valid()) {
+                float const envelope = m_window.at(grain.phase());
+                float const position = grain.source_position();
+                if constexpr (M == ChannelMode::MonoToStereo) {
+                    float mono = 0.0f;
+                    for (size_t ch = 0; ch < view.m_num_channels; ++ch) {
+                        mono += interpolate_wrapped(view.m_channels[ch], view.m_frames, position);
+                    }
+                    if (view.m_num_channels > 1) {
+                        mono /= static_cast<float>(view.m_num_channels);
+                    }
+                    mono *= envelope;
+                    frame[0] += mono * grain.m_gain_left;
+                    frame[1] += mono * grain.m_gain_right;
+                } else if constexpr (M == ChannelMode::TrueStereo) {
+                    float const s0 =
+                        interpolate_wrapped(view.m_channels[0], view.m_frames, position);
+                    float const s1 =
+                        view.m_num_channels > 1
+                            ? interpolate_wrapped(view.m_channels[1], view.m_frames, position)
+                            : s0;
+                    frame[0] += s0 * envelope * grain.m_gain_left;
+                    frame[1] += s1 * envelope * grain.m_gain_right;
+                } else {
+                    size_t const channels = std::min(m_channels, view.m_num_channels);
+                    for (size_t ch = 0; ch < channels; ++ch) {
+                        float const s =
+                            interpolate_wrapped(view.m_channels[ch], view.m_frames, position);
+                        frame[ch] +=
+                            s * envelope * ((ch % 2 == 0) ? grain.m_gain_left : grain.m_gain_right);
+                    }
+                }
+            }
+
+            grain.m_current_position++;
+            if (grain.m_current_position >= grain.m_grain_size) {
+                grain.m_active = false;
+                m_viz.grain_finished(static_cast<int>(gi));
+            }
+        }
 
         for (size_t ch = 0; ch < write_channels; ++ch) { block.m_channels[ch][i] = frame[ch]; }
     }
-
-    report_visualization(block.m_num_frames, bank);
 }
 
 void GrainEngine::update_trigger_rate(float density) {
@@ -103,35 +196,6 @@ void GrainEngine::trigger_due_grain(const Bank& bank,
     m_next_grain_time = m_min_grain_interval - 1;
 }
 
-void GrainEngine::mix_grains_frame(const Bank& bank,
-                                   const VoiceParams& params,
-                                   channel_mixer::Frame& frame) {
-    for (size_t gi = 0; gi < m_grains.size(); ++gi) {
-        auto& grain = m_grains[gi];
-        if (!grain.m_active) { continue; }
-
-        // Window, read, pan, accumulate
-        float const envelope = hann(grain.phase());
-        float const pan = 0.5f + (grain.m_position_spread - 0.5f) * params.m_spread;
-        channel_mixer::accumulate_grain(m_reader,
-                                        grain.source_position(),
-                                        grain.m_sample_index,
-                                        bank.m_channels,
-                                        params.m_channel_mode,
-                                        pan,
-                                        envelope,
-                                        m_channels,
-                                        frame);
-
-        // Advance; retire at the end of the window
-        grain.m_current_position++;
-        if (grain.m_current_position >= grain.m_grain_size) {
-            grain.m_active = false;
-            m_viz.grain_finished(static_cast<int>(gi));
-        }
-    }
-}
-
 void GrainEngine::report_visualization(size_t num_frames, const Bank& bank) {
     if (bank.m_frames == 0 || !m_viz.grain_frame_due(num_frames)) { return; }
     auto const total_f = static_cast<float>(bank.m_frames);
@@ -141,7 +205,7 @@ void GrainEngine::report_visualization(size_t num_frames, const Bank& bank) {
         if (!grain.m_active) { continue; }
         m_viz.grain_updated(static_cast<int>(gi),
                             grain.source_position() / total_f,
-                            hann(grain.phase()));
+                            m_window.at(grain.phase()));
     }
 }
 
@@ -169,6 +233,7 @@ void GrainEngine::trigger_grain(const Bank& bank,
     if (covered == 0) { return; }
 
     start_grain(*grain, start, grain_size, velocity, bank.m_index);
+    prime_grain(static_cast<size_t>(grain - m_grains.data()), params);
 
     auto const total = static_cast<float>(bank.m_frames);
     float const duration_ms =
