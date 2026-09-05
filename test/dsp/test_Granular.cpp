@@ -299,8 +299,9 @@ TEST(Granular, GrainEngineLoopScanIsOneXRegardlessOfDensity) {
 // ── Region and reader edges ──────────────────────────────────────────────────
 
 TEST(Granular, SampleRegionFromNormalizedClampsEveryEdge) {
-    auto r = SampleRegion::from_normalized(0.5f, 0.25f, 0.0f, 1000);  // end < start
-    EXPECT_EQ(r.size(), 0u);
+    auto r = SampleRegion::from_normalized(0.5f, 0.25f, 0.0f, 1000);  // end < start: reverse
+    EXPECT_TRUE(r.m_reverse);
+    EXPECT_EQ(r.size(), 250u);
     r = SampleRegion::from_normalized(0.0f, 0.5f, 0.9f, 1000);  // loop > end
     EXPECT_EQ(r.m_loop_point, 500u);
     r = SampleRegion::from_normalized(-2.0f, 3.0f, -1.0f, 1000);  // out of range
@@ -631,4 +632,77 @@ TEST(Granular, VoiceModeSwitchFadesThroughZeroAndRevertsMidFade) {
         ASSERT_NEAR(full[k], 1.0f - static_cast<float>(k + 1) * k_step, 1e-4f) << "k=" << k;
     }
     for (size_t k = 720; k < 768; ++k) { ASSERT_NEAR(full[k], 0.0f, 1e-5f) << "k=" << k; }
+}
+
+// ── Reverse (End before Start) ───────────────────────────────────────────────
+
+TEST(Granular, SampleRegionEndBeforeStartReversesAndMirrorsTheLoop) {
+    auto r = SampleRegion::from_normalized(0.8f, 0.2f, 0.7f, 1000);
+    EXPECT_TRUE(r.m_reverse);
+    EXPECT_EQ(r.m_start, 200u);
+    EXPECT_EQ(r.m_end, 800u);
+    // Loop at 700 physical (near Start = 800) re-enters near the virtual
+    // start: 200 + 800 - 700 - 1 = 299.
+    EXPECT_EQ(r.m_loop_point, 299u);
+    EXPECT_DOUBLE_EQ(r.physical(200.0), 799.0);
+    EXPECT_DOUBLE_EQ(r.physical(799.0), 200.0);
+    auto f = SampleRegion::from_normalized(0.2f, 0.8f, 0.7f, 1000);
+    EXPECT_FALSE(f.m_reverse);
+    EXPECT_EQ(f.m_loop_point, 700u);
+}
+
+TEST(Granular, SamplePlayerReverseRegionPlaysBackwardsAndLoopsAtTheMirroredPoint) {
+    // Start 0.48 (4800), End 0 → the head enters at 4799 and runs down to 0,
+    // then re-enters at Loop = 0.38 (physical 3800), running down again.
+    PlayerRig rig({make_ramp(1, 10000)});
+    rig.m_params.m_sample_start = 0.48f;
+    rig.m_params.m_sample_end = 0.0f;
+    rig.m_params.m_sample_loop_point = 0.38f;
+    rig.render(6016);
+
+    for (size_t n = 0; n < 4800; ++n) {
+        ASSERT_NEAR(rig.m_out[n], static_cast<float>(4799 - n), 1e-3f) << "n=" << n;
+    }
+    // Wrap: the tail keeps running down past 0 (clamped at frame 0), the
+    // live head fades in from 3799 downwards.
+    for (size_t k = 0; k < k_fade; ++k) {
+        float const tail =
+            static_cast<float>(std::max(0.0, 4799.0 - 4800.0 - static_cast<double>(k)));
+        float const expected = gain_in(k) * static_cast<float>(3800 - k) + gain_out(k) * tail;
+        ASSERT_NEAR(rig.m_out[4800 + k], expected, 0.05f) << "k=" << k;
+    }
+    for (size_t k = k_fade; k < 1200; ++k) {
+        ASSERT_NEAR(rig.m_out[4800 + k], static_cast<float>(3800 - k), 1e-3f) << "k=" << k;
+    }
+}
+
+TEST(Granular, GrainEngineReverseRegionGrainsReadBackwards) {
+    // Rectangle window, one grain at a time, region reversed: the grain
+    // enters at the mirrored frame and its samples descend.
+    thl::dsp::audio::AudioDataStore store;
+    load(store, [] {
+        std::vector<thl::core::BufferF> b;
+        b.push_back(make_ramp(1, 96000));
+        return b;
+    }());
+    SampleReader reader(store);
+    GrainVisualizer viz;
+    GrainEngine engine(reader, viz);
+    engine.prepare(k_sample_rate, 2);
+    engine.reset_schedule(EngineMode::GranularLoop);
+
+    VoiceParams params;
+    params.m_channel_mode = ChannelMode::TrueStereo;
+    params.m_density = 0.0f;       // one grain per 24000 frames
+    params.m_size = 0.0f;          // 96-frame grains
+    params.m_window_shape = 0.0f;  // rectangle: output == source
+    params.m_sample_start = 0.5f;  // 48000
+    params.m_sample_end = 0.25f;   // 24000 -> reversed, entry at 47999
+
+    Block block(2, k_block);
+    block.clear();
+    engine.render(block.m_view, params, EngineMode::GranularLoop, 0);
+    for (size_t i = 1; i < k_block; ++i) {
+        ASSERT_NEAR(block.m_data[0][i], static_cast<float>(47999 - i), 1e-2f) << "i=" << i;
+    }
 }

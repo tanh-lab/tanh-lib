@@ -233,14 +233,21 @@ void GrainEngine::trigger_grain(const Bank& bank,
     size_t const covered = fit_to_region(start, region, velocity, grain_size);
     if (covered == 0) { return; }
 
-    start_grain(*grain, start, grain_size, velocity, bank.m_index, params);
+    // In a reversed region the grain enters at the mirrored frame and runs
+    // backwards: negative velocity, so it covers [start - covered, start].
+    start_grain(*grain,
+                region.physical(start),
+                grain_size,
+                region.m_reverse ? -velocity : velocity,
+                bank.m_index,
+                params);
     prime_grain(static_cast<size_t>(grain - m_grains.data()), params);
 
     auto const total = static_cast<float>(bank.m_frames);
     float const duration_ms =
         static_cast<float>(grain_size) / static_cast<float>(m_sample_rate) * 1000.0f;
     m_viz.grain_triggered(static_cast<int>(grain - m_grains.data()),
-                          static_cast<float>(start) / total,
+                          static_cast<float>(region.physical(start)) / total,
                           static_cast<float>(covered) / total,
                           velocity,
                           duration_ms);

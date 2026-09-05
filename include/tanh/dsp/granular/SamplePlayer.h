@@ -97,6 +97,7 @@ private:
     size_t m_fade_remaining{0};  // live head's fade-in counter
     size_t m_sample_index{0};
     size_t m_total_frames{0};  // for viz normalisation after the block
+    SampleRegion m_region{};   // last block's region, for the viz mirror
     bool m_started{false};
     bool m_restart{false};
 };

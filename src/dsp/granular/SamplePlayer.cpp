@@ -68,12 +68,14 @@ bool SamplePlayer::render(const AudioBlock& block, const VoiceParams& params) {
         advance_head(src, loop_point);
     }
     m_total_frames = src.m_frames;
+    m_region = src.m_region;
     return true;
 }
 
 void SamplePlayer::report_visualization() const {
     if (!m_started || m_total_frames == 0) { return; }
-    m_viz.head_updated(static_cast<float>(m_play_head) / static_cast<float>(m_total_frames));
+    m_viz.head_updated(static_cast<float>(m_region.physical(m_play_head)) /
+                       static_cast<float>(m_total_frames));
 }
 
 bool SamplePlayer::resolve_source(const VoiceParams& params, Source& out) const {
@@ -146,7 +148,7 @@ void SamplePlayer::read_live_frame(const Source& src,
                                    const VoiceParams& params,
                                    channel_mixer::Frame& frame) {
     channel_mixer::read_head_frame(m_reader,
-                                   m_play_head,
+                                   src.m_region.physical(m_play_head),
                                    src.m_bank,
                                    src.m_channels,
                                    params.m_channel_mode,
@@ -168,7 +170,7 @@ void SamplePlayer::mix_outgoing_tails(const Source& src,
         float const gain_out = o.m_gain * fade_out_gain(o.m_remaining);
         if (o.m_source_channels > 0) {
             channel_mixer::read_head_frame(m_reader,
-                                           o.m_head,
+                                           src.m_region.physical(o.m_head),
                                            o.m_sample_index,
                                            o.m_source_channels,
                                            params.m_channel_mode,

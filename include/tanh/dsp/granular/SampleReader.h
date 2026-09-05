@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -15,12 +16,13 @@ namespace thl::dsp::granular {
 // positions past the end wrap around (a grain may be scheduled to
 // overshoot). The one implementation behind every grain read.
 inline float interpolate_wrapped(const float* data, size_t frames, float position) {
-    auto pos_floor = static_cast<FramePos>(position);
-    FramePos pos_ceil = pos_floor + 1;
+    auto pos_floor = static_cast<FramePos>(std::floor(position));
     float const frac = position - static_cast<float>(pos_floor);
     auto const wrap = static_cast<FramePos>(frames);
-    while (pos_ceil >= wrap) { pos_ceil -= wrap; }
     while (pos_floor >= wrap) { pos_floor -= wrap; }
+    while (pos_floor < 0) { pos_floor += wrap; }  // a reversed grain runs down past 0
+    FramePos pos_ceil = pos_floor + 1;
+    if (pos_ceil >= wrap) { pos_ceil -= wrap; }
     return data[pos_floor] * (1.0f - frac) + data[pos_ceil] * frac;
 }
 

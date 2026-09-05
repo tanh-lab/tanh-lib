@@ -9,6 +9,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `dsp::granular`: reverse playback from the markers alone — End before Start
+  makes Start the entry and End the exit, so the Sample head runs backwards
+  (re-entering at Loop) and Loop-mode grains scan and play backwards.
+  `SampleRegion` keeps ascending bounds plus `m_reverse` and mirrors only the
+  read position (`physical()`), so the loop floor, crossfade pool and
+  region-shrink logic are unchanged. Grain reads wrap below zero.
+
 - `dsp::utils::MorphWindow`: a bank of eight grain windows (Rectangle,
   Trapezoid, Half cosine, Triangle, Hann, Gaussian, Narrow, Impulse) morphed
   by a continuous shape value — integers land exactly on a shape, fractions
