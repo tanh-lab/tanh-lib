@@ -10,6 +10,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_StereoFDN.cpp
 	test_InternalTransportClock.cpp
 	test_MetronomePlayer.cpp
+	test_Granular.cpp
+	test_MorphWindow.cpp
 )
 
 if(TARGET tanh_resonator)
@@ -67,6 +69,18 @@ target_link_libraries(${PROJECT_NAME}
 			gtest_main
 			gtest
 	)
+
+# Benchmark target
+add_executable(benchmark_dsp
+	benchmark_Granular.cpp
+)
+target_link_libraries(benchmark_dsp
+	PRIVATE
+		tanh::DSP
+		tanh::Core
+		benchmark::benchmark
+)
+tanh_copy_runtime_dlls(benchmark_dsp)
 
 if(TARGET tanh_resonator)
 	target_link_libraries(${PROJECT_NAME}

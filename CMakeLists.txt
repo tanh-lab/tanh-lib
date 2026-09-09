@@ -245,6 +245,7 @@ if(TANH_BUILD_DSP)
         src/dsp/BaseProcessor.cpp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
+        src/dsp/utils/MorphWindow.cpp
         src/dsp/utils/Scales.cpp
         src/dsp/utils/SmoothedValue.cpp
         src/dsp/utils/Limiter.cpp
@@ -259,6 +260,8 @@ if(TANH_BUILD_DSP)
 
         src/dsp/synth/SineProcessor.cpp
         src/dsp/granular/GrainProcessor.cpp
+        src/dsp/granular/GrainEngine.cpp
+        src/dsp/granular/SamplePlayer.cpp
 
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
@@ -623,7 +626,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state benchmark_modulation)
+    foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()

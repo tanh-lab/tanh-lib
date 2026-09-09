@@ -3,63 +3,33 @@
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
+#include <tanh/dsp/granular/GrainEngine.h>
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
+#include <tanh/dsp/granular/GrainVisualizer.h>
+#include <tanh/dsp/granular/GranularTypes.h>
+#include <tanh/dsp/granular/SamplePlayer.h>
+#include <tanh/dsp/granular/SampleReader.h>
+#include <tanh/dsp/granular/VoiceParams.h>
 #include <tanh/dsp/utils/ADSR.h>
-#include <tanh/dsp/utils/HannWindow.h>
 
-#include <random>
-#include <vector>
+#include <cstddef>
+#include <cstdint>
 
 namespace thl::dsp::granular {
 
-// Maximum number of output channels supported by the GrainProcessor
-constexpr size_t k_max_channel_support = 16;
-
-// Grain size limits in seconds (will be converted to samples based on sample
-// rate)
-constexpr float k_min_grain_size = 0.002f;  // 2 ms
-constexpr float k_max_grain_size = 0.4f;    // 400 ms
-
-// Grain trigger rate limits in grains per second (for density control).
-// Density maps exponentially between these so the control feels even.
-constexpr float k_min_grain_rate = 2.0f;
-constexpr float k_max_grain_rate = 100.0f;
-
-// Maximum number of grains that can be active simultaneously.
-// Must cover the worst-case overlap: k_max_grain_rate * k_max_grain_size.
-constexpr size_t k_max_grains = 48;
-
-// Duration in seconds over which temperature ramps up from 0 to full at
-// playback start
-constexpr float k_temperature_ramp_duration = 1.0f;
-
-enum class ChannelMode : int {
-    MonoToStereo,      // Read ch0 from source, spread across L/R
-    TrueStereo,        // Read ch0+ch1 from source (mono duplicated if source is mono)
-    TrueMultichannel,  // Read all source channels, write to matching output
-                       // channels
-    NumChannelModes
-};
-
-// Structure to represent a single grain
-struct Grain {
-    size_t m_start_position;    // Starting position in the sample
-    size_t m_current_position;  // Current position within the grain
-    size_t m_grain_size;        // Size of the grain in samples
-    float m_velocity;           // Playback speed/velocity
-    float m_amplitude;          // Grain amplitude/volume
-    float m_gain;
-    float m_position_spread;                 // Pan position [0, 1] for MonoToStereo spread
-    bool m_active;                           // Whether the grain is currently active
-    thl::dsp::utils::HannWindow m_envelope;  // Hann window envelope for amplitude
-                                             // modulation
-    size_t m_sample_index;                   // Index of the sample in the audio data
-};
-
+// One granular voice: the BaseProcessor facade the host subclasses to bind
+// parameters. It owns what is common to every engine mode — the parameter
+// snapshot, the master ADSR and note logic, the mode-change fade — and
+// dispatches each block to one of two pre-allocated engines: the
+// GrainEngine (Position / Loop, told where to start grains by a HeadPolicy)
+// or the SamplePlayer (Sample). The engines never see the parameter system.
 class TANH_API GrainProcessorImpl : public thl::dsp::BaseProcessor {
 public:
     explicit GrainProcessorImpl(thl::dsp::audio::AudioDataStore& audio_store);
     ~GrainProcessorImpl() override;
+    // The engines hold references into this object: never copied.
+    GrainProcessorImpl(const GrainProcessorImpl&) = delete;
+    GrainProcessorImpl& operator=(const GrainProcessorImpl&) = delete;
 
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
@@ -96,6 +66,14 @@ protected:
         ChannelModeParam,
         Spread,
 
+        EngineModeParam,
+        Position,
+        Spray,
+        Tilt,
+
+        GrainWindowShape,
+        GrainWindowTilt,
+
         EnvelopeAttack,
         EnvelopeDecay,
         EnvelopeSustain,
@@ -108,21 +86,6 @@ protected:
     };
 
 private:
-    thl::dsp::utils::ADSR m_envelope;
-    thl::dsp::audio::AudioDataStore& m_audio_store;
-
-    struct SampleRegion {
-        SampleRegion(size_t start, size_t end, size_t loop_point)
-            : m_start(start), m_end(end), m_loop_point(loop_point) {}
-        size_t size() const { return m_end - m_start; }
-
-    private:
-        size_t m_start;
-        size_t m_end;
-        size_t m_loop_point;
-        friend class GrainProcessorImpl;
-    };
-
     // Template wrapper for get_parameter
     template <typename T>
     T get_parameter(Parameter parameter, uint32_t modulation_offset = 0);
@@ -131,49 +94,45 @@ private:
     virtual bool get_parameter_bool(Parameter parameter, uint32_t modulation_offset = 0) = 0;
     virtual int get_parameter_int(Parameter parameter, uint32_t modulation_offset = 0) = 0;
 
+    // process() in order:
+    AudioBlock begin_block(thl::core::BufferView buffer);  // pointers, clear
+    // The one place the parameter system is read: once per process() call,
+    // clamped into the ranges the components rely on.
+    VoiceParams read_params(uint32_t modulation_offset);
+    void update_envelope(const VoiceParams& params);   // hand the ADSR this block's values
+    void update_mode_fade(const VoiceParams& params);  // mode-switch state machine
+    void handle_gate(const VoiceParams& params);       // note-on / note-off edges
+    bool is_sounding() const;
+    void silence();  // envelope idle or no sample: drop grains, head, viz
+    void render_engine(const AudioBlock& block, const VoiceParams& params);
+    void apply_voice_gain(const AudioBlock& block, const VoiceParams& params);
+    void report_visualization();
+
+    thl::dsp::utils::ADSR m_envelope;
+    thl::dsp::audio::AudioDataStore& m_audio_store;
+
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
 
-    // Grain management
-    std::vector<Grain> m_grains;
-    size_t m_max_grains{k_max_grains};
-    size_t m_next_grain_time{0};
-    size_t m_min_grain_interval{100};
-    size_t m_sequential_position{0};
+    // Shared collaborators, declared before the engines that hold them.
+    SampleReader m_reader;
+    GrainVisualizer m_viz;
+    // Both engines pre-allocated: a mode switch is a dispatch change after
+    // the fade, never an allocation.
+    GrainEngine m_grain_engine;
+    SamplePlayer m_player;
 
-    // Random number generation for grain parameters
-    std::mt19937 m_random_generator;
-    std::uniform_real_distribution<float> m_uni_dist;
-
-    // Envelope
+    // Note logic
     bool m_last_playing_state{false};
+    bool m_was_sounding{false};  // silence() runs once per idle stretch
     size_t m_playback_elapsed_samples{0};
-    float m_last_envelope_attack{-1.0f};
-    float m_last_envelope_decay{-1.0f};
-    float m_last_envelope_sustain{-1.0f};
-    float m_last_envelope_release{-1.0f};
-    float m_last_envelope_attack_curve{-2.0f};
-    float m_last_envelope_decay_curve{-2.0f};
-    float m_last_envelope_release_curve{-2.0f};
-    void update_envelope_if_needed(uint32_t modulation_offset);
 
-    // Sample index management
-    size_t m_current_sample_index{0};
-
-    // Grain generation and management
-    void trigger_grain(const size_t sample_index, uint32_t modulation_offset);
-    void update_grains(float** buffer, size_t n_buffer_frames, uint32_t modulation_offset);
-    void read_sample(float position, size_t sample_index, size_t source_channel, float& out_sample);
-    size_t calculate_grain_size(float grain_size_param, float temperature);
-    float calculate_velocity(float velocity, float temperature);
-    long calculate_start_position(const SampleRegion& region, float temperature);
-    float apply_temperature_ramp(float temperature) const;
-    SampleRegion compute_sample_region(size_t total_frames, uint32_t modulation_offset);
-
-    // Visualization listeners (optional, not owned)
-    std::vector<GrainVisualizationListener*> m_viz_listeners;
-    size_t m_viz_update_interval = 0;  // in samples, 0 = disabled
-    size_t m_viz_update_counter = 0;
+    // Engine mode. The active mode only changes once the mode-change fade has
+    // reached silence, so a switch on a sounding voice never clicks.
+    EngineMode m_active_mode{EngineMode::GranularLoop};
+    float m_mode_gain{1.0f};
+    float m_mode_gain_step{1.0f};
+    bool m_mode_fade_out{false};
 };
 
 // Template specializations for get_parameter
