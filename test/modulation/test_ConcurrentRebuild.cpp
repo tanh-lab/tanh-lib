@@ -266,6 +266,17 @@ TEST(ConcurrentRebuild, PolyReplaceContentionChurnDoesNotCrash) {
     audio_thread.join();
     writer_thread.join();
 
+    // Sanity: both threads made meaningful progress, so the test actually
+    // raced rather than passing by never reaching the window.
+    //
+    // The writer bar is lower than in the tests above because each iteration
+    // here is far more expensive: add_routing + remove_routing is two full
+    // rebuild_schedule_with_lock passes, each ending in an m_config
+    // synchronize() that waits out an audio thread which is almost always
+    // inside a read scope. Windows scheduler granularity pushes that to ~23 ms
+    // per cycle (~65 cycles in 1.5 s) against ~0.2 ms on macOS. 20 cycles is
+    // still 40 rebuilds, i.e. 40 flips of the target's m_has_replace_priority
+    // flag underneath a running audio block.
     EXPECT_GT(audio_iterations.load(), 100U);
-    EXPECT_GT(writer_iterations.load(), 100U);
+    EXPECT_GT(writer_iterations.load(), 20U);
 }
