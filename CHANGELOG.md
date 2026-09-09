@@ -65,6 +65,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `ModulationMatrix` / `RCU`: data race between a schedule rebuild and the audio
+  thread. `RCU::update` is copy-on-write, so it deep-copies the live value —
+  including each `ResolvedRouting`'s `m_held_voice_values` and per-voice
+  freshness vectors, which the audio thread writes in place through the const
+  routing it is processing. `rebuild_schedule_with_lock` assigns every
+  `ProcessingConfig` member anyway, so that copy was discarded immediately.
+  New `RCU::replace()` publishes a freshly built value without reading the one
+  the readers hold; the rebuild now uses it. `update()` is unchanged and
+  documents when not to use it. Caught by TSan via
+  `ConcurrentRebuild.PolyReplaceContentionChurnDoesNotCrash` — the existing
+  concurrency tests route Additive only and never touch the held state.
 - `ModulationMatrix`: crash on the audio thread when a second Replace routing is
   added to a polyphonic target. A rebuild publishes each target's fresh
   `VoiceBuffers` one step *before* the new `ProcessingConfig`, so an in-flight
