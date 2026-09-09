@@ -949,8 +949,17 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
     new_all_sources.reserve(m_sources.size());
     for (auto& [id, source] : m_sources) { new_all_sources.push_back(source); }
 
-    // Publish everything atomically via RCU
-    m_config.update([&](ProcessingConfig& config) {
+    // Publish everything atomically via RCU.
+    //
+    // replace(), not update(): every one of ProcessingConfig's members is
+    // assigned below, so copying the live version first would be wasted work —
+    // and worse, it would be a data race. The audio thread writes per-routing
+    // scratch state (m_held_voice_values, m_voice_was_active_prev and the rest
+    // of the mutable freshness fields) straight through the const ResolvedRouting
+    // it is processing; update()'s deep copy reads those same bytes on the
+    // writer thread with nothing ordering them. replace() builds the new config
+    // from an empty one and never touches the version the readers hold.
+    m_config.replace([&](ProcessingConfig& config) {
         config.m_routings = std::move(new_routings);
         config.m_schedule = std::move(new_schedule);
         config.m_active_targets = std::move(new_active_targets);
