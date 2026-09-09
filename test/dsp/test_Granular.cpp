@@ -60,14 +60,40 @@ struct RecordingListener final : GrainVisualizationListener {
         float m_velocity;
         float m_ms;
     };
+
+    // GrainVisualizer emits from inside the voice's render, i.e. the audio
+    // thread — "the emitters are audio-thread safe", so a listener must not
+    // allocate. Reserve once here on the setup thread and never let a
+    // push_back reallocate: within capacity it cannot, and past capacity we
+    // count the overflow instead. The budget is ~80x the busiest test in this
+    // file (6016 frames at a 64-frame block = 94 head reports), so tripping
+    // m_dropped means a new test outgrew it, not that the cap is too tight.
+    static constexpr size_t k_capacity = 8192;
+
     std::vector<Triggered> m_triggered;
     std::vector<int> m_finished;
+    size_t m_dropped{0};
+
+    RecordingListener() {
+        m_triggered.reserve(k_capacity);
+        m_finished.reserve(k_capacity);
+    }
 
     void on_grain_triggered(int slot, float pos, float len, float velocity, float ms) override {
+        if (m_triggered.size() == m_triggered.capacity()) {
+            ++m_dropped;
+            return;
+        }
         m_triggered.push_back({slot, pos, len, velocity, ms});
     }
     void on_grain_updated(int, float, float) override {}
-    void on_grain_finished(int slot) override { m_finished.push_back(slot); }
+    void on_grain_finished(int slot) override {
+        if (m_finished.size() == m_finished.capacity()) {
+            ++m_dropped;
+            return;
+        }
+        m_finished.push_back(slot);
+    }
     void on_master_envelope_updated(float) override {}
 };
 
@@ -284,6 +310,7 @@ TEST(Granular, GrainEngineLoopScanIsOneXRegardlessOfDensity) {
             elapsed += k_block;
         }
 
+        ASSERT_EQ(listener.m_dropped, 0u) << "listener capacity outgrown at density " << density;
         ASSERT_GE(listener.m_triggered.size(), 3u) << "density " << density;
         float const rate =
             k_min_grain_rate * std::pow(k_max_grain_rate / k_min_grain_rate, density);
@@ -480,6 +507,7 @@ TEST(Granular, SamplePlayerTailWhoseBankWasUnloadedReadsSilence) {
     load(rig.m_store, std::move(gone));
     rig.render(64);
     EXPECT_FALSE(rig.m_player.is_started());
+    EXPECT_EQ(rig.m_listener.m_dropped, 0u);
     EXPECT_EQ(rig.m_listener.m_finished.size(), 1u);
     for (size_t j = 0; j < 64; ++j) { ASSERT_FLOAT_EQ(rig.m_out[2624 + j], 0.0f); }
 }
