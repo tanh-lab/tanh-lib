@@ -97,8 +97,13 @@ struct ResolvedRouting {
     // contribution stay inactive instead of holding the default-0 value.
     mutable std::vector<uint8_t> m_held_voice_active;
 
-    // Per-voice freshness state for polyphonic routings. All parallel to
-    // m_held_voice_values. m_voice_was_active_prev is uint8_t (not bool) so
+    // Per-voice freshness state for polyphonic Replace routings. All parallel
+    // to m_held_voice_values and sized alongside it for every poly Replace
+    // routing — including ones whose target has a single Replace writer and
+    // would take the fast path. A rebuild can flip the target's
+    // m_has_replace_priority flag under an in-flight block, sending an old
+    // routing down the multi-Replace branch; sizing these unconditionally is
+    // what makes that safe. m_voice_was_active_prev is uint8_t (not bool) so
     // it can share storage with the active-mask vectors and be cleared via
     // memset-style ops if needed.
     mutable std::vector<uint64_t> m_voice_active_phase_start;

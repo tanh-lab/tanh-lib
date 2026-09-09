@@ -63,6 +63,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   envelope parameter moved); lingering grains are always reported finished on
   reset / silence; `prepare()` starts the voice from silence.
 
+### Fixed
+
+- `ModulationMatrix`: crash on the audio thread when a second Replace routing is
+  added to a polyphonic target. A rebuild publishes each target's fresh
+  `VoiceBuffers` one step *before* the new `ProcessingConfig`, so an in-flight
+  audio block still running the old routings can load a buffer whose
+  `m_has_replace_priority` has just gone false -> true. That sends a routing
+  resolved as single-Replace down the multi-Replace branch of
+  `apply_replace_sample_voice`, where it indexes per-voice freshness vectors its
+  own rebuild left unsized -- a null dereference on the audio thread. The
+  vectors are now sized for every polyphonic Replace routing (contended or not),
+  and the multi-Replace branch bounds-checks the voice index. Reproduced by
+  `ConcurrentRebuild.PolyReplaceContentionChurnDoesNotCrash`.
+
 ## [0.3.0] - 2026-09-03
 
 First release with a changelog: earlier releases (v0.1.0, v0.2.0) are described only by their tag messages (`git tag -n1 v0.1.0 v0.2.0`).
