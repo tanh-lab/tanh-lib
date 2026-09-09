@@ -101,7 +101,7 @@ public:
         double const pos = std::clamp(position, 0.0, static_cast<double>(num_frames - 1));
         auto const frame_a = static_cast<size_t>(pos);
         auto const frame_b = std::min(frame_a + 1, num_frames - 1);
-        float const frac = static_cast<float>(pos - static_cast<double>(frame_a));
+        auto const frac = static_cast<float>(pos - static_cast<double>(frame_a));
         const float* data = buf.get_read_pointer(channel);
         return data[frame_a] * (1.0f - frac) + data[frame_b] * frac;
     }

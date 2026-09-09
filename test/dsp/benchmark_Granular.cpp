@@ -66,7 +66,7 @@ void BM_GrainEngineRender(benchmark::State& state) {
         engine.render(rig.m_block, params, EngineMode::GranularLoop, elapsed);
         elapsed += k_block;
     }
-    for (auto _ : state) {
+    for ([[maybe_unused]] auto _ : state) {
         engine.render(rig.m_block, params, EngineMode::GranularLoop, elapsed);
         elapsed += k_block;
         benchmark::DoNotOptimize(rig.m_data[0][0]);
@@ -90,7 +90,7 @@ void BM_SamplePlayerRender(benchmark::State& state) {
     params.m_sample_end = 2000.0f / 96000.0f;
     params.m_spread = 0.5f;
     player.note_on();
-    for (auto _ : state) {
+    for ([[maybe_unused]] auto _ : state) {
         player.render(rig.m_block, params);
         benchmark::DoNotOptimize(rig.m_data[0][0]);
     }

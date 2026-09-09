@@ -260,10 +260,20 @@ struct MonoBuffers {
 
 // Per-parameter modulation target. Exposes swappable VoiceBuffers and
 // MonoBuffers via atomic pointers; SmartHandle and the matrix's audio-thread
-// paths read these without any RCU call or refcount. The writer allocates
-// fresh buffer instances under m_writer_mutex, atomic-stores the new pointers
-// *after* m_config.synchronize() has drained all in-flight audio blocks, and
-// reclaims retired buffers at the end of the rebuild.
+// paths read these without any RCU call or refcount.
+//
+// Publication order during a rebuild (all under m_writer_mutex):
+//   1. allocate fresh buffer instances and atomic-store the new pointers;
+//   2. publish the new ProcessingConfig via m_config.update();
+//   3. m_config.synchronize() to drain in-flight audio blocks;
+//   4. destroy the retired buffers.
+//
+// Note the pointers are swapped in step 1, *before* the config swap — so
+// between steps 1 and 2 an audio block still executing the old routings
+// already reads the new buffers. Every audio-thread access must therefore
+// tolerate a buffer whose geometry and flags disagree with the routing that
+// is reading it; see the flag-gate rationale above
+// apply_routing_global_to_global in ModulationMatrix.cpp.
 struct ResolvedTarget {
     // ── Hot fields read by SmartHandle::load() on every sample ───────────
 

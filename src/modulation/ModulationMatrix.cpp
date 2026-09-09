@@ -868,23 +868,27 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         // have never received a live contribution stay silent.
         const bool tgt_replace = r.m_combine_mode == CombineMode::Replace ||
                                  r.m_combine_mode == CombineMode::ReplaceHold;
-        const auto info_it = target_info.find(routing.m_target_id);
-        const bool target_is_multi_replace =
-            info_it != target_info.end() && info_it->second.m_replace_count >= 2;
 
         if (tgt_replace && tgt_poly) {
             const uint32_t nv = tgt_it->second.m_voice_owner->m_num_voices;
             r.m_held_voice_values.assign(nv, 0.0f);
             r.m_held_voice_active.assign(nv, uint8_t{0});
 
-            // Freshness vectors are only needed under contention. Single-
-            // Replace targets fall through the priority_buf == nullptr fast
-            // path in apply_replace_sample_voice and never read these.
-            if (target_is_multi_replace) {
-                r.m_voice_active_phase_start.assign(nv, uint64_t{0});
-                r.m_voice_last_active_sample.assign(nv, uint64_t{0});
-                r.m_voice_was_active_prev.assign(nv, uint8_t{0});
-            }
+            // Freshness vectors are sized for *every* poly Replace routing,
+            // even when this target currently has a single Replace writer and
+            // the fast path would never read them. Which path a routing takes
+            // is decided at RT by the buffer's m_has_replace_priority flag, and
+            // that buffer is published one step before the ProcessingConfig
+            // (see the flag-gate rationale above apply_routing_global_to_global).
+            // In that window an old single-Replace routing can load a fresh
+            // buffer whose flag has just gone false → true, take the multi-
+            // Replace branch, and index vectors its own rebuild never sized.
+            // Sizing unconditionally costs nv * 17 bytes per routing and closes
+            // the window; the alternative — gating on a flag the routing cannot
+            // see — does not exist here.
+            r.m_voice_active_phase_start.assign(nv, uint64_t{0});
+            r.m_voice_last_active_sample.assign(nv, uint64_t{0});
+            r.m_voice_was_active_prev.assign(nv, uint8_t{0});
         }
         r.m_held_mono_active = false;
         r.m_active_phase_start = 0;
@@ -945,8 +949,17 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
     new_all_sources.reserve(m_sources.size());
     for (auto& [id, source] : m_sources) { new_all_sources.push_back(source); }
 
-    // Publish everything atomically via RCU
-    m_config.update([&](ProcessingConfig& config) {
+    // Publish everything atomically via RCU.
+    //
+    // replace(), not update(): every one of ProcessingConfig's members is
+    // assigned below, so copying the live version first would be wasted work —
+    // and worse, it would be a data race. The audio thread writes per-routing
+    // scratch state (m_held_voice_values, m_voice_was_active_prev and the rest
+    // of the mutable freshness fields) straight through the const ResolvedRouting
+    // it is processing; update()'s deep copy reads those same bytes on the
+    // writer thread with nothing ordering them. replace() builds the new config
+    // from an empty one and never touches the version the readers hold.
+    m_config.replace([&](ProcessingConfig& config) {
         config.m_routings = std::move(new_routings);
         config.m_schedule = std::move(new_schedule);
         config.m_active_targets = std::move(new_active_targets);
@@ -1126,9 +1139,12 @@ inline void apply_replace_sample(const ResolvedRouting& routing,
 
 // Helper: apply a single replace sample for poly with per-voice held values.
 //
-// On single-Replace targets (priority_buf == nullptr) the per-voice freshness
-// vectors aren't allocated — take the fast path that writes unconditionally
-// and skips every freshness-state access.
+// On single-Replace targets (priority_buf == nullptr) there is no contender —
+// take the fast path that writes unconditionally and skips every freshness-
+// state access. Both paths bounds-check `voice` against the vector they are
+// about to index: the routing was sized against the voice count of the buffer
+// live at *its* rebuild, and the buffer this block loaded may already be a
+// newer one.
 inline void apply_replace_sample_voice(const ResolvedRouting& routing,
                                        float* replace_buf,
                                        uint8_t* active_buf,
@@ -1157,7 +1173,10 @@ inline void apply_replace_sample_voice(const ResolvedRouting& routing,
         return;
     }
 
-    // Multi-Replace path: per-voice freshness state is sized to nv.
+    // Multi-Replace path. The three freshness vectors are sized together, so
+    // one check covers all of them.
+    if (voice >= routing.m_voice_was_active_prev.size()) { return; }
+
     const uint64_t now = block_offset + i;
     const bool was_prev_active = routing.m_voice_was_active_prev[voice] != 0;
     routing.m_voice_was_active_prev[voice] = src_active ? uint8_t{1} : uint8_t{0};
@@ -1233,6 +1252,15 @@ inline float compute_replace_value(const ResolvedRouting& routing,
 // Gating on the flags we just loaded from the atomic-published buffer turns
 // that stale write into a safe no-op. Correctness for the *next* block is
 // restored automatically because step 3 guarantees it sees the new config.
+//
+// The gate covers the case where a flag *shrinks*. m_has_replace_priority can
+// also *grow* (false → true, when a second Replace routing lands on the
+// target), which sends the old routing down a branch it was never resolved
+// for. There is no buffer state to gate on there — the branch is correct to
+// take, it just indexes per-routing state — so that case is closed on the
+// other side instead: the per-voice freshness vectors are sized for every
+// poly Replace routing, contended or not (see pass 2 of
+// rebuild_schedule_with_lock).
 void apply_routing_global_to_global(const ResolvedRouting& routing,
                                     const ModulationSource* source,
                                     size_t num_samples,

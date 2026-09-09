@@ -63,6 +63,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   envelope parameter moved); lingering grains are always reported finished on
   reset / silence; `prepare()` starts the voice from silence.
 
+### Fixed
+
+- `ModulationMatrix` / `RCU`: data race between a schedule rebuild and the audio
+  thread. `RCU::update` is copy-on-write, so it deep-copies the live value —
+  including each `ResolvedRouting`'s `m_held_voice_values` and per-voice
+  freshness vectors, which the audio thread writes in place through the const
+  routing it is processing. `rebuild_schedule_with_lock` assigns every
+  `ProcessingConfig` member anyway, so that copy was discarded immediately.
+  New `RCU::replace()` publishes a freshly built value without reading the one
+  the readers hold; the rebuild now uses it. `update()` is unchanged and
+  documents when not to use it. Caught by TSan via
+  `ConcurrentRebuild.PolyReplaceContentionChurnDoesNotCrash` — the existing
+  concurrency tests route Additive only and never touch the held state.
+- `ModulationMatrix`: crash on the audio thread when a second Replace routing is
+  added to a polyphonic target. A rebuild publishes each target's fresh
+  `VoiceBuffers` one step *before* the new `ProcessingConfig`, so an in-flight
+  audio block still running the old routings can load a buffer whose
+  `m_has_replace_priority` has just gone false -> true. That sends a routing
+  resolved as single-Replace down the multi-Replace branch of
+  `apply_replace_sample_voice`, where it indexes per-voice freshness vectors its
+  own rebuild left unsized -- a null dereference on the audio thread. The
+  vectors are now sized for every polyphonic Replace routing (contended or not),
+  and the multi-Replace branch bounds-checks the voice index. Reproduced by
+  `ConcurrentRebuild.PolyReplaceContentionChurnDoesNotCrash`.
+
 ## [0.3.0] - 2026-09-03
 
 First release with a changelog: earlier releases (v0.1.0, v0.2.0) are described only by their tag messages (`git tag -n1 v0.1.0 v0.2.0`).

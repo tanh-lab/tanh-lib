@@ -184,3 +184,99 @@ TEST(ConcurrentRebuild, RepeatedAddRemoveSingleRouting) {
 
     EXPECT_GT(audio_iterations.load(), 100U);
 }
+
+// Regression: a second Replace routing landing on a polyphonic target flips the
+// target's m_has_replace_priority flag false → true, and the fresh VoiceBuffers
+// carrying that flag is published one step *before* the new ProcessingConfig. An
+// audio block still running the old config then loads the new buffer, sees a
+// non-null priority_buf, and takes the multi-Replace branch inside
+// apply_replace_sample_voice — indexing per-voice freshness vectors that its own
+// rebuild only sized when the target was already contended.
+//
+// That was a null deref on the audio thread (SIGSEGV at 0x0, seen on device via
+// mapping randomize / preset load, which churn many routings per call). The
+// vectors are now sized for every poly Replace routing, so the branch is safe
+// whichever buffer the block happens to load.
+TEST(ConcurrentRebuild, PolyReplaceContentionChurnDoesNotCrash) {
+    thl::State state;
+    ModulationMatrix matrix(state);
+    const auto voice_scope = matrix.register_scope("voice", 4);
+    state.create("freq", modulatable_float(0.5f, voice_scope));
+
+    PolyTestSource poly_a(voice_scope);
+    poly_a.m_voice_values = {0.9f, 0.8f, 0.7f, 0.6f};
+    PolyTestSource poly_b(voice_scope);
+    poly_b.m_voice_values = {0.1f, 0.2f, 0.3f, 0.4f};
+    matrix.add_source("poly_a", &poly_a);
+    matrix.add_source("poly_b", &poly_b);
+
+    auto handle = matrix.get_smart_handle<float>("freq");
+
+    // The resident Replace routing. It is resolved while it is the *only*
+    // Replace writer on the target, so it is the one whose freshness vectors
+    // used to go unsized.
+    ModulationRouting resident{"poly_a",
+                               "freq",
+                               1.0f,
+                               0,
+                               DepthMode::Absolute,
+                               CombineMode::Replace};
+    resident.m_replace_priority = 1;
+    ASSERT_NE(matrix.add_routing(resident), k_invalid_routing_id);
+
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> audio_iterations{0};
+    std::atomic<uint64_t> writer_iterations{0};
+
+    std::thread audio_thread([&]() {
+        matrix.ensure_thread_registered();
+        while (!stop.load(std::memory_order_relaxed)) {
+            auto scope = matrix.read_scope();
+            matrix.process_with_scope(scope.data(), k_block_size);
+            float acc = 0.0f;
+            for (uint32_t v = 0; v < 4; ++v) { acc += handle.load(0, v); }
+            sink(acc);
+            audio_iterations.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    // Adds and removes a *second* Replace routing on the same target, so the
+    // target oscillates between single-Replace (fast path, priority_buf null)
+    // and multi-Replace (priority_buf allocated) on every writer iteration.
+    std::thread writer_thread([&]() {
+        state.ensure_thread_registered();
+        ModulationRouting contender{"poly_b",
+                                    "freq",
+                                    1.0f,
+                                    0,
+                                    DepthMode::Absolute,
+                                    CombineMode::Replace};
+        contender.m_replace_priority = 2;
+        while (!stop.load(std::memory_order_relaxed)) {
+            const uint32_t id = matrix.add_routing(contender);
+            if (id != k_invalid_routing_id) { matrix.remove_routing(id); }
+            writer_iterations.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::this_thread::sleep_for(1500ms);
+    stop.store(true, std::memory_order_relaxed);
+    audio_thread.join();
+    writer_thread.join();
+
+    // Sanity: both threads made meaningful progress, so the test actually
+    // raced rather than passing by never reaching the window.
+    //
+    // The writer bar is lower than in the tests above because each iteration
+    // here is far more expensive: add_routing + remove_routing is two full
+    // rebuild_schedule_with_lock passes, each ending in an m_config
+    // synchronize() that waits out an audio thread which is almost always
+    // inside a read scope. Windows scheduler granularity pushes that to ~23 ms
+    // per cycle (~65 cycles in 1.5 s) against ~0.2 ms on macOS. 20 cycles is
+    // still 40 rebuilds, i.e. 40 flips of the target's m_has_replace_priority
+    // flag underneath a running audio block.
+    EXPECT_GT(audio_iterations.load(), 100U);
+    EXPECT_GT(writer_iterations.load(), 20U);
+}

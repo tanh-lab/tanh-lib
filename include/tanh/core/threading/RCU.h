@@ -227,12 +227,56 @@ public:
         // Load current data
         const T* old_data = m_data_ptr.load(std::memory_order_acquire);
 
-        // Create copy for modification
+        // Create copy for modification. Note this reads every byte of the live
+        // version: only safe when readers never mutate what they read. If the
+        // read side writes into T (mutable per-reader state, say), copying it
+        // here races with those writes — use replace() instead.
         auto new_data = std::make_unique<T>(*old_data);
 
         // Let user modify the copy
         update_func(*new_data);
 
+        publish_with_lock(std::move(new_data), old_data);
+    }
+
+    /**
+     * @brief Publish a freshly built version, without reading the current one
+     *
+     * Same publication and reclamation as update(), but the new version is
+     * default-constructed and filled in by build_func rather than copied from
+     * the live one. Use this when the writer rebuilds T from scratch anyway —
+     * it skips a pointless deep copy, and, more importantly, it never reads the
+     * version the readers are using. That matters when readers mutate state
+     * inside T (RT scratch state reached through a const reference, for
+     * example): update()'s copy would race with those writes, this does not.
+     *
+     * Requires T to be default-constructible. May block; not real-time safe.
+     *
+     * @param build_func Function that fills in the fresh, empty value
+     *
+     * Usage:
+     * ```cpp
+     * rcu_config.replace([&](auto& config) {
+     *     config.entries = std::move(freshly_built_entries);
+     * });
+     * ```
+     */
+    template <typename Func>
+    void replace(Func&& build_func) {
+        const std::scoped_lock lock(m_writer_mutex);
+
+        const T* old_data = m_data_ptr.load(std::memory_order_acquire);
+
+        auto new_data = std::make_unique<T>();
+        build_func(*new_data);
+
+        publish_with_lock(std::move(new_data), old_data);
+    }
+
+private:
+    // Shared tail of update() / replace(): publish, retire the old version and
+    // run the reclamation tiers. Caller must hold m_writer_mutex.
+    void publish_with_lock(std::unique_ptr<T> new_data, const T* old_data) {
         // Atomically publish new version
         m_data_ptr.store(new_data.release(), std::memory_order_release);
 
@@ -275,6 +319,7 @@ public:
         cleanup_dead_nodes();
     }
 
+public:
     /**
      * @brief Register the current thread for real-time safe reads
      *
