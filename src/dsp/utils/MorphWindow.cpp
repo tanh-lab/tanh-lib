@@ -2,6 +2,7 @@
 #include <tanh/dsp/utils/MorphWindow.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <string_view>
@@ -77,7 +78,7 @@ Table build(WindowShape shape) {
         default: break;
     }
     // Peak 1, silence at both ends.
-    float const peak = *std::max_element(b.begin(), b.end());
+    float const peak = *std::ranges::max_element(b);
     if (peak > 0.0f) {
         for (auto& v : b) { v /= peak; }
     }

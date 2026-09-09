@@ -70,10 +70,10 @@ public:
                         size_t interval,
                         const VoiceParams& /*params*/,
                         std::mt19937& rng) override {
-        FramePos const max_position = static_cast<FramePos>(region.size());
+        auto const max_position = static_cast<FramePos>(region.size());
         if (max_position <= 0) { return static_cast<FramePos>(region.m_start); }
 
-        FramePos const loop = static_cast<FramePos>(region.m_loop_point - region.m_start);
+        auto const loop = static_cast<FramePos>(region.m_loop_point - region.m_start);
         FramePos start = m_sequential_position;
         // The region shrank under the head (End dragged or modulated below
         // it): restart at Loop and keep scanning from there. Returning Loop
@@ -113,7 +113,7 @@ public:
                         size_t /*interval*/,
                         const VoiceParams& p,
                         std::mt19937& rng) override {
-        FramePos const max_position = static_cast<FramePos>(region.size());
+        auto const max_position = static_cast<FramePos>(region.size());
         if (max_position <= 0) { return static_cast<FramePos>(region.m_start); }
 
         float const window_lo = std::max(-1.0f, p.m_tilt - 1.0f);
