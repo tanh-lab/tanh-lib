@@ -71,6 +71,11 @@ void GrainProcessorImpl::prepare(const double& sample_rate,
     m_mode_gain = 1.0f;
     m_mode_fade_out = false;
 
+    // Seed the volume ramp at the current level: a voice must not fade in from
+    // zero on its first block just because the smoother starts there.
+    m_volume_smoother.reset(m_sample_rate, k_volume_smoothing_duration);
+    m_volume_smoother.set_current_and_target_value(get_parameter<float>(Volume));
+
     m_envelope.set_sample_rate(static_cast<float>(m_sample_rate));
     m_envelope.set_parameters(get_parameter<float>(EnvelopeAttack),
                               get_parameter<float>(EnvelopeDecay),
@@ -167,6 +172,11 @@ void GrainProcessorImpl::handle_gate(const VoiceParams& params) {
     bool const envelope_active = m_envelope.is_active();
     if (params.m_playing && (!envelope_active || !m_last_playing_state)) {
         m_envelope.note_on();
+        // A voice starts at its level, it does not slide up to it — the ADSR
+        // is what shapes the onset. Without this the smoother would ramp from
+        // whatever the last note left behind (or from the prepare()-time
+        // volume), bending the first few ms of every note.
+        m_volume_smoother.set_current_and_target_value(params.m_volume);
         m_grain_engine.reset_schedule(m_active_mode);
         m_playback_elapsed_samples = 0;
         // Legato (crossfaded restart) only while the previous note still
@@ -210,6 +220,11 @@ void GrainProcessorImpl::apply_voice_gain(const AudioBlock& block, const VoicePa
     // Master volume, ADSR and the mode-change fade. The fade ramps linearly
     // toward 0 while a mode switch is pending and back to 1 after the switch
     // has happened (see update_mode_fade).
+    // Volume arrives as a sub-block constant; ramp toward it per sample so a
+    // modulated step (a square LFO swings both rails in one sample) reaches the
+    // output as a short slope instead of a discontinuity.
+    m_volume_smoother.set_target_value(params.m_volume);
+
     float const mode_target = m_mode_fade_out ? 0.0f : 1.0f;
 
     // A mode switch is rare and short; almost every block runs with the fade
@@ -219,7 +234,8 @@ void GrainProcessorImpl::apply_voice_gain(const AudioBlock& block, const VoicePa
     if (m_mode_gain == mode_target) {
         float const mode_gain = m_mode_gain;
         for (size_t i = 0; i < block.m_num_frames; i++) {
-            float const gain = params.m_volume * m_envelope.process() * mode_gain;
+            float const gain =
+                m_volume_smoother.get_smoothed_value() * m_envelope.process() * mode_gain;
             for (size_t ch = 0; ch < block.m_num_channels; ++ch) {
                 block.m_channels[ch][i] *= gain;
             }
@@ -233,7 +249,8 @@ void GrainProcessorImpl::apply_voice_gain(const AudioBlock& block, const VoicePa
         } else if (m_mode_gain > mode_target) {
             m_mode_gain = std::max(mode_target, m_mode_gain - m_mode_gain_step);
         }
-        float const gain = params.m_volume * m_envelope.process() * m_mode_gain;
+        float const gain =
+            m_volume_smoother.get_smoothed_value() * m_envelope.process() * m_mode_gain;
         for (size_t ch = 0; ch < block.m_num_channels; ++ch) { block.m_channels[ch][i] *= gain; }
     }
 }

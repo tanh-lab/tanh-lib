@@ -7,6 +7,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.
+  `VoiceParams::m_volume` is a per-sub-block constant and was applied raw, so it
+  was the only unsmoothed term in the voice gain (the ADSR already moves per
+  sample) — a hard modulation step, such as a square LFO swinging both rails in
+  one sample, reached the output as a discontinuity. The voice gain now ramps
+  volume over `k_volume_smoothing_duration` (5 ms), seeded to the current level
+  in `prepare()` and again at note-on so a voice starts at its level instead of
+  sliding up to it.
+
 ### Changed
 
 - `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
