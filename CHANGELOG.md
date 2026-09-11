@@ -7,6 +7,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
+  of calling `sin`/`cos` per frame — a block fading the live head plus four
+  outgoing tails wanted five transcendentals per frame. Because
+  `cos(t * pi/2) == sin((1 - t) * pi/2)`, one quarter-sine table sized to the
+  fade length in `prepare()` serves both directions, indexed straight by the
+  integer fade counter: exact at every index, so the crossfade values are
+  unchanged bit for bit.
+- `dsp::granular::GrainProcessorImpl`: the voice gain pass skips the mode-fade
+  ramp when the fade is already parked on its target, which is every block
+  outside a mode switch. Same output, two fewer compares and a store per frame.
+
 ### Added
 
 - `dsp::granular`: reverse playback from the markers alone — End before Start

@@ -211,6 +211,22 @@ void GrainProcessorImpl::apply_voice_gain(const AudioBlock& block, const VoicePa
     // toward 0 while a mode switch is pending and back to 1 after the switch
     // has happened (see update_mode_fade).
     float const mode_target = m_mode_fade_out ? 0.0f : 1.0f;
+
+    // A mode switch is rare and short; almost every block runs with the fade
+    // already parked on its target, where the ramp below is a no-op that still
+    // costs two compares and a store per frame. Split it out and the common
+    // block is a plain gain pass.
+    if (m_mode_gain == mode_target) {
+        float const mode_gain = m_mode_gain;
+        for (size_t i = 0; i < block.m_num_frames; i++) {
+            float const gain = params.m_volume * m_envelope.process() * mode_gain;
+            for (size_t ch = 0; ch < block.m_num_channels; ++ch) {
+                block.m_channels[ch][i] *= gain;
+            }
+        }
+        return;
+    }
+
     for (size_t i = 0; i < block.m_num_frames; i++) {
         if (m_mode_gain < mode_target) {
             m_mode_gain = std::min(mode_target, m_mode_gain + m_mode_gain_step);
