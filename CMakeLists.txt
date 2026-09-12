@@ -42,6 +42,9 @@ option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
+# Off by default: this is the only component that links a network stack, and
+# consumers embedding tanh::Core (anira) must not inherit it implicitly.
+option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
 
 # ==============================================================================
 # Get project version
@@ -505,6 +508,50 @@ if(TANH_BUILD_AUDIO_IO)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
 endif()
 
+if(TANH_BUILD_NET)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Net component requires Core component")
+    endif()
+
+    add_library(${PROJECT_NAME}_net
+        src/net/Sha256.cpp
+        src/net/AssetStore.cpp
+        src/net/HttpClient.cpp
+    )
+
+    # HTTPS comes from the platform, never from a vendored TLS stack: the OS
+    # trust store means no CA bundle to ship or rotate inside a released plugin,
+    # and Range resume / background transfer come for free.
+    if(APPLE)
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_apple.mm)
+        target_link_libraries(${PROJECT_NAME}_net PRIVATE "-framework Foundation" "-lobjc")
+    else()
+        # Windows (WinHTTP), Linux and Android backends are not written yet. The
+        # component still builds everywhere: every request reports
+        # HttpStatus::Unsupported, and HttpClient::supported() lets a caller
+        # check once rather than discover it per transfer.
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_unsupported.cpp)
+    endif()
+
+    set_target_properties(${PROJECT_NAME}_net PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Net ALIAS ${PROJECT_NAME}_net)
+
+    target_include_directories(${PROJECT_NAME}_net
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_net PUBLIC ${PROJECT_NAME}_core)
+
+    target_compile_definitions(${PROJECT_NAME}_net PUBLIC -DTANH_NET_ENABLED)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_net)
+endif()
+
 # ==============================================================================
 # Symbol policy and common settings of every component (cmake/tanh/symbol-policy.cmake)
 # ==============================================================================
@@ -564,7 +611,8 @@ foreach(_pair
         "${PROJECT_NAME}_dsp=DSP"
         "${PROJECT_NAME}_resonator=Resonator"
         "${PROJECT_NAME}_modulation=Modulation"
-        "${PROJECT_NAME}_audio_io=AudioIO")
+        "${PROJECT_NAME}_audio_io=AudioIO"
+        "${PROJECT_NAME}_net=Net")
     string(REPLACE "=" ";" _pair "${_pair}")
     list(GET _pair 0 _target)
     list(GET _pair 1 _export_name)
@@ -613,6 +661,9 @@ if (TANH_WITH_TESTS)
     endif()
     if (TANH_BUILD_AUDIO_IO)
         add_subdirectory(test/audio-io)
+    endif()
+    if (TANH_BUILD_NET)
+        add_subdirectory(test/net)
     endif()
 
     # The export-table invariant, on the desktop formats where it can be inspected.

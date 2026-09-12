@@ -3,8 +3,13 @@
 include(CMakeFindDependencyMacro)
 
 # Components built into this installation, by public component name
-# (Core, State, DSP, Resonator, Modulation, AudioIO). Each maps to an imported
-# target tanh::<Component>.
+# (Core, State, DSP, Resonator, Modulation, AudioIO, Net). Each maps to an
+# imported target tanh::<Component>.
+#
+# Net is off by default (TANH_BUILD_NET): it is the only component that links a
+# platform network stack, so a consumer embedding tanh::Core does not inherit
+# one. It will simply be absent from tanh_AVAILABLE_COMPONENTS unless the
+# installation was built with it.
 set(tanh_AVAILABLE_COMPONENTS @TANH_EXPORTED_COMPONENTS@)
 
 # Every component other than Core depends on Core; Modulation additionally
