@@ -9,10 +9,10 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_Sha256.cpp
 )
 
-# The transfer tests drive TestHttpServer, which is POSIX sockets. Porting it to
-# Winsock would be writing Windows socket code to test a Windows HTTP backend
-# that does not exist yet: HttpClient reports Unsupported there, so every one of
-# these tests would GTEST_SKIP. They come back with the WinHTTP backend.
+# The transfer tests drive TestHttpServer, which is POSIX sockets; Windows would
+# need a Winsock port of the fixture server. The WinHTTP backend itself is built
+# and shipped there — what is missing is a server to point it at, so these two
+# files are the only part of the suite Windows does not get.
 if(NOT WIN32)
 	target_sources(${PROJECT_NAME} PRIVATE
 		test_HttpClient.cpp
