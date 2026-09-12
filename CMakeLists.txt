@@ -524,6 +524,12 @@ if(TANH_BUILD_NET)
     # and Range resume / background transfer come for free.
     if(APPLE)
         target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_apple.mm)
+        # ARC for this file only. Without it the backend is manual reference
+        # counting and leaks the delegate, the operation queue and the semaphore
+        # on every request — seven of each for one pack install. The rest of the
+        # library has no Objective-C that allocates, so this stays local.
+        set_source_files_properties(src/net/HttpClient_apple.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
         target_link_libraries(${PROJECT_NAME}_net PRIVATE "-framework Foundation" "-lobjc")
     else()
         # Windows (WinHTTP), Linux and Android backends are not written yet. The

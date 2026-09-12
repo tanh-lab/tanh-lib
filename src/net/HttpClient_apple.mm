@@ -120,8 +120,13 @@ HttpResult perform(const Request& request) {
     HttpResult result;
 
     @autoreleasepool {
-        NSString* url_string = [NSString stringWithUTF8String:request.m_url.c_str()];
-        NSURL* url = [NSURL URLWithString:url_string];
+        NSString* const url_string = [NSString stringWithUTF8String:request.m_url.c_str()];
+        if (url_string == nil) {
+            result.m_status = HttpStatus::NetworkError;
+            result.m_message = "URL is not valid UTF-8.";
+            return result;
+        }
+        NSURL* const url = [NSURL URLWithString:url_string];
         if (url == nil) {
             result.m_status = HttpStatus::NetworkError;
             result.m_message = "Malformed URL.";
@@ -131,7 +136,7 @@ HttpResult perform(const Request& request) {
         const bool to_file = !request.m_destination.empty();
         const std::uint64_t resume_from = to_file ? request.m_resume_from : 0;
 
-        auto* delegate = [[TanhDownloadDelegate alloc] init];
+        TanhDownloadDelegate* const delegate = [[TanhDownloadDelegate alloc] init];
         delegate.cancelled = request.m_cancelled;
         delegate.onProgress = request.m_on_progress;
         delegate.resumeOffset = resume_from;
@@ -152,27 +157,28 @@ HttpResult perform(const Request& request) {
             delegate.maxBodyBytes = request.m_max_body_bytes;
         }
 
-        auto* configuration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        NSURLSessionConfiguration* const configuration =
+            [NSURLSessionConfiguration ephemeralSessionConfiguration];
         configuration.timeoutIntervalForRequest =
             request.m_timeout_seconds > 0 ? request.m_timeout_seconds : 60;
         // Bounds a stall, not the transfer: a large asset on a slow link must
         // not be killed for being big.
         configuration.timeoutIntervalForResource = 60 * 60;
 
-        auto* queue = [[NSOperationQueue alloc] init];
+        NSOperationQueue* const queue = [[NSOperationQueue alloc] init];
         queue.maxConcurrentOperationCount = 1;
-        auto* session = [NSURLSession sessionWithConfiguration:configuration
-                                                      delegate:delegate
-                                                 delegateQueue:queue];
+        NSURLSession* const session = [NSURLSession sessionWithConfiguration:configuration
+                                                                    delegate:delegate
+                                                               delegateQueue:queue];
 
-        auto* http_request = [NSMutableURLRequest requestWithURL:url];
+        NSMutableURLRequest* const http_request = [NSMutableURLRequest requestWithURL:url];
         http_request.HTTPMethod = @"GET";
         if (resume_from > 0) {
             [http_request setValue:[NSString stringWithFormat:@"bytes=%llu-", resume_from]
                 forHTTPHeaderField:@"Range"];
         }
 
-        auto* task = [session dataTaskWithRequest:http_request];
+        NSURLSessionDataTask* const task = [session dataTaskWithRequest:http_request];
         [task resume];
 
         // Wake regularly so a cancel() from another thread is noticed even when
