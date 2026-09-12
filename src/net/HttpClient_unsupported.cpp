@@ -1,3 +1,5 @@
+#include <tanh/net/HttpClient.h>
+
 #include "HttpBackend.h"
 
 namespace thl::net::detail {

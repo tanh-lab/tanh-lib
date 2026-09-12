@@ -95,7 +95,7 @@ public:
     /// larger than `max_bytes` fail with HttpError rather than allocating.
     HttpResult get_to_string(const std::string& url,
                              std::string& out_body,
-                             std::size_t max_bytes = 4u * 1024u * 1024u);
+                             std::size_t max_bytes = std::size_t{4} * 1024 * 1024);
 
     /// Ask the in-flight request to stop. Safe from any thread; a request that
     /// has already finished is unaffected. The flag stays set until reset().
