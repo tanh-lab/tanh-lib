@@ -18,7 +18,12 @@ RECURSIVE              = YES
 # Deprecated forwarding shim; the real macros are documented in Exports.h.
 EXCLUDE                = @CMAKE_SOURCE_DIR@/include/tanh/core/ExportMacros.h
 # Implementation namespaces are not API.
-EXCLUDE_SYMBOLS        = *::detail \
+# A using-declaration is not a new class. Doxygen 1.15 materialises the
+# `using ::thl::dsp::utils::ParameterInterpolator;` in RingsStringSynthOscillator.h
+# as a second class in thl::dsp::synth, duplicating the real page; 1.9.8 (what
+# the Ubuntu runner ships) does not. Drop it so every Doxygen agrees.
+EXCLUDE_SYMBOLS        = thl::dsp::synth::ParameterInterpolator \
+                         *::detail \
                          *::detail::* \
                          *::rt_format_detail \
                          *::rt_format_detail::* \
@@ -49,6 +54,12 @@ JAVADOC_AUTOBRIEF      = YES
 QT_AUTOBRIEF           = YES
 MARKDOWN_SUPPORT       = YES
 BUILTIN_STL_SUPPORT    = YES
+# File (and therefore URL) naming must not depend on the host filesystem.
+# Doxygen defaults CASE_SENSE_NAMES to the filesystem: a Linux build emits
+# classthl_1_1net_1_1HttpClient.html, a macOS one
+# classthl_1_1net_1_1_http_client.html. Pin it so a local build and the
+# published site address every page identically.
+CASE_SENSE_NAMES       = NO
 SHOW_HEADERFILE        = YES
 SHOW_INCLUDE_FILES     = YES
 SORT_MEMBER_DOCS       = NO
