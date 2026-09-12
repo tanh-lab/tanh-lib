@@ -1,3 +1,5 @@
+#if defined(THL_PLATFORM_ANDROID)
+
 #include <jni.h>
 #include <tanh/net/AndroidHttp.h>
 #include <tanh/net/HttpClient.h>
@@ -25,7 +27,7 @@ void set_android_java_vm(void* java_vm) {
 namespace thl::net::detail {
 namespace {
 
-constexpr std::size_t k_read_chunk = 64 * 1024;
+constexpr std::size_t k_read_chunk = std::size_t{64} * 1024;
 
 /// Attaches the calling thread for the duration of a transfer. Transfers run on
 /// a worker, so this is nearly always an attach rather than a lookup.
@@ -329,3 +331,5 @@ bool backend_supported() {
 }
 
 }  // namespace thl::net::detail
+
+#endif  // THL_PLATFORM_ANDROID

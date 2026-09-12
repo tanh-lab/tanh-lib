@@ -1,3 +1,5 @@
+#if defined(THL_PLATFORM_WINDOWS)
+
 #include <tanh/net/HttpClient.h>
 
 #include "HttpBackend.h"
@@ -18,7 +20,7 @@
 namespace thl::net::detail {
 namespace {
 
-constexpr std::size_t k_read_chunk = 64 * 1024;
+constexpr std::size_t k_read_chunk = std::size_t{64} * 1024;
 
 /// Closes a WinHTTP handle on scope exit. The three handles (session,
 /// connection, request) must be closed in reverse order of creation, which
@@ -285,3 +287,5 @@ bool backend_supported() {
 }
 
 }  // namespace thl::net::detail
+
+#endif  // THL_PLATFORM_WINDOWS

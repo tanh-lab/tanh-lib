@@ -1,4 +1,6 @@
 #include <curl/curl.h>
+#include <curl/easy.h>
+#include <curl/system.h>
 #include <tanh/net/HttpClient.h>
 
 #include <atomic>

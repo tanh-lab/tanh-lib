@@ -10,6 +10,11 @@
 /// The body is streamed, never buffered: an 85 MB asset must not sit in memory
 /// on a phone, so each chunk is appended to the destination as it arrives.
 /// Small in-memory fetches (manifests) opt in explicitly via `body`.
+// The ivars the compiler synthesises for these properties are named `_file`,
+// `_received` and so on — the Objective-C convention, and not something a
+// @property can be talked out of. The naming check expects `m_`, so it is off
+// for the block rather than reported on every property.
+// NOLINTBEGIN(readability-identifier-naming)
 @interface TanhDownloadDelegate : NSObject <NSURLSessionDataDelegate>
 @property(nonatomic, assign) std::FILE* file;
 @property(nonatomic, assign) std::uint64_t received;
@@ -30,18 +35,19 @@
 // moment it is created. Under manual counting assign merely leaked it.
 @property(nonatomic, strong) dispatch_semaphore_t done;
 @end
+// NOLINTEND(readability-identifier-naming)
 
 @implementation TanhDownloadDelegate
 
 - (void)URLSession:(NSURLSession*)session
-              dataTask:(NSURLSessionDataTask*)dataTask
+              dataTask:(NSURLSessionDataTask*)data_task
     didReceiveResponse:(NSURLResponse*)response
-     completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+     completionHandler:(void (^)(NSURLSessionResponseDisposition))completion_handler {
     auto* http = (NSHTTPURLResponse*)response;
     self.httpCode = (int)http.statusCode;
 
     if (self.httpCode < 200 || self.httpCode >= 300) {
-        completionHandler(NSURLSessionResponseCancel);
+        completion_handler(NSURLSessionResponseCancel);
         return;
     }
 
@@ -54,29 +60,29 @@
         self.resumeOffset = 0;
         if (self.file == nullptr) {
             self.writeFailed = YES;
-            completionHandler(NSURLSessionResponseCancel);
+            completion_handler(NSURLSessionResponseCancel);
             return;
         }
     }
 
     const long long length = http.expectedContentLength;
     self.expected = length > 0 ? (std::uint64_t)length : 0;
-    completionHandler(NSURLSessionResponseAllow);
+    completion_handler(NSURLSessionResponseAllow);
 }
 
 - (void)URLSession:(NSURLSession*)session
-          dataTask:(NSURLSessionDataTask*)dataTask
+          dataTask:(NSURLSessionDataTask*)data_task
     didReceiveData:(NSData*)data {
     if (self.cancelled != nullptr && self.cancelled->load(std::memory_order_relaxed)) {
         self.cancelledByCaller = YES;
-        [dataTask cancel];
+        [data_task cancel];
         return;
     }
 
     if (self.body != nil) {
         if (self.maxBodyBytes > 0 && self.body.length + data.length > self.maxBodyBytes) {
             self.bodyTooLarge = YES;
-            [dataTask cancel];
+            [data_task cancel];
             return;
         }
         [self.body appendData:data];
@@ -90,7 +96,7 @@
         }];
         if (failed) {
             self.writeFailed = YES;
-            [dataTask cancel];
+            [data_task cancel];
             return;
         }
     }
@@ -103,7 +109,7 @@
         progress.m_total = self.expected > 0 ? self.resumeOffset + self.expected : 0;
         if (!(*self.onProgress)(progress)) {
             self.cancelledByCaller = YES;
-            [dataTask cancel];
+            [data_task cancel];
         }
     }
 }
