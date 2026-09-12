@@ -72,16 +72,16 @@ public:
      * The output buffer should be filled with audio data; it may contain
      * uninitialised data on entry.
      *
-     * @param outputBuffer Pointer to the interleaved output buffer to fill.
+     * @param output_buffer Pointer to the interleaved output buffer to fill.
      *                     Size is frameCount * numOutputChannels floats. May
      *                     be nullptr if no output device is active.
-     * @param inputBuffer Pointer to the interleaved input buffer containing
+     * @param input_buffer Pointer to the interleaved input buffer containing
      *                    captured audio. Size is frameCount * numInputChannels
      *                    floats. May be nullptr if no input device is active.
-     * @param frameCount Number of audio frames to process. Each frame contains
+     * @param frame_count Number of audio frames to process. Each frame contains
      *                   numInputChannels/numOutputChannels samples.
-     * @param numInputChannels Number of input channels (interleaved).
-     * @param numOutputChannels Number of output channels (interleaved).
+     * @param num_input_channels Number of input channels (interleaved).
+     * @param num_output_channels Number of output channels (interleaved).
      *
      * @warning **MUST BE REAL-TIME SAFE** - Called from the audio thread.
      *          No allocations, locks, or blocking operations allowed.
@@ -100,9 +100,9 @@ public:
      * perform other setup that depends on the audio configuration. This is
      * called from the main thread when the audio device is started.
      *
-     * @param sampleRate The sample rate at which audio will be processed (e.g.,
+     * @param sample_rate The sample rate at which audio will be processed (e.g.,
      * 44100, 48000).
-     * @param bufferSize The number of frames that will be passed to each
+     * @param buffer_size The number of frames that will be passed to each
      * process() call.
      *
      * @note Called from the main thread - may perform allocations and blocking

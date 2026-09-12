@@ -105,10 +105,10 @@ public:
      * will decode audio on a background thread, allowing the audio thread to
      * read from pre-decoded buffers.
      *
-     * @param filePath Path to the audio file to load.
-     * @param outputChannels Number of output channels (audio will be
+     * @param file_path Path to the audio file to load.
+     * @param output_channels Number of output channels (audio will be
      *                       converted if needed).
-     * @param outputSampleRate Output sample rate in Hz (audio will be
+     * @param output_sample_rate Output sample rate in Hz (audio will be
      *                         resampled if needed).
      *
      * @return true if the file was loaded successfully, false otherwise.
@@ -128,9 +128,9 @@ public:
      *
      * @param data            Pointer to the binary audio data.
      * @param size            Size of the data in bytes.
-     * @param outputChannels  Number of output channels (audio will be
+     * @param output_channels  Number of output channels (audio will be
      *                        converted if needed).
-     * @param outputSampleRate Output sample rate in Hz (audio will be
+     * @param output_sample_rate Output sample rate in Hz (audio will be
      *                         resampled if needed).
      *
      * @return true if the data was loaded successfully, false otherwise.
@@ -259,11 +259,11 @@ public:
      * When the end of file is reached, remaining samples are zeroed and the
      * finished callback is invoked.
      *
-     * @param outputBuffer Buffer to fill with decoded audio.
-     * @param inputBuffer Ignored - playback does not use input.
-     * @param frameCount Number of frames to read.
-     * @param numInputChannels Number of input channels (unused).
-     * @param numOutputChannels Number of output channels.
+     * @param output_buffer Buffer to fill with decoded audio.
+     * @param input_buffer Ignored - playback does not use input.
+     * @param frame_count Number of frames to read.
+     * @param num_input_channels Number of input channels (unused).
+     * @param num_output_channels Number of output channels.
      *
      * @note This method reads from pre-decoded buffers and is real-time safe.
      */

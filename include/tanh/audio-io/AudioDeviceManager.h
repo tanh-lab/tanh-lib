@@ -241,16 +241,16 @@ public:
      * Sets up separate playback, capture, and (when both devices are provided)
      * duplex audio devices depending on which device pointers are provided.
      *
-     * @param inputDevice Pointer to the input device info, or nullptr for
+     * @param input_device Pointer to the input device info, or nullptr for
      * output-only.
-     * @param outputDevice Pointer to the output device info, or nullptr for
+     * @param output_device Pointer to the output device info, or nullptr for
      * input-only.
-     * @param sampleRate Desired sample rate in Hz (default: 44100).
-     * @param bufferSizeInFrames Desired buffer size in frames (default: 512).
+     * @param sample_rate Desired sample rate in Hz (default: 44100).
+     * @param buffer_size_in_frames Desired buffer size in frames (default: 512).
      *                           Lower values reduce latency but increase CPU
      * load.
-     * @param numInputChannels Number of input audio channels (default: 1).
-     * @param numOutputChannels Number of output audio channels (default: 1).
+     * @param num_input_channels Number of input audio channels (default: 1).
+     * @param num_output_channels Number of output audio channels (default: 1).
      *
      * @return true if initialisation succeeded, false otherwise.
      *
@@ -567,7 +567,7 @@ public:
      *
      * If capture is not running or SCO is not active, returns immediately.
      *
-     * @param timeoutMs Maximum time to wait in milliseconds (default 2000).
+     * @param timeout_ms Maximum time to wait in milliseconds (default 2000).
      * @return true if a measurement is available, false on timeout.
      */
     bool wait_for_capture_rate_measurement(uint32_t timeout_ms = 2000) const;
@@ -694,8 +694,8 @@ public:
      * kMaxBluetoothIOBufferDurationSeconds, the returned size is reduced to
      * exactly that limit.
      *
-     * @param bufferSizeInFrames The requested buffer size in frames.
-     * @param sampleRate The sample rate in Hz.
+     * @param buffer_size_in_frames The requested buffer size in frames.
+     * @param sample_rate The sample rate in Hz.
      * @return The (possibly reduced) buffer size in frames.
      */
     static uint32_t clamp_buffer_size_for_bluetooth_route(uint32_t buffer_size_in_frames,

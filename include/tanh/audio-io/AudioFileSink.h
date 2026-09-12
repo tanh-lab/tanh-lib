@@ -87,9 +87,9 @@ public:
      * Initialises the encoder and prepares the file for writing. Any
      * previously open file is closed first.
      *
-     * @param filePath Path to the output file.
+     * @param file_path Path to the output file.
      * @param channels Number of audio channels to record.
-     * @param sampleRate Sample rate in Hz.
+     * @param sample_rate Sample rate in Hz.
      * @param format Encoding format (default: WAV).
      *
      * @return true if the file was opened successfully, false otherwise.
@@ -171,11 +171,11 @@ public:
      * If recording is active and a file is open, writes the input buffer
      * to the file. The output buffer is not modified.
      *
-     * @param outputBuffer Ignored - recording does not produce output.
-     * @param inputBuffer Audio data to record.
-     * @param frameCount Number of frames in the buffer.
-     * @param numInputChannels Number of input channels.
-     * @param numOutputChannels Number of output channels (unused).
+     * @param output_buffer Ignored - recording does not produce output.
+     * @param input_buffer Audio data to record.
+     * @param frame_count Number of frames in the buffer.
+     * @param num_input_channels Number of input channels.
+     * @param num_output_channels Number of output channels (unused).
      *
      * @note This method performs file I/O and may block.
      */
