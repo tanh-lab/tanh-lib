@@ -80,29 +80,30 @@ public:
         // with it. The tests cannot exercise cancellation without this.
         std::signal(SIGPIPE, SIG_IGN);
 
-        m_listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (m_listen_fd < 0) { return false; }
+        const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listener < 0) { return false; }
+        m_listen_fd.store(listener, std::memory_order_release);
 
         int reuse = 1;
-        ::setsockopt(m_listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        ::setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
         sockaddr_in address{};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         address.sin_port = 0;  // let the OS choose, so parallel tests never collide
 
-        if (::bind(m_listen_fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+        if (::bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
             stop();
             return false;
         }
-        if (::listen(m_listen_fd, 8) < 0) {
+        if (::listen(listener, 8) < 0) {
             stop();
             return false;
         }
 
         sockaddr_in bound{};
         socklen_t bound_size = sizeof(bound);
-        if (::getsockname(m_listen_fd, reinterpret_cast<sockaddr*>(&bound), &bound_size) < 0) {
+        if (::getsockname(listener, reinterpret_cast<sockaddr*>(&bound), &bound_size) < 0) {
             stop();
             return false;
         }
@@ -115,10 +116,12 @@ public:
 
     void stop() {
         m_running = false;
-        if (m_listen_fd >= 0) {
-            ::shutdown(m_listen_fd, SHUT_RDWR);
-            ::close(m_listen_fd);
-            m_listen_fd = -1;
+        // exchange so a second stop() (the destructor after an explicit call)
+        // cannot close the same descriptor twice.
+        const int listener = m_listen_fd.exchange(-1, std::memory_order_acq_rel);
+        if (listener >= 0) {
+            ::shutdown(listener, SHUT_RDWR);
+            ::close(listener);
         }
         if (m_thread.joinable()) { m_thread.join(); }
     }
@@ -147,7 +150,11 @@ public:
 private:
     void serve() {
         while (m_running) {
-            const int client = ::accept(m_listen_fd, nullptr, nullptr);
+            const int listener = m_listen_fd.load(std::memory_order_acquire);
+            if (listener < 0) { break; }
+            // stop() may close the socket between this load and the accept; the
+            // call then fails with EBADF and the loop exits on m_running.
+            const int client = ::accept(listener, nullptr, nullptr);
             if (client < 0) { continue; }
 #ifdef SO_NOSIGPIPE
             int nosigpipe = 1;
@@ -279,7 +286,9 @@ private:
     std::map<std::string, int> m_request_counts;
     std::map<std::string, std::string> m_last_range;
 
-    int m_listen_fd = -1;
+    /// Read by the serve thread and cleared by stop() on another: atomic, or
+    /// TSan flags the accept/close pair (and rightly — it is a real race).
+    std::atomic<int> m_listen_fd{-1};
     std::uint16_t m_port = 0;
     std::atomic<bool> m_running{false};
     std::thread m_thread;
