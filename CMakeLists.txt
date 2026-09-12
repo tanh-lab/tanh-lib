@@ -45,6 +45,10 @@ option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 # Off by default: this is the only component that links a network stack, and
 # consumers embedding tanh::Core (anira) must not inherit it implicitly.
 option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
+# Use the libcurl backend even on Apple. The only way to exercise the
+# non-Apple transport from a Mac, which is otherwise reachable only by
+# pushing to CI.
+option(TANH_NET_FORCE_CURL "Net: use the libcurl backend even on Apple" OFF)
 
 # ==============================================================================
 # Get project version
@@ -519,10 +523,13 @@ if(TANH_BUILD_NET)
         src/net/HttpClient.cpp
     )
 
-    # HTTPS comes from the platform, never from a vendored TLS stack: the OS
-    # trust store means no CA bundle to ship or rotate inside a released plugin,
-    # and Range resume / background transfer come for free.
-    if(APPLE)
+    # HTTPS comes from the platform, never from a vendored TLS stack: validation
+    # uses the OS trust store, so there is no CA bundle to ship or rotate inside
+    # a released plugin. Each platform is named explicitly — a catch-all would
+    # quietly link whatever libcurl happened to be installed on a platform that
+    # has its own API, which is the opposite of the intent.
+    if(NOT TANH_NET_FORCE_CURL AND (TANH_OPERATING_SYSTEM STREQUAL "macOS"
+                                    OR TANH_OPERATING_SYSTEM STREQUAL "iOS"))
         target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_apple.mm)
         # ARC for this file only. Without it the backend is manual reference
         # counting and leaks the delegate, the operation queue and the semaphore
@@ -531,11 +538,37 @@ if(TANH_BUILD_NET)
         set_source_files_properties(src/net/HttpClient_apple.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
         target_link_libraries(${PROJECT_NAME}_net PRIVATE "-framework Foundation" "-lobjc")
+
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Linux" OR TANH_NET_FORCE_CURL)
+        # libcurl is the system HTTP library on Linux and validates against the
+        # system trust store, so it is the platform-native answer there in the
+        # same sense NSURLSession is on Apple — Linux has no other OS-level HTTP
+        # API. This is also what gives CI teeth: the sanitizer and Linux test
+        # legs run here, and without a real backend every transport and store
+        # test skips, so ASan/TSan/LSan/RTSan never see this component.
+        find_package(CURL REQUIRED)
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_curl.cpp)
+        target_link_libraries(${PROJECT_NAME}_net PRIVATE CURL::libcurl)
+
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Windows")
+        # WinHTTP is the OS API: system proxy configuration and the system
+        # certificate store, no vendored TLS. Deliberately not libcurl — on
+        # Windows curl is not a system library, so it would arrive with its own
+        # TLS stack and a CA bundle to maintain.
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_windows.cpp)
+        target_link_libraries(${PROJECT_NAME}_net PRIVATE winhttp)
+
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Android")
+        # The NDK ships no HTTP client and no libcurl, so the backend goes
+        # through java.net.HttpURLConnection over JNI. That needs the process's
+        # JavaVM: thl::net::set_android_java_vm() must be called during startup,
+        # and until it is, supported() is false and requests report Unsupported.
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_android.cpp)
+
     else()
-        # Windows (WinHTTP), Linux and Android backends are not written yet. The
-        # component still builds everywhere: every request reports
-        # HttpStatus::Unsupported, and HttpClient::supported() lets a caller
-        # check once rather than discover it per transfer.
+        # Anything else (wasm, unknown): the component still builds and every
+        # request reports HttpStatus::Unsupported, which HttpClient::supported()
+        # lets a caller check once rather than discover per transfer.
         target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_unsupported.cpp)
     endif()
 

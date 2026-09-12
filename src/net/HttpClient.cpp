@@ -1,3 +1,4 @@
+#include <tanh/net/AndroidHttp.h>
 #include <tanh/net/HttpClient.h>
 
 #include <atomic>
@@ -12,6 +13,12 @@
 namespace fs = std::filesystem;
 
 namespace thl::net {
+
+#if !defined(THL_PLATFORM_ANDROID)
+// Android defines the real one in HttpClient_android.cpp. Everywhere else this
+// keeps the declaration honest so a cross-platform caller needs no #ifdef.
+void set_android_java_vm(void* /*java_vm*/) {}
+#endif
 
 struct HttpClient::Backend {};
 
