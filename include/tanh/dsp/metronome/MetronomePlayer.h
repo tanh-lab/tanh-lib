@@ -26,14 +26,14 @@ namespace thl::dsp::metronome {
  * Override trigger_accent(), trigger_click(), and tick_voices() to replace the
  * built-in sine clicks with custom sounds (e.g. sample playback).
  *
- * @section lifetime Lifetime
+ * @par Lifetime
  *   The TransportClock reference passed in must outlive this player.
  *
- * @section modulation Modulation
+ * @par Modulation
  *   The Rhythm parameter is sampled once per process() block; sub-block
  *   change points are not honored. Gain and Enabled may modulate per-trigger.
  *
- * @section rt_safety Real-Time Safety
+ * @par Real-Time Safety
  *   process() is real-time safe — no allocation, no locks.
  */
 class TANH_API MetronomePlayerImpl : public BaseProcessor {

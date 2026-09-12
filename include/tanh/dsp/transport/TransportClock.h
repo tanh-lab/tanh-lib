@@ -57,18 +57,18 @@ enum class Division {
  * The sample counter is the authoritative time source; beat position
  * is derived from it on demand.
  *
- * @section rt_safety Real-Time Safety
+ * @par Real-Time Safety
  *   begin_block() and end_block() must be real-time safe.
  *   beat_at_sample() must be real-time safe.
  *   Any-thread setters (set_bpm, play, stop, set_position_beats) must
  *   be lock-free.
  *
- * @section usage Audio-thread contract
+ * @par Audio-thread contract
  *   Call begin_block() once at the start of every process() call.
  *   Call end_block()   once at the end   of every process() call.
  *   beat_at_sample() and is_playing() are only valid between those two calls.
  *
- * @section link Link compatibility
+ * @par Link compatibility
  *   host_time_micros in begin_block() carries the hardware output timestamp
  *   (callback host time + output latency). Ignored by InternalTransportClock,
  *   required by a future LinkTransportClock.

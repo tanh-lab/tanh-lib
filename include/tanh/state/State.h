@@ -27,7 +27,7 @@ namespace thl {
  * be updated with set_in_root(). Each ParameterRecord embeds a const
  * ParameterDefinition that is immutable after creation.
  *
- * @section rt_safety Real-Time Safety
+ * @par Real-Time Safety
  *
  * Functions marked with `TANH_NONBLOCKING_FUNCTION` are designed to be
  * real-time safe when:
@@ -92,7 +92,12 @@ public:
 
     /**
      * @brief Creates a string parameter from a C-string.
-     * @copydetails create_in_root()
+     *
+     * @param key The parameter key
+     * @param value The initial value, stored as std::string
+     *
+     * @throws ParameterAlreadyExistsException if the key already exists
+     * @warning NOT real-time safe - allocates memory
      */
     void create_in_root(std::string_view key, const char* value);
 

@@ -2,7 +2,7 @@
 #pragma once
 
 /// Platform-portable std::numbers constants.
-/// Apple Clang ships the <numbers> header but does not expose std::numbers
+/// Apple Clang ships the `<numbers>` header but does not expose std::numbers
 /// in C++20 mode.  Detect Apple Clang via __apple_build_version__ and
 /// provide a manual fallback.
 #if __has_include(<numbers>) && !defined(__apple_build_version__)

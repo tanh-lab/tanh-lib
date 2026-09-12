@@ -24,7 +24,7 @@ enum class AudioEncodingFormat { WAV, FLAC };
  * encode it to a file. It supports various audio formats through the backend
  * encoder interface.
  *
- * @section lifecycle File Lifecycle
+ * @par File Lifecycle
  *
  * The typical usage pattern is:
  * 1. Construct an AudioFileSink
@@ -34,7 +34,7 @@ enum class AudioEncodingFormat { WAV, FLAC };
  * 5. Call stop_recording() when done
  * 6. Call close_file() or let the destructor handle cleanup
  *
- * @section rt_safety Real-Time Safety
+ * @par Real-Time Safety
  *
  * - open_file(), close_file(), start_recording(), and stop_recording() are NOT
  *   real-time safe and should only be called from the main thread.
@@ -42,7 +42,7 @@ enum class AudioEncodingFormat { WAV, FLAC };
  *   may block, this is typically acceptable for recording scenarios. For
  *   strict real-time requirements, consider buffering to a lock-free queue.
  *
- * @section formats Supported Formats
+ * @par Supported Formats
  *
  * The format parameter in open_file() controls the output file format:
  * - AudioEncodingFormat::WAV (default) - Uncompressed WAV
@@ -87,9 +87,9 @@ public:
      * Initialises the encoder and prepares the file for writing. Any
      * previously open file is closed first.
      *
-     * @param filePath Path to the output file.
+     * @param file_path Path to the output file.
      * @param channels Number of audio channels to record.
-     * @param sampleRate Sample rate in Hz.
+     * @param sample_rate Sample rate in Hz.
      * @param format Encoding format (default: WAV).
      *
      * @return true if the file was opened successfully, false otherwise.
@@ -171,11 +171,11 @@ public:
      * If recording is active and a file is open, writes the input buffer
      * to the file. The output buffer is not modified.
      *
-     * @param outputBuffer Ignored - recording does not produce output.
-     * @param inputBuffer Audio data to record.
-     * @param frameCount Number of frames in the buffer.
-     * @param numInputChannels Number of input channels.
-     * @param numOutputChannels Number of output channels (unused).
+     * @param output_buffer Ignored - recording does not produce output.
+     * @param input_buffer Audio data to record.
+     * @param frame_count Number of frames in the buffer.
+     * @param num_input_channels Number of input channels.
+     * @param num_output_channels Number of output channels (unused).
      *
      * @note This method performs file I/O and may block.
      */

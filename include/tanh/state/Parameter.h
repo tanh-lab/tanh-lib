@@ -48,7 +48,7 @@ struct AtomicCacheEntry {
  * parameter: immutable definition (type, range, flags, name, etc.),
  * atomic cache for real-time value access, gesture state, and string value.
  *
- * @section layout Cache-Line Layout
+ * @par Cache-Line Layout
  *
  * Fields are ordered for cache efficiency. `m_cache` is at offset 0 so
  * that ParameterHandle::load() touches the first cache line of the
@@ -98,13 +98,13 @@ struct ParameterRecord {
  * and immutable metadata (definition, range, key, ID, flags) without any
  * additional lookups.
  *
- * @section lifetime Handle Lifetime
+ * @par Handle Lifetime
  *
  * A handle is valid as long as the owning State is alive and State::clear()
  * has not been called. After clear() or State destruction, using a handle is
  * undefined behaviour.
  *
- * @section consistency Consistency
+ * @par Consistency
  *
  * The atomic cache is the single source of truth for numeric values.
  * Both State::set_in_root() and ParameterHandle::store() write to the
@@ -189,7 +189,7 @@ private:
  * over the underlying record. Metadata accessors (def(), range(), key(), id())
  * forward directly to the immutable m_def on the record.
  *
- * @section rt_safety Real-Time Safety
+ * @par Real-Time Safety
  *
  * - Type checking methods (`is_double()`, `is_float()`, etc.) are **real-time
  * safe**

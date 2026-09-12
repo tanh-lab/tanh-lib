@@ -98,7 +98,12 @@ public:
 
     /**
      * @brief Creates a string parameter from a C-string.
-     * @copydetails create()
+     *
+     * @param path The parameter path
+     * @param value The initial value, stored as std::string
+     *
+     * @throws std::invalid_argument if the parameter already exists
+     * @warning NOT real-time safe - allocates memory
      */
     void create(std::string_view path, const char* value);
 
