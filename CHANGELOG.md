@@ -54,6 +54,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `TANH_WITH_DOCS` now does something — it adds the `sphinx-docs` target — and
+  therefore defaults to **OFF** (it was ON and inert). A docs-enabled configure
+  requires Doxygen and Python 3; consumers that already set it OFF are
+  unaffected.
 - `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
   of calling `sin`/`cos` per frame — a block fading the live head plus four
   outgoing tails wanted five transcendentals per frame. Because
@@ -67,6 +71,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Documentation: a Doxygen → Breathe → Sphinx site under `docs/` (the same
+  pipeline as anira), published to https://tanh-lab.github.io/tanh-lib/ by the
+  new `build_docs_and_deploy` workflow on every push to `main`. `just docs`
+  builds it locally. The API reference is generated from `include/tanh/`; the
+  README's design notes (symbol visibility, `InputEventQueue` event spreading,
+  the Android Bluetooth SCO notes) moved into the docs and the README is now a
+  short entry point. Doxygen comments in the audio-io and state headers were
+  corrected on the way (`@param` names that no longer matched the parameters,
+  `@section` labels reused across classes, a `@copydetails` that copied the
+  wrong overload).
 - `dsp::granular`: reverse playback from the markers alone — End before Start
   makes Start the entry and End the exit, so the Sample head runs backwards
   (re-entering at Loop) and Loop-mode grains scan and play backwards.

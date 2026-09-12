@@ -21,6 +21,12 @@ test-install:
     cmake -S test/install -B build/install-consumer -DCMAKE_PREFIX_PATH=$(pwd)/build/install-prefix
     cmake --build build/install-consumer --parallel && ./build/install-consumer/consumer
 
+# Build the documentation (Doxygen + Sphinx) into build/docs/docs/sphinx/html
+docs:
+    cmake -S . -B build/docs -DTANH_WITH_DOCS=ON -DTANH_WITH_TESTS=OFF -DTANH_WITH_EXAMPLES=OFF -DTANH_WITH_INSTALL=OFF
+    cmake --build build/docs --target sphinx-docs
+    @echo "Documentation: build/docs/docs/sphinx/html/index.html"
+
 # Run tests with verbose output
 test-verbose: build
     ctest --preset desktop-debug --verbose

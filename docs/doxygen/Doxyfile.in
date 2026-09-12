@@ -1,0 +1,117 @@
+# Doxygen configuration for tanh-lib, configured by docs/CMakeLists.txt.
+# Only the tags that differ from Doxygen's defaults are listed; Doxygen fills
+# in the rest. The XML output is what Breathe/Sphinx consume; the HTML output
+# is a by-product that is handy for a quick local look.
+
+DOXYFILE_ENCODING      = UTF-8
+PROJECT_NAME           = "tanh-lib"
+PROJECT_NUMBER         = @PROJECT_VERSION_FULL@
+PROJECT_BRIEF          = "Modular, real-time-safe C++20 audio library"
+OUTPUT_DIRECTORY       = @CMAKE_CURRENT_BINARY_DIR@/doxygen
+TIMESTAMP              = NO
+NUM_PROC_THREADS       = 0
+
+# ---- Input ---------------------------------------------------------------------
+INPUT                  = @CMAKE_SOURCE_DIR@/include
+FILE_PATTERNS          = *.h
+RECURSIVE              = YES
+# Deprecated forwarding shim; the real macros are documented in Exports.h.
+EXCLUDE                = @CMAKE_SOURCE_DIR@/include/tanh/core/ExportMacros.h
+# Implementation namespaces are not API.
+EXCLUDE_SYMBOLS        = *::detail \
+                         *::detail::* \
+                         *::rt_format_detail \
+                         *::rt_format_detail::* \
+                         *::wav_detail \
+                         *::wav_detail::* \
+                         *::channel_mixer::detail* \
+                         *::RingsFxEngine::Empty \
+                         *::RingsFxEngine::Reserve \
+                         *::RingsFxEngine::DelayLine* \
+                         *::@* \
+                         @*
+STRIP_FROM_PATH        = @CMAKE_SOURCE_DIR@/include
+STRIP_FROM_INC_PATH    = @CMAKE_SOURCE_DIR@/include
+
+# ---- Extraction ----------------------------------------------------------------
+# Every public and protected member gets a page entry, documented or not — the
+# reference should mirror the headers, and undocumented members show up as
+# an obvious gap to fill. Private members and anonymous namespaces stay out.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_ANON_NSPACES   = NO
+HIDE_UNDOC_NAMESPACES  = YES
+INHERIT_DOCS           = YES
+INLINE_INHERITED_MEMB  = NO
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MARKDOWN_SUPPORT       = YES
+BUILTIN_STL_SUPPORT    = YES
+SHOW_HEADERFILE        = YES
+SHOW_INCLUDE_FILES     = YES
+SORT_MEMBER_DOCS       = NO
+SORT_BRIEF_DOCS        = NO
+TAB_SIZE               = 4
+
+# ---- Warnings ------------------------------------------------------------------
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = NO
+WARN_FORMAT            = "$file:$line: $text"
+
+# ---- Preprocessing ---------------------------------------------------------------
+# Expand the export / real-time attribute macros to nothing so the signatures
+# read like plain C++. The component-enable defines make tanh/tanh.h include
+# everything.
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+SEARCH_INCLUDES        = YES
+INCLUDE_PATH           = @CMAKE_SOURCE_DIR@/include
+PREDEFINED             = DOXYGEN=1 \
+                         TANH_API= \
+                         TANH_NONBLOCKING_FUNCTION= \
+                         TANH_NONBLOCKING_SCOPED_DISABLER= \
+                         TANH_STATE_ENABLED=1 \
+                         TANH_DSP_ENABLED=1 \
+                         TANH_NET_ENABLED=1 \
+                         THL_PLATFORM_MACOS=1 \
+                         "THL_PRINTF_FORMAT(fmt,args)=" \
+                         "__attribute__(x)=" \
+                         "__declspec(x)="
+SKIP_FUNCTION_MACROS   = YES
+
+# ---- Output --------------------------------------------------------------------
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = NO
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = YES
+SEARCHENGINE           = YES
+GENERATE_LATEX         = NO
+GENERATE_MAN           = NO
+GENERATE_RTF           = NO
+
+# ---- Graphs (Graphviz) -----------------------------------------------------------
+HAVE_DOT               = @DOXYGEN_DOT_FOUND@
+DOT_NUM_THREADS        = 0
+DOT_IMAGE_FORMAT       = svg
+DOT_COMMON_ATTR        = "fontname=Helvetica,fontsize=10"
+DOT_EDGE_ATTR          = "labelfontname=Helvetica,labelfontsize=10"
+DOT_NODE_ATTR          = "shape=box,height=0.2,width=0.4"
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+GRAPHICAL_HIERARCHY    = YES
+DIRECTORY_GRAPH        = NO
+DOT_GRAPH_MAX_NODES    = 50
+DOT_CLEANUP            = YES
