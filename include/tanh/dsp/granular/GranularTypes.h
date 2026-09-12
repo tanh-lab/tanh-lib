@@ -77,6 +77,11 @@ enum class EngineMode : int {
 constexpr float k_player_crossfade_duration = 0.010f;
 // Fade-through-zero when the engine mode changes on a sounding voice.
 constexpr float k_mode_change_fade_duration = 0.015f;
+// Ramp applied to the voice's volume so a modulation step does not land on the
+// output as a discontinuity. Long enough to kill the click of a hard step (a
+// square LFO on Volume jumps both rails at once), short enough not to smear a
+// deliberate level change.
+constexpr float k_volume_smoothing_duration = 0.005f;
 
 // The planar output block a render call fills. `m_num_channels` is what the
 // host actually handed over this block (a device switch can deliver fewer

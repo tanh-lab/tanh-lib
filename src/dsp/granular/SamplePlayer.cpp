@@ -23,6 +23,16 @@ void SamplePlayer::prepare(double sample_rate, size_t num_channels) {
     m_fade_length = std::max(
         static_cast<size_t>(1),
         static_cast<size_t>(k_player_crossfade_duration * static_cast<float>(sample_rate)));
+
+    // Quarter-sine crossfade table, one entry per integer counter value the
+    // fades can hold. Allocating here keeps the audio thread free of both the
+    // allocation and the per-frame sin/cos.
+    m_fade_curve.resize(m_fade_length + 1);
+    for (size_t k = 0; k <= m_fade_length; ++k) {
+        float const t = static_cast<float>(k) / static_cast<float>(m_fade_length);
+        m_fade_curve[k] = std::sin(t * std::numbers::pi_v<float> * 0.5f);
+    }
+
     reset();
 }
 
@@ -201,13 +211,13 @@ void SamplePlayer::advance_head(const Source& src, double loop_point) {
 
 float SamplePlayer::fade_in_gain(size_t remaining) const {
     if (remaining == 0) { return 1.0f; }
-    float const t = 1.0f - static_cast<float>(remaining) / static_cast<float>(m_fade_length);
-    return std::sin(t * std::numbers::pi_v<float> * 0.5f);
+    // sin((1 - remaining/L) * pi/2) == m_fade_curve[L - remaining].
+    return m_fade_curve[m_fade_length - std::min(remaining, m_fade_length)];
 }
 
 float SamplePlayer::fade_out_gain(size_t remaining) const {
-    float const t = 1.0f - static_cast<float>(remaining) / static_cast<float>(m_fade_length);
-    return std::cos(t * std::numbers::pi_v<float> * 0.5f);
+    // cos((1 - remaining/L) * pi/2) == sin(remaining/L * pi/2) == curve[remaining].
+    return m_fade_curve[std::min(remaining, m_fade_length)];
 }
 
 void SamplePlayer::start_crossfade(size_t old_sample_index, size_t old_source_channels) {

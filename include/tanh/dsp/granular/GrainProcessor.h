@@ -11,6 +11,7 @@
 #include <tanh/dsp/granular/SampleReader.h>
 #include <tanh/dsp/granular/VoiceParams.h>
 #include <tanh/dsp/utils/ADSR.h>
+#include <tanh/dsp/utils/SmoothedValue.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -132,6 +133,11 @@ private:
     EngineMode m_active_mode{EngineMode::GranularLoop};
     float m_mode_gain{1.0f};
     float m_mode_gain_step{1.0f};
+
+    // Volume is a per-sub-block constant in VoiceParams; without a ramp a
+    // modulated step lands straight on the output. The ADSR already moves per
+    // sample, so this is the only unsmoothed term in the voice gain.
+    thl::dsp::utils::SmoothedValue m_volume_smoother;
     bool m_mode_fade_out{false};
 };
 

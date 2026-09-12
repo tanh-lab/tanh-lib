@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstddef>
+#include <vector>
 
 namespace thl::dsp::granular {
 
@@ -81,6 +82,11 @@ private:
     void advance_head(const Source& src, double loop_point);
 
     // Equal-power crossfade law, `remaining` frames of m_fade_length left.
+    // Both gains read m_fade_curve, built once in prepare(): the fade is a
+    // quarter sine, and cos(t * pi/2) == sin((1 - t) * pi/2), so one table
+    // indexed by the integer counter serves both directions exactly — no
+    // interpolation, and no sin/cos on the audio thread (a block fading the
+    // live head plus four tails wanted five transcendentals per frame).
     float fade_in_gain(size_t remaining) const;
     float fade_out_gain(size_t remaining) const;
     void start_crossfade(size_t old_sample_index, size_t old_source_channels);
@@ -91,6 +97,10 @@ private:
     double m_sample_rate{48000.0};
     size_t m_channels{2};
     size_t m_fade_length{1};
+
+    // sin(k / m_fade_length * pi/2) for k in [0, m_fade_length]. Sized in
+    // prepare(), so every index the fade counters produce is in range.
+    std::vector<float> m_fade_curve{0.0f, 1.0f};
 
     std::array<OutgoingHead, k_max_outgoing_heads> m_outgoing{};
     double m_play_head{0.0};
