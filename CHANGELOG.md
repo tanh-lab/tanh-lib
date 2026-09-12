@@ -7,6 +7,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `Net` component (`tanh::Net`, `TANH_BUILD_NET`, **off by default**) — delivery
+  of versioned file sets over HTTPS, for shipping model or sample packs that are
+  too large to bundle.
+  - `thl::net::HttpClient` — GET to a file or a string, `Range` resume, progress
+    with cancellation, and cancel from another thread. Backends are
+    platform-native (`NSURLSession` today) rather than a vendored TLS stack, so
+    certificate validation uses the OS trust store and there is no CA bundle to
+    ship or rotate inside a released plugin. Platforms without a backend report
+    `HttpStatus::Unsupported`; `HttpClient::supported()` lets a caller check once
+    rather than per transfer. Windows, Linux and Android backends are not
+    written yet.
+  - `thl::net::Sha256` — FIPS 180-4 in plain C++, streaming and whole-file, with
+    `matches_hex` that rejects malformed input rather than trusting it. Plain C++
+    rather than OS crypto so the component needs one platform matrix (HTTP) and
+    not two.
+  - `thl::net::AssetStore` — verified, atomic install of a caller-described file
+    set into `<root>/<id>/<version>/`. The completion marker is written last, so
+    a directory without it is a partial install that `is_installed()` refuses and
+    `prune_partial()` clears. Ids, versions and file names from a server are
+    validated against path traversal. A failed install resumes without
+    re-fetching files that already verify.
+  - The component knows nothing about manifests, models or packs: the caller
+    supplies `{id, version, files:[{url, name, size, sha256}]}`.
+  - Off by default so nothing embedding `tanh::Core` inherits a network stack.
+
+  Tested against a loopback HTTP server rather than a live endpoint — the
+  failures worth covering (a well-formed response carrying wrong bytes, a
+  declared length that is never delivered, a server ignoring `Range`,
+  cancellation mid-transfer) cannot be produced on demand against a real bucket.
+  One `DISABLED_` test fetches over real TLS when run with
+  `--gtest_also_run_disabled_tests`.
+
 ### Fixed
 
 - `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.

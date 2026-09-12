@@ -42,6 +42,13 @@ option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
+# Off by default: this is the only component that links a network stack, and
+# consumers embedding tanh::Core (anira) must not inherit it implicitly.
+option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
+# Use the libcurl backend even on Apple. The only way to exercise the
+# non-Apple transport from a Mac, which is otherwise reachable only by
+# pushing to CI.
+option(TANH_NET_FORCE_CURL "Net: use the libcurl backend even on Apple" OFF)
 
 # ==============================================================================
 # Get project version
@@ -505,6 +512,85 @@ if(TANH_BUILD_AUDIO_IO)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
 endif()
 
+if(TANH_BUILD_NET)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Net component requires Core component")
+    endif()
+
+    add_library(${PROJECT_NAME}_net
+        src/net/Sha256.cpp
+        src/net/AssetStore.cpp
+        src/net/HttpClient.cpp
+    )
+
+    # HTTPS comes from the platform, never from a vendored TLS stack: validation
+    # uses the OS trust store, so there is no CA bundle to ship or rotate inside
+    # a released plugin. Each platform is named explicitly — a catch-all would
+    # quietly link whatever libcurl happened to be installed on a platform that
+    # has its own API, which is the opposite of the intent.
+    if(NOT TANH_NET_FORCE_CURL AND (TANH_OPERATING_SYSTEM STREQUAL "macOS"
+                                    OR TANH_OPERATING_SYSTEM STREQUAL "iOS"))
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_apple.mm)
+        # ARC for this file only. Without it the backend is manual reference
+        # counting and leaks the delegate, the operation queue and the semaphore
+        # on every request — seven of each for one pack install. The rest of the
+        # library has no Objective-C that allocates, so this stays local.
+        set_source_files_properties(src/net/HttpClient_apple.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        target_link_libraries(${PROJECT_NAME}_net PRIVATE "-framework Foundation" "-lobjc")
+
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Linux" OR TANH_NET_FORCE_CURL)
+        # libcurl is the system HTTP library on Linux and validates against the
+        # system trust store, so it is the platform-native answer there in the
+        # same sense NSURLSession is on Apple — Linux has no other OS-level HTTP
+        # API. This is also what gives CI teeth: the sanitizer and Linux test
+        # legs run here, and without a real backend every transport and store
+        # test skips, so ASan/TSan/LSan/RTSan never see this component.
+        find_package(CURL REQUIRED)
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_curl.cpp)
+        target_link_libraries(${PROJECT_NAME}_net PRIVATE CURL::libcurl)
+
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Windows")
+        # WinHTTP is the OS API: system proxy configuration and the system
+        # certificate store, no vendored TLS. Deliberately not libcurl — on
+        # Windows curl is not a system library, so it would arrive with its own
+        # TLS stack and a CA bundle to maintain.
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_windows.cpp)
+        target_link_libraries(${PROJECT_NAME}_net PRIVATE winhttp)
+
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Android")
+        # The NDK ships no HTTP client and no libcurl, so the backend goes
+        # through java.net.HttpURLConnection over JNI. That needs the process's
+        # JavaVM: thl::net::set_android_java_vm() must be called during startup,
+        # and until it is, supported() is false and requests report Unsupported.
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_android.cpp)
+
+    else()
+        # Anything else (wasm, unknown): the component still builds and every
+        # request reports HttpStatus::Unsupported, which HttpClient::supported()
+        # lets a caller check once rather than discover per transfer.
+        target_sources(${PROJECT_NAME}_net PRIVATE src/net/HttpClient_unsupported.cpp)
+    endif()
+
+    set_target_properties(${PROJECT_NAME}_net PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Net ALIAS ${PROJECT_NAME}_net)
+
+    target_include_directories(${PROJECT_NAME}_net
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_net PUBLIC ${PROJECT_NAME}_core)
+
+    target_compile_definitions(${PROJECT_NAME}_net PUBLIC -DTANH_NET_ENABLED)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_net)
+endif()
+
 # ==============================================================================
 # Symbol policy and common settings of every component (cmake/tanh/symbol-policy.cmake)
 # ==============================================================================
@@ -564,7 +650,8 @@ foreach(_pair
         "${PROJECT_NAME}_dsp=DSP"
         "${PROJECT_NAME}_resonator=Resonator"
         "${PROJECT_NAME}_modulation=Modulation"
-        "${PROJECT_NAME}_audio_io=AudioIO")
+        "${PROJECT_NAME}_audio_io=AudioIO"
+        "${PROJECT_NAME}_net=Net")
     string(REPLACE "=" ";" _pair "${_pair}")
     list(GET _pair 0 _target)
     list(GET _pair 1 _export_name)
@@ -614,6 +701,9 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_AUDIO_IO)
         add_subdirectory(test/audio-io)
     endif()
+    if (TANH_BUILD_NET)
+        add_subdirectory(test/net)
+    endif()
 
     # The export-table invariant, on the desktop formats where it can be inspected.
     if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
@@ -626,7 +716,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_state test_dsp test_modulation test_audio_io benchmark_state benchmark_modulation benchmark_dsp)
+    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net benchmark_state benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()

@@ -14,7 +14,8 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++"
+                "CMAKE_CXX_COMPILER": "clang++",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -25,7 +26,8 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++"
+                "CMAKE_CXX_COMPILER": "clang++",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -37,7 +39,8 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
-                "CMAKE_OSX_ARCHITECTURES": "x86_64"
+                "CMAKE_OSX_ARCHITECTURES": "x86_64",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -49,18 +52,25 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
-                "CMAKE_OSX_ARCHITECTURES": "x86_64"
+                "CMAKE_OSX_ARCHITECTURES": "x86_64",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
             "name": "windows-debug",
             "displayName": "Windows Debug",
-            "binaryDir": "${sourceDir}/build/windows"
+            "binaryDir": "${sourceDir}/build/windows",
+            "cacheVariables": {
+                "TANH_BUILD_NET": "ON"
+            }
         },
         {
             "name": "windows-release",
             "displayName": "Windows Release",
-            "binaryDir": "${sourceDir}/build/windows"
+            "binaryDir": "${sourceDir}/build/windows",
+            "cacheVariables": {
+                "TANH_BUILD_NET": "ON"
+            }
         },
         {
             "name": "windows-arm64-debug",
@@ -71,7 +81,8 @@
                 "strategy": "set"
             },
             "cacheVariables": {
-                "TANH_WITH_TESTS": "OFF"
+                "TANH_WITH_TESTS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -85,7 +96,8 @@
                 "ANDROID_ABI": "arm64-v8a",
                 "ANDROID_PLATFORM": "android-24",
                 "BUILD_SHARED_LIBS": "OFF",
-                "TANH_WITH_TESTS": "OFF"
+                "TANH_WITH_TESTS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -99,7 +111,8 @@
                 "ANDROID_ABI": "arm64-v8a",
                 "ANDROID_PLATFORM": "android-24",
                 "BUILD_SHARED_LIBS": "OFF",
-                "TANH_WITH_TESTS": "OFF"
+                "TANH_WITH_TESTS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -112,7 +125,8 @@
                 "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
                 "ANDROID_ABI": "x86_64",
                 "ANDROID_PLATFORM": "android-24",
-                "BUILD_SHARED_LIBS": "OFF"
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -121,7 +135,8 @@
             "inherits": "desktop-debug",
             "cacheVariables": {
                 "TANH_WITH_ASAN": "ON",
-                "TANH_WITH_USAN": "ON"
+                "TANH_WITH_USAN": "ON",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -129,7 +144,8 @@
             "displayName": "Desktop Debug + TSan",
             "inherits": "desktop-debug",
             "cacheVariables": {
-                "TANH_WITH_TSAN": "ON"
+                "TANH_WITH_TSAN": "ON",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -137,7 +153,8 @@
             "displayName": "Desktop Debug + MSan",
             "inherits": "desktop-debug",
             "cacheVariables": {
-                "TANH_WITH_MSAN": "ON"
+                "TANH_WITH_MSAN": "ON",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -145,7 +162,8 @@
             "displayName": "Desktop Debug + LSan",
             "inherits": "desktop-debug",
             "cacheVariables": {
-                "TANH_WITH_LSAN": "ON"
+                "TANH_WITH_LSAN": "ON",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -153,7 +171,8 @@
             "displayName": "Desktop Debug + RTSan",
             "inherits": "desktop-debug",
             "cacheVariables": {
-                "TANH_WITH_RTSAN": "ON"
+                "TANH_WITH_RTSAN": "ON",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -165,7 +184,8 @@
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "SIMULATOR",
-                "BUILD_SHARED_LIBS": "OFF"
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -177,7 +197,8 @@
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "SIMULATOR",
-                "BUILD_SHARED_LIBS": "OFF"
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -189,7 +210,8 @@
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "DEVICE",
-                "BUILD_SHARED_LIBS": "OFF"
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -201,7 +223,8 @@
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/tanh/ios.toolchain.cmake",
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "DEVICE",
-                "BUILD_SHARED_LIBS": "OFF"
+                "BUILD_SHARED_LIBS": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -221,7 +244,8 @@
                 "TANH_WITH_TESTS": "OFF",
                 "TANH_WITH_EXAMPLES": "OFF",
                 "TANH_WITH_DOCS": "OFF",
-                "TANH_WITH_INSTALL": "OFF"
+                "TANH_WITH_INSTALL": "OFF",
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
@@ -234,7 +258,8 @@
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
                 "CMAKE_C_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
-                "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping"
+                "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
+                "TANH_BUILD_NET": "ON"
             },
             "description": "Instrumented clang source-based coverage build for the CI coverage leg."
         }

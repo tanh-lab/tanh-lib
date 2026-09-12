@@ -81,19 +81,33 @@ TEST(Thread, IsRunningClearsWhenBodyReturns) {
 }
 
 // A priority is a request: whatever the platform grants, the thread must run.
+//
+// The body is waited for with join(), not with a deadline. A deadline asserts
+// scheduling latency, which is neither the contract nor ours to promise:
+// Background is QOS_CLASS_BACKGROUND on Apple and SCHED_IDLE on Linux, both of
+// which a loaded machine may hold off for seconds. The iOS simulator on a shared
+// CI runner is that machine — this failed there at the 5 s mark while passing
+// locally in 56 ms. join() waits exactly as long as the platform takes; if a
+// platform never runs the body at all, ctest's timeout is what says so.
 TEST(Thread, EveryPriorityRunsTheBody) {
-    for (const auto priority : {ThreadPriority::Background,
-                                ThreadPriority::Low,
-                                ThreadPriority::Normal,
-                                ThreadPriority::High,
-                                ThreadPriority::RealTime}) {
+    struct Case {
+        ThreadPriority m_priority;
+        const char* m_name;
+    };
+    for (const auto& [priority, name] : {Case{ThreadPriority::Background, "Background"},
+                                         Case{ThreadPriority::Low, "Low"},
+                                         Case{ThreadPriority::Normal, "Normal"},
+                                         Case{ThreadPriority::High, "High"},
+                                         Case{ThreadPriority::RealTime, "RealTime"}}) {
+        SCOPED_TRACE(name);  // the old failure never said which priority it was
         std::atomic<bool> ran{false};
         Thread thread;
         ThreadOptions options;
         options.m_priority = priority;
         options.m_name = "thl-test";
         ASSERT_TRUE(thread.start(options, [&](const Thread&) { ran = true; }));
-        EXPECT_TRUE(wait_until(ran));
+        thread.join();
+        EXPECT_TRUE(ran.load());
     }
 }
 
