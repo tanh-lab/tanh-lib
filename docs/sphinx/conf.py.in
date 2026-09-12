@@ -1,0 +1,87 @@
+# Sphinx configuration for tanh-lib, configured by docs/CMakeLists.txt.
+# https://www.sphinx-doc.org/en/master/usage/configuration.html
+
+# -- Project information -----------------------------------------------------
+
+project = 'tanh-lib'
+version = '@PROJECT_VERSION_SHORT@'
+release = '@PROJECT_VERSION_FULL@'
+copyright = '2026, tanh-lab'
+author = 'tanh-lab'
+
+# -- General configuration ---------------------------------------------------
+
+extensions = [
+    'breathe',
+    'myst_parser',
+    'sphinx.ext.graphviz',
+    'sphinx.ext.intersphinx',
+]
+
+# Breathe: the Doxygen XML produced by the doxygen-docs target.
+breathe_projects = {'tanh-lib': '@CMAKE_CURRENT_BINARY_DIR@/doxygen/xml'}
+breathe_default_project = 'tanh-lib'
+breathe_default_members = ('members', 'protected-members', 'undoc-members')
+breathe_domain_by_extension = {'h': 'cpp', 'hpp': 'cpp'}
+breathe_show_include = True
+
+# Every symbol lives in thl::, so drop that prefix from the index.
+cpp_index_common_prefix = ['thl::', 'thl::core::', 'thl::dsp::', 'thl::modulation::',
+                           'thl::audio_io::', 'thl::net::']
+
+# MyST: the narrative pages pull sections straight out of README.md and
+# CHANGELOG.md, so the Markdown they use has to render here as well.
+myst_enable_extensions = ['colon_fence', 'deflist', 'tasklist']
+myst_heading_anchors = 3
+
+# The README links to the license files by repository-relative path; those
+# targets do not exist inside the rendered docs.
+suppress_warnings = ['myst.xref_missing', 'myst.header']
+
+graphviz_output_format = 'svg'
+
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'venv']
+
+# -- Options for HTML output -------------------------------------------------
+
+html_theme = 'shibuya'
+html_title = 'tanh-lib'
+html_static_path = ['@SPHINX_SOURCE_DIR@/_static']
+html_css_files = ['custom.css']
+
+html_theme_options = {
+    'github_url': 'https://github.com/tanh-lab/tanh-lib',
+    'nav_links': [
+        {
+            'title': 'Getting Started',
+            'url': 'getting_started',
+            'summary': 'Build, consume and test tanh-lib',
+        },
+        {
+            'title': 'Components',
+            'url': 'components',
+            'summary': 'Core, State, DSP, Modulation and AudioIO',
+        },
+        {
+            'title': 'Real-Time Safety',
+            'url': 'realtime_safety',
+            'summary': 'The rules the audio thread relies on',
+        },
+        {
+            'title': 'API Reference',
+            'url': 'api/index',
+            'children': [
+                {
+                    'title': 'Class List',
+                    'url': 'api/classlist',
+                    'summary': 'Every class in the public headers',
+                },
+                {
+                    'title': 'Struct List',
+                    'url': 'api/structlist',
+                    'summary': 'Every struct in the public headers',
+                },
+            ],
+        },
+    ],
+}

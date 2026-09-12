@@ -1,0 +1,68 @@
+name: build_docs_and_deploy
+
+# Documentation: Doxygen -> Breathe -> Sphinx (docs/CMakeLists.txt), the same
+# pipeline as anira. Builds on every push to main and deploys the HTML to
+# GitHub Pages (Settings -> Pages -> Source: "GitHub Actions"). Queue-gated:
+# pull requests report only the instant result stub; the merge queue runs the
+# build (no deploy).
+
+on:
+  merge_group:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: build_docs-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_docs:
+    name: docs
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git-version.cmake reads the nearest tag
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.12
+      - name: doxygen and graphviz
+        run: sudo apt-get install -y doxygen graphviz
+      - uses: tanh-lab/ci-actions/cmake-build@v0.3.12
+        with:
+          BUILD_TYPE: Release
+          CMAKE_BUILD_ARGS: "-DTANH_WITH_DOCS=ON -DTANH_WITH_TESTS=OFF -DTANH_WITH_EXAMPLES=OFF -DTANH_WITH_INSTALL=OFF"
+          TARGETS: "sphinx-docs"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/docs/sphinx/html
+
+  deploy:
+    name: deploy
+    needs: build_docs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  result:
+    name: docs result
+    needs: build_docs
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: aggregate
+        run: |
+          [ "${{ github.event_name }}" = "pull_request" ] && { echo "stub: real run happens in the merge queue"; exit 0; }
+          [ "${{ needs.build_docs.result }}" = "success" ] || exit 1

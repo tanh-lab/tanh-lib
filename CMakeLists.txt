@@ -10,7 +10,7 @@ option(TANH_WITH_INSTALL "Add install targets" ON)
 option(TANH_WITH_PACKAGING "Add CPack packaging targets (top-level builds only)" OFF)
 option(TANH_WITH_TESTS "Add Build Tests" ON)
 option(TANH_WITH_EXAMPLES "Add Build Examples" ON)
-option(TANH_WITH_DOCS "Add Build Documentation" ON)
+option(TANH_WITH_DOCS "Add the sphinx-docs target (needs Doxygen, Python 3)" OFF)
 
 option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" OFF)
 option(TANH_WITH_ASAN "Enable AddressSanitizer (asan) checks" OFF)
@@ -727,7 +727,7 @@ if(TANH_WITH_EXAMPLES AND TANH_OPERATING_SYSTEM STREQUAL "iOS")
     add_subdirectory(examples/ios/audio-io)
 endif()
 
-
-# if (TANH_WITH_DOCS)
-#     add_subdirectory(docs)
-# endif()
+# Documentation: Doxygen -> Breathe -> Sphinx, target `sphinx-docs` (never in ALL).
+if(TANH_WITH_DOCS)
+    add_subdirectory(docs)
+endif()

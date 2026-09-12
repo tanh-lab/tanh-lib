@@ -24,7 +24,7 @@ namespace thl {
  * manager for asynchronous streaming and decoding, making the audio thread read
  * from pre-decoded buffers rather than performing blocking file I/O.
  *
- * @section lifecycle File Lifecycle
+ * @par File Lifecycle
  *
  * The typical usage pattern is:
  * 1. Construct an AudioPlayerSource
@@ -34,14 +34,14 @@ namespace thl {
  * 5. Call pause() or stop() to control playback
  * 6. Call unload_file() or let the destructor handle cleanup
  *
- * @section playback Playback Control
+ * @par Playback Control
  *
  * - play() - Starts or resumes playback from the current position
  * - pause() - Pauses playback, maintaining the current position
  * - stop() - Stops playback and resets to the beginning
  * - seek_to_frame() - Seeks to a specific frame position
  *
- * @section rt_safety Real-Time Safety
+ * @par Real-Time Safety
  *
  * - load_file(), unload_file(), and seek_to_frame() are NOT real-time safe.
  * - play(), pause(), and stop() use atomic operations and are safe to call
@@ -49,7 +49,7 @@ namespace thl {
  * - process() reads from pre-decoded buffers managed by the resource manager's
  *   background thread, making it suitable for real-time audio processing.
  *
- * @section finished_callback Finished Callback
+ * @par Finished Callback
  *
  * Use set_finished_callback() to be notified when playback reaches the end of
  * the file. The callback is invoked from the audio thread, so it must be
@@ -105,10 +105,10 @@ public:
      * will decode audio on a background thread, allowing the audio thread to
      * read from pre-decoded buffers.
      *
-     * @param filePath Path to the audio file to load.
-     * @param outputChannels Number of output channels (audio will be
+     * @param file_path Path to the audio file to load.
+     * @param output_channels Number of output channels (audio will be
      *                       converted if needed).
-     * @param outputSampleRate Output sample rate in Hz (audio will be
+     * @param output_sample_rate Output sample rate in Hz (audio will be
      *                         resampled if needed).
      *
      * @return true if the file was loaded successfully, false otherwise.
@@ -128,9 +128,9 @@ public:
      *
      * @param data            Pointer to the binary audio data.
      * @param size            Size of the data in bytes.
-     * @param outputChannels  Number of output channels (audio will be
+     * @param output_channels  Number of output channels (audio will be
      *                        converted if needed).
-     * @param outputSampleRate Output sample rate in Hz (audio will be
+     * @param output_sample_rate Output sample rate in Hz (audio will be
      *                         resampled if needed).
      *
      * @return true if the data was loaded successfully, false otherwise.
@@ -259,11 +259,11 @@ public:
      * When the end of file is reached, remaining samples are zeroed and the
      * finished callback is invoked.
      *
-     * @param outputBuffer Buffer to fill with decoded audio.
-     * @param inputBuffer Ignored - playback does not use input.
-     * @param frameCount Number of frames to read.
-     * @param numInputChannels Number of input channels (unused).
-     * @param numOutputChannels Number of output channels.
+     * @param output_buffer Buffer to fill with decoded audio.
+     * @param input_buffer Ignored - playback does not use input.
+     * @param frame_count Number of frames to read.
+     * @param num_input_channels Number of input channels (unused).
+     * @param num_output_channels Number of output channels.
      *
      * @note This method reads from pre-decoded buffers and is real-time safe.
      */

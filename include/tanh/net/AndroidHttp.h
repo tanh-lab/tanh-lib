@@ -14,7 +14,7 @@ namespace thl::net {
 /// Mirrors thl::set_android_java_vm in the AudioIO component: the two are
 /// independent, so a consumer using both calls both.
 ///
-/// No-op on every other platform, so callers need no #ifdef.
+/// No-op on every other platform, so callers need no `#ifdef`.
 TANH_API void set_android_java_vm(void* java_vm);
 
 }  // namespace thl::net

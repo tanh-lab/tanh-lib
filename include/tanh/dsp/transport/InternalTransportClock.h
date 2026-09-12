@@ -21,7 +21,7 @@ namespace thl::dsp::transport {
  * Drop-in replaceable with a future LinkTransportClock via the
  * TransportClock interface.
  *
- * @section rt_safety Real-Time Safety
+ * @par Real-Time Safety
  *   begin_block() and end_block() are real-time safe (no allocation, no locks).
  *   beat_at_sample() is real-time safe.
  *   All setters are lock-free.
