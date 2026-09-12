@@ -25,7 +25,10 @@
 @property(nonatomic, assign) const thl::net::HttpProgressFn* onProgress;
 @property(nonatomic, strong) NSError* failure;
 @property(nonatomic, strong) NSString* destinationPath;
-@property(nonatomic, assign) dispatch_semaphore_t done;
+// strong, not assign: under ARC a dispatch object is an Objective-C object,
+// so assign means __unsafe_unretained and the semaphore would be released the
+// moment it is created. Under manual counting assign merely leaked it.
+@property(nonatomic, strong) dispatch_semaphore_t done;
 @end
 
 @implementation TanhDownloadDelegate
