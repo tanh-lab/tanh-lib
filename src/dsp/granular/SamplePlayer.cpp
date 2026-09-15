@@ -40,6 +40,7 @@ void SamplePlayer::reset() {
     if (m_started) { m_viz.head_finished(); }
     m_started = false;
     m_restart = false;
+    m_finished = false;
     m_play_head = 0.0;
     m_fade_remaining = 0;
     for (auto& o : m_outgoing) { o.m_remaining = 0; }
@@ -72,10 +73,15 @@ bool SamplePlayer::render(const AudioBlock& block, const VoiceParams& params) {
 
     channel_mixer::Frame frame{};
     for (size_t i = 0; i < block.m_num_frames; ++i) {
-        read_live_frame(src, params, frame);
+        if (m_finished) {
+            // One-shot done: only the parked tail still sounds.
+            frame.fill(0.0f);
+        } else {
+            read_live_frame(src, params, frame);
+        }
         mix_outgoing_tails(src, params, frame);
         for (size_t ch = 0; ch < write_channels; ++ch) { block.m_channels[ch][i] = frame[ch]; }
-        advance_head(src, loop_point);
+        if (!m_finished) { advance_head(src, params, loop_point); }
     }
     m_total_frames = src.m_frames;
     m_region = src.m_region;
@@ -84,7 +90,10 @@ bool SamplePlayer::render(const AudioBlock& block, const VoiceParams& params) {
 
 void SamplePlayer::report_visualization() const {
     if (!m_started || m_total_frames == 0) { return; }
-    m_viz.head_updated(static_cast<float>(m_region.physical(m_play_head)) /
+    // A finished one-shot parks the head on End; keep the report inside the
+    // region (physical() of a position past End would leave [0, 1]).
+    double const head = std::min(m_play_head, static_cast<double>(m_region.m_end) - 1.0);
+    m_viz.head_updated(static_cast<float>(m_region.physical(std::max(head, 0.0))) /
                        static_cast<float>(m_total_frames));
 }
 
@@ -96,10 +105,14 @@ bool SamplePlayer::resolve_source(const VoiceParams& params, Source& out) const 
     out.m_frames = m_reader.num_frames(out.m_bank);
     out.m_channels = m_reader.num_channels(out.m_bank);
     if (out.m_frames == 0) { return false; }
-    out.m_region = SampleRegion::from_normalized(params.m_sample_start,
-                                                 params.m_sample_end,
-                                                 params.m_sample_loop_point,
-                                                 out.m_frames);
+    out.m_region = params.m_slicer ? SampleRegion::from_slices(params.m_sample_start,
+                                                               params.m_sample_end,
+                                                               params.m_slices,
+                                                               out.m_frames)
+                                   : SampleRegion::from_normalized(params.m_sample_start,
+                                                                   params.m_sample_end,
+                                                                   params.m_sample_loop_point,
+                                                                   out.m_frames);
     if (out.m_region.size() == 0) { return false; }
     // Velocity is the head's own rate here (varispeed). Modulation may push
     // it past the range; keep it forward and finite.
@@ -128,9 +141,18 @@ void SamplePlayer::begin_or_switch(const Source& src) {
     }
     if (m_restart) {
         // Retrigger while sounding: fade the old position out, restart at
-        // the region start underneath it.
+        // the region start underneath it. A finished one-shot has already
+        // parked its tail; the live head just comes back.
         m_restart = false;
-        start_crossfade(src.m_bank, src.m_channels);
+        if (m_finished) {
+            // The live head was silent, so there is nothing to park — but
+            // the ADSR may still be in its release, so it fades in rather
+            // than stepping to level x sample.
+            m_fade_remaining = m_fade_length;
+        } else {
+            start_crossfade(src.m_bank, src.m_channels);
+        }
+        m_finished = false;
         m_play_head = static_cast<double>(src.m_region.m_start);
     }
 }
@@ -194,10 +216,17 @@ void SamplePlayer::mix_outgoing_tails(const Source& src,
     }
 }
 
-void SamplePlayer::advance_head(const Source& src, double loop_point) {
+void SamplePlayer::advance_head(const Source& src, const VoiceParams& params, double loop_point) {
     m_play_head += src.m_velocity;
     auto const region_end = static_cast<double>(src.m_region.m_end);
     if (m_play_head < region_end) { return; }
+    if (!params.m_loop) {
+        // One-shot: park the live head so it rides out the crossfade past
+        // End instead of hard-cutting, then fall silent.
+        start_crossfade(src.m_bank, src.m_channels);
+        m_finished = true;
+        return;
+    }
     // Loop wrap: the outgoing head rides out the crossfade (clamped to the
     // sample's last frame by read_clamped) while the live one restarts at
     // Loop, carrying the fractional overshoot so the seam is phase-exact.
