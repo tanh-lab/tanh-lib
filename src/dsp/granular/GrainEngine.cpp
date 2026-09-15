@@ -35,6 +35,15 @@ HeadPolicy& GrainEngine::head_for(EngineMode mode) {
                                                 : static_cast<HeadPolicy&>(m_loop_head);
 }
 
+const HeadPolicy& GrainEngine::head_for(EngineMode mode) const {
+    return mode == EngineMode::GranularPosition ? static_cast<const HeadPolicy&>(m_position_head)
+                                                : static_cast<const HeadPolicy&>(m_loop_head);
+}
+
+bool GrainEngine::any_grain_active() const {
+    return std::any_of(m_grains.begin(), m_grains.end(), [](const Grain& g) { return g.m_active; });
+}
+
 void GrainEngine::reset_schedule(EngineMode mode) {
     m_next_grain_time = 0;
     head_for(mode).reset();
@@ -230,7 +239,7 @@ void GrainEngine::trigger_grain(const Bank& bank,
         apply_temperature_ramp(params.m_temperature_position, playback_elapsed_samples);
     FramePos const start =
         head.pick_start(region, temperature, m_min_grain_interval, params, m_random_generator);
-    if (start < 0) { return; }  // the head declined (one-shot scan is over)
+    if (start == k_no_grain) { return; }  // the one-shot scan is over
 
     size_t const covered = fit_to_region(start, region, velocity, grain_size);
     if (covered == 0) { return; }

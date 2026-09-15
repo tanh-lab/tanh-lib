@@ -10,6 +10,9 @@
 
 namespace thl::dsp::granular {
 
+// pick_start's "trigger nothing" answer (a one-shot scan that is over).
+inline constexpr FramePos k_no_grain = -1;
+
 // One draw in [0, 1).
 inline float unit_random(std::mt19937& rng) {
     return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng);
@@ -94,7 +97,7 @@ public:
         if (start >= max_position) {
             if (!params.m_loop) {
                 m_finished = true;
-                return FramePos{-1};
+                return k_no_grain;
             }
             start = loop;
         }
@@ -203,8 +206,11 @@ private:
                               static_cast<double>(temperature) * n;
         v = wrap_into(v + jitter, window_lo, window_hi);
         v = wrap_into(v, 0.0, n);  // past the last slice -> the first
-        auto const frame = static_cast<FramePos>(static_cast<double>(p.m_slices.step_to_norm(v)) *
-                                                 static_cast<double>(max_frames(region) - 1));
+        // Same rounding as SliceMap::boundary_frame, so Spray 0 lands on the
+        // very frame Sample / Loop mode's region starts on.
+        auto const frame =
+            static_cast<FramePos>(std::llround(static_cast<double>(p.m_slices.step_to_norm(v)) *
+                                               static_cast<double>(max_frames(region))));
         return std::clamp(frame, FramePos{0}, max_frames(region) - 1) +
                static_cast<FramePos>(region.m_start);
     }

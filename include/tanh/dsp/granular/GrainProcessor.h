@@ -102,7 +102,8 @@ private:
 
     // The host's slice map for this voice's engine, copied once per block
     // when SlicerEnabled is set. Return false (the default) for no map:
-    // slicing is then off whatever the flag says.
+    // slicing is then off whatever the flag says. Called on the audio
+    // thread: no locks, no allocation — a seqlock / atomic copy, nothing more.
     virtual bool read_slice_map(SliceMap& /*out*/) { return false; }
 
     // process() in order:

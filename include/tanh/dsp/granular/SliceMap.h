@@ -35,8 +35,10 @@ struct SliceMap {
         return true;
     }
 
-    // Position: the slice a step value picks.
+    // Position: the slice a step value picks. An empty map (or a NaN) picks
+    // slice 0 rather than reaching undefined behaviour in the clamp.
     int slice_of_step(float u) const {
+        if (m_count <= 0 || !std::isfinite(u)) { return 0; }
         auto const n = static_cast<float>(m_count);
         int const k = static_cast<int>(std::floor(std::clamp(u, 0.0f, 1.0f) * n));
         return std::clamp(k, 0, m_count - 1);
@@ -44,6 +46,7 @@ struct SliceMap {
 
     // Start / End: the boundary a step value picks (0..N).
     int boundary_of_step(float u) const {
+        if (m_count <= 0 || !std::isfinite(u)) { return 0; }
         auto const n = static_cast<float>(m_count);
         int const k = static_cast<int>(std::lround(std::clamp(u, 0.0f, 1.0f) * n));
         return std::clamp(k, 0, m_count);
@@ -52,6 +55,7 @@ struct SliceMap {
     // Slice-space position v in [0, N] -> sample fraction, piecewise linear
     // through the boundaries (v = 2.5 is the middle of slice 3 in time).
     float step_to_norm(double v) const {
+        if (m_count <= 0 || !std::isfinite(v)) { return 0.0f; }
         auto const n = static_cast<double>(m_count);
         v = std::clamp(v, 0.0, n);
         int k = static_cast<int>(std::floor(v));

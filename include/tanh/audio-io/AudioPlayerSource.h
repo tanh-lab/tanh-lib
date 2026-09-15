@@ -223,8 +223,9 @@ public:
     /**
      * @brief Stops playback at `frame` (exclusive) with the short fade-out,
      * then invokes the finished callback — a sample-accurate end for a
-     * preview that must not bleed into what follows. 0 disables it; a new
-     * load_file / unload_file also clears it.
+     * preview that must not bleed into what follows. 0 disables it; reaching
+     * it, a new load (file or memory) and unload_file clear it. The fade is
+     * whole whatever the block size (it ramps by distance to the frame).
      *
      * @note Thread-safe — uses atomic operations. The stop happens on the
      *       audio thread in the block that reaches the frame.

@@ -40,11 +40,14 @@ public:
     // Silence every grain, telling the visualisation.
     void deactivate_all();
 
-    // One-shot: the mode's head reached End with Loop off and no grain is
-    // triggered any more (sounding ones finish). reset_schedule clears it.
+    // One-shot: the mode's head reached End with Loop off, nothing triggers
+    // any more, and the grains that were sounding have all ended — only then
+    // may the voice release, or the last grain would be cut by the ADSR.
+    // reset_schedule clears it.
     bool finished(EngineMode mode) const {
-        return mode != EngineMode::GranularPosition && m_loop_head.finished();
+        return head_for(mode).finished() && !any_grain_active();
     }
+    bool any_grain_active() const;
 
     // Render one block. `playback_elapsed_samples` (since note-on) drives the
     // temperature ramp.
@@ -62,6 +65,7 @@ private:
     };
 
     HeadPolicy& head_for(EngineMode mode);
+    const HeadPolicy& head_for(EngineMode mode) const;
 
     // render() in order: update_trigger_rate, select_bank (+ retrigger on a
     // bank change), region from the head, then per frame trigger_due_grain +

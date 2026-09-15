@@ -584,6 +584,9 @@ public:
     SliceMap m_map{};
     void set_mode(EngineMode mode) { m_i[EngineModeParam] = static_cast<int>(mode); }
     void set_sample_start(float v) { m_f[SampleStart] = v; }
+    void set_density(float v) { m_f[Density] = v; }
+    void set_size(float v) { m_f[Size] = v; }
+    void set_window_shape(float v) { m_f[GrainWindowShape] = v; }
     void set_sample_end(float v) { m_f[SampleEnd] = v; }
     void set_release(float v) { m_f[EnvelopeRelease] = v; }
     bool read_slice_map(SliceMap& out) override {
@@ -876,7 +879,8 @@ TEST(Granular, PositionSprayHeadSliceSprayZeroStartsOnSliceStart) {
     params.m_position = 0.4f;  // slice 3 (0-based 2) starts at 0.29
     params.m_spray = 0.0f;
     auto const region = SampleRegion::full(100000);
-    auto const expected = static_cast<FramePos>(0.29f * static_cast<float>(100000 - 1));
+    // The very frame Sample / Loop mode's region would start on.
+    auto const expected = static_cast<FramePos>(params.m_slices.boundary_frame(2, 100000));
     for (int i = 0; i < 50; ++i) {
         EXPECT_EQ(head.pick_start(region, 0.0f, 0, params, rng), expected);
     }
@@ -997,13 +1001,68 @@ TEST(Granular, SamplePlayerOneShotStopsAtEndWithTailFade) {
     for (size_t k = k_fade; k < 1200; ++k) {
         ASSERT_NEAR(rig.m_out[4800 + k], 0.0f, 1e-5f) << "k=" << k;
     }
-    // note_on brings the head back from the region start.
+    // note_on brings the head back from the region start, fading in (the
+    // ADSR may still be releasing) with nothing to park.
     rig.m_player.note_on();
     rig.render(k_block);
     EXPECT_FALSE(rig.m_player.finished());
     for (size_t n = 8; n < k_block; ++n) {
-        ASSERT_NEAR(rig.m_out[6016 + n], static_cast<float>(n), 0.5f) << "n=" << n;
+        ASSERT_NEAR(rig.m_out[6016 + n], static_cast<float>(n) * gain_in(n), 0.5f) << "n=" << n;
     }
+}
+
+TEST(Granular, VoicePositionModeIgnoresLoopOff) {
+    // Position mode has no travelling head: Loop off changes nothing and
+    // grains keep coming for as long as the gate is held.
+    thl::dsp::audio::AudioDataStore store;
+    load(store, [] {
+        std::vector<thl::core::BufferF> b;
+        b.push_back(make_ramp(1, 96000));
+        return b;
+    }());
+    StubVoice voice(store);
+    voice.set_mode(EngineMode::GranularPosition);
+    voice.m_loop = false;
+    voice.prepare(k_sample_rate, k_block, 2);
+    voice.m_playing = true;
+    auto const out = voice.run(48000);
+    EXPECT_TRUE(voice.is_active());
+    float last_energy = 0.0f;
+    for (size_t n = 48000 - 4800; n < 48000; ++n) { last_energy += std::abs(out[n]); }
+    EXPECT_GT(last_energy, 0.0f);
+}
+
+TEST(Granular, VoiceLoopOneShotReleasesOnlyAfterTheLastGrainEnds) {
+    // GranularLoop, Loop off, region [0, 4800), 480-frame trigger interval,
+    // rectangle window. The last grain starts at 4320 and is fitted to End,
+    // so it sounds until output frame 4800; the release must not start
+    // before that, or the last grain is cut.
+    thl::dsp::audio::AudioDataStore store;
+    load(store, [] {
+        std::vector<thl::core::BufferF> b;
+        b.push_back(make_ramp(1, 96000));
+        return b;
+    }());
+    StubVoice voice(store);
+    voice.set_mode(EngineMode::GranularLoop);
+    voice.set_sample_end(0.05f);   // 4800 frames
+    voice.set_release(0.001f);     // ~48 frames
+    voice.set_density(1.0f);       // 480-frame interval
+    voice.set_size(1.0f);          // 400 ms grains, truncated to the region
+    voice.set_window_shape(0.0f);  // rectangle: output == source
+    voice.m_loop = false;
+    voice.prepare(k_sample_rate, k_block, 2);
+    voice.m_playing = true;
+    auto const out = voice.run(9600);
+    // Still sounding well after the last trigger (frame 4320) — a release
+    // started there would have gone silent by ~4400. Every grain alive reads
+    // the same source frame (10 overlap at this density), so the output is at
+    // least one grain's worth; the window's edge ends them just before End.
+    ASSERT_GE(out[4600], 4600.0f * 0.95f);
+    ASSERT_GE(out[4700], 4700.0f * 0.95f);
+    // Silent after the last grain ended and the release ran out.
+    for (size_t n = 5200; n < 9600; ++n) { ASSERT_NEAR(out[n], 0.0f, 1e-3f) << "n=" << n; }
+    EXPECT_FALSE(voice.is_active());
 }
 
 TEST(Granular, GrainEngineLoopOneShotStopsTriggeringAtEnd) {

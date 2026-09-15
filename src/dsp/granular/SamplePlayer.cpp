@@ -90,7 +90,10 @@ bool SamplePlayer::render(const AudioBlock& block, const VoiceParams& params) {
 
 void SamplePlayer::report_visualization() const {
     if (!m_started || m_total_frames == 0) { return; }
-    m_viz.head_updated(static_cast<float>(m_region.physical(m_play_head)) /
+    // A finished one-shot parks the head on End; keep the report inside the
+    // region (physical() of a position past End would leave [0, 1]).
+    double const head = std::min(m_play_head, static_cast<double>(m_region.m_end) - 1.0);
+    m_viz.head_updated(static_cast<float>(m_region.physical(std::max(head, 0.0))) /
                        static_cast<float>(m_total_frames));
 }
 
@@ -142,7 +145,10 @@ void SamplePlayer::begin_or_switch(const Source& src) {
         // parked its tail; the live head just comes back.
         m_restart = false;
         if (m_finished) {
-            m_fade_remaining = 0;  // the live head was silent: come back cold
+            // The live head was silent, so there is nothing to park — but
+            // the ADSR may still be in its release, so it fades in rather
+            // than stepping to level x sample.
+            m_fade_remaining = m_fade_length;
         } else {
             start_crossfade(src.m_bank, src.m_channels);
         }
