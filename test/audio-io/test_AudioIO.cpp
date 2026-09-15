@@ -948,6 +948,58 @@ TEST(AudioPlayerSource, ProcessRejectsOutputChannelMismatch) {
     std::filesystem::remove(test_file);
 }
 
+TEST(AudioPlayerSource, StopFrameEndsPlaybackWithFadeAndFinishedCallback) {
+    // A DC file of 1024 frames; a stop frame at 600 must play 600 frames,
+    // fade the last 64 of them, silence the rest, and fire the callback.
+    std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+    std::filesystem::path test_file = temp_dir / "test_player_stop_frame.wav";
+
+    constexpr size_t k_frame_count = 1024;
+    constexpr size_t k_num_channels = 1;
+    constexpr size_t k_sample_rate = 48000;
+    constexpr uint64_t k_stop = 600;
+    constexpr uint32_t k_fade = 64;
+
+    std::array<float, k_frame_count> original_data{};
+    original_data.fill(0.5f);
+    {
+        AudioFileSink sink;
+        ASSERT_TRUE(sink.open_file(test_file.string(), k_num_channels, k_sample_rate));
+        sink.start_recording();
+        std::array<float, k_frame_count> output{};
+        sink.process(output.data(), original_data.data(), k_frame_count, k_num_channels, 0);
+        sink.close_file();
+    }
+
+    AudioPlayerSource player;
+    ASSERT_TRUE(player.load_file(test_file.string(), k_num_channels, k_sample_rate));
+    player.set_fade_enabled(false);
+    int finished = 0;
+    player.set_finished_callback([&finished]() { ++finished; });
+    player.set_stop_frame(k_stop);
+    player.play();
+
+    std::array<float, k_frame_count> played{};
+    std::array<float, k_frame_count> input{};
+    player.process(played.data(), input.data(), k_frame_count, 0, k_num_channels);
+
+    for (size_t i = 0; i < k_stop - k_fade; ++i) { ASSERT_FLOAT_EQ(played[i], 0.5f) << i; }
+    // Fade: strictly decreasing to 0 at the last kept frame.
+    for (size_t i = k_stop - k_fade; i + 1 < k_stop; ++i) {
+        ASSERT_GT(played[i], played[i + 1]) << i;
+    }
+    ASSERT_FLOAT_EQ(played[k_stop - 1], 0.0f);
+    for (size_t i = k_stop; i < k_frame_count; ++i) { ASSERT_FLOAT_EQ(played[i], 0.0f) << i; }
+    EXPECT_FALSE(player.is_playing());
+    EXPECT_EQ(finished, 1);
+
+    // A reload clears the stop frame.
+    ASSERT_TRUE(player.load_file(test_file.string(), k_num_channels, k_sample_rate));
+    EXPECT_EQ(player.get_stop_frame(), 0u);
+    player.unload_file();
+    std::filesystem::remove(test_file);
+}
+
 // Integration test: record and play back
 TEST(AudioFileIntegration, RecordAndPlayback) {
     std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
