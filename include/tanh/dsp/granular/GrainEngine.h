@@ -40,6 +40,12 @@ public:
     // Silence every grain, telling the visualisation.
     void deactivate_all();
 
+    // One-shot: the mode's head reached End with Loop off and no grain is
+    // triggered any more (sounding ones finish). reset_schedule clears it.
+    bool finished(EngineMode mode) const {
+        return mode != EngineMode::GranularPosition && m_loop_head.finished();
+    }
+
     // Render one block. `playback_elapsed_samples` (since note-on) drives the
     // temperature ramp.
     void render(const AudioBlock& block,

@@ -17,6 +17,7 @@
 #include <tanh/dsp/granular/SamplePlayer.h>
 #include <tanh/dsp/granular/SampleReader.h>
 #include <tanh/dsp/granular/SampleRegion.h>
+#include <tanh/dsp/granular/SliceMap.h>
 #include <tanh/dsp/granular/VoiceParams.h>
 
 #include <algorithm>
@@ -577,7 +578,19 @@ public:
         m_i[EngineModeParam] = static_cast<int>(EngineMode::GranularLoop);
     }
     bool m_playing{false};
+    bool m_loop{true};
+    bool m_slicer{false};
+    bool m_has_map{false};
+    SliceMap m_map{};
     void set_mode(EngineMode mode) { m_i[EngineModeParam] = static_cast<int>(mode); }
+    void set_sample_start(float v) { m_f[SampleStart] = v; }
+    void set_sample_end(float v) { m_f[SampleEnd] = v; }
+    void set_release(float v) { m_f[EnvelopeRelease] = v; }
+    bool read_slice_map(SliceMap& out) override {
+        if (!m_has_map) { return false; }
+        out = m_map;
+        return true;
+    }
 
     std::vector<float> run(size_t frames) {
         std::vector<float> out;
@@ -595,7 +608,11 @@ private:
     std::array<float, NumParameters> m_f{};
     std::array<int, NumParameters> m_i{};
     float get_parameter_float(Parameter p, uint32_t) override { return m_f[p]; }
-    bool get_parameter_bool(Parameter p, uint32_t) override { return p == Playing && m_playing; }
+    bool get_parameter_bool(Parameter p, uint32_t) override {
+        if (p == LoopEnabled) { return m_loop; }
+        if (p == SlicerEnabled) { return m_slicer; }
+        return p == Playing && m_playing;
+    }
     int get_parameter_int(Parameter p, uint32_t) override { return m_i[p]; }
 };
 
@@ -732,5 +749,379 @@ TEST(Granular, GrainEngineReverseRegionGrainsReadBackwards) {
     engine.render(block.m_view, params, EngineMode::GranularLoop, 0);
     for (size_t i = 1; i < k_block; ++i) {
         ASSERT_NEAR(block.m_data[0][i], static_cast<float>(47999 - i), 1e-2f) << "i=" << i;
+    }
+}
+
+// ── Slicing ──────────────────────────────────────────────────────────────────
+
+namespace {
+
+// Six uneven slices: the fixture the design doc draws.
+SliceMap six_slices() {
+    SliceMap m;
+    m.m_count = 6;
+    m.m_bounds = {0.0f, 0.17f, 0.29f, 0.52f, 0.71f, 0.86f, 1.0f};
+    return m;
+}
+
+// Which slice a physical frame lies in.
+int slice_at(const SliceMap& m, FramePos frame, size_t total) {
+    for (int k = 0; k < m.m_count; ++k) {
+        if (frame < static_cast<FramePos>(m.boundary_frame(k + 1, total))) { return k; }
+    }
+    return m.m_count - 1;
+}
+
+}  // namespace
+
+TEST(Granular, SliceMapStepsFloorRoundAndClamp) {
+    auto const m = six_slices();
+    EXPECT_TRUE(m.valid());
+    // Position: floor(u·6), clamped into 0..5.
+    EXPECT_EQ(m.slice_of_step(0.0f), 0);
+    EXPECT_EQ(m.slice_of_step(0.16f), 0);
+    EXPECT_EQ(m.slice_of_step(0.17f), 1);
+    EXPECT_EQ(m.slice_of_step(0.52f), 3);  // 52 % -> slice 4 of 6 (0-based 3)
+    EXPECT_EQ(m.slice_of_step(1.0f), 5);
+    EXPECT_EQ(m.slice_of_step(7.0f), 5);
+    EXPECT_EQ(m.slice_of_step(-1.0f), 0);
+    // Start / End: round(u·6), clamped into 0..6.
+    EXPECT_EQ(m.boundary_of_step(0.0f), 0);
+    EXPECT_EQ(m.boundary_of_step(0.08f), 0);
+    EXPECT_EQ(m.boundary_of_step(0.09f), 1);
+    EXPECT_EQ(m.boundary_of_step(0.5f), 3);
+    EXPECT_EQ(m.boundary_of_step(1.0f), 6);
+    EXPECT_EQ(m.boundary_of_step(2.0f), 6);
+    // Frames.
+    EXPECT_EQ(m.boundary_frame(0, 1000), 0u);
+    EXPECT_EQ(m.boundary_frame(2, 1000), 290u);
+    EXPECT_EQ(m.boundary_frame(6, 1000), 1000u);
+    EXPECT_EQ(m.boundary_frame(9, 1000), 1000u);
+    // Validity.
+    SliceMap bad = m;
+    bad.m_bounds[3] = bad.m_bounds[2];
+    EXPECT_FALSE(bad.valid());
+    bad = m;
+    bad.m_count = 1;
+    EXPECT_FALSE(bad.valid());
+    bad = m;
+    bad.m_bounds[6] = 0.99f;
+    EXPECT_FALSE(bad.valid());
+    EXPECT_FALSE(SliceMap{}.valid());
+    EXPECT_TRUE(SliceMap::grid(4).valid());
+    EXPECT_EQ(SliceMap::grid(40).m_count, k_max_slices);
+    EXPECT_EQ(SliceMap::grid(1).m_count, k_min_slices);
+}
+
+TEST(Granular, SliceMapStepToNormIsMonotonicThroughUnevenBounds) {
+    auto const m = six_slices();
+    EXPECT_FLOAT_EQ(m.step_to_norm(0.0), 0.0f);
+    EXPECT_FLOAT_EQ(m.step_to_norm(6.0), 1.0f);
+    EXPECT_FLOAT_EQ(m.step_to_norm(3.0), 0.52f);
+    EXPECT_NEAR(m.step_to_norm(2.5), 0.29f + 0.5f * (0.52f - 0.29f), 1e-6f);
+    EXPECT_FLOAT_EQ(m.step_to_norm(-1.0), 0.0f);
+    EXPECT_FLOAT_EQ(m.step_to_norm(9.0), 1.0f);
+    float last = -1.0f;
+    for (int i = 0; i <= 600; ++i) {
+        float const v = m.step_to_norm(static_cast<double>(i) / 100.0);
+        EXPECT_GE(v, last);
+        last = v;
+    }
+}
+
+TEST(Granular, SampleRegionFromSlicesSnapsToBoundaries) {
+    auto const m = six_slices();
+    // Start near boundary 2 (0.29), End near boundary 5 (0.86): slices 2-4.
+    auto r = SampleRegion::from_slices(0.3f, 0.8f, m, 1000);
+    EXPECT_FALSE(r.m_reverse);
+    EXPECT_EQ(r.m_start, 290u);
+    EXPECT_EQ(r.m_end, 860u);
+    EXPECT_EQ(r.m_loop_point, 290u);  // no Loop marker: repeats from Start
+    // Full range.
+    r = SampleRegion::from_slices(0.0f, 1.0f, m, 1000);
+    EXPECT_EQ(r.m_start, 0u);
+    EXPECT_EQ(r.m_end, 1000u);
+}
+
+TEST(Granular, SampleRegionFromSlicesEndBeforeStartReverses) {
+    auto const m = six_slices();
+    auto r = SampleRegion::from_slices(0.8f, 0.3f, m, 1000);
+    EXPECT_TRUE(r.m_reverse);
+    EXPECT_EQ(r.m_start, 290u);
+    EXPECT_EQ(r.m_end, 860u);
+    EXPECT_EQ(r.m_loop_point, 290u);
+    // The virtual start reads the Start marker's side (boundary 5, minus 1).
+    EXPECT_DOUBLE_EQ(r.physical(290.0), 859.0);
+}
+
+TEST(Granular, SampleRegionFromSlicesEqualStartEndPlaysOneSlice) {
+    auto const m = six_slices();
+    auto r = SampleRegion::from_slices(0.5f, 0.5f, m, 1000);  // both on boundary 3
+    EXPECT_FALSE(r.m_reverse);
+    EXPECT_EQ(r.m_start, 520u);
+    EXPECT_EQ(r.m_end, 710u);
+    // Both on the last boundary: the last slice.
+    r = SampleRegion::from_slices(1.0f, 1.0f, m, 1000);
+    EXPECT_EQ(r.m_start, 860u);
+    EXPECT_EQ(r.m_end, 1000u);
+    EXPECT_GT(r.size(), 0u);
+}
+
+TEST(Granular, PositionSprayHeadSliceSprayZeroStartsOnSliceStart) {
+    PositionSprayHead head;
+    std::mt19937 rng(3);
+    VoiceParams params;
+    params.m_slicer = true;
+    params.m_slices = six_slices();
+    params.m_position = 0.4f;  // slice 3 (0-based 2) starts at 0.29
+    params.m_spray = 0.0f;
+    auto const region = SampleRegion::full(100000);
+    auto const expected = static_cast<FramePos>(0.29f * static_cast<float>(100000 - 1));
+    for (int i = 0; i < 50; ++i) {
+        EXPECT_EQ(head.pick_start(region, 0.0f, 0, params, rng), expected);
+    }
+    // Temperature at Spray 0 stays inside the chosen slice.
+    for (int i = 0; i < 500; ++i) {
+        FramePos const f = head.pick_start(region, 1.0f, 0, params, rng);
+        EXPECT_EQ(slice_at(params.m_slices, f, 100000), 2) << "f=" << f;
+    }
+}
+
+TEST(Granular, PositionSprayHeadSliceTiltRightCoversChosenAndNext) {
+    PositionSprayHead head;
+    std::mt19937 rng(5);
+    VoiceParams params;
+    params.m_slicer = true;
+    params.m_slices = six_slices();
+    params.m_position = 0.4f;      // slice index 2
+    params.m_spray = 2.0f / 6.0f;  // two slices wide
+    params.m_tilt = 1.0f;          // forward only: slices 2 and 3
+    auto const region = SampleRegion::full(100000);
+    std::array<int, 6> hist{};
+    for (int i = 0; i < 2000; ++i) {
+        hist[static_cast<size_t>(
+            slice_at(params.m_slices, head.pick_start(region, 0.0f, 0, params, rng), 100000))]++;
+    }
+    EXPECT_EQ(hist[0] + hist[1] + hist[4] + hist[5], 0);
+    // Equal share per slice, however long each is in time.
+    EXPECT_GT(hist[2], 800);
+    EXPECT_GT(hist[3], 800);
+    // Spray 1/6, Tilt right: the chosen slice only, spread across it.
+    params.m_spray = 1.0f / 6.0f;
+    hist = {};
+    FramePos lo = 1 << 30, hi = -1;
+    for (int i = 0; i < 1000; ++i) {
+        FramePos const f = head.pick_start(region, 0.0f, 0, params, rng);
+        hist[static_cast<size_t>(slice_at(params.m_slices, f, 100000))]++;
+        lo = std::min(lo, f);
+        hi = std::max(hi, f);
+    }
+    EXPECT_EQ(hist[2], 1000);
+    EXPECT_GT(hi - lo, static_cast<FramePos>(0.2f * 100000 * 0.9f));  // nearly the whole slice
+}
+
+TEST(Granular, PositionSprayHeadSliceTiltLeftExcludesChosenSlice) {
+    PositionSprayHead head;
+    std::mt19937 rng(9);
+    VoiceParams params;
+    params.m_slicer = true;
+    params.m_slices = six_slices();
+    params.m_position = 0.4f;      // slice index 2
+    params.m_spray = 2.0f / 6.0f;  // two slices
+    params.m_tilt = -1.0f;         // the two before: 0 and 1
+    auto const region = SampleRegion::full(100000);
+    std::array<int, 6> hist{};
+    for (int i = 0; i < 2000; ++i) {
+        hist[static_cast<size_t>(
+            slice_at(params.m_slices, head.pick_start(region, 0.0f, 0, params, rng), 100000))]++;
+    }
+    EXPECT_EQ(hist[2] + hist[3] + hist[4] + hist[5], 0);
+    EXPECT_GT(hist[0], 800);
+    EXPECT_GT(hist[1], 800);
+    // Centred, Spray 1/6: one step each way -> slices 1 and 2.
+    params.m_tilt = 0.0f;
+    params.m_spray = 1.0f / 6.0f;
+    hist = {};
+    for (int i = 0; i < 2000; ++i) {
+        hist[static_cast<size_t>(
+            slice_at(params.m_slices, head.pick_start(region, 0.0f, 0, params, rng), 100000))]++;
+    }
+    EXPECT_EQ(hist[0] + hist[3] + hist[4] + hist[5], 0);
+    EXPECT_GT(hist[1], 800);
+    EXPECT_GT(hist[2], 800);
+}
+
+TEST(Granular, PositionSprayHeadSliceWindowWrapsPastLastSlice) {
+    PositionSprayHead head;
+    std::mt19937 rng(11);
+    VoiceParams params;
+    params.m_slicer = true;
+    params.m_slices = six_slices();
+    params.m_position = 0.9f;      // slice index 5 (the last)
+    params.m_spray = 2.0f / 6.0f;  // the last slice and, wrapped, the first
+    params.m_tilt = 1.0f;
+    auto const region = SampleRegion::full(100000);
+    std::array<int, 6> hist{};
+    for (int i = 0; i < 2000; ++i) {
+        hist[static_cast<size_t>(
+            slice_at(params.m_slices, head.pick_start(region, 0.0f, 0, params, rng), 100000))]++;
+    }
+    EXPECT_EQ(hist[1] + hist[2] + hist[3] + hist[4], 0);
+    EXPECT_GT(hist[5], 800);
+    EXPECT_GT(hist[0], 800);
+    // 100 % forward: every slice once.
+    params.m_spray = 1.0f;
+    hist = {};
+    for (int i = 0; i < 6000; ++i) {
+        hist[static_cast<size_t>(
+            slice_at(params.m_slices, head.pick_start(region, 0.0f, 0, params, rng), 100000))]++;
+    }
+    for (int k = 0; k < 6; ++k) { EXPECT_GT(hist[static_cast<size_t>(k)], 700) << "k=" << k; }
+}
+
+TEST(Granular, SamplePlayerOneShotStopsAtEndWithTailFade) {
+    // Region [0, 4800), Loop off: the head plays to End once, the outgoing
+    // tail rides out the 10 ms fade past End and then everything is silent.
+    PlayerRig rig({make_ramp(1, 10000)});
+    rig.m_params.m_sample_end = 0.48f;
+    rig.m_params.m_loop = false;
+    rig.render(6016);
+    for (size_t n = 0; n < 4800; ++n) {
+        ASSERT_NEAR(rig.m_out[n], static_cast<float>(n), 1e-3f) << "n=" << n;
+    }
+    EXPECT_TRUE(rig.m_player.finished());
+    for (size_t k = 0; k < k_fade; ++k) {
+        float const expected = gain_out(k) * static_cast<float>(4800 + k);
+        ASSERT_NEAR(rig.m_out[4800 + k], expected, 0.05f) << "k=" << k;
+    }
+    for (size_t k = k_fade; k < 1200; ++k) {
+        ASSERT_NEAR(rig.m_out[4800 + k], 0.0f, 1e-5f) << "k=" << k;
+    }
+    // note_on brings the head back from the region start.
+    rig.m_player.note_on();
+    rig.render(k_block);
+    EXPECT_FALSE(rig.m_player.finished());
+    for (size_t n = 8; n < k_block; ++n) {
+        ASSERT_NEAR(rig.m_out[6016 + n], static_cast<float>(n), 0.5f) << "n=" << n;
+    }
+}
+
+TEST(Granular, GrainEngineLoopOneShotStopsTriggeringAtEnd) {
+    thl::dsp::audio::AudioDataStore store;
+    load(store, [] {
+        std::vector<thl::core::BufferF> b;
+        b.push_back(make_ramp(1, 96000));
+        return b;
+    }());
+    SampleReader reader(store);
+    GrainVisualizer viz;
+    RecordingListener listener;
+    viz.add_listener(&listener);
+    GrainEngine engine(reader, viz);
+    engine.prepare(k_sample_rate, 2);
+    engine.seed(3);
+    engine.reset_schedule(EngineMode::GranularLoop);
+
+    VoiceParams params;
+    params.m_channel_mode = ChannelMode::TrueStereo;
+    params.m_density = 1.0f;  // 480-frame interval
+    params.m_size = 0.0f;
+    params.m_sample_end = 0.1f;  // 9600 frames: 20 triggers, then done
+    params.m_loop = false;
+
+    Block block(2, k_block);
+    size_t elapsed = 0;
+    while (elapsed < 48000) {
+        block.clear();
+        engine.render(block.m_view, params, EngineMode::GranularLoop, elapsed);
+        elapsed += k_block;
+    }
+    EXPECT_TRUE(engine.finished(EngineMode::GranularLoop));
+    EXPECT_FALSE(engine.finished(EngineMode::GranularPosition));
+    EXPECT_EQ(listener.m_triggered.size(), 20u);
+    for (auto const& t : listener.m_triggered) { EXPECT_LT(t.m_pos, 0.1f); }
+    // Looping again: the scan restarts and keeps going.
+    engine.reset_schedule(EngineMode::GranularLoop);
+    EXPECT_FALSE(engine.finished(EngineMode::GranularLoop));
+    params.m_loop = true;
+    listener.m_triggered.clear();
+    elapsed = 0;
+    while (elapsed < 48000) {
+        block.clear();
+        engine.render(block.m_view, params, EngineMode::GranularLoop, elapsed);
+        elapsed += k_block;
+    }
+    EXPECT_EQ(listener.m_triggered.size(), 100u);
+}
+
+TEST(Granular, VoiceOneShotReleasesAndDoesNotRetriggerWhileGateHeld) {
+    // Sample mode, Loop off, region [0, 4800). The head reaches End after
+    // 4800 frames: the envelope releases and, with the gate still held, the
+    // voice must stay silent instead of re-triggering. Releasing and
+    // pressing again replays.
+    thl::dsp::audio::AudioDataStore store;
+    load(store, [] {
+        std::vector<thl::core::BufferF> b;
+        thl::core::BufferF dc(1, 96000, k_sample_rate);
+        std::fill_n(dc.get_write_pointer(0), 96000, 1.0f);
+        b.push_back(std::move(dc));
+        return b;
+    }());
+    StubVoice voice(store);
+    voice.set_mode(EngineMode::Sample);
+    voice.set_sample_end(0.05f);  // 4800 frames
+    voice.set_release(0.001f);    // release ~48 frames
+    voice.m_loop = false;
+    voice.prepare(k_sample_rate, k_block, 2);
+    voice.m_playing = true;
+    auto out = voice.run(4800 + 4800);
+    ASSERT_NEAR(out[2400], 1.0f, 1e-3f);
+    // Well after End (tail + release are < 600 frames): silence, and it stays.
+    for (size_t n = 4800 + 1200; n < 9600; ++n) { ASSERT_NEAR(out[n], 0.0f, 1e-4f) << "n=" << n; }
+    EXPECT_FALSE(voice.is_active());
+    // Still held: nothing.
+    out = voice.run(2400);
+    for (float v : out) { ASSERT_NEAR(v, 0.0f, 1e-4f); }
+    // Gate falls and rises: the head plays again from Start.
+    voice.m_playing = false;
+    voice.run(k_block);
+    voice.m_playing = true;
+    out = voice.run(2400);
+    EXPECT_TRUE(voice.is_active());
+    ASSERT_NEAR(out[1200], 1.0f, 1e-3f);
+}
+
+TEST(Granular, VoiceWithoutSliceMapIgnoresSlicerFlag) {
+    // SlicerEnabled set but no map from the host: Sample mode plays the plain
+    // Start..End region (the ramp from 0), exactly as with the flag off.
+    thl::dsp::audio::AudioDataStore store;
+    load(store, [] {
+        std::vector<thl::core::BufferF> b;
+        b.push_back(make_ramp(1, 96000));
+        return b;
+    }());
+    StubVoice voice(store);
+    voice.set_mode(EngineMode::Sample);
+    voice.m_slicer = true;
+    voice.m_has_map = false;
+    voice.prepare(k_sample_rate, k_block, 2);
+    voice.m_playing = true;
+    auto out = voice.run(k_block);
+    for (size_t n = 8; n < k_block; ++n) { ASSERT_NEAR(out[n], static_cast<float>(n), 1e-3f); }
+
+    // With a map, Start 0.5 / End 1 snap to boundary 3 of the six: the head
+    // enters at frame 0.52 * 96000.
+    StubVoice sliced(store);
+    sliced.set_mode(EngineMode::Sample);
+    sliced.m_slicer = true;
+    sliced.m_has_map = true;
+    sliced.m_map = six_slices();
+    sliced.set_sample_start(0.5f);
+    sliced.prepare(k_sample_rate, k_block, 2);
+    sliced.m_playing = true;
+    out = sliced.run(k_block);
+    auto const entry = static_cast<float>(sliced.m_map.boundary_frame(3, 96000));
+    for (size_t n = 8; n < k_block; ++n) {
+        ASSERT_NEAR(out[n], entry + static_cast<float>(n), 1e-2f) << "n=" << n;
     }
 }

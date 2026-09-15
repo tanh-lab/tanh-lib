@@ -49,6 +49,7 @@ void GrainProcessorImpl::reset_grains() {
     m_player.reset();
     m_mode_fade_out = false;
     m_mode_gain = 1.0f;
+    m_one_shot_done = false;
 }
 
 void GrainProcessorImpl::prepare(const double& sample_rate,
@@ -121,6 +122,14 @@ VoiceParams GrainProcessorImpl::read_params(uint32_t offset) {
     v.m_position = unit(Position);
     v.m_spray = unit(Spray);
     v.m_tilt = std::clamp(finite(Tilt, 0.0f), -1.0f, 1.0f);
+    v.m_loop = get_parameter<bool>(LoopEnabled, offset);
+    // Slicing needs both the flag and a valid map; otherwise every consumer
+    // takes its unsliced path.
+    v.m_slicer = false;
+    if (get_parameter<bool>(SlicerEnabled, offset) && read_slice_map(v.m_slices) &&
+        v.m_slices.valid()) {
+        v.m_slicer = true;
+    }
     v.m_window_shape =
         std::clamp(finite(GrainWindowShape, 4.0f), 0.0f, utils::MorphWindow::k_max_shape);
     v.m_window_tilt = std::clamp(finite(GrainWindowTilt, 0.0f), -1.0f, 1.0f);
@@ -170,7 +179,13 @@ AudioBlock GrainProcessorImpl::begin_block(thl::core::BufferView buffer) {
 
 void GrainProcessorImpl::handle_gate(const VoiceParams& params) {
     bool const envelope_active = m_envelope.is_active();
-    if (params.m_playing && (!envelope_active || !m_last_playing_state)) {
+    if (!params.m_playing) { m_one_shot_done = false; }
+    // A rising gate always starts a note. A held gate re-arms only when the
+    // envelope has died on its own — not when a one-shot released it.
+    bool const rising = params.m_playing && !m_last_playing_state;
+    bool const rearm = params.m_playing && !envelope_active && !m_one_shot_done;
+    if (rising || rearm) {
+        m_one_shot_done = false;
         m_envelope.note_on();
         // A voice starts at its level, it does not slide up to it — the ADSR
         // is what shapes the onset. Without this the smoother would ramp from
@@ -207,13 +222,25 @@ void GrainProcessorImpl::silence() {
 void GrainProcessorImpl::render_engine(const AudioBlock& block, const VoiceParams& params) {
     m_viz.set_master_level(m_envelope.get_current_level());
     bool rendered = true;
+    bool finished = false;
     if (m_active_mode == EngineMode::Sample) {
         rendered = m_player.render(block, params);
+        finished = m_player.finished();
     } else {
         m_grain_engine.render(block, params, m_active_mode, m_playback_elapsed_samples);
+        finished = m_grain_engine.finished(m_active_mode);
     }
     // The temperature ramp counts sounding time only.
     if (rendered) { m_playback_elapsed_samples += block.m_num_frames; }
+    // One-shot reached End: release the voice once. The latch keeps
+    // handle_gate from re-triggering while the gate is still held.
+    if (finished && !m_one_shot_done) {
+        m_one_shot_done = true;
+        if (m_envelope.get_state() != utils::ADSR::State::IDLE &&
+            m_envelope.get_state() != utils::ADSR::State::RELEASE) {
+            m_envelope.note_off();
+        }
+    }
 }
 
 void GrainProcessorImpl::apply_voice_gain(const AudioBlock& block, const VoiceParams& params) {
@@ -283,6 +310,8 @@ void GrainProcessorImpl::update_mode_fade(const VoiceParams& params) {
     m_grain_engine.deactivate_all();
     m_grain_engine.reset_schedule(m_active_mode);
     m_player.reset();
+    // A finished one-shot in the old mode must not keep the new one silent.
+    m_one_shot_done = false;
 }
 
 void GrainProcessorImpl::update_envelope(const VoiceParams& p) {

@@ -41,6 +41,11 @@ public:
 
     bool is_started() const { return m_started; }
 
+    // One-shot (VoiceParams::m_loop == false): the head reached End, its tail
+    // is fading out and the live head renders silence. note_on / reset clear
+    // it. The voice releases its envelope on this.
+    bool finished() const { return m_finished; }
+
     // Render one block. Returns false on a silent early-out (no bank, empty
     // bank, empty region), which also resets the head so a stale one is
     // never painted.
@@ -79,7 +84,7 @@ private:
     void mix_outgoing_tails(const Source& src,
                             const VoiceParams& params,
                             channel_mixer::Frame& frame);
-    void advance_head(const Source& src, double loop_point);
+    void advance_head(const Source& src, const VoiceParams& params, double loop_point);
 
     // Equal-power crossfade law, `remaining` frames of m_fade_length left.
     // Both gains read m_fade_curve, built once in prepare(): the fade is a
@@ -110,6 +115,7 @@ private:
     SampleRegion m_region{};   // last block's region, for the viz mirror
     bool m_started{false};
     bool m_restart{false};
+    bool m_finished{false};
 };
 
 }  // namespace thl::dsp::granular

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/dsp/granular/GranularTypes.h>
+#include <tanh/dsp/granular/SliceMap.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -57,6 +58,30 @@ struct SampleRegion {
         l = std::clamp(l, lo, hi);
         if (reverse && hi > lo) { l = lo + hi - std::min(l, hi - 1) - 1; }
         return {.m_start = lo, .m_end = hi, .m_loop_point = l, .m_reverse = reverse};
+    }
+
+    // Slicing: Start and End are read in slice space and snap to
+    // boundaries; the slices between them play. Start and End on the same
+    // boundary play that one slice (the next one, or the last one at the
+    // final boundary). End before Start reverses. There is no Loop marker:
+    // the region re-enters at its own start (Start -> End repeats).
+    static SampleRegion from_slices(float start,
+                                    float end,
+                                    const SliceMap& map,
+                                    size_t total_frames) {
+        int s = map.boundary_of_step(start);
+        int e = map.boundary_of_step(end);
+        if (s == e) {
+            if (s < map.m_count) {
+                e = s + 1;
+            } else {
+                s = e - 1;
+            }
+        }
+        bool const reverse = e < s;
+        size_t const lo = map.boundary_frame(std::min(s, e), total_frames);
+        size_t const hi = map.boundary_frame(std::max(s, e), total_frames);
+        return {.m_start = lo, .m_end = hi, .m_loop_point = lo, .m_reverse = reverse};
     }
 };
 

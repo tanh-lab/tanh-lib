@@ -215,6 +215,7 @@ void GrainEngine::trigger_grain(const Bank& bank,
                                 const VoiceParams& params,
                                 HeadPolicy& head,
                                 size_t playback_elapsed_samples) {
+    if (head.finished()) { return; }
     Grain* grain = find_free_grain();
     if (grain == nullptr || !m_reader.bank_valid(bank.m_index)) { return; }
 
@@ -229,6 +230,7 @@ void GrainEngine::trigger_grain(const Bank& bank,
         apply_temperature_ramp(params.m_temperature_position, playback_elapsed_samples);
     FramePos const start =
         head.pick_start(region, temperature, m_min_grain_interval, params, m_random_generator);
+    if (start < 0) { return; }  // the head declined (one-shot scan is over)
 
     size_t const covered = fit_to_region(start, region, velocity, grain_size);
     if (covered == 0) { return; }

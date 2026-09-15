@@ -75,6 +75,11 @@ protected:
         GrainWindowShape,
         GrainWindowTilt,
 
+        // Slicing on/off and Loop / one-shot: plain bools, not modulation
+        // targets. The slice map itself comes through read_slice_map().
+        SlicerEnabled,
+        LoopEnabled,
+
         EnvelopeAttack,
         EnvelopeDecay,
         EnvelopeSustain,
@@ -94,6 +99,11 @@ private:
     virtual float get_parameter_float(Parameter parameter, uint32_t modulation_offset = 0) = 0;
     virtual bool get_parameter_bool(Parameter parameter, uint32_t modulation_offset = 0) = 0;
     virtual int get_parameter_int(Parameter parameter, uint32_t modulation_offset = 0) = 0;
+
+    // The host's slice map for this voice's engine, copied once per block
+    // when SlicerEnabled is set. Return false (the default) for no map:
+    // slicing is then off whatever the flag says.
+    virtual bool read_slice_map(SliceMap& /*out*/) { return false; }
 
     // process() in order:
     AudioBlock begin_block(thl::core::BufferView buffer);  // pointers, clear
@@ -127,6 +137,11 @@ private:
     bool m_last_playing_state{false};
     bool m_was_sounding{false};  // silence() runs once per idle stretch
     size_t m_playback_elapsed_samples{0};
+    // One-shot latch: the head reached End and the envelope was released.
+    // While the gate is still held the ADSR reaching idle must not re-trigger
+    // a note-on (handle_gate would, on !envelope_active). Clears when the
+    // gate falls, on a mode switch and on reset.
+    bool m_one_shot_done{false};
 
     // Engine mode. The active mode only changes once the mode-change fade has
     // reached silence, so a switch on a sounding voice never clicks.
