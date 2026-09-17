@@ -123,6 +123,7 @@ VoiceParams GrainProcessorImpl::read_params(uint32_t offset) {
     v.m_spray = unit(Spray);
     v.m_tilt = std::clamp(finite(Tilt, 0.0f), -1.0f, 1.0f);
     v.m_loop = get_parameter<bool>(LoopEnabled, offset);
+    v.m_loop_snap = get_parameter<bool>(LoopSnap, offset);
     // Slicing needs both the flag and a valid map; otherwise every consumer
     // takes its unsliced path.
     v.m_slicer = false;

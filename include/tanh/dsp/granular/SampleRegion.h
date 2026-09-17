@@ -46,18 +46,41 @@ struct SampleRegion {
     // reverses; the loop point is mirrored into virtual coordinates with
     // the bounds.
     static SampleRegion from_normalized(float start, float end, float loop, size_t total_frames) {
-        auto const total_f = static_cast<float>(total_frames);
-        auto s = static_cast<size_t>(std::clamp(start, 0.0f, 1.0f) * total_f);
-        auto e = static_cast<size_t>(std::clamp(end, 0.0f, 1.0f) * total_f);
-        auto l = static_cast<size_t>(std::clamp(loop, 0.0f, 1.0f) * total_f);
+        return from_frames(to_frame(start, total_frames),
+                           to_frame(end, total_frames),
+                           to_frame(loop, total_frames),
+                           total_frames);
+    }
+
+    // One normalised marker to its frame, as from_normalized reads it.
+    static size_t to_frame(float normalized, size_t total_frames) {
+        return static_cast<size_t>(std::clamp(normalized, 0.0f, 1.0f) *
+                                   static_cast<float>(total_frames));
+    }
+
+    // Start / End / Loop already in frames (e.g. snapped by the Sample head).
+    static SampleRegion from_frames(size_t s, size_t e, size_t l, size_t total_frames) {
         s = std::min(s, total_frames);
         e = std::min(e, total_frames);
         bool const reverse = e < s;
         size_t const lo = std::min(s, e);
         size_t const hi = std::max(s, e);
-        l = std::clamp(l, lo, hi);
-        if (reverse && hi > lo) { l = lo + hi - std::min(l, hi - 1) - 1; }
-        return {.m_start = lo, .m_end = hi, .m_loop_point = l, .m_reverse = reverse};
+        return {.m_start = lo,
+                .m_end = hi,
+                .m_loop_point = virtual_loop(l, lo, hi, reverse),
+                .m_reverse = reverse};
+    }
+
+    // Loop (physical frame) as the virtual re-entry. Outside the region, or
+    // on its exit (the last frame before End — for a reversed region that is
+    // the lowest frame), there is no loop body to play: the region loops
+    // whole from its entry. The UI clamps Loop into [Start, End], so
+    // squeezing the markers together parks Loop on either one — including
+    // End, which used to leave a one-frame body (a 2 ms buzz once floored).
+    static size_t virtual_loop(size_t l, size_t lo, size_t hi, bool reverse) {
+        if (hi <= lo || l < lo || l >= hi) { return lo; }
+        size_t const v = reverse ? lo + hi - 1 - l : l;
+        return v + 1 >= hi ? lo : v;
     }
 
     // Slicing: Start and End are read in slice space and snap to

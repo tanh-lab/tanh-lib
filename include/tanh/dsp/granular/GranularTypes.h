@@ -73,8 +73,15 @@ enum class EngineMode : int {
 };
 
 // Length of the equal-power crossfade the Sample head runs at a loop wrap,
-// a pitch-bank switch or a retrigger (seconds).
+// a pitch-bank switch or a retrigger (seconds). A loop wrap shortens it to
+// fit the loop (at most half the loop body).
 constexpr float k_player_crossfade_duration = 0.010f;
+// Shortest Start -> End span and loop body the Sample head plays (seconds):
+// below it a loop wrap's crossfade would shrink to nothing.
+constexpr float k_player_min_loop_duration = 0.002f;
+// How far Loop Snap moves End / Loop / Start to reach a zero crossing
+// (seconds); with no crossing that close the marker stays where it is.
+constexpr float k_player_snap_radius = 0.005f;
 // Fade-through-zero when the engine mode changes on a sounding voice.
 constexpr float k_mode_change_fade_duration = 0.015f;
 // Ramp applied to the voice's volume so a modulation step does not land on the

@@ -75,10 +75,12 @@ protected:
         GrainWindowShape,
         GrainWindowTilt,
 
-        // Slicing on/off and Loop / one-shot: plain bools, not modulation
-        // targets. The slice map itself comes through read_slice_map().
+        // Slicing on/off, Loop / one-shot and Loop Snap: plain bools, not
+        // modulation targets. The slice map itself comes through
+        // read_slice_map().
         SlicerEnabled,
         LoopEnabled,
+        LoopSnap,
 
         EnvelopeAttack,
         EnvelopeDecay,

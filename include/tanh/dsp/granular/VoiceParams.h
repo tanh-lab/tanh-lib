@@ -46,6 +46,9 @@ struct VoiceParams {
     // Loop / one-shot for the travelling-head modes (Sample, GranularLoop):
     // false plays Start -> End once, then the voice releases.
     bool m_loop{true};
+    // Loop Snap (Sample mode, unsliced): Start / End / Loop move to the
+    // nearest upward zero crossing, so a loop wrap joins like to like.
+    bool m_loop_snap{false};
 
     // Grain window: shape morph position [0, MorphWindow::k_max_shape]
     // (integers = exact shapes, default Hann) and tilt [-1, 1].

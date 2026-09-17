@@ -157,45 +157,71 @@ struct PlayerRig {
 // ── SamplePlayer ─────────────────────────────────────────────────────────────
 
 TEST(Granular, SamplePlayerLoopWrapIsExactEqualPowerCrossfade) {
-    // Region [0, 4800), Loop at 1000: the head reaches End after 4800 frames,
-    // then the tail rides on past End while the live head fades in at Loop.
+    // Region [0, 4800), Loop at 1000: over the last 480 frames before End
+    // the head blends equal-power into the audio just before Loop (the copy
+    // reads 3800 frames behind), so at End it already reads what follows
+    // Loop and the jump is silent. Nothing past End is ever read.
     PlayerRig rig({make_ramp(1, 10000)});
     rig.m_params.m_sample_end = 0.48f;
     rig.m_params.m_sample_loop_point = 0.1f;
     rig.render(6016);
 
-    for (size_t n = 0; n < 4800; ++n) { ASSERT_NEAR(rig.m_out[n], static_cast<float>(n), 1e-3f); }
+    for (size_t n = 0; n < 4320; ++n) { ASSERT_NEAR(rig.m_out[n], static_cast<float>(n), 1e-3f); }
     for (size_t k = 0; k < k_fade; ++k) {
         float const expected =
-            gain_in(k) * static_cast<float>(1000 + k) + gain_out(k) * static_cast<float>(4800 + k);
-        ASSERT_NEAR(rig.m_out[4800 + k], expected, 0.05f) << "k=" << k;
+            gain_out(k) * static_cast<float>(4320 + k) + gain_in(k) * static_cast<float>(520 + k);
+        ASSERT_NEAR(rig.m_out[4320 + k], expected, 0.05f) << "k=" << k;
     }
-    // After the fade only the live head remains, continuing from Loop.
-    for (size_t k = k_fade; k < 1200; ++k) {
+    // Past End only the head remains, continuing from Loop.
+    for (size_t k = 0; k < 1200; ++k) {
         ASSERT_NEAR(rig.m_out[4800 + k], static_cast<float>(1000 + k), 1e-3f) << "k=" << k;
     }
 }
 
-TEST(Granular, SamplePlayerRetriggerInsideFadeParksLiveHeadWithItsGain) {
-    // Same wrap, then a note-on 256 frames into the 480-frame wrap fade. The
-    // live head (fading in, gain sin) is parked as a second tail with that
-    // gain; the first tail keeps fading; the live head restarts at Start.
+TEST(Granular, SamplePlayerRetriggerInsideLoopFadeParksTheBlend) {
+    // Same wrap, then a note-on 224 frames into the loop fade. The tail
+    // keeps the blend it had (head and copy at their frozen gains) while it
+    // fades out; the live head restarts at Start.
     PlayerRig rig({make_ramp(1, 10000)});
     rig.m_params.m_sample_end = 0.48f;
     rig.m_params.m_sample_loop_point = 0.1f;
-    rig.render(4800 + 256);
+    rig.render(4320 + 224);
     rig.m_player.note_on();
     rig.render(1024);
 
-    constexpr size_t k_retrigger = 4800 + 256;
-    float const parked_gain = gain_in(256);
+    constexpr size_t k_retrigger = 4320 + 224;
+    // The blend of the last frame rendered before the note-on (k = 223).
+    float const head_gain = gain_out(223);
+    float const copy_gain = gain_in(223);
     for (size_t j = 0; j < k_fade; ++j) {
-        float expected = gain_in(j) * static_cast<float>(j) +
-                         parked_gain * gain_out(j) * static_cast<float>(1256 + j);
-        if (256 + j < k_fade) { expected += gain_out(256 + j) * static_cast<float>(5056 + j); }
-        ASSERT_NEAR(rig.m_out[k_retrigger + j], expected, 0.05f) << "j=" << j;
+        float const tail =
+            head_gain * static_cast<float>(4544 + j) + copy_gain * static_cast<float>(744 + j);
+        float const expected = gain_in(j) * static_cast<float>(j) + gain_out(j) * tail;
+        ASSERT_NEAR(rig.m_out[k_retrigger + j], expected, 0.1f) << "j=" << j;
     }
     ASSERT_NEAR(rig.m_out[k_retrigger + k_fade], static_cast<float>(k_fade), 1e-3f);
+}
+
+TEST(Granular, SamplePlayerMarkerMoveInsideLoopFadeWaitsForTheWrap) {
+    // End moves from 4800 to 4600 while the fade toward 4800 runs: the fade
+    // finishes against the old End, the next pass loops at the new one.
+    PlayerRig rig({make_ramp(1, 10000)});
+    rig.m_params.m_sample_end = 0.48f;
+    rig.m_params.m_sample_loop_point = 0.1f;
+    rig.render(4416);
+    rig.m_params.m_sample_end = 0.46f;
+    rig.render(4096);
+
+    for (size_t k = 96; k < k_fade; ++k) {
+        float const expected =
+            gain_out(k) * static_cast<float>(4320 + k) + gain_in(k) * static_cast<float>(520 + k);
+        ASSERT_NEAR(rig.m_out[4320 + k], expected, 0.05f) << "k=" << k;
+    }
+    for (size_t k = 0; k < 3120; ++k) {
+        ASSERT_NEAR(rig.m_out[4800 + k], static_cast<float>(1000 + k), 1e-3f) << "k=" << k;
+    }
+    // 3600 frames later the head reaches the new End (4600) and is back at Loop.
+    ASSERT_NEAR(rig.m_out[4800 + 3600], 1000.0f, 1e-3f);
 }
 
 TEST(Granular, SamplePlayerBankSwitchCrossfadesAndKeepsHeadPosition) {
@@ -330,8 +356,8 @@ TEST(Granular, SampleRegionFromNormalizedClampsEveryEdge) {
     auto r = SampleRegion::from_normalized(0.5f, 0.25f, 0.0f, 1000);  // end < start: reverse
     EXPECT_TRUE(r.m_reverse);
     EXPECT_EQ(r.size(), 250u);
-    r = SampleRegion::from_normalized(0.0f, 0.5f, 0.9f, 1000);  // loop > end
-    EXPECT_EQ(r.m_loop_point, 500u);
+    r = SampleRegion::from_normalized(0.0f, 0.5f, 0.9f, 1000);  // loop past End: loops whole
+    EXPECT_EQ(r.m_loop_point, 0u);
     r = SampleRegion::from_normalized(-2.0f, 3.0f, -1.0f, 1000);  // out of range
     EXPECT_EQ(r.m_start, 0u);
     EXPECT_EQ(r.m_end, 1000u);
@@ -513,18 +539,187 @@ TEST(Granular, SamplePlayerTailWhoseBankWasUnloadedReadsSilence) {
     for (size_t j = 0; j < 64; ++j) { ASSERT_FLOAT_EQ(rig.m_out[2624 + j], 0.0f); }
 }
 
-TEST(Granular, SamplePlayerRegionSmallerThanLoopFloorLoopsWhole) {
-    // A 500-frame region is below the two-crossfade floor (960): it loops
-    // whole, wrapping every 500 frames with the crossfade riding across.
+TEST(Granular, SamplePlayerLoopBodyFloorAndFadeFitTheLoop) {
+    // Region [0, 500) with Loop at 490: the loop body is floored to 2 ms
+    // (96 frames, Loop 404) and the fade shrinks to half the body (48).
     PlayerRig rig({make_ramp(1, 10000)});
     rig.m_params.m_sample_end = 0.05f;
-    rig.m_params.m_sample_loop_point = 0.03f;  // ignored: floored to Start
+    rig.m_params.m_sample_loop_point = 0.049f;
     rig.render(1024);
+    for (size_t k = 0; k < 48; ++k) {
+        float const t = static_cast<float>(k) / 48.0f * std::numbers::pi_v<float> * 0.5f;
+        float const expected =
+            std::cos(t) * static_cast<float>(452 + k) + std::sin(t) * static_cast<float>(356 + k);
+        ASSERT_NEAR(rig.m_out[452 + k], expected, 0.05f) << "k=" << k;
+    }
+    for (size_t k = 0; k < 48; ++k) {
+        ASSERT_NEAR(rig.m_out[500 + k], static_cast<float>(404 + k), 1e-3f) << "k=" << k;
+    }
+    ASSERT_NEAR(rig.m_out[596], 404.0f, 1e-3f);
+}
+
+TEST(Granular, SamplePlayerLoopSnapWithoutCrossingsKeepsEqualPower) {
+    // Loop Snap on, but a ramp has no zero crossing to snap to: the join is
+    // not in phase, so the loop fade stays equal-power.
+    PlayerRig rig({make_ramp(1, 10000)});
+    rig.m_params.m_sample_end = 0.48f;
+    rig.m_params.m_sample_loop_point = 0.1f;
+    rig.m_params.m_loop_snap = true;
+    rig.render(4864);
     for (size_t k = 0; k < k_fade; ++k) {
         float const expected =
-            gain_in(k) * static_cast<float>(k) + gain_out(k) * static_cast<float>(500 + k);
-        ASSERT_NEAR(rig.m_out[500 + k], expected, 0.05f) << "k=" << k;
+            gain_out(k) * static_cast<float>(4320 + k) + gain_in(k) * static_cast<float>(520 + k);
+        ASSERT_NEAR(rig.m_out[4320 + k], expected, 0.05f) << "k=" << k;
     }
+}
+
+TEST(Granular, SamplePlayerLoopSnapJudgesThePhaseAtTheRealReentry) {
+    // Crossing only at 6000 (End); Loop parked on End loops the region whole
+    // from Start (1000), which has no crossing: not in phase, equal-power.
+    thl::core::BufferF signed_ramp(1, 10000, k_sample_rate);
+    float* d = signed_ramp.get_write_pointer(0);
+    for (size_t i = 0; i < 10000; ++i) {
+        bool const negative = i >= 5000 && i < 6000;
+        d[i] = (negative ? -1.0f : 1.0f) * static_cast<float>(i + 1);
+    }
+    std::vector<thl::core::BufferF> banks;
+    banks.push_back(std::move(signed_ramp));
+    PlayerRig rig(std::move(banks));
+    rig.m_params.m_sample_start = 0.1f;
+    rig.m_params.m_sample_end = 0.6f;
+    rig.m_params.m_sample_loop_point = 0.6f;
+    rig.m_params.m_loop_snap = true;
+    rig.render(5056);
+    for (size_t k = 0; k < k_fade; ++k) {
+        float const expected =
+            gain_out(k) * -static_cast<float>(5521 + k) + gain_in(k) * static_cast<float>(521 + k);
+        ASSERT_NEAR(rig.m_out[4520 + k], expected, 0.1f) << "k=" << k;
+    }
+}
+
+TEST(Granular, SamplePlayerLoopAtSampleStartFadesAfterTheWrap) {
+    // Region [0, 96) with Loop at 0: there is no audio before Loop, so the
+    // fade runs after the wrap instead — the head restarts at 0 under a copy
+    // carrying on past End (96 + k) that fades out over half the body (48).
+    PlayerRig rig({make_ramp(1, 10000)});
+    rig.m_params.m_sample_end = 0.0096f;
+    rig.render(256);
+    for (size_t n = 0; n < 96; ++n) {
+        ASSERT_NEAR(rig.m_out[n], static_cast<float>(n), 1e-3f) << "n=" << n;
+    }
+    for (size_t k = 0; k < 48; ++k) {
+        float const t = static_cast<float>(k) / 48.0f * std::numbers::pi_v<float> * 0.5f;
+        float const expected =
+            std::cos(t) * static_cast<float>(96 + k) + std::sin(t) * static_cast<float>(k);
+        ASSERT_NEAR(rig.m_out[96 + k], expected, 0.05f) << "k=" << k;
+    }
+    for (size_t k = 48; k < 96; ++k) {
+        ASSERT_NEAR(rig.m_out[96 + k], static_cast<float>(k), 1e-3f) << "k=" << k;
+    }
+    // Every wrap does the same; no tail is parked.
+    ASSERT_NEAR(rig.m_out[192], 96.0f, 1e-3f);
+}
+
+TEST(Granular, SamplePlayerStartOnEndStillPlaysTheMinimumSpan) {
+    // Start == End would be an empty region; it plays 2 ms (96 frames)
+    // forwards from Start instead.
+    PlayerRig rig({make_ramp(1, 10000)});
+    rig.m_params.m_sample_start = 0.5f;
+    rig.m_params.m_sample_end = 0.5f;
+    rig.render(256);
+    for (size_t n = 0; n < 48; ++n) {
+        ASSERT_NEAR(rig.m_out[n], static_cast<float>(5000 + n), 1e-3f) << "n=" << n;
+    }
+    ASSERT_NEAR(rig.m_out[96], 5000.0f, 1e-3f);
+}
+
+TEST(Granular, SamplePlayerLoopSnapMovesMarkersToUpwardCrossings) {
+    // x[i] = +-(i + 1), negative in [1000, 2000) and [5000, 6000): upward
+    // zero crossings sit at 2000 and 6000 only, and |x| is the position.
+    // End near 5980 snaps to 6000 and Loop near 1990 to 2000; Start (no
+    // crossing within 5 ms) stays.
+    thl::core::BufferF signed_ramp(1, 10000, k_sample_rate);
+    float* d = signed_ramp.get_write_pointer(0);
+    for (size_t i = 0; i < 10000; ++i) {
+        bool const negative = (i >= 1000 && i < 2000) || (i >= 5000 && i < 6000);
+        d[i] = (negative ? -1.0f : 1.0f) * static_cast<float>(i + 1);
+    }
+    auto run = [&](bool snap) {
+        std::vector<thl::core::BufferF> banks;
+        banks.push_back(signed_ramp);
+        PlayerRig rig(std::move(banks));
+        rig.m_params.m_sample_end = 0.598f;
+        rig.m_params.m_sample_loop_point = 0.199f;
+        rig.m_params.m_loop_snap = snap;
+        rig.render(6400);
+        return rig.m_out;
+    };
+    auto const snapped = run(true);
+    ASSERT_NEAR(snapped[0], 1.0f, 1e-3f);
+    ASSERT_NEAR(snapped[6000], 2001.0f, 1e-3f);
+    ASSERT_NEAR(snapped[6001], 2002.0f, 1e-3f);
+    auto const raw = run(false);
+    EXPECT_GT(std::abs(raw[6000] - 2001.0f), 1.0f);
+}
+
+TEST(Granular, SamplePlayerLoopSnapNeverReversesTheRegion) {
+    // Start 1900 snaps up to the crossing at 2000, past End 1950: the region
+    // must stay forward (End pushed out to the 2 ms span), not reverse.
+    thl::core::BufferF signed_ramp(1, 10000, k_sample_rate);
+    float* d = signed_ramp.get_write_pointer(0);
+    for (size_t i = 0; i < 10000; ++i) {
+        bool const negative = i >= 1000 && i < 2000;
+        d[i] = (negative ? -1.0f : 1.0f) * static_cast<float>(i + 1);
+    }
+    std::vector<thl::core::BufferF> banks;
+    banks.push_back(std::move(signed_ramp));
+    PlayerRig rig(std::move(banks));
+    rig.m_params.m_sample_start = 0.19f;
+    rig.m_params.m_sample_end = 0.195f;
+    rig.m_params.m_loop_snap = true;
+    rig.render(64);
+    for (size_t n = 0; n < 48; ++n) {
+        ASSERT_NEAR(rig.m_out[n], static_cast<float>(2001 + n), 1e-3f) << "n=" << n;
+    }
+}
+
+TEST(Granular, SamplePlayerSnappedTinyLoopOnASineHasNoJumps) {
+    // Start == End on a 220 Hz sine: the 2 ms span snaps out to one period,
+    // so the loop fade blends in-phase audio (equal-gain, no +3 dB bulge)
+    // and the output stays the sine: x[n-1] + x[n+1] == 2 cos(w) x[n].
+    constexpr size_t k_frames = 48000;
+    thl::core::BufferF sine(1, k_frames, k_sample_rate);
+    float* d = sine.get_write_pointer(0);
+    for (size_t i = 0; i < k_frames; ++i) {
+        d[i] = static_cast<float>(
+            std::sin(2.0 * std::numbers::pi * 220.0 * static_cast<double>(i) / k_sample_rate));
+    }
+    std::vector<thl::core::BufferF> banks;
+    banks.push_back(std::move(sine));
+    auto run = [&](bool snap) {
+        PlayerRig rig(banks);
+        rig.m_params.m_sample_start = 0.5f;
+        rig.m_params.m_sample_end = 0.5f;
+        rig.m_params.m_loop_snap = snap;
+        rig.render(9600);
+        float peak = 0.0f;
+        float residual = 0.0f;  // 0 for a pure 220 Hz sine
+        auto const two_cos_w =
+            static_cast<float>(2.0 * std::cos(2.0 * std::numbers::pi * 220.0 / k_sample_rate));
+        for (size_t n = 1; n + 1 < rig.m_out.size(); ++n) {
+            peak = std::max(peak, std::abs(rig.m_out[n]));
+            residual =
+                std::max(residual,
+                         std::abs(rig.m_out[n - 1] + rig.m_out[n + 1] - two_cos_w * rig.m_out[n]));
+        }
+        return std::pair{peak, residual};
+    };
+    auto const [snapped_peak, snapped_residual] = run(true);
+    EXPECT_NEAR(snapped_peak, 1.0f, 0.02f);
+    EXPECT_LT(snapped_residual, 0.005f);
+    // Unsnapped, the 96-frame loop cuts mid-period: the blend is audible.
+    auto const [raw_peak, raw_residual] = run(false);
+    EXPECT_GT(raw_residual, 0.02f);
 }
 
 // ── Block shapes ─────────────────────────────────────────────────────────────
@@ -697,30 +892,55 @@ TEST(Granular, SampleRegionEndBeforeStartReversesAndMirrorsTheLoop) {
     auto f = SampleRegion::from_normalized(0.2f, 0.8f, 0.7f, 1000);
     EXPECT_FALSE(f.m_reverse);
     EXPECT_EQ(f.m_loop_point, 700u);
+    // Loop on the exit (End, where the UI parks it when the markers are
+    // squeezed) or outside the region loops the whole region from its
+    // entry, in both directions: reversed, End is the lowest frame.
+    EXPECT_EQ(SampleRegion::from_normalized(0.8f, 0.2f, 0.2f, 1000).m_loop_point, 200u);
+    EXPECT_EQ(SampleRegion::from_normalized(0.8f, 0.2f, 0.1f, 1000).m_loop_point, 200u);
+    EXPECT_EQ(SampleRegion::from_normalized(0.8f, 0.2f, 0.9f, 1000).m_loop_point, 200u);
+    EXPECT_EQ(SampleRegion::from_normalized(0.2f, 0.8f, 0.8f, 1000).m_loop_point, 200u);
+    // Reversed Loop on Start is the entry itself.
+    EXPECT_EQ(SampleRegion::from_normalized(0.8f, 0.2f, 0.7999f, 1000).m_loop_point, 200u);
 }
 
 TEST(Granular, SamplePlayerReverseRegionPlaysBackwardsAndLoopsAtTheMirroredPoint) {
     // Start 0.48 (4800), End 0 → the head enters at 4799 and runs down to 0,
-    // then re-enters at Loop = 0.38 (physical 3800), running down again.
+    // then re-enters at Loop = 0.38 (physical 3800), running down again. The
+    // loop fade mirrors too: the copy reads the audio just above Loop.
     PlayerRig rig({make_ramp(1, 10000)});
     rig.m_params.m_sample_start = 0.48f;
     rig.m_params.m_sample_end = 0.0f;
     rig.m_params.m_sample_loop_point = 0.38f;
     rig.render(6016);
 
-    for (size_t n = 0; n < 4800; ++n) {
+    for (size_t n = 0; n < 4320; ++n) {
         ASSERT_NEAR(rig.m_out[n], static_cast<float>(4799 - n), 1e-3f) << "n=" << n;
     }
-    // Wrap: the tail keeps running down past 0 (clamped at frame 0), the
-    // live head fades in from 3799 downwards.
     for (size_t k = 0; k < k_fade; ++k) {
-        float const tail =
-            static_cast<float>(std::max(0.0, 4799.0 - 4800.0 - static_cast<double>(k)));
-        float const expected = gain_in(k) * static_cast<float>(3800 - k) + gain_out(k) * tail;
-        ASSERT_NEAR(rig.m_out[4800 + k], expected, 0.05f) << "k=" << k;
+        float const expected =
+            gain_out(k) * static_cast<float>(479 - k) + gain_in(k) * static_cast<float>(4280 - k);
+        ASSERT_NEAR(rig.m_out[4320 + k], expected, 0.05f) << "k=" << k;
     }
-    for (size_t k = k_fade; k < 1200; ++k) {
+    for (size_t k = 0; k < 1200; ++k) {
         ASSERT_NEAR(rig.m_out[4800 + k], static_cast<float>(3800 - k), 1e-3f) << "k=" << k;
+    }
+}
+
+TEST(Granular, SamplePlayerReverseRegionMarkerMovesKeepTheHeadInPlace) {
+    // Reversed region: moving Start or End every block must not step the read
+    // position (the mirror axis is Start + End). Like forward, the head keeps
+    // running down one frame per frame; only reaching End wraps it.
+    PlayerRig rig({make_ramp(1, 10000)});
+    rig.m_params.m_sample_start = 0.9f;
+    rig.m_params.m_sample_end = 0.1f;
+    rig.render(k_block);
+    for (int b = 0; b < 40; ++b) {
+        rig.m_params.m_sample_start -= 0.001f;  // 10 frames per block
+        rig.m_params.m_sample_end += 0.0013f;   // 13 frames per block
+        rig.render(k_block);
+    }
+    for (size_t n = 1; n < rig.m_out.size(); ++n) {
+        ASSERT_NEAR(rig.m_out[n - 1] - rig.m_out[n], 1.0f, 1e-3f) << "n=" << n;
     }
 }
 
