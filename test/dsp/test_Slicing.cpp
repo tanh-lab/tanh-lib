@@ -374,3 +374,15 @@ TEST(TransientSlicer, PickClampsTheCount) {
     EXPECT_EQ(slicer.pick(analysis, 0, &buffer).m_count, 1u);
     EXPECT_EQ(slicer.pick(analysis, 400, &buffer).m_count, k_max_slices);
 }
+
+TEST(TransientSlicer, PickNeverReturnsAnInvalidNonEmptyMap) {
+    TransientSlicer const slicer;
+    // No frames: an empty map, not a grid of zero-length slices.
+    EXPECT_EQ(slicer.pick(TransientAnalysis{}, 4).m_count, 0u);
+    // Fewer frames than slices: the count shrinks to what fits.
+    TransientAnalysis tiny;
+    tiny.m_num_frames = 3;
+    auto const map = slicer.pick(tiny, 8);
+    EXPECT_EQ(map.m_count, 3u);
+    EXPECT_TRUE(map.valid());
+}

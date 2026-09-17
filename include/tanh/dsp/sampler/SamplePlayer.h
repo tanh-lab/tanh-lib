@@ -113,6 +113,16 @@ public:
     void set_snap(bool snap) { m_snap = snap; }
 
     /**
+     * @brief The audio behind the sources changed in place or was replaced.
+     *
+     * Snapped markers are cached against a source's address and length; a
+     * new sample of the same length can land at the same address. Call this
+     * whenever the host loads new audio (it is cheap: the next render
+     * re-resolves the markers).
+     */
+    void sources_changed() { m_markers.invalidate(); }
+
+    /**
      * @brief Render one block.
      *
      * Writes source channel c into `out[c]` for c < num_channels; a mono

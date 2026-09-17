@@ -221,8 +221,10 @@ TransientAnalysis TransientSlicer::analyse(const core::BufferF& buffer, double s
 SliceMap TransientSlicer::pick(const TransientAnalysis& analysis,
                                size_t count,
                                const core::BufferF* buffer) const {
-    const size_t num_slices = std::clamp<size_t>(count, 1, k_max_slices);
     const size_t num_frames = analysis.m_num_frames;
+    if (num_frames == 0) { return {}; }
+    // Every slice needs at least one frame.
+    const size_t num_slices = std::min(std::clamp<size_t>(count, 1, k_max_slices), num_frames);
     const auto grid = [&] { return SliceMap::grid(num_slices, num_frames); };
     if (analysis.empty() || analysis.m_sample_rate <= 0.0) { return grid(); }
 

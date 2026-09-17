@@ -253,6 +253,8 @@ void GrainProcessorImpl::refresh_sources() {
     for (size_t i = 0; i < count; ++i) { m_sources[i] = sampler::SampleView::of(banks[i]); }
     m_sources_generation = generation;
     m_sources_valid = true;
+    // New audio may reuse an old buffer's address and length.
+    m_player.sources_changed();
 }
 
 void GrainProcessorImpl::render_engine(const AudioBlock& block, const VoiceParams& params) {

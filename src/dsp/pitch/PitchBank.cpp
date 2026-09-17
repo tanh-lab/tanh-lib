@@ -39,12 +39,12 @@ struct PlanarBuffer {
 void shift_into(core::BufferF& output,
                 const core::BufferF& input,
                 float semitones,
+                double sample_rate,
                 const PitchBank::Settings& settings,
                 std::vector<float>& padded_input,
                 std::vector<float>& out_flat) {
     size_t const num_frames = input.get_num_samples();
     size_t const num_channels = input.get_num_channels();
-    double const sample_rate = input.get_sample_rate();
 
     if (std::abs(semitones) < 0.001f || settings.m_copy_only) {
         for (size_t ch = 0; ch < num_channels; ++ch) {
@@ -106,21 +106,28 @@ void shift_into(core::BufferF& output,
 
 }  // namespace
 
-void PitchBank::shift(core::BufferF& output, const core::BufferF& input, float semitones) const {
+bool PitchBank::shift(core::BufferF& output,
+                      const core::BufferF& input,
+                      float semitones,
+                      double sample_rate) const {
+    if (!(sample_rate > 0.0)) { return false; }
     std::vector<float> padded_input;
     std::vector<float> out_flat;
-    shift_into(output, input, semitones, m_settings, padded_input, out_flat);
+    shift_into(output, input, semitones, sample_rate, m_settings, padded_input, out_flat);
+    return true;
 }
 
-void PitchBank::build(std::vector<core::BufferF>& bank, std::span<const int> semitones) const {
+bool PitchBank::build(std::vector<core::BufferF>& bank,
+                      std::span<const int> semitones,
+                      double sample_rate) const {
+    if (!(sample_rate > 0.0)) { return false; }
     size_t const root = root_index();
-    if (root >= bank.size()) { return; }
+    if (root >= bank.size()) { return true; }
     const core::BufferF& input = bank[root];
-    if (input.empty()) { return; }
+    if (input.empty()) { return true; }
 
     size_t const num_frames = input.get_num_samples();
     size_t const num_channels = input.get_num_channels();
-    double const sample_rate = input.get_sample_rate();
 
     std::vector<size_t> selected;
     selected.reserve(semitones.size());
@@ -132,7 +139,7 @@ void PitchBank::build(std::vector<core::BufferF>& bank, std::span<const int> sem
         if (index == root || index >= bank.size()) { continue; }
         selected.push_back(index);
     }
-    if (selected.empty()) { return; }
+    if (selected.empty()) { return true; }
 
     // Allocate every output before the workers start: they only write.
     for (size_t const index : selected) {
@@ -151,6 +158,7 @@ void PitchBank::build(std::vector<core::BufferF>& bank, std::span<const int> sem
             shift_into(bank[index],
                        input,
                        static_cast<float>(semitones_of(index)),
+                       sample_rate,
                        m_settings,
                        padded_input,
                        out_flat);
@@ -167,6 +175,7 @@ void PitchBank::build(std::vector<core::BufferF>& bank, std::span<const int> sem
         begin = end;
     }
     for (auto& worker : workers) { worker.join(); }
+    return true;
 }
 
 }  // namespace thl::dsp::pitch

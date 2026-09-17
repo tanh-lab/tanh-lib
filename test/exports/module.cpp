@@ -72,7 +72,7 @@ extern "C" TANH_EXPORTS_MODULE_API std::size_t tanh_exports_entry() {
         (void)string;
         // PitchBank pulls in Signalsmith Stretch, which must stay internal.
         std::vector<thl::core::BufferF> bank;
-        thl::dsp::pitch::PitchBank{}.build(bank, {});
+        thl::dsp::pitch::PitchBank{}.build(bank, {}, 48000.0);
         thl::dsp::sampler::SamplePlayer player;
         player.prepare(48000.0);
     }

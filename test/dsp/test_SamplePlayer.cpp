@@ -564,3 +564,30 @@ TEST(SamplePlayer, PlaysAPlainBufferWithoutAnyVoice) {
     EXPECT_FALSE(player.render({}, 0, block.out(), 2, k_block));
     EXPECT_FALSE(player.started());
 }
+
+TEST(SamplePlayer, SourcesChangedDropsMarkersSnappedToTheOldAudio) {
+    // Same buffer (address and length), new audio: without sources_changed()
+    // the snapped End would stay on the old crossing.
+    thl::core::BufferF buffer(1, 10000, k_sample_rate);
+    auto fill = [&](size_t crossing) {
+        float* d = buffer.get_write_pointer(0);
+        for (size_t i = 0; i < 10000; ++i) {
+            d[i] = (i >= crossing - 100 && i < crossing) ? -1.0f : 1.0f;
+        }
+    };
+    fill(5010);  // upward crossing at 5010
+    auto const view = thl::dsp::sampler::SampleView::of(buffer);
+    thl::dsp::sampler::SamplePlayer player;
+    player.prepare(k_sample_rate);
+    player.note_on();
+    player.set_markers(0.0f, 0.5f, 0.0f);
+    player.set_snap(true);
+    Block block(2, k_block);
+    ASSERT_TRUE(player.render({&view, 1}, 0, block.out(), 2, k_block));
+    EXPECT_EQ(player.region().m_end, 5010u);
+
+    fill(4990);  // the crossing moved; the buffer did not
+    player.sources_changed();
+    ASSERT_TRUE(player.render({&view, 1}, 0, block.out(), 2, k_block));
+    EXPECT_EQ(player.region().m_end, 4990u);
+}

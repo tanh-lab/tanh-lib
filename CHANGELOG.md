@@ -19,7 +19,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     room behind it), equal-power, or equal-gain when both ends sit on zero
     crossings. Other discontinuities (source switch, retrigger, one-shot end) are
     crossfaded through a pool of outgoing heads. Tuning lives in
-    `PlayerSettings`; `render()` takes a span of alternative sources.
+    `PlayerSettings`; `render()` takes a span of alternative sources, and
+    `sources_changed()` must be called when the host loads new audio (snapped
+    markers are cached against a source's address and length).
   - Its building blocks: `SampleView` with `read_clamped` / `read_wrapped`,
     `LoopRegion`, `LoopMarkers` (minimum span, zero-crossing snap, cache),
     `ZeroCrossing.h`, and `LoopCrossfade.h` (`FadeCurve`, `plan_loop_fade`).
@@ -32,6 +34,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     grid; every threshold is in `Settings`.
   - `dsp::pitch::PitchBank`: pitch-shifted, equal-length copies of a sample, one
     slot per semitone, built across worker threads with Signalsmith Stretch.
+    `build()` / `shift()` take the sample rate explicitly and refuse a
+    non-positive one.
     Signalsmith is fetched and linked privately, and `test/exports` forbids it
     in the export table.
   - `dsp::utils::mixdown`: mono average of a buffer, for offline analysis.

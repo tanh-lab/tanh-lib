@@ -190,6 +190,8 @@ void GrainEngine::render_frames(float* const* out,
         }
 
         for (size_t ch = 0; ch < write_channels; ++ch) { out[ch][i] = frame[ch]; }
+        // Channels the engine was not prepared for are silent, not stale.
+        for (size_t ch = write_channels; ch < num_channels; ++ch) { out[ch][i] = 0.0f; }
     }
 }
 

@@ -444,3 +444,17 @@ TEST(GrainEngine, RendersAPlainBufferWithoutAnyVoice) {
     engine.deactivate_all();
     EXPECT_FALSE(engine.any_grain_active());
 }
+
+TEST(GrainEngine, RenderSilencesChannelsPastThePreparedCount) {
+    auto const ramp = make_ramp(1, 96000);
+    auto const source = thl::dsp::sampler::SampleView::of(ramp);
+    GrainEngine engine;
+    engine.prepare(k_sample_rate, 2);
+    Block block(4, k_block);
+    for (auto& channel : block.m_data) { std::fill(channel.begin(), channel.end(), 123.0f); }
+    engine.render({&source, 1}, 0, GrainParams{}, HeadMode::Scan, block.out(), 4, k_block, 0);
+    for (size_t i = 0; i < k_block; ++i) {
+        ASSERT_FLOAT_EQ(block.m_data[2][i], 0.0f);
+        ASSERT_FLOAT_EQ(block.m_data[3][i], 0.0f);
+    }
+}

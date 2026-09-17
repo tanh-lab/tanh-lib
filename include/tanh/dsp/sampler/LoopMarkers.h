@@ -24,7 +24,10 @@ namespace thl::dsp::sampler {
  *   head re-enters at) landed on crossings, i.e. the join is in phase and an
  *   equal-gain crossfade is right.
  *
- * The result is cached on its inputs, so an unmoved marker costs nothing.
+ * The result is cached on its inputs (the markers, the snap flag and the
+ * view's first-channel address and length), so an unmoved marker costs
+ * nothing. The cache cannot see audio replaced at the same address with the
+ * same length: call invalidate() when the sample changes.
  *
  * @par Real-Time Safety
  * resolve() is real-time safe; a cache miss with snap on scans up to

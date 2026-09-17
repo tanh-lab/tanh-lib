@@ -9,7 +9,7 @@ thl::dsp::pitch::PitchBank const bank;             // -24..+24 semitones
 std::vector<thl::core::BufferF> slots(bank.num_slots());
 slots[bank.root_index()] = std::move(root);        // decoded sample
 const std::vector<int> semitones = {-12, 0, 7, 12};
-bank.build(slots, semitones);                      // loader thread: seconds, allocates
+bank.build(slots, semitones, sample_rate);         // loader thread: seconds, allocates
 ```
 
 Every copy keeps the root's length and timing: it is a pitch shift, not a

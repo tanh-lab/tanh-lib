@@ -70,11 +70,24 @@ public:
      * Each selected transposition (out-of-range, duplicate and root entries
      * are skipped) gets a buffer of the root's shape; other slots are left
      * as they are.
+     *
+     * @param sample_rate The root's sample rate (the shifter's analysis
+     *        depends on it).
+     * @return false, building nothing, when `sample_rate` is not positive.
      */
-    void build(std::vector<core::BufferF>& bank, std::span<const int> semitones) const;
+    bool build(std::vector<core::BufferF>& bank,
+               std::span<const int> semitones,
+               double sample_rate) const;
 
-    /// Shift `input` by `semitones` into `output` (same shape, pre-allocated).
-    void shift(core::BufferF& output, const core::BufferF& input, float semitones) const;
+    /**
+     * @brief Shift `input` by `semitones` into `output` (same shape,
+     * pre-allocated).
+     * @return false, writing nothing, when `sample_rate` is not positive.
+     */
+    bool shift(core::BufferF& output,
+               const core::BufferF& input,
+               float semitones,
+               double sample_rate) const;
 
 private:
     Settings m_settings{};

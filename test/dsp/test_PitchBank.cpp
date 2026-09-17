@@ -57,7 +57,7 @@ TEST(PitchBank, BuildFillsOnlyTheSelectedSlots) {
     slots[bank.root_index()] = sine(220.0, 16000.0, 1600);
     // Duplicates, the root and out-of-range entries are skipped.
     const std::vector<int> selected = {-24, -12, 0, 12, 24, 12, 99, -30};
-    bank.build(slots, selected);
+    ASSERT_TRUE(bank.build(slots, selected, 16000.0));
     for (int s = -24; s <= 24; ++s) {
         bool const expected = s == -24 || s == -12 || s == 0 || s == 12 || s == 24;
         EXPECT_EQ(!slots[bank.index_of(s)].empty(), expected) << "semitone " << s;
@@ -69,7 +69,7 @@ TEST(PitchBank, BuildFillsOnlyTheSelectedSlots) {
     }
     // No root: nothing to do.
     std::vector<BufferF> empty(bank.num_slots());
-    bank.build(empty, selected);
+    EXPECT_TRUE(bank.build(empty, selected, 16000.0));
     for (const auto& slot : empty) { EXPECT_TRUE(slot.empty()); }
 }
 
@@ -80,7 +80,7 @@ TEST(PitchBank, ShiftedCopiesKeepLengthAndHitTheirPitch) {
     std::vector<BufferF> slots(bank.num_slots());
     slots[bank.root_index()] = sine(440.0, k_rate, k_frames);
     const std::vector<int> selected = {-12, -7, 7, 12};
-    bank.build(slots, selected);
+    ASSERT_TRUE(bank.build(slots, selected, k_rate));
     for (int const s : selected) {
         const auto& shifted = slots[bank.index_of(s)];
         ASSERT_EQ(shifted.get_num_samples(), k_frames);
@@ -92,12 +92,24 @@ TEST(PitchBank, ShiftedCopiesKeepLengthAndHitTheirPitch) {
     }
 }
 
+TEST(PitchBank, RejectsAMissingSampleRate) {
+    // A buffer built without a rate reports 0: the shifter must not run on it.
+    PitchBank const bank;
+    std::vector<BufferF> slots(bank.num_slots());
+    slots[bank.root_index()] = BufferF(1, 800);
+    const std::vector<int> selected = {7};
+    EXPECT_FALSE(bank.build(slots, selected, 0.0));
+    EXPECT_TRUE(slots[bank.index_of(7)].empty());
+    BufferF out(1, 800);
+    EXPECT_FALSE(bank.shift(out, slots[bank.root_index()], 7.0f, -1.0));
+}
+
 TEST(PitchBank, CopyOnlyDuplicatesTheRoot) {
     PitchBank const bank({.m_copy_only = true});
     std::vector<BufferF> slots(bank.num_slots());
     slots[bank.root_index()] = sine(220.0, 16000.0, 800);
     const std::vector<int> selected = {5};
-    bank.build(slots, selected);
+    ASSERT_TRUE(bank.build(slots, selected, 16000.0));
     const auto& copy = slots[bank.index_of(5)];
     ASSERT_EQ(copy.get_num_samples(), 800u);
     EXPECT_TRUE(std::equal(copy.get_read_pointer(0),

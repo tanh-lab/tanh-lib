@@ -87,7 +87,8 @@ public:
     bool any_grain_active() const;
 
     /**
-     * @brief Render one block, overwriting `out`.
+     * @brief Render one block, overwriting all `num_channels` of `out`
+     * (channels past the prepared count are written silent).
      * @param elapsed_samples Samples since note-on: drives the temperature
      *        ramp (position temperature eases in over the first second).
      */

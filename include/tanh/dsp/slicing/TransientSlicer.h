@@ -73,7 +73,9 @@ public:
      * @brief Pick `count` slices from an analysis.
      * @param refine The analysed audio, to refine boundaries against (see
      *               class); nullptr keeps the hop-resolution peaks.
-     * @return A valid map of `count` slices (clamped to 1..k_max_slices).
+     * @return A valid map of `count` slices (clamped to 1..k_max_slices and
+     *         to the analysed frame count), or an empty map (`m_count == 0`)
+     *         when the analysis has no frames to cut.
      */
     [[nodiscard]] SliceMap pick(const TransientAnalysis& analysis,
                                 size_t count,
