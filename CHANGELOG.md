@@ -9,6 +9,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Sample playback as standalone components, usable without the granular voice
+  or any parameter system (design notes: `docs/sphinx/sampler.md`, `slicing.md`,
+  `pitch.md`):
+  - `dsp::sampler::SamplePlayer`: a varispeed player / looper over
+    `SampleView`s, with Start / End / Loop markers or an exact region. End before
+    Start plays backwards, and moving a marker never moves the audible head. A
+    loop wraps through a crossfade before End (or after the wrap when Loop has no
+    room behind it), equal-power, or equal-gain when both ends sit on zero
+    crossings. Other discontinuities (source switch, retrigger, one-shot end) are
+    crossfaded through a pool of outgoing heads. Tuning lives in
+    `PlayerSettings`; `render()` takes a span of alternative sources.
+  - Its building blocks: `SampleView` with `read_clamped` / `read_wrapped`,
+    `LoopRegion`, `LoopMarkers` (minimum span, zero-crossing snap, cache),
+    `ZeroCrossing.h`, and `LoopCrossfade.h` (`FadeCurve`, `plan_loop_fade`).
+  - `dsp::slicing::SliceMap`: up to 64 slices in frames, trivially copyable for an
+    audio-thread handoff, rescaled for sources of another length; `SliceSteps.h`
+    for the slice-space mapping and `region_from_steps`;
+    `valid_normalized_bounds` for host edits.
+  - `dsp::slicing::TransientSlicer`: offline band-flux transient detection that
+    picks N slices, refines boundaries against the audio and falls back to the
+    grid; every threshold is in `Settings`.
+  - `dsp::pitch::PitchBank`: pitch-shifted, equal-length copies of a sample, one
+    slot per semitone, built across worker threads with Signalsmith Stretch.
+    Signalsmith is fetched and linked privately, and `test/exports` forbids it
+    in the export table.
+  - `dsp::utils::mixdown`: mono average of a buffer, for offline analysis.
+- `dsp::granular::GrainEngine` is usable standalone: it takes a `GrainParams`
+  block, a `HeadMode` (`Spray` / `Scan`), a span of sources and planar output,
+  and reports to an optional `GrainVisualizer`.
+
 - `Net` component (`tanh::Net`, `TANH_BUILD_NET`, **off by default**) — delivery
   of versioned file sets over HTTPS, for shipping model or sample packs that are
   too large to bundle.
@@ -54,6 +84,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Breaking**, `dsp::granular`: the voice internals were split into the
+  components above. Hosts that subclass `GrainProcessorImpl` must change the
+  following:
+  - `SlicerEnabled`, `LoopEnabled` and `LoopSnap` moved to the end of the
+    `Parameter` enum. Hosts that serve parameters by name are unaffected; tables
+    indexed by the enum's numeric value must be reordered.
+  - `read_slice_map()` takes a `dsp::slicing::SliceMap`, which is frame-based,
+    instead of the old normalised 16-slice `granular::SliceMap`. Build it with
+    `SliceMap::from_normalized(bounds, total_frames)`.
+  - `prepare()`'s `samples_per_block` is now used: it sizes the player's scratch.
+  - `granular::SamplePlayer`, `SampleReader`, `SampleRegion` and `SliceMap` are
+    gone; use `sampler::SamplePlayer`, `sampler::SampleView`,
+    `sampler::LoopRegion` and `slicing::SliceMap`.
+  - `GrainEngine` no longer takes a `SampleReader` and `VoiceParams`: see the
+    new API above.
+  - `HeadPolicy` reads `HeadInputs`.
+  - The `k_player_*` and `k_*_varispeed` constants moved into
+    `sampler::PlayerSettings`.
+
+  The Sample head now renders source channels and the voice applies the channel
+  mode afterwards (`channel_mixer::mix_head`). Grain output is bit-identical
+  before and after the split; Sample-mode output differs by at most 1.2e-7 of
+  full scale, from floating-point reordering.
 - `TANH_WITH_DOCS` now does something — it adds the `sphinx-docs` target — and
   therefore defaults to **OFF** (it was ON and inert). A docs-enabled configure
   requires Doxygen and Python 3; consumers that already set it OFF are

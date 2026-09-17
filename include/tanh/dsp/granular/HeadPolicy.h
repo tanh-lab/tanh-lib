@@ -1,7 +1,9 @@
 #pragma once
 
-#include <tanh/dsp/granular/SampleRegion.h>
-#include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/dsp/granular/GranularTypes.h>
+#include <tanh/dsp/sampler/LoopRegion.h>
+#include <tanh/dsp/slicing/SliceMap.h>
+#include <tanh/dsp/slicing/SliceSteps.h>
 
 #include <algorithm>
 #include <cmath>
@@ -12,6 +14,22 @@ namespace thl::dsp::granular {
 
 // pick_start's "trigger nothing" answer (a one-shot scan that is over).
 inline constexpr FramePos k_no_grain = -1;
+
+/// What a head policy reads each block. Markers and Position are normalised
+/// [0, 1]; Tilt is [-1, 1]. A non-null `m_slices` (a valid map) reads Start /
+/// End / Position in slice space (see slicing/SliceSteps.h).
+struct HeadInputs {
+    float m_start{0.0f};
+    float m_end{1.0f};
+    float m_loop_point{0.0f};
+    bool m_loop{true};  ///< Scan: loop (true) or one pass (false).
+    float m_position{0.0f};
+    float m_spray{0.0f};
+    float m_tilt{0.0f};
+    const slicing::SliceMap* m_slices{nullptr};
+};
+
+using sampler::LoopRegion;
 
 // One draw in [0, 1).
 inline float unit_random(std::mt19937& rng) {
@@ -27,15 +45,15 @@ class HeadPolicy {
 public:
     virtual ~HeadPolicy() = default;
 
-    virtual SampleRegion region(size_t total_frames, const VoiceParams& params) const = 0;
+    virtual LoopRegion region(size_t total_frames, const HeadInputs& params) const = 0;
 
     // Next grain's start, absolute in source frames, or negative when no
     // grain should be triggered. `temperature` is the (ramped) position
     // temperature; `interval` the frames between triggers.
-    virtual FramePos pick_start(const SampleRegion& region,
+    virtual FramePos pick_start(const LoopRegion& region,
                                 float temperature,
                                 size_t interval,
-                                const VoiceParams& params,
+                                const HeadInputs& params,
                                 std::mt19937& rng) = 0;
 
     virtual void reset() = 0;
@@ -49,7 +67,7 @@ protected:
     // into the region however many times it takes, then made absolute.
     static FramePos jitter_and_wrap(FramePos start,
                                     float temperature,
-                                    const SampleRegion& region,
+                                    const LoopRegion& region,
                                     std::mt19937& rng) {
         auto const max_position = static_cast<FramePos>(region.size());
         float rand_value = unit_random(rng);      // [0, 1)
@@ -67,23 +85,17 @@ protected:
 // per trigger), so the scan is always 1x regardless of density.
 class LoopScanHead final : public HeadPolicy {
 public:
-    SampleRegion region(size_t total_frames, const VoiceParams& p) const override {
-        if (p.m_slicer) {
-            return SampleRegion::from_slices(p.m_sample_start,
-                                             p.m_sample_end,
-                                             p.m_slices,
-                                             total_frames);
+    LoopRegion region(size_t total_frames, const HeadInputs& p) const override {
+        if (p.m_slices != nullptr) {
+            return slicing::region_from_steps(*p.m_slices, p.m_start, p.m_end, total_frames);
         }
-        return SampleRegion::from_normalized(p.m_sample_start,
-                                             p.m_sample_end,
-                                             p.m_sample_loop_point,
-                                             total_frames);
+        return LoopRegion::from_normalized(p.m_start, p.m_end, p.m_loop_point, total_frames);
     }
 
-    FramePos pick_start(const SampleRegion& region,
+    FramePos pick_start(const LoopRegion& region,
                         float temperature,
                         size_t interval,
-                        const VoiceParams& params,
+                        const HeadInputs& params,
                         std::mt19937& rng) override {
         auto const max_position = static_cast<FramePos>(region.size());
         if (max_position <= 0) { return static_cast<FramePos>(region.m_start); }
@@ -148,18 +160,20 @@ private:
 // the boundaries, so short and long slices are picked equally often.
 class PositionSprayHead final : public HeadPolicy {
 public:
-    SampleRegion region(size_t total_frames, const VoiceParams& /*params*/) const override {
-        return SampleRegion::full(total_frames);
+    LoopRegion region(size_t total_frames, const HeadInputs& /*params*/) const override {
+        return LoopRegion::full(total_frames);
     }
 
-    FramePos pick_start(const SampleRegion& region,
+    FramePos pick_start(const LoopRegion& region,
                         float temperature,
                         size_t /*interval*/,
-                        const VoiceParams& p,
+                        const HeadInputs& p,
                         std::mt19937& rng) override {
         auto const max_position = static_cast<FramePos>(region.size());
         if (max_position <= 0) { return static_cast<FramePos>(region.m_start); }
-        if (p.m_slicer) { return pick_slice_start(region, temperature, p, rng); }
+        if (p.m_slices != nullptr) {
+            return pick_slice_start(region, temperature, *p.m_slices, p, rng);
+        }
 
         float const window_lo = std::max(-1.0f, p.m_tilt - 1.0f);
         float const window_hi = std::min(1.0f, p.m_tilt + 1.0f);
@@ -184,12 +198,13 @@ private:
         return lo + v;
     }
 
-    FramePos pick_slice_start(const SampleRegion& region,
+    FramePos pick_slice_start(const LoopRegion& region,
                               float temperature,
-                              const VoiceParams& p,
+                              const slicing::SliceMap& slices,
+                              const HeadInputs& p,
                               std::mt19937& rng) {
-        auto const n = static_cast<double>(p.m_slices.m_count);
-        auto const k = static_cast<double>(p.m_slices.slice_of_step(p.m_position));
+        auto const n = static_cast<double>(slices.m_count);
+        auto const k = static_cast<double>(slicing::slice_of_step(slices, p.m_position));
         double const spray = static_cast<double>(p.m_spray) * n;  // width in slices
         double const tilt = static_cast<double>(p.m_tilt);
         double window_lo = k + std::max(-1.0, tilt - 1.0) * spray;
@@ -208,14 +223,14 @@ private:
         v = wrap_into(v, 0.0, n);  // past the last slice -> the first
         // Same rounding as SliceMap::boundary_frame, so Spray 0 lands on the
         // very frame Sample / Loop mode's region starts on.
-        auto const frame =
-            static_cast<FramePos>(std::llround(static_cast<double>(p.m_slices.step_to_norm(v)) *
-                                               static_cast<double>(max_frames(region))));
+        auto const frame = static_cast<FramePos>(
+            std::llround(static_cast<double>(slicing::step_to_norm(slices, v)) *
+                         static_cast<double>(max_frames(region))));
         return std::clamp(frame, FramePos{0}, max_frames(region) - 1) +
                static_cast<FramePos>(region.m_start);
     }
 
-    static FramePos max_frames(const SampleRegion& region) {
+    static FramePos max_frames(const LoopRegion& region) {
         return std::max(FramePos{1}, static_cast<FramePos>(region.size()));
     }
 };

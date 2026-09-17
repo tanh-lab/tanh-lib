@@ -1,9 +1,14 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
+#include <tanh/dsp/granular/ChannelMixer.h>
+#include <tanh/dsp/granular/GrainEngine.h>
 #include <tanh/dsp/granular/GrainProcessor.h>
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 #include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/dsp/sampler/SamplePlayer.h>
+#include <tanh/dsp/sampler/SampleView.h>
+#include <tanh/dsp/slicing/SliceSteps.h>
 #include <tanh/dsp/utils/MorphWindow.h>
 
 #include <algorithm>
@@ -15,11 +20,19 @@
 
 namespace thl::dsp::granular {
 
+namespace {
+
+HeadMode head_mode(EngineMode mode) {
+    return mode == EngineMode::GranularPosition ? HeadMode::Spray : HeadMode::Scan;
+}
+
+}  // namespace
+
 GrainProcessorImpl::GrainProcessorImpl(audio::AudioDataStore& audio_store)
-    : m_audio_store(audio_store)
-    , m_reader(audio_store)
-    , m_grain_engine(m_reader, m_viz)
-    , m_player(m_reader, m_viz) {}
+    : m_audio_store(audio_store) {
+    m_grain_engine.set_visualizer(&m_viz);
+    m_sources.reserve(k_max_sources);
+}
 
 GrainProcessorImpl::~GrainProcessorImpl() = default;
 
@@ -41,25 +54,30 @@ void GrainProcessorImpl::set_visualization_update_rate(float fps) {
 
 void GrainProcessorImpl::reset_grains() {
     m_grain_engine.deactivate_all();
-    m_grain_engine.reset_schedule(m_active_mode);
+    m_grain_engine.reset_schedule(head_mode(m_active_mode));
     m_last_playing_state = false;
     m_was_sounding = false;
     m_playback_elapsed_samples = 0;
     m_envelope.reset();
-    m_player.reset();
+    reset_player();
     m_mode_fade_out = false;
     m_mode_gain = 1.0f;
     m_one_shot_done = false;
 }
 
 void GrainProcessorImpl::prepare(const double& sample_rate,
-                                 const size_t& /*samples_per_block*/,
+                                 const size_t& samples_per_block,
                                  const size_t& num_channels) {
     m_sample_rate = sample_rate;
     m_channels = std::min(num_channels, k_max_channel_support);
 
     m_grain_engine.prepare(sample_rate, m_channels);
-    m_player.prepare(sample_rate, m_channels);
+    m_viz.player_resetting(m_player);
+    m_player.prepare(sample_rate);
+    m_scratch_frames = std::max<size_t>(1, samples_per_block);
+    m_head_scratch.assign(k_max_channel_support * m_scratch_frames, 0.0f);
+    m_mix_scratch.assign(k_max_channel_support * m_scratch_frames, 0.0f);
+    m_sources_valid = false;
 
     // Mode timing. The active mode seeds from the parameter so a preset that
     // boots in Sample mode doesn't run one block of grains first.
@@ -193,14 +211,14 @@ void GrainProcessorImpl::handle_gate(const VoiceParams& params) {
         // whatever the last note left behind (or from the prepare()-time
         // volume), bending the first few ms of every note.
         m_volume_smoother.set_current_and_target_value(params.m_volume);
-        m_grain_engine.reset_schedule(m_active_mode);
+        m_grain_engine.reset_schedule(head_mode(m_active_mode));
         m_playback_elapsed_samples = 0;
         // Legato (crossfaded restart) only while the previous note still
         // sounds; a head whose envelope has already died restarts cold.
         if (envelope_active) {
             m_player.note_on();
         } else {
-            m_player.reset();
+            reset_player();
         }
     } else if (!params.m_playing && m_envelope.get_state() != utils::ADSR::State::IDLE &&
                m_envelope.get_state() != utils::ADSR::State::RELEASE) {
@@ -210,26 +228,75 @@ void GrainProcessorImpl::handle_gate(const VoiceParams& params) {
 }
 
 bool GrainProcessorImpl::is_sounding() const {
-    return m_envelope.is_active() && m_reader.is_loaded();
+    return m_envelope.is_active() && m_audio_store.is_loaded();
 }
 
 void GrainProcessorImpl::silence() {
     m_grain_engine.deactivate_all();
     m_viz.set_master_level(0.f);
     m_viz.report_master_level();
+    reset_player();
+}
+
+void GrainProcessorImpl::reset_player() {
+    m_viz.player_resetting(m_player);
     m_player.reset();
+}
+
+void GrainProcessorImpl::refresh_sources() {
+    uint32_t const generation = m_audio_store.get_load_generation();
+    if (m_sources_valid && generation == m_sources_generation) { return; }
+    // Within the capacity reserved at construction: no allocation.
+    const auto& banks = m_audio_store.get_buffer();
+    size_t const count = std::min(banks.size(), k_max_sources);
+    m_sources.resize(count);
+    for (size_t i = 0; i < count; ++i) { m_sources[i] = sampler::SampleView::of(banks[i]); }
+    m_sources_generation = generation;
+    m_sources_valid = true;
 }
 
 void GrainProcessorImpl::render_engine(const AudioBlock& block, const VoiceParams& params) {
     m_viz.set_master_level(m_envelope.get_current_level());
+    refresh_sources();
     bool rendered = true;
     bool finished = false;
     if (m_active_mode == EngineMode::Sample) {
-        rendered = m_player.render(block, params);
+        rendered = render_player(block, params);
         finished = m_player.finished();
     } else {
-        m_grain_engine.render(block, params, m_active_mode, m_playback_elapsed_samples);
-        finished = m_grain_engine.finished(m_active_mode);
+        size_t const source =
+            static_cast<size_t>(std::clamp(params.m_sample_index,
+                                           0,
+                                           std::max(0, static_cast<int>(m_sources.size()) - 1)));
+        GrainParams grain;
+        grain.m_size = params.m_size;
+        grain.m_density = params.m_density;
+        grain.m_pitch = params.m_velocity;
+        grain.m_temperature_size = params.m_temperature_size;
+        grain.m_temperature_position = params.m_temperature_position;
+        grain.m_temperature_pitch = params.m_temperature_velocity;
+        grain.m_window_shape = params.m_window_shape;
+        grain.m_window_tilt = params.m_window_tilt;
+        grain.m_channel_mode = params.m_channel_mode;
+        grain.m_spread = params.m_spread;
+        grain.m_head = {.m_start = params.m_sample_start,
+                        .m_end = params.m_sample_end,
+                        .m_loop_point = params.m_sample_loop_point,
+                        .m_loop = params.m_loop,
+                        .m_position = params.m_position,
+                        .m_spray = params.m_spray,
+                        .m_tilt = params.m_tilt,
+                        .m_slices = params.m_slicer ? &params.m_slices : nullptr};
+        HeadMode const mode = head_mode(m_active_mode);
+        m_grain_engine.render(m_sources,
+                              source,
+                              grain,
+                              mode,
+                              block.m_channels.data(),
+                              block.m_num_channels,
+                              block.m_num_frames,
+                              m_playback_elapsed_samples);
+        finished = m_grain_engine.finished(mode);
     }
     // The temperature ramp counts sounding time only.
     if (rendered) { m_playback_elapsed_samples += block.m_num_frames; }
@@ -242,6 +309,61 @@ void GrainProcessorImpl::render_engine(const AudioBlock& block, const VoiceParam
             m_envelope.note_off();
         }
     }
+}
+
+bool GrainProcessorImpl::render_player(const AudioBlock& block, const VoiceParams& params) {
+    size_t const source = static_cast<size_t>(
+        std::clamp(params.m_sample_index, 0, std::max(0, static_cast<int>(m_sources.size()) - 1)));
+    const sampler::SampleView* view = source < m_sources.size() ? &m_sources[source] : nullptr;
+    size_t const source_channels = view != nullptr ? view->m_num_channels : 0;
+    // The player renders the source's own channels (at least a stereo pair,
+    // a mono source duplicated); the channel mode then maps them out.
+    size_t const head_channels =
+        std::min(k_max_channel_support, std::max<size_t>(2, source_channels));
+
+    if (params.m_slicer && view != nullptr) {
+        m_player.set_region(slicing::region_from_steps(params.m_slices,
+                                                       params.m_sample_start,
+                                                       params.m_sample_end,
+                                                       view->m_num_frames));
+    } else {
+        m_player.set_markers(params.m_sample_start,
+                             params.m_sample_end,
+                             params.m_sample_loop_point);
+    }
+    m_player.set_speed(params.m_velocity);
+    m_player.set_loop(params.m_loop);
+    m_player.set_snap(params.m_loop_snap);
+
+    std::array<float*, k_max_channel_support> head{};
+    std::array<float*, k_max_channel_support> mix{};
+    size_t const write_channels = std::min(m_channels, block.m_num_channels);
+    bool rendered_any = false;
+    for (size_t done = 0; done < block.m_num_frames;) {
+        size_t const frames = std::min(m_scratch_frames, block.m_num_frames - done);
+        for (size_t ch = 0; ch < k_max_channel_support; ++ch) {
+            head[ch] = m_head_scratch.data() + ch * m_scratch_frames;
+            mix[ch] = m_mix_scratch.data() + ch * m_scratch_frames;
+        }
+        bool const was_started = m_player.started();
+        bool const rendered =
+            m_player.render(m_sources, source, head.data(), head_channels, frames);
+        m_viz.player_rendered(m_player, was_started, rendered, m_sample_rate);
+        if (!rendered) { return rendered_any; }
+        rendered_any = true;
+        channel_mixer::mix_head(head.data(),
+                                source_channels,
+                                params.m_channel_mode,
+                                params.m_spread,
+                                mix.data(),
+                                m_channels,
+                                frames);
+        for (size_t ch = 0; ch < write_channels; ++ch) {
+            std::copy_n(mix[ch], frames, block.m_channels[ch] + done);
+        }
+        done += frames;
+    }
+    return rendered_any;
 }
 
 void GrainProcessorImpl::apply_voice_gain(const AudioBlock& block, const VoiceParams& params) {
@@ -289,7 +411,7 @@ void GrainProcessorImpl::report_visualization() {
     // on their own rate-limited cadence.
     if (m_active_mode == EngineMode::Sample) {
         m_viz.set_master_level(m_envelope.get_current_level());
-        m_player.report_visualization();
+        m_viz.player_updated(m_player);
     }
 }
 
@@ -309,8 +431,8 @@ void GrainProcessorImpl::update_mode_fade(const VoiceParams& params) {
     m_mode_fade_out = false;
     if (!m_envelope.is_active()) { m_mode_gain = 1.0f; }
     m_grain_engine.deactivate_all();
-    m_grain_engine.reset_schedule(m_active_mode);
-    m_player.reset();
+    m_grain_engine.reset_schedule(head_mode(m_active_mode));
+    reset_player();
     // A finished one-shot in the old mode must not keep the new one silent.
     m_one_shot_done = false;
 }

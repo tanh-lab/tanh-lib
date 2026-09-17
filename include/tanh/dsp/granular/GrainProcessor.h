@@ -7,23 +7,26 @@
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
 #include <tanh/dsp/granular/GranularTypes.h>
-#include <tanh/dsp/granular/SamplePlayer.h>
-#include <tanh/dsp/granular/SampleReader.h>
 #include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/dsp/sampler/SamplePlayer.h>
+#include <tanh/dsp/sampler/SampleView.h>
+#include <tanh/dsp/slicing/SliceMap.h>
 #include <tanh/dsp/utils/ADSR.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace thl::dsp::granular {
 
 // One granular voice: the BaseProcessor facade the host subclasses to bind
 // parameters. It owns what is common to every engine mode — the parameter
 // snapshot, the master ADSR and note logic, the mode-change fade — and
-// dispatches each block to one of two pre-allocated engines: the
-// GrainEngine (Position / Loop, told where to start grains by a HeadPolicy)
-// or the SamplePlayer (Sample). The engines never see the parameter system.
+// dispatches each block to one of two pre-allocated components: the
+// GrainEngine (Position / Loop) or a sampler::SamplePlayer (Sample), both
+// reading the pitch banks of an AudioDataStore as alternative sources. The
+// components never see the parameter system.
 class TANH_API GrainProcessorImpl : public thl::dsp::BaseProcessor {
 public:
     explicit GrainProcessorImpl(thl::dsp::audio::AudioDataStore& audio_store);
@@ -75,13 +78,6 @@ protected:
         GrainWindowShape,
         GrainWindowTilt,
 
-        // Slicing on/off, Loop / one-shot and Loop Snap: plain bools, not
-        // modulation targets. The slice map itself comes through
-        // read_slice_map().
-        SlicerEnabled,
-        LoopEnabled,
-        LoopSnap,
-
         EnvelopeAttack,
         EnvelopeDecay,
         EnvelopeSustain,
@@ -89,6 +85,13 @@ protected:
         EnvelopeAttackCurve,
         EnvelopeDecayCurve,
         EnvelopeReleaseCurve,
+
+        // Slicing on/off, Loop / one-shot and Loop Snap: plain bools, not
+        // modulation targets. The slice map itself comes through
+        // read_slice_map().
+        SlicerEnabled,
+        LoopEnabled,
+        LoopSnap,
 
         NumParameters
     };
@@ -106,7 +109,7 @@ private:
     // when SlicerEnabled is set. Return false (the default) for no map:
     // slicing is then off whatever the flag says. Called on the audio
     // thread: no locks, no allocation — a seqlock / atomic copy, nothing more.
-    virtual bool read_slice_map(SliceMap& /*out*/) { return false; }
+    virtual bool read_slice_map(slicing::SliceMap& /*out*/) { return false; }
 
     // process() in order:
     AudioBlock begin_block(thl::core::BufferView buffer);  // pointers, clear
@@ -117,8 +120,11 @@ private:
     void update_mode_fade(const VoiceParams& params);  // mode-switch state machine
     void handle_gate(const VoiceParams& params);       // note-on / note-off edges
     bool is_sounding() const;
-    void silence();  // envelope idle or no sample: drop grains, head, viz
+    void silence();          // envelope idle or no sample: drop grains, head, viz
+    void refresh_sources();  // one SampleView per pitch bank, rebuilt per load
+    void reset_player();     // tells the visualisation first
     void render_engine(const AudioBlock& block, const VoiceParams& params);
+    bool render_player(const AudioBlock& block, const VoiceParams& params);
     void apply_voice_gain(const AudioBlock& block, const VoiceParams& params);
     void report_visualization();
 
@@ -128,13 +134,24 @@ private:
     double m_sample_rate = 48000.0;
     size_t m_channels = 2;
 
-    // Shared collaborators, declared before the engines that hold them.
-    SampleReader m_reader;
+    // Shared collaborators, declared before the components that hold them.
     GrainVisualizer m_viz;
-    // Both engines pre-allocated: a mode switch is a dispatch change after
+    // Both components pre-allocated: a mode switch is a dispatch change after
     // the fade, never an allocation.
     GrainEngine m_grain_engine;
-    SamplePlayer m_player;
+    sampler::SamplePlayer m_player;
+
+    // The store's banks as views, rebuilt when its load generation changes.
+    static constexpr size_t k_max_sources = 128;
+    std::vector<sampler::SampleView> m_sources;
+    uint32_t m_sources_generation{0};
+    bool m_sources_valid{false};
+
+    // The player renders the source's channels here, then the channel mode
+    // maps them into the mix scratch (k_max_channel_support x max block).
+    size_t m_scratch_frames{0};
+    std::vector<float> m_head_scratch;
+    std::vector<float> m_mix_scratch;
 
     // Note logic
     bool m_last_playing_state{false};

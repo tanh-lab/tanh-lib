@@ -3,7 +3,8 @@
 // A plugin-shaped shared object embedding every built tanh-lib component — what a
 // DAW plugin that uses tanh-lib looks like to the dynamic linker. test/exports checks
 // its export table: the one entry point below and nothing else (no thl::, nothing of
-// miniaudio, nlohmann::json or moodycamel), in both the static and the shared shape.
+// miniaudio, nlohmann::json, moodycamel or Signalsmith), in both the static and the
+// shared shape.
 //
 // Each component is referenced by address so that its archive is pulled into the link
 // in a static build; nothing is executed.
@@ -13,8 +14,12 @@
 #include <tanh/state/State.h>
 #endif
 #ifdef TANH_DSP_ENABLED
+#include <tanh/dsp/pitch/PitchBank.h>
 #include <tanh/dsp/rings-resonator/RingsString.h>
+#include <tanh/dsp/sampler/SamplePlayer.h>
 #include <tanh/dsp/utils/Scales.h>
+
+#include <vector>
 #endif
 #ifdef TANH_MODULATION_ENABLED
 #include <tanh/modulation/ModulationMatrix.h>
@@ -65,6 +70,11 @@ extern "C" TANH_EXPORTS_MODULE_API std::size_t tanh_exports_entry() {
     if (references[0] == nullptr) {
         thl::dsp::resonator::RingsString string;
         (void)string;
+        // PitchBank pulls in Signalsmith Stretch, which must stay internal.
+        std::vector<thl::core::BufferF> bank;
+        thl::dsp::pitch::PitchBank{}.build(bank, {});
+        thl::dsp::sampler::SamplePlayer player;
+        player.prepare(48000.0);
     }
 #endif
     return sizeof(references) / sizeof(references[0]);

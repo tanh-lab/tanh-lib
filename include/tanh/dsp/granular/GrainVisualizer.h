@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
+#include <tanh/dsp/sampler/SamplePlayer.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -76,6 +77,35 @@ public:
     void head_updated(float norm_position) {
         report_master_level();
         grain_updated(k_head_slot, norm_position, 1.0f);
+    }
+
+    // A sampler::SamplePlayer as the head. After each render: `was_started`
+    // is started() from before it; a render that started the head reports
+    // head_started, a silent early-out that stopped it head_finished.
+    void player_rendered(const sampler::SamplePlayer& player,
+                         bool was_started,
+                         bool rendered,
+                         double sample_rate) {
+        if (!rendered) {
+            if (was_started) { head_finished(); }
+            return;
+        }
+        if (!player.just_started()) { return; }
+        const auto& region = player.region();
+        auto const total_f = static_cast<float>(player.source_frames());
+        head_started(static_cast<float>(region.m_start) / total_f,
+                     static_cast<float>(region.size()) / total_f,
+                     player.speed(),
+                     static_cast<float>(region.size()) / static_cast<float>(sample_rate) * 1000.0f);
+    }
+    // The player is about to be reset (note logic, silence, mode switch).
+    void player_resetting(const sampler::SamplePlayer& player) {
+        if (player.started()) { head_finished(); }
+    }
+    // Per block, after the voice applied its gain.
+    void player_updated(const sampler::SamplePlayer& player) {
+        if (!player.started() || player.source_frames() == 0) { return; }
+        head_updated(player.normalized_position());
     }
 
 private:

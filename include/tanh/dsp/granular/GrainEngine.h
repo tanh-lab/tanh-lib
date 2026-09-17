@@ -5,9 +5,8 @@
 #include <tanh/dsp/granular/GrainVisualizer.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 #include <tanh/dsp/granular/HeadPolicy.h>
-#include <tanh/dsp/granular/SampleReader.h>
-#include <tanh/dsp/granular/SampleRegion.h>
-#include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/dsp/sampler/LoopRegion.h>
+#include <tanh/dsp/sampler/SampleView.h>
 #include <tanh/dsp/utils/MorphWindow.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -15,109 +14,156 @@
 #include <cstddef>
 #include <cstdint>
 #include <random>
+#include <span>
 
 namespace thl::dsp::granular {
 
-// The grain scheduler and renderer shared by the granular modes: a
-// pre-allocated pool of Hann-windowed grains triggered at the Density rate,
-// each with jittered size / pitch / pan. Where a grain starts is decided by
-// the HeadPolicy for the mode the voice asks for; the render maths never
-// branches on the mode. Nothing here allocates after construction.
+/// Where grains start (see HeadPolicy).
+enum class HeadMode {
+    Spray,  ///< Around a fixed Position, within a Spray / Tilt window.
+    Scan,   ///< A scan head travelling Start -> End at 1x, re-entering at Loop.
+};
+
+/// One block of grain controls. Normalised controls are [0, 1].
+struct GrainParams {
+    float m_size{0.5f};     ///< Grain length between k_min / k_max_grain_size.
+    float m_density{0.5f};  ///< Trigger rate between k_min / k_max_grain_rate.
+    float m_pitch{1.0f};    ///< Read rate per grain (1 = original pitch).
+    float m_temperature_size{0.0f};
+    float m_temperature_position{0.0f};
+    float m_temperature_pitch{0.0f};
+    float m_window_shape{4.0f};  ///< utils::MorphWindow shape (4 = Hann).
+    float m_window_tilt{0.0f};
+    ChannelMode m_channel_mode{ChannelMode::MonoToStereo};
+    float m_spread{0.0f};  ///< Per-grain pan spread.
+    HeadInputs m_head{};
+};
+
+/**
+ * @class GrainEngine
+ * @brief A granular synthesiser over a sample: a pre-allocated pool of
+ * windowed grains triggered at the Density rate, each with jittered size,
+ * pitch and pan.
+ *
+ * Where each grain starts is decided by the HeadPolicy of the HeadMode the
+ * caller asks for; the render maths never branches on it.
+ *
+ * @par Sources
+ * render() takes a span of alternative, equal-length sources (e.g. a
+ * pitch::PitchBank) and the index to trigger new grains from. A grain keeps
+ * reading the source it started on; switching retriggers at once.
+ *
+ * @par Visualisation
+ * With a GrainVisualizer set, grain starts, updates (rate-limited) and ends
+ * are reported.
+ *
+ * @par Real-Time Safety
+ * prepare() and set_visualizer() are setup calls. render() and the
+ * schedule calls are real-time safe; nothing allocates after construction.
+ */
 class TANH_API GrainEngine {
 public:
-    GrainEngine(const SampleReader& reader, GrainVisualizer& viz);
-    // Holds references into its owner: never copied.
+    GrainEngine();
     GrainEngine(const GrainEngine&) = delete;
     GrainEngine& operator=(const GrainEngine&) = delete;
 
     void prepare(double sample_rate, size_t num_channels);
 
-    // Reseed the jitter generator (tests: reproducible grain streams).
+    /// Report to `visualizer` (nullptr: report nothing). Must outlive the
+    /// engine's use of it.
+    void set_visualizer(GrainVisualizer* visualizer) { m_viz = visualizer; }
+
+    /// Reseed the jitter generator (reproducible grain streams).
     void seed(uint32_t value) { m_random_generator.seed(value); }
 
-    // Restart the trigger clock and the mode's head (note-on, mode switch).
-    void reset_schedule(EngineMode mode);
-    // Silence every grain, telling the visualisation.
+    /// Restart the trigger clock and the mode's head (note-on, mode switch).
+    void reset_schedule(HeadMode mode);
+    /// Silence every grain.
     void deactivate_all();
 
-    // One-shot: the mode's head reached End with Loop off, nothing triggers
-    // any more, and the grains that were sounding have all ended — only then
-    // may the voice release, or the last grain would be cut by the ADSR.
-    // reset_schedule clears it.
-    bool finished(EngineMode mode) const {
-        return head_for(mode).finished() && !any_grain_active();
-    }
+    /// One pass (loop off) is over: the head reached End, nothing triggers
+    /// any more and every grain has ended. reset_schedule() clears it.
+    bool finished(HeadMode mode) const { return head_for(mode).finished() && !any_grain_active(); }
     bool any_grain_active() const;
 
-    // Render one block. `playback_elapsed_samples` (since note-on) drives the
-    // temperature ramp.
-    void render(const AudioBlock& block,
-                const VoiceParams& params,
-                EngineMode mode,
-                size_t playback_elapsed_samples) TANH_NONBLOCKING_FUNCTION;
+    /**
+     * @brief Render one block, overwriting `out`.
+     * @param elapsed_samples Samples since note-on: drives the temperature
+     *        ramp (position temperature eases in over the first second).
+     */
+    void render(std::span<const sampler::SampleView> sources,
+                size_t source,
+                const GrainParams& params,
+                HeadMode mode,
+                float* const* out,
+                size_t num_channels,
+                size_t num_frames,
+                size_t elapsed_samples) TANH_NONBLOCKING_FUNCTION;
 
 private:
-    // The pitch bank this block reads from.
-    struct Bank {
+    // The source this block triggers from.
+    struct Source {
         size_t m_index{0};
         size_t m_frames{0};
         size_t m_channels{1};
+        bool m_valid{false};
     };
 
-    HeadPolicy& head_for(EngineMode mode);
-    const HeadPolicy& head_for(EngineMode mode) const;
+    HeadPolicy& head_for(HeadMode mode);
+    const HeadPolicy& head_for(HeadMode mode) const;
 
-    // render() in order: update_trigger_rate, select_bank (+ retrigger on a
-    // bank change), region from the head, then per frame trigger_due_grain +
-    // mix_grains_frame, then report_visualization.
+    // render() in order: update_trigger_rate, select_source (+ retrigger on a
+    // switch), region from the head, then per frame trigger_due_grain +
+    // mix, then report_visualization.
     void update_trigger_rate(float density);
-    Bank select_bank(int raw_sample_index) const;
-    void trigger_due_grain(const Bank& bank,
-                           const SampleRegion& region,
-                           const VoiceParams& params,
+    static Source select_source(std::span<const sampler::SampleView> sources, size_t index);
+    void trigger_due_grain(const Source& src,
+                           const LoopRegion& region,
+                           const GrainParams& params,
                            HeadPolicy& head,
-                           size_t playback_elapsed_samples);
-    // Per block, per grain: resolve its bank to raw pointers and its pan to
-    // gains, so the frame loop does no validation and no switch.
-    void prime_grain(size_t index, const VoiceParams& params);
-    // The frame loop for one ChannelMode: trigger, then window / read / pan /
-    // accumulate every active grain, retire the ones that ended.
+                           size_t elapsed_samples);
+    // Per block, per grain: resolve its source and its pan to gains, so the
+    // frame loop does no validation and no switch.
+    void prime_grain(size_t index,
+                     std::span<const sampler::SampleView> sources,
+                     const GrainParams& params);
     template <ChannelMode M>
-    void render_frames(const AudioBlock& block,
-                       const VoiceParams& params,
-                       const Bank& bank,
-                       const SampleRegion& region,
+    void render_frames(float* const* out,
+                       size_t num_channels,
+                       size_t num_frames,
+                       const GrainParams& params,
+                       const Source& src,
+                       const LoopRegion& region,
                        HeadPolicy& head,
-                       size_t playback_elapsed_samples);
-    void report_visualization(size_t num_frames, const Bank& bank);
+                       size_t elapsed_samples);
+    void report_visualization(size_t num_frames, const Source& src);
 
-    // trigger_grain() in order: find_free_grain, jitter size and velocity,
-    // ask the head where, fit_to_region, start_grain.
-    void trigger_grain(const Bank& bank,
-                       const SampleRegion& region,
-                       const VoiceParams& params,
+    // trigger_grain() in order: find_free_grain, jitter size and pitch, ask
+    // the head where, fit_to_region, start_grain.
+    void trigger_grain(const Source& src,
+                       const LoopRegion& region,
+                       const GrainParams& params,
                        HeadPolicy& head,
-                       size_t playback_elapsed_samples);
+                       size_t elapsed_samples);
     Grain* find_free_grain();
     // Truncate a grain that would overshoot the region end. Returns the
     // frames it covers in the source (0 = nothing fits); `grain_size` is
     // shrunk to match.
     static size_t fit_to_region(FramePos start,
-                                const SampleRegion& region,
+                                const LoopRegion& region,
                                 float velocity,
                                 size_t& grain_size);
     void start_grain(Grain& grain,
                      FramePos start,
                      size_t grain_size,
                      float velocity,
-                     size_t bank,
-                     const VoiceParams& params);
+                     size_t source,
+                     const GrainParams& params);
     size_t calculate_grain_size(float grain_size_param, float temperature);
     float calculate_velocity(float velocity, float temperature);
-    float apply_temperature_ramp(float temperature, size_t playback_elapsed_samples) const;
+    float apply_temperature_ramp(float temperature, size_t elapsed_samples) const;
 
-    const SampleReader& m_reader;
-    GrainVisualizer& m_viz;
+    GrainVisualizer* m_viz{nullptr};
     const utils::MorphWindow& m_window{utils::MorphWindow::shared()};
     LoopScanHead m_loop_head;
     PositionSprayHead m_position_head;
@@ -126,10 +172,11 @@ private:
     size_t m_channels{2};
 
     std::array<Grain, k_max_grains> m_grains{};
-    std::array<BankView, k_max_grains> m_grain_banks{};  // valid within render()
+    std::array<sampler::SampleView, k_max_grains> m_grain_sources{};  // valid within render()
+    std::span<const sampler::SampleView> m_block_sources;             // valid within render()
     size_t m_next_grain_time{0};
     size_t m_min_grain_interval{100};
-    size_t m_current_bank{0};
+    size_t m_current_source{0};
 
     std::mt19937 m_random_generator;
     std::uniform_real_distribution<float> m_uni_dist;

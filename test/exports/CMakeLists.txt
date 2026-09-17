@@ -1,7 +1,7 @@
 # The symbol-export invariant of every component (cmake/tanh/check-exports.cmake):
 #
 #   * a shared component exports namespace thl and nothing else — no std::, no
-#     miniaudio (ma_*), no nlohmann::json, no moodycamel;
+#     miniaudio (ma_*), no nlohmann::json, no moodycamel, no signalsmith;
 #   * tanh_exports_module, a plugin-shaped shared object embedding every built
 #     component, exports its entry point only: in a static build nothing of thl:: may
 #     leak from it, in either build nothing of the bundled third-party code;
@@ -21,6 +21,6 @@ foreach(_component IN LISTS TANH_BUILT_COMPONENTS)
         LIBRARY ${_component}
         MODULE tanh_exports_module
         NAMESPACES thl
-        FORBID_NAMESPACES nlohmann moodycamel
+        FORBID_NAMESPACES nlohmann moodycamel signalsmith
         FORBID_PREFIXES ma_)
 endforeach()
