@@ -4,21 +4,16 @@
 #include <tanh/dsp/granular/GrainVisualizer.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 #include <tanh/dsp/granular/HeadPolicy.h>
-#include <tanh/dsp/granular/SampleReader.h>
-#include <tanh/dsp/granular/SampleRegion.h>
-#include <tanh/dsp/granular/VoiceParams.h>
+#include <tanh/dsp/sampler/SampleView.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <span>
 
 namespace thl::dsp::granular {
 
-GrainEngine::GrainEngine(const SampleReader& reader, GrainVisualizer& viz)
-    : m_reader(reader)
-    , m_viz(viz)
-    , m_random_generator(std::random_device{}())
-    , m_uni_dist(0.0f, 1.0f) {}
+GrainEngine::GrainEngine() : m_random_generator(std::random_device{}()), m_uni_dist(0.0f, 1.0f) {}
 
 void GrainEngine::prepare(double sample_rate, size_t num_channels) {
     m_sample_rate = sample_rate;
@@ -30,12 +25,21 @@ void GrainEngine::prepare(double sample_rate, size_t num_channels) {
     m_position_head.reset();
 }
 
-HeadPolicy& GrainEngine::head_for(EngineMode mode) {
-    return mode == EngineMode::GranularPosition ? static_cast<HeadPolicy&>(m_position_head)
-                                                : static_cast<HeadPolicy&>(m_loop_head);
+HeadPolicy& GrainEngine::head_for(HeadMode mode) {
+    return mode == HeadMode::Spray ? static_cast<HeadPolicy&>(m_position_head)
+                                   : static_cast<HeadPolicy&>(m_loop_head);
 }
 
-void GrainEngine::reset_schedule(EngineMode mode) {
+const HeadPolicy& GrainEngine::head_for(HeadMode mode) const {
+    return mode == HeadMode::Spray ? static_cast<const HeadPolicy&>(m_position_head)
+                                   : static_cast<const HeadPolicy&>(m_loop_head);
+}
+
+bool GrainEngine::any_grain_active() const {
+    return std::ranges::any_of(m_grains, [](const Grain& g) { return g.m_active; });
+}
+
+void GrainEngine::reset_schedule(HeadMode mode) {
     m_next_grain_time = 0;
     head_for(mode).reset();
 }
@@ -44,59 +48,73 @@ void GrainEngine::deactivate_all() {
     for (size_t gi = 0; gi < m_grains.size(); ++gi) {
         if (!m_grains[gi].m_active) { continue; }
         m_grains[gi].m_active = false;
-        m_viz.grain_finished(static_cast<int>(gi));
+        if (m_viz != nullptr) { m_viz->grain_finished(static_cast<int>(gi)); }
     }
 }
 
-void GrainEngine::render(const AudioBlock& block,
-                         const VoiceParams& params,
-                         EngineMode mode,
-                         size_t playback_elapsed_samples) {
+void GrainEngine::render(std::span<const sampler::SampleView> sources,
+                         size_t source,
+                         const GrainParams& params,
+                         HeadMode mode,
+                         float* const* out,
+                         size_t num_channels,
+                         size_t num_frames,
+                         size_t elapsed_samples) {
+    m_block_sources = sources;
     update_trigger_rate(params.m_density);
-    const Bank bank = select_bank(params.m_sample_index);
-    if (bank.m_index != m_current_bank) {
-        m_current_bank = bank.m_index;
-        m_next_grain_time = 0;  // a pitch-bank switch retriggers at once
+    const Source src = select_source(sources, source);
+    if (src.m_index != m_current_source) {
+        m_current_source = src.m_index;
+        m_next_grain_time = 0;  // a source switch retriggers at once
     }
     HeadPolicy& head = head_for(mode);
-    const SampleRegion region = head.region(bank.m_frames, params);
+    const LoopRegion region = head.region(src.m_frames, params.m_head);
     for (size_t gi = 0; gi < m_grains.size(); ++gi) {
-        if (m_grains[gi].m_active) { prime_grain(gi, params); }
+        if (m_grains[gi].m_active) { prime_grain(gi, sources, params); }
     }
 
     switch (params.m_channel_mode) {
         case ChannelMode::MonoToStereo:
-            render_frames<ChannelMode::MonoToStereo>(block,
+            render_frames<ChannelMode::MonoToStereo>(out,
+                                                     num_channels,
+                                                     num_frames,
                                                      params,
-                                                     bank,
+                                                     src,
                                                      region,
                                                      head,
-                                                     playback_elapsed_samples);
+                                                     elapsed_samples);
             break;
         case ChannelMode::TrueStereo:
-            render_frames<ChannelMode::TrueStereo>(block,
+            render_frames<ChannelMode::TrueStereo>(out,
+                                                   num_channels,
+                                                   num_frames,
                                                    params,
-                                                   bank,
+                                                   src,
                                                    region,
                                                    head,
-                                                   playback_elapsed_samples);
+                                                   elapsed_samples);
             break;
         default:
-            render_frames<ChannelMode::TrueMultichannel>(block,
+            render_frames<ChannelMode::TrueMultichannel>(out,
+                                                         num_channels,
+                                                         num_frames,
                                                          params,
-                                                         bank,
+                                                         src,
                                                          region,
                                                          head,
-                                                         playback_elapsed_samples);
+                                                         elapsed_samples);
             break;
     }
 
-    report_visualization(block.m_num_frames, bank);
+    report_visualization(num_frames, src);
 }
 
-void GrainEngine::prime_grain(size_t index, const VoiceParams& params) {
+void GrainEngine::prime_grain(size_t index,
+                              std::span<const sampler::SampleView> sources,
+                              const GrainParams& params) {
     Grain& grain = m_grains[index];
-    m_grain_banks[index] = m_reader.view(grain.m_sample_index);
+    m_grain_sources[index] = grain.m_sample_index < sources.size() ? sources[grain.m_sample_index]
+                                                                   : sampler::SampleView{};
     float const pan = 0.5f + (grain.m_position_spread - 0.5f) * params.m_spread;
     float const compensation =
         params.m_channel_mode == ChannelMode::MonoToStereo ? 1.0f : k_stereo_energy_compensation;
@@ -105,22 +123,24 @@ void GrainEngine::prime_grain(size_t index, const VoiceParams& params) {
 }
 
 template <ChannelMode M>
-void GrainEngine::render_frames(const AudioBlock& block,
-                                const VoiceParams& params,
-                                const Bank& bank,
-                                const SampleRegion& region,
+void GrainEngine::render_frames(float* const* out,
+                                size_t num_channels,
+                                size_t num_frames,
+                                const GrainParams& params,
+                                const Source& src,
+                                const LoopRegion& region,
                                 HeadPolicy& head,
-                                size_t playback_elapsed_samples) {
-    size_t const write_channels = std::min(m_channels, block.m_num_channels);
+                                size_t elapsed_samples) {
+    size_t const write_channels = std::min(m_channels, num_channels);
 
-    for (size_t i = 0; i < block.m_num_frames; ++i) {
-        trigger_due_grain(bank, region, params, head, playback_elapsed_samples + i);
+    for (size_t i = 0; i < num_frames; ++i) {
+        trigger_due_grain(src, region, params, head, elapsed_samples + i);
 
         channel_mixer::Frame frame{};
         for (size_t gi = 0; gi < m_grains.size(); ++gi) {
             Grain& grain = m_grains[gi];
             if (!grain.m_active) { continue; }
-            const BankView& view = m_grain_banks[gi];
+            const sampler::SampleView& view = m_grain_sources[gi];
 
             if (view.valid()) {
                 float const envelope =
@@ -129,7 +149,9 @@ void GrainEngine::render_frames(const AudioBlock& block,
                 if constexpr (M == ChannelMode::MonoToStereo) {
                     float mono = 0.0f;
                     for (size_t ch = 0; ch < view.m_num_channels; ++ch) {
-                        mono += interpolate_wrapped(view.m_channels[ch], view.m_frames, position);
+                        mono += sampler::interpolate_wrapped(view.m_channels[ch],
+                                                             view.m_num_frames,
+                                                             position);
                     }
                     if (view.m_num_channels > 1) {
                         mono /= static_cast<float>(view.m_num_channels);
@@ -138,19 +160,22 @@ void GrainEngine::render_frames(const AudioBlock& block,
                     frame[0] += mono * grain.m_gain_left;
                     frame[1] += mono * grain.m_gain_right;
                 } else if constexpr (M == ChannelMode::TrueStereo) {
-                    float const s0 =
-                        interpolate_wrapped(view.m_channels[0], view.m_frames, position);
-                    float const s1 =
-                        view.m_num_channels > 1
-                            ? interpolate_wrapped(view.m_channels[1], view.m_frames, position)
-                            : s0;
+                    float const s0 = sampler::interpolate_wrapped(view.m_channels[0],
+                                                                  view.m_num_frames,
+                                                                  position);
+                    float const s1 = view.m_num_channels > 1
+                                         ? sampler::interpolate_wrapped(view.m_channels[1],
+                                                                        view.m_num_frames,
+                                                                        position)
+                                         : s0;
                     frame[0] += s0 * envelope * grain.m_gain_left;
                     frame[1] += s1 * envelope * grain.m_gain_right;
                 } else {
                     size_t const channels = std::min(m_channels, view.m_num_channels);
                     for (size_t ch = 0; ch < channels; ++ch) {
-                        float const s =
-                            interpolate_wrapped(view.m_channels[ch], view.m_frames, position);
+                        float const s = sampler::interpolate_wrapped(view.m_channels[ch],
+                                                                     view.m_num_frames,
+                                                                     position);
                         frame[ch] +=
                             s * envelope * ((ch % 2 == 0) ? grain.m_gain_left : grain.m_gain_right);
                     }
@@ -160,11 +185,13 @@ void GrainEngine::render_frames(const AudioBlock& block,
             grain.m_current_position++;
             if (grain.m_current_position >= grain.m_grain_size) {
                 grain.m_active = false;
-                m_viz.grain_finished(static_cast<int>(gi));
+                if (m_viz != nullptr) { m_viz->grain_finished(static_cast<int>(gi)); }
             }
         }
 
-        for (size_t ch = 0; ch < write_channels; ++ch) { block.m_channels[ch][i] = frame[ch]; }
+        for (size_t ch = 0; ch < write_channels; ++ch) { out[ch][i] = frame[ch]; }
+        // Channels the engine was not prepared for are silent, not stale.
+        for (size_t ch = write_channels; ch < num_channels; ++ch) { out[ch][i] = 0.0f; }
     }
 }
 
@@ -176,59 +203,67 @@ void GrainEngine::update_trigger_rate(float density) {
     m_min_grain_interval = static_cast<size_t>(m_sample_rate / rate);
 }
 
-GrainEngine::Bank GrainEngine::select_bank(int raw_sample_index) const {
-    Bank bank;
-    bank.m_index = m_reader.num_banks() > 0 ? m_reader.clamp_bank(raw_sample_index) : 0;
-    bank.m_frames = m_reader.num_frames(bank.m_index);
-    bank.m_channels = std::max<size_t>(1, m_reader.num_channels(bank.m_index));
-    return bank;
+GrainEngine::Source GrainEngine::select_source(std::span<const sampler::SampleView> sources,
+                                               size_t index) {
+    Source src;
+    if (sources.empty()) { return src; }
+    src.m_index = std::min(index, sources.size() - 1);
+    const sampler::SampleView& view = sources[src.m_index];
+    src.m_valid = view.valid();
+    src.m_frames = src.m_valid ? view.m_num_frames : 0;
+    src.m_channels = std::max<size_t>(1, view.m_num_channels);
+    return src;
 }
 
-void GrainEngine::trigger_due_grain(const Bank& bank,
-                                    const SampleRegion& region,
-                                    const VoiceParams& params,
+void GrainEngine::trigger_due_grain(const Source& src,
+                                    const LoopRegion& region,
+                                    const GrainParams& params,
                                     HeadPolicy& head,
-                                    size_t playback_elapsed_samples) {
+                                    size_t elapsed_samples) {
     if (m_next_grain_time > 0) {
         m_next_grain_time--;
         return;
     }
-    trigger_grain(bank, region, params, head, playback_elapsed_samples);
+    trigger_grain(src, region, params, head, elapsed_samples);
     m_next_grain_time = m_min_grain_interval - 1;
 }
 
-void GrainEngine::report_visualization(size_t num_frames, const Bank& bank) {
-    if (bank.m_frames == 0 || !m_viz.grain_frame_due(num_frames)) { return; }
-    auto const total_f = static_cast<float>(bank.m_frames);
-    m_viz.report_master_level();
+void GrainEngine::report_visualization(size_t num_frames, const Source& src) {
+    if (m_viz == nullptr || src.m_frames == 0 || !m_viz->grain_frame_due(num_frames)) { return; }
+    auto const total_f = static_cast<float>(src.m_frames);
+    m_viz->report_master_level();
     for (size_t gi = 0; gi < m_grains.size(); ++gi) {
         auto const& grain = m_grains[gi];
         if (!grain.m_active) { continue; }
-        m_viz.grain_updated(static_cast<int>(gi),
-                            grain.source_position() / total_f,
-                            m_window.at(grain.phase(), grain.m_window_shape, grain.m_window_tilt));
+        m_viz->grain_updated(static_cast<int>(gi),
+                             grain.source_position() / total_f,
+                             m_window.at(grain.phase(), grain.m_window_shape, grain.m_window_tilt));
     }
 }
 
-void GrainEngine::trigger_grain(const Bank& bank,
-                                const SampleRegion& region,
-                                const VoiceParams& params,
+void GrainEngine::trigger_grain(const Source& src,
+                                const LoopRegion& region,
+                                const GrainParams& params,
                                 HeadPolicy& head,
-                                size_t playback_elapsed_samples) {
+                                size_t elapsed_samples) {
+    if (head.finished()) { return; }
     Grain* grain = find_free_grain();
-    if (grain == nullptr || !m_reader.bank_valid(bank.m_index)) { return; }
+    if (grain == nullptr || !src.m_valid) { return; }
 
     // Draw order matters for the RNG stream: size, velocity, head, pan.
     size_t grain_size = calculate_grain_size(params.m_size, params.m_temperature_size);
     float const velocity =
-        std::max(calculate_velocity(params.m_velocity, params.m_temperature_velocity),
-                 k_min_grain_pitch);
+        std::max(calculate_velocity(params.m_pitch, params.m_temperature_pitch), k_min_grain_pitch);
 
     if (region.size() == 0) { return; }
     float const temperature =
-        apply_temperature_ramp(params.m_temperature_position, playback_elapsed_samples);
-    FramePos const start =
-        head.pick_start(region, temperature, m_min_grain_interval, params, m_random_generator);
+        apply_temperature_ramp(params.m_temperature_position, elapsed_samples);
+    FramePos const start = head.pick_start(region,
+                                           temperature,
+                                           m_min_grain_interval,
+                                           params.m_head,
+                                           m_random_generator);
+    if (start == k_no_grain) { return; }  // the one-shot scan is over
 
     size_t const covered = fit_to_region(start, region, velocity, grain_size);
     if (covered == 0) { return; }
@@ -239,18 +274,19 @@ void GrainEngine::trigger_grain(const Bank& bank,
                 region.physical(start),
                 grain_size,
                 region.m_reverse ? -velocity : velocity,
-                bank.m_index,
+                src.m_index,
                 params);
-    prime_grain(static_cast<size_t>(grain - m_grains.data()), params);
+    prime_grain(static_cast<size_t>(grain - m_grains.data()), m_block_sources, params);
 
-    auto const total = static_cast<float>(bank.m_frames);
+    if (m_viz == nullptr) { return; }
+    auto const total = static_cast<float>(src.m_frames);
     float const duration_ms =
         static_cast<float>(grain_size) / static_cast<float>(m_sample_rate) * 1000.0f;
-    m_viz.grain_triggered(static_cast<int>(grain - m_grains.data()),
-                          static_cast<float>(region.physical(start)) / total,
-                          static_cast<float>(covered) / total,
-                          velocity,
-                          duration_ms);
+    m_viz->grain_triggered(static_cast<int>(grain - m_grains.data()),
+                           static_cast<float>(region.physical(start)) / total,
+                           static_cast<float>(covered) / total,
+                           velocity,
+                           duration_ms);
 }
 
 Grain* GrainEngine::find_free_grain() {
@@ -261,7 +297,7 @@ Grain* GrainEngine::find_free_grain() {
 }
 
 size_t GrainEngine::fit_to_region(FramePos start,
-                                  const SampleRegion& region,
+                                  const LoopRegion& region,
                                   float velocity,
                                   size_t& grain_size) {
     auto covered = static_cast<size_t>(std::ceil(static_cast<float>(grain_size) * velocity));
@@ -279,14 +315,14 @@ void GrainEngine::start_grain(Grain& grain,
                               FramePos start,
                               size_t grain_size,
                               float velocity,
-                              size_t bank,
-                              const VoiceParams& params) {
+                              size_t source,
+                              const GrainParams& params) {
     grain.m_start_position = static_cast<size_t>(start);
     grain.m_current_position = 0;
     grain.m_grain_size = grain_size;
     grain.m_velocity = velocity;
     grain.m_active = true;
-    grain.m_sample_index = bank;
+    grain.m_sample_index = source;
     grain.m_position_spread = m_uni_dist(m_random_generator);
     grain.m_window_shape = params.m_window_shape;
     grain.m_window_tilt = params.m_window_tilt;
@@ -329,12 +365,11 @@ float GrainEngine::calculate_velocity(float velocity, float temperature) {
     return velocity;
 }
 
-float GrainEngine::apply_temperature_ramp(float temperature,
-                                          size_t playback_elapsed_samples) const {
+float GrainEngine::apply_temperature_ramp(float temperature, size_t elapsed_samples) const {
     auto ramp_samples = static_cast<float>(k_temperature_ramp_duration * m_sample_rate);
     float ramp_factor = 1.0f;
-    if (static_cast<float>(playback_elapsed_samples) < ramp_samples) {
-        ramp_factor = std::sin((static_cast<float>(playback_elapsed_samples) / ramp_samples) *
+    if (static_cast<float>(elapsed_samples) < ramp_samples) {
+        ramp_factor = std::sin((static_cast<float>(elapsed_samples) / ramp_samples) *
                                std::numbers::pi_v<float> / 2.0f);
     }
     // Blend between ramped and unramped: low temperature -> ramp active,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/core/Numbers.h>
+#include <tanh/dsp/sampler/SampleView.h>
 
 #include <algorithm>
 #include <array>
@@ -8,17 +9,14 @@
 #include <cstddef>
 #include <cstdint>
 
-// Shared constants and enums of the granular voice. Every component of the
-// voice (GrainEngine, SamplePlayer, HeadPolicy, ChannelMixer) speaks these;
-// GrainProcessor.h re-exports them for the public facade.
+// Shared constants and enums of the granular components (GrainEngine,
+// HeadPolicy, ChannelMixer, GrainProcessorImpl).
 namespace thl::dsp::granular {
 
-// Signed frame position / offset in a bank. 64-bit everywhere (`long` is
-// 32-bit on Windows); unsigned bank lengths are size_t.
-using FramePos = std::int64_t;
+using sampler::FramePos;
 
-// Maximum number of output channels supported by the granular voice.
-constexpr size_t k_max_channel_support = 16;
+// Maximum number of channels the granular components read or write.
+constexpr size_t k_max_channel_support = sampler::k_max_channels;
 
 // Grain size limits in seconds (will be converted to samples based on sample
 // rate)
@@ -41,9 +39,6 @@ constexpr float k_temperature_ramp_duration = 1.0f;
 // Grain pitch (Velocity in the granular modes) after jitter never drops
 // below this: zero or negative would produce empty grains.
 constexpr float k_min_grain_pitch = 0.01f;
-// Sample-mode varispeed bounds: forward and finite under modulation.
-constexpr float k_min_varispeed = 0.01f;
-constexpr float k_max_varispeed = 8.0f;
 
 // Temperature response curves (exponents on [0, 1] temperature).
 constexpr float k_size_temperature_curve = 3.0f;
@@ -68,13 +63,10 @@ enum class ChannelMode : int {
 enum class EngineMode : int {
     GranularPosition,  // Grains sprayed around a fixed Position (no travelling head)
     GranularLoop,      // Scan head runs Start -> End at 1x, restarts at Loop
-    Sample,            // One continuous interpolating head at Velocity, no grains
+    Sample,            // One continuous interpolating head (sampler::SamplePlayer), no grains
     NumEngineModes
 };
 
-// Length of the equal-power crossfade the Sample head runs at a loop wrap,
-// a pitch-bank switch or a retrigger (seconds).
-constexpr float k_player_crossfade_duration = 0.010f;
 // Fade-through-zero when the engine mode changes on a sounding voice.
 constexpr float k_mode_change_fade_duration = 0.015f;
 // Ramp applied to the voice's volume so a modulation step does not land on the

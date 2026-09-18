@@ -4,6 +4,7 @@
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 
+#include <array>
 #include <vector>
 
 namespace thl::dsp::fx {
@@ -13,29 +14,35 @@ namespace thl::dsp::fx {
  *
  * Models the analog wavefolder topology found in the Intellijel µFold /
  * Bifold modules. Uses a sine-shaping transfer function with a continuous
- * `Folds` parameter, combined with an optional JFET-like soft saturation
- * stage for tonal warmth.
+ * `Folds` parameter, followed by a 12 dB/oct lowpass `Tone` control that
+ * darkens the folded harmonics.
  *
- * Per-sample parameter smoothing prevents zipper noise when Drive/Folds/
- * Symmetry/JfetTone are modulated at control rate. A one-pole DC blocker on
- * the output removes the static DC offset the transfer function produces for
- * non-zero Symmetry.
+ * Folding is level-independent. A per-channel peak follower (instant attack,
+ * 50 ms release) tracks the input envelope; the signal is divided by it, folded
+ * in that unit domain and scaled back by it. The same Drive therefore produces
+ * the same harmonics on a quiet and a loud input, and the output follows the
+ * input's envelope. Input below -60 dBFS is treated as silence, so a silent
+ * input stays silent at any Symmetry.
  *
- * Output is amplitude-normalized to the input: a one-pole envelope follower
- * tracks both input and post-fold output level, and the output is scaled so
- * its envelope matches the input's. This prevents two artifacts: noise from
- * a non-zero Symmetry/Drive when the input is silent (Symmetry synthesises
- * DC from nothing), and large loudness jumps when Drive/Folds/Symmetry are
- * randomized while audio is playing. Drive/Folds/Symmetry still control the
- * harmonic content; they no longer control the level.
+ * The output level is set by a fixed makeup gain that depends only on the
+ * (smoothed) Drive·(1 + Folds): unity gain while the sine is still
+ * linear, unity peak once it folds. The shaper's zero-input value is
+ * subtracted, so Symmetry adds even harmonics without adding DC that follows
+ * the envelope; a one-pole DC blocker removes what remains.
+ *
+ * All parameters are smoothed per sample, so they can be modulated or stepped
+ * at control rate without zipper noise.
  *
  * Processes all input channels in-place.
  *
  * Parameters:
- *   Drive     – input gain before folding [0.1, 20]
+ *   Drive     – gain into the folder relative to the input envelope [0.1, 20];
+ *               the first fold starts at Drive·(1 + Folds) = π/2
  *   Folds     – fold depth [0, 10]; fractional values interpolate smoothly
- *   Symmetry  – DC offset before folding [-1, 1]; adds even harmonics
- *   JfetTone  – blend of JFET soft saturation [0 = clean, 1 = full]
+ *   Symmetry  – offset before folding, relative to the envelope [-1, 1];
+ *               adds even harmonics
+ *   Tone      – lowpass cutoff [0 = dark (1 kHz), 1 = open (just below Nyquist)],
+ *               exponential sweep
  */
 class TANH_API IntellijelWavefolderImpl : public thl::dsp::BaseProcessor {
 public:
@@ -49,7 +56,7 @@ public:
     void process(thl::core::BufferView buffer, uint32_t modulation_offset = 0) override;
 
 protected:
-    enum Parameter { Drive = 0, Folds, Symmetry, JfetTone, NumParameters };
+    enum Parameter { Drive = 0, Folds, Symmetry, Tone, NumParameters };
 
     template <typename T>
     T get_parameter(Parameter p, uint32_t modulation_offset = 0);
@@ -57,25 +64,27 @@ protected:
     virtual float get_parameter_float(Parameter p, uint32_t modulation_offset = 0) = 0;
 
 private:
-    static float process_sample(float x, float drive, float folds, float symmetry, float jfet_tone);
-    static float jfet_saturate(float x);
+    static float shape(float u, float k, float symmetry);
+    [[nodiscard]] float tone_coefficient(float tone) const;
 
     utils::SmoothedValue m_smoothed_drive;
     utils::SmoothedValue m_smoothed_folds;
     utils::SmoothedValue m_smoothed_symmetry;
-    utils::SmoothedValue m_smoothed_jfet_tone;
+    utils::SmoothedValue m_smoothed_tone;
 
     // One-pole DC blocker — y[n] = x[n] - x[n-1] + pole * y[n-1].
     std::vector<float> m_dc_x_prev;
     std::vector<float> m_dc_y_prev;
     float m_dc_pole = 0.0f;
 
-    // One-pole envelope followers on |input| and |post-fold output|. Output
-    // is rescaled per sample so its envelope tracks the input envelope —
-    // makes the wavefolder loudness-flat across Drive/Folds/Symmetry.
-    std::vector<float> m_input_env;
-    std::vector<float> m_output_env;
-    float m_env_pole = 0.0f;
+    // Per-channel input peak follower. The folder works on input / envelope
+    // and scales the result back by it.
+    std::vector<float> m_envelope;
+
+    // Per-channel state of the two Tone lowpass stages.
+    std::vector<std::array<float, 2>> m_tone_state;
+    float m_sample_rate = 48000.0f;
+    float m_env_release = 0.0f;
 };
 
 template <>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/dsp/granular/GranularTypes.h>
+#include <tanh/dsp/slicing/SliceMap.h>
 
 namespace thl::dsp::granular {
 
@@ -37,6 +38,17 @@ struct VoiceParams {
     float m_position{0.0f};  // [0, 1]
     float m_spray{0.0f};     // [0, 1]
     float m_tilt{0.0f};      // [-1, 1]
+
+    // Slicing (see slicing::SliceMap). m_slicer is only true with a valid
+    // map; the voice resolves it once per block from the host's slice map.
+    bool m_slicer{false};
+    slicing::SliceMap m_slices{};
+    // Loop / one-shot for the travelling-head modes (Sample, GranularLoop):
+    // false plays Start -> End once, then the voice releases.
+    bool m_loop{true};
+    // Loop Snap (Sample mode, unsliced): Start / End / Loop move to the
+    // nearest upward zero crossing, so a loop wrap joins like to like.
+    bool m_loop_snap{false};
 
     // Grain window: shape morph position [0, MorphWindow::k_max_shape]
     // (integers = exact shapes, default Hann) and tilt [-1, 1].

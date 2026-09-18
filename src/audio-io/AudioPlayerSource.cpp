@@ -35,6 +35,7 @@ bool AudioPlayerSource::load_file(const std::string& file_path,
     m_memory_size = 0;
     m_channels = output_channels;
     m_sample_rate = output_sample_rate;
+    m_stop_frame.store(0, std::memory_order_release);
 
     bool const loaded = rebuild_data_source(m_channels, m_sample_rate, 0);
     m_loaded.store(loaded, std::memory_order_release);
@@ -64,6 +65,7 @@ bool AudioPlayerSource::load_from_memory(const void* data,
     m_memory_size = size;
     m_channels = output_channels;
     m_sample_rate = output_sample_rate;
+    m_stop_frame.store(0, std::memory_order_release);
 
     bool const loaded = rebuild_data_source(m_channels, m_sample_rate, 0);
     m_loaded.store(loaded, std::memory_order_release);
@@ -87,6 +89,7 @@ void AudioPlayerSource::unload_file() {
     m_file_path.clear();
     m_memory_data = nullptr;
     m_memory_size = 0;
+    m_stop_frame.store(0, std::memory_order_release);
 }
 
 void AudioPlayerSource::play() {
@@ -195,6 +198,42 @@ void AudioPlayerSource::process(float* output_buffer,
             }
         }
         m_fade_in_remaining.store(fade_in - to_fade, std::memory_order_release);
+    }
+
+    // --- Stop frame (preview end) ---
+    // The last k_fade_samples before the frame ramp down by distance, so the
+    // fade is whole whatever the block size; the block that reaches the
+    // frame silences the rest, finishes, and clears the frame so a later
+    // play() or seek past it does not finish again with no audio.
+    uint64_t const stop_frame = m_stop_frame.load(std::memory_order_acquire);
+    if (stop_frame > 0 && !m_stop_requested.load(std::memory_order_acquire)) {
+        uint64_t const cursor = ds->get_cursor();  // after this block's read
+        uint64_t const block_start = cursor - frames_read;
+        if (cursor + k_fade_samples > stop_frame) {  // the block reaches into the fade
+            for (uint32_t i = 0; i < static_cast<uint32_t>(frames_read); ++i) {
+                uint64_t const frame = block_start + i;
+                float const gain = frame >= stop_frame
+                                       ? 0.0f
+                                       : std::min(1.0f,
+                                                  static_cast<float>(stop_frame - frame) /
+                                                      static_cast<float>(k_fade_samples));
+                for (uint32_t ch = 0; ch < num_output_channels; ++ch) {
+                    output_buffer[i * num_output_channels + ch] *= gain;
+                }
+            }
+        }
+        if (cursor >= stop_frame) {
+            if (frames_read < frame_count) {
+                std::memset(output_buffer + frames_read * num_output_channels,
+                            0,
+                            (frame_count - frames_read) * num_output_channels * sizeof(float));
+            }
+            m_stop_frame.store(0, std::memory_order_release);
+            m_playing.store(false, std::memory_order_release);
+            auto callback = atomic_load(m_finished_callback);
+            if (callback) { (*callback)(); }
+            return;
+        }
     }
 
     // --- Micro fade-out (request_stop) ---

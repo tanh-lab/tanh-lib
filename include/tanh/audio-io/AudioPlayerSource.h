@@ -221,6 +221,19 @@ public:
     void seek_to_frame(uint64_t frame);
 
     /**
+     * @brief Stops playback at `frame` (exclusive) with the short fade-out,
+     * then invokes the finished callback — a sample-accurate end for a
+     * preview that must not bleed into what follows. 0 disables it; reaching
+     * it, a new load (file or memory) and unload_file clear it. The fade is
+     * whole whatever the block size (it ramps by distance to the frame).
+     *
+     * @note Thread-safe — uses atomic operations. The stop happens on the
+     *       audio thread in the block that reaches the frame.
+     */
+    void set_stop_frame(uint64_t frame) { m_stop_frame.store(frame, std::memory_order_release); }
+    uint64_t get_stop_frame() const { return m_stop_frame.load(std::memory_order_acquire); }
+
+    /**
      * @brief Gets the current playback position in frames.
      *
      * @return Current frame position, or 0 if no file is loaded.
@@ -312,7 +325,8 @@ private:
     // Fade state — written by control thread, consumed by audio thread
     std::atomic<uint32_t> m_fade_in_remaining{0};
     std::atomic<bool> m_stop_requested{false};
-    uint32_t m_fade_out_counter{0};  // audio-thread only
+    std::atomic<uint64_t> m_stop_frame{0};  // 0 = play to the end
+    uint32_t m_fade_out_counter{0};         // audio-thread only
     bool m_fade_enabled{true};
 };
 

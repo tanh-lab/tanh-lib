@@ -10,8 +10,9 @@ components, all in namespace `thl`:
   queue, generic buffers, header-only WAV decoder
 - **tanh::State** -- hierarchical parameter storage with RCU lock-free reads and
   JSON serialization
-- **tanh::DSP** -- processors, effects, filters, granular engine, Rings resonator
-  model (also available alone as `tanh::Resonator`)
+- **tanh::DSP** -- processors, effects, filters, sample player / looper, slicing,
+  pitch banks, granular engine, Rings resonator model (also available alone as
+  `tanh::Resonator`)
 - **tanh::Modulation** -- modulation matrix with change-point sub-blocking
 - **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)
