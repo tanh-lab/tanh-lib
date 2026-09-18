@@ -1,4 +1,10 @@
+// signalsmith-linear's fft.h calls std::memcpy without including <cstring>
+// (libstdc++ doesn't pull it in transitively): include it first.
+// clang-format off
+#include <cstring>
 #include <signalsmith-stretch/signalsmith-stretch.h>
+// clang-format on
+
 #include <tanh/core/Buffer.h>
 #include <tanh/dsp/pitch/PitchBank.h>
 

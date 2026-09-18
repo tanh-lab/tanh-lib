@@ -43,6 +43,9 @@ public:
     void reset_grains();
 
     bool is_active() const { return m_envelope.is_active(); }
+    // The master ADSR, read-only — e.g. for the host to publish its stage and
+    // level for display. Audio thread only, between process() calls.
+    const thl::dsp::utils::ADSR& get_envelope() const { return m_envelope; }
 
     void set_visualization_listener(GrainVisualizationListener* listener);
     void add_visualization_listener(GrainVisualizationListener* listener);

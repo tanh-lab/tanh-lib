@@ -323,9 +323,9 @@ if(TANH_BUILD_DSP)
         target_link_libraries(${PROJECT_NAME}_dsp PRIVATE "-framework Accelerate")
     endif()
     # Shifting a bank is seconds of FFT work at load time: optimise it even in
-    # Debug builds.
+    # Debug builds. Not with MSVC in Debug: /O2 is rejected next to its /RTC1.
     set_source_files_properties(src/dsp/pitch/PitchBank.cpp
-        PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/O2,-O3>"
+        PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,$<$<NOT:$<CONFIG:Debug>>:/O2>,-O3>"
     )
 
     target_compile_definitions(${PROJECT_NAME}_dsp
