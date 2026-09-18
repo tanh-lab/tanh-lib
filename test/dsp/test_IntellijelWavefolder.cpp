@@ -27,7 +27,7 @@ public:
     float m_drive = 1.0f;
     float m_folds = 0.0f;
     float m_symmetry = 0.0f;
-    float m_jfet_tone = 0.0f;
+    float m_tone = 1.0f;
 
 protected:
     float get_parameter_float(Parameter p, uint32_t /*modulation_offset*/) override {
@@ -35,7 +35,7 @@ protected:
             case Drive: return m_drive;
             case Folds: return m_folds;
             case Symmetry: return m_symmetry;
-            case JfetTone: return m_jfet_tone;
+            case Tone: return m_tone;
             default: return 0.0f;
         }
     }
@@ -169,7 +169,7 @@ TEST(IntellijelWavefolder, RandomisingEveryBlockStaysSmoothAndFinite) {
         wf.m_drive = 0.1f + 19.9f * unit(rng);
         wf.m_folds = 10.0f * unit(rng);
         wf.m_symmetry = -1.0f + 2.0f * unit(rng);
-        wf.m_jfet_tone = unit(rng);
+        wf.m_tone = unit(rng);
     });
 
     EXPECT_TRUE(all_finite(output));
@@ -185,8 +185,8 @@ TEST(IntellijelWavefolder, RandomisingEveryBlockStaysSmoothAndFinite) {
 TEST(IntellijelWavefolder, RandomisingOneParameterAtLowDriveDoesNotCrackle) {
     // Gentle folding, so a parameter ramp that kinks the sine's phase at each
     // retarget stands out against the signal's own high-frequency content.
-    enum Which { Drive, Folds, Symmetry, JfetTone };
-    for (const Which which : {Drive, Folds, Symmetry, JfetTone}) {
+    enum Which { Drive, Folds, Symmetry, Tone };
+    for (const Which which : {Drive, Folds, Symmetry, Tone}) {
         TestWavefolder wf;
         wf.m_drive = 1.0f;
         wf.m_folds = 1.0f;
@@ -200,7 +200,7 @@ TEST(IntellijelWavefolder, RandomisingOneParameterAtLowDriveDoesNotCrackle) {
                     case Drive: wf.m_drive = 0.1f + 19.9f * unit(rng); break;
                     case Folds: wf.m_folds = 10.0f * unit(rng); break;
                     case Symmetry: wf.m_symmetry = -1.0f + 2.0f * unit(rng); break;
-                    case JfetTone: wf.m_jfet_tone = unit(rng); break;
+                    case Tone: wf.m_tone = unit(rng); break;
                 }
             });
 
@@ -215,7 +215,7 @@ TEST(IntellijelWavefolder, SilenceStaysSilentWithOffsetSymmetry) {
         wf.m_drive = 20.0f;
         wf.m_folds = 10.0f;
         wf.m_symmetry = symmetry;
-        wf.m_jfet_tone = 1.0f;
+        wf.m_tone = 0.0f;
         wf.prepare(k_sample_rate, k_block_size, 1);
 
         const auto output = run(wf, std::vector<float>(48000, 0.0f));
@@ -316,4 +316,20 @@ TEST(IntellijelWavefolder, OffsetSymmetryNeverCancelsTheSignal) {
             EXPECT_LT(out_rms, 2.0f * in_rms) << "drive " << drive << ", symmetry " << symmetry;
         }
     }
+}
+
+TEST(IntellijelWavefolder, ToneDarkensTheFold) {
+    const auto harmonic_ratio = [](float tone) {
+        TestWavefolder wf;
+        wf.m_drive = 8.0f;
+        wf.m_tone = tone;
+        wf.prepare(k_sample_rate, k_block_size, 1);
+        const auto output = run(wf, sine(0.1f, 500.0f, 48000));
+        return harmonic_magnitude(output, 24000, 24000, 4500.0f) /
+               harmonic_magnitude(output, 24000, 24000, 500.0f);
+    };
+    const float open = harmonic_ratio(1.0f);
+    const float dark = harmonic_ratio(0.0f);
+    EXPECT_GT(open, 0.1f);
+    EXPECT_LT(dark, 0.1f * open);
 }
