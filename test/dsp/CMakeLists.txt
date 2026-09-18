@@ -16,6 +16,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_GrainEngine.cpp
 	test_GrainProcessor.cpp
 	test_MorphWindow.cpp
+	test_IntellijelWavefolder.cpp
 )
 
 if(TARGET tanh_resonator)
