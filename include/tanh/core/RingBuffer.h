@@ -106,6 +106,41 @@ public:
         m_num_valid[channel] = std::min(m_num_valid[channel] + count, capacity);
     }
 
+    /// Strided push: reads `count` samples from data[0], data[stride],
+    /// data[2 * stride], ... Equivalent to `count` calls of
+    /// push_sample(channel, data[i * stride]), so one channel of an interleaved
+    /// host buffer (`data = interleaved + c`, `stride = num_channels`) goes into
+    /// the ring without a de-interleaved copy in between. `stride` is in
+    /// elements and at least 1; `stride == 1` is push_block(channel, data,
+    /// count). An oversized block keeps its last `capacity` samples, like the
+    /// unit-stride form. Never allocates.
+    void push_block(size_t channel, const T* data, size_t count, size_t stride) {
+        if (stride == 1) {
+            push_block(channel, data, count);
+            return;
+        }
+        const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0 || count == 0) { return; }
+        T* buf = m_buffer.get_write_pointer(channel);
+        const size_t free = capacity - get_available_samples(channel);
+
+        size_t start = m_write_pos[channel];
+        if (count > capacity) {
+            data += (count - capacity) * stride;
+            start = advance(start, wrap(count - capacity, capacity), capacity);
+            count = capacity;
+        }
+
+        gather_wrapped(data, stride, buf, start, count, capacity);
+        m_write_pos[channel] = advance(start, count, capacity);
+
+        if (count >= free) {
+            m_read_pos[channel] = m_write_pos[channel];
+            m_is_full[channel] = true;
+        }
+        m_num_valid[channel] = std::min(m_num_valid[channel] + count, capacity);
+    }
+
     /// Pop `count` samples. Equivalent to `count` calls of pop_sample(): any
     /// samples beyond what is available are value-initialised (T{}).
     void pop_block(size_t channel, T* data, size_t count) {
@@ -123,6 +158,31 @@ public:
             m_is_full[channel] = false;
         }
         std::fill_n(data + n, count - n, T{});
+    }
+
+    /// Strided pop: writes `count` samples to data[0], data[stride],
+    /// data[2 * stride], ... Equivalent to data[i * stride] =
+    /// pop_sample(channel) for i in [0, count): samples beyond what is available
+    /// are value-initialised (T{}), and the elements between the strided ones
+    /// are not touched. `stride` is in elements and at least 1; `stride == 1` is
+    /// pop_block(channel, data, count). Never allocates.
+    void pop_block(size_t channel, T* data, size_t count, size_t stride) {
+        if (stride == 1) {
+            pop_block(channel, data, count);
+            return;
+        }
+        const size_t capacity = m_buffer.get_num_samples();
+        const size_t available = get_available_samples(channel);
+        const size_t n = std::min(count, available);
+
+        if (n > 0) {
+            const T* buf = m_buffer.get_read_pointer(channel);
+            const size_t start = m_read_pos[channel];
+            scatter_wrapped(buf, start, n, capacity, data, stride);
+            m_read_pos[channel] = advance(start, n, capacity);
+            m_is_full[channel] = false;
+        }
+        for (size_t i = n; i < count; ++i) { data[i * stride] = T{}; }
     }
 
     /// Push `count` copies of `value`. Equivalent to `count` calls of
@@ -192,6 +252,32 @@ public:
         std::copy_n(buf, count - first, data + first);
     }
 
+    /// Strided peek_past_block: the `count` most recently consumed samples,
+    /// oldest first, written to data[0], data[stride], ... so that
+    /// data[(count - 1) * stride] is the sample popped last. Same range rules
+    /// as the unit-stride form; `stride` is in elements and at least 1. Never
+    /// allocates.
+    void peek_past_block(size_t channel, T* data, size_t count, size_t stride) const {
+        if (stride == 1) {
+            peek_past_block(channel, data, count);
+            return;
+        }
+        const size_t capacity = m_buffer.get_num_samples();
+        if (capacity == 0 || count == 0) { return; }
+        const T* buf = m_buffer.get_read_pointer(channel);
+        while (count > capacity) {
+            const size_t lap = count - capacity;
+            const size_t start =
+                advance(m_read_pos[channel], capacity - wrap(lap, capacity), capacity);
+            const size_t n = std::min(lap, capacity);
+            scatter_wrapped(buf, start, n, capacity, data, stride);
+            data += n * stride;
+            count -= n;
+        }
+        const size_t start = advance(m_read_pos[channel], capacity - count, capacity);
+        scatter_wrapped(buf, start, count, capacity, data, stride);
+    }
+
     T get_future_sample(size_t channel, size_t offset) const {
         const size_t capacity = m_buffer.get_num_samples();
         if (capacity == 0) { return T{}; }
@@ -240,6 +326,36 @@ private:
         const size_t first = std::min(count, capacity - start);
         std::copy_n(src, first, ring + start);
         std::copy_n(src + first, count - first, ring);
+    }
+
+    /// Gather `count` elements src[0], src[stride], ... into the ring starting
+    /// at `start`, wrapping at `capacity`. Requires count <= capacity.
+    static void gather_wrapped(const T* src,
+                               size_t stride,
+                               T* ring,
+                               size_t start,
+                               size_t count,
+                               size_t capacity) {
+        const size_t first = std::min(count, capacity - start);
+        T* dst = ring + start;
+        for (size_t i = 0; i < first; ++i) { dst[i] = src[i * stride]; }
+        src += first * stride;
+        for (size_t i = 0; i < count - first; ++i) { ring[i] = src[i * stride]; }
+    }
+
+    /// Scatter `count` ring elements starting at `start` (wrapping at
+    /// `capacity`) to dst[0], dst[stride], ... Requires count <= capacity.
+    static void scatter_wrapped(const T* ring,
+                                size_t start,
+                                size_t count,
+                                size_t capacity,
+                                T* dst,
+                                size_t stride) {
+        const size_t first = std::min(count, capacity - start);
+        const T* src = ring + start;
+        for (size_t i = 0; i < first; ++i) { dst[i * stride] = src[i]; }
+        dst += first * stride;
+        for (size_t i = 0; i < count - first; ++i) { dst[i * stride] = ring[i]; }
     }
 
     bool empty(size_t channel) const {

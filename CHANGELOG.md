@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::core::RingBuffer<T>`: strided block calls, `push_block(channel, data, count,
+  stride)`, `pop_block(channel, data, count, stride)` and `peek_past_block(channel,
+  data, count, stride)`. They read or write `data[0]`, `data[stride]`, ... and are
+  exactly `count` per-sample calls over that run, so one channel of an interleaved
+  host buffer (`data = interleaved + c`, `stride = num_channels`, any channel count)
+  moves between the host and the ring without a de-interleaved copy in between. A
+  strided pop leaves the elements between the strided ones untouched and
+  value-initialises what the ring cannot deliver; an oversized strided push keeps the
+  tail of the run; `stride == 1` is the existing call (two `std::copy_n` segments).
+  None of them allocates. Tests: `RingBufferStrided.*` (differential against the
+  per-sample calls for 1, 2, 3 and 6 interleaved channels across the seam).
 - `Net` component (`tanh::Net`, `TANH_BUILD_NET`, **off by default**) — delivery
   of versioned file sets over HTTPS, for shipping model or sample packs that are
   too large to bundle.
