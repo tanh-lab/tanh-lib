@@ -7,6 +7,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-21
+
 ### Added
 
 - `thl::core::RingBuffer<T>`: strided block calls, `push_block(channel, data, count,
@@ -52,48 +54,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   One `DISABLED_` test fetches over real TLS when run with
   `--gtest_also_run_disabled_tests`.
 
-### Fixed
-
-- `thl::RCU`: a version could be reclaimed while a reader was still inside the
-  read scope that handed it out. A reader entering a section stores its
-  generation and then loads the data pointer; the writer stores the pointer and
-  then reads the generations. That store-load handshake needs sequential
-  consistency, but used `memory_order_release` / `acquire`, which leave a release
-  store free to sit in the core's store buffer while the following load runs —
-  so the writer could read generation 0 in `cleanup_safe_versions()`, free the
-  version, and leave the reader on freed memory. Seen as an intermittent
-  audio-thread SIGSEGV on a freed `ProcessingConfig` in
-  `ConcurrentRebuild.RepeatedAddRemoveSingleRouting`, reproducible only on some
-  x86-64 hosts (Intel Xeon Platinum 8573C). The four handshake operations are
-  now `memory_order_seq_cst`; the reader pays one locked exchange per section
-  entry, still wait-free. Leaving a section is unchanged.
-- `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.
-  `VoiceParams::m_volume` is a per-sub-block constant and was applied raw, so it
-  was the only unsmoothed term in the voice gain (the ADSR already moves per
-  sample) — a hard modulation step, such as a square LFO swinging both rails in
-  one sample, reached the output as a discontinuity. The voice gain now ramps
-  volume over `k_volume_smoothing_duration` (5 ms), seeded to the current level
-  in `prepare()` and again at note-on so a voice starts at its level instead of
-  sliding up to it.
-
-### Changed
-
-- `TANH_WITH_DOCS` now does something — it adds the `sphinx-docs` target — and
-  therefore defaults to **OFF** (it was ON and inert). A docs-enabled configure
-  requires Doxygen and Python 3; consumers that already set it OFF are
-  unaffected.
-- `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
-  of calling `sin`/`cos` per frame — a block fading the live head plus four
-  outgoing tails wanted five transcendentals per frame. Because
-  `cos(t * pi/2) == sin((1 - t) * pi/2)`, one quarter-sine table sized to the
-  fade length in `prepare()` serves both directions, indexed straight by the
-  integer fade counter: exact at every index, so the crossfade values are
-  unchanged bit for bit.
-- `dsp::granular::GrainProcessorImpl`: the voice gain pass skips the mode-fade
-  ramp when the fade is already parked on its target, which is every block
-  outside a mode switch. Same output, two fewer compares and a store per frame.
-
-### Added
 
 - Documentation: a Doxygen → Breathe → Sphinx site under `docs/` (the same
   pipeline as anira), published to https://tanh-lab.github.io/tanh-lib/ by the
@@ -137,6 +97,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `TANH_WITH_DOCS` now does something — it adds the `sphinx-docs` target — and
+  therefore defaults to **OFF** (it was ON and inert). A docs-enabled configure
+  requires Doxygen and Python 3; consumers that already set it OFF are
+  unaffected.
+- `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
+  of calling `sin`/`cos` per frame — a block fading the live head plus four
+  outgoing tails wanted five transcendentals per frame. Because
+  `cos(t * pi/2) == sin((1 - t) * pi/2)`, one quarter-sine table sized to the
+  fade length in `prepare()` serves both directions, indexed straight by the
+  integer fade counter: exact at every index, so the crossfade values are
+  unchanged bit for bit.
+- `dsp::granular::GrainProcessorImpl`: the voice gain pass skips the mode-fade
+  ramp when the fade is already parked on its target, which is every block
+  outside a mode switch. Same output, two fewer compares and a store per frame.
+
+
 - `dsp::granular::GrainEngine` render loop: bank pointers and pan gains are
   resolved once per block per grain, one channel-mode kernel is chosen per
   block, and the window comes from the new `dsp::utils::MorphWindow`.
@@ -160,6 +136,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   reset / silence; `prepare()` starts the voice from silence.
 
 ### Fixed
+
+- `thl::RCU`: a version could be reclaimed while a reader was still inside the
+  read scope that handed it out. A reader entering a section stores its
+  generation and then loads the data pointer; the writer stores the pointer and
+  then reads the generations. That store-load handshake needs sequential
+  consistency, but used `memory_order_release` / `acquire`, which leave a release
+  store free to sit in the core's store buffer while the following load runs —
+  so the writer could read generation 0 in `cleanup_safe_versions()`, free the
+  version, and leave the reader on freed memory. Seen as an intermittent
+  audio-thread SIGSEGV on a freed `ProcessingConfig` in
+  `ConcurrentRebuild.RepeatedAddRemoveSingleRouting`, reproducible only on some
+  x86-64 hosts (Intel Xeon Platinum 8573C). The four handshake operations are
+  now `memory_order_seq_cst`; the reader pays one locked exchange per section
+  entry, still wait-free. Leaving a section is unchanged.
+- `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.
+  `VoiceParams::m_volume` is a per-sub-block constant and was applied raw, so it
+  was the only unsmoothed term in the voice gain (the ADSR already moves per
+  sample) — a hard modulation step, such as a square LFO swinging both rails in
+  one sample, reached the output as a discontinuity. The voice gain now ramps
+  volume over `k_volume_smoothing_duration` (5 ms), seeded to the current level
+  in `prepare()` and again at note-on so a voice starts at its level instead of
+  sliding up to it.
+
 
 - `ModulationMatrix` / `RCU`: data race between a schedule rebuild and the audio
   thread. `RCU::update` is copy-on-write, so it deep-copies the live value —
@@ -229,5 +228,6 @@ First release with a changelog: earlier releases (v0.1.0, v0.2.0) are described 
   `m_dropped_before` (and in the rendered suffix), instead of
   `N real-time log message(s) dropped (queue full)` after every pass with drops.
 
-[Unreleased]: https://github.com/tanh-lab/tanh-lib/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tanh-lab/tanh-lib/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.2.0...v0.3.0
