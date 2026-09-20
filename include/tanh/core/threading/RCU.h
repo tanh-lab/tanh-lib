@@ -195,8 +195,9 @@ public:
 
         const ReadGuard guard(this);
 
-        // Load current data pointer (guaranteed valid during read section)
-        const T* data = m_data_ptr.load(std::memory_order_acquire);
+        // Load current data pointer (guaranteed valid during read section).
+        // seq_cst: second half of the reader's handshake, see rcu_read_lock().
+        const T* data = m_data_ptr.load(std::memory_order_seq_cst);
 
         // Call user function with data - guard ensures unlock on normal return
         // or exception
@@ -277,8 +278,10 @@ private:
     // Shared tail of update() / replace(): publish, retire the old version and
     // run the reclamation tiers. Caller must hold m_writer_mutex.
     void publish_with_lock(std::unique_ptr<T> new_data, const T* old_data) {
-        // Atomically publish new version
-        m_data_ptr.store(new_data.release(), std::memory_order_release);
+        // Atomically publish new version. seq_cst: first half of the writer's
+        // handshake with rcu_read_lock() — the generation loads in
+        // cleanup_safe_versions() / synchronize_rcu() are the second half.
+        m_data_ptr.store(new_data.release(), std::memory_order_seq_cst);
 
         // Retire old version with current grace period
         // Note: At 1 billion updates/sec, takes 584 years to overflow uint64_t
@@ -404,7 +407,8 @@ public:
         explicit ReadScope(const RCU* rcu) : m_rcu(rcu) {
             m_rcu->register_reader_thread();
             m_rcu->rcu_read_lock();
-            m_data = m_rcu->m_data_ptr.load(std::memory_order_acquire);
+            // seq_cst: second half of the reader's handshake, see rcu_read_lock().
+            m_data = m_rcu->m_data_ptr.load(std::memory_order_seq_cst);
         }
         ~ReadScope() {
             if (m_rcu != nullptr) { m_rcu->rcu_read_unlock(); }
@@ -454,13 +458,35 @@ private:
     mutable std::atomic<detail::RcuReaderNode*> m_reader_head{nullptr};
 
     // RCU operations
+    //
+    // Ordering contract between a reader entering a section and the writer
+    // reclaiming a version. Both sides do a store followed by a load of the
+    // *other* side's variable:
+    //
+    //   reader: store m_read_generation  →  load m_data_ptr
+    //   writer: store m_data_ptr         →  load m_read_generation
+    //
+    // Reclamation is only safe if at least one of them observes the other's
+    // store: either the reader sees the new pointer, or the writer sees the
+    // reader's generation and keeps the old version alive. That is a store-load
+    // (Dekker) handshake and needs sequential consistency on all four
+    // operations. memory_order_release / acquire do not provide it: a release
+    // store is a plain move that can still sit in the core's store buffer while
+    // the following load executes, so both sides can miss each other — the
+    // writer reads generation 0, frees the version, and the reader dereferences
+    // it. Observed as an audio-thread SIGSEGV on a freed ProcessingConfig.
+    //
+    // seq_cst costs the reader one locked exchange per section entry (wait-free,
+    // no syscall) and nothing on the loads.
     void rcu_read_lock() const {
         if (auto* node = detail::rcu_thread_state().get_node(this)) {
             const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
-            node->m_read_generation.store(current_period, std::memory_order_release);
+            node->m_read_generation.store(current_period, std::memory_order_seq_cst);
         }
     }
 
+    // Leaving a section is not part of the handshake: a writer that misses this
+    // store still sees the old generation and merely waits a little longer.
     void rcu_read_unlock() const {
         if (auto* node = detail::rcu_thread_state().get_node(this)) {
             node->m_read_generation.store(0, std::memory_order_release);
@@ -488,8 +514,10 @@ private:
         const detail::RcuReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
             if (!node->m_is_dead.load(std::memory_order_acquire)) {
+                // seq_cst: second half of the writer's handshake, see
+                // rcu_read_lock().
                 const uint64_t reader_period =
-                    node->m_read_generation.load(std::memory_order_acquire);
+                    node->m_read_generation.load(std::memory_order_seq_cst);
 
                 if (reader_period != 0) {
                     // Active reader - consider its period
@@ -529,8 +557,10 @@ private:
             // inside a read section any more, so its node must never pin the
             // writer — even if the generation it left behind is stale.
             while (!current->m_is_dead.load(std::memory_order_acquire)) {
+                // seq_cst: second half of the writer's handshake, see
+                // rcu_read_lock().
                 const uint64_t reader_period =
-                    current->m_read_generation.load(std::memory_order_acquire);
+                    current->m_read_generation.load(std::memory_order_seq_cst);
                 if (reader_period == 0) {
                     break;  // Truly idle - not reading and not starting
                 }

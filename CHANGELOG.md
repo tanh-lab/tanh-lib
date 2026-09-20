@@ -43,6 +43,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `thl::RCU`: a version could be reclaimed while a reader was still inside the
+  read scope that handed it out. A reader entering a section stores its
+  generation and then loads the data pointer; the writer stores the pointer and
+  then reads the generations. That store-load handshake needs sequential
+  consistency, but used `memory_order_release` / `acquire`, which leave a release
+  store free to sit in the core's store buffer while the following load runs —
+  so the writer could read generation 0 in `cleanup_safe_versions()`, free the
+  version, and leave the reader on freed memory. Seen as an intermittent
+  audio-thread SIGSEGV on a freed `ProcessingConfig` in
+  `ConcurrentRebuild.RepeatedAddRemoveSingleRouting`, reproducible only on some
+  x86-64 hosts (Intel Xeon Platinum 8573C). The four handshake operations are
+  now `memory_order_seq_cst`; the reader pays one locked exchange per section
+  entry, still wait-free. Leaving a section is unchanged.
 - `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.
   `VoiceParams::m_volume` is a per-sub-block constant and was applied raw, so it
   was the only unsmoothed term in the voice gain (the ADSR already moves per
