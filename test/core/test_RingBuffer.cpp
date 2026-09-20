@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <random>
 #include <vector>
@@ -517,4 +518,153 @@ TEST(RingBufferWrap, AvailableSamplesAcrossTheSeam) {
         for (int i = 0; i < 6; ++i) { EXPECT_EQ(rb.pop_sample(0), i); }
         EXPECT_EQ(rb.get_available_samples(0), 0u);
     }
+}
+
+// ── Strided block calls ──────────────────────────────────────────────────────
+// One channel of an interleaved host buffer is a strided run: data = base + c,
+// stride = num_channels. The strided calls must be exactly `count` per-sample
+// calls over that run, for every channel count, across the seam, for oversized
+// blocks and for pops beyond what is available; and they must leave the
+// elements between the strided ones alone.
+
+TEST(RingBufferStrided, InterleavedDifferentialAgainstPerSample) {
+    std::mt19937 rng(0x57121DE);
+    for (const size_t channels : {1U, 2U, 3U, 6U}) {
+        for (const size_t capacity : {1U, 2U, 3U, 7U, 8U, 64U}) {
+            thl::core::RingBuffer<int> strided;
+            thl::core::RingBuffer<int> per_sample;
+            strided.initialise_with_positions(channels, capacity);
+            per_sample.initialise_with_positions(channels, capacity);
+            std::uniform_int_distribution<size_t> len(0, capacity * 2 + 3);
+            std::uniform_int_distribution<int> coin(0, 1);
+            int next = 1;
+
+            for (int step = 0; step < 500; ++step) {
+                const size_t n = len(rng);
+                if (coin(rng) == 0) {
+                    // Interleaved frames: sample i of channel c at i * channels + c.
+                    // At least one frame, so that `data() + c` is a valid pointer for n == 0.
+                    std::vector<int> interleaved(std::max<size_t>(n, 1) * channels);
+                    for (auto& v : interleaved) { v = next++; }
+                    for (size_t c = 0; c < channels; ++c) {
+                        strided.push_block(c, interleaved.data() + c, n, channels);
+                        for (size_t i = 0; i < n; ++i) {
+                            per_sample.push_sample(c, interleaved[i * channels + c]);
+                        }
+                    }
+                } else {
+                    std::vector<int> interleaved(std::max<size_t>(n, 1) * channels, -1);
+                    for (size_t c = 0; c < channels; ++c) {
+                        strided.pop_block(c, interleaved.data() + c, n, channels);
+                    }
+                    for (size_t i = 0; i < n; ++i) {
+                        for (size_t c = 0; c < channels; ++c) {
+                            ASSERT_EQ(interleaved[i * channels + c], per_sample.pop_sample(c))
+                                << "channels=" << channels << " cap=" << capacity
+                                << " step=" << step << " i=" << i << " c=" << c;
+                        }
+                    }
+                }
+                for (size_t c = 0; c < channels; ++c) {
+                    ASSERT_EQ(strided.get_available_samples(c), per_sample.get_available_samples(c))
+                        << "channels=" << channels << " cap=" << capacity << " step=" << step;
+                    ASSERT_EQ(strided.get_available_past_samples(c),
+                              per_sample.get_available_past_samples(c))
+                        << "channels=" << channels << " cap=" << capacity << " step=" << step;
+                    for (size_t off = 0; off < capacity; ++off) {
+                        ASSERT_EQ(strided.get_future_sample(c, off),
+                                  per_sample.get_future_sample(c, off));
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(RingBufferStrided, StrideOneIsTheUnitStrideCall) {
+    thl::core::RingBuffer<int> a;
+    thl::core::RingBuffer<int> b;
+    a.initialise_with_positions(1, 8);
+    b.initialise_with_positions(1, 8);
+    const std::array<int, 11> in{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    a.push_block(0, in.data(), in.size(), 1);
+    b.push_block(0, in.data(), in.size());
+    std::array<int, 10> out_a{};
+    std::array<int, 10> out_b{};
+    a.pop_block(0, out_a.data(), out_a.size(), 1);
+    b.pop_block(0, out_b.data(), out_b.size());
+    EXPECT_EQ(out_a, out_b);
+    std::array<int, 5> past_a{};
+    std::array<int, 5> past_b{};
+    a.peek_past_block(0, past_a.data(), past_a.size(), 1);
+    b.peek_past_block(0, past_b.data(), past_b.size());
+    EXPECT_EQ(past_a, past_b);
+}
+
+TEST(RingBufferStrided, PushLargerThanCapacityKeepsTheTailOfTheRun) {
+    thl::core::RingBuffer<int> rb;
+    rb.initialise_with_positions(1, 4);
+    // Channel 1 of three: 11, 21, ..., 71 sit at indices 1, 4, 7, ...
+    std::vector<int> interleaved;
+    for (int frame = 1; frame <= 7; ++frame) {
+        interleaved.push_back(frame * 10);
+        interleaved.push_back(frame * 10 + 1);
+        interleaved.push_back(frame * 10 + 2);
+    }
+    rb.push_block(0, interleaved.data() + 1, 7, 3);
+    ASSERT_EQ(rb.get_available_samples(0), 4U);
+    for (const int expected : {41, 51, 61, 71}) { EXPECT_EQ(rb.pop_sample(0), expected); }
+}
+
+TEST(RingBufferStrided, PopLeavesTheOtherChannelsAloneAndZeroFillsTheTail) {
+    thl::core::RingBuffer<int> rb;
+    rb.initialise_with_positions(1, 8);
+    const std::array<int, 3> in{1, 2, 3};
+    rb.push_block(0, in.data(), in.size());
+    // Five frames of two channels, channel 0 popped: three samples, then T{}.
+    std::array<int, 10> interleaved{};
+    interleaved.fill(-7);
+    rb.pop_block(0, interleaved.data(), 5, 2);
+    const std::array<int, 10> expected{1, -7, 2, -7, 3, -7, 0, -7, 0, -7};
+    EXPECT_EQ(interleaved, expected);
+    EXPECT_EQ(rb.get_available_samples(0), 0U);
+}
+
+TEST(RingBufferStrided, PeekPastBlockMatchesGetPastSample) {
+    for (const size_t capacity : {1U, 3U, 8U}) {
+        thl::core::RingBuffer<int> rb;
+        rb.initialise_with_positions(1, capacity);
+        for (int v = 1; v <= 20; ++v) {
+            rb.push_sample(0, v);
+            rb.pop_sample(0);
+        }
+        for (const size_t count : {size_t{1}, capacity, capacity * 2 + 1}) {
+            std::vector<int> strided(count * 3, -1);
+            rb.peek_past_block(0, strided.data() + 2, count, 3);
+            for (size_t k = 0; k < count; ++k) {
+                EXPECT_EQ(strided[2 + k * 3], rb.get_past_sample(0, count - k))
+                    << "cap=" << capacity << " count=" << count << " k=" << k;
+                EXPECT_EQ(strided[k * 3], -1) << "the elements between the strided ones";
+            }
+        }
+    }
+}
+
+TEST(RingBufferStrided, ZeroCountAndZeroCapacityAreNoOps) {
+    thl::core::RingBuffer<int> rb;
+    rb.initialise_with_positions(1, 4);
+    std::array<int, 4> data{9, 9, 9, 9};
+    rb.push_block(0, data.data(), 0, 2);
+    EXPECT_EQ(rb.get_available_samples(0), 0U);
+    rb.pop_block(0, data.data(), 0, 2);
+    rb.peek_past_block(0, data.data(), 0, 2);
+    const std::array<int, 4> untouched{9, 9, 9, 9};
+    EXPECT_EQ(data, untouched);
+
+    thl::core::RingBuffer<int> empty;
+    empty.initialise_with_positions(1, 0);
+    empty.push_block(0, data.data(), 2, 2);
+    empty.pop_block(0, data.data(), 2, 2);
+    const std::array<int, 4> zeroed_strided{0, 9, 0, 9};
+    EXPECT_EQ(data, zeroed_strided) << "an empty ring pops T{} into the strided elements";
 }
