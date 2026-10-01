@@ -6,14 +6,12 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
+#include "tanh/modulation/ParameterBackend.h"
 #include "tanh/state/ModulationScope.h"
 #include "tanh/state/ParameterDefinitions.h"
-
-namespace thl {
-struct ParameterRecord;
-}
 
 namespace thl::modulation {
 
@@ -277,7 +275,8 @@ struct MonoBuffers {
 struct ResolvedTarget {
     // ── Hot fields read by SmartHandle::load() on every sample ───────────
 
-    // Set during schedule rebuild for normalized depth processing.
+    // Points at m_def.m_range (set once by ensure_target_with_lock). Used for
+    // normalized depth processing.
     const Range* m_range = nullptr;
 
     // When true, buffers store normalized-space deltas and the curve conversion
@@ -291,10 +290,19 @@ struct ResolvedTarget {
     std::atomic<VoiceBuffers*> m_voice{nullptr};
     std::atomic<MonoBuffers*> m_mono{nullptr};
 
+    // Base value and gesture flag of the bound parameter, copied from the
+    // ParameterBinding the backend returned. Read on the audio thread; the
+    // pointed-to atomics are owned by the backend and must outlive the matrix.
+    ParameterBaseValue m_base;
+    const std::atomic<bool>* m_in_gesture = nullptr;
+
     // ── Cold fields (writer-only; not read on the audio hot path) ────────
     std::string m_id;
     ParameterType m_type = ParameterType::Float;
-    ParameterRecord* m_record = nullptr;
+
+    // Copy of the parameter's definition (owned here so m_range and
+    // SmartHandle::def() stay valid independent of the backend).
+    ParameterDefinition m_def;
 
     // Scope declared on the parameter's ParameterDefinition, copied and
     // validated by ensure_target_with_lock. Gates routing validity: only
@@ -330,8 +338,27 @@ struct ResolvedTarget {
         return m_voice.load(std::memory_order_acquire) != nullptr;
     }
 
-    // RT-safe: read the base value as float from the parameter's atomic cache.
-    [[nodiscard]] float read_base_as_float() const;
+    // RT-safe: true while the bound parameter is in a user gesture.
+    [[nodiscard]] bool is_in_gesture() const {
+        return m_in_gesture != nullptr && m_in_gesture->load(std::memory_order_relaxed);
+    }
+
+    // RT-safe: read the base value as float from the backend's atomic.
+    [[nodiscard]] float read_base_as_float() const {
+        if (const auto* const* f = std::get_if<const std::atomic<float>*>(&m_base)) {
+            return (*f)->load(std::memory_order_relaxed);
+        }
+        if (const auto* const* d = std::get_if<const std::atomic<double>*>(&m_base)) {
+            return static_cast<float>((*d)->load(std::memory_order_relaxed));
+        }
+        if (const auto* const* i = std::get_if<const std::atomic<int>*>(&m_base)) {
+            return static_cast<float>((*i)->load(std::memory_order_relaxed));
+        }
+        if (const auto* const* b = std::get_if<const std::atomic<bool>*>(&m_base)) {
+            return (*b)->load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+        }
+        return 0.0f;
+    }
 
     // Called once per block from the audio thread at block start.
     void clear_per_block() {

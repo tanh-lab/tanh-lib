@@ -13,13 +13,17 @@ include(CMakeFindDependencyMacro)
 set(tanh_AVAILABLE_COMPONENTS @TANH_EXPORTED_COMPONENTS@)
 
 # Every component other than Core depends on Core; Modulation additionally
-# depends on State and DSP. Resolve the closure of what was requested.
+# depends on DSP, and on State when the installation has it (Modulation then
+# links it). Resolve the closure of what was requested.
 set(_tanh_required ${tanh_FIND_COMPONENTS})
 if(NOT _tanh_required)
     set(_tanh_required ${tanh_AVAILABLE_COMPONENTS})
 endif()
 if("Modulation" IN_LIST _tanh_required)
-    list(APPEND _tanh_required State DSP)
+    list(APPEND _tanh_required DSP)
+    if("State" IN_LIST tanh_AVAILABLE_COMPONENTS)
+        list(APPEND _tanh_required State)
+    endif()
 endif()
 if(NOT "Core" IN_LIST _tanh_required)
     list(APPEND _tanh_required Core)
@@ -36,7 +40,7 @@ foreach(_comp IN LISTS _tanh_required)
 endforeach()
 
 # Third-party dependencies exported alongside the components that use them.
-if("State" IN_LIST _tanh_required)
+if("State" IN_LIST _tanh_required OR "Modulation" IN_LIST _tanh_required)
     find_dependency(nlohmann_json)
 endif()
 

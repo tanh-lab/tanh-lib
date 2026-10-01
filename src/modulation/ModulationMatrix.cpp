@@ -25,37 +25,35 @@
 
 #include "tanh/core/Logger.h"
 #include "tanh/modulation/ModulationRouting.h"
+#include "tanh/modulation/ParameterBackend.h"
 #include "tanh/modulation/ResolvedRouting.h"
 #include "tanh/modulation/ResolvedTarget.h"
 #include "tanh/modulation/SmartHandle.h"
 #include "tanh/state/ModulationScope.h"
-#include "tanh/state/Parameter.h"
 #include "tanh/state/ParameterDefinitions.h"
-#include "tanh/state/State.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 using namespace thl::modulation;
 
-// ── ResolvedTarget::read_base_as_float ──────────────────────────────────────
+ModulationMatrix::ModulationMatrix(ParameterBackend& backend) : m_backend(backend) {
+    // Pre-register Global scope at id 0 with voice_count == 1. The name is
+    // the reserved "global" string from k_global_scope_name —
+    // hosts cannot register it (register_scope rejects "global").
+    m_scope_names.emplace_back(k_global_scope_name);
+    m_scopes.push_back(ScopeEntry{.m_name = m_scope_names.back().c_str(), .m_voice_count = 1});
 
-float ResolvedTarget::read_base_as_float() const TANH_NONBLOCKING_FUNCTION {
-    if (!m_record) { return 0.0f; }
-    switch (m_type) {
-        case thl::ParameterType::Float:
-            return m_record->m_cache.m_atomic_float.load(std::memory_order_relaxed);
-        case thl::ParameterType::Double:
-            return static_cast<float>(
-                m_record->m_cache.m_atomic_double.load(std::memory_order_relaxed));
-        case thl::ParameterType::Int:
-            return static_cast<float>(
-                m_record->m_cache.m_atomic_int.load(std::memory_order_relaxed));
-        case thl::ParameterType::Bool:
-            return m_record->m_cache.m_atomic_bool.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
-        default: return 0.0f;
-    }
+    m_config.register_reader_thread();
 }
 
-ModulationMatrix::ModulationMatrix(thl::State& state) : m_state(state) {
+ModulationMatrix::ModulationMatrix(std::unique_ptr<ParameterBackend> owned_backend,
+                                   thl::State* state,
+                                   StateToJson state_to_json,
+                                   StateFromJson state_from_json)
+    : m_owned_backend(std::move(owned_backend))
+    , m_backend(*m_owned_backend)
+    , m_state(state)
+    , m_state_to_json(state_to_json)
+    , m_state_from_json(state_from_json) {
     // Pre-register Global scope at id 0 with voice_count == 1. The name is
     // the reserved "global" string from k_global_scope_name —
     // hosts cannot register it (register_scope rejects "global").
@@ -71,18 +69,23 @@ template <typename T>
 SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_key) {
     std::scoped_lock const lock(m_writer_mutex);
 
-    // Throws StateKeyNotFoundException if parameter doesn't exist.
-    // Throws std::invalid_argument if T doesn't match the parameter's type.
-    auto handle = m_state.get_handle<T>(param_key);
-
-    // Check modulation flag
-    if (!m_state.is_modulatable(param_key)) {
+    auto binding = m_backend.find(param_key);
+    if (!binding) {
+        throw std::out_of_range("Parameter '" + std::string(param_key) + "' not found");
+    }
+    if (!binding->m_def.is_modulatable()) {
         throw std::invalid_argument("Parameter '" + std::string(param_key) +
                                     "' has modulation disabled");
     }
 
-    auto* target = ensure_target_with_lock(param_key);
-    return {handle, target};
+    auto* target = ensure_target_with_lock(param_key, &*binding);
+    // The target's binding is authoritative (it may predate this lookup).
+    const auto* const* base = std::get_if<const std::atomic<T>*>(&target->m_base);
+    if (base == nullptr || *base == nullptr) {
+        throw std::invalid_argument("Parameter '" + std::string(param_key) +
+                                    "' is not stored as the requested type");
+    }
+    return {*base, target};
 }
 
 // Explicit instantiations for all supported types.
@@ -93,22 +96,33 @@ template TANH_API SmartHandle<double> ModulationMatrix::get_smart_handle<double>
 template TANH_API SmartHandle<int> ModulationMatrix::get_smart_handle<int>(std::string_view);
 template TANH_API SmartHandle<bool> ModulationMatrix::get_smart_handle<bool>(std::string_view);
 
-ResolvedTarget* ModulationMatrix::ensure_target_with_lock(const std::string_view id) {
+ResolvedTarget* ModulationMatrix::ensure_target_with_lock(const std::string_view id,
+                                                          const ParameterBinding* binding) {
     auto it = m_targets.find(id);
     if (it != m_targets.end()) { return &it->second; }
+
+    std::optional<ParameterBinding> looked_up;
+    if (binding == nullptr) {
+        looked_up = m_backend.find(id);
+        if (!looked_up) { return nullptr; }
+        binding = &*looked_up;
+    }
+
     // ResolvedTarget is non-movable (holds atomics) — use try_emplace to
     // default-construct the value in place.
     auto [target_it, inserted] = m_targets.try_emplace(std::string(id));
     auto& t = target_it->second;
     t.m_id = id;
 
-    // Populate metadata from State for normalized depth processing
-    const thl::Parameter param = m_state.get_parameter(id);
-    t.m_range = &param.range();
-    t.m_type = param.def().m_type;
-    t.m_record = m_state.get_record(id);
-    t.m_uses_normalized_buffer = t.m_range && !t.m_range->is_linear();
-    t.m_scope = resolve_parameter_scope_with_lock(id, param.def().m_modulation_scope);
+    // Copy the binding: metadata for normalized depth processing plus the
+    // base/gesture atomics the audio thread reads.
+    t.m_def = binding->m_def;
+    t.m_range = &t.m_def.m_range;
+    t.m_type = t.m_def.m_type;
+    t.m_base = binding->m_base;
+    t.m_in_gesture = binding->m_in_gesture;
+    t.m_uses_normalized_buffer = !t.m_range->is_linear();
+    t.m_scope = resolve_parameter_scope_with_lock(id, t.m_def.m_modulation_scope);
 
     return &t;
 }
@@ -424,8 +438,9 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
         return k_invalid_routing_id;
     }
 
-    // Reject routing if target parameter is not modulatable in State
-    if (!m_state.is_modulatable(routing.m_target_id)) {
+    // Reject routing if target parameter is unknown or not modulatable
+    const auto binding = m_backend.find(routing.m_target_id);
+    if (!binding || !binding->m_def.is_modulatable()) {
         thl::Logger::logf(thl::Logger::LogLevel::Warning,
                           "modulation",
                           "Routing rejected: target '%s' is not a modulatable parameter.",
@@ -434,7 +449,7 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
     }
 
     // Resolve target if not yet in m_targets
-    ensure_target_with_lock(routing.m_target_id);
+    ensure_target_with_lock(routing.m_target_id, &*binding);
 
     const uint32_t id = m_next_routing_id++;
     m_user_routings.push_back(routing);
@@ -588,9 +603,13 @@ bool ModulationMatrix::update_routing_replace_range_normalized(std::string_view 
                                                                std::string_view target_id,
                                                                float norm_min,
                                                                float norm_max) {
-    const thl::ParameterRecord* record = m_state.get_record(target_id);
-    if (!record) { return false; }
-    const auto& range = record->m_def.m_range;
+    std::optional<ParameterBinding> binding;
+    {
+        std::scoped_lock const lock(m_writer_mutex);
+        binding = m_backend.find(target_id);
+    }
+    if (!binding) { return false; }
+    const auto& range = binding->m_def.m_range;
     return update_routing_replace_range(source_id,
                                         target_id,
                                         range.from_normalized(norm_min),
@@ -1526,10 +1545,7 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
     }
 
     for (const auto* routing : it->second) {
-        if (routing->m_skip_during_gesture &&
-            routing->m_target->m_record->m_in_gesture.load(std::memory_order_relaxed)) {
-            continue;
-        }
+        if (routing->m_skip_during_gesture && routing->m_target->is_in_gesture()) { continue; }
 
         // Multi-Replace targets gate writes inline via the priority watermark
         // in apply_replace_sample / apply_replace_sample_voice — no deferred
@@ -1614,8 +1630,7 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                     for (const auto* routing : it->second) {
                         if (routing->m_routing_mode == RoutingMode::GlobalToGlobal) {
                             if (routing->m_skip_during_gesture &&
-                                routing->m_target->m_record->m_in_gesture.load(
-                                    std::memory_order_relaxed)) {
+                                routing->m_target->is_in_gesture()) {
                                 continue;
                             }
                             apply_modulation_sample_mono(*routing, sample, active, i, block_offset);
@@ -1641,8 +1656,7 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                             auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
                             if (vb == nullptr || v >= vb->m_num_voices) { continue; }
                             if (routing->m_skip_during_gesture &&
-                                routing->m_target->m_record->m_in_gesture.load(
-                                    std::memory_order_relaxed)) {
+                                routing->m_target->is_in_gesture()) {
                                 continue;
                             }
                             if (routing->m_combine_mode == CombineMode::Additive) {
@@ -1684,10 +1698,7 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
         if (it == config.m_routings_by_source.end()) { continue; }
 
         for (const auto* routing : it->second) {
-            if (routing->m_skip_during_gesture &&
-                routing->m_target->m_record->m_in_gesture.load(std::memory_order_relaxed)) {
-                continue;
-            }
+            if (routing->m_skip_during_gesture && routing->m_target->is_in_gesture()) { continue; }
 
             if (routing->m_routing_mode == RoutingMode::GlobalToGlobal) {
                 if (auto* mb = routing->m_target->m_mono.load(std::memory_order_acquire);
@@ -1807,7 +1818,7 @@ nlohmann::json  // NOLINT(misc-include-cleaner)
     if (!include_state) { return routings_array; }
 
     nlohmann::json root;
-    root["parameters"] = m_state.to_json();
+    if (m_state != nullptr) { root["parameters"] = m_state_to_json(*m_state); }
     root["modulation_routings"] = std::move(routings_array);
     return root;
 }
@@ -1869,7 +1880,7 @@ void ModulationMatrix::from_json(const nlohmann::json& json) {
     }
 
     // Forward parameters to State
-    if (json.contains("parameters") && json["parameters"].is_array()) {
-        m_state.from_json(json["parameters"]);
+    if (m_state != nullptr && json.contains("parameters") && json["parameters"].is_array()) {
+        m_state_from_json(*m_state, json["parameters"]);
     }
 }

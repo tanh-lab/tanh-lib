@@ -8,7 +8,7 @@
 #include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl::modulation {
-class ModulationMatrix;
+class StateParameterBackend;
 }
 
 namespace thl {
@@ -315,7 +315,7 @@ public:
 private:
     friend class Parameter;
     friend class StateGroup;
-    friend class modulation::ModulationMatrix;
+    friend class modulation::StateParameterBackend;
 
     static std::string& m_temp_buffer_0() noexcept {
         static thread_local std::string s;

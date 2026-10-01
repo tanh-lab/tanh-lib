@@ -11,6 +11,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::modulation::ParameterBackend` / `ParameterBinding`: `ModulationMatrix` reads
+  parameters through a backend instead of `thl::State`, so a host can bind its own
+  parameter store (base-value atomic, gesture flag, `ParameterDefinition`) without
+  mirroring into a State. `ModulationMatrix(thl::State&)` keeps working through the
+  new `StateParameterBackend`. Modulation now builds with `TANH_BUILD_STATE=OFF`.
+  Behaviour changes: `get_smart_handle` throws `std::out_of_range` for unknown keys
+  and `std::invalid_argument` for a type mismatch (was `StateKeyNotFoundException` /
+  `ParameterTypeMismatchException`); `SmartHandle::raw_handle()` and the
+  `SmartHandle(ParameterHandle<T>, ResolvedTarget*)` constructor are gone.
+  Tests: `ParameterBackend.*`.
 - `thl::core::RingBuffer<T>`: strided block calls, `push_block(channel, data, count,
   stride)`, `pop_block(channel, data, count, stride)` and `peek_past_block(channel,
   data, count, stride)`. They read or write `data[0]`, `data[stride]`, ... and are

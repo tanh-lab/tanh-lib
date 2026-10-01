@@ -4,6 +4,7 @@
 #include <tanh/core/threading/RCU.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
+#include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/ResolvedRouting.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/modulation/SmartHandle.h>
@@ -12,9 +13,11 @@
 #include <cstddef>
 #include <list>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <variant>
 #include <vector>
@@ -55,17 +58,41 @@ struct ProcessingConfig {
 
 class TANH_API ModulationMatrix {
 public:
+    // Read parameters through a host-provided backend. The backend (and every
+    // atomic its bindings point at) must outlive the matrix. A matrix built
+    // this way has no State: state() throws, and to_json()/from_json() only
+    // handle routings.
+    explicit ModulationMatrix(ParameterBackend& backend);
+
+    // Read parameters from a thl::State via an internally owned
+    // StateParameterBackend. to_json()/from_json() include the State's
+    // parameters. Only available when tanh is built with the State component.
     explicit ModulationMatrix(thl::State& state);
+
     ~ModulationMatrix();
 
     ModulationMatrix(const ModulationMatrix&) = delete;
     ModulationMatrix& operator=(const ModulationMatrix&) = delete;
 
+    // The backend parameters are resolved through.
+    ParameterBackend& backend() { return m_backend; }
+    const ParameterBackend& backend() const { return m_backend; }
+
+    // True if constructed from a thl::State.
+    [[nodiscard]] bool has_state() const { return m_state != nullptr; }
+
     // Access the underlying State — useful when downstream code holds only a
     // ModulationMatrix& but still needs non-RT writes (e.g. setting string
     // parameters, loading presets) that don't route through the matrix.
-    thl::State& state() { return m_state; }
-    const thl::State& state() const { return m_state; }
+    // Throws std::logic_error if the matrix was built from a ParameterBackend.
+    thl::State& state() {
+        if (m_state == nullptr) { throw std::logic_error("ModulationMatrix has no thl::State"); }
+        return *m_state;
+    }
+    const thl::State& state() const {
+        if (m_state == nullptr) { throw std::logic_error("ModulationMatrix has no thl::State"); }
+        return *m_state;
+    }
 
     // Allocate internal buffers sized to samples_per_block and rebuild the
     // schedule. Every target's VoiceBuffers / MonoBuffers is freshly allocated
@@ -177,13 +204,14 @@ public:
     // config. After this returns the caller may safely delete the source.
     void remove_source(const std::string_view id);
 
-    // Get a SmartHandle for a State parameter. Lazily creates a ResolvedTarget
+    // Get a SmartHandle for a backend parameter. Lazily creates a ResolvedTarget
     // the first time a parameter key is requested. The returned SmartHandle
     // holds a stable pointer into the target map — no registration needed.
     //
-    // T must match the parameter's native type (float, double, int, bool).
+    // T must match the parameter's native type (the ParameterBinding::m_base
+    // alternative: float, double, int, bool).
     //
-    // Throws StateKeyNotFoundException if the parameter doesn't exist in State.
+    // Throws std::out_of_range if the backend doesn't know the key.
     // Throws std::invalid_argument if the parameter's definition has
     // modulation disabled or if T doesn't match the parameter's type.
     template <typename T>
@@ -214,10 +242,11 @@ public:
     bool update_routing_replace_range(uint32_t routing_id, float range_min, float range_max);
 
     // Normalized-[0,1] variant: looks up the target parameter's Range via the
-    // matrix's State reference and converts the endpoints to plain units
-    // internally. Callers that already work in normalized coordinates can
-    // avoid a separate State lookup.
-    // Returns false if the target is not in State or the routing was not found.
+    // matrix's backend and converts the endpoints to plain units internally.
+    // Callers that already work in normalized coordinates can avoid a
+    // separate lookup.
+    // Returns false if the backend doesn't know the target or the routing was
+    // not found.
     bool update_routing_replace_range_normalized(std::string_view source_id,
                                                  std::string_view target_id,
                                                  float norm_min,
@@ -240,22 +269,38 @@ public:
 
     // ── Serialization ───────────────────────────────────────────────────
     // Serialize modulation routings (and optionally State parameters) to JSON.
-    // include_state=true wraps both under {"parameters":..., "modulation_routings":...}.
+    // include_state=true wraps both under {"parameters":..., "modulation_routings":...}
+    // ("parameters" is omitted when the matrix has no State).
     // include_state=false returns just the routings array.
     nlohmann::json to_json(bool include_state = true);
 
     // Deserialize from JSON. Reads "modulation_routings" if present, replaces
     // all user routings, and rebuilds the schedule. Forwards "parameters" to
-    // State::from_json() if present.
+    // State::from_json() if present and the matrix has a State (ignored
+    // otherwise).
     void from_json(const nlohmann::json& json);
 
 private:
+    // Hooks for the State-constructed matrix, set by ModulationMatrix(State&)
+    // (defined in StateParameterBackend.cpp) so this class's own translation
+    // unit never references State symbols.
+    using StateToJson = nlohmann::json (*)(thl::State&);
+    using StateFromJson = void (*)(thl::State&, const nlohmann::json&);
+
+    ModulationMatrix(std::unique_ptr<ParameterBackend> owned_backend,
+                     thl::State* state,
+                     StateToJson state_to_json,
+                     StateFromJson state_from_json);
+
     // Internal rebuild — must be called with m_writer_mutex held.
     void rebuild_schedule_with_lock();
 
-    // Ensure a target exists for the given id. Returns a stable pointer.
+    // Ensure a target exists for the given id. Returns a stable pointer, or
+    // nullptr if the backend doesn't know the id. binding, if given, is the
+    // backend's answer for id (saves a second lookup).
     // Must be called with m_writer_mutex held.
-    ResolvedTarget* ensure_target_with_lock(const std::string_view id);
+    ResolvedTarget* ensure_target_with_lock(const std::string_view id,
+                                            const ParameterBinding* binding = nullptr);
 
     // Routing lookup helpers — must be called with m_writer_mutex held.
     ModulationRouting* find_user_routing_with_lock(std::string_view source_id,
@@ -290,7 +335,13 @@ private:
         const std::unordered_map<std::string, bool>& has_self_edge,
         std::vector<ScheduleStep>& out_schedule);
 
-    thl::State& m_state;
+    // Declared before m_backend so it is initialised first.
+    std::unique_ptr<ParameterBackend> m_owned_backend;
+    ParameterBackend& m_backend;
+
+    thl::State* m_state = nullptr;
+    StateToJson m_state_to_json = nullptr;
+    StateFromJson m_state_from_json = nullptr;
 
     double m_sample_rate = 48000.0;
     size_t m_samples_per_block = 512;
