@@ -192,7 +192,8 @@ static_assert(std::is_trivially_copyable_v<TransportInfo>);
  *   and Link host-time jitter without accumulating error.
  * - beyond the tolerance: k_jumped with m_jump_delta_beats = start - expected.
  *
- * tolerance = max(2 samples worth of beats at the current bpm, 1e-6).
+ * tolerance = max(N samples worth of beats at the current bpm, 1e-6), N = 2 by
+ * default (set_tolerance_samples()).
  * It also sets k_started / k_stopped / k_tempo_changed, and k_timeline_reset on the
  * first block after prepare() or reset().
  *
@@ -221,11 +222,15 @@ public:
                  double raw_end_beat,
                  uint32_t frames) noexcept TANH_NONBLOCKING_FUNCTION;
 
+    /// Jitter tolerance in samples (default 2). Not reset by prepare()/reset().
+    void set_tolerance_samples(double samples) noexcept;
+
     /// Tolerance used for the given bpm.
     [[nodiscard]] double tolerance_beats(double bpm) const noexcept TANH_NONBLOCKING_FUNCTION;
 
 private:
     double m_sample_rate = 48000.0;
+    double m_tolerance_samples = 2.0;
     double m_prev_end = 0.0;
     double m_prev_bpm = 0.0;
     bool m_prev_playing = false;

@@ -14,7 +14,6 @@ namespace {
 constexpr double k_exact_epsilon = 1e-9;
 constexpr double k_min_tolerance = 1e-6;
 constexpr double k_tempo_epsilon = 1e-6;
-constexpr double k_tolerance_samples = 2.0;
 
 }  // namespace
 
@@ -23,13 +22,17 @@ void ContinuityTracker::prepare(double sample_rate) noexcept {
     reset();
 }
 
+void ContinuityTracker::set_tolerance_samples(double samples) noexcept {
+    if (samples >= 0.0) { m_tolerance_samples = samples; }
+}
+
 void ContinuityTracker::reset() noexcept TANH_NONBLOCKING_FUNCTION {
     m_reset_pending = true;
 }
 
 double ContinuityTracker::tolerance_beats(double bpm) const noexcept TANH_NONBLOCKING_FUNCTION {
     const double per_sample = std::abs(bpm) / (60.0 * m_sample_rate);
-    return std::max(k_tolerance_samples * per_sample, k_min_tolerance);
+    return std::max(m_tolerance_samples * per_sample, k_min_tolerance);
 }
 
 void ContinuityTracker::resolve(TransportInfo& io,

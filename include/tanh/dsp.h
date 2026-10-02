@@ -7,6 +7,8 @@
 #include "dsp/synth/SineProcessor.h"
 #include "dsp/transport/HostTransportClock.h"
 #include "dsp/transport/InternalTransportClock.h"
+#include "dsp/transport/LinkBackend.h"
+#include "dsp/transport/LinkTransportClock.h"
 #include "dsp/transport/TransportClock.h"
 #include "dsp/transport/TransportInfo.h"
 #include "dsp/utils/ADSR.h"
