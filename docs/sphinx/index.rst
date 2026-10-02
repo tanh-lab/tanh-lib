@@ -26,6 +26,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    realtime_safety
    symbol_visibility
    modulation
+   host_parameters
    audio_io
    api/index
    changelog
