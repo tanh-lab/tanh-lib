@@ -30,6 +30,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    host_parameters
    transport
    motion_recording
+   xy_controller
    audio_io
    api/index
    changelog
@@ -47,7 +48,9 @@ other; :doc:`realtime_safety` lists the rules every ``process()`` path follows.
 :doc:`symbol_visibility`, :doc:`modulation` and :doc:`audio_io` are the design
 notes that used to live in the README. :doc:`transport` covers musical time
 (``TransportInfo``, host/internal/Link clocks), the XY pad and Ableton Link;
-:doc:`motion_recording` records and loops XY pad gestures.
+:doc:`motion_recording` records and loops XY pad gestures, and
+:doc:`xy_controller` combines pad, recorder and a UI snapshot into matrix
+sources with Single/PerEffect switching.
 
 The :doc:`api/index` is generated from the public headers under
 ``include/tanh/``.

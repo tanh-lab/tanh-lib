@@ -30,10 +30,10 @@ recorder.process(transport.block_info(), pad.primary(), n);  // 2. record / play
 matrix.process(n);
 ```
 
-An XY controller does steps 1 and 2 (and its sequencer) in its own driver step,
-in `pre_process_block()`, and writes the composed result into its own output
-buffers; the stand-alone sources here are for using the recorder without such a
-controller. They are global-scope and not fully active (the active mask is the
+`XYController` ([XY controller](xy_controller.md)) does steps 1 and 2 in its
+own driver step, in `pre_process_block()`, and writes the composed result into
+its own output buffers, one pad and recorder per voice. The stand-alone sources
+here are for using the recorder without such a controller. They are global-scope and not fully active (the active mask is the
 output gate): route x/y with `ReplaceHold` and the gate with `Replace`.
 
 `process()` produces per sample:

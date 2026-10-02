@@ -152,7 +152,8 @@ pad.release_all();           // on unmount / focus loss
 ### Driving the pad from an owner
 
 An XY controller that records motion or sequences steps needs the pad's state
-*before* the matrix routes it. Call `process_block(n)` on the audio thread (for
+*before* the matrix routes it (`XYController` does this, see
+[XY controller](xy_controller.md)). Call `process_block(n)` on the audio thread (for
 example from the controller's own source's `pre_process_block()`, with `n` from
 `TransportInfo::m_num_samples`), then read `stream(i)` / `primary()`
 (`XYPadStream`: x, y, active and the change points for `n` samples). If the

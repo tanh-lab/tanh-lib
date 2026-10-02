@@ -89,6 +89,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   alignment, tempo, touch override, handoff, every clock discontinuity, matrix,
   TSan stress, RTSan scenario); benchmark `bm_motion_recorder_playback`. Docs:
   `docs/sphinx/motion_recording.md`.
+- `ModulationMatrix::set_routing_enabled(id | source, target, bool)` and the batched
+  `set_routings_enabled(span<RoutingEnabled>)`: a disabled routing is fully inert —
+  no Additive term, no Replace value, no ReplaceHold hold (a Replace routing at
+  depth 0 still writes `src * 0` and wins its target) — and its held state is
+  cleared, so re-enabling never revives a stale hold. No schedule rebuild: the audio
+  thread reads every flag once per block through a wait-free seqlock, so a batch is
+  seen completely or not at all; enable/disable edges flag a change point at offset
+  0. `ModulationRouting::m_enabled` (default true) is serialised as
+  `"enabled": false` only when disabled, so existing JSON is unchanged. Tests:
+  `RoutingEnabled.*` (Additive / Replace / ReplaceHold / multi-Replace / cyclic,
+  JSON, concurrent toggling without rebuild, RTSan).
+- `thl::TripleBuffer<T>` (`tanh/core/threading/TripleBuffer.h`): wait-free
+  single-producer / single-consumer latest-value mailbox for trivially copyable
+  frames (`write()` or `write_buffer()` + `publish()`, `read()` / `update()` +
+  `latest()`). Tests: `TripleBuffer.*` (incl. a TSan consistency stress and RTSan).
+- `thl::modulation::XYController`: one or more XY dots (voices), each with its own
+  `XYPad` and `MotionRecorder`, exposed as `<id>.x` / `.y` / `.active` matrix sources
+  (`<id>.<v>.x` … with several voices). One driver step per controller and block,
+  run from whichever output's `pre_process_block()` comes first (no dependency on the
+  matrix's source order), with the block's `TransportInfo` from `set_transport()`
+  (or a stand-alone `process_block(t)`); outputs only copy in `process()`. Touch >
+  motion, using the recorder's single glide back after a release; x/y stay live once
+  a dot has a value so re-enabled routings pick it up at once; Kaoss-style latch;
+  `reset()`. Several voices: a touch grabs the nearest enabled dot no other finger
+  holds and moves only that voice (`touch_voice()` bypasses selection). Owns its
+  routings (`route`, `route_voices`, `unroute`, `set_route_enabled`,
+  `set_route_depth`; removed in the destructor). UI: a fixed-size `XYFrame` per
+  block through `TripleBuffer` (rate-limited to 240 Hz, immediate on state change,
+  skipped while `set_ui_attached(false)`), a drop-oldest live recording trail
+  (`drain_trail`) and the recorded path via the recorder's RCU lane and
+  `m_path_version` (`read_path`). `XYModeRouter` wires Single/PerEffect routings
+  and switches them with one enable batch. Tests: `XYController.*`,
+  `XYControllerThreads.*` (TSan), `XYControllerRtsan.*`, `XYControllerState.*`;
+  benchmarks `bm_xy_8_controllers`, `bm_xy_matrix_elasticfx`. Docs:
+  `docs/sphinx/xy_controller.md`.
 
 ### Changed
 

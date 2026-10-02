@@ -149,6 +149,16 @@ void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override 
 }                                  // scope closes here
 ```
 
+With XY controllers ([XY controller](xy_controller.md)), give every controller
+the block's transport before the matrix runs; `m_num_samples` is the block
+length its driver step renders:
+
+```cpp
+const auto t = m_clock.block_info();           // HostTransportClock fed from the playhead
+for (auto& pad : m_pads) { pad->set_transport(t); }
+m_matrix.process_with_scope(scope.data(), t.m_num_samples);
+```
+
 Keep the scope open while the processors read their `SmartHandle`s: the
 modulation buffers they point into are RCU-protected. The audio path must not
 run on two threads at the same time — the normal plugin contract.
@@ -164,10 +174,20 @@ APVTS instead (`setValueNotifyingHost` on the message thread): a direct store
 bypasses host automation, undo and listeners. Recorded gestures and other
 movement belong in modulation sources, not in base-value writes.
 
+## Switching routings on and off
+
+`update_routing_depth(id, 0)` silences an Additive routing but not a Replace
+one (it still writes `src * 0` and wins the target). Use
+`set_routing_enabled(id, false)` instead: the routing writes nothing, its held
+value is dropped, and nothing is rebuilt. `set_routings_enabled(batch)` flips
+several at once so that no block sees half of the change — e.g. a pad mode
+switch (`XYModeRouter`).
+
 ## Saving
 
 With a host backend, `ModulationMatrix::to_json()` / `from_json()` contain the
-routings only; the parameters are saved by the host (APVTS state). Store the
+routings only (including `"enabled": false` for disabled ones); the parameters
+are saved by the host (APVTS state). Store the
 routing JSON next to the APVTS tree in `getStateInformation`.
 
 ## Errors
