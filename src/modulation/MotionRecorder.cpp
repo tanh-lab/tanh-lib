@@ -107,6 +107,8 @@ void MotionRecorder::prepare(double sample_rate,
         m_take.m_active = false;
         m_aborted = true;
     }
+    m_armed = false;
+    m_force_start = false;
     for (auto& b : m_takes) { b.m_state.store(BufferState::Free, std::memory_order_relaxed); }
 
     m_config = config;
@@ -709,6 +711,9 @@ void MotionRecorder::process(const TransportInfo& t,
     m_seg_start = 0;
     if (!view.empty()) {
         dphase = direction(view);
+        // Entering or leaving a held clock: re-anchor the render ramp, so a
+        // held output stands still from the first held sample.
+        if ((dphase == 0.0) != (m_prev_dphase == 0.0)) { m_ramp_restart = true; }
         if (!m_need_phase) {
             if (view.m_timebase == MotionTimebase::Beats) {
                 const double fresh = transport_phase(view, 0);
@@ -884,6 +889,7 @@ void MotionRecorder::process(const TransportInfo& t,
         m_phase = 0.0;
     }
     m_clock_end = b0 + (static_cast<double>(n) * slope);
+    m_prev_dphase = dphase;
     publish_snapshot(view);
 }
 

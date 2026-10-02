@@ -417,8 +417,9 @@ private:
 
     // Render ramp
     bool m_ramp_restart = true;
-    uint32_t m_ramp_pos = 0;  // samples since the last tick
-    double m_last_p = 0.0;    // phase of the last rendered sample (wrap detection)
+    uint32_t m_ramp_pos = 0;     // samples since the last tick
+    double m_last_p = 0.0;       // phase of the last rendered sample (wrap detection)
+    double m_prev_dphase = 1.0;  // phase slope of the previous block
     float m_ramp_from_x = 0.0f, m_ramp_from_y = 0.0f;
     float m_ramp_to_x = 0.0f, m_ramp_to_y = 0.0f;
 

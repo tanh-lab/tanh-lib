@@ -51,6 +51,8 @@ struct Rig {
         m_host.add({sample, sim::Event::Kind::Loop, start, end});
     }
 
+    void loop_off_at(uint64_t sample) { m_host.add({sample, sim::Event::Kind::LoopOff}); }
+
     /// One block of @p n samples (default: the rig's block size).
     TransportInfo step(uint32_t n = 0) {
         if (n == 0) { n = m_block; }
