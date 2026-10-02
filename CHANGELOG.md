@@ -7,8 +7,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-09-21
-
 ### Added
 
 - `thl::modulation::ParameterBackend` / `ParameterBinding`: `ModulationMatrix` reads
@@ -16,11 +14,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   parameter store (base-value atomic, gesture flag, `ParameterDefinition`) without
   mirroring into a State. `ModulationMatrix(thl::State&)` keeps working through the
   new `StateParameterBackend`. Modulation now builds with `TANH_BUILD_STATE=OFF`.
-  Behaviour changes: `get_smart_handle` throws `std::out_of_range` for unknown keys
-  and `std::invalid_argument` for a type mismatch (was `StateKeyNotFoundException` /
-  `ParameterTypeMismatchException`); `SmartHandle::raw_handle()` and the
-  `SmartHandle(ParameterHandle<T>, ResolvedTarget*)` constructor are gone.
-  Tests: `ParameterBackend.*`.
+  `get_smart_handle` keeps the v0.4.0 error contract on every backend:
+  `thl::StateKeyNotFoundException` for an unknown key (a State-backed matrix rethrows
+  State's own exception, e.g. `StateGroupNotFoundException`),
+  `thl::ParameterTypeMismatchException` for a type mismatch, `std::invalid_argument`
+  when modulation is disabled; `tanh/state/Exceptions.h` is installed with Modulation
+  when State is off. New `SmartHandle<T>::store_base(T)`: relaxed store into the bound
+  base atomic (the counterpart of `ParameterHandle<T>::store()`, no notifications), so
+  `ParameterBinding::m_base` holds writable `std::atomic<T>*`. The
+  `SmartHandle(ParameterHandle<T>, ResolvedTarget*)` constructor is gone.
+  Tests: `ParameterBackend.*`, `StateParameterBackend.*`.
+
+### Deprecated
+
+- `SmartHandle<T>::raw_handle()` now returns `std::optional<thl::ParameterHandle<T>>`
+  (the State handle for a State-backed matrix, `std::nullopt` for any other backend)
+  and is only declared when tanh is built with State (`TANH_STATE_ENABLED`). Kept for
+  one release; use `store_base()` / `load_base()`, or `State::get_handle<T>(key)`.
+
+## [0.4.0] - 2026-09-21
+
+### Added
+
 - `thl::core::RingBuffer<T>`: strided block calls, `push_block(channel, data, count,
   stride)`, `pop_block(channel, data, count, stride)` and `peek_past_block(channel,
   data, count, stride)`. They read or write `data[0]`, `data[stride]`, ... and are

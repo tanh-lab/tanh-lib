@@ -298,6 +298,10 @@ struct ResolvedTarget {
 
     // ── Cold fields (writer-only; not read on the audio hot path) ────────
     std::string m_id;
+
+    // ParameterBinding::m_state_record (opaque; non-null only for
+    // StateParameterBackend bindings). Backs SmartHandle::raw_handle().
+    void* m_state_record = nullptr;
     ParameterType m_type = ParameterType::Float;
 
     // Copy of the parameter's definition (owned here so m_range and
@@ -345,16 +349,16 @@ struct ResolvedTarget {
 
     // RT-safe: read the base value as float from the backend's atomic.
     [[nodiscard]] float read_base_as_float() const {
-        if (const auto* const* f = std::get_if<const std::atomic<float>*>(&m_base)) {
+        if (const auto* f = std::get_if<std::atomic<float>*>(&m_base)) {
             return (*f)->load(std::memory_order_relaxed);
         }
-        if (const auto* const* d = std::get_if<const std::atomic<double>*>(&m_base)) {
+        if (const auto* d = std::get_if<std::atomic<double>*>(&m_base)) {
             return static_cast<float>((*d)->load(std::memory_order_relaxed));
         }
-        if (const auto* const* i = std::get_if<const std::atomic<int>*>(&m_base)) {
+        if (const auto* i = std::get_if<std::atomic<int>*>(&m_base)) {
             return static_cast<float>((*i)->load(std::memory_order_relaxed));
         }
-        if (const auto* const* b = std::get_if<const std::atomic<bool>*>(&m_base)) {
+        if (const auto* b = std::get_if<std::atomic<bool>*>(&m_base)) {
             return (*b)->load(std::memory_order_relaxed) ? 1.0f : 0.0f;
         }
         return 0.0f;

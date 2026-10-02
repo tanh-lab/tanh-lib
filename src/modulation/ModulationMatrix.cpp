@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -29,6 +30,7 @@
 #include "tanh/modulation/ResolvedRouting.h"
 #include "tanh/modulation/ResolvedTarget.h"
 #include "tanh/modulation/SmartHandle.h"
+#include "tanh/state/Exceptions.h"
 #include "tanh/state/ModulationScope.h"
 #include "tanh/state/ParameterDefinitions.h"
 #include "tanh/utils/RealtimeSanitizer.h"
@@ -48,12 +50,14 @@ ModulationMatrix::ModulationMatrix(ParameterBackend& backend) : m_backend(backen
 ModulationMatrix::ModulationMatrix(std::unique_ptr<ParameterBackend> owned_backend,
                                    thl::State* state,
                                    StateToJson state_to_json,
-                                   StateFromJson state_from_json)
+                                   StateFromJson state_from_json,
+                                   StateThrowKeyNotFound state_throw_key_not_found)
     : m_owned_backend(std::move(owned_backend))
     , m_backend(*m_owned_backend)
     , m_state(state)
     , m_state_to_json(state_to_json)
-    , m_state_from_json(state_from_json) {
+    , m_state_from_json(state_from_json)
+    , m_state_throw_key_not_found(state_throw_key_not_found) {
     // Pre-register Global scope at id 0 with voice_count == 1. The name is
     // the reserved "global" string from k_global_scope_name —
     // hosts cannot register it (register_scope rejects "global").
@@ -65,26 +69,66 @@ ModulationMatrix::ModulationMatrix(std::unique_ptr<ParameterBackend> owned_backe
 
 ModulationMatrix::~ModulationMatrix() = default;
 
+namespace {
+
+template <typename T>
+constexpr thl::ParameterType parameter_type_of() {
+    if constexpr (std::is_same_v<T, float>) {
+        return thl::ParameterType::Float;
+    } else if constexpr (std::is_same_v<T, double>) {
+        return thl::ParameterType::Double;
+    } else if constexpr (std::is_same_v<T, int>) {
+        return thl::ParameterType::Int;
+    } else {
+        return thl::ParameterType::Bool;
+    }
+}
+
+// Type of the atomic a binding stores its base value in (a host may store an
+// Int parameter as float); the definition's type when there is none.
+thl::ParameterType stored_parameter_type(const ParameterBaseValue& base,
+                                         const ParameterBinding& binding) {
+    if (std::holds_alternative<std::atomic<float>*>(base)) { return thl::ParameterType::Float; }
+    if (std::holds_alternative<std::atomic<double>*>(base)) { return thl::ParameterType::Double; }
+    if (std::holds_alternative<std::atomic<int>*>(base)) { return thl::ParameterType::Int; }
+    if (std::holds_alternative<std::atomic<bool>*>(base)) { return thl::ParameterType::Bool; }
+    return binding.m_def.m_type;
+}
+
+}  // namespace
+
 template <typename T>
 SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_key) {
     std::scoped_lock const lock(m_writer_mutex);
 
+    // Same checks, order and exception types as v0.4.0's State::get_handle<T>()
+    // followed by the modulatable check, for every backend.
     auto binding = m_backend.find(param_key);
     if (!binding) {
-        throw std::out_of_range("Parameter '" + std::string(param_key) + "' not found");
+        // A State-backed matrix rethrows State's own exception (a missing
+        // group in a dotted key is a StateGroupNotFoundException there).
+        if (m_state != nullptr && m_state_throw_key_not_found != nullptr) {
+            m_state_throw_key_not_found(*m_state, param_key);
+        }
+        throw thl::StateKeyNotFoundException(param_key);
     }
+
+    // An existing target's binding is authoritative (it may predate this lookup).
+    const auto existing = m_targets.find(param_key);
+    const ParameterBaseValue& base_value =
+        existing != m_targets.end() ? existing->second.m_base : binding->m_base;
+    auto* const* base = std::get_if<std::atomic<T>*>(&base_value);
+    if (base == nullptr || *base == nullptr) {
+        throw thl::ParameterTypeMismatchException(parameter_type_of<T>(),
+                                                  stored_parameter_type(base_value, *binding));
+    }
+
     if (!binding->m_def.is_modulatable()) {
         throw std::invalid_argument("Parameter '" + std::string(param_key) +
                                     "' has modulation disabled");
     }
 
     auto* target = ensure_target_with_lock(param_key, &*binding);
-    // The target's binding is authoritative (it may predate this lookup).
-    const auto* const* base = std::get_if<const std::atomic<T>*>(&target->m_base);
-    if (base == nullptr || *base == nullptr) {
-        throw std::invalid_argument("Parameter '" + std::string(param_key) +
-                                    "' is not stored as the requested type");
-    }
     return {*base, target};
 }
 
@@ -121,6 +165,7 @@ ResolvedTarget* ModulationMatrix::ensure_target_with_lock(const std::string_view
     t.m_type = t.m_def.m_type;
     t.m_base = binding->m_base;
     t.m_in_gesture = binding->m_in_gesture;
+    t.m_state_record = binding->m_state_record;
     t.m_uses_normalized_buffer = !t.m_range->is_linear();
     t.m_scope = resolve_parameter_scope_with_lock(id, t.m_def.m_modulation_scope);
 

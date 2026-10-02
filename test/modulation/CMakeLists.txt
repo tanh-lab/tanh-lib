@@ -24,6 +24,7 @@ if(TARGET tanh::State)
 		test_CyclicModulation.cpp
 		test_BaseProcessor.cpp
 		test_SmartHandle.cpp
+		test_StateParameterBackend.cpp
 		test_Integration.cpp
 		test_PolyphonicModulation.cpp
 		test_InputEventQueue.cpp

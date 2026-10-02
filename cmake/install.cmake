@@ -74,9 +74,11 @@ foreach(target IN LISTS TANH_BUILT_COMPONENTS)
 endforeach()
 
 # Modulation without State still uses the header-only definition types that
-# live under state/ (Range, ParameterDefinition, ModulationScope).
+# live under state/ (Range, ParameterDefinition, ModulationScope) and the
+# exception types ModulationMatrix::get_smart_handle() throws.
 if(TARGET ${PROJECT_NAME}_modulation AND NOT TARGET ${PROJECT_NAME}_state)
     install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state/Exceptions.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state/ModulationScope.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state/ParameterDefinitions.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/state

@@ -15,6 +15,11 @@ namespace thl {
 class State;
 class StateGroup;
 
+namespace modulation {
+template <typename T>
+class SmartHandle;
+}  // namespace modulation
+
 /**
  * @brief Atomic cache entry for real-time safe per-sample parameter access.
  *
@@ -174,6 +179,8 @@ public:
 private:
     friend class State;
     friend class Parameter;
+    // Deprecated SmartHandle::raw_handle() rebuilds a handle from its record.
+    friend class modulation::SmartHandle<T>;
     explicit ParameterHandle(ParameterRecord* record)
         : m_record(record), m_range(&record->m_def.m_range) {}
     ParameterRecord* m_record = nullptr;

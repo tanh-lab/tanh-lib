@@ -4,6 +4,10 @@
 #include <tanh/state/ParameterDefinitions.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#if defined(TANH_STATE_ENABLED)
+#include <tanh/state/Parameter.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -12,6 +16,7 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -61,8 +66,7 @@ public:
     // base must point at the parameter's base-value atomic and stay valid for
     // the handle's lifetime; target is the matrix-owned ResolvedTarget (whose
     // m_def/m_range back the metadata accessors).
-    SmartHandle(const std::atomic<T>* base, ResolvedTarget* target)
-        : m_base(base), m_target(target) {}
+    SmartHandle(std::atomic<T>* base, ResolvedTarget* target) : m_base(base), m_target(target) {}
 
     // Read the parameter value at a given sample offset.
     // If a modulation target is attached, returns base + modulation.
@@ -197,7 +201,28 @@ public:
         return m_base->load(std::memory_order_relaxed);
     }
 
+    // Write the unmodulated base value: a relaxed store into the backend's
+    // atomic, the counterpart of thl::ParameterHandle<T>::store(). Real-time
+    // safe and backend-neutral. Bypasses every host notification: no State
+    // listeners fire and no host (e.g. JUCE APVTS) is told — for host
+    // parameters that must notify, write through the host API instead.
+    void store_base(T value) TANH_NONBLOCKING_FUNCTION {
+        m_base->store(value, std::memory_order_relaxed);
+    }
+
     bool is_valid() const TANH_NONBLOCKING_FUNCTION { return m_base != nullptr; }
+
+#if defined(TANH_STATE_ENABLED)
+    // Deprecated, kept for one release. The thl::ParameterHandle behind a
+    // State-backed handle (ModulationMatrix(thl::State&)); std::nullopt for a
+    // handle from any other ParameterBackend.
+    [[deprecated("use store_base()/load_base(), or State::get_handle<T>(key)")]] [[nodiscard]]
+    std::optional<thl::ParameterHandle<T>> raw_handle() const {
+        if (m_target == nullptr || m_target->m_state_record == nullptr) { return std::nullopt; }
+        return thl::ParameterHandle<T>(
+            static_cast<thl::ParameterRecord*>(m_target->m_state_record));
+    }
+#endif
 
     // ── Metadata accessors (RT-safe — immutable after construction) ──────
     // Require a handle obtained from ModulationMatrix::get_smart_handle().
@@ -317,7 +342,7 @@ private:
         }
     }
 
-    const std::atomic<T>* m_base = nullptr;
+    std::atomic<T>* m_base = nullptr;
     ResolvedTarget* m_target = nullptr;
 };
 
@@ -456,7 +481,8 @@ void collect_change_points(std::span<const Handle> handles,
         const auto word = target_buffer[bitset_base + w];
         auto bits = word;
         while (bits != 0) {
-            const int bit = std::countr_zero(bits);
+            // bits != 0, so countr_zero is in [0, 31].
+            const auto bit = static_cast<size_t>(std::countr_zero(bits));
             target_buffer[write++] = static_cast<uint32_t>(w * 32 + bit);
             bits &= bits - 1;  // clear lowest set bit
         }
@@ -511,7 +537,8 @@ inline void collect_change_points(
         const auto word = target_buffer[bitset_base + w];
         auto bits = word;
         while (bits != 0) {
-            const int bit = std::countr_zero(bits);
+            // bits != 0, so countr_zero is in [0, 31].
+            const auto bit = static_cast<size_t>(std::countr_zero(bits));
             target_buffer[write++] = static_cast<uint32_t>(w * 32 + bit);
             bits &= bits - 1;
         }

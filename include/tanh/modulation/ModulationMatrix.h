@@ -223,9 +223,13 @@ public:
     // T must match the parameter's native type (the ParameterBinding::m_base
     // alternative: float, double, int, bool).
     //
-    // Throws std::out_of_range if the backend doesn't know the key.
-    // Throws std::invalid_argument if the parameter's definition has
-    // modulation disabled or if T doesn't match the parameter's type.
+    // Same error contract for every backend, checked in this order:
+    // - thl::StateKeyNotFoundException if the backend doesn't know the key
+    //   (for a State-backed matrix exactly what State::get_handle<T>(key)
+    //   throws, e.g. thl::StateGroupNotFoundException for a missing group);
+    // - thl::ParameterTypeMismatchException if T doesn't match the type of
+    //   the bound base atomic;
+    // - std::invalid_argument if the parameter has modulation disabled.
     template <typename T>
     SmartHandle<T> get_smart_handle(std::string_view param_key);
 
@@ -298,11 +302,14 @@ private:
     // unit never references State symbols.
     using StateToJson = nlohmann::json (*)(thl::State&);
     using StateFromJson = void (*)(thl::State&, const nlohmann::json&);
+    // Throws what State::get_handle(key) throws for a key State doesn't have.
+    using StateThrowKeyNotFound = void (*)(const thl::State&, std::string_view);
 
     ModulationMatrix(std::unique_ptr<ParameterBackend> owned_backend,
                      thl::State* state,
                      StateToJson state_to_json,
-                     StateFromJson state_from_json);
+                     StateFromJson state_from_json,
+                     StateThrowKeyNotFound state_throw_key_not_found);
 
     // Internal rebuild — must be called with m_writer_mutex held.
     void rebuild_schedule_with_lock();
@@ -354,6 +361,7 @@ private:
     thl::State* m_state = nullptr;
     StateToJson m_state_to_json = nullptr;
     StateFromJson m_state_from_json = nullptr;
+    StateThrowKeyNotFound m_state_throw_key_not_found = nullptr;
 
     double m_sample_rate = 48000.0;
     size_t m_samples_per_block = 512;

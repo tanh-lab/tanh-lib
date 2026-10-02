@@ -8,6 +8,7 @@
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/SmartHandle.h>
+#include <tanh/state/Exceptions.h>
 #include <tanh/state/ParameterDefinitions.h>
 
 #include <array>
@@ -49,7 +50,7 @@ public:
     std::optional<ParameterBinding> find(std::string_view key) const override {
         auto it = m_entries.find(key);
         if (it == m_entries.end()) { return std::nullopt; }
-        const Entry& e = *it->second;
+        Entry& e = *it->second;
         return ParameterBinding{
             .m_def = e.m_def,
             .m_base = &e.m_value,
@@ -322,14 +323,88 @@ TEST(ParameterBackend, LookupErrors) {
     ConstSource src;
     matrix.add_source("src", &src);
 
-    EXPECT_THROW(matrix.get_smart_handle<float>("missing"), std::out_of_range);
+    EXPECT_THROW(matrix.get_smart_handle<float>("missing"), thl::StateKeyNotFoundException);
     EXPECT_THROW(matrix.get_smart_handle<float>("fixed"), std::invalid_argument);
-    EXPECT_THROW(matrix.get_smart_handle<int>("gain"), std::invalid_argument);
+    EXPECT_THROW(matrix.get_smart_handle<int>("gain"), thl::ParameterTypeMismatchException);
 
     EXPECT_EQ(matrix.add_routing({"src", "missing"}), k_invalid_routing_id);
     EXPECT_EQ(matrix.add_routing({"src", "fixed"}), k_invalid_routing_id);
     EXPECT_NE(matrix.add_routing({"src", "gain"}), k_invalid_routing_id);
 }
+
+// Same exception types (and messages) as a State-backed matrix and v0.4.0.
+TEST(ParameterBackend, LookupErrorTypesMatchState) {
+    FakeBackend backend;
+    backend.add("gain", mod_float(thl::Range::linear(0.0f, 1.0f), 0.0f));
+    backend.add("fixed",
+                thl::ParameterDefinition::make_float("f", thl::Range::linear(0.0f, 1.0f), 0.0f)
+                    .modulatable(false));
+    ModulationMatrix matrix(backend);
+
+    try {
+        (void)matrix.get_smart_handle<float>("missing");
+        FAIL() << "expected StateKeyNotFoundException";
+    } catch (const thl::StateKeyNotFoundException& e) {
+        EXPECT_EQ(e.key(), "missing");
+        EXPECT_STREQ(e.what(), "Key not found in state: missing");
+    }
+
+    try {
+        (void)matrix.get_smart_handle<double>("gain");
+        FAIL() << "expected ParameterTypeMismatchException";
+    } catch (const thl::ParameterTypeMismatchException& e) {
+        EXPECT_EQ(e.requested(), thl::ParameterType::Double);
+        EXPECT_EQ(e.actual(), thl::ParameterType::Float);
+    }
+
+    // Type is checked before the modulatable flag, as in v0.4.0.
+    EXPECT_THROW(matrix.get_smart_handle<int>("fixed"), thl::ParameterTypeMismatchException);
+    // A failed lookup creates no target.
+    EXPECT_EQ(matrix.get_target("gain"), nullptr);
+}
+
+TEST(ParameterBackend, StoreBaseWritesBackendAtomic) {
+    FakeBackend backend;
+    auto& cutoff = backend.add("cutoff", mod_float(thl::Range::linear(0.0f, 100.0f), 10.0f));
+    ModulationMatrix matrix(backend);
+
+    auto handle = matrix.get_smart_handle<float>("cutoff");
+    handle.store_base(30.0f);
+    EXPECT_FLOAT_EQ(cutoff.m_value.load(), 30.0f);
+    EXPECT_FLOAT_EQ(handle.load_base(), 30.0f);
+    EXPECT_FLOAT_EQ(handle.load(), 30.0f);
+
+    ConstSource src;
+    src.m_value = 1.0f;
+    matrix.add_source("src", &src);
+    ASSERT_NE(matrix.add_routing({"src", "cutoff", 0.1f}), k_invalid_routing_id);  // +10
+    matrix.prepare(k_sample_rate, k_block_size);
+    matrix.process(k_block_size);
+    EXPECT_FLOAT_EQ(handle.load(0), 40.0f);
+
+    handle.store_base(50.0f);
+    matrix.process(k_block_size);
+    EXPECT_FLOAT_EQ(handle.load_base(), 50.0f);
+    EXPECT_FLOAT_EQ(handle.load(0), 60.0f);
+}
+
+#if defined(TANH_STATE_ENABLED)
+TEST(ParameterBackend, RawHandleIsNulloptForNonStateBackend) {
+    FakeBackend backend;
+    backend.add("gain", mod_float(thl::Range::linear(0.0f, 1.0f), 0.0f));
+    ModulationMatrix matrix(backend);
+    auto handle = matrix.get_smart_handle<float>("gain");
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+    EXPECT_FALSE(handle.raw_handle().has_value());
+    EXPECT_FALSE(SmartHandle<float>{}.raw_handle().has_value());
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+}
+#endif
 
 TEST(ParameterBackend, JsonRoundTripWithoutState) {
     FakeBackend backend;

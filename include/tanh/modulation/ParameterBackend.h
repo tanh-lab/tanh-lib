@@ -14,22 +14,29 @@ namespace thl::modulation {
  * @brief Pointer to the atomic that holds a parameter's base (unmodulated) value.
  *
  * Exactly one alternative is set, matching the parameter's native storage type.
- * SmartHandle<T> requires the `const std::atomic<T>*` alternative, so the
+ * SmartHandle<T> requires the `std::atomic<T>*` alternative, so the
  * type a host stores a value in is the type it must request a handle for.
  * Hosts that keep every parameter as a float (e.g. JUCE's
  * AudioProcessorValueTreeState) bind int/bool/choice parameters as
- * `const std::atomic<float>*` and request SmartHandle<float>. Modulated values
+ * `std::atomic<float>*` and request SmartHandle<float>. Modulated values
  * are then not snapped to the Range step (SmartHandle<int> does that), so such
  * hosts round/snap the loaded value themselves.
+ *
+ * The pointer is writable: SmartHandle::store_base() stores through it
+ * (relaxed), the counterpart of thl::ParameterHandle::store(). A host must
+ * therefore only hand out atomics it allows the matrix's users to write. Such
+ * a write bypasses any host notification (listeners, undo, automation); a host
+ * whose parameters must notify (e.g. JUCE APVTS) has its users write through
+ * the host API instead.
  *
  * std::monostate means the parameter has no numeric base value (e.g. a
  * String parameter) and cannot be modulated.
  */
 using ParameterBaseValue = std::variant<std::monostate,
-                                        const std::atomic<float>*,
-                                        const std::atomic<double>*,
-                                        const std::atomic<int>*,
-                                        const std::atomic<bool>*>;
+                                        std::atomic<float>*,
+                                        std::atomic<double>*,
+                                        std::atomic<int>*,
+                                        std::atomic<bool>*>;
 
 /**
  * @brief Everything the modulation matrix needs to know about one parameter.
@@ -53,6 +60,12 @@ struct ParameterBinding {
     /// ModulationRouting::m_skip_during_gesture (relaxed load). nullptr means
     /// the parameter is never in a gesture.
     const std::atomic<bool>* m_in_gesture = nullptr;
+
+    /// Opaque backend record. Only StateParameterBackend sets it (to the
+    /// thl::ParameterRecord the binding points into) so the deprecated
+    /// SmartHandle::raw_handle() can rebuild a thl::ParameterHandle. Other
+    /// backends leave it nullptr; the matrix never dereferences it.
+    void* m_state_record = nullptr;
 };
 
 /**
