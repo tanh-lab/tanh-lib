@@ -60,6 +60,7 @@ endif()
 if(TARGET tanh::State)
 	add_executable(benchmark_modulation
 		benchmark_ModulationMatrix.cpp
+		benchmark_XYController.cpp
 	)
 
 	target_link_libraries(benchmark_modulation
