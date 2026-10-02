@@ -23,7 +23,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   base atomic (the counterpart of `ParameterHandle<T>::store()`, no notifications), so
   `ParameterBinding::m_base` holds writable `std::atomic<T>*`. The
   `SmartHandle(ParameterHandle<T>, ResolvedTarget*)` constructor is gone.
-  Tests: `ParameterBackend.*`, `StateParameterBackend.*`.
+  Tests: `ParameterBackend.*`, `StateParameterBackend.*`. Docs: "Modulation with host
+  parameters (JUCE)" (`docs/sphinx/host_parameters.md`).
+- `thl::RCU::add_reader()` / `read_scope(reader)`: a reader slot owned by the RCU
+  instance instead of by a thread, so one logical reader can move between threads
+  without registering on each. `ModulationMatrix::audio_read_scope()` (and `process()`)
+  use such a slot: a host that renders consecutive blocks on different threads no
+  longer allocates and locks (per-thread reader registration) on the audio thread.
+  The per-thread path (`read_scope()`, `ensure_thread_registered()`) is unchanged.
+  Tests: `RCU.OwnedReaderProtectsAcrossChangingThreads`,
+  `ParameterBackend.ProcessOnChangingThreadsNeedsNoRegistration` (aborts under RTSan
+  without the slot).
 
 ### Deprecated
 
