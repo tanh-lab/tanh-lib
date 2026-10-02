@@ -7,6 +7,8 @@ add_executable(${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PRIVATE
 	test_ParameterBackend.cpp
 	test_ResolvedTarget.cpp
+	test_XYPad.cpp
+	test_XYPadMatrix.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
