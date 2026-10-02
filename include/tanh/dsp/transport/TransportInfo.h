@@ -216,7 +216,9 @@ public:
      * state). Out: m_beat_position, m_beats_per_sample, m_num_samples = frames,
      * m_jump_delta_beats and the discontinuity bits (previous ones are cleared).
      *
-     * @param raw_end_beat  raw beat at sample `frames` (== start when the source holds).
+     * @param io            the block, raw on input, resolved on output
+     * @param raw_end_beat  raw beat at sample `frames` (== start when the source holds)
+     * @param frames        block length in samples
      */
     void resolve(TransportInfo& io,
                  double raw_end_beat,

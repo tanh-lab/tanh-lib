@@ -49,7 +49,7 @@ option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
 # iOS, both fetched at configure time. Off by default because of the licence:
 # Link is GPLv2+ or proprietary (LinkKit proprietary only), so a product built
 # with it must be GPL-compatible or hold Ableton's proprietary Link licence.
-# tanh itself stays Apache-2.0 without this option.
+# Without this option no Link code is fetched or linked.
 option(TANH_WITH_LINK
     "Build tanh::Link (Ableton Link). Link is GPLv2+/proprietary: products need the proprietary Link licence unless GPL"
     OFF)

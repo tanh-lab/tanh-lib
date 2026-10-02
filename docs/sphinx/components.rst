@@ -20,6 +20,7 @@ Everything lives in namespace ``thl``.
        modulation [label="tanh::Modulation\nmodulation matrix,\nchange-point sub-blocking"];
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
+       link       [label="tanh::Link\nLinkSession (Ableton Link)", style="rounded,dashed"];
 
        state -> core;
        dsp -> core;
@@ -28,6 +29,7 @@ Everything lives in namespace ``thl``.
        modulation -> core;
        modulation -> state;
        modulation -> dsp;
+       link -> dsp;
    }
 
 Core
@@ -104,6 +106,17 @@ platform HTTP stack, :cpp:class:`thl::net::Sha256` for verification and
 :cpp:class:`thl::net::AssetStore` for the verified, atomic install into
 ``<root>/<id>/<version>/``. Off by default (``TANH_BUILD_NET``) so nothing that
 embeds ``tanh::Core`` inherits a network stack. Depends on Core.
+
+Link
+----
+
+``tanh::Link`` (``include/tanh/link/``) wraps one Ableton Link session,
+:cpp:class:`thl::link::LinkSession`: the Link C++ SDK on macOS, Linux and
+Windows, LinkKit on iOS. The audio side,
+:cpp:class:`thl::dsp::transport::LinkTransportClock`, lives in DSP and talks to
+the session through the ``LinkBackend`` seam, so it is testable without the
+SDK. Off by default (``TANH_WITH_LINK``) because Link brings its own licence
+terms (GPLv2+ or proprietary). See :doc:`transport`. Depends on DSP.
 
 Platforms
 ---------

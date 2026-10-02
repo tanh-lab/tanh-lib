@@ -34,6 +34,47 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Tests: `RCU.OwnedReaderProtectsAcrossChangingThreads`,
   `ParameterBackend.ProcessOnChangingThreadsNeedsNoRegistration` (aborts under RTSan
   without the slot).
+- `thl::dsp::transport::TransportInfo`: trivially copyable per-block musical-time
+  snapshot (beat at block start in quarter notes, slope, bpm, time signature, bar
+  start, loop, host time, block length) with validity/state flags and the
+  discontinuity flags `k_jumped` (with `m_jump_delta_beats`), `k_started`,
+  `k_stopped`, `k_tempo_changed` and `k_timeline_reset`; `phase()` (negative-safe),
+  `division_boundary_in()`. `ContinuityTracker` derives the flags for every clock
+  and absorbs ppq / host-time jitter below a tolerance (2 samples by default).
+  `TransportClock` gains `block_info()` and `discontinuities()` (defaulted, so
+  existing clocks compile unchanged). Tests: `TransportInfo.*`, `ContinuityTracker.*`,
+  `InternalTransportClockInfo.*`. Docs: `docs/sphinx/transport.md`.
+- `thl::dsp::transport::HostTransportClock`: a `TransportClock` fed by the plugin
+  host's playhead (`set_host_info()` per block) with fallback tempo, time signature,
+  play state and a drift-free free-running beat for fields the host omits. Tests:
+  `HostTransportClock.*`, including a deterministic simulated host (seek, DAW loop
+  wrap, tempo change, start/stop requested mid-block) and an RTSan audio-path test.
+- `thl::modulation::XYPad`: UI touches (`touch(id, x, y)`, `release(id)`,
+  `release_all()`) become `<prefix>.x` / `.y` / `.active` matrix sources. One
+  lock-free queue carries x and y together (same in-block offsets), touch slots are
+  allocated in C++ (configurable maximum, cap 16), global pads reduce several
+  fingers with `MonoPriority::Last`/`First`, voice-scoped pads map slot = voice, and
+  a full queue coalesces moves without losing gate edges. An owner (XY controller)
+  can drive it with `process_block(n)` and read `stream()` / `primary()`; the matrix
+  outputs then reuse that render. `detail::spread_offset` is shared with
+  `InputEventQueue`. Tests: `XYPad.*`, `XYPadMatrix.*` (incl. RTSan audio path).
+- Ableton Link behind `TANH_WITH_LINK` (default OFF): the `tanh::Link` component
+  with `thl::link::LinkSession` over the Link C++ SDK 4.1 (FetchContent, tag
+  `Link-4.1`, recursive submodules) on macOS/Linux/Windows and the official
+  LinkKit 4.1.2 release zip (pinned SHA256) on iOS; Android is a configure error.
+  `thl::dsp::transport::LinkTransportClock` (in DSP, over the `LinkBackend` seam)
+  adds output latency, applies queued tempo/play/seek requests on the audio thread
+  with quantized launch, and maps the sample counter to Link time when the host
+  gives none. Tests: `LinkTransportClock.*` (scripted fake session, always built),
+  `LinkSession.*` (real SDK incl. a two-peer loopback test, with the option).
+
+### Changed
+
+- `InternalTransportClock`: a tempo change keeps the beat continuous (re-anchored at
+  the current position) instead of rescaling the whole sample count, which made the
+  beat jump. `Division`, `beats_per_division()` and `division_from_int()` moved to
+  `tanh/dsp/transport/TransportInfo.h` (still included by `TransportClock.h`).
+  `TransportClock`'s vtable grew (`block_info()`, `discontinuities()`): an ABI change.
 
 ### Deprecated
 
