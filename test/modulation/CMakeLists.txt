@@ -10,6 +10,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_XYPad.cpp
 	test_XYPadMatrix.cpp
 	test_RoutingEnabled.cpp
+	test_XYController.cpp
 	test_MotionLane.cpp
 	test_MotionRecorder.cpp
 	test_MotionRecorderClock.cpp
@@ -40,6 +41,7 @@ if(TARGET tanh::State)
 		test_DspFixture_Wavefolder.cpp
 		test_DspFixture_Limiter.cpp
 		test_DspFixture_Reverb.cpp
+		test_XYControllerState.cpp
 	)
 	target_link_libraries(${PROJECT_NAME} PRIVATE tanh::DSP tanh::State)
 endif()
