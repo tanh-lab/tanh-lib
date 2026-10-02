@@ -1,53 +1,13 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
+#include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
 #include <optional>
 
 namespace thl::dsp::transport {
-
-/**
- * @brief Musical time divisions for division_in_block().
- *
- * All divisions are expressed as beat multiples where 1 beat = quarter note.
- * Bar length depends on the active time signature: sig_num * (4 / sig_denom).
- * For example 4/4 → 4 beats, 6/8 → 3 beats, 7/8 → 3.5 beats.
- */
-enum class Division {
-    Bar,
-    Half,       ///< Half note      (2 beats)
-    Beat,       ///< Quarter note   (1 beat)
-    Eighth,     ///< Eighth note    (0.5 beats)
-    Sixteenth,  ///< Sixteenth note (0.25 beats)
-    NumDivisions
-};
-
-/**
- * @brief Beat length of a division. Bar = sig_num * (4 / sig_denom).
- */
-[[nodiscard]] inline double beats_per_division(Division div, int sig_num, int sig_denom) {
-    switch (div) {
-        case Division::Bar:
-            return static_cast<double>(sig_num) * 4.0 / static_cast<double>(sig_denom);
-        case Division::Half: return 2.0;
-        case Division::Beat: return 1.0;
-        case Division::Eighth: return 0.5;
-        case Division::Sixteenth: return 0.25;
-        case Division::NumDivisions: break;
-    }
-    return 1.0;
-}
-
-/**
- * @brief Map an int to a Division, clamped to a valid value.
- *        Returns Division::Beat for out-of-range input.
- */
-[[nodiscard]] inline Division division_from_int(int value) {
-    if (value < 0 || value >= static_cast<int>(Division::NumDivisions)) { return Division::Beat; }
-    return static_cast<Division>(value);
-}
 
 /**
  * @class TransportClock
@@ -71,7 +31,13 @@ enum class Division {
  * @par Link compatibility
  *   host_time_micros in begin_block() carries the hardware output timestamp
  *   (callback host time + output latency). Ignored by InternalTransportClock,
- *   required by a future LinkTransportClock.
+ *   used by thl::link::LinkTransportClock.
+ *
+ * @par Block snapshot
+ *   block_info() returns the whole block as a TransportInfo, including the
+ *   discontinuity flags (seek, loop wrap, start/stop, tempo change, timeline
+ *   reset). Consumers that take a `const TransportClock&` work unchanged with
+ *   the host, internal and Link clocks.
  */
 class TANH_API TransportClock {
 public:
@@ -156,6 +122,32 @@ public:
     virtual void play() TANH_NONBLOCKING_FUNCTION = 0;
     virtual void stop() TANH_NONBLOCKING_FUNCTION = 0;
     virtual void set_position_beats(double beats) TANH_NONBLOCKING_FUNCTION = 0;
+
+    // ── Block snapshot (audio thread, between begin_block and end_block) ──────
+
+    /**
+     * @brief The current block as a TransportInfo.
+     *
+     * The default builds it from the getters (tempo, beat, time signature, play
+     * state) and reports no discontinuities and no block length. The tanh clocks
+     * override it with the tracked snapshot.
+     */
+    [[nodiscard]] virtual TransportInfo block_info() const TANH_NONBLOCKING_FUNCTION {
+        TransportInfo info;
+        info.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
+                       TransportInfo::k_has_time_signature;
+        if (is_playing()) { info.m_flags |= TransportInfo::k_is_playing; }
+        info.m_bpm = bpm();
+        info.m_beat_position = beat_at_sample(0);
+        info.m_beats_per_sample = beat_at_sample(1) - info.m_beat_position;
+        info.m_sig_num = sig_num();
+        info.m_sig_denom = sig_denom();
+        info.m_quantum = beats_per_division(Division::Bar, info.m_sig_num, info.m_sig_denom);
+        return info;
+    }
+
+    /// Discontinuity bits (TransportInfo::k_discontinuity_mask) of the current block.
+    [[nodiscard]] virtual uint32_t discontinuities() const TANH_NONBLOCKING_FUNCTION { return 0; }
 };
 
 }  // namespace thl::dsp::transport

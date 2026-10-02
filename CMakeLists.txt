@@ -276,6 +276,7 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/ConstellationReverb.cpp
         src/dsp/fx/StereoFDN.cpp
 
+        src/dsp/transport/TransportInfo.cpp
         src/dsp/transport/InternalTransportClock.cpp
 
         src/dsp/metronome/MetronomePlayer.cpp
