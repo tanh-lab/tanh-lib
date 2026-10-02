@@ -41,7 +41,8 @@ set(_tanh_header_dirs
     "${PROJECT_NAME}_state=state"
     "${PROJECT_NAME}_dsp=dsp"
     "${PROJECT_NAME}_modulation=modulation"
-    "${PROJECT_NAME}_audio_io=audio-io")
+    "${PROJECT_NAME}_audio_io=audio-io"
+    "${PROJECT_NAME}_link=link")
 set(_tanh_umbrella_headers
     "${PROJECT_NAME}_core=core.h"
     "${PROJECT_NAME}_state=state.h"
