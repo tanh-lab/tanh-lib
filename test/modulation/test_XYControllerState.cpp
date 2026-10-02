@@ -9,10 +9,20 @@
 
 #include <nlohmann/json.hpp>
 
-#include "TestHelpers.h"
 #include "XYControllerRig.h"
 
 using namespace thl::modulation;
+
+namespace {
+
+constexpr uint32_t k_block_size = 256;
+
+thl::ParameterDefinition modulatable_float(float default_value) {
+    return thl::ParameterDefinition::make_float("", thl::Range::linear(0.0f, 1.0f), default_value)
+        .modulatable(true);
+}
+
+}  // namespace
 
 TEST(XYControllerState, TouchDrivesStateParameters) {
     thl::State state;

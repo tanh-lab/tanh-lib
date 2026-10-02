@@ -330,14 +330,14 @@ namespace {
 struct PadSystem {
     explicit PadSystem(Engine& e) : m_router(*e.matrix) {
         m_single = std::make_unique<XYController>(*e.matrix, config("single", 8));
-        for (int n = 0; n < 8; ++n) {
+        for (size_t n = 0; n < 8; ++n) {
             m_per_effect[n] =
                 std::make_unique<XYController>(*e.matrix, config("pad" + std::to_string(n + 1)));
         }
-        for (int n = 0; n < 8; ++n) {
+        for (size_t n = 0; n < 8; ++n) {
             for (const auto* p : {"a", "b"}) {
                 const auto axis = p[0] == 'a' ? XYPadAxis::X : XYPadAxis::Y;
-                EXPECT_TRUE(m_router.add_target(Engine::slot(n + 1, p),
+                EXPECT_TRUE(m_router.add_target(Engine::slot(static_cast<int>(n) + 1, p),
                                                 axis,
                                                 *m_per_effect[n],
                                                 0,
@@ -448,20 +448,22 @@ TEST(XYController, EightControllersDriveEightSlotsWithoutCrosstalk) {
     }
     e.matrix->prepare(k_sr, k_bs);
     // Odd pads touched, even pads play a lane.
-    for (int n = 0; n < 8; ++n) {
+    for (size_t n = 0; n < 8; ++n) {
         if (n % 2 == 0) {
             pads[n]->touch(1,
                            0.05f * static_cast<float>(n + 1),
                            1.0f - (0.1f * static_cast<float>(n)));
         } else {
-            pads[n]->recorder().load_lane(motion_test::beats_lane(2.0 + n, 96));
+            pads[n]->recorder().load_lane(
+                motion_test::beats_lane(2.0 + static_cast<double>(n), 96));
         }
     }
     for (int b = 0; b < 30; ++b) { e.block(ptrs); }
-    for (int n = 0; n < 8; ++n) {
-        auto a = e.handle(n + 1, "a");
-        auto bb = e.handle(n + 1, "b");
-        auto wet = e.handle(n + 1, "wet");
+    for (size_t n = 0; n < 8; ++n) {
+        const int slot = static_cast<int>(n) + 1;
+        auto a = e.handle(slot, "a");
+        auto bb = e.handle(slot, "b");
+        auto wet = e.handle(slot, "wet");
         for (uint32_t i = 0; i < k_bs; i += 17) {
             EXPECT_FLOAT_EQ(a.load(i), pads[n]->out_x(0)[i]) << n;
             EXPECT_FLOAT_EQ(bb.load(i), pads[n]->out_y(0)[i]) << n;
@@ -487,7 +489,7 @@ TEST(XYController, DrivesOncePerBlockInAnyOutputOrder) {
     std::array<ModulationSource*, 3> outs{&c.source(XYPadAxis::X),
                                           &c.source(XYPadAxis::Y),
                                           &c.source(XYPadAxis::Active)};
-    std::array<int, 3> order{0, 1, 2};
+    std::array<size_t, 3> order{0, 1, 2};
     int perm = 0;
     SimTransport t;
     do {
@@ -496,8 +498,8 @@ TEST(XYController, DrivesOncePerBlockInAnyOutputOrder) {
         const uint64_t driven = c.blocks_driven();
         c.set_transport(t.next(k_bs));
         for (auto* o : outs) { o->clear_per_block(); }
-        for (const int i : order) { outs[i]->pre_process_block(); }
-        for (const int i : order) { outs[i]->process(k_bs, 0); }
+        for (const size_t i : order) { outs[i]->pre_process_block(); }
+        for (const size_t i : order) { outs[i]->process(k_bs, 0); }
         EXPECT_EQ(c.blocks_driven(), driven + 1);
         EXPECT_FLOAT_EQ(outs[0]->get_output_at(k_bs - 1), x);
         EXPECT_FLOAT_EQ(outs[1]->get_output_at(k_bs - 1), 1.0f - x);

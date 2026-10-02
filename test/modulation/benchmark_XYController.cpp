@@ -42,14 +42,14 @@ struct Bench {
         cfg.m_num_voices = 8;
         single = std::make_unique<XYController>(*matrix, cfg);
         cfg.m_num_voices = 1;
-        for (int n = 0; n < 8; ++n) {
+        for (uint32_t n = 0; n < 8; ++n) {
             cfg.m_id = "pad" + std::to_string(n + 1);
             pads[n] = std::make_unique<XYController>(*matrix, cfg);
             const std::string s = "s" + std::to_string(n + 1);
             router.add_target(s + ".a", XYPadAxis::X, *pads[n], 0, *single, n);
             router.add_target(s + ".b", XYPadAxis::Y, *pads[n], 0, *single, n);
             pads[n]->route(XYPadAxis::Active, s + ".wet");
-            if (n < 6) { pads[n]->recorder().load_lane(bench_lane(2.0 + n)); }
+            if (n < 6) { pads[n]->recorder().load_lane(bench_lane(2.0 + static_cast<double>(n))); }
         }
         matrix->prepare(xy_test::k_sr, block);
         pads[6]->touch(1, 0.3f, 0.7f);
