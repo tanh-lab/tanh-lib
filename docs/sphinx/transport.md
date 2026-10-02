@@ -54,12 +54,17 @@ accumulate beats. Flags only reset internal state:
 
 | Flag | Motion recorder | Step sequencer |
 |---|---|---|
-| `k_jumped` | playback re-reads the phase and glides from the last output (no click) | recompute the step; retrigger only if the index changed |
-| `k_started` | bar-mode record arms at the next loop boundary (≥ beat 0) | retrigger the current step at the first sample with beat ≥ 0 |
-| `k_stopped` | bar-mode playback holds | gates off at offset 0 |
-| `k_tempo_changed` | nothing (beat-stamped) | nothing (steps are in beats) |
-| `k_timeline_reset` | like `k_jumped`, also clear edge detectors | like `k_jumped` |
-| beat < 0 (Link count-in) | not started | not started |
+| `k_jumped` | playback: lane-phase test, re-seek and glide from the last output (no click); a running take is *not* aborted, it continues on its own clock | recompute the step; retrigger only if the index changed |
+| `k_started` | lane-phase test against the new beat, glide if needed; a running take continues | retrigger the current step at the first sample with beat ≥ 0 |
+| `k_stopped` | Beats lanes free-run at the last tempo (or hold, `StoppedTransport::Hold`); a bar take finishes on its own clock | gates off at offset 0 |
+| `k_tempo_changed` | nothing (beat-stamped; a take integrates the new tempo) | nothing (steps are in beats) |
+| `k_timeline_reset` | like `k_jumped` | like `k_jumped` |
+| beat < 0 (Link count-in) | phase wraps like any beat | not started |
+
+The motion recorder does not rely on the flags alone: it compares the lane
+phase the beat implies with its own running phase every block, so a hint
+without a real jump never glides and an unflagged jump still does. See
+[Motion recording](motion_recording.md).
 
 ### Clocks
 

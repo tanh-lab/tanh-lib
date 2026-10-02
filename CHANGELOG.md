@@ -67,6 +67,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   with quantized launch, and maps the sample counter to Link time when the host
   gives none. Tests: `LinkTransportClock.*` (scripted fake session, always built),
   `LinkSession.*` (real SDK incl. a two-peer loopback test, with the option).
+- `thl::modulation::MotionRecorder`: records one XY pad's primary stream (x, y,
+  gate; pre-matrix, so playback never feeds back) on the audio thread into two
+  preallocated take buffers (`MotionRecorderConfig::m_max_points`, default 32768,
+  576 KiB per recorder) at 200 points/s or a tick-per-beat grid. Free takes (end on
+  release; Beats timebase rounded to whole beats while the transport plays) and
+  1–16-bar takes (end after exactly one loop, bar-aligned). 5-tap binomial
+  smoothing, a raised-cosine seam blend, playback by uniform Catmull-Rom clamped to
+  [0, 1] every 32 samples, free-run or hold while stopped, reverse, a live touch
+  overriding playback with a 25 ms glide back, glides on transport jumps (lane-phase
+  test, never interpolating across a jump; a running take is never aborted). UI
+  commands through a lock-free queue (`arm`, `record`, `disarm`, `play`, `stop`,
+  `set_reverse`); finished takes are published by `service()` on the message thread
+  through RCU and the audio thread switches to them by take id without a click;
+  `ui_snapshot()` packs state, phase and progress into atomics. Driver API for an XY
+  controller: `process(TransportInfo, XYPadStream, n)` then `out_x/out_y/out_gate/
+  out_live/change_points`; optional matrix sources via `source(XYPadAxis)`.
+  `thl::modulation::MotionLane` is the published value type with `sample(phase)` and
+  JSON (`to_json`/`from_json`, uint16 x/y, run-length gate, validated, never throws).
+  Tests: `MotionLane.*`, `MotionRecorder*.*` (figure-8 acceptance, seam, bar
+  alignment, tempo, touch override, handoff, every clock discontinuity, matrix,
+  TSan stress, RTSan scenario); benchmark `bm_motion_recorder_playback`. Docs:
+  `docs/sphinx/motion_recording.md`.
 
 ### Changed
 
