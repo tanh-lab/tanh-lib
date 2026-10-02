@@ -368,6 +368,34 @@ public:
         }
     }
 
+    /**
+     * @brief Create a reader slot owned by this instance instead of by a thread
+     *
+     * For a reader that is one logical client but may run on changing threads,
+     * e.g. a plugin whose host calls the render callback from different
+     * threads: the per-thread registration would allocate (and lock) on the
+     * real-time path every time the thread changes. Pass the slot to
+     * read_scope(reader) instead; that path never allocates or locks.
+     *
+     * NOT real-time safe: call during setup. The slot stays valid until this
+     * RCU is destroyed. A slot must not be used by two threads at the same
+     * time (one open read section per slot).
+     */
+    detail::RcuReaderNode& add_reader() const {
+        const std::scoped_lock lock(m_writer_mutex);
+
+        // Owned by this instance: the destructor deletes every node in the list.
+        auto* node = new detail::RcuReaderNode();
+        detail::RcuReaderNode* current_head = m_reader_head.load(std::memory_order_acquire);
+        do {
+            node->m_next.store(current_head, std::memory_order_relaxed);
+        } while (!m_reader_head.compare_exchange_weak(current_head,
+                                                      node,
+                                                      std::memory_order_release,
+                                                      std::memory_order_acquire));
+        return *node;
+    }
+
     unsigned int get_reader_count() const {
         // Serialize with cleanup and registration
         const std::scoped_lock lock(m_writer_mutex);
@@ -410,8 +438,19 @@ public:
             // seq_cst: second half of the reader's handshake, see rcu_read_lock().
             m_data = m_rcu->m_data_ptr.load(std::memory_order_seq_cst);
         }
+        // Read section on a slot from add_reader(): no registration, no lookup.
+        ReadScope(const RCU* rcu, detail::RcuReaderNode& reader) : m_rcu(rcu), m_reader(&reader) {
+            m_rcu->rcu_read_lock(reader);
+            // seq_cst: second half of the reader's handshake, see rcu_read_lock().
+            m_data = m_rcu->m_data_ptr.load(std::memory_order_seq_cst);
+        }
         ~ReadScope() {
-            if (m_rcu != nullptr) { m_rcu->rcu_read_unlock(); }
+            if (m_rcu == nullptr) { return; }
+            if (m_reader != nullptr) {
+                m_rcu->rcu_read_unlock(*m_reader);
+            } else {
+                m_rcu->rcu_read_unlock();
+            }
         }
         ReadScope(const ReadScope&) = delete;
         ReadScope& operator=(const ReadScope&) = delete;
@@ -423,6 +462,7 @@ public:
 
     private:
         const RCU* m_rcu;
+        detail::RcuReaderNode* m_reader = nullptr;  // nullptr: the calling thread's node
         const T* m_data = nullptr;
     };
 
@@ -430,6 +470,14 @@ public:
      * @brief Open an RCU read section as an RAII scope. See ReadScope.
      */
     ReadScope read_scope() const TANH_NONBLOCKING_FUNCTION { return ReadScope(this); }
+
+    /**
+     * @brief Open a read section on a reader slot from add_reader(). Real-time
+     * safe on any thread, as long as the slot is not used concurrently.
+     */
+    ReadScope read_scope(detail::RcuReaderNode& reader) const TANH_NONBLOCKING_FUNCTION {
+        return ReadScope(this, reader);
+    }
 
 private:
     // RCU-protected data pointer
@@ -479,18 +527,22 @@ private:
     // seq_cst costs the reader one locked exchange per section entry (wait-free,
     // no syscall) and nothing on the loads.
     void rcu_read_lock() const {
-        if (auto* node = detail::rcu_thread_state().get_node(this)) {
-            const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
-            node->m_read_generation.store(current_period, std::memory_order_seq_cst);
-        }
+        if (auto* node = detail::rcu_thread_state().get_node(this)) { rcu_read_lock(*node); }
+    }
+
+    void rcu_read_lock(detail::RcuReaderNode& node) const {
+        const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
+        node.m_read_generation.store(current_period, std::memory_order_seq_cst);
     }
 
     // Leaving a section is not part of the handshake: a writer that misses this
     // store still sees the old generation and merely waits a little longer.
     void rcu_read_unlock() const {
-        if (auto* node = detail::rcu_thread_state().get_node(this)) {
-            node->m_read_generation.store(0, std::memory_order_release);
-        }
+        if (auto* node = detail::rcu_thread_state().get_node(this)) { rcu_read_unlock(*node); }
+    }
+
+    void rcu_read_unlock(detail::RcuReaderNode& node) const {
+        node.m_read_generation.store(0, std::memory_order_release);
     }
 
     /**

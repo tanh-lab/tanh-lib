@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "TestHelpers.h"
@@ -355,4 +356,33 @@ TEST(ParameterBackend, JsonRoundTripWithoutState) {
     ASSERT_EQ(out.size(), 1u);
     EXPECT_EQ(out[0]["target_id"], "gain");
     EXPECT_FLOAT_EQ(out[0]["depth"].get<float>(), 0.3f);
+}
+
+// Hosts may render each block on a different thread. The audio path (process(),
+// audio_read_scope()) uses the matrix's own reader slot, so a fresh thread per
+// block needs no registration — under RTSan the old per-thread registration
+// (allocation + mutex inside the nonblocking process()) would abort here.
+TEST(ParameterBackend, ProcessOnChangingThreadsNeedsNoRegistration) {
+    FakeBackend backend;
+    backend.add("gain", mod_float(thl::Range::linear(0.0f, 1.0f), 0.25f));
+    ModulationMatrix matrix(backend);
+    ConstSource src;
+    src.m_value = 0.5f;
+    matrix.add_source("src", &src);
+    auto handle = matrix.get_smart_handle<float>("gain");
+    ASSERT_NE(matrix.add_routing({"src", "gain", 0.5f}), k_invalid_routing_id);
+    matrix.prepare(k_sample_rate, k_block_size);
+
+    for (int block = 0; block < 20; ++block) {
+        std::thread render([&]() {
+            if (block % 2 == 0) {
+                matrix.process(k_block_size);
+            } else {
+                const auto scope = matrix.audio_read_scope();
+                matrix.process_with_scope(scope.data(), k_block_size);
+                EXPECT_FLOAT_EQ(handle.load(0), 0.5f);  // 0.25 + 0.5 * 0.5
+            }
+        });
+        render.join();
+    }
 }

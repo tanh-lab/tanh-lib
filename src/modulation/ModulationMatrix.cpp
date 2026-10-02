@@ -297,7 +297,7 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
 }
 
 void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    const auto scope = m_config.read_scope();
+    const auto scope = audio_read_scope();
     process_with_scope(scope.data(), num_samples);
 }
 

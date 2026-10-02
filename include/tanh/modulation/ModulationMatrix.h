@@ -140,6 +140,18 @@ public:
         return m_config.read_scope();
     }
 
+    // Read section for the audio path on the matrix's own reader slot instead of
+    // the calling thread's: no registration, real-time safe on whatever thread
+    // the host renders on (hosts may switch render threads between blocks).
+    // The audio path must not run on two threads at the same time — the usual
+    // plugin contract. process() uses this slot too.
+    //   auto scope = matrix.audio_read_scope();
+    //   matrix.process_with_scope(scope.data(), num_samples);
+    //   processor_manager.process(buffer);  // SmartHandle reads safe here
+    [[nodiscard]] ReadScope audio_read_scope() const TANH_NONBLOCKING_FUNCTION {
+        return m_config.read_scope(*m_audio_reader);
+    }
+
     // Process all sources and fill modulation buffers for all targets.
     // Convenience wrapper that opens a read scope internally — use when the
     // caller doesn't need to extend the scope across downstream DSP work.
@@ -372,6 +384,9 @@ private:
 
     // RT-safe processing config — RCU-protected for lock-free RT reads
     thl::RCU<ProcessingConfig> m_config;
+
+    // Reader slot of the audio path (audio_read_scope(), process()); owned by m_config.
+    thl::detail::RcuReaderNode* m_audio_reader = &m_config.add_reader();
 
     // Scope registry. Entries in m_scope_names own the name strings; the
     // c_str() pointers from these std::string nodes are stored on
