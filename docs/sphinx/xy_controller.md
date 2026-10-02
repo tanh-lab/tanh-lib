@@ -213,22 +213,24 @@ The figures below use the default recorder capacity (32768 points).
 A one-voice controller therefore needs about 0.66 MiB, and an 8-voice Single
 controller about 5 MiB. Lower `m_recorder.m_max_points` to reduce this.
 
-Measured with `benchmark_modulation --benchmark_filter=bm_xy` (release,
-Apple Silicon, machine under load, CPU time):
+Measured with `benchmark_modulation --benchmark_filter=bm_xy
+--benchmark_repetitions=5` (release, Apple Silicon, machine under load, median
+CPU time):
 
 | Block (48 kHz) | 8 controllers alone | full matrix |
 |---|---|---|
-| 32 | 2.5 µs | 7.7 µs |
-| 128 | 9.3 µs | 23.5 µs |
-| 256 | 18.8 µs | 46.2 µs |
-| 512 | 35 µs | 92 µs |
+| 32 | 2.2 µs | 7.5 µs |
+| 128 | 8.0 µs | 23.6 µs |
+| 256 | 15.7 µs | 46.0 µs |
+| 512 | 31.7 µs | 91.2 µs |
 
 - **8 controllers alone**: 8 PerEffect controllers, 6 playing motion and 2
   touched.
 - **Full matrix**: the 8 controllers plus a Single controller with 8 voices,
   24 targets, 16 of them with two Replace writers.
 
-At 128 samples, the controllers alone take 0.35 % of the block period.
+At 128 samples, the controllers alone take 0.3 % of the block period and the
+whole matrix about 0.9 %.
 
 ## Extending: a sequencer layer
 
