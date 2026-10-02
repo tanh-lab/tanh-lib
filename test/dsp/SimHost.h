@@ -2,7 +2,7 @@
 
 // Deterministic simulated host playhead for transport tests.
 //
-// A script of sample-stamped events (seek, tempo, play, stop, loop) drives a
+// A script of sample-stamped events (seek, shift, tempo, play, stop, loop) drives a
 // host the way a DAW does: changes requested anywhere inside a block become
 // visible at the next block boundary (hosts report one position per block), a
 // cycle wraps at the first block start past the loop end, and the beat moves
@@ -19,7 +19,7 @@
 namespace sim {
 
 struct Event {
-    enum class Kind { Seek, Tempo, Play, Stop, Loop, LoopOff };
+    enum class Kind { Seek, Shift, Tempo, Play, Stop, Loop, LoopOff };
     uint64_t m_sample = 0;
     Kind m_kind = Kind::Seek;
     double m_a = 0.0;
@@ -78,6 +78,7 @@ private:
     void apply(const Event& e) {
         switch (e.m_kind) {
             case Event::Kind::Seek: m_beat = e.m_a; break;
+            case Event::Kind::Shift: m_beat += e.m_a; break;  // Link phase realignment
             case Event::Kind::Tempo: m_bpm = e.m_a; break;
             case Event::Kind::Play: m_playing = true; break;
             case Event::Kind::Stop: m_playing = false; break;

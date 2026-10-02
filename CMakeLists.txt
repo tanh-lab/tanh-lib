@@ -384,6 +384,7 @@ if(TANH_BUILD_MODULATION)
         src/modulation/InputEventQueue.cpp
         src/modulation/XYPad.cpp
         src/modulation/MotionLane.cpp
+        src/modulation/MotionRecorder.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES
