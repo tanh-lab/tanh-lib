@@ -383,6 +383,7 @@ if(TANH_BUILD_MODULATION)
         src/modulation/LFOSource.cpp
         src/modulation/InputEventQueue.cpp
         src/modulation/XYPad.cpp
+        src/modulation/MotionLane.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES

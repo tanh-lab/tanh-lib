@@ -9,6 +9,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_ResolvedTarget.cpp
 	test_XYPad.cpp
 	test_XYPadMatrix.cpp
+	test_MotionLane.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
