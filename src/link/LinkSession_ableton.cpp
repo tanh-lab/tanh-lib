@@ -2,6 +2,7 @@
 
 #include <tanh/dsp/transport/LinkBackend.h>
 #include <tanh/link/LinkSession.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <ableton/Link.hpp>
 #include <atomic>
@@ -42,7 +43,14 @@ public:
     void request_beat_at(double beat, int64_t t_us, double quantum) noexcept override {
         m_state->requestBeatAtTime(beat, microseconds(t_us), quantum);
     }
-    void commit() noexcept override { m_link.commitAudioSessionState(*m_state); }
+    void commit() noexcept override {
+        // Link 4.1 wakes its dispatcher thread with condition_variable::notify_one()
+        // (pthread_cond_signal, no lock taken) inside commitAudioSessionState(),
+        // which Ableton documents as realtime-safe. RTSan intercepts every
+        // pthread_cond_signal, so this one SDK call is exempted.
+        TANH_NONBLOCKING_SCOPED_DISABLER
+        m_link.commitAudioSessionState(*m_state);
+    }
     [[nodiscard]] int64_t now_us() const noexcept override {
         return m_link.clock().micros().count();
     }
