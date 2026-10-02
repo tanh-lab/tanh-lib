@@ -33,7 +33,11 @@ TEST(LinkSession, DisabledSessionIsALocalTimeline) {
     EXPECT_FALSE(session.is_enabled());
     EXPECT_EQ(session.num_peers(), 0u);
     EXPECT_NEAR(session.tempo(), 120.0, 1e-9);
+#ifdef THL_PLATFORM_IOS
+    EXPECT_NE(session.settings_view_controller(), nullptr);  // LinkKit settings view
+#else
     EXPECT_EQ(session.settings_view_controller(), nullptr);
+#endif
 
     LinkTransportClock clk(session.audio_backend());
     clk.prepare(k_sr);
@@ -99,6 +103,9 @@ TEST(LinkSession, LinkTransportClock_IsRealtimeSafe) {
 // Two Link instances in one process discover each other over the loopback /
 // local interfaces. Skipped when the network does not allow discovery.
 TEST(LinkSession, TwoPeers_Loopback) {
+#ifdef THL_PLATFORM_IOS
+    GTEST_SKIP() << "LinkKit: enabling Link is a user action in the settings view";
+#endif
     LinkSession a(120.0);
     LinkSession b(90.0);
     a.set_enabled(true);

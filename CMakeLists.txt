@@ -648,6 +648,7 @@ if(TANH_WITH_LINK)
             "-framework AudioToolbox"
             "-framework Foundation"
             "-framework UIKit"
+            "-framework CoreGraphics"
             "-lobjc"
         )
     elseif(TANH_OPERATING_SYSTEM STREQUAL "macOS" OR TANH_OPERATING_SYSTEM STREQUAL "Linux"
