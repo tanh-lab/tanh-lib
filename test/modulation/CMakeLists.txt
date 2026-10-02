@@ -11,6 +11,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_XYPadMatrix.cpp
 	test_RoutingEnabled.cpp
 	test_XYController.cpp
+	test_XYControllerThreads.cpp
 	test_MotionLane.cpp
 	test_MotionRecorder.cpp
 	test_MotionRecorderClock.cpp
