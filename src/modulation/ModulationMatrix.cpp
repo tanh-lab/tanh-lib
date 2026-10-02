@@ -372,6 +372,10 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
     //    sources; everything they hold is block-local and must be cleared.
     for (auto* target : config.m_active_targets) { target->clear_per_block(); }
 
+    // 3b. Routing enabled flags for this block (after the target reset, so an
+    //     enable/disable edge can flag a change point at offset 0).
+    snapshot_routing_enabled(config, num_samples);
+
     // 4. Execute schedule steps
     for (const auto& step : config.m_schedule) {
         if (auto* bulk = std::get_if<BulkStep>(&step)) {
@@ -607,6 +611,17 @@ bool ModulationMatrix::clear_routing_replace_range_with_lock(ModulationRouting& 
     return true;
 }
 
+void ModulationMatrix::store_routing_enabled_with_lock(const ProcessingConfig& config,
+                                                       uint32_t routing_id,
+                                                       bool enabled) {
+    for (const auto& r : config.m_routings) {
+        if (r.m_id == routing_id) {
+            r.m_enabled.store(enabled, std::memory_order_relaxed);
+            return;
+        }
+    }
+}
+
 // ── Public routing update methods ───────────────────────────────────────────
 
 bool ModulationMatrix::update_routing_depth(std::string_view source_id,
@@ -674,6 +689,46 @@ bool ModulationMatrix::clear_routing_replace_range(uint32_t routing_id) {
     auto* routing = find_user_routing_with_lock(routing_id);
     if (!routing) { return false; }
     return clear_routing_replace_range_with_lock(*routing);
+}
+
+bool ModulationMatrix::set_routing_enabled(uint32_t routing_id, bool enabled) {
+    const RoutingEnabled change{.m_routing_id = routing_id, .m_enabled = enabled};
+    return set_routings_enabled({&change, 1}) == 1;
+}
+
+bool ModulationMatrix::set_routing_enabled(std::string_view source_id,
+                                           std::string_view target_id,
+                                           bool enabled) {
+    uint32_t id = k_invalid_routing_id;
+    {
+        std::scoped_lock const lock(m_writer_mutex);
+        auto* routing = find_user_routing_with_lock(source_id, target_id);
+        if (!routing) { return false; }
+        id = routing->m_id;
+    }
+    return set_routing_enabled(id, enabled);
+}
+
+size_t ModulationMatrix::set_routings_enabled(std::span<const RoutingEnabled> changes) {
+    std::scoped_lock const lock(m_writer_mutex);
+    // Seqlock write (single writer: the mutex). Odd epoch = write in progress.
+    const uint32_t epoch = m_enabled_epoch.load(std::memory_order_relaxed);
+    m_enabled_epoch.store(epoch + 1, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
+
+    size_t applied = 0;
+    m_config.read([&](const ProcessingConfig& config) {
+        for (const auto& c : changes) {
+            auto* routing = find_user_routing_with_lock(c.m_routing_id);
+            if (!routing) { continue; }
+            routing->m_enabled = c.m_enabled;
+            store_routing_enabled_with_lock(config, c.m_routing_id, c.m_enabled);
+            ++applied;
+        }
+    });
+
+    m_enabled_epoch.store(epoch + 2, std::memory_order_release);
+    return applied;
 }
 
 const ResolvedTarget* ModulationMatrix::get_target(const std::string_view id) const {
@@ -917,6 +972,8 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         r.m_replace_hold_priority =
             routing.m_replace_hold_priority.value_or(routing.m_replace_priority);
         r.m_skip_during_gesture = routing.m_skip_during_gesture;
+        r.m_enabled.store(routing.m_enabled, std::memory_order_relaxed);
+        r.m_block_enabled = routing.m_enabled;
         r.m_samples_until_update = 0;
 
         // Replace range — copy from user routing.
@@ -1531,6 +1588,42 @@ void apply_routing_global_to_scoped(const ResolvedRouting& routing,
     }
 }
 
+// Apply this block's enabled flag to a routing. On an edge, flag a change
+// point at offset 0 of the target; on a disable edge also drop the held
+// ReplaceHold state and the freshness edge detectors, so a re-enabled routing
+// writes nothing until its source is active again.
+void apply_routing_enabled(const ResolvedRouting& routing,
+                           bool enabled,
+                           size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+    if (enabled == routing.m_block_enabled) { return; }
+    routing.m_block_enabled = enabled;
+
+    if (!enabled) {
+        routing.m_held_mono_active = false;
+        routing.m_was_active_prev = false;
+        std::fill(routing.m_held_voice_active.begin(), routing.m_held_voice_active.end(), 0);
+        std::fill(routing.m_voice_was_active_prev.begin(),
+                  routing.m_voice_was_active_prev.end(),
+                  0);
+    }
+
+    if (num_samples == 0) { return; }
+    if (auto* mb = routing.m_target->m_mono.load(std::memory_order_acquire);
+        mb != nullptr && (mb->m_has_additive || mb->m_has_replace) &&
+        !mb->m_change_point_flags.empty()) {
+        mb->m_change_point_flags[0] = 1;
+    }
+    if (auto* vb = routing.m_target->m_voice.load(std::memory_order_acquire);
+        vb != nullptr && (vb->m_has_additive || vb->m_has_replace)) {
+        for (uint32_t v = 0; v < vb->m_num_voices; ++v) {
+            const size_t base = static_cast<size_t>(v) * vb->m_block_size;
+            if (base < vb->m_change_point_flags_storage.size()) {
+                vb->m_change_point_flags_storage[base] = 1;
+            }
+        }
+    }
+}
+
 // Apply a single source sample for cyclic (per-sample) processing.
 void apply_modulation_sample_mono(const ResolvedRouting& routing,
                                   float src_sample,
@@ -1561,6 +1654,29 @@ void apply_modulation_sample_mono(const ResolvedRouting& routing,
 
 }  // namespace
 
+// ── Routing enabled flags ─────────────────────────────────────────────────────
+
+void ModulationMatrix::snapshot_routing_enabled(const ProcessingConfig& config,
+                                                size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+    // Seqlock read of every routing's flag: a batch written by
+    // set_routings_enabled() is seen completely or not at all. While a write is
+    // in progress (odd epoch) or raced the loads, the previous block's flags
+    // stay in force for one more block. Wait-free: no retry.
+    const uint32_t epoch = m_enabled_epoch.load(std::memory_order_acquire);
+    bool take = (epoch & 1u) == 0;
+    if (take) {
+        for (const auto& r : config.m_routings) {
+            r.m_loaded_enabled = r.m_enabled.load(std::memory_order_relaxed);
+        }
+        std::atomic_thread_fence(std::memory_order_acquire);
+        take = m_enabled_epoch.load(std::memory_order_relaxed) == epoch;
+    }
+    if (!take) { return; }
+    for (const auto& r : config.m_routings) {
+        apply_routing_enabled(r, r.m_loaded_enabled, num_samples);
+    }
+}
+
 // ── Per-source bulk processing ────────────────────────────────────────────────
 
 void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& config,
@@ -1590,6 +1706,7 @@ void ModulationMatrix::process_source_bulk_with_scope(const ProcessingConfig& co
     }
 
     for (const auto* routing : it->second) {
+        if (!routing->m_block_enabled) { continue; }
         if (routing->m_skip_during_gesture && routing->m_target->is_in_gesture()) { continue; }
 
         // Multi-Replace targets gate writes inline via the priority watermark
@@ -1674,6 +1791,7 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
                 if (it != config.m_routings_by_source.end()) {
                     for (const auto* routing : it->second) {
                         if (routing->m_routing_mode == RoutingMode::GlobalToGlobal) {
+                            if (!routing->m_block_enabled) { continue; }
                             if (routing->m_skip_during_gesture &&
                                 routing->m_target->is_in_gesture()) {
                                 continue;
@@ -1695,7 +1813,8 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
 
                     if (it != config.m_routings_by_source.end()) {
                         for (const auto* routing : it->second) {
-                            if (routing->m_routing_mode != RoutingMode::ScopedToScoped) {
+                            if (routing->m_routing_mode != RoutingMode::ScopedToScoped ||
+                                !routing->m_block_enabled) {
                                 continue;
                             }
                             auto* vb = routing->m_target->m_voice.load(std::memory_order_acquire);
@@ -1743,6 +1862,7 @@ void ModulationMatrix::process_cyclic_with_scope(const ProcessingConfig& config,
         if (it == config.m_routings_by_source.end()) { continue; }
 
         for (const auto* routing : it->second) {
+            if (!routing->m_block_enabled) { continue; }
             if (routing->m_skip_during_gesture && routing->m_target->is_in_gesture()) { continue; }
 
             if (routing->m_routing_mode == RoutingMode::GlobalToGlobal) {
@@ -1853,6 +1973,7 @@ nlohmann::json  // NOLINT(misc-include-cleaner)
             obj["replace_range_max"] = r.m_replace_range_max;
         }
         if (r.m_skip_during_gesture) { obj["skip_during_gesture"] = true; }
+        if (!r.m_enabled) { obj["enabled"] = false; }
         if (r.m_replace_priority != 0) { obj["replace_priority"] = r.m_replace_priority; }
         if (r.m_replace_hold_priority.has_value()) {
             obj["replace_hold_priority"] = *r.m_replace_hold_priority;
@@ -1882,6 +2003,7 @@ void ModulationMatrix::from_json(const nlohmann::json& json) {
         r.m_combine_mode = combine_mode_from_string(obj.value("combine_mode", "additive"));
         r.m_max_decimation = obj.value("max_decimation", uint32_t{0});
         r.m_skip_during_gesture = obj.value("skip_during_gesture", false);
+        r.m_enabled = obj.value("enabled", true);
         r.m_replace_priority = obj.value("replace_priority", uint32_t{0});
         if (obj.contains("replace_hold_priority")) {
             r.m_replace_hold_priority = obj["replace_hold_priority"].get<uint32_t>();

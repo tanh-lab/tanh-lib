@@ -101,6 +101,15 @@ struct ModulationRouting {
     // (i.e. the user is actively interacting with the parameter).
     bool m_skip_during_gesture = false;
 
+    // A disabled routing is fully inert: it writes nothing to its target (no
+    // Additive contribution, no Replace value, no ReplaceHold hold) and its
+    // held state is cleared, so re-enabling never revives a stale hold. Unlike
+    // a depth of 0 this also silences Replace / ReplaceHold routings (a Replace
+    // routing at depth 0 still writes rmin or 0 and wins the target). Toggled
+    // without a schedule rebuild by ModulationMatrix::set_routing_enabled().
+    // Serialised only when false, so older presets load as enabled.
+    bool m_enabled = true;
+
     ModulationRouting() = default;
 
     ModulationRouting(std::string_view view_source_id,

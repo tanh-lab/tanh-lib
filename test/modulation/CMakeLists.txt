@@ -9,6 +9,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_ResolvedTarget.cpp
 	test_XYPad.cpp
 	test_XYPadMatrix.cpp
+	test_RoutingEnabled.cpp
 	test_MotionLane.cpp
 	test_MotionRecorder.cpp
 	test_MotionRecorderClock.cpp

@@ -10,6 +10,7 @@
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/ModulationScope.h>
 
+#include <atomic>
 #include <cstddef>
 #include <list>
 #include <map>
@@ -17,6 +18,7 @@
 #include <mutex>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -38,6 +40,12 @@ struct CyclicStep {
 };
 
 using ScheduleStep = std::variant<BulkStep, CyclicStep>;
+
+// One entry of ModulationMatrix::set_routings_enabled().
+struct RoutingEnabled {
+    uint32_t m_routing_id = k_invalid_routing_id;
+    bool m_enabled = true;
+};
 
 // All state read by the RT thread — bundled into a single RCU instance for
 // atomic publication. Pointers in routings_by_source reference elements in
@@ -273,6 +281,27 @@ public:
     bool clear_routing_replace_range(std::string_view source_id, std::string_view target_id);
     bool clear_routing_replace_range(uint32_t routing_id);
 
+    // Enable or disable a routing without a schedule rebuild. Thread-safe and
+    // lock-free for the audio thread (the writer mutex is only taken on the
+    // calling, non-RT thread). The audio thread picks the flag up at the next
+    // block boundary. A disabled routing writes nothing to its target — this
+    // also silences Replace / ReplaceHold routings, which a depth of 0 does
+    // not — and its held ReplaceHold state is cleared, so after re-enabling it
+    // writes nothing until its source is active again. Both edges flag a
+    // change point at offset 0 of the target. The flag is part of the routing
+    // (ModulationRouting::m_enabled) and survives rebuilds and to_json().
+    // Returns false if the routing was not found.
+    bool set_routing_enabled(uint32_t routing_id, bool enabled);
+    bool set_routing_enabled(std::string_view source_id, std::string_view target_id, bool enabled);
+
+    // Apply several enable flags as one batch: every audio block sees either
+    // none or all of them (seqlock over the flags; the audio thread never
+    // waits — a block that races the write keeps the previous flags). Use it
+    // to switch between two sets of routings (e.g. a pad mode switch) without
+    // a block in which neither or both sets write. Unknown ids are skipped.
+    // Returns the number of routings found.
+    size_t set_routings_enabled(std::span<const RoutingEnabled> changes);
+
     // Access the resolved target for reading modulation data.
     const ResolvedTarget* get_target(const std::string_view id) const;
     ResolvedTarget* get_target(const std::string_view id);
@@ -336,6 +365,12 @@ private:
                                                 float range_min,
                                                 float range_max);
     bool clear_routing_replace_range_with_lock(ModulationRouting& user_routing);
+    static void store_routing_enabled_with_lock(const ProcessingConfig& config,
+                                                uint32_t routing_id,
+                                                bool enabled);
+    // Audio thread: load every routing's enabled flag for this block.
+    void snapshot_routing_enabled(const ProcessingConfig& config,
+                                  size_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
     // Process helpers — called from within RCU read section.
     void process_source_bulk_with_scope(const ProcessingConfig& config,
@@ -375,6 +410,10 @@ private:
 
     // Writer mutex — serializes all non-RT methods
     std::mutex m_writer_mutex;
+
+    // Seqlock epoch over the routings' enabled flags (odd while
+    // set_routings_enabled() writes). Written under m_writer_mutex.
+    std::atomic<uint32_t> m_enabled_epoch{0};
 
     // Registered sources (not owned) — protected by m_writer_mutex
     std::map<std::string, ModulationSource*, std::less<>> m_sources;
