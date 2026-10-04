@@ -19,9 +19,8 @@ namespace {
 
 constexpr size_t k_min_take_points = 4;
 constexpr size_t k_min_capacity = 16;
-// Below this the running playback phase is kept as is (bit-exact continuity
-// across an aligned DAW loop wrap); above it, up to two lane points, the phase
-// snaps to the transport silently; beyond two points it glides.
+// Below this the running playback phase is kept as is (bit-exact continuity,
+// also across an aligned DAW loop wrap or a hint without a real jump).
 constexpr double k_keep_phase_eps = 1e-6;
 constexpr double k_tick_eps = 1e-9;
 constexpr double k_seam_window_seconds = 0.15;
@@ -665,9 +664,15 @@ void MotionRecorder::process(const TransportInfo& t,
     if (n == 0) { return; }
 
     // ── Clock: the transport while it plays, else a free-running (or held) beat.
+    // The transport's discontinuity flags are the only jump detector (see
+    // "Clock discontinuities" in docs/sphinx/motion_recording.md).
     const double bpm = t.m_bpm > 0.0 ? t.m_bpm : 120.0;
     const double nominal = bpm / (60.0 * m_sample_rate);
     const bool playing = t.is_playing();
+    const bool timeline_reset = t.has(TransportInfo::k_timeline_reset);
+    const bool jumped = t.has(TransportInfo::k_jumped) || t.has(TransportInfo::k_started);
+    // A timeline reset also restarts the stopped free-run from the transport's beat.
+    if (timeline_reset) { m_have_clock = false; }
     const bool hold = m_stopped_mode.load(std::memory_order_relaxed) == StoppedTransport::Hold;
     double b0 = t.m_beat_position;
     double slope = nominal;
@@ -707,7 +712,16 @@ void MotionRecorder::process(const TransportInfo& t,
         }
     }
 
-    // ── Block-start phase: lane-phase test against the transport.
+    // ── Block-start phase. Beats lanes derive it from the clock beat every block.
+    // The flags alone decide what a difference to the running phase means:
+    // - none: the beat is continuous (the clock absorbed jitter and tempo
+    //   changes), so a difference is rounding: take the clock's phase silently;
+    // - k_timeline_reset: re-lock without a glide;
+    // - k_jumped / k_started (playing): re-lock, restart the render ramp (never
+    //   interpolate across the jump) and glide if the phase moved by more than
+    //   two lane points; an aligned jump (DAW loop of whole lanes) changes nothing.
+    // While stopped the beat is the recorder's own free-run, continuous by
+    // construction; transport seeks take effect at the next start.
     m_seg_start = 0;
     if (!view.empty()) {
         dphase = direction(view);
@@ -722,14 +736,18 @@ void MotionRecorder::process(const TransportInfo& t,
                     2.0 * view.m_length / static_cast<double>(view.m_num_points);
                 if (d <= k_keep_phase_eps) {
                     m_seg_phase = m_phase;
-                } else if (d <= two_points) {
-                    m_seg_phase = fresh;  // jitter or an aligned jump: no audible change
-                } else {
-                    // A real jump: never interpolate across it.
+                } else if (timeline_reset) {
                     m_seg_phase = fresh;
                     m_ramp_restart = true;
-                    if (!m_last_live) { start_glide(); }
-                    ++m_jump_glides;
+                } else if (jumped && playing) {
+                    m_seg_phase = fresh;
+                    m_ramp_restart = true;
+                    if (d > two_points) {
+                        if (!m_last_live) { start_glide(); }
+                        ++m_jump_glides;
+                    }
+                } else {
+                    m_seg_phase = fresh;
                 }
             } else {
                 m_seg_phase = m_phase;

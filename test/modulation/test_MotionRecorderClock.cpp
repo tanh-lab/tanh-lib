@@ -262,7 +262,9 @@ TEST_P(MotionRecorderClock, StartStopSync) {
     }
 }
 
-// The hint is set but the beat is continuous: no glide.
+// The flags are set but the beat is continuous (a host that reports a jump onto
+// the same position): the lane phase does not move, so nothing glides and the
+// output stays seamless.
 TEST_P(MotionRecorderClock, HintWithoutJump) {
     const uint32_t block = GetParam();
     auto rp = playing_rig(block);
@@ -275,6 +277,68 @@ TEST_P(MotionRecorderClock, HintWithoutJump) {
     r.run_until(4 * k_spb);
     EXPECT_EQ(r.m_rec.jump_glide_count(), 0u);
     check_output(r, 2 * k_glide, false);
+}
+
+// The clock is the only jump detector. The recorder takes the transport's beat
+// every block, and only k_jumped / k_started / k_timeline_reset decide what a
+// change of the lane phase means: a jump glides, a timeline reset re-locks at
+// once, an unflagged change is taken silently (a clock that reports none has
+// nothing to report). A timeline reset while stopped restarts the free-run from
+// the transport's beat.
+TEST(MotionRecorderClockFlags, OnlyTheFlagsDecideAboutAGlide) {
+    constexpr uint32_t k_n = 256;
+    const MotionLane lane = motion_test::beats_lane(k_lane_beats, k_tpb);
+    auto run = [&](uint32_t flags, bool playing) {
+        MotionRecorder rec;
+        rec.prepare(k_sr, k_n);
+        rec.load_lane(lane);
+        TransportInfo t;
+        t.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position;
+        t.m_bpm = 120.0;
+        t.m_num_samples = k_n;
+        double beat = 0.0;
+        for (int b = 0; b < 200; ++b) {
+            t.m_flags &= ~(TransportInfo::k_discontinuity_mask | TransportInfo::k_is_playing);
+            const bool now_playing = playing || b < 100;
+            if (now_playing) { t.m_flags |= TransportInfo::k_is_playing; }
+            t.m_beats_per_sample = now_playing ? 120.0 / (60.0 * k_sr) : 0.0;
+            if (b == 150) {
+                beat += 1.3;  // the transport moves by 1.3 beats
+                t.m_flags |= flags;
+            }
+            t.m_beat_position = beat;
+            rec.process(t, XYPadStream{}, k_n);
+            beat = t.beat_end();
+        }
+        return std::pair<uint64_t, double>{rec.jump_glide_count(), rec.playback_phase()};
+    };
+    const double moved = std::fmod((200 * k_n * 120.0 / (60.0 * k_sr)) + 1.3, k_lane_beats);
+    const double unmoved = std::fmod(200 * k_n * 120.0 / (60.0 * k_sr), k_lane_beats);
+
+    const auto unflagged = run(0u, true);
+    EXPECT_EQ(unflagged.first, 0u);
+    EXPECT_NEAR(unflagged.second, moved, 1e-9);
+
+    const auto jumped = run(TransportInfo::k_jumped, true);
+    EXPECT_EQ(jumped.first, 1u);
+    EXPECT_NEAR(jumped.second, moved, 1e-9);
+
+    const auto reset = run(TransportInfo::k_jumped | TransportInfo::k_timeline_reset, true);
+    EXPECT_EQ(reset.first, 0u);
+    EXPECT_NEAR(reset.second, moved, 1e-9);
+
+    // Stopped from block 100 (FreeRun at 120 BPM from the stop beat): a seek is
+    // ignored until the next start, a timeline reset re-anchors the free-run.
+    const auto stopped_seek = run(TransportInfo::k_jumped, false);
+    EXPECT_EQ(stopped_seek.first, 0u);
+    EXPECT_NEAR(stopped_seek.second, unmoved, 1e-9);
+    const auto stopped_reset = run(TransportInfo::k_timeline_reset, false);
+    EXPECT_EQ(stopped_reset.first, 0u);
+    EXPECT_NEAR(
+        stopped_reset.second,
+        std::fmod((100 * k_n * 120.0 / (60.0 * k_sr)) + 1.3 + (50 * k_n * 120.0 / (60.0 * k_sr)),
+                  k_lane_beats),
+        1e-9);
 }
 
 // ── During a bar take ─────────────────────────────────────────────────────────

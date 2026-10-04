@@ -94,11 +94,12 @@ older take), a take finished after a load replaces that.
 
 ## Recording
 
-- **Clock.** A take keeps its own beat accumulator, seeded at the first touch
-  and advanced at the block's tempo (the transport's slope while it plays, the
-  bpm while it is stopped). Seeks, DAW loop wraps and Link realignments during
-  a take are ignored; tempo changes are integrated, so the grid stays uniform in
-  beats.
+- **Clock.** A take keeps its own beat clock, seeded at the first touch and
+  advanced by the block's slope (the transport's `m_beats_per_sample` while it
+  plays, the bpm while it is stopped). The clock absorbs tempo changes into the
+  slope, also inside a block, so while the transport is continuous the take
+  clock is the transport beat and the grid stays uniform in beats. What a jump
+  does to a take: see "Jump rule" below.
 - **Sampling.** A point is written at the first sample at or after each grid
   tick, from the live input at that sample.
 - **Free take, transport stopped**: Seconds timebase, length = elapsed time. The
@@ -143,23 +144,43 @@ older take), a take finished after a load replaces that.
 
 ### Clock discontinuities
 
-The recorder does not trust `TransportInfo`'s discontinuity flags alone. Each
-block it compares the lane phase the transport implies with its own running
-phase (the lane-phase test):
+The transport clock is the only jump detector: its `ContinuityTracker` decides
+(see [Transport](transport.md), "Discontinuities"), and the recorder only reads
+`TransportInfo`'s flags. A Beats lane takes its phase from the clock beat every
+block; the flags decide what a change of that phase means:
 
-- within 1e-6 beats: keep the running phase (an aligned DAW loop wrap is seamless);
-- within two lane points: snap silently (jitter);
-- beyond: a jump. The ramp restarts at offset 0 (never interpolating across the
-  jump) and the output glides from the last value actually output.
+- no flag: the beat is continuous (jitter and tempo changes, also inside a
+  block, are already in the slope), so the phase follows silently. A source that
+  never sets flags is treated the same way: there is no second detector;
+- `k_timeline_reset` (first block after a clock `prepare()`/`reset()`,
+  `XYController::reset()`): re-lock to the beat at once, without a glide. While
+  stopped it also restarts the free-run from the transport's beat;
+- `k_jumped` or `k_started` while playing: re-lock, restart the render ramp at
+  offset 0 (never interpolating across the jump) and, if the phase moved by more
+  than two lane points, glide from the last value actually output. A jump that
+  lands on the same lane phase (a DAW loop of whole lanes, a Link realignment
+  by a multiple of the lane length) changes nothing;
+- while stopped the lane runs on the recorder's own free-run (or holds), so a
+  seek while stopped takes effect at the next start (`k_started`).
+
+**Jump rule for a running take.** A discontinuity (`k_jumped`, `k_timeline_reset`,
+`k_started`, `k_stopped`) never aborts and never shifts a running take. The take
+keeps recording on its own continuous clock, writes every index once and ends
+after its length (a bar take after exactly one loop, a free take on release);
+only playback re-locks to the transport. The finished lane keeps its anchor (bar
+takes: 0, on the bar grid), so after a seek inside a bar take the part recorded
+after the seek is on the grid of the take's own clock, not of the new song
+position. Only `prepare()` aborts a take.
 
 | Event | While playing | While recording |
 |---|---|---|
-| Host seek / scrub | re-seek from the beat, glide | the take continues on its own clock; playback re-locks when it ends |
-| Host loop wrap | aligned with the lane: seamless; misaligned: re-seek and glide on each wrap | as above, the take is never aborted |
+| Host seek / scrub (`k_jumped`) | re-seek from the beat, glide | the take continues on its own clock; playback re-locks when it ends |
+| Host loop wrap (`k_jumped`) | aligned with the lane: seamless; misaligned: re-seek and glide on each wrap | as above, the take is never aborted |
 | Link join / phase realignment | glide unless the shift is a multiple of the lane length | as above |
-| Tempo change (host, Link peer) | no jump: Beats lanes follow | the take integrates the new tempo |
+| Tempo change (host, also inside a block; Link peer) | no jump: Beats lanes follow | the take integrates the new tempo and stays on the bar grid |
 | Transport stop | `FreeRun`: keep moving at the last tempo; `Hold`: freeze | a bar take finishes on its own clock at the last tempo |
-| Transport start | lane-phase test against the new beat, glide if needed | continue |
+| Transport start (`k_started`) | re-lock to the new beat, glide if the phase moved | continue |
+| Host reset (`XYController::reset()`, `k_timeline_reset`) | re-lock without a glide | continue |
 | Time-signature change | lanes keep their length in beats | the take keeps the length chosen at arm time |
 | `prepare()` | re-lock to the next block's beat without a glide | the take is aborted, the previous lane kept, `ui_snapshot().m_aborted` |
 

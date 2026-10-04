@@ -246,6 +246,44 @@ TEST(XYController, ReleaseResumesPlaybackAtTheCurrentPhase) {
     EXPECT_EQ(c.out_layer(0)[k_bs - 1], XYLayer::Motion);
 }
 
+// A host seek reaches the controller as k_jumped from the clock: the playing
+// lane glides to the new phase. With reset() (host reset) in the same block the
+// recorder re-locks at once: no glide, the first sample is already the lane at
+// the new beat.
+TEST(XYController, ResetRelocksWithoutGlide) {
+    for (const bool with_reset : {false, true}) {
+        SCOPED_TRACE(with_reset ? "reset()" : "seek only");
+        Engine e(1);
+        XYController c(*e.matrix, config("pad"));
+        XYController* cs[] = {&c};
+        e.matrix->prepare(k_sr, k_bs);
+        const MotionLane lane = motion_test::beats_lane(4.0, 96);
+        c.recorder().load_lane(lane);
+        for (int b = 0; b < 40; ++b) { e.block(cs); }
+        const float before = c.out_x(0)[k_bs - 1];
+
+        e.transport.m_beat += 1.3;  // seek
+        TransportInfo t = e.transport.next(k_bs);
+        t.m_flags |= TransportInfo::k_jumped;
+        t.m_jump_delta_beats = 1.3;
+        if (with_reset) { c.reset(); }
+        c.set_transport(t);
+        e.matrix->process(k_bs);
+
+        const float want = lane.sample(std::fmod(t.m_beat_position, 4.0)).m_x;
+        if (with_reset) {
+            EXPECT_EQ(c.recorder().jump_glide_count(), 0u);
+            EXPECT_NEAR(c.out_x(0)[0], want, 0.01f);
+        } else {
+            EXPECT_EQ(c.recorder().jump_glide_count(), 1u);
+            EXPECT_NEAR(c.out_x(0)[0], before, 0.01f);  // glides from the last output
+        }
+        for (int b = 0; b < 10; ++b) { e.block(cs); }  // both end on the lane
+        const double beat = e.transport.m_beat - (120.0 / 60.0 / k_sr);
+        EXPECT_NEAR(c.out_x(0)[k_bs - 1], lane.sample(std::fmod(beat, 4.0)).m_x, 0.01f);
+    }
+}
+
 TEST(XYController, LatchKeepsTheGateOpenUntilTurnedOff) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));

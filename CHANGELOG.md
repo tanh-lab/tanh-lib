@@ -75,8 +75,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   1–16-bar takes (end after exactly one loop, bar-aligned). 5-tap binomial
   smoothing, a raised-cosine seam blend, playback by uniform Catmull-Rom clamped to
   [0, 1] every 32 samples, free-run or hold while stopped, reverse, a live touch
-  overriding playback with a 25 ms glide back, glides on transport jumps (lane-phase
-  test, never interpolating across a jump; a running take is never aborted). UI
+  overriding playback with a 25 ms glide back, glides on transport jumps (from the
+  clock's flags, never interpolating across a jump; a running take is never aborted). UI
   commands through a lock-free queue (`arm`, `record`, `disarm`, `play`, `stop`,
   `set_reverse`); finished takes are published by `service()` on the message thread
   through RCU and the audio thread switches to them by take id without a click;
@@ -150,6 +150,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `LinkTransportClock.PeerTempoChangeInsidePreviousBlockIsNotAJump`,
   `MotionRecorderTempoMap.*` (SimHost gains a sample-accurate tempo map:
   `TempoAt`, `TempoRamp`).
+- `MotionRecorder`: the transport clock is the only jump detector. The recorder
+  read none of `TransportInfo`'s discontinuity flags and re-detected jumps from the
+  lane phase with its own threshold (two lane points), so the two detectors
+  disagreed and `XYController::reset()`'s `k_timeline_reset` was ignored. Now
+  `k_jumped` / `k_started` re-seek playback (glide if the lane phase moved by more
+  than two points), `k_timeline_reset` re-locks without a glide (also restarting the
+  stopped free-run), and an unflagged block is continuous. One documented jump rule
+  for running takes: a jump never aborts or shifts a take; it continues on its own
+  clock and ends after its length; only `prepare()` aborts. Tests:
+  `MotionRecorderClockFlags.OnlyTheFlagsDecideAboutAGlide`,
+  `XYController.ResetRelocksWithoutGlide`. Docs: `motion_recording.md` ("Clock
+  discontinuities", "Jump rule for a running take"), `transport.md`.
 
 ### Deprecated
 

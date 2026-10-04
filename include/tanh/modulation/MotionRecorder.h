@@ -200,7 +200,13 @@ public:
      * @brief Advance one block.
      *
      * @param transport the block's TransportInfo (beat, slope, tempo, play state,
-     *                  time signature; discontinuity flags are optional)
+     *                  time signature and discontinuity flags), normally a clock's
+     *                  block_info(). The flags are the only jump detector:
+     *                  k_jumped / k_started re-seek playback (glide if the lane
+     *                  phase moved), k_timeline_reset re-locks without a glide, and
+     *                  without flags the beat is taken as continuous. A jump never
+     *                  aborts or shifts a running take (it continues on its own
+     *                  clock and ends after its length).
      * @param input     the pad's primary stream for this block (XYPad::primary()),
      *                  pre-matrix; a default-constructed stream means "no touch"
      * @param num_samples block length (≤ the prepared maximum)
@@ -244,7 +250,7 @@ public:
     [[nodiscard]] uint32_t playing_take_id() const noexcept TANH_NONBLOCKING_FUNCTION {
         return m_play_id;
     }
-    /// Glides started by a transport jump since prepare() (diagnostics, tests).
+    /// Glides started by a flagged transport jump since prepare() (diagnostics, tests).
     [[nodiscard]] uint64_t jump_glide_count() const noexcept TANH_NONBLOCKING_FUNCTION {
         return m_jump_glides;
     }
