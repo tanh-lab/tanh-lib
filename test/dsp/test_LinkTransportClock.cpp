@@ -239,6 +239,53 @@ TEST(LinkTransportClock, LatencyCompensation) {
     EXPECT_EQ(compensated.block_info().m_host_time_ns, 123456000);  // callback time, no latency
 }
 
+// AUDIOENGINE-1, deterministic: a click rendered at every beat leaves the speaker
+// exactly when the session says the beat is. Beat k of the fake session is at
+// host time 10 + 500000 k µs (120 bpm), i.e. 0.48 samples after a sample
+// boundary, so the first sample at or after it is unambiguous: with output
+// latency L (a multiple of 6 samples, an integer number of µs at 48 kHz) the
+// click must be at sample 24000 k - L + 1 of the output stream, whatever the
+// block size. The real-peer version is LinkPeersLatency in test/link.
+TEST(LinkTransportClock, LatencyCompensatedClicksAreSampleExact) {
+    for (const uint32_t frames : {64u, 512u, 2048u}) {
+        for (const uint32_t latency : {0u, 6u, 96u, 480u, 4800u}) {
+            fake::FakeLinkBackend link;
+            link.m_session.m_playing = true;
+            link.m_session.force_beat_at(0.0, 10);
+            LinkTransportClock clk(link);
+            clk.prepare(k_sr);
+            clk.set_output_latency_samples(latency);
+
+            std::vector<int64_t> clicks;
+            const auto total = static_cast<uint64_t>(3.2 * k_sr);
+            for (uint64_t n = 0; n * frames < total; ++n) {
+                const auto host = static_cast<int64_t>(
+                    std::llround(static_cast<double>(n * frames) * 1e6 / k_sr));
+                clk.begin_block(frames, host);
+                const auto info = clk.block_info();
+                for (double k = std::ceil(info.m_beat_position); k < info.beat_end(); k += 1.0) {
+                    const double offset =
+                        std::ceil((k - info.m_beat_position) / info.m_beats_per_sample);
+                    if (offset < frames) {
+                        clicks.push_back(static_cast<int64_t>(n * frames) +
+                                         static_cast<int64_t>(offset));
+                    }
+                }
+                clk.end_block();
+            }
+
+            std::vector<int64_t> expected;
+            for (int64_t k = 0; k < 7; ++k) {
+                const int64_t sample = (24000 * k) - static_cast<int64_t>(latency) + 1;
+                if (sample >= 0 && static_cast<uint64_t>(sample) < total) {
+                    expected.push_back(sample);
+                }
+            }
+            EXPECT_EQ(clicks, expected) << "block " << frames << " latency " << latency;
+        }
+    }
+}
+
 TEST(LinkTransportClock, EnableDisable_NoJumpWithoutPeers) {
     fake::FakeLinkBackend link;
     LinkTransportClock clk(link);
