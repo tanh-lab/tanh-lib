@@ -38,9 +38,11 @@ namespace thl::dsp::transport {
  *
  * Play state: the block plays if the session plays and its start time lies
  * before the block's end, so k_started lands in the block that contains the
- * start; beats before it are negative (count-in). Unlike the host and internal
- * clocks the Link timeline keeps running while stopped (m_beats_per_sample > 0);
- * gate musical events on is_playing().
+ * start; beats before it are negative (count-in). Likewise a stop dated ahead
+ * (a peer stopping at its output time) lands as k_stopped in the block that
+ * contains it. Unlike the host and internal clocks the Link timeline keeps
+ * running while stopped (m_beats_per_sample > 0); gate musical events on
+ * is_playing().
  *
  * Tempo requests (set_bpm) are applied only when made; enabling Link or a peer
  * joining never pushes the local tempo (Link TEST-PLAN TEMPO-5). Do not push a

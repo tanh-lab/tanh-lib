@@ -34,6 +34,7 @@ void LinkTransportClock::prepare(double sample_rate) {
     m_tracker.set_tolerance_samples(
         std::max(2.0, k_jitter_tolerance_us * m_sample_rate / k_micros_per_second));
     m_tempo_window_samples = k_peer_tempo_window_us * m_sample_rate / k_micros_per_second;
+    m_info = TransportInfo{};
     m_sample_position = 0;
     m_filter_count = 0;
     m_filter_index = 0;
@@ -130,7 +131,9 @@ void LinkTransportClock::begin_block(uint32_t frame_count,
         t0 + std::llround(static_cast<double>(frame_count) * k_micros_per_second / m_sample_rate);
     const double b0 = m_backend.beat_at(t0, q);
     const double b1 = m_backend.beat_at(t1, q);
-    const bool playing = state.m_playing && state.m_play_time_us < t1;
+    // A start or stop dated ahead takes effect in the block that contains it.
+    const bool playing = state.m_playing ? state.m_play_time_us < t1
+                                         : m_info.is_playing() && state.m_play_time_us >= t1;
 
     TransportInfo info;
     info.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |

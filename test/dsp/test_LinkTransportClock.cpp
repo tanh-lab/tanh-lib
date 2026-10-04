@@ -177,6 +177,26 @@ TEST(LinkTransportClock, JoinRealignmentWithTempoChangeIsAJump) {
     }
 }
 
+// A peer stopping at its output time sends a stop dated ahead: we keep playing
+// until the block that contains it (STARTSTOPSTATE-1), like a start.
+TEST(LinkTransportClock, PeerStopDatedAheadLandsInItsBlock) {
+    fake::FakeLinkBackend link;
+    LinkTransportClock clk(link);
+    clk.prepare(k_sr);
+    link.m_session.m_playing = true;
+    for (int b = 0; b < 20; ++b) {
+        const int64_t t0 = b * k_block_us;
+        if (b == 10) { link.peer_stop((13 * k_block_us) + 2500); }
+        clk.begin_block(k_frames, t0);
+        EXPECT_EQ(clk.is_playing(), b < 13) << "block " << b;
+        if (b > 0) {
+            EXPECT_EQ(clk.discontinuities(), b == 13 ? TransportInfo::k_stopped : 0u)
+                << "block " << b;
+        }
+        clk.end_block();
+    }
+}
+
 TEST(LinkTransportClock, HostTimeJitterRaisesNoFlags) {
     fake::FakeLinkBackend link;
     LinkTransportClock clk(link);
