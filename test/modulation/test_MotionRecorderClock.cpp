@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <memory>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 #include "MotionRig.h"
@@ -474,4 +475,158 @@ TEST_P(MotionRecorderClock, PrepareAbortsTake) {
     // Playback re-locked to the transport without a glide.
     EXPECT_EQ(r.m_rec.jump_glide_count(), 0u);
     EXPECT_LE(phase_error(r, 2 * k_spb + 64 + k_glide, r.m_x.size()), k_tick_beats);
+}
+
+// ── Tempo map: tempo steps and ramps inside a block ──────────────────────────
+//
+// A DAW reports one bpm per block but its ppq follows the tempo map per sample
+// (SimHost TempoAt / TempoRamp). The clock absorbs the difference as a tempo
+// change, so a bar take stays on the bar grid and a playing lane never glides.
+// Run at 64 .. 2048 samples (the error grows with the block).
+
+namespace {
+
+constexpr double k_draw_radius = 0.35;
+// Lane vs drawing (beats): smoothing and the finger's 64-sample event grid, measured
+// 0.0034 with the tempo changing at block boundaries; one tick is 0.01 beats.
+constexpr double k_lane_offset_tol = 0.005;
+
+std::pair<float, float> draw_circle(double beat) {
+    const double ph = 2.0 * std::numbers::pi * beat / k_lane_beats;
+    return {static_cast<float>(0.5 + (k_draw_radius * std::sin(ph))),
+            static_cast<float>(0.5 + (k_draw_radius * std::cos(ph)))};
+}
+
+// Beat (mod one bar) that draw_circle() drew @p x, @p y at.
+double beat_of_circle(float x, float y) {
+    double t =
+        std::atan2((x - 0.5) / k_draw_radius, (y - 0.5) / k_draw_radius) / (2.0 * std::numbers::pi);
+    if (t < 0.0) { t += 1.0; }
+    return t * k_lane_beats;
+}
+
+struct BarTakeResult {
+    double m_lane_offset = 1e9;  // max |lane beat - drawn beat|
+    // Distance of the finishing block from start + 1 bar. The last point is
+    // written one tick before that (ticks start at the first one after the touch).
+    double m_finish_error = 1e9;
+    uint32_t m_jumps = 0;
+};
+
+// Record a 1-bar take whose finger follows the transport beat (one event per 64
+// samples) while @p script changes the tempo, then compare the lane with the
+// drawing at the same beat.
+BarTakeResult bar_take_on_tempo_map(Rig& r) {
+    BarTakeResult res;
+    bool touching = false;
+    r.m_before_pad = [&](const TransportInfo& t) {
+        if (t.has(TransportInfo::k_jumped)) { ++res.m_jumps; }
+        if (!touching) { return; }
+        for (uint32_t k = 0; k < r.m_block / 64; ++k) {
+            const auto [x, y] = draw_circle(t.beat_at(64 * k));
+            r.m_pad.touch(1, x, y);
+        }
+    };
+    r.run_until(k_spb * 2);
+    r.m_rec.arm(LoopLength::Bars1);
+    touching = true;
+    double start = -1.0;
+    while (r.now() < 20 * k_spb) {
+        const TransportInfo t = r.step();
+        if (start < 0.0 && r.m_rec.state() == MotionState::Recording) {
+            start = t.m_beat_position;  // the first touch is at offset 0
+        }
+        if (start >= 0.0 && r.m_rec.state() == MotionState::Playing) {
+            // Finished inside this block: the bar ended in [start, end] of it.
+            const double want = start + k_lane_beats;
+            if (want < t.m_beat_position) {
+                res.m_finish_error = t.m_beat_position - want;
+            } else if (want > t.beat_end()) {
+                res.m_finish_error = want - t.beat_end();
+            } else {
+                res.m_finish_error = 0.0;
+            }
+            break;
+        }
+    }
+    touching = false;
+    r.m_pad.release(1);
+    r.step();
+    r.m_rec.service();
+    const MotionLane lane = r.m_rec.lane();
+    EXPECT_EQ(lane.num_points(), static_cast<size_t>(k_lane_beats * lane.m_rate));
+    double worst = 0.0;
+    for (double b = 0.05; b < k_lane_beats; b += 0.01) {
+        const MotionPoint p = lane.sample(b);
+        worst = std::max(worst, circ(beat_of_circle(p.m_x, p.m_y), b, k_lane_beats));
+    }
+    res.m_lane_offset = worst;
+    return res;
+}
+
+uint64_t into_block(uint32_t block, uint64_t around, uint32_t offset) {
+    return (((around + block - 1) / block) * block) + offset;
+}
+
+}  // namespace
+
+class MotionRecorderTempoMap : public ::testing::TestWithParam<uint32_t> {};
+
+INSTANTIATE_TEST_SUITE_P(Blocks,
+                         MotionRecorderTempoMap,
+                         ::testing::Values(64u, 256u, 1024u, 2048u),
+                         [](const auto& info) { return "Block" + std::to_string(info.param); });
+
+// The tempo steps 120 → 180 (and 120 → 70) one sample into a block and in the
+// middle of one, half a bar into a 1-bar take: the lane is on the bar grid and
+// the take ends one bar after it started, in transport beats.
+TEST_P(MotionRecorderTempoMap, TempoStepMidBlockDuringBarTake) {
+    const uint32_t block = GetParam();
+    for (const double to : {180.0, 70.0}) {
+        for (const uint32_t offset : {1u, block / 2}) {
+            SCOPED_TRACE(testing::Message() << "to " << to << " bpm, " << offset << " into");
+            auto r = std::make_unique<Rig>(block);
+            r->play_at(0);
+            r->tempo_step_at(into_block(block, 4 * k_spb, offset), to);
+            const BarTakeResult res = bar_take_on_tempo_map(*r);
+            EXPECT_EQ(res.m_jumps, 0u);
+            EXPECT_LE(res.m_lane_offset, k_lane_offset_tol);
+            EXPECT_LE(res.m_finish_error, k_tick_beats + 1e-9);
+        }
+    }
+}
+
+// Ramps 120 → 60 and 120 → 180 across the whole take.
+TEST_P(MotionRecorderTempoMap, TempoRampDuringBarTake) {
+    const uint32_t block = GetParam();
+    for (const double to : {60.0, 180.0}) {
+        SCOPED_TRACE(testing::Message() << "to " << to << " bpm");
+        auto r = std::make_unique<Rig>(block);
+        r->play_at(0);
+        r->tempo_ramp_at(3 * k_spb, to, 4 * k_spb);
+        const BarTakeResult res = bar_take_on_tempo_map(*r);
+        EXPECT_EQ(res.m_jumps, 0u);
+        EXPECT_LE(res.m_lane_offset, k_lane_offset_tol);
+        EXPECT_LE(res.m_finish_error, k_tick_beats + 1e-9);
+    }
+}
+
+// A playing lane at a slow tempo (two lane points = 0.02 beats) through a step
+// 60 → 120 inside a block and a ramp back to 60: no glide, the phase stays the
+// transport's and the output has no step beyond the in-loop maximum.
+TEST_P(MotionRecorderTempoMap, PlayingLaneFollowsTempoMapWithoutGlide) {
+    const uint32_t block = GetParam();
+    auto rp = playing_rig(block, 60.0);
+    Rig& r = *rp;
+    r.tempo_step_at(into_block(block, 4 * k_spb, block / 2), 120.0);
+    r.tempo_ramp_at(into_block(block, 8 * k_spb, 7), 60.0, 4 * k_spb);
+    uint32_t jumps = 0;
+    r.m_before_pad = [&](const TransportInfo& t) {
+        if (t.has(TransportInfo::k_jumped)) { ++jumps; }
+    };
+    r.run_until(16 * k_spb);
+    EXPECT_EQ(jumps, 0u);
+    EXPECT_EQ(r.m_rec.jump_glide_count(), 0u);
+    EXPECT_LE(phase_error(r, 2 * k_glide, r.m_x.size()), k_tick_beats);
+    check_output(r, 2 * k_glide, false);
 }

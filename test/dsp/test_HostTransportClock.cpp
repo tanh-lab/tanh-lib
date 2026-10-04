@@ -232,6 +232,157 @@ TEST(HostTransportClock, SimulatedHostScript) {
     EXPECT_EQ(wraps, 3);  // blocks ~385 and ~577 at 120 bpm, ~731 at 150 bpm
 }
 
+// ── Tempo map: tempo changes inside a block ──────────────────────────────────
+//
+// A DAW reports one bpm per block (the tempo at the block start) but its ppq
+// integrates the tempo map per sample. The clock predicts the block end with the
+// reported bpm, so a step or ramp inside a block shows up as a start difference
+// at the next block. That is a tempo change, never a jump.
+
+namespace {
+
+struct TempoMapRun {
+    std::vector<uint32_t> m_flags;
+    std::vector<double> m_start;       // resolved start beat
+    std::vector<double> m_end;         // resolved end beat
+    std::vector<double> m_host_start;  // the host's reported start beat
+    std::vector<double> m_bpm;
+};
+
+TempoMapRun run_tempo_map(sim::SimHost& host, uint32_t block, uint64_t samples) {
+    HostTransportClock clk;
+    clk.prepare(k_sr);
+    TempoMapRun r;
+    while (host.now() < samples) {
+        const auto h = host.next_block(block);
+        const auto info = run(clk, &h, block);
+        r.m_flags.push_back(info.discontinuities());
+        r.m_start.push_back(info.m_beat_position);
+        r.m_end.push_back(info.beat_end());
+        r.m_host_start.push_back(h.m_beat_position);
+        r.m_bpm.push_back(info.m_bpm);
+    }
+    return r;
+}
+
+// Every block after the first continues the previous one.
+void expect_continuous(const TempoMapRun& r) {
+    for (size_t b = 1; b < r.m_flags.size(); ++b) {
+        ASSERT_EQ(r.m_flags[b] & TransportInfo::k_jumped, 0u) << "block " << b;
+        ASSERT_NEAR(r.m_start[b], r.m_end[b - 1], 1e-9) << "block " << b;
+    }
+}
+
+}  // namespace
+
+class HostTransportClockTempoMap : public ::testing::TestWithParam<uint32_t> {};
+
+INSTANTIATE_TEST_SUITE_P(Blocks,
+                         HostTransportClockTempoMap,
+                         ::testing::Values(64u, 256u, 1024u, 2048u),
+                         [](const auto& info) { return "Block" + std::to_string(info.param); });
+
+// Steps up and down, one sample into a block and in the middle of one: the
+// block that reports the new tempo gets k_tempo_changed only, is re-sloped onto
+// the host's next start, and from the block after it the clock is the host.
+TEST_P(HostTransportClockTempoMap, NoJumpOnMidBlockTempoStep) {
+    const uint32_t block = GetParam();
+    for (const double to : {180.0, 60.0}) {
+        for (const uint32_t into : {1u, block / 2}) {
+            SCOPED_TRACE(testing::Message() << "to " << to << " bpm, " << into << " into");
+            sim::SimHost host(k_sr, 120.0);
+            const uint64_t at = (((96000 + block - 1) / block) * block) + into;
+            host.add({.m_sample = 0, .m_kind = sim::Event::Kind::Play});
+            host.add({.m_sample = at, .m_kind = sim::Event::Kind::TempoAt, .m_a = to});
+            const TempoMapRun r = run_tempo_map(host, block, 192000);
+            expect_continuous(r);
+            const size_t changed = (at / block) + 1;  // first block that reports `to`
+            for (size_t b = 1; b < r.m_flags.size(); ++b) {
+                const uint32_t want = b == changed ? TransportInfo::k_tempo_changed : 0u;
+                ASSERT_EQ(r.m_flags[b], want) << "block " << b;
+            }
+            EXPECT_NEAR(r.m_end[changed], r.m_host_start[changed + 1], 1e-9);
+            for (size_t b = changed + 1; b < r.m_flags.size(); ++b) {
+                ASSERT_NEAR(r.m_start[b], r.m_host_start[b], 1e-9) << "block " << b;
+            }
+        }
+    }
+}
+
+// Linear ramps over 2 s, up and down: k_tempo_changed on every ramp block, no
+// jump, and the clock trails the host by at most one block of the per-block
+// tempo difference. A DAW loop wrap during the ramp still jumps.
+TEST_P(HostTransportClockTempoMap, NoJumpOnTempoRamp) {
+    const uint32_t block = GetParam();
+    for (const double to : {60.0, 180.0}) {
+        SCOPED_TRACE(testing::Message() << "to " << to << " bpm");
+        sim::SimHost host(k_sr, 120.0);
+        host.add({.m_sample = 0, .m_kind = sim::Event::Kind::Play});
+        host.add(
+            {.m_sample = 72000, .m_kind = sim::Event::Kind::TempoRamp, .m_a = to, .m_b = 96000});
+        const TempoMapRun r = run_tempo_map(host, block, 240000);
+        expect_continuous(r);
+        size_t tempo_blocks = 0;
+        for (size_t b = 1; b < r.m_flags.size(); ++b) {
+            const double bound =
+                (block * std::abs(r.m_bpm[b] - r.m_bpm[b - 1]) / (60.0 * k_sr)) + 1e-9;
+            ASSERT_LE(std::abs(r.m_start[b] - r.m_host_start[b]), bound) << "block " << b;
+            if (r.m_flags[b] == TransportInfo::k_tempo_changed) { ++tempo_blocks; }
+        }
+        EXPECT_GE(tempo_blocks, (96000 / block) - 1);
+        EXPECT_NEAR(r.m_start.back(), r.m_host_start.back(), 1e-9);  // ramp over: exact again
+    }
+    {
+        // A 2-beat DAW loop during a ramp: every wrap is a jump, nothing else is.
+        sim::SimHost host(k_sr, 120.0);
+        host.add({.m_sample = 0, .m_kind = sim::Event::Kind::Play});
+        host.add({.m_sample = 0, .m_kind = sim::Event::Kind::Loop, .m_a = 0.0, .m_b = 2.0});
+        host.add(
+            {.m_sample = 0, .m_kind = sim::Event::Kind::TempoRamp, .m_a = 60.0, .m_b = 192000});
+        HostTransportClock clk;
+        clk.prepare(k_sr);
+        int jumps = 0;
+        int wraps = 0;
+        double prev_host = 0.0;
+        while (host.now() < 192000) {
+            const auto h = host.next_block(block);
+            const auto info = run(clk, &h, block);
+            if (h.m_beat_position < prev_host) { ++wraps; }
+            prev_host = h.m_beat_position;
+            if (info.has(TransportInfo::k_jumped)) {
+                ++jumps;
+                EXPECT_LT(info.m_jump_delta_beats, -1.9);
+            }
+        }
+        EXPECT_GT(wraps, 0);
+        EXPECT_EQ(jumps, wraps);
+    }
+}
+
+// A seek in the block that also reports a tempo step is still a jump, in both
+// directions, including one smaller than a block.
+TEST_P(HostTransportClockTempoMap, SeekWithTempoStepStillJumps) {
+    const uint32_t block = GetParam();
+    for (const double shift : {0.05, -0.05, 3.0}) {
+        SCOPED_TRACE(testing::Message() << "shift " << shift);
+        sim::SimHost host(k_sr, 120.0);
+        const uint64_t boundary = ((96000 + block - 1) / block) * block;
+        host.add({.m_sample = 0, .m_kind = sim::Event::Kind::Play});
+        host.add({.m_sample = boundary - (block / 2),
+                  .m_kind = sim::Event::Kind::TempoAt,
+                  .m_a = 125.0});
+        host.add({.m_sample = boundary, .m_kind = sim::Event::Kind::Shift, .m_a = shift});
+        const TempoMapRun r = run_tempo_map(host, block, 144000);
+        const size_t b = boundary / block;
+        EXPECT_TRUE((r.m_flags[b] & TransportInfo::k_jumped) != 0);
+        EXPECT_TRUE((r.m_flags[b] & TransportInfo::k_tempo_changed) != 0);
+        EXPECT_DOUBLE_EQ(r.m_start[b], r.m_host_start[b]);
+        for (size_t k = 1; k < r.m_flags.size(); ++k) {
+            if (k != b) { ASSERT_EQ(r.m_flags[k] & TransportInfo::k_jumped, 0u) << k; }
+        }
+    }
+}
+
 TEST(HostTransportClock, JitteryHostPpqIsAbsorbed) {
     HostTransportClock clk;
     clk.prepare(k_sr);

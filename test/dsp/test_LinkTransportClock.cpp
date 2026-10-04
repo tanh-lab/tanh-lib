@@ -90,6 +90,37 @@ TEST(LinkTransportClock, FakeLink_DeterministicScript) {
     EXPECT_EQ(link.m_set_tempo_calls, 0);  // never pushed a local tempo
 }
 
+// A peer's tempo change reaches us after the time it applies from: the session
+// keeps the beat continuous at that time, which lies inside our previous block,
+// so the new start is ahead of the end we predicted at the old tempo. Same
+// contract as a host's in-block tempo change: k_tempo_changed, not k_jumped, and
+// the slope lands on the session's timeline.
+TEST(LinkTransportClock, PeerTempoChangeInsidePreviousBlockIsNotAJump) {
+    fake::FakeLinkBackend link;
+    LinkTransportClock clk(link);
+    clk.prepare(k_sr);
+    link.m_session.m_playing = true;
+    double prev_end = 0.0;
+    for (int b = 0; b < 40; ++b) {
+        const int64_t t0 = b * k_block_us;
+        if (b == 10) { link.peer_set_tempo(180.0, t0 - 4000); }  // 4 ms into block 9
+        if (b == 20) { link.peer_set_tempo(90.0, t0 - 9000); }   // 1 ms into block 19
+        clk.begin_block(k_frames, t0);
+        const auto info = clk.block_info();
+        if (b > 0) {
+            const uint32_t want = (b == 10 || b == 20) ? TransportInfo::k_tempo_changed : 0u;
+            ASSERT_EQ(info.discontinuities(), want) << "block " << b;
+            ASSERT_NEAR(info.m_beat_position, prev_end, 1e-9) << "block " << b;
+        }
+        if (b == 10 || b == 20) {
+            // Re-sloped onto the session timeline at the block end.
+            EXPECT_NEAR(info.beat_end(), link.m_session.beat_at(t0 + k_block_us), 1e-9);
+        }
+        prev_end = info.beat_end();
+        clk.end_block();
+    }
+}
+
 TEST(LinkTransportClock, HostTimeJitterRaisesNoFlags) {
     fake::FakeLinkBackend link;
     LinkTransportClock clk(link);

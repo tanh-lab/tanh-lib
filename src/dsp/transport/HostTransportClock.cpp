@@ -60,6 +60,8 @@ void HostTransportClock::begin_block(uint32_t frame_count,
     double end = 0.0;
     if (host.has(TransportInfo::k_has_beat_position)) {
         start = host.m_beat_position;
+        // Predicted with the block-start tempo (all a per-block host reports). An
+        // in-block tempo change is absorbed by the tracker at the next block.
         end = playing ? start + static_cast<double>(frame_count) * bps : start;
         m_free_valid = false;  // a later free-run continues from this block's end
     } else {

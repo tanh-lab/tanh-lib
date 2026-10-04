@@ -105,13 +105,15 @@ struct TransportInfo {
     static constexpr uint32_t k_is_recording = 1u << 10;
 
     // ── Discontinuities vs. the previous block (set by the clock only) ─────
-    /// beat(start) differs from the previous block's beat(end) beyond the
-    /// tolerance: seek, host loop wrap, Link phase realignment.
-    /// m_jump_delta_beats holds beat(start) - expected.
+    /// beat(start) differs from the previous block's beat(end) beyond what jitter
+    /// and a tempo change explain: seek, host loop wrap, Link phase realignment.
+    /// m_jump_delta_beats holds beat(start) - expected. The only jump detector:
+    /// consumers react to this flag and never compare beats themselves.
     static constexpr uint32_t k_jumped = 1u << 16;
     static constexpr uint32_t k_started = 1u << 17;  ///< stopped → playing
     static constexpr uint32_t k_stopped = 1u << 18;  ///< playing → stopped
-    /// |bpm - previous bpm| > 1e-6. Not a jump: the beat stays continuous.
+    /// |bpm - previous bpm| > 1e-6. Not a jump: the beat stays continuous, also
+    /// when the tempo changed inside the previous block (the slope absorbs it).
     static constexpr uint32_t k_tempo_changed = 1u << 19;
     /// First block after prepare()/reset(), a clock switch or Link enable. No
     /// k_jumped/k_started is reported for this block; treat it like k_jumped and
@@ -187,13 +189,23 @@ static_assert(std::is_trivially_copyable_v<TransportInfo>);
  * raw beat at the block end. resolve() compares the start against the previous
  * block's end:
  *
- * - |start - expected| <= tolerance: the start snaps to the expected beat and the
- *   slope is recomputed to land on the raw end beat. This absorbs host ppq jitter
- *   and Link host-time jitter without accumulating error.
- * - beyond the tolerance: k_jumped with m_jump_delta_beats = start - expected.
+ * - start - expected inside the window: the start snaps to the expected beat and
+ *   the slope is recomputed to land on the raw end beat. This absorbs host ppq
+ *   jitter, Link host-time jitter and in-block tempo changes without
+ *   accumulating error: a consumer that integrates m_beats_per_sample lands on
+ *   the source's end beat.
+ * - outside the window: k_jumped with m_jump_delta_beats = start - expected.
  *
- * tolerance = max(N samples worth of beats at the current bpm, 1e-6), N = 2 by
- * default (set_tolerance_samples()).
+ * The window is [min(0, e) - tol, max(0, e) + tol]:
+ * - tol = max(N samples worth of beats at the current bpm, 1e-6), N = 2 by
+ *   default (set_tolerance_samples()), for jitter;
+ * - e = prev_frames * (bpm - prev_bpm) / (60 * sample_rate) if the previous block
+ *   moved, else 0. A source that reports one tempo per block (JUCE, VST3) has its
+ *   block end predicted with that tempo, so a tempo step or ramp inside the
+ *   previous block shows up as a start difference of at most e, in the direction
+ *   of the tempo change. That is a tempo change (k_tempo_changed), not a jump.
+ *   A seek smaller than e in the same direction is absorbed too.
+ *
  * It also sets k_started / k_stopped / k_tempo_changed, and k_timeline_reset on the
  * first block after prepare() or reset().
  *
@@ -227,7 +239,7 @@ public:
     /// Jitter tolerance in samples (default 2). Not reset by prepare()/reset().
     void set_tolerance_samples(double samples) noexcept;
 
-    /// Tolerance used for the given bpm.
+    /// Jitter tolerance in beats for the given bpm (the tempo term comes on top).
     [[nodiscard]] double tolerance_beats(double bpm) const noexcept TANH_NONBLOCKING_FUNCTION;
 
 private:
@@ -235,6 +247,8 @@ private:
     double m_tolerance_samples = 2.0;
     double m_prev_end = 0.0;
     double m_prev_bpm = 0.0;
+    double m_prev_frames = 0.0;
+    bool m_prev_moving = false;
     bool m_prev_playing = false;
     bool m_reset_pending = true;
 };

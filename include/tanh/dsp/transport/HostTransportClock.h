@@ -19,7 +19,10 @@ namespace thl::dsp::transport {
  * before begin_block(). Fields the host omits come from the fallbacks set with
  * set_bpm(), set_time_signature(), play()/stop() and set_position_beats():
  *
- * - Tempo: host if k_has_tempo, else the fallback bpm. Latched per block.
+ * - Tempo: host if k_has_tempo, else the fallback bpm. Latched per block. The
+ *   block end is predicted with it; a tempo step or ramp inside the block (a DAW
+ *   tempo map) shows up as a small start difference at the next block, which the
+ *   ContinuityTracker absorbs (k_tempo_changed, not k_jumped).
  * - Play state: host k_is_playing if the host reported any musical field
  *   (tempo, beat, time signature, bar start or loop), else the fallback.
  * - Beat: host if k_has_beat_position (constant within the block while

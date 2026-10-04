@@ -32,18 +32,35 @@ Helpers: `phase(unit, offset)` (negative-safe, `-0.5` mod 4 = 3.5),
 ### Discontinuities
 
 Every clock feeds its raw per-block beats through a `ContinuityTracker`. It
-compares the block's start beat with the previous block's end:
+compares the block's start beat with the previous block's end (the expected
+beat):
 
-- within the tolerance (2 samples worth of beats; 0.5 ms for Link) the start
-  snaps to the expected beat, which absorbs host ppq jitter and host-time
-  jitter without accumulating error;
-- beyond it the block gets `k_jumped` and `m_jump_delta_beats`.
+- inside the window the start snaps to the expected beat and the slope is
+  re-fitted to land on the source's end beat. This absorbs host ppq jitter,
+  host-time jitter and tempo changes inside a block without accumulating error;
+  a consumer that integrates `m_beats_per_sample` lands on the source's beat;
+- outside it the block gets `k_jumped` and `m_jump_delta_beats`.
+
+The window is `[min(0, e) - tol, max(0, e) + tol]`:
+
+- `tol` is the jitter tolerance: 2 samples worth of beats (0.5 ms for Link);
+- `e = prev_frames · (bpm - prev_bpm) / (60 · sample_rate)` when the previous
+  block moved, else 0. A host reports one tempo per block (JUCE, VST3: the tempo
+  at the block start), and the clock predicts the block end with it. A tempo
+  step or ramp inside the block (DAW tempo map, tempo automation, a Link peer)
+  therefore shows up at the next block as a start difference of at most `e`, in
+  the direction of the tempo change. Example: 512 samples at 48 kHz with 120 →
+  80 BPM in the middle of the block is 0.0036 beats (85 samples at 120 BPM),
+  far beyond the jitter tolerance but inside `e` = 0.0071 beats.
+
+A seek smaller than `e` in the same direction as the tempo change is absorbed
+too; any other seek, loop wrap or realignment is still `k_jumped`.
 
 | Flag | Raised when |
 |---|---|
 | `k_jumped` | seek, DAW loop wrap, Link phase realignment |
 | `k_started` / `k_stopped` | play state changed against the previous block |
-| `k_tempo_changed` | bpm differs by more than 1e-6 (the beat stays continuous: not a jump) |
+| `k_tempo_changed` | bpm differs by more than 1e-6 (the beat stays continuous: not a jump, also for a change inside the previous block) |
 | `k_timeline_reset` | first block after `prepare()`; with Link also when Link was enabled or the first peer joined *and* the beat moved |
 
 ### Consumer contract

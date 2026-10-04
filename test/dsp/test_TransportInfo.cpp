@@ -146,6 +146,73 @@ TEST(ContinuityTracker, HoldingSourceStaysFlatUnderJitter) {
     EXPECT_DOUBLE_EQ(b.m_beats_per_sample, 0.0);
 }
 
+// A tempo step 120 → 180 halfway through a 1024-sample block: the host reports
+// 180 at the next block, whose start is ahead of the predicted end by half a
+// block of the tempo difference. That is a tempo change, not a jump; the start
+// snaps and the slope lands on the raw end.
+TEST(ContinuityTracker, AbsorbsTempoChangeInsidePreviousBlock) {
+    ContinuityTracker tracker;
+    tracker.prepare(k_sr);
+    const double fast = 180.0 / (60.0 * k_sr);
+    auto a = raw(0.0, true);
+    tracker.resolve(a, 1024 * k_bps, 1024);
+    auto b = raw(1024 * k_bps, true);
+    tracker.resolve(b, 2048 * k_bps, 1024);
+    const double host = (2048 * k_bps) + (512 * (fast - k_bps));  // real position
+    auto c = raw(host, true, 180.0);
+    tracker.resolve(c, host + (1024 * fast), 1024);
+    EXPECT_EQ(c.discontinuities(), TransportInfo::k_tempo_changed);
+    EXPECT_DOUBLE_EQ(c.m_beat_position, b.beat_end());
+    EXPECT_NEAR(c.beat_end(), host + (1024 * fast), 1e-12);  // lands on the host's end
+    auto d = raw(host + (1024 * fast), true, 180.0);
+    tracker.resolve(d, host + (2048 * fast), 1024);
+    EXPECT_EQ(d.discontinuities(), 0u);
+    EXPECT_DOUBLE_EQ(d.m_beat_position, host + (1024 * fast));
+}
+
+// The tempo window points in the direction of the change: a faster tempo can
+// only put the host ahead of the prediction, never behind it. And it is no
+// wider than one previous block of the tempo difference.
+TEST(ContinuityTracker, TempoWindowIsSignedAndBounded) {
+    const double fast = 180.0 / (60.0 * k_sr);
+    const double e = 1024 * (fast - k_bps);
+    auto third_block = [&](double delta) {
+        ContinuityTracker tracker;
+        tracker.prepare(k_sr);
+        auto a = raw(0.0, true);
+        tracker.resolve(a, 1024 * k_bps, 1024);
+        auto b = raw(1024 * k_bps, true);
+        tracker.resolve(b, 2048 * k_bps, 1024);
+        auto c = raw((2048 * k_bps) + delta, true, 180.0);
+        tracker.resolve(c, (2048 * k_bps) + delta + (1024 * fast), 1024);
+        return c;
+    };
+    EXPECT_FALSE(third_block(e).has(TransportInfo::k_jumped));
+    EXPECT_FALSE(third_block(0.0).has(TransportInfo::k_jumped));  // change at the block end
+    const auto behind = third_block(-10.0 * k_bps);
+    EXPECT_TRUE(behind.has(TransportInfo::k_jumped));
+    EXPECT_TRUE(behind.has(TransportInfo::k_tempo_changed));
+    EXPECT_NEAR(behind.m_jump_delta_beats, -10.0 * k_bps, 1e-12);
+    EXPECT_TRUE(third_block(e + (10.0 * k_bps)).has(TransportInfo::k_jumped));
+    EXPECT_TRUE(third_block(0.25).has(TransportInfo::k_jumped));  // a seek stays a seek
+}
+
+// A source that did not move in the previous block (stopped) gets no tempo term:
+// its prediction did not depend on the tempo.
+TEST(ContinuityTracker, NoTempoWindowAfterAHeldBlock) {
+    ContinuityTracker tracker;
+    tracker.prepare(k_sr);
+    auto a = raw(2.0, false);
+    tracker.resolve(a, 2.0, 1024);
+    auto b = raw(2.0, false);
+    tracker.resolve(b, 2.0, 1024);
+    const double e = 1024 * (180.0 - k_bpm) / (60.0 * k_sr);
+    auto c = raw(2.0 + e, true, 180.0);
+    tracker.resolve(c, 2.0 + e + (1024 * 180.0 / (60.0 * k_sr)), 1024);
+    EXPECT_TRUE(c.has(TransportInfo::k_jumped));
+    EXPECT_TRUE(c.has(TransportInfo::k_started));
+}
+
 // ── InternalTransportClock discontinuities ───────────────────────────────────
 
 TEST(InternalTransportClockInfo, ReportsSeekStartStopAndReset) {

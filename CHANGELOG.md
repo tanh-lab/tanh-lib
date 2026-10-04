@@ -133,6 +133,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `tanh/dsp/transport/TransportInfo.h` (still included by `TransportClock.h`).
   `TransportClock`'s vtable grew (`block_info()`, `discontinuities()`): an ABI change.
 
+### Fixed
+
+- `ContinuityTracker`: a tempo change inside a block (DAW tempo map step or ramp,
+  tempo automation, a Link peer's change applied in the past) is a tempo change, not
+  a jump. Hosts report one tempo per block, so the predicted block end missed the
+  next start by up to `frames · Δbps`, and the 2-sample tolerance flagged
+  `k_jumped`; the recorder then shifted a running bar take off the bar grid (0.04
+  beats at 2048 samples, 120 → 180 BPM) and a playing lane glided. The window is now
+  `[min(0, e) - tol, max(0, e) + tol]` with `e = prev_frames · (bpm - prev_bpm) / (60
+  · sr)`: inside it the start snaps and the slope lands on the source's end, and
+  `k_tempo_changed` is set. Seeks, loop wraps and realignments still jump. Tests:
+  `ContinuityTracker.AbsorbsTempoChangeInsidePreviousBlock`,
+  `ContinuityTracker.TempoWindowIsSignedAndBounded`,
+  `ContinuityTracker.NoTempoWindowAfterAHeldBlock`, `HostTransportClockTempoMap.*`,
+  `LinkTransportClock.PeerTempoChangeInsidePreviousBlockIsNotAJump`,
+  `MotionRecorderTempoMap.*` (SimHost gains a sample-accurate tempo map:
+  `TempoAt`, `TempoRamp`).
+
 ### Deprecated
 
 - `SmartHandle<T>::raw_handle()` now returns `std::optional<thl::ParameterHandle<T>>`
