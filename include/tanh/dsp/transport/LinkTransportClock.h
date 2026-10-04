@@ -31,7 +31,10 @@ namespace thl::dsp::transport {
  * 3. Beats at t0 and at the block's end feed a ContinuityTracker, which absorbs
  *    host-time jitter and flags a phase realignment as k_jumped. When Link was
  *    enabled or the first peer joined (LinkBackend::timeline_epoch()) and the beat
- *    moved, k_timeline_reset is reported too.
+ *    moved, k_timeline_reset is reported too. A peer's tempo change dated
+ *    within ±50 ms of the block start (peers date it at their output time) is
+ *    a tempo change, not a jump (ContinuityTracker::set_tempo_window_samples()),
+ *    except in a block where the epoch changed.
  *
  * Play state: the block plays if the session plays and its start time lies
  * before the block's end, so k_started lands in the block that contains the
@@ -101,6 +104,7 @@ private:
     uint64_t m_sample_position = 0;
     int64_t m_t0_us = 0;
     uint64_t m_seen_epoch = 0;
+    double m_tempo_window_samples = 0.0;
 
     TransportInfo m_info{};
     ContinuityTracker m_tracker;

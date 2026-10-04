@@ -26,6 +26,11 @@ void ContinuityTracker::set_tolerance_samples(double samples) noexcept {
     if (samples >= 0.0) { m_tolerance_samples = samples; }
 }
 
+void ContinuityTracker::set_tempo_window_samples(double samples) noexcept
+    TANH_NONBLOCKING_FUNCTION {
+    if (samples >= 0.0) { m_tempo_window_samples = samples; }
+}
+
 void ContinuityTracker::reset() noexcept TANH_NONBLOCKING_FUNCTION {
     m_reset_pending = true;
 }
@@ -56,10 +61,15 @@ void ContinuityTracker::resolve(TransportInfo& io,
         // with the previous block's start tempo. A tempo change inside that
         // block (tempo map step or ramp, Link peer) moved the real position by
         // at most prev_frames * (bps - prev_bps), in the direction of the change.
-        const double tempo_extra =
-            m_prev_moving ? m_prev_frames * (io.m_bpm - m_prev_bpm) / (60.0 * m_sample_rate) : 0.0;
-        const double low = std::min(0.0, tempo_extra) - jitter;
-        const double high = std::max(0.0, tempo_extra) + jitter;
+        const double tempo_step = (io.m_bpm - m_prev_bpm) / (60.0 * m_sample_rate);
+        const double tempo_extra = m_prev_moving ? m_prev_frames * tempo_step : 0.0;
+        // A change dated up to the window before or after the block start (Link:
+        // one timeline line, the change at a peer's output time) moves the start
+        // by up to window * (bps - prev_bps) in either direction.
+        const double tempo_window =
+            m_prev_moving ? m_tempo_window_samples * std::abs(tempo_step) : 0.0;
+        const double low = std::min(0.0, tempo_extra) - tempo_window - jitter;
+        const double high = std::max(0.0, tempo_extra) + tempo_window + jitter;
         if (delta < low || delta > high) {
             io.m_flags |= TransportInfo::k_jumped;
             io.m_jump_delta_beats = delta;

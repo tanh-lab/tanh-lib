@@ -113,7 +113,8 @@ struct TransportInfo {
     static constexpr uint32_t k_started = 1u << 17;  ///< stopped → playing
     static constexpr uint32_t k_stopped = 1u << 18;  ///< playing → stopped
     /// |bpm - previous bpm| > 1e-6. Not a jump: the beat stays continuous, also
-    /// when the tempo changed inside the previous block (the slope absorbs it).
+    /// when the tempo changed inside the previous block or a Link peer's change
+    /// is dated a little before or after the block start (the slope absorbs it).
     static constexpr uint32_t k_tempo_changed = 1u << 19;
     /// First block after prepare()/reset(), a clock switch or Link enable. No
     /// k_jumped/k_started is reported for this block; treat it like k_jumped and
@@ -196,7 +197,7 @@ static_assert(std::is_trivially_copyable_v<TransportInfo>);
  *   the source's end beat.
  * - outside the window: k_jumped with m_jump_delta_beats = start - expected.
  *
- * The window is [min(0, e) - tol, max(0, e) + tol]:
+ * The window is [min(0, e, -w) - tol, max(0, e, w) + tol]:
  * - tol = max(N samples worth of beats at the current bpm, 1e-6), N = 2 by
  *   default (set_tolerance_samples()), for jitter;
  * - e = prev_frames * (bpm - prev_bpm) / (60 * sample_rate) if the previous block
@@ -205,6 +206,10 @@ static_assert(std::is_trivially_copyable_v<TransportInfo>);
  *   previous block shows up as a start difference of at most e, in the direction
  *   of the tempo change. That is a tempo change (k_tempo_changed), not a jump.
  *   A seek smaller than e in the same direction is absorbed too.
+ * - w = window * |bpm - prev_bpm| / (60 * sample_rate) if the previous block
+ *   moved, else 0, with window = set_tempo_window_samples() (default 0): a
+ *   source with one timeline line whose tempo changes are dated away from the
+ *   block start (Link) moves the start by up to w in either direction.
  *
  * It also sets k_started / k_stopped / k_tempo_changed, and k_timeline_reset on the
  * first block after prepare() or reset().
@@ -239,12 +244,27 @@ public:
     /// Jitter tolerance in samples (default 2). Not reset by prepare()/reset().
     void set_tolerance_samples(double samples) noexcept;
 
+    /**
+     * @brief How far from the block start a tempo change may be dated (default 0).
+     *
+     * For a source whose timeline is one line (tempo, origin) and whose tempo
+     * changes are dated away from the block that first sees them, like a Link
+     * session: a peer applies a change at its output time, which can lie before
+     * (network delay) or after (its output latency) our block start, and the new
+     * line also applies before that time. The start then differs from the
+     * predicted end by up to samples * |bpm - prev_bpm| / (60 * sample_rate) in
+     * either direction, which is absorbed like an in-block change. Hosts keep 0.
+     * Not reset by prepare()/reset().
+     */
+    void set_tempo_window_samples(double samples) noexcept TANH_NONBLOCKING_FUNCTION;
+
     /// Jitter tolerance in beats for the given bpm (the tempo term comes on top).
     [[nodiscard]] double tolerance_beats(double bpm) const noexcept TANH_NONBLOCKING_FUNCTION;
 
 private:
     double m_sample_rate = 48000.0;
     double m_tolerance_samples = 2.0;
+    double m_tempo_window_samples = 0.0;
     double m_prev_end = 0.0;
     double m_prev_bpm = 0.0;
     double m_prev_frames = 0.0;

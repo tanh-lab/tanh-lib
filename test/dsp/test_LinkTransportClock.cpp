@@ -121,6 +121,62 @@ TEST(LinkTransportClock, PeerTempoChangeInsidePreviousBlockIsNotAJump) {
     }
 }
 
+// Peers apply a tempo change at their output time, so the first block that sees
+// it may start before that time (or well after it, delayed by the network).
+// Link's timeline is one line: the new tempo also applies before the change
+// time. Within ±50 ms of the block start that is a tempo change, not a jump.
+TEST(LinkTransportClock, PeerTempoChangeDatedAwayFromTheBlockIsNotAJump) {
+    fake::FakeLinkBackend link;
+    LinkTransportClock clk(link);
+    clk.prepare(k_sr);
+    link.m_session.m_playing = true;
+    double prev_end = 0.0;
+    for (int b = 0; b < 40; ++b) {
+        const int64_t t0 = b * k_block_us;
+        if (b == 10) { link.peer_set_tempo(180.0, t0 + 8000); }   // inside block 10
+        if (b == 20) { link.peer_set_tempo(90.0, t0 + 45000); }   // 4.5 blocks ahead
+        if (b == 30) { link.peer_set_tempo(140.0, t0 - 40000); }  // 4 blocks late
+        clk.begin_block(k_frames, t0);
+        const auto info = clk.block_info();
+        if (b > 0) {
+            const bool change = b == 10 || b == 20 || b == 30;
+            ASSERT_EQ(info.discontinuities(), change ? TransportInfo::k_tempo_changed : 0u)
+                << "block " << b;
+            ASSERT_NEAR(info.m_beat_position, prev_end, 1e-9) << "block " << b;
+            ASSERT_NEAR(info.beat_end(), link.m_session.beat_at(t0 + k_block_us), 1e-9)
+                << "block " << b;
+        }
+        prev_end = info.beat_end();
+        clk.end_block();
+    }
+}
+
+// The tempo window is not applied when the epoch changed (Link enabled, first
+// peer joined): a small phase realignment that comes with a tempo change is still
+// reported as a jump.
+TEST(LinkTransportClock, JoinRealignmentWithTempoChangeIsAJump) {
+    fake::FakeLinkBackend link;
+    LinkTransportClock clk(link);
+    clk.prepare(k_sr);
+    link.m_session.m_playing = true;
+    for (int b = 0; b < 10; ++b) {
+        const int64_t t0 = b * k_block_us;
+        if (b == 5) {
+            link.peer_join_realign(0.005, t0);
+            link.peer_set_tempo(130.0, t0 + 40000);
+        }
+        clk.begin_block(k_frames, t0);
+        if (b == 5) {
+            EXPECT_EQ(clk.discontinuities(),
+                      TransportInfo::k_jumped | TransportInfo::k_tempo_changed |
+                          TransportInfo::k_timeline_reset);
+        } else if (b > 0) {
+            EXPECT_EQ(clk.discontinuities(), 0u) << "block " << b;
+        }
+        clk.end_block();
+    }
+}
+
 TEST(LinkTransportClock, HostTimeJitterRaisesNoFlags) {
     fake::FakeLinkBackend link;
     LinkTransportClock clk(link);

@@ -18,6 +18,12 @@ constexpr double k_micros_per_second = 1e6;
 // start-vs-expected difference). A Link phase realignment moves the beat by a
 // fraction of the quantum, orders of magnitude more.
 constexpr double k_jitter_tolerance_us = 500.0;
+// Peers apply tempo changes at their output time (LinkHut: callback host time +
+// output latency). The block that first sees a change can start after that time
+// (network and thread delays) or before it (the peer's latency exceeds ours),
+// and Link's timeline is one line, so the new tempo also applies before the
+// change time. Changes dated within ±50 ms of the block start are tempo changes.
+constexpr double k_peer_tempo_window_us = 50000.0;
 }  // namespace
 
 LinkTransportClock::LinkTransportClock(LinkBackend& backend) : m_backend(backend) {}
@@ -27,6 +33,7 @@ void LinkTransportClock::prepare(double sample_rate) {
     m_tracker.prepare(m_sample_rate);
     m_tracker.set_tolerance_samples(
         std::max(2.0, k_jitter_tolerance_us * m_sample_rate / k_micros_per_second));
+    m_tempo_window_samples = k_peer_tempo_window_us * m_sample_rate / k_micros_per_second;
     m_sample_position = 0;
     m_filter_count = 0;
     m_filter_index = 0;
@@ -140,6 +147,8 @@ void LinkTransportClock::begin_block(uint32_t frame_count,
     const bool epoch_changed = epoch != m_seen_epoch;
     m_seen_epoch = epoch;
 
+    // A join realigns the phase: never absorb that as a peer's tempo change.
+    m_tracker.set_tempo_window_samples(epoch_changed ? 0.0 : m_tempo_window_samples);
     m_tracker.resolve(info, b1, frame_count);
     if (epoch_changed && info.has(TransportInfo::k_jumped)) {
         info.m_flags |= TransportInfo::k_timeline_reset;
