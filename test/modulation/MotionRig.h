@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "../dsp/SimHost.h"
@@ -44,8 +45,17 @@ struct Rig {
     void shift_at(uint64_t sample, double beats) {
         m_host.add({sample, sim::Event::Kind::Shift, beats});
     }
+    /// Tempo change at the next block boundary (the host reports it exactly).
     void tempo_at(uint64_t sample, double bpm) {
         m_host.add({sample, sim::Event::Kind::Tempo, bpm});
+    }
+    /// Tempo-map step at exactly @p sample, also inside a block.
+    void tempo_step_at(uint64_t sample, double bpm) {
+        m_host.add({sample, sim::Event::Kind::TempoAt, bpm});
+    }
+    /// Tempo-map ramp from the current tempo to @p bpm over @p samples from @p sample.
+    void tempo_ramp_at(uint64_t sample, double bpm, uint64_t samples) {
+        m_host.add({sample, sim::Event::Kind::TempoRamp, bpm, static_cast<double>(samples)});
     }
     void loop_at(uint64_t sample, double start, double end) {
         m_host.add({sample, sim::Event::Kind::Loop, start, end});
@@ -61,6 +71,7 @@ struct Rig {
         TransportInfo info = m_clock.block_info();
         info.m_flags |= m_extra_flags;
         m_extra_flags = 0;
+        if (m_before_pad) { m_before_pad(info); }
         m_pad.process_block(n);
         m_rec.process(info, m_pad.primary(), n);
         for (uint32_t i = 0; i < n; ++i) {
@@ -88,6 +99,9 @@ struct Rig {
     thl::modulation::XYPad m_pad;
     thl::modulation::MotionRecorder m_rec;
     uint32_t m_extra_flags = 0;  // OR'ed into the next block's TransportInfo (hints)
+    /// Called with the block's TransportInfo before the pad drains its touches
+    /// (a finger that follows the transport beat).
+    std::function<void(const TransportInfo&)> m_before_pad;
     uint64_t m_now = 0;
 
     std::vector<float> m_x, m_y;
