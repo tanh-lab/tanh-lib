@@ -78,7 +78,12 @@ TEST(LinkSession, LocalStartAndTempoRequest) {
     EXPECT_NEAR(clk.bpm(), 150.0, 1e-9);
     EXPECT_NEAR(clk.beat_at_sample(0), 0.0, 1e-6);  // quantized launch alone: beat 0 now
     clk.end_block();
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // The app-side state follows the audio commit on Link's thread: poll.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::abs(session.tempo() - 150.0) > 1e-9 &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
     EXPECT_NEAR(session.tempo(), 150.0, 1e-9);  // committed to the session
 }
 
