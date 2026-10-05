@@ -367,8 +367,14 @@ TEST(OversizedBlocksDeathTest, MatrixRejectsBlocksAboveThePreparedSize) {
     matrix.process(k_bs);
     // Under RTSan the assert's own message write is reported first (the matrix
     // runs as a non-blocking function), so either report marks the violation.
+    // googletest's simple regex (Windows) has no alternation; RTSan is
+    // clang-only and never runs there.
+#if GTEST_USES_SIMPLE_RE
+    EXPECT_DEBUG_DEATH(matrix.process(k_bs + 1), "exceeds the prepared samples_per_block");
+#else
     EXPECT_DEBUG_DEATH(matrix.process(k_bs + 1),
                        "exceeds the prepared samples_per_block|RealtimeSanitizer");
+#endif
 }
 #endif  // GTEST_HAS_DEATH_TEST
 
