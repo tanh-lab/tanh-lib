@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -348,6 +349,13 @@ void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
 
 void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
                                           size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+    // 0. Every buffer holds the prepared maximum: the caller splits larger host
+    //    blocks (see "Block size" in docs/sphinx/transport.md). Clamp so a
+    //    violation in a release build cannot write past the buffers.
+    assert(num_samples <= config.m_max_block_size &&
+           "ModulationMatrix: num_samples exceeds the prepared samples_per_block");
+    num_samples = std::min(num_samples, config.m_max_block_size);
+
     // 1. Source per-block reset. Wipes change-point lists by default. Value
     //    buffers and active masks are intentionally *not* touched here —
     //    those are source-authored state (an event-driven source like
@@ -1085,6 +1093,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         config.m_schedule = std::move(new_schedule);
         config.m_active_targets = std::move(new_active_targets);
         config.m_all_sources = std::move(new_all_sources);
+        config.m_max_block_size = m_samples_per_block;
         config.m_routings_by_source.clear();
         for (const auto& r : config.m_routings) {
             config.m_routings_by_source[r.m_source].push_back(&r);

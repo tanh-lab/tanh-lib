@@ -62,6 +62,11 @@ struct ProcessingConfig {
     // source per block, before any ScheduleStep. Contains every source added
     // via add_source(), including sources with no routings.
     std::vector<ModulationSource*> m_all_sources;
+
+    // samples_per_block of the prepare() this config was built for: the length
+    // of every source and target buffer, and the largest num_samples
+    // process_with_scope() accepts.
+    size_t m_max_block_size = 0;
 };
 
 class TANH_API ModulationMatrix {
@@ -161,6 +166,10 @@ public:
     }
 
     // Process all sources and fill modulation buffers for all targets.
+    // num_samples must not exceed the prepared samples_per_block: every source
+    // and target buffer has that length, so an engine splits a larger host block
+    // into chunks and runs clock, set_transport(), process() and its DSP per
+    // chunk. A larger value asserts and is clamped.
     // Convenience wrapper that opens a read scope internally — use when the
     // caller doesn't need to extend the scope across downstream DSP work.
     void process(size_t num_samples) TANH_NONBLOCKING_FUNCTION;
