@@ -43,7 +43,7 @@ public:
     template <typename T, typename... Args>
     NodeId add_node(Args&&... args) {
         static_assert(std::is_base_of_v<Node, T>);
-        add_node_impl(std::make_shared<T>(std::forward<Args>(args)...));
+        return add_node_impl(std::make_shared<T>(std::forward<Args>(args)...));
     }
 
     bool remove_node(NodeId id);
