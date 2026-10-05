@@ -19,6 +19,10 @@ namespace {
 constexpr double k_sr = 48000.0;
 constexpr uint32_t k_frames = 256;
 
+int64_t block_start_us(int64_t t0, int block) {
+    return t0 + std::llround(static_cast<double>(block) * k_frames * 1e6 / k_sr);
+}
+
 double rt_block(LinkTransportClock& clk, int64_t host_us) TANH_NONBLOCKING_FUNCTION {
     clk.begin_block(k_frames, host_us);
     const double beat = clk.beat_at_sample(k_frames - 1);
@@ -44,7 +48,7 @@ TEST(LinkSession, DisabledSessionIsALocalTimeline) {
     auto& backend = session.audio_backend();
     const int64_t t0 = backend.now_us();
     for (int b = 0; b < 50; ++b) {
-        clk.begin_block(k_frames, t0 + std::llround(b * k_frames * 1e6 / k_sr));
+        clk.begin_block(k_frames, block_start_us(t0, b));
         if (b > 0) { EXPECT_EQ(clk.discontinuities(), 0u) << "block " << b; }
         // Link time is integer µs, so the in-block slope carries ≤1 µs of rounding.
         EXPECT_NEAR(clk.block_info().m_beats_per_sample, 120.0 / (60.0 * k_sr), 1e-8);
@@ -59,7 +63,7 @@ TEST(LinkSession, EnableWithoutPeersDoesNotMoveTheBeat) {  // BEATTIME-1
     const int64_t t0 = session.audio_backend().now_us();
     for (int b = 0; b < 40; ++b) {
         if (b == 20) { session.set_enabled(true); }
-        clk.begin_block(k_frames, t0 + std::llround(b * k_frames * 1e6 / k_sr));
+        clk.begin_block(k_frames, block_start_us(t0, b));
         if (b > 0) { EXPECT_EQ(clk.discontinuities(), 0u) << "block " << b; }
         clk.end_block();
     }
@@ -100,7 +104,7 @@ TEST(LinkSession, LinkTransportClock_IsRealtimeSafe) {
         if (b == 10) { clk.play(); }
         if (b == 50) { clk.set_bpm(128.0); }
         if (b == 100) { clk.stop(); }
-        acc += rt_block(clk, t0 + std::llround(b * k_frames * 1e6 / k_sr));
+        acc += rt_block(clk, block_start_us(t0, b));
     }
     EXPECT_NE(acc, 0.0);
 }
