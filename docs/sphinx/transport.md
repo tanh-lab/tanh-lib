@@ -56,6 +56,16 @@ The window is `[min(0, e) - tol, max(0, e) + tol]`:
 A seek smaller than `e` in the same direction as the tempo change is absorbed
 too; any other seek, loop wrap or realignment is still `k_jumped`.
 
+`LinkTransportClock` widens the window by `w = 50 ms · |bpm - prev_bpm| / 60`
+beats on both sides (`ContinuityTracker::set_tempo_window_samples()`, 0 for the
+other clocks). A Link peer dates a tempo change at its output time, which can lie
+after our block start (the peer's output latency is larger than ours) or before
+it (network and thread delays), and Link's timeline is a single line, so the new
+tempo also applies before the change time. Measured with two in-process peers
+(peer output latency 10 ms): changes dated up to 9 ms ahead and, on a heavily
+loaded machine, 40 ms late, each flagged `k_jumped` without the widening. Not applied in a
+block where the Link epoch changed (enable, first peer joined).
+
 | Flag | Raised when |
 |---|---|
 | `k_jumped` | seek, DAW loop wrap, Link phase realignment |
@@ -220,7 +230,9 @@ clock.end_block();
   Link clock (Ableton's `HostTimeFilter`, fixed storage).
 - The Link timeline keeps running while stopped (`m_beats_per_sample > 0`);
   gate musical events on `is_playing()`. A peer's start lands as `k_started` in
-  the block that contains the start time; beats before it are negative.
+  the block that contains the start time; beats before it are negative. A stop
+  dated ahead (a peer stopping at its output time) lands as `k_stopped` in the
+  block that contains it.
 - The clock never pushes the local tempo on its own (TEMPO-5). Do not push a
   preset tempo while `num_peers() > 0` (TEMPO-2/3).
 - A disabled session is still a local timeline, so enabling or disabling Link
@@ -233,7 +245,48 @@ there), call `session.set_active(false)` when backgrounded without audio, and se
 the Info.plist keys `NSLocalNetworkUsageDescription` and
 `ABLLinkStartStopSyncSupported`.
 
-Before release, run Ableton's TEST-PLAN (TEMPO-1..5, BEATTIME-1/2,
-STARTSTOPSTATE-1/2, AUDIOENGINE-1) against LinkHut on macOS and iOS; the unit
-tests cover the clock logic against a scripted fake session and two real
-desktop sessions in one process.
+### Testing Link
+
+Ableton's [TEST-PLAN](https://github.com/Ableton/link/blob/master/TEST-PLAN.md)
+is covered at three levels:
+
+| Where | Built when | Runs | Covers |
+|---|---|---|---|
+| `test/dsp` `LinkTransportClock.*` | always | every `ctest` | clock logic against a scripted fake session, no network; `LatencyCompensatedClicksAreSampleExact` proves the latency math sample-exact (AUDIOENGINE-1 math) |
+| `test/link` `LinkSession.*` | `TANH_WITH_LINK=ON` | every `ctest` | the real SDK backend: disabled session, BEATTIME-1, local start/tempo, RTSan, a two-peer smoke test |
+| `test/link` `LinkPeers.*`, `BlockSizes/LinkPeersLatency.*` | `TANH_WITH_LINK=ON`, desktop | label `link-peers` | TEST-PLAN cases against a LinkHut-like peer on the raw Link SDK in the same process |
+
+`LinkPeers` drives `LinkSession` + `LinkTransportClock` (the app's code path) with
+simulated audio blocks (48 kHz, fixed block size, exact host times rendered once
+the Link clock has passed them) and asserts against the peer's session state:
+
+| Test | TEST-PLAN |
+|---|---|
+| `Tempo1_OurTempoChangeReachesPeer`, `Tempo1_PeerTempoChangeReachesUsWithoutJump` | TEMPO-1 (both ways, while playing: `k_tempo_changed`, no `k_jumped`) |
+| `Tempo2_JoiningKeepsTheSessionTempo` | TEMPO-2 |
+| `Tempo4_ExtremeTempi` | TEMPO-4 (20 and 999 BPM) |
+| `Tempo5_EnableDisableKeepsOurTempo` | TEMPO-5 (and BEATTIME-1) |
+| `PhaseAlignedAfterJoin` | phase (quantum 4) within 0.25 ms of the peer |
+| `Beattime2_PeerJoiningDoesNotMoveOurBeat` | BEATTIME-2 |
+| `StartStop1_PeerStartsAndStopsUs`, `StartStop2_WeStartAndStopThePeer` | STARTSTOPSTATE-1/2 |
+| `BlockSizes/LinkPeersLatency.*` (64, 512, 2048 frames, 10 ms output latency) | AUDIOENGINE-1 stand-in: clicks within 3 ms of the peer's beats |
+
+Measured on an Apple Silicon Mac: phase error 4–20 µs, click error ≤ 16 µs.
+Each test prints its measurements as `[ measured ]` lines.
+
+These tests need multicast on the loopback/local interfaces and are known to be
+flaky on CI runners (as for SuperCollider's LinkClock): they skip when the peers
+do not discover each other within 10 s or a foreign Link peer is on the network,
+poll with generous timeouts, and all Link tests share the CTest
+`RESOURCE_LOCK link-network` so `ctest -j` never runs two at once. Exclude them in
+CI with:
+
+```sh
+ctest --preset <preset> -LE link-peers
+```
+
+Run only them with `ctest -L link-peers` (about 45 s).
+
+The manual TEST-PLAN run (against LinkHut on macOS and iOS, including
+AUDIOENGINE-1 with a loopback recording) lives in the product repository: run it
+before a release.

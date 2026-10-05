@@ -67,6 +67,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   with quantized launch, and maps the sample counter to Link time when the host
   gives none. Tests: `LinkTransportClock.*` (scripted fake session, always built),
   `LinkSession.*` (real SDK incl. a two-peer loopback test, with the option).
+- Link TEST-PLAN tests against a LinkHut-like peer on the raw Link SDK in the same
+  process (desktop, `TANH_WITH_LINK`), driving `LinkSession` + `LinkTransportClock`
+  with simulated audio blocks: `LinkPeers.Tempo1_*` (TEMPO-1 both ways),
+  `Tempo2_*`, `Tempo4_ExtremeTempi` (20/999 BPM), `Tempo5_*`, `PhaseAlignedAfterJoin`
+  (within 0.25 ms), `Beattime2_*`, `StartStop1_*`/`StartStop2_*` and
+  `BlockSizes/LinkPeersLatency.*` (AUDIOENGINE-1 stand-in: clicks with 10 ms output
+  latency at 64/512/2048 frames within 3 ms of the peer's beats; measured ≤ 16 µs).
+  CTest label `link-peers` (exclude with `ctest -LE link-peers`); all Link tests
+  share `RESOURCE_LOCK link-network`. Always-run fake-session counterpart:
+  `LinkTransportClock.LatencyCompensatedClicksAreSampleExact`. Docs: "Testing Link"
+  in `docs/sphinx/transport.md`.
 - `thl::modulation::MotionRecorder`: records one XY pad's primary stream (x, y,
   gate; pre-matrix, so playback never feeds back) on the audio thread into two
   preallocated take buffers (`MotionRecorderConfig::m_max_points`, default 32768,
@@ -150,6 +161,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `LinkTransportClock.PeerTempoChangeInsidePreviousBlockIsNotAJump`,
   `MotionRecorderTempoMap.*` (SimHost gains a sample-accurate tempo map:
   `TempoAt`, `TempoRamp`).
+- `LinkTransportClock`: a Link peer's tempo change no longer raises `k_jumped`
+  when it is dated within ±50 ms of our block start. Peers date a change at their
+  output time and Link's timeline is one line, so the start moved against the
+  direction of the change (dated ahead) or beyond the in-block window (delivered
+  late); measured 3–9 ms ahead and up to 40 ms late with two in-process peers. New
+  `ContinuityTracker::set_tempo_window_samples()` (default 0, hosts unchanged);
+  not applied in a block where the Link epoch changed. Tests:
+  `LinkTransportClock.PeerTempoChangeDatedAwayFromTheBlockIsNotAJump`,
+  `LinkTransportClock.JoinRealignmentWithTempoChangeIsAJump`,
+  `LinkPeers.Tempo1_PeerTempoChangeReachesUsWithoutJump`, `LinkPeers.Tempo4_ExtremeTempi`.
+- `LinkTransportClock`: a stop dated ahead (a peer stopping at its output time)
+  stopped the clock as soon as it was received; it now lands as `k_stopped` in the
+  block that contains the stop time, like a start. Tests:
+  `LinkTransportClock.PeerStopDatedAheadLandsInItsBlock`,
+  `LinkPeers.StartStop1_PeerStartsAndStopsUs`.
+- `LinkSession.LocalStartAndTempoRequest` polls for the committed tempo instead of
+  sleeping 50 ms (failed on a loaded machine).
 - `MotionRecorder`: the transport clock is the only jump detector. The recorder
   read none of `TransportInfo`'s discontinuity flags and re-detected jumps from the
   lane phase with its own threshold (two lane points), so the two detectors
