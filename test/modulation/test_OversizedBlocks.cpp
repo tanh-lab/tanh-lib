@@ -363,7 +363,10 @@ TEST(OversizedBlocksDeathTest, MatrixRejectsBlocksAboveThePreparedSize) {
     ModulationMatrix matrix(backend);
     matrix.prepare(k_sr, k_bs);
     matrix.process(k_bs);
-    EXPECT_DEBUG_DEATH(matrix.process(k_bs + 1), "exceeds the prepared samples_per_block");
+    // Under RTSan the assert's own message write is reported first (the matrix
+    // runs as a non-blocking function), so either report marks the violation.
+    EXPECT_DEBUG_DEATH(matrix.process(k_bs + 1),
+                       "exceeds the prepared samples_per_block|RealtimeSanitizer");
 }
 
 // ── RTSan ─────────────────────────────────────────────────────────────────────
