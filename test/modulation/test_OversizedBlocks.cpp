@@ -356,7 +356,9 @@ TEST(OversizedBlocks, ControllerMatchesPreparedChunks) {
 // ── ModulationMatrix ──────────────────────────────────────────────────────────
 
 // The matrix's buffers hold the prepared maximum: a larger num_samples is a
-// contract violation (assert), clamped in a release build.
+// contract violation (assert), clamped in a release build. Death tests need
+// fork(), which googletest does not support on iOS / Android.
+#if GTEST_HAS_DEATH_TEST
 TEST(OversizedBlocksDeathTest, MatrixRejectsBlocksAboveThePreparedSize) {
     FakeBackend backend;
     backend.add("p", 0.0f);
@@ -368,6 +370,7 @@ TEST(OversizedBlocksDeathTest, MatrixRejectsBlocksAboveThePreparedSize) {
     EXPECT_DEBUG_DEATH(matrix.process(k_bs + 1),
                        "exceeds the prepared samples_per_block|RealtimeSanitizer");
 }
+#endif  // GTEST_HAS_DEATH_TEST
 
 // ── RTSan ─────────────────────────────────────────────────────────────────────
 
