@@ -163,6 +163,28 @@ struct TransportInfo {
         return beat_at(m_num_samples);
     }
 
+    /**
+     * @brief The part [offset, offset + length) of this block as a block of its own.
+     *
+     * For consumers that process a block in chunks (a host block larger than the
+     * prepared maximum): the beat starts at beat_at(offset), m_num_samples is
+     * @p length, and the discontinuity bits stay on the first chunk only
+     * (offset 0), so the chunks read like consecutive continuous blocks. Every
+     * other field (tempo, slope, validity and play state, bar start, loop, host
+     * time) is copied unchanged.
+     */
+    [[nodiscard]] constexpr TransportInfo sub_block(uint32_t offset, uint32_t length) const noexcept
+        TANH_NONBLOCKING_FUNCTION {
+        TransportInfo t = *this;
+        t.m_beat_position = beat_at(offset);
+        t.m_num_samples = length;
+        if (offset > 0) {
+            t.m_flags &= ~k_discontinuity_mask;
+            t.m_jump_delta_beats = 0.0;
+        }
+        return t;
+    }
+
     /// Phase of beat_at(offset) in [0, unit). Negative beats wrap like positive ones
     /// (-0.5 with unit 4 → 3.5). Returns 0 for unit <= 0.
     [[nodiscard]] double phase(double unit,

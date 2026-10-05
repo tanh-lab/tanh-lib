@@ -54,6 +54,30 @@ TEST(TransportInfo, BeatAtAndEnd) {
     EXPECT_DOUBLE_EQ(info.phase(1.0, 50), 0.5);
 }
 
+TEST(TransportInfo, SubBlockKeepsDiscontinuitiesOnTheFirstChunkOnly) {
+    TransportInfo info = raw(2.0, true);
+    info.m_flags |= TransportInfo::k_jumped | TransportInfo::k_tempo_changed;
+    info.m_beats_per_sample = 0.01;
+    info.m_jump_delta_beats = 0.5;
+    info.m_num_samples = 300;
+
+    const TransportInfo first = info.sub_block(0, 128);
+    EXPECT_EQ(first.m_flags, info.m_flags);
+    EXPECT_DOUBLE_EQ(first.m_beat_position, 2.0);
+    EXPECT_EQ(first.m_num_samples, 128u);
+    EXPECT_DOUBLE_EQ(first.m_jump_delta_beats, 0.5);
+
+    const TransportInfo last = info.sub_block(256, 44);
+    EXPECT_EQ(last.discontinuities(), 0u);
+    EXPECT_TRUE(last.is_playing());
+    EXPECT_TRUE(last.has(TransportInfo::k_has_tempo));
+    EXPECT_DOUBLE_EQ(last.m_beat_position, info.beat_at(256));
+    EXPECT_DOUBLE_EQ(last.m_beats_per_sample, 0.01);
+    EXPECT_DOUBLE_EQ(last.m_jump_delta_beats, 0.0);
+    EXPECT_EQ(last.m_num_samples, 44u);
+    EXPECT_NEAR(last.beat_end(), info.beat_end(), 1e-12);
+}
+
 TEST(TransportInfo, DivisionBoundaryIsHalfOpenAndNegativeSafe) {
     using thl::dsp::transport::division_boundary_in;
     EXPECT_TRUE(division_boundary_in(0.0, 0.1, Division::Beat, 4, 4));   // boundary at start
