@@ -97,6 +97,40 @@ phase (a DAW loop of whole lanes) needs no action. See
 [Motion recording](motion_recording.md), "Clock discontinuities", for the
 recorder and its jump rule for running takes.
 
+### Block size
+
+A host may call with more samples than the maximum it announced (JUCE does not
+guarantee `numSamples <= maximumExpectedSamplesPerBlock` in every wrapper).
+Who handles that:
+
+- **The engine** splits the host block for everything that has per-sample
+  buffers of the prepared length: `ModulationMatrix::process()` requires
+  `num_samples <= samples_per_block` (debug builds assert, release builds clamp,
+  so a violation cannot write past the buffers), and the DSP that reads the
+  matrix's targets has the same limit. Run the clock, `set_transport()`,
+  `matrix.process()` and the DSP once per chunk of at most the prepared size:
+
+  ```cpp
+  for (size_t off = 0; off < num_samples; off += max_block) {
+      const auto n = static_cast<uint32_t>(std::min(max_block, num_samples - off));
+      clock.begin_block(n);
+      for (auto& pad : pads) { pad->set_transport(clock.block_info()); }
+      matrix.process_with_scope(scope.data(), n);
+      // DSP on samples [off, off + n) of the host buffer
+      clock.end_block();
+  }
+  ```
+
+- **`MotionRecorder::process()` and `XYController::process_block()`** (and the
+  controller's driver step) accept a larger block on their own: they run it as
+  consecutive chunks of at most the prepared size, with the chunk's transport
+  from `TransportInfo::sub_block(offset, length)` (beat at the chunk start, the
+  discontinuity flags on the first chunk only). The result is bit-identical to
+  the same audio in prepared-size blocks: takes, playback phase, glides, jumps
+  and UI frames advance by the whole block, so their clock stays with the
+  transport. Their output buffers then hold the last chunk (`num_samples()` is
+  its length). Tests: `OversizedBlocks.*`.
+
 ### Clocks
 
 | Clock | Use | Notes |

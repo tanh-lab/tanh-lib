@@ -433,20 +433,33 @@ void XYController::drive_from_matrix() noexcept TANH_NONBLOCKING_FUNCTION {
 }
 
 void XYController::run(const TransportInfo& transport) noexcept TANH_NONBLOCKING_FUNCTION {
-    const auto n = static_cast<uint32_t>(std::min<size_t>(transport.m_num_samples, m_capacity));
-    m_num_samples = n;
-    if (n == 0) {
+    const auto capacity = static_cast<uint32_t>(m_capacity);
+    const uint32_t total = capacity == 0 ? 0 : transport.m_num_samples;
+    if (total == 0) {
+        m_num_samples = 0;
         for (auto& v : m_voices) { v->m_num_cps = 0; }
         return;
     }
     ++m_blocks_driven;
 
     TransportInfo t = transport;
-    t.m_num_samples = n;
     if (m_reset_pending) {
         t.m_flags |= TransportInfo::k_timeline_reset;
         m_reset_pending = false;
     }
+    // A block larger than the prepared maximum runs as consecutive chunks of at
+    // most m_capacity samples, exactly like the same audio in prepared-size
+    // blocks (pads, recorders, latch and frames advance by the whole block).
+    // The outputs keep the last chunk.
+    for (uint32_t offset = 0; offset < total; offset += capacity) {
+        const uint32_t len = std::min(capacity, total - offset);
+        run_chunk(t.sub_block(offset, len));
+    }
+}
+
+void XYController::run_chunk(const TransportInfo& t) noexcept TANH_NONBLOCKING_FUNCTION {
+    const uint32_t n = t.m_num_samples;
+    m_num_samples = n;
 
     const bool latch = m_latch.load(std::memory_order_relaxed);
     const bool latch_changed = latch != m_last_latch;

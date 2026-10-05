@@ -209,7 +209,12 @@ public:
      *                  clock and ends after its length).
      * @param input     the pad's primary stream for this block (XYPad::primary()),
      *                  pre-matrix; a default-constructed stream means "no touch"
-     * @param num_samples block length (≤ the prepared maximum)
+     * @param num_samples block length. A block larger than the prepared maximum
+     *                  is processed as consecutive chunks of at most that size
+     *                  (TransportInfo::sub_block(), the input stream read at the
+     *                  chunk's offset), with the same result as the same audio in
+     *                  prepared-size blocks; out_*(), change_points() and
+     *                  num_samples() then hold the last chunk.
      */
     void process(const thl::dsp::transport::TransportInfo& transport,
                  const XYPadStream& input,
@@ -358,6 +363,10 @@ private:
     [[nodiscard]] LaneView view_of(Source src,
                                    const MotionLane& lane) const noexcept TANH_NONBLOCKING_FUNCTION;
     void switch_to(Source src, uint32_t id, bool silent) noexcept TANH_NONBLOCKING_FUNCTION;
+    void process_chunk(const thl::dsp::transport::TransportInfo& t,
+                       const XYPadStream& in,
+                       uint32_t in_offset,
+                       uint32_t n) noexcept TANH_NONBLOCKING_FUNCTION;
     void start_take(const thl::dsp::transport::TransportInfo& t,
                     const XYPadStream& in,
                     uint32_t offset,

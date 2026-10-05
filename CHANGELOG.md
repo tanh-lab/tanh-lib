@@ -190,6 +190,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `MotionRecorderClockFlags.OnlyTheFlagsDecideAboutAGlide`,
   `XYController.ResetRelocksWithoutGlide`. Docs: `motion_recording.md` ("Clock
   discontinuities", "Jump rule for a running take"), `transport.md`.
+- Blocks larger than the prepared maximum. `MotionRecorder::process()` and
+  `XYController` (`process_block()` and the matrix-driven driver step) clamped such a
+  block to their capacity and held the rest while the transport advanced by the
+  whole block, so the recorder's clock fell behind (a later jump and glide), a held
+  touch read as released after the capacity, and a take lost samples. They now run
+  it as consecutive chunks of at most the prepared size, bit-identical to the same
+  audio in prepared-size blocks (takes, phase, glides, jumps, UI frames and trail);
+  the outputs hold the last chunk. New `TransportInfo::sub_block(offset, length)`
+  (beat at the chunk start, discontinuity flags on the first chunk only).
+  `ModulationMatrix::process()` / `process_with_scope()` wrote past its buffers for
+  `num_samples > samples_per_block`; that is now a documented precondition (the
+  engine splits host blocks) that asserts in debug builds and clamps in release
+  builds. Tests: `OversizedBlocks.*`, `OversizedBlocksDeathTest.*`,
+  `OversizedBlocksRtsan.*`, `TransportInfo.SubBlockKeepsDiscontinuitiesOnTheFirstChunkOnly`.
+  Docs: `transport.md` ("Block size"), `motion_recording.md`, `xy_controller.md`.
 
 ### Deprecated
 

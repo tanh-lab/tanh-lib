@@ -171,6 +171,10 @@ private:
  * TransportInfo (with m_num_samples) to every controller before
  * matrix.process(): set_transport(). Without a matrix, process_block(t) runs
  * the driver directly (then the outputs reuse that render in the same block).
+ * A transport longer than the prepared block size runs as consecutive chunks of
+ * at most that size, like the same audio in prepared-size blocks; the outputs
+ * then hold the last chunk. The matrix itself takes no larger block, so the
+ * engine splits host blocks (docs: transport.md, "Block size").
  *
  * @par Voices and touches
  * One voice: every touch drives it (several fingers: MonoPriority). Several
@@ -350,6 +354,7 @@ private:
 
     void drive_from_matrix() noexcept TANH_NONBLOCKING_FUNCTION;
     void run(const thl::dsp::transport::TransportInfo& t) noexcept TANH_NONBLOCKING_FUNCTION;
+    void run_chunk(const thl::dsp::transport::TransportInfo& t) noexcept TANH_NONBLOCKING_FUNCTION;
     void run_voice(Voice& v,
                    uint32_t index,
                    const thl::dsp::transport::TransportInfo& t,

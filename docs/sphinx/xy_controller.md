@@ -78,6 +78,11 @@ controllers. Controllers share no state.
 
 Without a matrix, `process_block(t)` runs the driver directly. If the
 controller is also in a matrix, its outputs reuse that render in the same block.
+A transport longer than the prepared block size runs as consecutive chunks of
+the prepared size, with the same result as prepared-size blocks; the outputs
+then hold the last chunk. The matrix itself takes no block above the prepared
+size, so an engine splits host blocks (see [Transport](transport.md), "Block
+size").
 `reset()` (audio thread, host reset) makes the next block a timeline reset, so
 the recorders re-lock without a glide. It also closes latched gates.
 

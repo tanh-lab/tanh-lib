@@ -658,7 +658,25 @@ void MotionRecorder::publish_snapshot(const LaneView& view) noexcept TANH_NONBLO
 void MotionRecorder::process(const TransportInfo& t,
                              const XYPadStream& in,
                              uint32_t num_samples) noexcept TANH_NONBLOCKING_FUNCTION {
-    const auto n = static_cast<uint32_t>(std::min<size_t>(num_samples, m_max_block));
+    const auto max_block = static_cast<uint32_t>(m_max_block);
+    if (num_samples <= max_block || max_block == 0) {
+        process_chunk(t, in, 0, std::min(num_samples, max_block));
+        return;
+    }
+    // A block larger than the prepared maximum runs as consecutive chunks of at
+    // most max_block samples, exactly like the same audio in prepared-size
+    // blocks: the recorder's clock, takes and glides advance by the whole block.
+    // The outputs keep the last chunk.
+    for (uint32_t offset = 0; offset < num_samples; offset += max_block) {
+        const uint32_t len = std::min(max_block, num_samples - offset);
+        process_chunk(t.sub_block(offset, len), in, offset, len);
+    }
+}
+
+void MotionRecorder::process_chunk(const TransportInfo& t,
+                                   const XYPadStream& in,
+                                   uint32_t in_offset,
+                                   uint32_t n) noexcept TANH_NONBLOCKING_FUNCTION {
     m_num_samples = n;
     m_num_cps = 0;
     if (n == 0) { return; }
@@ -776,19 +794,20 @@ void MotionRecorder::process(const TransportInfo& t,
     const auto inv_interval = static_cast<float>(1.0 / interval);
 
     for (uint32_t i = 0; i < n; ++i) {
-        const bool has_in = i < in_n;
-        const bool live = has_in && in.m_active[i] != 0;
-        const float lx = has_in ? in.m_x[i] : m_last_x;
-        const float ly = has_in ? in.m_y[i] : m_last_y;
+        const uint32_t j = in_offset + i;  // sample in the input stream
+        const bool has_in = j < in_n;
+        const bool live = has_in && in.m_active[j] != 0;
+        const float lx = has_in ? in.m_x[j] : m_last_x;
+        const float ly = has_in ? in.m_y[j] : m_last_y;
         bool cp = false;
-        while (in_cp < in.m_change_points.size() && in.m_change_points[in_cp] <= i) {
-            cp = cp || in.m_change_points[in_cp] == i;
+        while (in_cp < in.m_change_points.size() && in.m_change_points[in_cp] <= j) {
+            cp = cp || in.m_change_points[in_cp] == j;
             ++in_cp;
         }
 
         // ── Recording.
         if (!m_take.m_active && m_armed && (live || m_force_start)) {
-            start_take(t, in, i, b0 + (static_cast<double>(i) * slope));
+            start_take(t, in, j, b0 + (static_cast<double>(i) * slope));
         }
         if (m_take.m_active) {
             Take& k = m_take;

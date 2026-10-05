@@ -45,6 +45,12 @@ output gate): route x/y with `ReplaceHold` and the gate with `Replace`.
 | `out_live()` | 1 where the sample came from the live touch (layer reporting) |
 | `change_points()` | render ticks (every 32 samples), touch and gate edges, glide starts |
 
+A block larger than the prepared maximum is processed as consecutive chunks of
+at most that size (`TransportInfo::sub_block()`, the input stream read at each
+chunk's offset). The take, the playback phase, glides and jumps advance exactly
+as for the same audio in prepared-size blocks; the outputs above then hold the
+last chunk. See [Transport](transport.md), "Block size".
+
 ## Threading
 
 | Call | Thread | Mechanism |
