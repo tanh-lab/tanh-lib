@@ -151,6 +151,33 @@ TEST(LinkTransportClock, PeerTempoChangeDatedAwayFromTheBlockIsNotAJump) {
     }
 }
 
+// The ±50 ms window bounds a late change too: dated 49 ms before the block that
+// first sees it (almost five blocks in the past) it is a tempo change, dated
+// 60 ms before (or 60 ms ahead) the beat moved further than any tempo change
+// explains, and the clock reports k_jumped.
+TEST(LinkTransportClock, PeerTempoChangeBeyondTheWindowIsAJump) {
+    auto first_block_after = [](int64_t dated) {
+        fake::FakeLinkBackend link;
+        LinkTransportClock clk(link);
+        clk.prepare(k_sr);
+        link.m_session.m_playing = true;
+        uint32_t flags = 0;
+        for (int b = 0; b < 20; ++b) {
+            const int64_t t0 = b * k_block_us;
+            if (b == 10) { link.peer_set_tempo(160.0, t0 + dated); }
+            clk.begin_block(k_frames, t0);
+            if (b == 10) { flags = clk.discontinuities(); }
+            if (b > 0 && b != 10) { EXPECT_EQ(clk.discontinuities(), 0u) << "block " << b; }
+            clk.end_block();
+        }
+        return flags;
+    };
+    EXPECT_EQ(first_block_after(-49000), TransportInfo::k_tempo_changed);
+    EXPECT_EQ(first_block_after(49000), TransportInfo::k_tempo_changed);
+    EXPECT_EQ(first_block_after(-60000), TransportInfo::k_jumped | TransportInfo::k_tempo_changed);
+    EXPECT_EQ(first_block_after(60000), TransportInfo::k_jumped | TransportInfo::k_tempo_changed);
+}
+
 // The tempo window is not applied when the epoch changed (Link enabled, first
 // peer joined): a small phase realignment that comes with a tempo change is still
 // reported as a jump.

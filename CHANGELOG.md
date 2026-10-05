@@ -167,8 +167,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   direction of the change (dated ahead) or beyond the in-block window (delivered
   late); measured 3–9 ms ahead and up to 40 ms late with two in-process peers. New
   `ContinuityTracker::set_tempo_window_samples()` (default 0, hosts unchanged);
-  not applied in a block where the Link epoch changed. Tests:
+  not applied in a block where the Link epoch changed. The window is the union with
+  the in-block term `e`, not their sum, so a change dated more than 50 ms in the past
+  is still `k_jumped` (the sum accepted 50 ms plus one block). Tests:
   `LinkTransportClock.PeerTempoChangeDatedAwayFromTheBlockIsNotAJump`,
+  `LinkTransportClock.PeerTempoChangeBeyondTheWindowIsAJump`,
   `LinkTransportClock.JoinRealignmentWithTempoChangeIsAJump`,
   `LinkPeers.Tempo1_PeerTempoChangeReachesUsWithoutJump`, `LinkPeers.Tempo4_ExtremeTempi`.
 - `LinkTransportClock`: a stop dated ahead (a peer stopping at its output time)

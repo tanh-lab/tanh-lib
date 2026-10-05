@@ -65,11 +65,13 @@ void ContinuityTracker::resolve(TransportInfo& io,
         const double tempo_extra = m_prev_moving ? m_prev_frames * tempo_step : 0.0;
         // A change dated up to the window before or after the block start (Link:
         // one timeline line, the change at a peer's output time) moves the start
-        // by up to window * (bps - prev_bps) in either direction.
+        // by up to window * (bps - prev_bps) in either direction. The window and
+        // the in-block term cover the same lateness, so they are not added: a
+        // change dated more than the window in the past is still a jump.
         const double tempo_window =
             m_prev_moving ? m_tempo_window_samples * std::abs(tempo_step) : 0.0;
-        const double low = std::min(0.0, tempo_extra) - tempo_window - jitter;
-        const double high = std::max(0.0, tempo_extra) + tempo_window + jitter;
+        const double low = std::min({0.0, tempo_extra, -tempo_window}) - jitter;
+        const double high = std::max({0.0, tempo_extra, tempo_window}) + jitter;
         if (delta < low || delta > high) {
             io.m_flags |= TransportInfo::k_jumped;
             io.m_jump_delta_beats = delta;

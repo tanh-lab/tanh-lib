@@ -56,9 +56,11 @@ The window is `[min(0, e) - tol, max(0, e) + tol]`:
 A seek smaller than `e` in the same direction as the tempo change is absorbed
 too; any other seek, loop wrap or realignment is still `k_jumped`.
 
-`LinkTransportClock` widens the window by `w = 50 ms · |bpm - prev_bpm| / 60`
-beats on both sides (`ContinuityTracker::set_tempo_window_samples()`, 0 for the
-other clocks). A Link peer dates a tempo change at its output time, which can lie
+`LinkTransportClock` widens the window to at least `w = 50 ms · |bpm - prev_bpm|
+/ 60` beats on both sides, `[min(0, e, -w) - tol, max(0, e, w) + tol]`
+(`ContinuityTracker::set_tempo_window_samples()`, 0 for the other clocks). `w`
+and `e` are not added, so a change dated more than 50 ms before the block start
+is still `k_jumped`, however long the previous block was. A Link peer dates a tempo change at its output time, which can lie
 after our block start (the peer's output latency is larger than ours) or before
 it (network and thread delays), and Link's timeline is a single line, so the new
 tempo also applies before the change time. Measured with two in-process peers
