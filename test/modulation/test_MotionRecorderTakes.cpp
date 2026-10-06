@@ -63,52 +63,6 @@ TEST(MotionRecorderTakes, AlignedTakeStartsOnTheBarLineWithLeadingSilence) {
     EXPECT_EQ(lane.m_x[100], 0.3f);
 }
 
-TEST(MotionRecorderTakes, FreeTakeEndsAtTheNextBoundaryWithTheFingerUp) {
-    Rig r(256, 120.0, aligned());
-    start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
-    r.m_pad.touch(1, 0.4f, 0.4f);
-    r.run_until(k_bar + (3 * k_bar / 10));  // lift at 1.3 bars
-    r.m_pad.release(1);
-    r.run_until(2 * k_bar - 512);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);  // lifts are recorded
-    r.run_until(2 * k_bar + 512);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
-    ASSERT_TRUE(r.m_rec.service());
-    const MotionLane lane = r.m_rec.lane();
-    EXPECT_DOUBLE_EQ(lane.m_length, 8.0);
-    EXPECT_EQ(lane.m_gate[100], 1);
-    EXPECT_EQ(lane.m_gate[700], 0);  // padding after the lift
-
-    // Finger down at 2 bars: the take runs on to 4 bars.
-    const uint64_t bar_line = 3 * k_bar;
-    r.run_until(bar_line);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
-    r.m_pad.touch(1, 0.6f, 0.6f);
-    r.run_until(bar_line + (5 * k_bar / 2));
-    r.m_pad.release(1);
-    r.run_until(bar_line + (4 * k_bar) + 512);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
-    ASSERT_TRUE(r.m_rec.service());
-    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 16.0);
-    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_anchor, 12.0);  // bar 3 (beat 12) mod 16
-}
-
-TEST(MotionRecorderTakes, FreeTakeEndsAfterSixteenBars) {
-    Rig r(256, 240.0, aligned());  // one bar = 1 s
-    start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
-    r.m_pad.touch(1, 0.3f, 0.3f);
-    r.run_until(static_cast<uint64_t>(15.9 * motion_test::k_sr));
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    r.run_until(static_cast<uint64_t>(16.1 * motion_test::k_sr));
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);  // finger still down
-    r.m_pad.release(1);
-    r.step();
-    ASSERT_TRUE(r.m_rec.service());
-    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 64.0);
-}
-
 TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
     Rig r(256, 120.0, aligned());
     start(r);
@@ -121,25 +75,14 @@ TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
     r.step();  // ends at once, padded to 4 bars
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
     ASSERT_TRUE(r.m_rec.service());
-    MotionLane lane = r.m_rec.lane();
+    const MotionLane lane = r.m_rec.lane();
     EXPECT_DOUBLE_EQ(lane.m_length, 16.0);
     EXPECT_EQ(lane.m_gate[100], 1);
     EXPECT_EQ(lane.m_gate[1000], 0);
 
-    // Free with the finger down at 1.5 bars: the next boundary is 2 bars.
-    r.run_until(2 * k_bar);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
-    r.m_pad.touch(1, 0.5f, 0.5f);
-    r.run_until(3 * k_bar + (k_bar / 2));
-    ASSERT_TRUE(r.m_rec.stop());
-    r.step();
-    r.m_pad.release(1);
-    ASSERT_TRUE(r.m_rec.service());
-    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 8.0);
-    const uint32_t kept = r.m_rec.lane().m_take_id;
+    const uint32_t kept = lane.m_take_id;
 
     // An untouched take is dropped and the lane plays on.
-    ASSERT_TRUE(r.m_rec.play());
     ASSERT_TRUE(r.m_rec.record(LoopLength::Bars2));
     r.run_until(r.now() + k_beat);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -150,57 +93,7 @@ TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept);
 }
 
-TEST(MotionRecorderTakes, OverdubReplacesOnlyTheTouchedSpan) {
-    Rig r(256);
-    start(r);
-    const MotionLane original = motion_test::beats_lane(4.0, 100);
-    const uint32_t base = r.m_rec.load_lane(original);
-    ASSERT_TRUE(r.m_rec.overdub());
-    r.run_until(k_beat);
-    const uint64_t down = r.now();
-    r.m_pad.touch(1, 0.1f, 0.9f);
-    r.run_until(2 * k_beat);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    EXPECT_EQ(r.m_x.back(), 0.1f);  // live finger while punching
-    const uint64_t up = r.now();
-    r.m_pad.release(1);
-    r.step();
-    EXPECT_TRUE(r.m_rec.snapshot().m_overdub);
-    ASSERT_TRUE(r.m_rec.service());
-    const MotionLane lane = r.m_rec.lane();
-    EXPECT_GT(lane.m_take_id, base);
-    EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
-    ASSERT_EQ(lane.num_points(), original.num_points());
-    const auto first = static_cast<size_t>(std::ceil(r.m_beat[down] * 100.0));
-    const auto last = static_cast<size_t>(std::floor(r.m_beat[up - 1] * 100.0));
-    for (size_t i = 0; i < lane.num_points(); ++i) {
-        if (i + 1 >= first && i <= last + 1) {
-            if (i > first && i < last) {
-                ASSERT_EQ(lane.m_x[i], 0.1f) << i;
-                ASSERT_EQ(lane.m_y[i], 0.9f) << i;
-            }
-            continue;
-        }
-        ASSERT_EQ(lane.m_x[i], original.m_x[i]) << i;
-        ASSERT_EQ(lane.m_y[i], original.m_y[i]) << i;
-    }
-}
-
-TEST(MotionRecorderTakes, OverdubOnAnEmptyRecorderArmsATake) {
-    Rig r(256);
-    start(r);
-    ASSERT_TRUE(r.m_rec.overdub());
-    r.step();
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Armed);
-    r.m_pad.touch(1, 0.5f, 0.5f);
-    r.step();
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    ASSERT_TRUE(r.m_rec.disarm());
-    r.step();
-    EXPECT_FALSE(r.m_rec.snapshot().m_overdub);
-}
-
-TEST(MotionRecorderTakes, UndoAndRedoATakeAndAPunch) {
+TEST(MotionRecorderTakes, UndoAndRedoATakeAndAClear) {
     Rig r(256, 120.0, aligned());
     start(r);
     EXPECT_FALSE(r.m_rec.can_undo());
@@ -224,15 +117,13 @@ TEST(MotionRecorderTakes, UndoAndRedoATakeAndAPunch) {
     EXPECT_EQ(take.m_x[200], 0.2f);
     EXPECT_GT(take.m_take_id, undone.m_take_id);
 
-    // A punch is one undo step.
-    ASSERT_TRUE(r.m_rec.overdub());
-    r.step();
-    r.m_pad.touch(1, 0.9f, 0.9f);
-    r.run_until(r.now() + k_beat);
-    r.m_pad.release(1);
-    r.step();
-    ASSERT_TRUE(r.m_rec.service());
-    EXPECT_NE(r.m_rec.lane().m_x, take.m_x);
+    // A clear is one undo step; a new publication drops the redo lane.
+    r.m_rec.clear();
+    EXPECT_TRUE(r.m_rec.lane().empty());
+    ASSERT_TRUE(r.m_rec.undo());
+    EXPECT_EQ(r.m_rec.lane().m_x, take.m_x);
+    EXPECT_TRUE(r.m_rec.can_redo());
+    r.m_rec.clear();
     EXPECT_FALSE(r.m_rec.can_redo());
     ASSERT_TRUE(r.m_rec.undo());
     EXPECT_EQ(r.m_rec.lane().m_x, take.m_x);

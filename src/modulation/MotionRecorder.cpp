@@ -30,6 +30,16 @@ constexpr size_t k_min_capacity = 16;
 constexpr double k_keep_phase_eps = 1e-6;
 constexpr double k_tick_eps = 1e-9;
 constexpr double k_seam_window_seconds = 0.15;
+// A snapped free take counts as still while x and y stay within this distance
+// (pad units, |dx| + |dy|) of its first or last point: finger jitter, no move.
+constexpr double k_still_distance = 0.002;
+
+// Nearest of 1, 2, 4, 8, 16 bars by ratio (log2), so the stretch is the smallest.
+double snap_bars(double bars) {
+    if (!(bars > 0.0)) { return 1.0; }
+    const double exponent = std::clamp(std::round(std::log2(bars)), 0.0, 4.0);
+    return std::exp2(exponent);
+}
 
 uint32_t bars_of(LoopLength length) {
     switch (length) {
@@ -107,7 +117,6 @@ void MotionRecorder::prepare(double sample_rate,
     }
     m_armed = false;
     m_force_start = false;
-    m_punch = Punch{};
     for (auto& b : m_takes) { b.m_state.store(BufferState::Free, std::memory_order_relaxed); }
 
     m_config = config;
@@ -166,10 +175,6 @@ bool MotionRecorder::record(LoopLength length) {
         {.m_kind = CommandKind::Record, .m_arg = static_cast<uint8_t>(length)});
 }
 
-bool MotionRecorder::overdub() {
-    return m_commands.try_push({.m_kind = CommandKind::Overdub, .m_arg = 0});
-}
-
 bool MotionRecorder::disarm() {
     return m_commands.try_push({.m_kind = CommandKind::Disarm, .m_arg = 0});
 }
@@ -193,7 +198,7 @@ bool MotionRecorder::set_playback_length(LoopLength length) {
 }
 
 // Every publication goes through here: smooth on this thread, swap through
-// RCU. The audio thread plays m_x / m_y and copies m_lane for an overdub.
+// RCU. The audio thread plays m_x / m_y.
 void MotionRecorder::publish_played(MotionLane lane) {
     const uint32_t id = lane.m_take_id;
     const double amount = m_smoothing.load(std::memory_order_relaxed);
@@ -367,7 +372,7 @@ MotionLane MotionRecorder::played_lane() const {
 MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
     const bool has_lane = m_view_length > 0.0;
     MotionSnapshot s;
-    if (m_take.m_active || m_punch.m_active) {
+    if (m_take.m_active) {
         s.m_state = MotionState::Recording;
     } else if (m_armed) {
         s.m_state = MotionState::Armed;
@@ -376,7 +381,6 @@ MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
     }
     s.m_playing = m_play_enabled;
     s.m_reverse = m_reverse;
-    s.m_overdub = m_overdub;
     s.m_beats = has_lane && m_view_timebase == MotionTimebase::Beats;
     s.m_busy = m_busy;
     s.m_refused = m_refused;
@@ -397,8 +401,6 @@ MotionRecorder::LaneView MotionRecorder::view_of(Source src, const PlayedLane& p
         const MotionLane& lane = played.m_lane;
         v.m_x = played.m_x.data();
         v.m_y = played.m_y.data();
-        v.m_raw_x = lane.m_x.data();
-        v.m_raw_y = lane.m_y.data();
         v.m_gate = lane.m_gate.data();
         v.m_num_points = std::min({lane.m_x.size(),
                                    lane.m_y.size(),
@@ -413,8 +415,6 @@ MotionRecorder::LaneView MotionRecorder::view_of(Source src, const PlayedLane& p
         const TakeBuffer& b = m_takes[src == Source::Buffer0 ? 0 : 1];
         v.m_x = b.m_x.data();
         v.m_y = b.m_y.data();
-        v.m_raw_x = b.m_x.data();
-        v.m_raw_y = b.m_y.data();
         v.m_gate = b.m_gate.data();
         v.m_num_points = b.m_num_points;
         v.m_timebase = b.m_timebase;
@@ -462,19 +462,14 @@ void MotionRecorder::switch_to(Source src, uint32_t id, bool silent) {
 // finalises it in place (Finished) and plays straight from it. service() copies
 // a Finished buffer into a MotionLane, publishes it and marks the buffer
 // Published. Take ids come from one counter shared with load_lane(), so the
-// newest id always wins. An overdub punch is a Recording buffer too: a copy of
-// the playing lane that plays while it is edited.
+// newest id always wins.
 //
 // The switch away from a buffer depends only on the lane this block reads: a
 // buffer can turn Published after the read scope opened (service() racing this
 // block), and the lane in the scope then still predates it.
 void MotionRecorder::select_source(const PlayedLane& played) {
     const uint32_t lane_id = played.m_lane.m_take_id;
-    // A lane published after the punch started (load, clear, undo) wins.
-    if (m_punch.m_active && lane_id > m_punch.m_base_id) { abort_punch(); }
-    if (m_punch.m_active) {
-        // Keep playing the punch buffer.
-    } else if (m_source == Source::Lane) {
+    if (m_source == Source::Lane) {
         if (lane_id != m_playing_take_id) {
             switch_to(Source::Lane, lane_id, false);
         } else if (played.m_version != m_playing_version) {
@@ -506,8 +501,6 @@ void MotionRecorder::apply_commands(double bpm) {
         switch (c.m_kind) {
             case CommandKind::Arm:
             case CommandKind::Record:
-                m_overdub = false;
-                if (m_punch.m_active) { finish_punch(); }
                 if (m_take.m_active) { break; }
                 m_armed = true;
                 m_force_start = c.m_kind == CommandKind::Record;
@@ -516,15 +509,8 @@ void MotionRecorder::apply_commands(double bpm) {
                 m_aborted = false;
                 m_busy = false;
                 break;
-            case CommandKind::Overdub:
-                m_overdub = true;
-                m_refused = false;
-                m_aborted = false;
-                break;
             case CommandKind::Disarm:
             case CommandKind::Stop:
-                m_overdub = false;
-                if (m_punch.m_active) { finish_punch(); }
                 m_armed = false;
                 m_force_start = false;
                 m_busy = false;
@@ -594,9 +580,8 @@ void MotionRecorder::start_take(const TransportInfo& t,
     const float first_y = has_in ? in.m_y[offset] : m_last_y;
 
     if (m_config.m_bar_aligned_takes) {
-        // Point 0 sits on the bar line at or before the touch, on the transport
-        // beat or the free-running one. Free takes reserve 16 bars, so a whole
-        // number of points per bar has to fit 16 times.
+        // Beats on the transport or the free-running clock. A free take reserves
+        // 16 bars, so a whole number of points per bar has to fit 16 times.
         const size_t loop_bars = bars > 0 ? bars : k_max_aligned_bars;
         const double per_bar = std::min(std::round(k.m_bar_beats * ideal_tpb),
                                         std::floor(max_points / static_cast<double>(loop_bars)));
@@ -606,7 +591,8 @@ void MotionRecorder::start_take(const TransportInfo& t,
             m_force_start = false;
             return;
         }
-        k.m_aligned = true;
+        k.m_aligned = bars > 0;
+        k.m_snap = bars == 0;
         k.m_bar = bars > 0;
         k.m_beats = true;
         k.m_points_per_bar = static_cast<size_t>(per_bar);
@@ -614,8 +600,10 @@ void MotionRecorder::start_take(const TransportInfo& t,
         k.m_target = bars > 0 ? k.m_capacity : k.m_points_per_bar;
         k.m_length = static_cast<double>(loop_bars) * k.m_bar_beats;
         k.m_tick_step = k.m_bar_beats / per_bar;
+        // A bar take's point 0 sits on the bar line at or before the touch; a
+        // free take's on the first touch (record() rebases it there).
         k.m_bar_line = std::floor((clock_beat / k.m_bar_beats) + k_tick_eps) * k.m_bar_beats;
-        k.m_tick_base = k.m_bar_line;
+        k.m_tick_base = bars > 0 ? k.m_bar_line : clock_beat;
         k.m_clock = clock_beat;
     } else if (bars > 0) {
         const int num = t.m_sig_num > 0 ? t.m_sig_num : 4;
@@ -650,7 +638,7 @@ void MotionRecorder::start_take(const TransportInfo& t,
         k.m_tick_base = 0.0;
         k.m_clock = 0.0;
     }
-    if (!k.m_aligned) { k.m_target = k.m_capacity; }
+    if (!k.m_aligned && !k.m_snap) { k.m_target = k.m_capacity; }
     k.m_active = true;
     k.m_buffer = buffer;
     k.m_start_beat = clock_beat;
@@ -683,6 +671,35 @@ void MotionRecorder::write_point(float x, float y, uint8_t gate) {
     k.m_count = l + 1;
     k.m_last_x = x;
     k.m_last_y = y;
+}
+
+// A snapped free take loops without a pause: drop the points before the finger
+// first moves and after it last moved (each run kept down to one point). The
+// shift is a bounded memmove inside the take buffer.
+void MotionRecorder::trim_still_ends() {
+    Take& k = m_take;
+    TakeBuffer& b = m_takes[k.m_buffer];
+    const size_t n = k.m_count;
+    auto distance = [&](size_t i, size_t j) {
+        return std::abs(static_cast<double>(b.m_x[i]) - b.m_x[j]) +
+               std::abs(static_cast<double>(b.m_y[i]) - b.m_y[j]);
+    };
+    size_t first = 0;
+    while (first < n && distance(first, 0) <= k_still_distance) { ++first; }
+    if (first == n) { return; }  // never moved: a held position, kept as it is
+    size_t last = n - 1;
+    while (last > 0 && distance(last, n - 1) <= k_still_distance) { --last; }
+    const size_t begin = first - 1;
+    const size_t end = std::min(n, std::max(last + 2, first + 1));
+    if (begin > 0) {
+        const auto from = static_cast<std::ptrdiff_t>(begin);
+        const auto to = static_cast<std::ptrdiff_t>(end);
+        std::copy(b.m_x.begin() + from, b.m_x.begin() + to, b.m_x.begin());
+        std::copy(b.m_y.begin() + from, b.m_y.begin() + to, b.m_y.begin());
+        std::copy(b.m_gate.begin() + from, b.m_gate.begin() + to, b.m_gate.begin());
+    }
+    k.m_start_beat += static_cast<double>(begin) * k.m_tick_step;
+    k.m_count = end - begin;
 }
 
 void MotionRecorder::finalise(TakeBuffer& b, size_t n, double points_per_second) {
@@ -741,7 +758,7 @@ void MotionRecorder::abort_take(bool keep_replaced) {
 void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     Take& k = m_take;
     if (!k.m_active) { return; }
-    if (!k.m_bar && !k.m_aligned && trim_samples > 0 && k.m_count_at_change >= k_min_take_points) {
+    if (!k.m_bar && !k.m_snap && trim_samples > 0 && k.m_count_at_change >= k_min_take_points) {
         // The release reaches us up to a block after the last move (events carry
         // no timestamps): a still tail no longer than that block is quantisation,
         // not gesture, and would put a pause into the loop.
@@ -752,6 +769,7 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
             k.m_count = k.m_count_at_change;
         }
     }
+    if (k.m_snap) { trim_still_ends(); }
     const bool complete = k.m_aligned ? k.m_count == k.m_target
                           : k.m_bar   ? k.m_count == k.m_capacity
                                       : k.m_count >= k_min_take_points;
@@ -775,6 +793,17 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
         b.m_timebase = MotionTimebase::Beats;
         b.m_length = length;
         b.m_anchor = detail::wrap_phase(k.m_bar_line, length);
+        b.m_rate = static_cast<double>(n) / length;
+        points_per_second = b.m_rate * bpm / 60.0;
+    } else if (k.m_snap) {
+        // Stretched onto the nearest of 1, 2, 4, 8 or 16 bars; index 0 plays on
+        // the bar line nearest the first kept point.
+        const double beats = static_cast<double>(n) * k.m_tick_step;
+        const double length = snap_bars(beats / k.m_bar_beats) * k.m_bar_beats;
+        b.m_timebase = MotionTimebase::Beats;
+        b.m_length = length;
+        b.m_anchor =
+            detail::wrap_phase(std::round(k.m_start_beat / k.m_bar_beats) * k.m_bar_beats, length);
         b.m_rate = static_cast<double>(n) / length;
         points_per_second = b.m_rate * bpm / 60.0;
     } else if (k.m_beats) {
@@ -806,11 +835,19 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     switch_to(k.m_buffer == 0 ? Source::Buffer0 : Source::Buffer1, b.m_take_id, false);
 }
 
-// disarm() / stop() never throw a touched bar-aligned take away: it ends at
-// once, the rest of its loop (N bars, or the next free boundary) lifted.
+// disarm() / stop() never throw a touched bar-aligned take away: a BarsN take
+// ends at once with the rest of its N bars lifted, a free one where it is.
 // Padding writes at most m_max_points points into preallocated memory.
 void MotionRecorder::end_take(double bpm) {
     const Take& k = m_take;
+    if (k.m_snap) {
+        if (k.m_saw_touch) {
+            finish_take(bpm);
+        } else {
+            abort_take(true);  // nothing recorded: the replaced lane plays on
+        }
+        return;
+    }
     if (!k.m_aligned) {
         if (k.m_bar) {
             abort_take();
@@ -825,95 +862,6 @@ void MotionRecorder::end_take(double bpm) {
     }
     while (k.m_count < k.m_target) { write_point(k.m_last_x, k.m_last_y, 0); }
     finish_take(bpm);
-}
-
-// Overdub: the playing lane (raw) is copied into a free take buffer, which then
-// plays and takes the punch. The copy is a bounded memcpy (at most m_max_points
-// points, 9 bytes each) into memory prepare() allocated: no allocation, lock or
-// syscall on the audio thread. Both buffers waiting for service(): no punch.
-void MotionRecorder::start_punch(const PlayedLane& played) {
-    uint32_t target = 2;
-    for (uint32_t b = 0; b < 2; ++b) {
-        if (m_takes[b].m_state.load(std::memory_order_acquire) == BufferState::Free) {
-            target = b;
-            break;
-        }
-    }
-    if (target == 2) {
-        m_busy = true;
-        return;
-    }
-    const LaneView src = view_of(m_source, played);
-    TakeBuffer& b = m_takes[target];
-    const size_t n = src.m_num_points;
-    if (n == 0 || n > b.m_x.size() || src.m_raw_x == nullptr) { return; }
-    std::copy_n(src.m_raw_x, n, b.m_x.begin());
-    std::copy_n(src.m_raw_y, n, b.m_y.begin());
-    std::copy_n(src.m_gate, n, b.m_gate.begin());
-    // view_of() reports a stretched view; the copy keeps the source's own grid.
-    if (m_source == Source::Lane) {
-        const MotionLane& lane = played.m_lane;
-        b.m_timebase = lane.m_timebase;
-        b.m_length = lane.m_length;
-        b.m_anchor = lane.m_anchor;
-        b.m_rate = lane.m_rate;
-    } else {
-        const TakeBuffer& from = m_takes[m_source == Source::Buffer0 ? 0 : 1];
-        b.m_timebase = from.m_timebase;
-        b.m_length = from.m_length;
-        b.m_anchor = from.m_anchor;
-        b.m_rate = from.m_rate;
-    }
-    b.m_num_points = n;
-    b.m_state.store(BufferState::Recording, std::memory_order_relaxed);
-    m_punch = Punch{.m_active = true, .m_buffer = target, .m_base_id = m_playing_take_id};
-    m_source = target == 0 ? Source::Buffer0 : Source::Buffer1;
-    m_ramp_restart = true;
-    m_busy = false;
-}
-
-// Write the finger at lane index @p index, and at the indices the playback
-// skipped since the last write (fast stretched playback), in playback direction.
-void MotionRecorder::write_punch(size_t index,
-                                 float x,
-                                 float y,
-                                 double direction,
-                                 size_t num_points) {
-    TakeBuffer& b = m_takes[m_punch.m_buffer];
-    auto put = [&](size_t i) {
-        b.m_x[i] = x;
-        b.m_y[i] = y;
-        b.m_gate[i] = 1;
-    };
-    if (m_punch.m_wrote && index != m_punch.m_last_index) {
-        const size_t last = m_punch.m_last_index;
-        const bool forward = direction >= 0.0;
-        const size_t gap = forward ? (index + num_points - last) % num_points
-                                   : (last + num_points - index) % num_points;
-        // A larger gap is a re-seek (jump, reverse), not skipped points.
-        if (gap <= num_points / 4) {
-            for (size_t s = 1; s < gap; ++s) {
-                put(forward ? (last + s) % num_points : (last + num_points - s) % num_points);
-            }
-        }
-    }
-    put(index);
-    m_punch.m_last_index = index;
-    m_punch.m_wrote = true;
-}
-
-// Release: the edited copy becomes a take; service() publishes it (undo per punch).
-void MotionRecorder::finish_punch() {
-    TakeBuffer& b = m_takes[m_punch.m_buffer];
-    b.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
-    b.m_state.store(BufferState::Finished, std::memory_order_release);
-    m_playing_take_id = b.m_take_id;
-    m_punch = Punch{};
-}
-
-void MotionRecorder::abort_punch() {
-    m_takes[m_punch.m_buffer].m_state.store(BufferState::Free, std::memory_order_relaxed);
-    m_punch = Punch{};
 }
 
 void MotionRecorder::process(const TransportInfo& t,
@@ -960,13 +908,6 @@ void MotionRecorder::process(const TransportInfo& t,
     select_source(lane);
 
     LaneView view = playback_view(lane);
-    // Overdub with nothing to punch into records a take of the playback length.
-    if (m_overdub && !m_armed && !m_take.m_active && !m_punch.m_active && !m_refused &&
-        view.empty()) {
-        m_armed = true;
-        m_force_start = false;
-        m_arm_length = m_playback_length;
-    }
     double dphase = 0.0;
     auto direction = [&](const LaneView& v) {
         if (v.m_timebase == MotionTimebase::Beats) { return m_reverse ? -slope : slope; }
@@ -1068,9 +1009,16 @@ void MotionRecorder::process(const TransportInfo& t,
         }
         if (m_take.m_active) {
             Take& k = m_take;
-            if (!k.m_bar && !k.m_aligned && k.m_saw_touch && !live) {
+            if (!k.m_bar && k.m_saw_touch && !live) {
                 finish_take(bpm, n);  // free take: ends on release
+            } else if (k.m_snap && !k.m_saw_touch && !live) {
+                // record(Free) without a finger: the take starts at the touch.
+                k.m_clock += rec_slope;
             } else {
+                if (k.m_snap && !k.m_saw_touch) {
+                    k.m_tick_base = k.m_clock;
+                    k.m_start_beat = k.m_clock;
+                }
                 k.m_saw_touch = k.m_saw_touch || live;
                 const double next =
                     k.m_tick_base + (static_cast<double>(k.m_count) * k.m_tick_step);
@@ -1080,10 +1028,10 @@ void MotionRecorder::process(const TransportInfo& t,
                     } else {
                         write_point(k.m_last_x, k.m_last_y, 0);
                     }
-                    // An aligned free take ends at a boundary (1, 2, 4, 8, 16
-                    // bars) reached with the finger up, else runs to the next.
+                    // A snapped free take ends after 16 bars with the finger
+                    // down; its progress runs to the next 1, 2, 4, 8 or 16 bars.
                     if (k.m_count >= k.m_target) {
-                        if (k.m_count >= k.m_capacity || !live) {
+                        if (k.m_count >= k.m_capacity) {
                             finish_take(bpm);
                         } else {
                             k.m_target = std::min(k.m_target * 2, k.m_capacity);
@@ -1097,15 +1045,6 @@ void MotionRecorder::process(const TransportInfo& t,
         if (m_need_phase) {
             relock(i);
             cp = true;
-        }
-
-        // Overdub: a touch punches into a copy of the playing lane until release.
-        if (m_punch.m_active && !live) {
-            finish_punch();
-        } else if (!m_punch.m_active && live && m_overdub && !m_armed && !m_take.m_active &&
-                   m_play_enabled && !view.empty()) {
-            start_punch(lane);
-            if (m_punch.m_active) { view = playback_view(lane); }
         }
 
         // Playback.
@@ -1122,7 +1061,6 @@ void MotionRecorder::process(const TransportInfo& t,
             auto gi = static_cast<size_t>(p * scale);
             if (gi >= view.m_num_points) { gi = view.m_num_points - 1; }
             pg = view.m_gate[gi];
-            if (m_punch.m_active) { write_punch(gi, lx, ly, dphase, view.m_num_points); }
             // The render grid restarts at every loop wrap, so each loop is
             // rendered on the same ticks (loop n == loop 1).
             const double half = 0.5 * view.m_length;
