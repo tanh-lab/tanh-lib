@@ -13,7 +13,6 @@
 #include <atomic>
 #include <bit>
 #include <cassert>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -26,7 +25,9 @@
 #include <vector>
 
 #if defined(__APPLE__)
-#include <time.h>
+#include <time.h>  // NOLINT(modernize-deprecated-headers): clock_gettime_nsec_np
+#else
+#include <chrono>
 #endif
 
 namespace thl::modulation {
@@ -443,14 +444,12 @@ std::span<const uint32_t> XYController::change_points(uint32_t voice) const
     return {v.m_change_points.data(), v.m_num_change_points};
 }
 
-// Run-once per block: set_transport() opens a block; process_block() renders it
-// ahead of the matrix; the matrix pass then runs the controller only if nothing
-// rendered it. A new set_transport() discards a render the matrix never consumed.
 int64_t XYController::clock_now_ns() TANH_NONBLOCKING_FUNCTION {
 #if defined(__APPLE__)
     // UIKit / AppKit event timestamps and AudioTimeStamp host times count
     // uptime; libc++'s steady_clock counts sleep too (CLOCK_MONOTONIC_RAW).
-    return static_cast<int64_t>(clock_gettime_nsec_np(CLOCK_UPTIME_RAW));
+    return static_cast<int64_t>(
+        clock_gettime_nsec_np(CLOCK_UPTIME_RAW));  // NOLINT(misc-include-cleaner)
 #else
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
                std::chrono::steady_clock::now().time_since_epoch())
@@ -463,6 +462,9 @@ void XYController::set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION {
     m_block_time_fresh = true;
 }
 
+// Run-once per block: set_transport() opens a block; process_block() renders it
+// ahead of the matrix; the matrix pass then runs the controller only if nothing
+// rendered it. A new set_transport() discards a render the matrix never consumed.
 void XYController::set_transport(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION {
     m_transport = transport;
     m_transport_fresh = true;
