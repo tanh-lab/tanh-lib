@@ -9,12 +9,21 @@ loop on release.
   time signature at arm time (they end after exactly one loop).
 - **Recording** runs at control rate into preallocated memory: 200 points per
   second, or `round(200 · 60 / bpm)` ticks per beat (24 to 512) while the
-  transport plays. Points are stored raw; a raised-cosine blend closes the loop
-  seam.
+  transport plays. Points are stored raw, including the step from the end of
+  the take back to its start (the seam).
 - **Smoothing** (`set_smoothing(amount)`, 0 to 1) is non-destructive: the lane
-  stays raw and plays through a circular, zero-phase Gaussian over x and y
-  (sigma up to a quarter beat, or 250 ms for Seconds lanes), computed on the
-  message thread and published with the lane. The gate is not smoothed.
+  stays raw and a played copy is computed on the message thread and published
+  with it. With `LoopEnd::Smooth` (default) the copy spreads the seam step
+  (beyond the expected velocity) over a raised-cosine window from 0.3 beat
+  (150 ms for Seconds lanes) at amount 0 to the whole loop at 1, so a take that
+  did not quite end where it started still loops without a jump. Then x and y
+  run through a circular, zero-phase Gaussian with sigma = amount² × half a
+  beat (250 ms for Seconds lanes; 0.2 gives 0.02 beat, 10 ms at 120 bpm),
+  capped at a sixth of the loop. The gate is not smoothed.
+- **Loop end** (`set_loop_end(LoopEnd::Jump)`): keep the seam step as a hard
+  edge (a drawn line that jumps back to its start). The Gaussian then treats
+  the take as an open sequence (mirrored at both ends) and does not smooth
+  across the edge. Like a smoothing change it republishes and glides.
 - **Playback** interpolates with uniform Catmull-Rom across the seam, clamped
   to [0, 1], evaluated every 32 samples with a linear ramp in between. Beats
   lanes follow the transport's tempo; Seconds lanes run on their own clock.
@@ -66,8 +75,8 @@ cannot feed back as a fake touch.
     gate 0 to N bars.
   - `Free` runs from the first touch to the release, 16 bars of the tempo at
     its start at most (`record(Free)` also waits for the touch). The still
-    ends (the finger down but not yet or no longer moving) are dropped, the
-    seam is blended, and the take is stretched onto the nearest (by ratio) of
+    ends (the finger down but not yet or no longer moving) are dropped and
+    the take is stretched onto the nearest (by ratio) of
     1, 2, 4, 8 or 16 bars, anchored on the bar line nearest its first point:
     it loops as one continuous movement, without a pause. Lifting ends it, so
     a free take holds no gaps: record gaps with a fixed `BarsN` length.
@@ -96,14 +105,15 @@ cannot feed back as a fake touch.
   through a lock-free queue of `k_motion_command_capacity` (32) entries, applied
   at the next block start. They are `[[nodiscard]]` and return false when the
   queue is full; the command is then dropped.
-- `set_stopped_transport()`, `smoothing()`: any thread.
+- `set_stopped_transport()`, `smoothing()`, `loop_end()`: any thread.
 - `process()`, the outputs and `snapshot()`: audio thread.
 - `service()`, `load_lane()`, `clear()`, `undo()`, `redo()`, `can_undo()`,
-  `can_redo()`, `clear_history()`, `set_smoothing()`: one message thread (RCU
-  publication, allocates). Call `service()` from a timer at 10 Hz or more.
-- `lane()` (raw), `played_lane()` (smoothed), `read_lane(f)`, `lane_version()`:
-  message or UI thread; `lane_version()` bumps on every publication, including
-  a smoothing change.
+  `can_redo()`, `clear_history()`, `set_smoothing()`, `set_loop_end()`: one
+  message thread (RCU publication, allocates). Call `service()` from a timer at 10 Hz or more.
+- `lane()` (raw), `played_lane()` (what plays: seam closed and smoothed),
+  `read_lane(f)` (raw), `lane_version()`: message or UI thread;
+  `lane_version()` bumps on every publication, including a smoothing or loop
+  end change.
 
 A UI reads the recorder's state from `XYFrame::m_voices[v].m_motion`
 (a `MotionSnapshot`), not from the recorder.
@@ -112,8 +122,10 @@ A UI reads the recorder's state from `XYFrame::m_voices[v].m_motion`
 
 The RCU writer locks and allocates, so the audio thread never publishes. Each
 recorder owns two take buffers. The audio thread writes one, finalises it in
-place on finish and plays straight from it; `service()` copies it into a
-`MotionLane` and publishes it; the next block switches to the published lane
+place on finish and plays straight from it. With `LoopEnd::Smooth` the
+finalise closes the seam in the buffer over the base window and keeps the raw
+values of those points in a preallocated tail; `service()` copies the buffer
+into a `MotionLane`, restores the raw tail and publishes it; the next block switches to the published lane
 (silently, or with a glide when it plays smoothed) and frees the buffer. If
 both buffers wait for
 `service()`, arming waits and `MotionSnapshot::m_busy` is set. Take ids come
@@ -140,8 +152,9 @@ aborts a take (the previous lane is kept, `MotionSnapshot::m_aborted`).
 ## MotionLane and JSON
 
 A `MotionLane` holds a take id, a timebase (Seconds or Beats), the loop length,
-an anchor (Beats: index 0 sits at beat ≡ anchor mod length) and uniform x, y and
-gate arrays.
+an anchor (Beats: index 0 sits at beat ≡ anchor mod length), the seam (index of
+the first recorded point, not 0 for a bar take started mid-loop; written only
+when not 0) and uniform x, y and gate arrays.
 
 ```json
 {"version":1,"take_id":7,"timebase":"beats","rate":96,"length":8.0,"anchor":0.0,
@@ -166,7 +179,8 @@ capacity.
   builds assert, release builds clamp). Split larger blocks with
   `TransportInfo::sub_block()`, or let `XYController` do it.
 - **Memory.** Each recorder allocates two take buffers of
-  `MotionRecorderConfig::m_max_points` (default 32768) points at 9 bytes each.
+  `MotionRecorderConfig::m_max_points` (default 32768) points at 11 bytes each
+  (x, y, gate and the raw seam tail).
   A bar take that does not fit at 24 ticks per beat is refused
   (`MotionSnapshot::m_refused`).
 - **Release tail.** A still tail before the release of at most one block is

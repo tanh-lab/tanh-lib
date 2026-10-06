@@ -54,8 +54,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `disarm()` / `stop()` pad it instead of dropping it; `Free` runs from the first touch
   to the release (16 bars at most), drops its still ends and is stretched onto the
   nearest of 1, 2, 4, 8 or 16 bars, so it loops without a pause. `undo()` /
-  `redo()` keep one previous lane; `set_smoothing()` plays the raw lane through a
-  circular zero-phase Gaussian. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
+  `redo()` keep one previous lane. The published lane stays raw, seam included
+  (`MotionLane::m_seam`, JSON `seam`); the played copy (`played_lane()`) closes the
+  seam over 0.3 beat (150 ms), widening to the whole loop as `set_smoothing()` goes
+  to 1, then runs x and y through a zero-phase Gaussian of sigma = amount² × half a
+  beat (250 ms for Seconds lanes). `set_loop_end(LoopEnd::Jump)` (also on
+  `XYController`) keeps the end-to-start step as a hard edge and smooths without
+  crossing it. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
   `motion_recording.md`.
 - `thl::modulation::XYController`: XY dots (voices), each with touch input and a
   recorder, as `<id>.x` / `.y` / `.active` matrix sources. It runs once per block from
