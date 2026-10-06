@@ -41,7 +41,8 @@ set(_tanh_header_dirs
     "${PROJECT_NAME}_state=state"
     "${PROJECT_NAME}_dsp=dsp"
     "${PROJECT_NAME}_modulation=modulation"
-    "${PROJECT_NAME}_audio_io=audio-io")
+    "${PROJECT_NAME}_audio_io=audio-io"
+    "${PROJECT_NAME}_link=link")
 set(_tanh_umbrella_headers
     "${PROJECT_NAME}_core=core.h"
     "${PROJECT_NAME}_state=state.h"
@@ -73,14 +74,27 @@ foreach(target IN LISTS TANH_BUILT_COMPONENTS)
     endforeach()
 endforeach()
 
+# Modulation without State still uses the header-only definition types that
+# live under state/ (Range, ParameterDefinition, ModulationScope) and the
+# exception types ModulationMatrix::get_smart_handle() throws.
+if(TARGET ${PROJECT_NAME}_modulation AND NOT TARGET ${PROJECT_NAME}_state)
+    install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state/Exceptions.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state/ModulationScope.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/state/ParameterDefinitions.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/state
+        COMPONENT dev
+    )
+endif()
+
 # --- Targets -------------------------------------------------------------------
 
 set(TARGETS_TO_EXPORT ${TANH_BUILT_COMPONENTS})
 
-# nlohmann_json is a PUBLIC dependency of State; export it with the set so the
-# installed tanh::State target resolves (its own config is also installed when
-# JSON_Install is ON, which Config.cmake.in re-finds via find_dependency).
-if(TARGET ${PROJECT_NAME}_state AND TARGET nlohmann_json)
+# nlohmann_json is a PUBLIC dependency of State and Modulation; export it with
+# the set so the installed targets resolve (its own config is also installed
+# when JSON_Install is ON, which Config.cmake.in re-finds via find_dependency).
+if((TARGET ${PROJECT_NAME}_state OR TARGET ${PROJECT_NAME}_modulation) AND TARGET nlohmann_json)
     list(APPEND TARGETS_TO_EXPORT nlohmann_json)
 endif()
 

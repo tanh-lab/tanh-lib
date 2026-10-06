@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tanh/modulation/ResolvedTarget.h>
-#include <tanh/state/Parameter.h>
+#include <tanh/state/ParameterDefinitions.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -13,18 +13,23 @@
 #include <cstring>
 #include <initializer_list>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <variant>
 #include <vector>
 
 namespace thl::modulation {
 
-// SmartHandle<T> wraps a ParameterHandle<T> and adds per-sample modulation
-// buffer support. Holds a stable pointer to a ResolvedTarget in the matrix's
-// map — no registration or rewiring needed.
+// SmartHandle<T> reads a parameter's base value through the atomic its
+// ParameterBackend bound (ParameterBinding::m_base) and adds per-sample
+// modulation buffer support. Holds a stable pointer to a ResolvedTarget in the
+// matrix's map — no registration or rewiring needed.
 //
 // - Unmodulated: m_target is nullptr or both buffer pointers null → reads
-//   State's AtomicCacheEntry directly (~1ns)
+//   the backend's base atomic directly (~1ns)
+// - A handle without a target (built from a bare atomic) supports load() and
+//   the change-point accessors only; the metadata accessors and
+//   load_normalized() need the target's ParameterDefinition and assert on it.
 // - Modulated: applies base + modulation_buffer[offset] with type conversion
 //
 // The hot path is a single std::memory_order_acquire load of either the
@@ -56,8 +61,11 @@ class SmartHandle {
 public:
     SmartHandle() = default;
 
-    SmartHandle(thl::ParameterHandle<T> handle, ResolvedTarget* target)
-        : m_handle(handle), m_target(target) {}
+    // base must point at the parameter's base-value atomic and stay valid for
+    // the handle's lifetime. target is the matrix-owned ResolvedTarget whose
+    // definition backs the metadata accessors; nullptr gives an unmodulated
+    // handle that only supports load() and the change-point accessors.
+    SmartHandle(std::atomic<T>* base, ResolvedTarget* target) : m_base(base), m_target(target) {}
 
     // Read the parameter value at a given sample offset.
     // If a modulation target is attached, returns base + modulation.
@@ -71,7 +79,7 @@ public:
     // conversion happens here — one pow() per read instead of 2N per block.
     T load(uint32_t modulation_offset = 0,
            uint32_t voice_index = 0) const TANH_NONBLOCKING_FUNCTION {
-        if (!m_target) { return m_handle.load(); }
+        if (!m_target) { return load_base(); }
 
         if (auto* vb = m_target->m_voice.load(std::memory_order_acquire)) {
             float base_f = 0.0f;
@@ -82,7 +90,7 @@ public:
             if (vb->m_has_replace && vb->replace_active_voice(voice_index)[modulation_offset]) {
                 base_f = vb->replace_voice(voice_index)[modulation_offset];
             } else {
-                base_f = static_cast<float>(m_handle.load());
+                base_f = static_cast<float>(load_base());
             }
             if (vb->m_has_additive) { mod = vb->additive_voice(voice_index)[modulation_offset]; }
             return apply_modulation(base_f, mod);
@@ -93,7 +101,7 @@ public:
                 mb->m_replace_active[modulation_offset]) {
                 base_f = mb->m_replace_buffer[modulation_offset];
             } else {
-                base_f = static_cast<float>(m_handle.load());
+                base_f = static_cast<float>(load_base());
             }
             if (mb->m_has_additive && modulation_offset < mb->m_additive_buffer.size()) {
                 mod = mb->m_additive_buffer[modulation_offset];
@@ -101,7 +109,7 @@ public:
             return apply_modulation(base_f, mod);
         }
 
-        return m_handle.load();
+        return load_base();
     }
 
     // Access the mono-change-point list for this parameter's target. Returns
@@ -187,27 +195,30 @@ public:
                static_cast<size_t>(voice_index) * vb->m_block_size;
     }
 
-    thl::ParameterHandle<T> raw_handle() const TANH_NONBLOCKING_FUNCTION { return m_handle; }
-    bool is_valid() const TANH_NONBLOCKING_FUNCTION { return m_handle.is_valid(); }
+    bool is_valid() const TANH_NONBLOCKING_FUNCTION { return m_base != nullptr; }
 
     // ── Metadata accessors (RT-safe — immutable after construction) ──────
+    // Require a handle from ModulationMatrix::get_smart_handle() (a target).
     [[nodiscard]] const thl::ParameterDefinition& def() const TANH_NONBLOCKING_FUNCTION {
-        return m_handle.def();
+        assert(m_target != nullptr && "SmartHandle::def() needs a matrix handle");
+        return m_target->m_def;
     }
     [[nodiscard]] const thl::Range& range() const TANH_NONBLOCKING_FUNCTION {
-        return m_handle.range();
+        return def().m_range;
     }
-    [[nodiscard]] std::string_view key() const TANH_NONBLOCKING_FUNCTION { return m_handle.key(); }
-    [[nodiscard]] uint32_t id() const TANH_NONBLOCKING_FUNCTION { return m_handle.id(); }
-    [[nodiscard]] uint32_t flags() const TANH_NONBLOCKING_FUNCTION { return m_handle.flags(); }
+    [[nodiscard]] std::string_view key() const TANH_NONBLOCKING_FUNCTION {
+        assert(m_target != nullptr && "SmartHandle::key() needs a matrix handle");
+        return m_target->m_id;
+    }
+    [[nodiscard]] uint32_t id() const TANH_NONBLOCKING_FUNCTION { return def().m_id; }
+    [[nodiscard]] uint32_t flags() const TANH_NONBLOCKING_FUNCTION { return def().m_flags; }
 
     // Read the parameter value normalized to [0, 1] at a given sample offset.
     // For normalized buffers this avoids the from_norm→to_norm roundtrip.
+    // Requires a handle from ModulationMatrix::get_smart_handle() (a target).
     float load_normalized(uint32_t modulation_offset = 0,
                           uint32_t voice_index = 0) const TANH_NONBLOCKING_FUNCTION {
-        if (!m_target) {
-            return m_handle.range().to_normalized(static_cast<float>(m_handle.load()));
-        }
+        assert(m_target != nullptr && "SmartHandle::load_normalized() needs a matrix handle");
 
         float base_f = 0.0f;
         float mod = 0.0f;
@@ -218,7 +229,7 @@ public:
             if (vb->m_has_replace && vb->replace_active_voice(voice_index)[modulation_offset]) {
                 base_f = vb->replace_voice(voice_index)[modulation_offset];
             } else {
-                base_f = static_cast<float>(m_handle.load());
+                base_f = static_cast<float>(load_base());
             }
             if (vb->m_has_additive) { mod = vb->additive_voice(voice_index)[modulation_offset]; }
         } else if (auto* mb = m_target->m_mono.load(std::memory_order_acquire)) {
@@ -227,16 +238,14 @@ public:
                 mb->m_replace_active[modulation_offset]) {
                 base_f = mb->m_replace_buffer[modulation_offset];
             } else {
-                base_f = static_cast<float>(m_handle.load());
+                base_f = static_cast<float>(load_base());
             }
             if (mb->m_has_additive && modulation_offset < mb->m_additive_buffer.size()) {
                 mod = mb->m_additive_buffer[modulation_offset];
             }
         }
 
-        if (!has_mod_state) {
-            return m_handle.range().to_normalized(static_cast<float>(m_handle.load()));
-        }
+        if (!has_mod_state) { return range().to_normalized(static_cast<float>(load_base())); }
 
         if (m_target->m_uses_normalized_buffer) {
             const float base_norm = m_target->m_range->to_normalized(base_f);
@@ -249,7 +258,7 @@ public:
             }
             return result_norm;
         }
-        return m_handle.range().to_normalized(base_f + mod);
+        return range().to_normalized(base_f + mod);
     }
 
     // Returns the block size of whichever buffer set is currently published
@@ -269,6 +278,9 @@ public:
     ResolvedTarget* target() const TANH_NONBLOCKING_FUNCTION { return m_target; }
 
 private:
+    // Unmodulated base value, straight from the backend's atomic.
+    T load_base() const { return m_base->load(std::memory_order_relaxed); }
+
     // Common modulation application: base_f + mod with curve conversion and type cast.
     T apply_modulation(float base_f, float mod) const TANH_NONBLOCKING_FUNCTION {
         float result;
@@ -309,7 +321,7 @@ private:
         }
     }
 
-    thl::ParameterHandle<T> m_handle;
+    std::atomic<T>* m_base = nullptr;
     ResolvedTarget* m_target = nullptr;
 };
 
@@ -448,7 +460,8 @@ void collect_change_points(std::span<const Handle> handles,
         const auto word = target_buffer[bitset_base + w];
         auto bits = word;
         while (bits != 0) {
-            const int bit = std::countr_zero(bits);
+            // bits != 0, so countr_zero is in [0, 31].
+            const auto bit = static_cast<size_t>(std::countr_zero(bits));
             target_buffer[write++] = static_cast<uint32_t>(w * 32 + bit);
             bits &= bits - 1;  // clear lowest set bit
         }
@@ -503,7 +516,8 @@ inline void collect_change_points(
         const auto word = target_buffer[bitset_base + w];
         auto bits = word;
         while (bits != 0) {
-            const int bit = std::countr_zero(bits);
+            // bits != 0, so countr_zero is in [0, 31].
+            const auto bit = static_cast<size_t>(std::countr_zero(bits));
             target_buffer[write++] = static_cast<uint32_t>(w * 32 + bit);
             bits &= bits - 1;
         }
