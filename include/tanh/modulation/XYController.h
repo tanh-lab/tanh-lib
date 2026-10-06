@@ -12,7 +12,6 @@
 
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -183,7 +182,7 @@ public:
 
     /// Touch down (a new id grabs a voice) or move (a known id). False for a
     /// non-finite position, a full touch table, no enabled voice or a full queue.
-    /// @p time_ns is when the touch happened on the clock_now_ns() clock; with it
+    /// @p time_ns is when the touch happened, on the clock of set_block_time(); with it
     /// (and set_block_time()) the touch plays at its own sample, and x / y ramp
     /// between timed moves. Without it the block's touches are spread and held.
     bool touch(TouchId id, float x, float y, std::optional<int64_t> time_ns = std::nullopt);
@@ -229,16 +228,14 @@ public:
         voice_recorder(voice).read_lane(std::forward<F>(f));
     }
 
-    /// The touch timestamp clock: std::chrono::steady_clock in nanoseconds
-    /// (mach_absolute_time based on Apple platforms).
-    [[nodiscard]] static int64_t clock_now_ns() {
-        return std::chrono::duration_cast<std::chrono::nanoseconds>(
-                   std::chrono::steady_clock::now().time_since_epoch())
-            .count();
-    }
-    /// The clock_now_ns() time of the block's audio callback. Call once per
-    /// block before set_transport() / process_block() to place timestamped
-    /// touches; a block without it spreads its touches as if untimed.
+    /// A monotonic clock in nanoseconds for touch and block times. On Apple
+    /// platforms it is the uptime clock (mach_absolute_time) of UITouch,
+    /// NSEvent and AudioTimeStamp host times; elsewhere std::chrono::steady_clock.
+    [[nodiscard]] static int64_t clock_now_ns() TANH_NONBLOCKING_FUNCTION;
+    /// The time of the block's audio callback, on the clock of the touch
+    /// timestamps (any monotonic nanosecond clock, e.g. clock_now_ns()). Call
+    /// once per block before set_transport() / process_block() to place
+    /// timestamped touches; a block without it spreads its touches as if untimed.
     void set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION;
 
     /// The block's transport (m_num_samples = block length). Call before

@@ -134,22 +134,22 @@ private:
 
     // Audio thread only.
     XYPadTiming m_timing;
-    int64_t m_max_wait = 0;  // latest offset a timed event may land at
+    int64_t m_max_wait = 0;        // latest offset a timed event may land at
+    int64_t m_block_start = 0;     // pad sample of this block's first sample
+    int64_t m_last_scheduled = 0;  // pad sample of the newest scheduled event
+    int64_t m_ramp_from_sample = 0;
     // Drained events not yet applied, oldest first (a ring).
     std::array<Scheduled, k_xy_pad_queue_capacity> m_waiting{};
     size_t m_waiting_head = 0;
     size_t m_waiting_count = 0;
-    int64_t m_block_start = 0;     // pad sample of this block's first sample
-    int64_t m_last_scheduled = 0;  // pad sample of the newest scheduled event
-    float m_current_x = 0.0f;      // value set by the last applied event
+    float m_current_x = 0.0f;  // value set by the last applied event
     float m_current_y = 0.0f;
-    uint8_t m_current_active = 0;
-    bool m_ramping = false;  // x / y ramp towards the oldest waiting event
     float m_ramp_from_x = 0.0f;
     float m_ramp_from_y = 0.0f;
-    int64_t m_ramp_from_sample = 0;
     uint32_t m_num_samples = 0;
     uint32_t m_num_change_points = 0;
+    uint8_t m_current_active = 0;
+    bool m_ramping = false;  // x / y ramp towards the oldest waiting event
     std::vector<float> m_x;
     std::vector<float> m_y;
     std::vector<uint8_t> m_active;
