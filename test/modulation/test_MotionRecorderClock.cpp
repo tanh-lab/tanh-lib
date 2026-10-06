@@ -427,7 +427,10 @@ TEST_P(MotionRecorderClock, JumpDuringBarRecording) {
     const size_t from = r.m_x.size() + k_glide + 64;
     r.run_until(r.now() + (6 * k_spb));
     for (size_t s = from; s < r.m_x.size(); s += 53) {
-        const MotionPoint p = lane.sample(std::fmod(r.m_beat[s], 8.0));
+        // Skip the raw 1 → 0 step of x (index 0): the render ramp cuts its overshoot.
+        const double phase = std::fmod(r.m_beat[s], 8.0);
+        if (phase < 0.05 || phase > 7.95) { continue; }
+        const MotionPoint p = lane.sample(phase);
         ASSERT_NEAR(r.m_x[s], p.m_x, 2e-3) << s;
     }
     EXPECT_TRUE(motion_test::all_in_unit_range(r.m_x));
@@ -539,9 +542,9 @@ TEST_P(MotionRecorderClock, PrepareAbortsTake) {
 namespace {
 
 constexpr double k_draw_radius = 0.35;
-// Lane vs drawing (beats): smoothing and the finger's 64-sample event grid, measured
-// 0.0034 with the tempo changing at block boundaries; one tick is 0.01 beats.
-constexpr double k_lane_offset_tol = 0.005;
+// Lane vs drawing (beats): the finger's 64-sample event grid on a raw lane,
+// measured up to 0.0055 (tempo ramp, 2048-sample blocks); one tick is 0.01 beats.
+constexpr double k_lane_offset_tol = 0.006;
 
 std::pair<float, float> draw_circle(double beat) {
     const double ph = 2.0 * std::numbers::pi * beat / k_lane_beats;

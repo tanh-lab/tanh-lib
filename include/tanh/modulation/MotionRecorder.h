@@ -19,7 +19,16 @@ namespace thl::modulation {
 
 namespace detail {
 
-enum class MotionCommandKind : uint8_t { Arm, Record, Disarm, Play, Stop, Reverse, PlaybackLength };
+enum class MotionCommandKind : uint8_t {
+    Arm,
+    Record,
+    Overdub,
+    Disarm,
+    Play,
+    Stop,
+    Reverse,
+    PlaybackLength
+};
 
 /// One UI to audio recorder command.
 struct MotionCommand {
@@ -47,7 +56,7 @@ enum class StoppedTransport : uint8_t {
 enum class MotionState : uint8_t {
     Idle,       ///< nothing playing (no lane, or playback stopped) and not armed
     Armed,      ///< waiting for the first touch; the old lane keeps playing
-    Recording,  ///< a take is being written
+    Recording,  ///< a take or an overdub punch is being written
     Playing     ///< a lane is playing
 };
 
@@ -62,10 +71,12 @@ struct MotionRecorderConfig {
     /// Catmull-Rom is evaluated every this many samples; the output ramps linearly between.
     uint32_t m_render_interval = 32;
     double m_glide_ms = 25.0;  ///< raised-cosine glide after a jump, a new lane or a release
-    /// Free takes end after 16 bars at most and are stretched onto the nearest
-    /// (in ratio) of 1, 2, 4, 8 or 16 bars: a Beats lane whose index 0 sits on
-    /// the bar line nearest the take's start. Off: free takes keep their length.
-    bool m_snap_to_bars = false;
+    /// Every take starts on the bar line at or before its first touch and
+    /// records lifts as gate 0. BarsN records exactly N bars; Free ends at the
+    /// first of 1, 2, 4, 8 or 16 bars reached with the finger up. disarm() and
+    /// stop() pad a running take to that length instead of dropping it.
+    /// Off: free takes end on release and keep their length.
+    bool m_bar_aligned_takes = false;
 };
 
 /// One block of touch input for MotionRecorder::process().
@@ -82,12 +93,13 @@ struct MotionSnapshot {
     MotionState m_state = MotionState::Idle;
     bool m_playing = false;  ///< playback enabled (play() / stop())
     bool m_reverse = false;
+    bool m_overdub = false;   ///< overdub mode: touches punch into the playing lane
     bool m_beats = false;     ///< the playing lane is a Beats lane
     bool m_busy = false;      ///< armed, but both take buffers wait for service()
     bool m_refused = false;   ///< the last take could not start (tpb below the minimum)
     bool m_aborted = false;   ///< the last take was aborted (prepare() during a take)
     float m_phase = 0.0f;     ///< playback position, 0..1 of the loop
-    float m_progress = 0.0f;  ///< recording progress, 0..1 of the loop or of the capacity
+    float m_progress = 0.0f;  ///< recording progress, 0..1 of the current loop target
     uint32_t m_take_id = 0;   ///< id of the lane that is playing (0 = none)
     double m_length = 0.0;    ///< loop length of that lane (seconds or beats)
 };
@@ -104,19 +116,24 @@ struct MotionSnapshot {
  *
  * A new take replaces the playing lane from its first sample: the old lane
  * stops playing, and if the take is then dropped (a cancelled bar take, a take
- * too short to keep) service() clears it.
+ * too short to keep) service() clears it. In overdub mode a touch instead
+ * punches into a copy of the playing lane where the playback passes under it.
+ *
+ * service() keeps the published lane raw and plays a copy smoothed by
+ * set_smoothing(). Every publication can be undone once (undo(), redo()).
  *
  * XYController owns one recorder per voice and calls process(); recorder(v)
  * gives the UI and message thread access to the rest.
  *
  * Threading:
  * - ctor, prepare: message thread, audio stopped (allocates).
- * - arm, record, disarm, play, stop, set_reverse, set_playback_length: one UI
- *   thread (lock-free queue).
- * - set_stopped_transport: any thread.
+ * - arm, record, overdub, disarm, play, stop, set_reverse, set_playback_length:
+ *   one UI thread (lock-free queue).
+ * - set_stopped_transport, smoothing: any thread.
  * - process and the audio getters: audio thread.
- * - service, load_lane, clear: one message thread (RCU publication, allocates).
- * - lane, read_lane, lane_version: message or UI thread.
+ * - service, load_lane, clear, undo, redo, can_undo, can_redo, clear_history,
+ *   set_smoothing: one message thread (RCU publication, allocates).
+ * - lane, played_lane, read_lane, lane_version: message or UI thread.
  */
 class TANH_API MotionRecorder {
 public:
@@ -149,7 +166,18 @@ public:
     [[nodiscard]] bool arm(LoopLength length);
     /// Start a take at the next block without waiting for a touch.
     [[nodiscard]] bool record(LoopLength length);
-    /// Cancel arming. A running free take finishes and plays; a running bar take is dropped.
+    /**
+     * @brief Enter overdub mode: while the finger is down, the playing lane is
+     * replaced under the playback position (x, y, gate 1); untouched points and
+     * the length stay. Each release publishes the edit as a new take.
+     *
+     * With nothing playing it arms a take of the playback length first.
+     * arm(), record(), disarm() and stop() leave overdub mode.
+     */
+    [[nodiscard]] bool overdub();
+    /// Cancel arming and leave overdub mode. A running free or bar-aligned take
+    /// finishes and plays (a bar-aligned take is padded to its loop, and dropped
+    /// only if it was never touched); a running bar take is dropped.
     [[nodiscard]] bool disarm();
     /// Enable playback (the default).
     [[nodiscard]] bool play();
@@ -215,16 +243,39 @@ public:
     /// Publish an empty lane: playback stops (gate 0, x and y hold). Returns the new id.
     uint32_t clear();
 
-    /// Copy of the published lane (allocates).
-    [[nodiscard]] MotionLane lane() const;
+    /// Republish the lane before the last publication (take, punch, load, clear)
+    /// under a new take id. Publishes finished takes first. False if there is none.
+    bool undo();
+    /// Republish the lane the last undo() replaced. A new publication drops it.
+    bool redo();
+    [[nodiscard]] bool can_undo() const { return m_has_undo; }
+    [[nodiscard]] bool can_redo() const { return m_has_redo; }
+    /// Forget the undo and redo lanes (preset load).
+    void clear_history();
 
-    /// Call @p f with the published lane inside an RCU read section.
+    /**
+     * @brief Playback smoothing, 0 (raw) to 1; the published lane stays raw.
+     *
+     * x and y play through a circular, zero-phase Gaussian whose sigma grows
+     * exponentially with @p amount up to a quarter beat (Beats lanes) or 250 ms
+     * (Seconds lanes). The gate is not smoothed. Playback glides to the result.
+     */
+    void set_smoothing(float amount);
+    [[nodiscard]] float smoothing() const { return m_smoothing.load(std::memory_order_relaxed); }
+
+    /// Copy of the published lane (raw, allocates).
+    [[nodiscard]] MotionLane lane() const;
+    /// Copy of the published lane with the smoothed x and y that play (allocates).
+    [[nodiscard]] MotionLane played_lane() const;
+
+    /// Call @p f with the published (raw) lane inside an RCU read section.
     template <typename F>
     void read_lane(F&& f) const {
-        m_lanes.read([&](const MotionLane& l) { f(l); });
+        m_lanes.read([&](const PlayedLane& l) { f(l.m_lane); });
     }
 
-    /// Bumped on every publication (take, load, clear): redraw when it changes.
+    /// Bumped on every publication (take, punch, load, clear, undo, redo,
+    /// smoothing change): redraw when it changes.
     [[nodiscard]] uint32_t lane_version() const {
         return m_lane_version.load(std::memory_order_acquire);
     }
@@ -234,6 +285,15 @@ private:
     using Command = detail::MotionCommand;
 
     enum class BufferState : uint8_t { Free, Recording, Finished, Published };
+
+    // The RCU payload: the published lane and the x and y that play.
+    struct PlayedLane {
+        MotionLane m_lane;
+        std::vector<float> m_x;
+        std::vector<float> m_y;
+        bool m_smoothed = false;
+        uint32_t m_version = 0;  // per publication, also for a smoothing change
+    };
 
     struct TakeBuffer {
         std::atomic<BufferState> m_state{BufferState::Free};
@@ -251,8 +311,10 @@ private:
 
     // What playback reads: a take buffer or the RCU lane, valid for one block.
     struct LaneView {
-        const float* m_x = nullptr;
+        const float* m_x = nullptr;  // played (smoothed) x and y
         const float* m_y = nullptr;
+        const float* m_raw_x = nullptr;  // published x and y (overdub copies these)
+        const float* m_raw_y = nullptr;
         const uint8_t* m_gate = nullptr;
         size_t m_num_points = 0;
         MotionTimebase m_timebase = MotionTimebase::Seconds;
@@ -267,10 +329,13 @@ private:
     struct Take {
         bool m_active = false;
         bool m_bar = false;
+        bool m_aligned = false;  // starts on a bar line (m_bar_aligned_takes)
         bool m_beats = false;
         bool m_saw_touch = false;
         uint32_t m_buffer = 0;
-        size_t m_capacity = 0;         // bar: points per loop; free: max points
+        size_t m_capacity = 0;  // bar: points per loop; free: max points
+        size_t m_target = 0;    // the take may end here (aligned free: the next boundary)
+        size_t m_points_per_bar = 0;
         size_t m_count = 0;            // points written
         size_t m_count_at_change = 0;  // points up to the last input change
         size_t m_start_index = 0;      // bar: physical index of the first point
@@ -280,29 +345,45 @@ private:
         double m_start_beat = 0.0;
         double m_length = 0.0;     // bar: loop length in beats
         double m_bar_beats = 4.0;  // beats per bar at the start
+        double m_bar_line = 0.0;   // aligned: beat of point 0
         float m_last_x = 0.0f;
         float m_last_y = 0.0f;
-        std::array<float, 5> m_ring_x{};  // raw last points
-        std::array<float, 5> m_ring_y{};
+    };
+
+    // An overdub punch into a copy of the playing lane (audio thread only).
+    struct Punch {
+        bool m_active = false;
+        bool m_wrote = false;
+        uint32_t m_buffer = 0;
+        uint32_t m_base_id = 0;  // take id of the lane that was copied
+        size_t m_last_index = 0;
     };
 
     void apply_commands(double bpm);
-    void select_source(const MotionLane& lane);
-    [[nodiscard]] LaneView view_of(Source source, const MotionLane& lane) const;
+    void select_source(const PlayedLane& lane);
+    [[nodiscard]] LaneView view_of(Source source, const PlayedLane& lane) const;
     // view_of() the playing source, empty while a new take replaces it.
-    [[nodiscard]] LaneView playback_view(const MotionLane& lane) const;
+    [[nodiscard]] LaneView playback_view(const PlayedLane& lane) const;
     void switch_to(Source source, uint32_t id, bool silent);
+    void glide_in_place();
     void start_take(const thl::dsp::transport::TransportInfo& transport,
                     const MotionInput& input,
                     uint32_t offset,
                     double clock_beat);
     void write_point(float x, float y, uint8_t gate);
     void finish_take(double bpm, uint32_t trim_samples = 0);
+    // disarm()/stop() during a take.
+    void end_take(double bpm);
     // keep_replaced: the old lane plays on (prepare()); otherwise service() clears it.
     void abort_take(bool keep_replaced = false);
     void finalise(TakeBuffer& buffer, size_t num_points, double points_per_second);
     void start_glide();
-    void publish(MotionLane lane);
+    void start_punch(const PlayedLane& lane);
+    void write_punch(size_t index, float x, float y, double direction, size_t num_points);
+    void finish_punch();
+    void abort_punch();
+    void publish(MotionLane lane, bool record_history = true);
+    void publish_played(MotionLane lane);
 
     MotionRecorderConfig m_config;
     double m_sample_rate = 48000.0;
@@ -312,19 +393,27 @@ private:
     // Shared between threads.
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
     std::array<TakeBuffer, 2> m_takes;
-    RCU<MotionLane> m_lanes;
+    RCU<PlayedLane> m_lanes;
     thl::detail::RcuReaderNode* m_audio_reader = nullptr;
     std::atomic<uint32_t> m_next_take_id{1};
     std::atomic<uint32_t> m_lane_version{0};
     std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
     // Id of a lane a dropped take replaced; service() clears it if still published.
     std::atomic<uint32_t> m_clear_request{0};
+    std::atomic<float> m_smoothing{0.0f};
 
     // Message thread only.
     uint32_t m_published_id = 0;
+    uint32_t m_played_version = 0;
+    MotionLane m_undo_lane;
+    MotionLane m_redo_lane;
+    bool m_has_undo = false;
+    bool m_has_redo = false;
 
     // Audio thread only: commands and take.
     Take m_take;
+    Punch m_punch;
+    bool m_overdub = false;
     bool m_armed = false;
     bool m_force_start = false;
     LoopLength m_arm_length = LoopLength::Free;
@@ -342,6 +431,7 @@ private:
     // Audio thread only: playback source and clock.
     Source m_source = Source::Lane;
     uint32_t m_playing_take_id = 0;
+    uint32_t m_playing_version = 0;  // PlayedLane::m_version of the playing lane
     bool m_have_clock = false;
     double m_clock_end = 0.0;  // beat at the end of the previous block
 

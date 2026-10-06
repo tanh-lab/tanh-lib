@@ -18,6 +18,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MotionRecorder.cpp
 	test_MotionRecorderClock.cpp
 	test_MotionRecorderThreads.cpp
+	test_MotionRecorderTakes.cpp
 	test_OversizedBlocks.cpp
 )
 

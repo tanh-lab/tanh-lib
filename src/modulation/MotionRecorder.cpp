@@ -23,14 +23,7 @@ using thl::dsp::transport::TransportInfo;
 namespace {
 
 constexpr size_t k_min_take_points = 4;
-constexpr double k_max_snap_bars = 16.0;
-
-// Nearest of 1, 2, 4, 8, 16 bars by ratio (log2), so the stretch is the smallest.
-double snap_bars(double bars) {
-    if (!(bars > 0.0)) { return 1.0; }
-    const double exponent = std::clamp(std::round(std::log2(bars)), 0.0, 4.0);
-    return std::exp2(exponent);
-}
+constexpr size_t k_max_aligned_bars = 16;
 constexpr size_t k_min_capacity = 16;
 // Below this the running playback phase is kept as is (bit-exact continuity,
 // also across an aligned DAW loop wrap or a hint without a real jump).
@@ -59,6 +52,44 @@ float clamp01(double v) {
     return static_cast<float>(std::clamp(v, 0.0, 1.0));
 }
 
+// Smoothing sigma at amount 1, in lane units (a quarter beat, or 250 ms).
+constexpr double k_max_smoothing_sigma = 0.25;
+// sigma = max * (base^amount - 1) / (base - 1): fine control at small amounts.
+constexpr double k_smoothing_curve_base = 64.0;
+// Below this many points of sigma the kernel is a no-op: play the raw lane.
+constexpr double k_min_smoothing_points = 0.05;
+
+// Circular convolution of @p in with a sampled Gaussian. The kernel is symmetric
+// (zero phase) and wraps around the loop, so the seam is smoothed like any
+// other point. Weights sum to 1: the output stays inside [0, 1].
+void smooth_circular(const std::vector<float>& in, double sigma, std::vector<float>& out) {
+    const size_t n = in.size();
+    out.assign(n, 0.0f);
+    if (n == 0) { return; }
+    // Truncate at 3 sigma; a kernel wider than the loop just wraps more than once.
+    const auto radius =
+        static_cast<std::ptrdiff_t>(std::min(std::ceil(3.0 * sigma), 2.0 * static_cast<double>(n)));
+    std::vector<double> weights(static_cast<size_t>((2 * radius) + 1));
+    double sum = 0.0;
+    for (std::ptrdiff_t k = -radius; k <= radius; ++k) {
+        const auto d = static_cast<double>(k);
+        const double w = std::exp(-0.5 * d * d / (sigma * sigma));
+        weights[static_cast<size_t>(k + radius)] = w;
+        sum += w;
+    }
+    const auto len = static_cast<std::ptrdiff_t>(n);
+    for (std::ptrdiff_t i = 0; i < len; ++i) {
+        double acc = 0.0;
+        for (std::ptrdiff_t k = -radius; k <= radius; ++k) {
+            std::ptrdiff_t j = (i + k) % len;
+            if (j < 0) { j += len; }
+            acc += weights[static_cast<size_t>(k + radius)] *
+                   static_cast<double>(in[static_cast<size_t>(j)]);
+        }
+        out[static_cast<size_t>(i)] = clamp01(acc / sum);
+    }
+}
+
 }  // namespace
 
 MotionRecorder::MotionRecorder() : m_audio_reader(&m_lanes.add_reader()) {}
@@ -76,6 +107,7 @@ void MotionRecorder::prepare(double sample_rate,
     }
     m_armed = false;
     m_force_start = false;
+    m_punch = Punch{};
     for (auto& b : m_takes) { b.m_state.store(BufferState::Free, std::memory_order_relaxed); }
 
     m_config = config;
@@ -134,6 +166,10 @@ bool MotionRecorder::record(LoopLength length) {
         {.m_kind = CommandKind::Record, .m_arg = static_cast<uint8_t>(length)});
 }
 
+bool MotionRecorder::overdub() {
+    return m_commands.try_push({.m_kind = CommandKind::Overdub, .m_arg = 0});
+}
+
 bool MotionRecorder::disarm() {
     return m_commands.try_push({.m_kind = CommandKind::Disarm, .m_arg = 0});
 }
@@ -156,11 +192,89 @@ bool MotionRecorder::set_playback_length(LoopLength length) {
         {.m_kind = CommandKind::PlaybackLength, .m_arg = static_cast<uint8_t>(length)});
 }
 
-void MotionRecorder::publish(MotionLane lane) {
+// Every publication goes through here: smooth on this thread, swap through
+// RCU. The audio thread plays m_x / m_y and copies m_lane for an overdub.
+void MotionRecorder::publish_played(MotionLane lane) {
     const uint32_t id = lane.m_take_id;
-    m_lanes.replace([&](MotionLane& l) { l = std::move(lane); });
+    const double amount = m_smoothing.load(std::memory_order_relaxed);
+    const size_t n = lane.num_points();
+    double sigma = 0.0;
+    if (amount > 0.0 && n > 0 && lane.m_length > 0.0) {
+        const double units = k_max_smoothing_sigma *
+                             (std::pow(k_smoothing_curve_base, amount) - 1.0) /
+                             (k_smoothing_curve_base - 1.0);
+        sigma = units * static_cast<double>(n) / lane.m_length;
+    }
+    const uint32_t version = ++m_played_version;
+    m_lanes.replace([&](PlayedLane& l) {
+        l.m_smoothed = sigma >= k_min_smoothing_points;
+        if (l.m_smoothed) {
+            smooth_circular(lane.m_x, sigma, l.m_x);
+            smooth_circular(lane.m_y, sigma, l.m_y);
+        } else {
+            l.m_x = lane.m_x;
+            l.m_y = lane.m_y;
+        }
+        l.m_version = version;
+        l.m_lane = std::move(lane);
+    });
     m_published_id = id;
     m_lane_version.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void MotionRecorder::publish(MotionLane lane, bool record_history) {
+    if (record_history) {
+        MotionLane previous = this->lane();
+        if (!previous.empty() || !lane.empty()) {
+            m_undo_lane = std::move(previous);
+            m_has_undo = true;
+            m_redo_lane = MotionLane{};
+            m_has_redo = false;
+        }
+    }
+    publish_played(std::move(lane));
+}
+
+bool MotionRecorder::undo() {
+    service();
+    if (!m_has_undo) { return false; }
+    MotionLane current = lane();
+    MotionLane restored = std::move(m_undo_lane);
+    restored.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
+    publish(std::move(restored), false);
+    m_undo_lane = MotionLane{};
+    m_has_undo = false;
+    m_redo_lane = std::move(current);
+    m_has_redo = true;
+    return true;
+}
+
+bool MotionRecorder::redo() {
+    service();
+    if (!m_has_redo) { return false; }
+    MotionLane current = lane();
+    MotionLane restored = std::move(m_redo_lane);
+    restored.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
+    publish(std::move(restored), false);
+    m_redo_lane = MotionLane{};
+    m_has_redo = false;
+    m_undo_lane = std::move(current);
+    m_has_undo = true;
+    return true;
+}
+
+void MotionRecorder::clear_history() {
+    m_undo_lane = MotionLane{};
+    m_redo_lane = MotionLane{};
+    m_has_undo = false;
+    m_has_redo = false;
+}
+
+void MotionRecorder::set_smoothing(float amount) {
+    const float a = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f;
+    if (a == m_smoothing.load(std::memory_order_relaxed)) { return; }
+    m_smoothing.store(a, std::memory_order_relaxed);
+    publish_played(lane());  // same take id: playback glides to the new curve
 }
 
 bool MotionRecorder::service() {
@@ -236,14 +350,24 @@ uint32_t MotionRecorder::clear() {
 
 MotionLane MotionRecorder::lane() const {
     MotionLane copy;
-    m_lanes.read([&](const MotionLane& l) { copy = l; });
+    m_lanes.read([&](const PlayedLane& l) { copy = l.m_lane; });
+    return copy;
+}
+
+MotionLane MotionRecorder::played_lane() const {
+    MotionLane copy;
+    m_lanes.read([&](const PlayedLane& l) {
+        copy = l.m_lane;
+        copy.m_x = l.m_x;
+        copy.m_y = l.m_y;
+    });
     return copy;
 }
 
 MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
     const bool has_lane = m_view_length > 0.0;
     MotionSnapshot s;
-    if (m_take.m_active) {
+    if (m_take.m_active || m_punch.m_active) {
         s.m_state = MotionState::Recording;
     } else if (m_armed) {
         s.m_state = MotionState::Armed;
@@ -252,34 +376,45 @@ MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
     }
     s.m_playing = m_play_enabled;
     s.m_reverse = m_reverse;
+    s.m_overdub = m_overdub;
     s.m_beats = has_lane && m_view_timebase == MotionTimebase::Beats;
     s.m_busy = m_busy;
     s.m_refused = m_refused;
     s.m_aborted = m_aborted;
     s.m_phase = has_lane ? clamp01(m_phase / m_view_length) : 0.0f;
-    if (m_take.m_active && m_take.m_capacity > 0) {
+    if (m_take.m_active && m_take.m_target > 0) {
         s.m_progress =
-            clamp01(static_cast<double>(m_take.m_count) / static_cast<double>(m_take.m_capacity));
+            clamp01(static_cast<double>(m_take.m_count) / static_cast<double>(m_take.m_target));
     }
     s.m_take_id = has_lane ? m_playing_take_id : 0;
     s.m_length = m_view_length;
     return s;
 }
 
-MotionRecorder::LaneView MotionRecorder::view_of(Source src, const MotionLane& lane) const {
+MotionRecorder::LaneView MotionRecorder::view_of(Source src, const PlayedLane& played) const {
     LaneView v;
     if (src == Source::Lane) {
-        v.m_x = lane.m_x.data();
-        v.m_y = lane.m_y.data();
+        const MotionLane& lane = played.m_lane;
+        v.m_x = played.m_x.data();
+        v.m_y = played.m_y.data();
+        v.m_raw_x = lane.m_x.data();
+        v.m_raw_y = lane.m_y.data();
         v.m_gate = lane.m_gate.data();
-        v.m_num_points = std::min({lane.m_x.size(), lane.m_y.size(), lane.m_gate.size()});
+        v.m_num_points = std::min({lane.m_x.size(),
+                                   lane.m_y.size(),
+                                   lane.m_gate.size(),
+                                   played.m_x.size(),
+                                   played.m_y.size()});
         v.m_timebase = lane.m_timebase;
         v.m_length = lane.m_length;
         v.m_anchor = lane.m_anchor;
     } else if (src == Source::Buffer0 || src == Source::Buffer1) {
+        // A take buffer plays raw until service() publishes it.
         const TakeBuffer& b = m_takes[src == Source::Buffer0 ? 0 : 1];
         v.m_x = b.m_x.data();
         v.m_y = b.m_y.data();
+        v.m_raw_x = b.m_x.data();
+        v.m_raw_y = b.m_y.data();
         v.m_gate = b.m_gate.data();
         v.m_num_points = b.m_num_points;
         v.m_timebase = b.m_timebase;
@@ -296,7 +431,7 @@ MotionRecorder::LaneView MotionRecorder::view_of(Source src, const MotionLane& l
     return v;
 }
 
-MotionRecorder::LaneView MotionRecorder::playback_view(const MotionLane& lane) const {
+MotionRecorder::LaneView MotionRecorder::playback_view(const PlayedLane& lane) const {
     if (m_replaced_take_id != 0 && m_playing_take_id == m_replaced_take_id) { return {}; }
     return view_of(m_source, lane);
 }
@@ -305,6 +440,12 @@ void MotionRecorder::start_glide() {
     m_glide_left = m_glide_samples;
     m_glide_from_x = m_last_x;
     m_glide_from_y = m_last_y;
+}
+
+// Same lane, other curve (smoothing): keep the phase, glide to the new values.
+void MotionRecorder::glide_in_place() {
+    m_ramp_restart = true;
+    if (!m_last_live) { start_glide(); }
 }
 
 void MotionRecorder::switch_to(Source src, uint32_t id, bool silent) {
@@ -321,19 +462,33 @@ void MotionRecorder::switch_to(Source src, uint32_t id, bool silent) {
 // finalises it in place (Finished) and plays straight from it. service() copies
 // a Finished buffer into a MotionLane, publishes it and marks the buffer
 // Published. Take ids come from one counter shared with load_lane(), so the
-// newest id always wins.
+// newest id always wins. An overdub punch is a Recording buffer too: a copy of
+// the playing lane that plays while it is edited.
 //
 // The switch away from a buffer depends only on the lane this block reads: a
 // buffer can turn Published after the read scope opened (service() racing this
 // block), and the lane in the scope then still predates it.
-void MotionRecorder::select_source(const MotionLane& lane) {
-    const uint32_t lane_id = lane.m_take_id;
-    if (m_source == Source::Lane) {
-        if (lane_id != m_playing_take_id) { switch_to(Source::Lane, lane_id, false); }
+void MotionRecorder::select_source(const PlayedLane& played) {
+    const uint32_t lane_id = played.m_lane.m_take_id;
+    // A lane published after the punch started (load, clear, undo) wins.
+    if (m_punch.m_active && lane_id > m_punch.m_base_id) { abort_punch(); }
+    if (m_punch.m_active) {
+        // Keep playing the punch buffer.
+    } else if (m_source == Source::Lane) {
+        if (lane_id != m_playing_take_id) {
+            switch_to(Source::Lane, lane_id, false);
+        } else if (played.m_version != m_playing_version) {
+            glide_in_place();  // new smoothing
+        }
+        m_playing_version = played.m_version;
     } else if (lane_id >= m_playing_take_id) {
-        // Same id: the lane is a bit-identical copy of the buffer, switch silently.
-        // A newer id: a loaded lane replaced the take.
-        switch_to(Source::Lane, lane_id, lane_id == m_playing_take_id);
+        // Same id: the lane is a copy of the buffer, switch without a re-seek
+        // (and glide when it plays smoothed). A newer id: a loaded lane
+        // replaced the take.
+        const bool same = lane_id == m_playing_take_id;
+        switch_to(Source::Lane, lane_id, same);
+        if (same && played.m_smoothed) { glide_in_place(); }
+        m_playing_version = played.m_version;
     }
     for (uint32_t b = 0; b < 2; ++b) {
         const Source own = b == 0 ? Source::Buffer0 : Source::Buffer1;
@@ -351,6 +506,8 @@ void MotionRecorder::apply_commands(double bpm) {
         switch (c.m_kind) {
             case CommandKind::Arm:
             case CommandKind::Record:
+                m_overdub = false;
+                if (m_punch.m_active) { finish_punch(); }
                 if (m_take.m_active) { break; }
                 m_armed = true;
                 m_force_start = c.m_kind == CommandKind::Record;
@@ -359,18 +516,19 @@ void MotionRecorder::apply_commands(double bpm) {
                 m_aborted = false;
                 m_busy = false;
                 break;
+            case CommandKind::Overdub:
+                m_overdub = true;
+                m_refused = false;
+                m_aborted = false;
+                break;
             case CommandKind::Disarm:
             case CommandKind::Stop:
+                m_overdub = false;
+                if (m_punch.m_active) { finish_punch(); }
                 m_armed = false;
                 m_force_start = false;
                 m_busy = false;
-                if (m_take.m_active) {
-                    if (m_take.m_bar) {
-                        abort_take();
-                    } else {
-                        finish_take(bpm);
-                    }
-                }
+                if (m_take.m_active) { end_take(bpm); }
                 if (c.m_kind == CommandKind::Stop) { m_play_enabled = false; }
                 break;
             case CommandKind::Play:
@@ -431,8 +589,35 @@ void MotionRecorder::start_take(const TransportInfo& t,
     Take& k = m_take;
     k = Take{};
     k.m_bar_beats = static_cast<double>(sig_num) * 4.0 / static_cast<double>(sig_denom);
+    const bool has_in = in.m_x != nullptr && in.m_y != nullptr && offset < in.m_num_samples;
+    const float first_x = has_in ? in.m_x[offset] : m_last_x;
+    const float first_y = has_in ? in.m_y[offset] : m_last_y;
 
-    if (bars > 0) {
+    if (m_config.m_bar_aligned_takes) {
+        // Point 0 sits on the bar line at or before the touch, on the transport
+        // beat or the free-running one. Free takes reserve 16 bars, so a whole
+        // number of points per bar has to fit 16 times.
+        const size_t loop_bars = bars > 0 ? bars : k_max_aligned_bars;
+        const double per_bar = std::min(std::round(k.m_bar_beats * ideal_tpb),
+                                        std::floor(max_points / static_cast<double>(loop_bars)));
+        if (per_bar < (k.m_bar_beats * m_config.m_min_tpb) - k_tick_eps) {
+            m_refused = true;
+            m_armed = false;
+            m_force_start = false;
+            return;
+        }
+        k.m_aligned = true;
+        k.m_bar = bars > 0;
+        k.m_beats = true;
+        k.m_points_per_bar = static_cast<size_t>(per_bar);
+        k.m_capacity = loop_bars * k.m_points_per_bar;
+        k.m_target = bars > 0 ? k.m_capacity : k.m_points_per_bar;
+        k.m_length = static_cast<double>(loop_bars) * k.m_bar_beats;
+        k.m_tick_step = k.m_bar_beats / per_bar;
+        k.m_bar_line = std::floor((clock_beat / k.m_bar_beats) + k_tick_eps) * k.m_bar_beats;
+        k.m_tick_base = k.m_bar_line;
+        k.m_clock = clock_beat;
+    } else if (bars > 0) {
         const int num = t.m_sig_num > 0 ? t.m_sig_num : 4;
         const int den = t.m_sig_denom > 0 ? t.m_sig_denom : 4;
         const double length = bars * static_cast<double>(num) * 4.0 / static_cast<double>(den);
@@ -465,20 +650,20 @@ void MotionRecorder::start_take(const TransportInfo& t,
         k.m_tick_base = 0.0;
         k.m_clock = 0.0;
     }
-    if (bars == 0 && m_config.m_snap_to_bars) {
-        // A snapped take ends after 16 bars (of the tempo at the start when stopped).
-        const double max_beats = k_max_snap_bars * k.m_bar_beats;
-        const double limit =
-            k.m_beats ? max_beats / k.m_tick_step : max_beats * 60.0 / bpm * m_config.m_rate;
-        k.m_capacity = std::min(k.m_capacity, static_cast<size_t>(std::ceil(limit)));
-    }
+    if (!k.m_aligned) { k.m_target = k.m_capacity; }
     k.m_active = true;
     k.m_buffer = buffer;
     k.m_start_beat = clock_beat;
-    const bool has_in = in.m_x != nullptr && in.m_y != nullptr && offset < in.m_num_samples;
-    k.m_last_x = has_in ? in.m_x[offset] : m_last_x;
-    k.m_last_y = has_in ? in.m_y[offset] : m_last_y;
+    k.m_last_x = first_x;
+    k.m_last_y = first_y;
     m_takes[buffer].m_state.store(BufferState::Recording, std::memory_order_relaxed);
+    if (k.m_aligned) {
+        // The time from the bar line to the touch is lifted (gate 0) at the
+        // first position. At most one bar of points: a bounded loop.
+        const double ticks = std::ceil(((clock_beat - k.m_bar_line) / k.m_tick_step) - k_tick_eps);
+        const auto lead = std::min(static_cast<size_t>(std::max(ticks, 0.0)), k.m_target - 1);
+        for (size_t i = 0; i < lead; ++i) { write_point(first_x, first_y, 0); }
+    }
     m_force_start = false;
     m_busy = false;
     if (m_playing_take_id != 0 && m_view_length > 0.0) { m_replaced_take_id = m_playing_take_id; }
@@ -488,29 +673,12 @@ void MotionRecorder::write_point(float x, float y, uint8_t gate) {
     Take& k = m_take;
     TakeBuffer& b = m_takes[k.m_buffer];
     const size_t l = k.m_count;
-    const size_t cap = k.m_capacity;
-    auto phys = [&](size_t logical) {
-        const size_t p = k.m_start_index + logical;
-        return p >= cap ? p - cap : p;
-    };
-    k.m_ring_x[l % 5] = x;
-    k.m_ring_y[l % 5] = y;
-    const size_t p = phys(l);
+    // Raw points: smoothing is a playback setting (set_smoothing()).
+    size_t p = k.m_start_index + l;
+    if (p >= k.m_capacity) { p -= k.m_capacity; }
     b.m_x[p] = x;
     b.m_y[p] = y;
     b.m_gate[p] = gate;
-    if (l >= 4) {
-        // Centred 5-tap binomial [1 4 6 4 1] / 16, written two points behind.
-        auto smooth = [&](const std::array<float, 5>& r) {
-            const double v = (static_cast<double>(r[(l - 4) % 5]) + (4.0 * r[(l - 3) % 5]) +
-                              (6.0 * r[(l - 2) % 5]) + (4.0 * r[(l - 1) % 5]) + r[l % 5]) /
-                             16.0;
-            return static_cast<float>(v);
-        };
-        const size_t q = phys(l - 2);
-        b.m_x[q] = smooth(k.m_ring_x);
-        b.m_y[q] = smooth(k.m_ring_y);
-    }
     if (l == 0 || x != k.m_last_x || y != k.m_last_y) { k.m_count_at_change = l + 1; }
     k.m_count = l + 1;
     k.m_last_x = x;
@@ -524,10 +692,9 @@ void MotionRecorder::finalise(TakeBuffer& b, size_t n, double points_per_second)
         return p >= n ? p - n : p;
     };
 
-    // The first two and the last two points are still raw (the running filter
-    // writes two points behind). Seam blend first: spread the step at the wrap
-    // beyond the expected velocity over the last W points (raised cosine), so
-    // the looped curve is C1 at the seam.
+    // Seam blend: spread the step at the wrap beyond the expected velocity over
+    // the last W points (raised cosine), so the raw loop has no jump at the
+    // seam even with smoothing off (a finger held across the loop end).
     if (n >= k_min_take_points) {
         const auto window = static_cast<size_t>(
             std::max(1.0,
@@ -553,23 +720,6 @@ void MotionRecorder::finalise(TakeBuffer& b, size_t n, double points_per_second)
         blend(b.m_x);
         blend(b.m_y);
     }
-
-    // Then smooth the four edge points across the (now continuous) seam.
-    if (n >= 8) {
-        auto smooth_edges = [&](std::vector<float>& p) {
-            // Logical points n-4 .. n-1, 0 .. 3 in a row.
-            std::array<double, 8> v{};
-            for (size_t j = 0; j < 8; ++j) { v[j] = p[phys((n - 4 + j) % n)]; }
-            constexpr std::array<double, 5> k_weights{1.0, 4.0, 6.0, 4.0, 1.0};
-            for (size_t c = 2; c < 6; ++c) {  // n-2, n-1, 0, 1
-                double acc = 0.0;
-                for (size_t t = 0; t < 5; ++t) { acc += k_weights[t] * v[c + t - 2]; }
-                p[phys((n - 4 + c) % n)] = clamp01(acc / 16.0);
-            }
-        };
-        smooth_edges(b.m_x);
-        smooth_edges(b.m_y);
-    }
 }
 
 void MotionRecorder::abort_take(bool keep_replaced) {
@@ -591,7 +741,7 @@ void MotionRecorder::abort_take(bool keep_replaced) {
 void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     Take& k = m_take;
     if (!k.m_active) { return; }
-    if (!k.m_bar && trim_samples > 0 && k.m_count_at_change >= k_min_take_points) {
+    if (!k.m_bar && !k.m_aligned && trim_samples > 0 && k.m_count_at_change >= k_min_take_points) {
         // The release reaches us up to a block after the last move (events carry
         // no timestamps): a still tail no longer than that block is quantisation,
         // not gesture, and would put a pause into the loop.
@@ -602,7 +752,9 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
             k.m_count = k.m_count_at_change;
         }
     }
-    const bool complete = k.m_bar ? k.m_count == k.m_capacity : k.m_count >= k_min_take_points;
+    const bool complete = k.m_aligned ? k.m_count == k.m_target
+                          : k.m_bar   ? k.m_count == k.m_capacity
+                                      : k.m_count >= k_min_take_points;
     if (!complete) {
         abort_take();
         return;
@@ -610,20 +762,19 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     TakeBuffer& b = m_takes[k.m_buffer];
     const size_t n = k.m_count;
     double points_per_second = 0.0;
-    if (k.m_bar) {
+    if (k.m_bar && !k.m_aligned) {
         b.m_timebase = MotionTimebase::Beats;
         b.m_length = k.m_length;
         b.m_anchor = 0.0;
         b.m_rate = static_cast<double>(n) / k.m_length;
         points_per_second = b.m_rate * bpm / 60.0;
-    } else if (m_config.m_snap_to_bars) {
-        const double beats = k.m_beats ? static_cast<double>(n) * k.m_tick_step
-                                       : static_cast<double>(n) / m_config.m_rate * bpm / 60.0;
-        const double length = snap_bars(beats / k.m_bar_beats) * k.m_bar_beats;
+    } else if (k.m_aligned) {
+        // Whole bars from the bar line: index 0 plays on that bar line.
+        const double length =
+            static_cast<double>(n) / static_cast<double>(k.m_points_per_bar) * k.m_bar_beats;
         b.m_timebase = MotionTimebase::Beats;
         b.m_length = length;
-        b.m_anchor =
-            detail::wrap_phase(std::round(k.m_start_beat / k.m_bar_beats) * k.m_bar_beats, length);
+        b.m_anchor = detail::wrap_phase(k.m_bar_line, length);
         b.m_rate = static_cast<double>(n) / length;
         points_per_second = b.m_rate * bpm / 60.0;
     } else if (k.m_beats) {
@@ -653,6 +804,116 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     m_play_enabled = true;
     m_replaced_take_id = 0;
     switch_to(k.m_buffer == 0 ? Source::Buffer0 : Source::Buffer1, b.m_take_id, false);
+}
+
+// disarm() / stop() never throw a touched bar-aligned take away: it ends at
+// once, the rest of its loop (N bars, or the next free boundary) lifted.
+// Padding writes at most m_max_points points into preallocated memory.
+void MotionRecorder::end_take(double bpm) {
+    const Take& k = m_take;
+    if (!k.m_aligned) {
+        if (k.m_bar) {
+            abort_take();
+        } else {
+            finish_take(bpm);
+        }
+        return;
+    }
+    if (!k.m_saw_touch) {
+        abort_take(true);  // nothing recorded: the replaced lane plays on
+        return;
+    }
+    while (k.m_count < k.m_target) { write_point(k.m_last_x, k.m_last_y, 0); }
+    finish_take(bpm);
+}
+
+// Overdub: the playing lane (raw) is copied into a free take buffer, which then
+// plays and takes the punch. The copy is a bounded memcpy (at most m_max_points
+// points, 9 bytes each) into memory prepare() allocated: no allocation, lock or
+// syscall on the audio thread. Both buffers waiting for service(): no punch.
+void MotionRecorder::start_punch(const PlayedLane& played) {
+    uint32_t target = 2;
+    for (uint32_t b = 0; b < 2; ++b) {
+        if (m_takes[b].m_state.load(std::memory_order_acquire) == BufferState::Free) {
+            target = b;
+            break;
+        }
+    }
+    if (target == 2) {
+        m_busy = true;
+        return;
+    }
+    const LaneView src = view_of(m_source, played);
+    TakeBuffer& b = m_takes[target];
+    const size_t n = src.m_num_points;
+    if (n == 0 || n > b.m_x.size() || src.m_raw_x == nullptr) { return; }
+    std::copy_n(src.m_raw_x, n, b.m_x.begin());
+    std::copy_n(src.m_raw_y, n, b.m_y.begin());
+    std::copy_n(src.m_gate, n, b.m_gate.begin());
+    // view_of() reports a stretched view; the copy keeps the source's own grid.
+    if (m_source == Source::Lane) {
+        const MotionLane& lane = played.m_lane;
+        b.m_timebase = lane.m_timebase;
+        b.m_length = lane.m_length;
+        b.m_anchor = lane.m_anchor;
+        b.m_rate = lane.m_rate;
+    } else {
+        const TakeBuffer& from = m_takes[m_source == Source::Buffer0 ? 0 : 1];
+        b.m_timebase = from.m_timebase;
+        b.m_length = from.m_length;
+        b.m_anchor = from.m_anchor;
+        b.m_rate = from.m_rate;
+    }
+    b.m_num_points = n;
+    b.m_state.store(BufferState::Recording, std::memory_order_relaxed);
+    m_punch = Punch{.m_active = true, .m_buffer = target, .m_base_id = m_playing_take_id};
+    m_source = target == 0 ? Source::Buffer0 : Source::Buffer1;
+    m_ramp_restart = true;
+    m_busy = false;
+}
+
+// Write the finger at lane index @p index, and at the indices the playback
+// skipped since the last write (fast stretched playback), in playback direction.
+void MotionRecorder::write_punch(size_t index,
+                                 float x,
+                                 float y,
+                                 double direction,
+                                 size_t num_points) {
+    TakeBuffer& b = m_takes[m_punch.m_buffer];
+    auto put = [&](size_t i) {
+        b.m_x[i] = x;
+        b.m_y[i] = y;
+        b.m_gate[i] = 1;
+    };
+    if (m_punch.m_wrote && index != m_punch.m_last_index) {
+        const size_t last = m_punch.m_last_index;
+        const bool forward = direction >= 0.0;
+        const size_t gap = forward ? (index + num_points - last) % num_points
+                                   : (last + num_points - index) % num_points;
+        // A larger gap is a re-seek (jump, reverse), not skipped points.
+        if (gap <= num_points / 4) {
+            for (size_t s = 1; s < gap; ++s) {
+                put(forward ? (last + s) % num_points : (last + num_points - s) % num_points);
+            }
+        }
+    }
+    put(index);
+    m_punch.m_last_index = index;
+    m_punch.m_wrote = true;
+}
+
+// Release: the edited copy becomes a take; service() publishes it (undo per punch).
+void MotionRecorder::finish_punch() {
+    TakeBuffer& b = m_takes[m_punch.m_buffer];
+    b.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
+    b.m_state.store(BufferState::Finished, std::memory_order_release);
+    m_playing_take_id = b.m_take_id;
+    m_punch = Punch{};
+}
+
+void MotionRecorder::abort_punch() {
+    m_takes[m_punch.m_buffer].m_state.store(BufferState::Free, std::memory_order_relaxed);
+    m_punch = Punch{};
 }
 
 void MotionRecorder::process(const TransportInfo& t,
@@ -695,10 +956,17 @@ void MotionRecorder::process(const TransportInfo& t,
     apply_commands(bpm);
 
     const auto scope = m_lanes.read_scope(*m_audio_reader);
-    const MotionLane& lane = scope.data();
+    const PlayedLane& lane = scope.data();
     select_source(lane);
 
     LaneView view = playback_view(lane);
+    // Overdub with nothing to punch into records a take of the playback length.
+    if (m_overdub && !m_armed && !m_take.m_active && !m_punch.m_active && !m_refused &&
+        view.empty()) {
+        m_armed = true;
+        m_force_start = false;
+        m_arm_length = m_playback_length;
+    }
     double dphase = 0.0;
     auto direction = [&](const LaneView& v) {
         if (v.m_timebase == MotionTimebase::Beats) { return m_reverse ? -slope : slope; }
@@ -800,7 +1068,7 @@ void MotionRecorder::process(const TransportInfo& t,
         }
         if (m_take.m_active) {
             Take& k = m_take;
-            if (!k.m_bar && k.m_saw_touch && !live) {
+            if (!k.m_bar && !k.m_aligned && k.m_saw_touch && !live) {
                 finish_take(bpm, n);  // free take: ends on release
             } else {
                 k.m_saw_touch = k.m_saw_touch || live;
@@ -812,7 +1080,15 @@ void MotionRecorder::process(const TransportInfo& t,
                     } else {
                         write_point(k.m_last_x, k.m_last_y, 0);
                     }
-                    if (k.m_count >= k.m_capacity) { finish_take(bpm); }
+                    // An aligned free take ends at a boundary (1, 2, 4, 8, 16
+                    // bars) reached with the finger up, else runs to the next.
+                    if (k.m_count >= k.m_target) {
+                        if (k.m_count >= k.m_capacity || !live) {
+                            finish_take(bpm);
+                        } else {
+                            k.m_target = std::min(k.m_target * 2, k.m_capacity);
+                        }
+                    }
                 }
                 k.m_clock += k.m_beats ? rec_slope : 1.0;
             }
@@ -821,6 +1097,15 @@ void MotionRecorder::process(const TransportInfo& t,
         if (m_need_phase) {
             relock(i);
             cp = true;
+        }
+
+        // Overdub: a touch punches into a copy of the playing lane until release.
+        if (m_punch.m_active && !live) {
+            finish_punch();
+        } else if (!m_punch.m_active && live && m_overdub && !m_armed && !m_take.m_active &&
+                   m_play_enabled && !view.empty()) {
+            start_punch(lane);
+            if (m_punch.m_active) { view = playback_view(lane); }
         }
 
         // Playback.
@@ -837,6 +1122,7 @@ void MotionRecorder::process(const TransportInfo& t,
             auto gi = static_cast<size_t>(p * scale);
             if (gi >= view.m_num_points) { gi = view.m_num_points - 1; }
             pg = view.m_gate[gi];
+            if (m_punch.m_active) { write_punch(gi, lx, ly, dphase, view.m_num_points); }
             // The render grid restarts at every loop wrap, so each loop is
             // rendered on the same ticks (loop n == loop 1).
             const double half = 0.5 * view.m_length;
