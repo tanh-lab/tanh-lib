@@ -719,6 +719,9 @@ if (TANH_WITH_TESTS)
     include(CTest)
     include(cmake/tanh/test-deps.cmake)
     tanh_fetch_googletest(VERSION v1.14.0)
+    # test-deps.cmake includes GoogleTest inside a function, which breaks test discovery on
+    # older CMake (e.g. 3.28). Remove once tanh-tooling includes it at file scope.
+    include(GoogleTest)
     tanh_fetch_googlebenchmark(VERSION v1.9.1)
     if (TANH_BUILD_CORE)
         add_subdirectory(test/core)
