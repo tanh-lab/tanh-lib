@@ -138,7 +138,7 @@ stops frame and trail publication.
 ## Threading contract
 
 - ctor, dtor, `route`, `unroute`, `set_route_enabled`, `set_route_depth`,
-  `service`, `set_smoothing` (every voice's `MotionRecorder::set_smoothing()`):
+  `service`, `set_smoothing`, `set_loop_end` (every voice's recorder):
   message thread.
 - `touch`, `touch_voice`, `release`, `release_all`, `flush`, `read_frame`,
   `drain_trail`, `read_path`: one UI thread, lock-free.
@@ -154,5 +154,5 @@ stops frame and trail publication.
   takes are never published and arming stalls once both take buffers wait.
 - A controller cannot be moved: the matrix holds pointers to its sources.
 - Memory is dominated by the recorders' take buffers
-  (`m_recorder.m_max_points`, two buffers of 9 bytes per point per voice);
+  (`m_recorder.m_max_points`, two buffers of 11 bytes per point per voice);
   lower it for many voices.
