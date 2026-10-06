@@ -46,8 +46,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (free or 1-16 bar takes, touch override with a glide back). The transport flags are
   the only jump detector; a jump never aborts a running take. UI commands are
   `[[nodiscard]]` (false when the 32-entry queue is full); `service()` publishes
-  takes through RCU; lanes save as validated JSON. Tests: `MotionLane.*`,
-  `MotionRecorder*.*`. Docs: `motion_recording.md`.
+  takes through RCU; lanes save as validated JSON. `set_playback_length(BarsN)` plays
+  any lane stretched onto N bars from a bar line (Free: its recorded length). A new
+  take replaces the playing lane from its first sample; if the take is dropped the
+  old lane stays deleted. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
+  `motion_recording.md`.
 - `thl::modulation::XYController`: XY dots (voices), each with touch input and a
   recorder, as `<id>.x` / `.y` / `.active` matrix sources. It runs once per block from
   the first of its sources the matrix reaches, with the transport from

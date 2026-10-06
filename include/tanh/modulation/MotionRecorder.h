@@ -19,7 +19,7 @@ namespace thl::modulation {
 
 namespace detail {
 
-enum class MotionCommandKind : uint8_t { Arm, Record, Disarm, Play, Stop, Reverse };
+enum class MotionCommandKind : uint8_t { Arm, Record, Disarm, Play, Stop, Reverse, PlaybackLength };
 
 /// One UI to audio recorder command.
 struct MotionCommand {
@@ -32,8 +32,9 @@ struct MotionCommand {
 /// Capacity of a recorder's UI to audio command queue.
 inline constexpr size_t k_motion_command_capacity = 32;
 
-/// Loop length of the next take. Free lasts as long as the gesture; BarsN is N
-/// bars of the time signature at arm time, synced to the transport.
+/// Loop length of a take (arm, record) or of playback (set_playback_length).
+/// Free lasts as long as the gesture; BarsN is N bars of the time signature,
+/// synced to the transport.
 enum class LoopLength : uint8_t { Free, Bars1, Bars2, Bars4, Bars8, Bars16 };
 
 /// Beats-lane playback while the transport is stopped.
@@ -97,12 +98,17 @@ struct MotionSnapshot {
  * glides back on release. service() publishes finished takes as MotionLane
  * through RCU on the message thread.
  *
+ * A new take replaces the playing lane from its first sample: the old lane
+ * stops playing, and if the take is then dropped (a cancelled bar take, a take
+ * too short to keep) service() clears it.
+ *
  * XYController owns one recorder per voice and calls process(); recorder(v)
  * gives the UI and message thread access to the rest.
  *
  * Threading:
  * - ctor, prepare: message thread, audio stopped (allocates).
- * - arm, record, disarm, play, stop, set_reverse: one UI thread (lock-free queue).
+ * - arm, record, disarm, play, stop, set_reverse, set_playback_length: one UI
+ *   thread (lock-free queue).
  * - set_stopped_transport: any thread.
  * - process and the audio getters: audio thread.
  * - service, load_lane, clear: one message thread (RCU publication, allocates).
@@ -147,6 +153,10 @@ public:
     [[nodiscard]] bool stop();
     /// Mirror the playback phase (Beats lanes glide to phase = length - phase).
     [[nodiscard]] bool set_reverse(bool reverse);
+    /// Play every lane as @p length: BarsN stretches the lane to exactly N bars of
+    /// the current time signature, starting on a bar line (faster or slower than
+    /// recorded); Free (the default) plays it at its recorded length.
+    [[nodiscard]] bool set_playback_length(LoopLength length);
     /// Behaviour of Beats lanes while the transport is stopped.
     void set_stopped_transport(StoppedTransport mode) {
         m_stopped_mode.store(mode, std::memory_order_relaxed);
@@ -274,6 +284,8 @@ private:
     void apply_commands(double bpm);
     void select_source(const MotionLane& lane);
     [[nodiscard]] LaneView view_of(Source source, const MotionLane& lane) const;
+    // view_of() the playing source, empty while a new take replaces it.
+    [[nodiscard]] LaneView playback_view(const MotionLane& lane) const;
     void switch_to(Source source, uint32_t id, bool silent);
     void start_take(const thl::dsp::transport::TransportInfo& transport,
                     const MotionInput& input,
@@ -281,7 +293,8 @@ private:
                     double clock_beat);
     void write_point(float x, float y, uint8_t gate);
     void finish_take(double bpm, uint32_t trim_samples = 0);
-    void abort_take();
+    // keep_replaced: the old lane plays on (prepare()); otherwise service() clears it.
+    void abort_take(bool keep_replaced = false);
     void finalise(TakeBuffer& buffer, size_t num_points, double points_per_second);
     void start_glide();
     void publish(MotionLane lane);
@@ -299,6 +312,8 @@ private:
     std::atomic<uint32_t> m_next_take_id{1};
     std::atomic<uint32_t> m_lane_version{0};
     std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
+    // Id of a lane a dropped take replaced; service() clears it if still published.
+    std::atomic<uint32_t> m_clear_request{0};
 
     // Message thread only.
     uint32_t m_published_id = 0;
@@ -311,6 +326,10 @@ private:
     bool m_play_enabled = true;
     bool m_reverse = false;
     bool m_reverse_pending = false;
+    LoopLength m_playback_length = LoopLength::Free;
+    uint32_t m_replaced_take_id = 0;  // lane muted by the running take (0 = none)
+    int m_sig_num = 4;                // time signature of the last block
+    int m_sig_denom = 4;
     bool m_busy = false;
     bool m_refused = false;
     bool m_aborted = false;

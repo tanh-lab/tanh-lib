@@ -63,8 +63,7 @@ void MotionRecorder::prepare(double sample_rate,
     // Keep what was recorded: publish finished takes before resetting.
     service();
     if (m_take.m_active) {
-        m_takes[m_take.m_buffer].m_state.store(BufferState::Free, std::memory_order_relaxed);
-        m_take.m_active = false;
+        abort_take(true);
         m_aborted = true;
     }
     m_armed = false;
@@ -144,6 +143,11 @@ bool MotionRecorder::set_reverse(bool reverse) {
         {.m_kind = CommandKind::Reverse, .m_arg = static_cast<uint8_t>(reverse ? 1 : 0)});
 }
 
+bool MotionRecorder::set_playback_length(LoopLength length) {
+    return m_commands.try_push(
+        {.m_kind = CommandKind::PlaybackLength, .m_arg = static_cast<uint8_t>(length)});
+}
+
 void MotionRecorder::publish(MotionLane lane) {
     const uint32_t id = lane.m_take_id;
     m_lanes.replace([&](MotionLane& l) { l = std::move(lane); });
@@ -181,6 +185,12 @@ bool MotionRecorder::service() {
             published = true;
         }
         b.m_state.store(BufferState::Published, std::memory_order_release);
+    }
+    // A take that replaced the lane was dropped: the lane stays deleted.
+    const uint32_t replaced = m_clear_request.exchange(0, std::memory_order_acq_rel);
+    if (replaced != 0 && replaced == m_published_id) {
+        clear();
+        published = true;
     }
     return published;
 }
@@ -268,7 +278,19 @@ MotionRecorder::LaneView MotionRecorder::view_of(Source src, const MotionLane& l
         v.m_length = b.m_length;
         v.m_anchor = b.m_anchor;
     }
+    const uint32_t bars = bars_of(m_playback_length);
+    if (bars > 0 && !v.empty()) {
+        // Stretched onto N bars from a bar line: the grid scale follows the length.
+        v.m_timebase = MotionTimebase::Beats;
+        v.m_length = bars * static_cast<double>(m_sig_num) * 4.0 / static_cast<double>(m_sig_denom);
+        v.m_anchor = 0.0;
+    }
     return v;
+}
+
+MotionRecorder::LaneView MotionRecorder::playback_view(const MotionLane& lane) const {
+    if (m_replaced_take_id != 0 && m_playing_take_id == m_replaced_take_id) { return {}; }
+    return view_of(m_source, lane);
 }
 
 void MotionRecorder::start_glide() {
@@ -351,6 +373,15 @@ void MotionRecorder::apply_commands(double bpm) {
                     if (!m_last_live) { start_glide(); }
                 }
                 break;
+            case CommandKind::PlaybackLength: {
+                const auto length = static_cast<LoopLength>(std::min<uint8_t>(c.m_arg, 5));
+                if (length == m_playback_length) { break; }
+                m_playback_length = length;
+                m_need_phase = true;
+                m_ramp_restart = true;
+                if (!m_last_live) { start_glide(); }
+                break;
+            }
             case CommandKind::Reverse: {
                 const bool reverse = c.m_arg != 0;
                 if (reverse == m_reverse) { break; }
@@ -432,6 +463,7 @@ void MotionRecorder::start_take(const TransportInfo& t,
     m_takes[buffer].m_state.store(BufferState::Recording, std::memory_order_relaxed);
     m_force_start = false;
     m_busy = false;
+    if (m_playing_take_id != 0 && m_view_length > 0.0) { m_replaced_take_id = m_playing_take_id; }
 }
 
 void MotionRecorder::write_point(float x, float y, uint8_t gate) {
@@ -522,12 +554,20 @@ void MotionRecorder::finalise(TakeBuffer& b, size_t n, double points_per_second)
     }
 }
 
-void MotionRecorder::abort_take() {
+void MotionRecorder::abort_take(bool keep_replaced) {
     if (!m_take.m_active) { return; }
     m_takes[m_take.m_buffer].m_state.store(BufferState::Free, std::memory_order_relaxed);
     m_take.m_active = false;
     m_armed = false;
     m_force_start = false;
+    if (m_replaced_take_id != 0) {
+        if (keep_replaced) {
+            m_need_phase = true;  // the old lane plays on from the clock
+        } else {
+            m_clear_request.store(m_replaced_take_id, std::memory_order_release);
+        }
+    }
+    if (keep_replaced) { m_replaced_take_id = 0; }
 }
 
 void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
@@ -583,6 +623,7 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     m_armed = false;
     m_force_start = false;
     m_play_enabled = true;
+    m_replaced_take_id = 0;
     switch_to(k.m_buffer == 0 ? Source::Buffer0 : Source::Buffer1, b.m_take_id, false);
 }
 
@@ -618,6 +659,10 @@ void MotionRecorder::process(const TransportInfo& t,
     // A take integrates tempo on its own clock and never stops.
     const double rec_slope = playing && t.m_beats_per_sample > 0.0 ? t.m_beats_per_sample : nominal;
     m_have_clock = true;
+    if (t.m_sig_num > 0 && t.m_sig_denom > 0) {
+        m_sig_num = t.m_sig_num;
+        m_sig_denom = t.m_sig_denom;
+    }
 
     apply_commands(bpm);
 
@@ -625,7 +670,7 @@ void MotionRecorder::process(const TransportInfo& t,
     const MotionLane& lane = scope.data();
     select_source(lane);
 
-    LaneView view = view_of(m_source, lane);
+    LaneView view = playback_view(lane);
     double dphase = 0.0;
     auto direction = [&](const LaneView& v) {
         if (v.m_timebase == MotionTimebase::Beats) { return m_reverse ? -slope : slope; }
@@ -689,7 +734,7 @@ void MotionRecorder::process(const TransportInfo& t,
     }
 
     auto relock = [&](uint32_t offset) {
-        view = view_of(m_source, lane);
+        view = playback_view(lane);
         m_need_phase = false;
         m_segment_start = offset;
         m_ramp_restart = true;
@@ -723,6 +768,7 @@ void MotionRecorder::process(const TransportInfo& t,
         // Recording.
         if (!m_take.m_active && m_armed && (live || m_force_start)) {
             start_take(t, in, j, b0 + (static_cast<double>(i) * slope));
+            if (m_take.m_active && m_replaced_take_id != 0) { view = {}; }
         }
         if (m_take.m_active) {
             Take& k = m_take;

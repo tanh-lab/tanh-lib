@@ -50,9 +50,14 @@ cannot feed back as a fake touch.
 
 - `arm(len)`: the take starts on the first touch (or at once if a finger is
   down); until then the old lane keeps playing. `record(len)` starts at the next
-  block without waiting.
+  block without waiting. From its first sample the new take replaces the old
+  lane: the old lane stops, and stays deleted if the take is dropped.
 - `disarm()`: cancel arming. A running free take finishes and plays; a running
   bar take is dropped.
+- `set_playback_length(len)`: play every lane as `len`. `BarsN` stretches it onto
+  exactly N bars of the current time signature from a bar line, faster or slower
+  than recorded (a free take or a 2-bar take as one bar); `Free` plays the
+  recorded length. The lane itself is unchanged.
 - `stop()` / `play()`: playback off (gate 0, x and y hold) / on (with a glide).
   `stop()` also ends a running take like `disarm()`.
 - `set_reverse(true)`: Beats lanes play the mirrored phase (they stay

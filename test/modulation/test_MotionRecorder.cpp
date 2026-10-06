@@ -762,8 +762,103 @@ TEST(MotionRecorder, DisarmFinishesFreeTakeAndDropsBarTake) {
     EXPECT_TRUE(r.m_rec.disarm());
     r.step();
     EXPECT_NE(r.m_rec.snapshot().m_state, MotionState::Recording);
+    // The dropped bar take had replaced the free take: service() clears it.
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_GT(r.m_rec.lane().m_take_id, kept);
+    EXPECT_TRUE(r.m_rec.lane().empty());
+}
+
+TEST(MotionRecorder, NewTakeReplacesThePlayingLane) {
+    Rig r(256);
+    record_free_take(r, 0.6, 0.4f);
+    r.m_rec.service();
+    r.run_until(r.now() + 4800);
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+
+    // Armed: the old lane keeps playing.
+    r.play_at(r.now());
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Armed);
+    EXPECT_GT(r.m_rec.snapshot().m_take_id, 0u);
+
+    // The take starts: the old lane stops, so a lifted finger leaves the gate shut.
+    r.m_pad.touch(1, 0.9f, 0.9f);
+    r.step();
+    r.m_pad.release(1);
+    r.step();
+    const size_t from = r.m_gate.size();
+    r.run_until(r.now() + 12000);
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
+    for (size_t i = from; i < r.m_gate.size(); ++i) { ASSERT_EQ(r.m_gate[i], 0) << i; }
+
+    // The new take completes and plays; the old lane is gone.
+    r.run_until(r.now() + 96000);
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 4.0);
+}
+
+TEST(MotionRecorder, PrepareDuringAReplacingTakeKeepsTheOldLane) {
+    Rig r(256);
+    record_free_take(r, 0.6, 0.4f);
+    r.m_rec.service();
+    const uint32_t kept = r.m_rec.lane().m_take_id;
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
+    r.m_pad.touch(1, 0.9f, 0.9f);
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    r.m_rec.prepare(k_sr, 4096);
+    r.m_pad.release(1);
+    r.run_until(r.now() + 2048);
     EXPECT_FALSE(r.m_rec.service());
     EXPECT_EQ(r.m_rec.lane().m_take_id, kept);
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept);
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+}
+
+TEST(MotionRecorder, PlaybackLengthStretchesATakeOntoBars) {
+    Rig r(256);  // 120 bpm, 4/4: one bar = 2 s
+    record_free_take(r, 1.0, 0.5f);
+    r.m_rec.service();
+    const double recorded = r.m_rec.lane().m_length;
+    EXPECT_NEAR(recorded, 1.0, 0.02);  // seconds: recorded with the transport stopped
+
+    // One bar: the 1 s gesture now takes 2 s (half speed), on the beat clock.
+    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Bars1));
+    r.step();
+    auto s = r.m_rec.snapshot();
+    EXPECT_TRUE(s.m_beats);
+    EXPECT_DOUBLE_EQ(s.m_length, 4.0);
+    const double p0 = r.m_rec.playback_phase();
+    r.run_until(r.now() + 24000);  // 0.5 s = 1 beat
+    EXPECT_NEAR(detail::wrap_phase(r.m_rec.playback_phase() - p0, 4.0), 1.0, 0.01);
+    // The lane itself is unchanged.
+    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, recorded);
+
+    // Free again: the recorded length.
+    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Free));
+    r.step();
+    s = r.m_rec.snapshot();
+    EXPECT_FALSE(s.m_beats);
+    EXPECT_DOUBLE_EQ(s.m_length, recorded);
+}
+
+TEST(MotionRecorder, PlaybackLengthSpeedsUpABarTake) {
+    Rig r(256);
+    r.play_at(0);
+    EXPECT_TRUE(r.m_rec.record(LoopLength::Bars2));
+    r.run_until(4 * 96000);  // the 2-bar take and some playback
+    r.m_rec.service();
+    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 8.0);
+
+    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Bars1));
+    r.step();
+    EXPECT_DOUBLE_EQ(r.m_rec.snapshot().m_length, 4.0);
+    // Locked to the bar: phase = beat mod 4.
+    const double beat = r.m_beat.back() + (r.m_beat[1] - r.m_beat[0]);
+    EXPECT_NEAR(r.m_rec.playback_phase(), detail::wrap_phase(beat, 4.0), 1e-6);
 }
 
 // Free take while the transport plays: Beats lane rounded to whole beats.
