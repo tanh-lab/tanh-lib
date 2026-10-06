@@ -86,6 +86,30 @@ enabled voice if all are held), and the finger keeps that voice until released.
 - When the queue is full, moves are coalesced and releases kept pending:
   `flush()` re-sends them, so no gate edge is lost.
 
+### Timestamped touches
+
+Untimed touches are spread over the block that drains them and held, so they
+carry up to one block of jitter and a UI-rate staircase. Pass the event time
+instead, and the block's callback time on the same clock:
+
+```cpp
+// UI thread (iOS: per coalesced UITouch, timestamp in seconds of uptime).
+pad.touch(id, x, y, std::llround(touch.timestamp * 1e9));
+// Audio thread, every block, before set_transport() / process_block().
+pad.set_block_time(thl::modulation::XYController::clock_now_ns());
+```
+
+- A touch plays at `time + m_input_delay_ms` (default one prepared block plus
+  5 ms); one already late lands at offset 0, one due later waits for its block.
+- x / y ramp linearly between two timed moves; down, up and a switch to another
+  finger stay sharp. The ramp covers the whole gap only while the delay exceeds
+  one block plus the gap between moves (plus arrival jitter); otherwise x / y
+  hold until the next move arrives.
+- `clock_now_ns()` is the uptime clock on Apple platforms (the clock of
+  `UITouch.timestamp`, `NSEvent.timestamp` and `AudioTimeStamp.mHostTime`) and
+  `std::chrono::steady_clock` elsewhere. Any monotonic nanosecond clock works if
+  both sides use it.
+
 ## Switching routings
 
 To switch between sets of routings (one controller per target versus one
@@ -120,8 +144,8 @@ stops frame and trail publication.
   `drain_trail`, `read_path`: one UI thread, lock-free.
 - `set_latch`, `set_voice_enabled`, `set_ui_attached`: any thread.
 - `recorder(v)`: as documented on `MotionRecorder`.
-- `set_transport`, `process_block`, `reset`, `out_*`: audio thread, real-time
-  safe.
+- `set_block_time`, `set_transport`, `process_block`, `reset`, `out_*`: audio
+  thread, real-time safe.
 
 ## Pitfalls
 

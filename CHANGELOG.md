@@ -63,6 +63,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `TripleBuffer`, plus a recording trail and the recorded path. Blocks above the
   prepared size run as prepared-size chunks. Tests: `XYController*.*`, `XYPad.*`,
   `OversizedBlocks.*`. Docs: `xy_controller.md`.
+- Timestamped touch input: `XYController::touch()` / `touch_voice()` / `release()`
+  take an optional `time_ns`, and `set_block_time(now_ns)` once per block places them
+  at their own sample, `m_input_delay_ms` late (default one prepared block + 5 ms);
+  late touches land at offset 0, later ones wait. x / y ramp linearly between timed
+  moves (change point every `m_render_interval` samples); down, up and finger
+  switches stay sharp. Untimed touches, or a block without a block time, spread as
+  before. `clock_now_ns()` is the Apple uptime clock (UITouch, NSEvent, host time),
+  elsewhere `steady_clock`. Tests: `XYControllerInput.*`, `XYPad.Timed*`.
 
 ### Changed
 
