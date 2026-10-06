@@ -517,6 +517,9 @@ if(TANH_BUILD_GRAPH)
     if(NOT TARGET ${PROJECT_NAME}_core)
         message(FATAL_ERROR "Graph component requires Core Component")
     endif()
+    if(NOT TARGET ${PROJECT_NAME}_dsp)
+        message(FATAL_ERROR "Graph component requires DSP component")
+    endif()
 
     add_library(${PROJECT_NAME}_graph
         src/graph/Node.cpp
@@ -535,7 +538,7 @@ if(TANH_BUILD_GRAPH)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
 
-    target_link_libraries(${PROJECT_NAME}_graph PUBLIC ${PROJECT_NAME}_core)
+    target_link_libraries(${PROJECT_NAME}_graph PUBLIC ${PROJECT_NAME}_core ${PROJECT_NAME}_dsp)
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_graph)
 
