@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -37,6 +38,10 @@ uint64_t pack_position(float x, float y) {
 std::pair<float, float> unpack_position(uint64_t packed) {
     return {std::bit_cast<float>(static_cast<uint32_t>(packed >> 32)),
             std::bit_cast<float>(static_cast<uint32_t>(packed & 0xFFFFFFFFu))};
+}
+
+int64_t pad_time(std::optional<int64_t> time_ns) {
+    return time_ns.value_or(detail::k_xy_pad_untimed);
 }
 
 uint64_t hash_combine(uint64_t hash, uint64_t value) {
@@ -206,9 +211,19 @@ ModulationSource& XYController::source(XYPadAxis axis, uint32_t voice) {
 void XYController::prepare(double sample_rate, size_t max_block_size) {
     if (sample_rate <= 0.0 || max_block_size == 0) { return; }
     m_capacity = max_block_size;
+    m_sample_rate = sample_rate;
+    // Default delay: a touch stamped just before a callback still lands inside
+    // the block that callback renders, with 5 ms left for UI delivery.
+    const double delay_ms = m_config.m_input_delay_ms.value_or(
+        5.0 + (1000.0 * static_cast<double>(max_block_size) / sample_rate));
+    const detail::XYPadTiming timing{
+        .m_sample_rate = sample_rate,
+        .m_delay_ns = static_cast<int64_t>(std::max(delay_ms, 0.0) * 1e6),
+        .m_ramp_interval = std::max<uint32_t>(m_config.m_recorder.m_render_interval, 1),
+    };
     for (auto& voice : m_voices) {
         auto& v = *voice;
-        v.m_pad.prepare(max_block_size);
+        v.m_pad.prepare(max_block_size, timing);
         v.m_recorder.prepare(sample_rate, max_block_size, m_config.m_recorder);
         v.m_active.assign(max_block_size, 0);
         v.m_xy_mask.assign(max_block_size, 0);
@@ -311,35 +326,45 @@ uint32_t XYController::pick_voice(float x, float y) const {
     return best_free != k_no_voice ? best_free : best_any;
 }
 
-bool XYController::touch(TouchId id, float x, float y) {
+bool XYController::touch(TouchId id, float x, float y, std::optional<int64_t> time_ns) {
     if (!std::isfinite(x) || !std::isfinite(y)) { return false; }
     const uint32_t slot = find_touch(id);
-    if (slot != k_no_voice) { return m_voices[m_ui_touches[slot].m_voice]->m_pad.touch(id, x, y); }
-    return touch_voice(pick_voice(std::clamp(x, 0.0f, 1.0f), std::clamp(y, 0.0f, 1.0f)), id, x, y);
+    if (slot != k_no_voice) {
+        return m_voices[m_ui_touches[slot].m_voice]->m_pad.touch(id, x, y, pad_time(time_ns));
+    }
+    return touch_voice(pick_voice(std::clamp(x, 0.0f, 1.0f), std::clamp(y, 0.0f, 1.0f)),
+                       id,
+                       x,
+                       y,
+                       time_ns);
 }
 
-bool XYController::touch_voice(uint32_t voice, TouchId id, float x, float y) {
+bool XYController::touch_voice(uint32_t voice,
+                               TouchId id,
+                               float x,
+                               float y,
+                               std::optional<int64_t> time_ns) {
     if (voice >= m_num_voices || !std::isfinite(x) || !std::isfinite(y)) { return false; }
     const uint32_t slot = find_touch(id);
     if (slot != k_no_voice) {
         // A held touch keeps its voice.
-        return m_voices[m_ui_touches[slot].m_voice]->m_pad.touch(id, x, y);
+        return m_voices[m_ui_touches[slot].m_voice]->m_pad.touch(id, x, y, pad_time(time_ns));
     }
     const auto free_slot = std::ranges::find_if(m_ui_touches, [](const UiTouch& t) {
         return t.m_voice == k_no_voice;
     });
     if (free_slot == m_ui_touches.end()) { return false; }
-    if (!m_voices[voice]->m_pad.touch(id, x, y)) { return false; }
+    if (!m_voices[voice]->m_pad.touch(id, x, y, pad_time(time_ns))) { return false; }
     *free_slot = UiTouch{.m_id = id, .m_voice = voice};
     return true;
 }
 
-bool XYController::release(TouchId id) {
+bool XYController::release(TouchId id, std::optional<int64_t> time_ns) {
     const uint32_t slot = find_touch(id);
     if (slot == k_no_voice) { return false; }
     const uint32_t voice = m_ui_touches[slot].m_voice;
     m_ui_touches[slot] = UiTouch{};
-    return m_voices[voice]->m_pad.release(id);
+    return m_voices[voice]->m_pad.release(id, pad_time(time_ns));
 }
 
 void XYController::release_all() {
@@ -416,6 +441,11 @@ std::span<const uint32_t> XYController::change_points(uint32_t voice) const
 // Run-once per block: set_transport() opens a block; process_block() renders it
 // ahead of the matrix; the matrix pass then runs the controller only if nothing
 // rendered it. A new set_transport() discards a render the matrix never consumed.
+void XYController::set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION {
+    m_block_time_ns = now_ns;
+    m_block_time_fresh = true;
+}
+
 void XYController::set_transport(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION {
     m_transport = transport;
     m_transport_fresh = true;
@@ -458,6 +488,9 @@ void XYController::run_for_matrix() {
 void XYController::run(const TransportInfo& transport) {
     const auto capacity = static_cast<uint32_t>(m_capacity);
     const uint32_t total = capacity == 0 ? 0 : transport.m_num_samples;
+    // The block time places timestamped touches in this block only.
+    const bool timed = m_block_time_fresh;
+    m_block_time_fresh = false;
     if (total == 0) {
         m_num_samples = 0;
         for (auto& v : m_voices) { v->m_num_change_points = 0; }
@@ -473,6 +506,12 @@ void XYController::run(const TransportInfo& transport) {
     // A block larger than the prepared size runs as prepared-size chunks, exactly
     // like the same audio in prepared-size blocks. The outputs keep the last chunk.
     for (uint32_t offset = 0; offset < total; offset += capacity) {
+        m_chunk_time_ns.reset();
+        if (timed) {
+            m_chunk_time_ns = m_block_time_ns +
+                              static_cast<int64_t>(
+                                  std::llround(static_cast<double>(offset) * 1e9 / m_sample_rate));
+        }
         run_chunk(t.sub_block(offset, std::min(capacity, total - offset)));
     }
 }
@@ -503,7 +542,7 @@ void XYController::run_voice(Voice& v,
 
     // The recorder composes touch over playback, including the glide back after
     // a release, so the controller only adds the latch and the layer.
-    v.m_pad.process_block(n);
+    v.m_pad.process_block(n, m_chunk_time_ns);
     v.m_recorder.process(transport, v.m_pad.output(), n);
 
     const uint8_t* gate = v.m_recorder.out_gate();

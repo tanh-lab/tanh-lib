@@ -12,6 +12,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -67,6 +68,10 @@ struct XYControllerConfig {
     double m_frame_rate_hz = 240.0;
     /// Samples between live trail points while a voice records.
     uint32_t m_trail_interval = 32;
+    /// Delay of timestamped touches, so they land ahead of the block that plays
+    /// them. Unset: one prepared block plus 5 ms. x / y ramp over the whole gap
+    /// between two moves only while the delay exceeds one block plus that gap.
+    std::optional<double> m_input_delay_ms;
 };
 
 /// Options of XYController::route(). The defaults are those of ModulationRouting.
@@ -178,11 +183,18 @@ public:
 
     /// Touch down (a new id grabs a voice) or move (a known id). False for a
     /// non-finite position, a full touch table, no enabled voice or a full queue.
-    bool touch(TouchId id, float x, float y);
+    /// @p time_ns is when the touch happened on the clock_now_ns() clock; with it
+    /// (and set_block_time()) the touch plays at its own sample, and x / y ramp
+    /// between timed moves. Without it the block's touches are spread and held.
+    bool touch(TouchId id, float x, float y, std::optional<int64_t> time_ns = std::nullopt);
     /// Touch down on a given voice without nearest-dot selection, or move.
-    bool touch_voice(uint32_t voice, TouchId id, float x, float y);
+    bool touch_voice(uint32_t voice,
+                     TouchId id,
+                     float x,
+                     float y,
+                     std::optional<int64_t> time_ns = std::nullopt);
     /// Touch up or cancel. False for an unknown id.
-    bool release(TouchId id);
+    bool release(TouchId id, std::optional<int64_t> time_ns = std::nullopt);
     /// Release every touch (unmount, focus loss, mode switch).
     void release_all();
     /// Re-send moves and releases that a full queue coalesced. True when nothing is pending.
@@ -216,6 +228,18 @@ public:
     void read_path(uint32_t voice, F&& f) const {
         voice_recorder(voice).read_lane(std::forward<F>(f));
     }
+
+    /// The touch timestamp clock: std::chrono::steady_clock in nanoseconds
+    /// (mach_absolute_time based on Apple platforms).
+    [[nodiscard]] static int64_t clock_now_ns() {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    }
+    /// The clock_now_ns() time of the block's audio callback. Call once per
+    /// block before set_transport() / process_block() to place timestamped
+    /// touches; a block without it spreads its touches as if untimed.
+    void set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION;
 
     /// The block's transport (m_num_samples = block length). Call before
     /// matrix.process() every block.
@@ -290,6 +314,10 @@ private:
     bool m_matrix_block_pending = false;
     bool m_rendered_ahead = false;  // process_block() ran for the coming matrix block
     bool m_reset_pending = false;
+    bool m_block_time_fresh = false;
+    int64_t m_block_time_ns = 0;
+    std::optional<int64_t> m_chunk_time_ns;  // clock time of the running chunk
+    double m_sample_rate = 0.0;
     bool m_last_latch = false;
     uint32_t m_num_samples = 0;
     uint64_t m_sample_time = 0;

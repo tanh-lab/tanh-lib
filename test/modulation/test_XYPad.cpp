@@ -255,3 +255,96 @@ TEST(XYPad, Concurrent_UiAndAudio) {
     EXPECT_GE(s.m_x[63], 0.0f);
     EXPECT_LE(s.m_x[63], 1.0f);
 }
+
+namespace {
+
+constexpr uint32_t k_timed_bs = 480;  // 10 ms at 48 kHz
+constexpr int64_t k_ms = 1'000'000;
+constexpr int64_t k_clock_start = 1'000'000'000;
+
+/// A pad that plays timestamps 20 ms late.
+struct TimedPad : XYPad {
+    TimedPad() : XYPad(2, MonoPriority::Last) {
+        prepare(k_timed_bs, {.m_sample_rate = 48000.0, .m_delay_ns = 20 * k_ms});
+    }
+};
+
+int64_t block_time(int block) {
+    return k_clock_start + (block * 10 * k_ms);
+}
+
+}  // namespace
+
+TEST(XYPad, TimedTouch_LandsAtItsSampleWhenQueuedEarlyOrLate) {
+    const int64_t when = block_time(1) - (15 * k_ms);  // 5 ms into block 1 after the delay
+    TimedPad early;
+    TimedPad late;
+    early.touch(1, 0.5f, 0.5f, when);
+    early.process_block(k_timed_bs, block_time(0));  // due after this block: waits
+    EXPECT_TRUE(early.output().m_change_points.empty());
+    EXPECT_EQ(early.output().m_active[k_timed_bs - 1], 0);
+    late.process_block(k_timed_bs, block_time(0));
+    late.touch(1, 0.5f, 0.5f, when);
+
+    for (XYPad* pad : {&early, &late}) {
+        pad->process_block(k_timed_bs, block_time(1));
+        const MotionInput s = pad->output();
+        EXPECT_EQ(cps(s), (std::vector<uint32_t>{240}));
+        EXPECT_EQ(s.m_active[239], 0);
+        EXPECT_EQ(s.m_active[240], 1);
+        EXPECT_FLOAT_EQ(s.m_x[240], 0.5f);
+    }
+}
+
+TEST(XYPad, TimedTouch_LateLandsAtZeroAndFutureWaits) {
+    TimedPad pad;
+    pad.touch(1, 0.3f, 0.3f, block_time(0) - (100 * k_ms));  // far too late
+    pad.touch(1, 0.4f, 0.4f, block_time(0) + (5 * k_ms));    // due in block 2
+    pad.process_block(k_timed_bs, block_time(0));
+    EXPECT_EQ(cps(pad.output()).size(), k_timed_bs / 32);  // a mark every 32 samples
+    EXPECT_EQ(pad.output().m_active[0], 1);
+    EXPECT_FLOAT_EQ(pad.output().m_x[0], 0.3f);
+
+    pad.process_block(k_timed_bs, block_time(1));
+    pad.process_block(k_timed_bs, block_time(2));
+    EXPECT_FLOAT_EQ(pad.output().m_x[239], 0.4f - (0.1f / 1200.0f));
+    EXPECT_FLOAT_EQ(pad.output().m_x[240], 0.4f);
+}
+
+TEST(XYPad, TimedMoves_RampLinearlyWithSharpEdges) {
+    TimedPad pad;
+    const int64_t down = block_time(0) - (19 * k_ms);  // sample 48
+    pad.touch(1, 0.2f, 0.8f, down);
+    pad.touch(1, 0.6f, 0.4f, down + (2 * k_ms));  // sample 144
+    pad.release(1, down + (4 * k_ms));            // sample 240
+    pad.process_block(k_timed_bs, block_time(0));
+
+    const MotionInput s = pad.output();
+    EXPECT_EQ(cps(s), (std::vector<uint32_t>{48, 80, 112, 144, 240}));
+    EXPECT_EQ(s.m_active[47], 0);
+    EXPECT_FLOAT_EQ(s.m_x[47], 0.0f);  // the down does not ramp in
+    EXPECT_EQ(s.m_active[48], 1);
+    EXPECT_FLOAT_EQ(s.m_x[48], 0.2f);
+    EXPECT_FLOAT_EQ(s.m_x[96], 0.4f);
+    EXPECT_FLOAT_EQ(s.m_y[96], 0.6f);
+    EXPECT_FLOAT_EQ(s.m_x[144], 0.6f);
+    EXPECT_FLOAT_EQ(s.m_x[239], 0.6f);  // no ramp into the release
+    EXPECT_EQ(s.m_active[239], 1);
+    EXPECT_EQ(s.m_active[240], 0);
+}
+
+TEST(XYPad, TimedTouches_WithoutBlockClockSpreadLikeUntimed) {
+    TimedPad timed;
+    TimedPad untimed;
+    for (int i = 0; i < 4; ++i) {
+        const float v = 0.2f * static_cast<float>(i + 1);
+        timed.touch(1, v, v, block_time(0) + (i * k_ms));
+        untimed.touch(1, v, v);
+    }
+    timed.process_block(k_timed_bs);
+    untimed.process_block(k_timed_bs);
+    EXPECT_EQ(cps(timed.output()), cps(untimed.output()));
+    for (uint32_t i = 0; i < k_timed_bs; ++i) {
+        ASSERT_EQ(timed.output().m_x[i], untimed.output().m_x[i]) << i;
+    }
+}

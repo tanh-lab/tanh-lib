@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -19,6 +20,19 @@ namespace thl::modulation::detail {
 [[nodiscard]] constexpr uint32_t spread_offset(size_t i, size_t n, uint32_t block_size) {
     if (n == 0) { return 0; }
     return static_cast<uint32_t>((i * static_cast<size_t>(block_size)) / n);
+}
+
+/**
+ * @brief Offset, in samples from the block start, of an event stamped
+ *        @p event_ns and played @p delay_ns late, when the block starts at
+ *        @p block_ns on the same clock. Negative for an event already late.
+ */
+[[nodiscard]] inline int64_t timed_offset(int64_t event_ns,
+                                          int64_t block_ns,
+                                          int64_t delay_ns,
+                                          double sample_rate) {
+    const auto ns = static_cast<double>(event_ns - block_ns) + static_cast<double>(delay_ns);
+    return static_cast<int64_t>(std::llround(ns * sample_rate * 1e-9));
 }
 
 }  // namespace thl::modulation::detail
