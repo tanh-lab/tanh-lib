@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <span>
 #include <vector>
 #include "tanh/graph/Node.h"
@@ -69,7 +70,20 @@ Graph::~Graph() = default;
 // Editing
 // ─────────────────────────────────────────────────────────────────────────────
 
-NodeId Graph::add_node_impl(std::shared_ptr<Node> node) {
+std::set<const void*> Graph::exclusive_resources() const {
+    std::set<const void*> resources;
+    for (const auto& [id, node] : m_nodes) {
+        for (const void* resource : node->exclusive_resources()) { resources.insert(resource); }
+    }
+    return resources;
+}
+
+std::optional<NodeId> Graph::add_node_impl(std::shared_ptr<Node> node) {
+    std::set<const void*> in_use = exclusive_resources();
+    for (const void* resource : node->exclusive_resources()) {
+        if (!in_use.insert(resource).second) { return std::nullopt; }
+    }
+
     if (m_spec.max_block_size > 0) {
         node->prepare(m_spec);
     }

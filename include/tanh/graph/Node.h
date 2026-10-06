@@ -35,6 +35,8 @@ public:
 
     virtual uint32_t latency_samples() const { return 0; }
 
+    virtual std::vector<const void*> exclusive_resources() const { return {}; }
+
     virtual void prepare(const ProcessSpec& spec) { (void)spec; }
  
     virtual void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION = 0;
