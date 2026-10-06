@@ -29,7 +29,6 @@ constexpr size_t k_min_capacity = 16;
 // also across an aligned DAW loop wrap or a hint without a real jump).
 constexpr double k_keep_phase_eps = 1e-6;
 constexpr double k_tick_eps = 1e-9;
-constexpr double k_seam_window_seconds = 0.15;
 // A snapped free take counts as still while x and y stay within this distance
 // (pad units, |dx| + |dy|) of its first or last point: finger jitter, no move.
 constexpr double k_still_distance = 0.002;
@@ -62,23 +61,68 @@ float clamp01(double v) {
     return static_cast<float>(std::clamp(v, 0.0, 1.0));
 }
 
-// Smoothing sigma at amount 1, in lane units (a quarter beat, or 250 ms).
-constexpr double k_max_smoothing_sigma = 0.25;
-// sigma = max * (base^amount - 1) / (base - 1): fine control at small amounts.
-constexpr double k_smoothing_curve_base = 64.0;
-// Below this many points of sigma the kernel is a no-op: play the raw lane.
+// Seam window at amount 0, in lane units: 150 ms, or 0.3 beat (150 ms at 120 bpm).
+constexpr double k_seam_window_seconds = 0.15;
+constexpr double k_seam_window_beats = 0.3;
+// Smoothing sigma at amount 1, in lane units (half a beat, or 250 ms).
+constexpr double k_max_sigma_beats = 0.5;
+constexpr double k_max_sigma_seconds = 0.25;
+// Below this many points of sigma the kernel is a no-op.
 constexpr double k_min_smoothing_points = 0.05;
+// Sigma is capped at this fraction of the loop: a short Seconds lane at a large
+// amount flattens towards its mean instead of wrapping the kernel many times.
+constexpr double k_max_sigma_fraction = 1.0 / 6.0;
 
-// Circular convolution of @p in with a sampled Gaussian. The kernel is symmetric
-// (zero phase) and wraps around the loop, so the seam is smoothed like any
-// other point. Weights sum to 1: the output stays inside [0, 1].
-void smooth_circular(const std::vector<float>& in, double sigma, std::vector<float>& out) {
+// Seam window at amount 0 in points, at most a quarter of the loop.
+size_t base_seam_window(size_t n, double length, MotionTimebase timebase) {
+    const double units =
+        timebase == MotionTimebase::Beats ? k_seam_window_beats : k_seam_window_seconds;
+    const double points_per_unit = static_cast<double>(n) / length;
+    return static_cast<size_t>(std::max(
+        1.0,
+        std::min(std::floor(static_cast<double>(n) / 4.0), std::round(units * points_per_unit))));
+}
+
+// The step from the last point to the first beyond the expected step, which is
+// the mean velocity on both sides (three points each, robust against a single
+// jittery point). at(i) is the i-th recorded point, n >= k_min_take_points.
+template <typename At>
+double seam_error(At at, size_t n) {
+    const double p0 = at(0);
+    const double pn = at(n - 1);
+    const double vel = n >= 8 ? (((at(3) - p0) / 3.0) + ((pn - at(n - 4)) / 3.0)) * 0.5
+                              : static_cast<double>(at(1)) - p0;
+    return (p0 - pn) - vel;
+}
+
+// Add @p error to the last @p window points with a raised-cosine ramp: the
+// last point moves by the whole error, the point before the window not at all.
+template <typename At>
+void spread_seam(At at, size_t n, size_t window, double error) {
+    for (size_t j = 0; j < window; ++j) {
+        const double w = 0.5 * (1.0 - std::cos(std::numbers::pi * static_cast<double>(j + 1) /
+                                               static_cast<double>(window)));
+        float& v = at(n - window + j);
+        v = clamp01(static_cast<double>(v) + (error * w));
+    }
+}
+
+// Convolution of the loop with a sampled Gaussian, in recorded order from
+// @p seam. Periodic: the kernel wraps around the loop, so the seam is smoothed
+// like any other point. Otherwise both ends are mirrored (half-sample
+// reflection) and the edge at the seam stays sharp. The kernel is symmetric
+// (zero phase) and its weights sum to 1: the output stays inside [0, 1].
+void smooth_gaussian(const std::vector<float>& in,
+                     double sigma,
+                     size_t seam,
+                     bool periodic,
+                     std::vector<float>& out) {
     const size_t n = in.size();
     out.assign(n, 0.0f);
     if (n == 0) { return; }
-    // Truncate at 3 sigma; a kernel wider than the loop just wraps more than once.
+    // Truncate at 3 sigma (sigma <= n / 6 keeps the kernel within one loop).
     const auto radius =
-        static_cast<std::ptrdiff_t>(std::min(std::ceil(3.0 * sigma), 2.0 * static_cast<double>(n)));
+        static_cast<std::ptrdiff_t>(std::min(std::ceil(3.0 * sigma), static_cast<double>(n)));
     std::vector<double> weights(static_cast<size_t>((2 * radius) + 1));
     double sum = 0.0;
     for (std::ptrdiff_t k = -radius; k <= radius; ++k) {
@@ -88,15 +132,21 @@ void smooth_circular(const std::vector<float>& in, double sigma, std::vector<flo
         sum += w;
     }
     const auto len = static_cast<std::ptrdiff_t>(n);
+    auto source = [&](std::ptrdiff_t j) {
+        if (periodic) {
+            j %= len;
+            if (j < 0) { j += len; }
+        } else {
+            while (j < 0 || j >= len) { j = j < 0 ? -j - 1 : (2 * len) - 1 - j; }
+        }
+        return in[(seam + static_cast<size_t>(j)) % n];
+    };
     for (std::ptrdiff_t i = 0; i < len; ++i) {
         double acc = 0.0;
         for (std::ptrdiff_t k = -radius; k <= radius; ++k) {
-            std::ptrdiff_t j = (i + k) % len;
-            if (j < 0) { j += len; }
-            acc += weights[static_cast<size_t>(k + radius)] *
-                   static_cast<double>(in[static_cast<size_t>(j)]);
+            acc += weights[static_cast<size_t>(k + radius)] * static_cast<double>(source(i + k));
         }
-        out[static_cast<size_t>(i)] = clamp01(acc / sum);
+        out[(seam + static_cast<size_t>(i)) % n] = clamp01(acc / sum);
     }
 }
 
@@ -133,6 +183,9 @@ void MotionRecorder::prepare(double sample_rate,
             b.m_x.assign(m_config.m_max_points, 0.0f);
             b.m_y.assign(m_config.m_max_points, 0.0f);
             b.m_gate.assign(m_config.m_max_points, 0);
+            // The seam window is at most a quarter of the take.
+            b.m_raw_tail_x.assign(m_config.m_max_points / 4, 0.0f);
+            b.m_raw_tail_y.assign(m_config.m_max_points / 4, 0.0f);
         }
     }
     m_max_block = max_block_size;
@@ -161,7 +214,10 @@ void MotionRecorder::prepare(double sample_rate,
 size_t MotionRecorder::take_buffer_bytes() const {
     size_t bytes = 0;
     for (const auto& b : m_takes) {
-        bytes += (b.m_x.capacity() + b.m_y.capacity()) * sizeof(float) + b.m_gate.capacity();
+        bytes += (b.m_x.capacity() + b.m_y.capacity() + b.m_raw_tail_x.capacity() +
+                  b.m_raw_tail_y.capacity()) *
+                     sizeof(float) +
+                 b.m_gate.capacity();
     }
     return bytes;
 }
@@ -197,29 +253,49 @@ bool MotionRecorder::set_playback_length(LoopLength length) {
         {.m_kind = CommandKind::PlaybackLength, .m_arg = static_cast<uint8_t>(length)});
 }
 
-// Every publication goes through here: smooth on this thread, swap through
-// RCU. The audio thread plays m_x / m_y.
+// Every publication goes through here: build the played x and y on this
+// thread, swap through RCU. The audio thread plays m_x / m_y.
+//
+// The published lane keeps the raw seam. LoopEnd::Smooth closes it in the
+// played copy over a window that grows from the base window (amount 0, as
+// finalise() does it) to the whole loop (amount 1, a smooth detrend), then runs
+// x and y through a circular Gaussian with sigma = max * amount^2.
+// LoopEnd::Jump keeps the seam and smooths the loop as an open sequence.
 void MotionRecorder::publish_played(MotionLane lane) {
     const uint32_t id = lane.m_take_id;
     const double amount = m_smoothing.load(std::memory_order_relaxed);
+    const bool jump = m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Jump;
     const size_t n = lane.num_points();
+    const size_t seam = lane.m_seam < n ? lane.m_seam : 0;
+    std::vector<float> x = lane.m_x;
+    std::vector<float> y = lane.m_y;
     double sigma = 0.0;
-    if (amount > 0.0 && n > 0 && lane.m_length > 0.0) {
-        const double units = k_max_smoothing_sigma *
-                             (std::pow(k_smoothing_curve_base, amount) - 1.0) /
-                             (k_smoothing_curve_base - 1.0);
-        sigma = units * static_cast<double>(n) / lane.m_length;
+    if (n >= k_min_take_points && lane.m_length > 0.0) {
+        if (!jump) {
+            const size_t base = base_seam_window(n, lane.m_length, lane.m_timebase);
+            const size_t window =
+                base + static_cast<size_t>(std::round(amount * static_cast<double>(n - base)));
+            for (auto* p : {&x, &y}) {
+                auto at = [&](size_t i) -> float& { return (*p)[(seam + i) % n]; };
+                spread_seam(at, n, window, seam_error(at, n));
+            }
+        }
+        const double max_sigma =
+            lane.m_timebase == MotionTimebase::Beats ? k_max_sigma_beats : k_max_sigma_seconds;
+        const double points_per_unit = static_cast<double>(n) / lane.m_length;
+        sigma = std::min(max_sigma * amount * amount * points_per_unit,
+                         k_max_sigma_fraction * static_cast<double>(n));
     }
     const uint32_t version = ++m_played_version;
     m_lanes.replace([&](PlayedLane& l) {
-        l.m_smoothed = sigma >= k_min_smoothing_points;
-        if (l.m_smoothed) {
-            smooth_circular(lane.m_x, sigma, l.m_x);
-            smooth_circular(lane.m_y, sigma, l.m_y);
+        if (sigma >= k_min_smoothing_points) {
+            smooth_gaussian(x, sigma, seam, !jump, l.m_x);
+            smooth_gaussian(y, sigma, seam, !jump, l.m_y);
         } else {
-            l.m_x = lane.m_x;
-            l.m_y = lane.m_y;
+            l.m_x = std::move(x);
+            l.m_y = std::move(y);
         }
+        l.m_smoothed = amount > 0.0 || jump;
         l.m_version = version;
         l.m_lane = std::move(lane);
     });
@@ -282,6 +358,12 @@ void MotionRecorder::set_smoothing(float amount) {
     publish_played(lane());  // same take id: playback glides to the new curve
 }
 
+void MotionRecorder::set_loop_end(LoopEnd mode) {
+    if (mode == m_loop_end.load(std::memory_order_relaxed)) { return; }
+    m_loop_end.store(mode, std::memory_order_relaxed);
+    publish_played(lane());  // same take id: playback glides to the new curve
+}
+
 bool MotionRecorder::service() {
     std::array<TakeBuffer*, 2> finished{};
     size_t count = 0;
@@ -308,6 +390,15 @@ bool MotionRecorder::service() {
             lane.m_x.assign(b.m_x.begin(), b.m_x.begin() + n);
             lane.m_y.assign(b.m_y.begin(), b.m_y.begin() + n);
             lane.m_gate.assign(b.m_gate.begin(), b.m_gate.begin() + n);
+            // Undo the seam blend: the lane keeps the raw recording, and the
+            // played copy closes the seam again for the current amount.
+            const size_t count = b.m_num_points;
+            for (size_t j = 0; j < b.m_seam_window; ++j) {
+                const size_t i = (b.m_seam + count - b.m_seam_window + j) % count;
+                lane.m_x[i] = b.m_raw_tail_x[j];
+                lane.m_y[i] = b.m_raw_tail_y[j];
+            }
+            lane.m_seam = b.m_seam;
             publish(std::move(lane));
             published = true;
         }
@@ -324,7 +415,7 @@ bool MotionRecorder::service() {
 
 uint32_t MotionRecorder::load_lane(MotionLane lane) {
     const size_t n = lane.num_points();
-    if (lane.m_y.size() != n) { return 0; }
+    if (lane.m_y.size() != n || (n > 0 && lane.m_seam >= n)) { return 0; }
     if (lane.m_gate.size() != n) {
         if (!lane.m_gate.empty()) { return 0; }
         lane.m_gate.assign(n, 1);
@@ -702,41 +793,30 @@ void MotionRecorder::trim_still_ends() {
     k.m_count = end - begin;
 }
 
-void MotionRecorder::finalise(TakeBuffer& b, size_t n, double points_per_second) {
-    const Take& k = m_take;
-    auto phys = [&](size_t logical) {
-        const size_t p = k.m_start_index + logical;
-        return p >= n ? p - n : p;
-    };
-
-    // Seam blend: spread the step at the wrap beyond the expected velocity over
-    // the last W points (raised cosine), so the raw loop has no jump at the
-    // seam even with smoothing off (a finger held across the loop end).
-    if (n >= k_min_take_points) {
-        const auto window = static_cast<size_t>(
-            std::max(1.0,
-                     std::min(std::floor(static_cast<double>(n) / 4.0),
-                              std::round(k_seam_window_seconds * points_per_second))));
-        auto blend = [&](std::vector<float>& p) {
-            const double p0 = p[phys(0)];
-            const double pn = p[phys(n - 1)];
-            // Expected step across the seam: the mean velocity on both sides
-            // (three points each, robust against a single jittery point).
-            const double vel =
-                n >= 8 ? (((p[phys(3)] - p0) / 3.0) + ((pn - p[phys(n - 4)]) / 3.0)) * 0.5
-                       : static_cast<double>(p[phys(1)]) - p0;
-            const double e = (p0 - pn) - vel;
-            for (size_t j = 0; j < window; ++j) {
-                const double w =
-                    0.5 * (1.0 - std::cos(std::numbers::pi * static_cast<double>(j + 1) /
-                                          static_cast<double>(window)));
-                float& v = p[phys(n - window + j)];
-                v = clamp01(static_cast<double>(v) + (e * w));
-            }
-        };
-        blend(b.m_x);
-        blend(b.m_y);
+// LoopEnd::Smooth: close the seam in place so the buffer plays without a jump at the wrap until
+// service() publishes it (a finger held across the loop end). The raw values of
+// the blended points go to the raw tail: service() restores them, so the
+// published lane keeps the raw seam. Bounded work on preallocated memory.
+void MotionRecorder::finalise(TakeBuffer& b, size_t n) {
+    const size_t start = m_take.m_start_index;
+    b.m_seam = start;
+    b.m_seam_window = 0;
+    if (n < k_min_take_points || m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Jump) {
+        return;
     }
+    const size_t window = base_seam_window(n, b.m_length, b.m_timebase);
+    assert(window <= b.m_raw_tail_x.size());
+    auto close = [&](std::vector<float>& p, std::vector<float>& tail) {
+        auto at = [&](size_t i) -> float& {
+            const size_t q = start + i;
+            return p[q >= n ? q - n : q];
+        };
+        for (size_t j = 0; j < window; ++j) { tail[j] = at(n - window + j); }
+        spread_seam(at, n, window, seam_error(at, n));
+    };
+    close(b.m_x, b.m_raw_tail_x);
+    close(b.m_y, b.m_raw_tail_y);
+    b.m_seam_window = window;
 }
 
 void MotionRecorder::abort_take(bool keep_replaced) {
@@ -779,13 +859,11 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     }
     TakeBuffer& b = m_takes[k.m_buffer];
     const size_t n = k.m_count;
-    double points_per_second = 0.0;
     if (k.m_bar && !k.m_aligned) {
         b.m_timebase = MotionTimebase::Beats;
         b.m_length = k.m_length;
         b.m_anchor = 0.0;
         b.m_rate = static_cast<double>(n) / k.m_length;
-        points_per_second = b.m_rate * bpm / 60.0;
     } else if (k.m_aligned) {
         // Whole bars from the bar line: index 0 plays on that bar line.
         const double length =
@@ -794,7 +872,6 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
         b.m_length = length;
         b.m_anchor = detail::wrap_phase(k.m_bar_line, length);
         b.m_rate = static_cast<double>(n) / length;
-        points_per_second = b.m_rate * bpm / 60.0;
     } else if (k.m_snap) {
         // Stretched onto the nearest of 1, 2, 4, 8 or 16 bars; index 0 plays on
         // the bar line nearest the first kept point.
@@ -805,7 +882,6 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
         b.m_anchor =
             detail::wrap_phase(std::round(k.m_start_beat / k.m_bar_beats) * k.m_bar_beats, length);
         b.m_rate = static_cast<double>(n) / length;
-        points_per_second = b.m_rate * bpm / 60.0;
     } else if (k.m_beats) {
         // Free take while the transport plays: round to whole beats, stretch at read time.
         const double elapsed = static_cast<double>(n) * k.m_tick_step;
@@ -814,15 +890,13 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
         b.m_length = length;
         b.m_anchor = detail::wrap_phase(std::round(k.m_start_beat * 16.0) / 16.0, length);
         b.m_rate = 1.0 / k.m_tick_step;
-        points_per_second = b.m_rate * bpm / 60.0;
     } else {
         b.m_timebase = MotionTimebase::Seconds;
         b.m_rate = m_sample_rate / k.m_tick_step;
         b.m_length = static_cast<double>(n) / b.m_rate;
         b.m_anchor = 0.0;
-        points_per_second = b.m_rate;
     }
-    finalise(b, n, points_per_second);
+    finalise(b, n);
     b.m_num_points = n;
     b.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
     b.m_state.store(BufferState::Finished, std::memory_order_release);

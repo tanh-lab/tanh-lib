@@ -310,8 +310,9 @@ TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
 TEST(MotionRecorder, MemoryPerRecorder) {
     MotionRecorder rec;
     rec.prepare(k_sr, 512);
-    // Two take buffers of 32768 points × (2 floats + 1 gate byte) = 576 KiB.
-    EXPECT_EQ(rec.take_buffer_bytes(), 2u * 32768u * 9u);
+    // Two take buffers of 32768 points × (2 floats + 1 gate byte) plus a raw
+    // seam tail of a quarter of the points × 2 floats = 704 KiB.
+    EXPECT_EQ(rec.take_buffer_bytes(), 2u * 32768u * 11u);
 }
 
 class MotionRecorderFigure8 : public ::testing::TestWithParam<uint32_t> {};
@@ -879,7 +880,8 @@ TEST(MotionRecorder, FreeTakeWithTransportRoundsToWholeBeats) {
     EXPECT_NEAR(lane.m_anchor, std::fmod(2.125 + (256.0 / 24000.0), 3.0), 1.0 / 32.0);
 }
 
-// Save the published lane as JSON, load it into a second recorder: same playback.
+// Save the published lane as JSON, load it into a second recorder: it plays
+// the same played lane (seam closed from the raw lane).
 TEST(MotionRecorder, JsonSaveAndLoadPlaysTheSame) {
     Rig a(256);
     record_free_take(a, 1.0, 0.5f);
@@ -892,7 +894,7 @@ TEST(MotionRecorder, JsonSaveAndLoadPlaysTheSame) {
     b.m_rec.load_lane(*loaded);
     MotionRecorder& rec = b.m_rec;
     b.run_until(static_cast<uint64_t>(3 * k_sr));
-    const MotionLane& orig = a.m_rec.lane();
+    const MotionLane orig = a.m_rec.played_lane();
     for (size_t s = 4800; s < b.m_x.size(); s += 101) {
         const double phase = std::fmod(static_cast<double>(s) / k_sr, orig.m_length);
         const MotionPoint p = orig.sample(phase);

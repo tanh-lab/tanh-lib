@@ -412,6 +412,10 @@ void XYController::set_smoothing(float amount) {
     for (auto& v : m_voices) { v->m_recorder.set_smoothing(amount); }
 }
 
+void XYController::set_loop_end(LoopEnd mode) {
+    for (auto& v : m_voices) { v->m_recorder.set_loop_end(mode); }
+}
+
 bool XYController::read_frame(XYFrame& out) {
     return m_frames.read(out);
 }

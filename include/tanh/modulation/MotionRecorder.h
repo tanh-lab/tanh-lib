@@ -43,6 +43,12 @@ enum class StoppedTransport : uint8_t {
     Hold      ///< freeze the output
 };
 
+/// How the played lane treats the step from the end of the loop to its start.
+enum class LoopEnd : uint8_t {
+    Smooth,  ///< spread the step over a window that grows with the smoothing amount (default)
+    Jump     ///< keep the step as a hard edge; smoothing does not cross it
+};
+
 /// Recorder state as a UI shows it.
 enum class MotionState : uint8_t {
     Idle,       ///< nothing playing (no lane, or playback stopped) and not armed
@@ -52,7 +58,7 @@ enum class MotionState : uint8_t {
 };
 
 struct MotionRecorderConfig {
-    /// Points per take buffer (two buffers per recorder, 9 bytes per point).
+    /// Points per take buffer (two buffers per recorder, 11 bytes per point).
     size_t m_max_points = k_motion_default_max_points;
     /// Grid rate of Seconds takes in points per second. Beats takes use
     /// round(rate * 60 / bpm) ticks per beat, clamped to [m_min_tpb, m_max_tpb].
@@ -112,8 +118,9 @@ struct MotionSnapshot {
  * stops playing, and if the take is then dropped (a cancelled bar take, a take
  * too short to keep) service() clears it.
  *
- * service() keeps the published lane raw and plays a copy smoothed by
- * set_smoothing(). Every publication can be undone once (undo(), redo()).
+ * service() publishes the raw take and plays a copy whose seam is closed and
+ * which is smoothed by set_smoothing(). Every publication can be undone once
+ * (undo(), redo()).
  *
  * XYController owns one recorder per voice and calls process(); recorder(v)
  * gives the UI and message thread access to the rest.
@@ -122,10 +129,10 @@ struct MotionSnapshot {
  * - ctor, prepare: message thread, audio stopped (allocates).
  * - arm, record, disarm, play, stop, set_reverse, set_playback_length:
  *   one UI thread (lock-free queue).
- * - set_stopped_transport, smoothing: any thread.
+ * - set_stopped_transport, smoothing, loop_end: any thread.
  * - process and the audio getters: audio thread.
  * - service, load_lane, clear, undo, redo, can_undo, can_redo, clear_history,
- *   set_smoothing: one message thread (RCU publication, allocates).
+ *   set_smoothing, set_loop_end: one message thread (RCU publication, allocates).
  * - lane, played_lane, read_lane, lane_version: message or UI thread.
  */
 class TANH_API MotionRecorder {
@@ -239,18 +246,25 @@ public:
     void clear_history();
 
     /**
-     * @brief Playback smoothing, 0 (raw) to 1; the published lane stays raw.
+     * @brief Playback smoothing, 0 to 1; the published lane stays raw.
      *
-     * x and y play through a circular, zero-phase Gaussian whose sigma grows
-     * exponentially with @p amount up to a quarter beat (Beats lanes) or 250 ms
-     * (Seconds lanes). The gate is not smoothed. Playback glides to the result.
+     * The played copy spreads the jump at the loop seam over a window that grows
+     * from 150 ms (0.3 beat) at 0 to the whole loop at 1, then smooths x and y
+     * with a zero-phase Gaussian of sigma = amount^2 * half a beat (250 ms for
+     * Seconds lanes). The gate is not smoothed. Playback glides to the result.
      */
     void set_smoothing(float amount);
     [[nodiscard]] float smoothing() const { return m_smoothing.load(std::memory_order_relaxed); }
 
-    /// Copy of the published lane (raw, allocates).
+    /// Loop end of the played lane (LoopEnd::Smooth by default). Jump also
+    /// leaves new takes unblended while they play from the take buffer.
+    void set_loop_end(LoopEnd mode);
+    [[nodiscard]] LoopEnd loop_end() const { return m_loop_end.load(std::memory_order_relaxed); }
+
+    /// Copy of the published lane (raw, with the recorded seam; allocates).
     [[nodiscard]] MotionLane lane() const;
-    /// Copy of the published lane with the smoothed x and y that play (allocates).
+    /// Copy of the published lane with the x and y that play: seam closed and
+    /// smoothed (allocates).
     [[nodiscard]] MotionLane played_lane() const;
 
     /// Call @p f with the published (raw) lane inside an RCU read section.
@@ -260,7 +274,7 @@ public:
     }
 
     /// Bumped on every publication (take, load, clear, undo, redo,
-    /// smoothing change): redraw when it changes.
+    /// smoothing or loop end change): redraw when it changes.
     [[nodiscard]] uint32_t lane_version() const {
         return m_lane_version.load(std::memory_order_acquire);
     }
@@ -276,8 +290,8 @@ private:
         MotionLane m_lane;
         std::vector<float> m_x;
         std::vector<float> m_y;
-        bool m_smoothed = false;
-        uint32_t m_version = 0;  // per publication, also for a smoothing change
+        bool m_smoothed = false;  // may differ from the finalised take buffer: glide on handoff
+        uint32_t m_version = 0;   // per publication, also for a smoothing change
     };
 
     struct TakeBuffer {
@@ -285,6 +299,9 @@ private:
         std::vector<float> m_x;
         std::vector<float> m_y;
         std::vector<uint8_t> m_gate;
+        // Raw values of the points finalise() blended, for service() to restore.
+        std::vector<float> m_raw_tail_x;
+        std::vector<float> m_raw_tail_y;
         // Written by the audio thread before Finished (release), read after (acquire).
         size_t m_num_points = 0;
         MotionTimebase m_timebase = MotionTimebase::Seconds;
@@ -292,6 +309,8 @@ private:
         double m_length = 0.0;
         double m_anchor = 0.0;
         uint32_t m_take_id = 0;
+        size_t m_seam = 0;         // index of the first recorded point
+        size_t m_seam_window = 0;  // points blended by finalise()
     };
 
     // What playback reads: a take buffer or the RCU lane, valid for one block.
@@ -352,7 +371,7 @@ private:
     void end_take(double bpm);
     // keep_replaced: the old lane plays on (prepare()); otherwise service() clears it.
     void abort_take(bool keep_replaced = false);
-    void finalise(TakeBuffer& buffer, size_t num_points, double points_per_second);
+    void finalise(TakeBuffer& buffer, size_t num_points);
     void start_glide();
     void publish(MotionLane lane, bool record_history = true);
     void publish_played(MotionLane lane);
@@ -373,6 +392,7 @@ private:
     // Id of a lane a dropped take replaced; service() clears it if still published.
     std::atomic<uint32_t> m_clear_request{0};
     std::atomic<float> m_smoothing{0.0f};
+    std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
 
     // Message thread only.
     uint32_t m_published_id = 0;

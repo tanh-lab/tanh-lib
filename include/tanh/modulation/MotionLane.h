@@ -61,6 +61,9 @@ struct TANH_API MotionLane {
     std::vector<float> m_x;       ///< [0, 1], num_points() entries
     std::vector<float> m_y;       ///< [0, 1], num_points() entries
     std::vector<uint8_t> m_gate;  ///< 0 / 1 per point
+    /// Index of the first recorded point: the take's seam sits between
+    /// m_seam - 1 and m_seam (not 0 for a bar take started mid-loop).
+    size_t m_seam = 0;
 
     [[nodiscard]] size_t num_points() const { return m_x.size(); }
     [[nodiscard]] bool empty() const { return m_x.empty(); }
@@ -69,7 +72,8 @@ struct TANH_API MotionLane {
     [[nodiscard]] MotionPoint sample(double phase) const;
 
     /// Serialise as version 1: x and y quantised to uint16 arrays, the gate as
-    /// [index, value] edges, plus take_id, timebase, rate, length and anchor.
+    /// [index, value] edges, plus take_id, timebase, rate, length, anchor and,
+    /// when not 0, seam.
     [[nodiscard]] nlohmann::json to_json() const;
 
     /**
@@ -77,7 +81,8 @@ struct TANH_API MotionLane {
      *
      * Rejects (nullopt) a wrong version, a missing or non-finite field, rate or
      * length ≤ 0, x/y of different sizes or out of the uint16 range, and gate
-     * edges that are unsorted, out of range or not 0/1. A lane with more than
+     * edges that are unsorted, out of range or not 0/1, and a seam outside the
+     * points. A missing seam is 0. A lane with more than
      * @p max_points points is resampled down to @p max_points. An empty lane
      * (no points) parses to an empty MotionLane.
      */
@@ -85,7 +90,8 @@ struct TANH_API MotionLane {
         const nlohmann::json& json,
         size_t max_points = k_motion_default_max_points);
 
-    /// Resample to exactly @p num_points points (Catmull-Rom for x/y, step for the gate).
+    /// Resample to exactly @p num_points points (Catmull-Rom for x/y, step for
+    /// the gate); the seam index is scaled along.
     void resample(size_t num_points);
 };
 

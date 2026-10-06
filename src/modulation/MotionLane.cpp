@@ -92,6 +92,7 @@ nlohmann::json MotionLane::to_json() const {
     j["rate"] = m_rate;
     j["length"] = m_length;
     j["anchor"] = m_anchor;
+    if (m_seam != 0) { j["seam"] = m_seam; }
     auto xs = nlohmann::json::array();
     auto ys = nlohmann::json::array();
     auto gate = nlohmann::json::array();
@@ -184,6 +185,14 @@ std::optional<MotionLane> MotionLane::from_json(const nlohmann::json& json, size
             std::fill(lane.m_gate.begin() + prev_index, lane.m_gate.end(), value);
         }
 
+        const auto seam = json.find("seam");
+        if (seam != json.end()) {
+            if (!seam->is_number_integer()) { return std::nullopt; }
+            const int64_t s = seam->get<int64_t>();
+            if (s < 0 || std::cmp_greater_equal(s, n)) { return std::nullopt; }
+            lane.m_seam = static_cast<size_t>(s);
+        }
+
         if (max_points > 0 && n > max_points) { lane.resample(max_points); }
         return lane;
     } catch (...) { return std::nullopt; }
@@ -205,6 +214,8 @@ void MotionLane::resample(size_t num_points) {
         gate[k] = gi < m_gate.size() ? m_gate[gi] : uint8_t{0};
     }
     m_rate *= static_cast<double>(num_points) / static_cast<double>(n);
+    const auto seam = static_cast<size_t>(std::llround(static_cast<double>(m_seam) / step));
+    m_seam = seam % num_points;
     m_x = std::move(x);
     m_y = std::move(y);
     m_gate = std::move(gate);
