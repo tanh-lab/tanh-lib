@@ -62,6 +62,10 @@ struct MotionRecorderConfig {
     /// Catmull-Rom is evaluated every this many samples; the output ramps linearly between.
     uint32_t m_render_interval = 32;
     double m_glide_ms = 25.0;  ///< raised-cosine glide after a jump, a new lane or a release
+    /// Free takes end after 16 bars at most and are stretched onto the nearest
+    /// (in ratio) of 1, 2, 4, 8 or 16 bars: a Beats lane whose index 0 sits on
+    /// the bar line nearest the take's start. Off: free takes keep their length.
+    bool m_snap_to_bars = false;
 };
 
 /// One block of touch input for MotionRecorder::process().
@@ -274,7 +278,8 @@ private:
         double m_tick_base = 0.0;      // clock of tick 0
         double m_tick_step = 0.0;      // clock units per point
         double m_start_beat = 0.0;
-        double m_length = 0.0;  // bar: loop length in beats
+        double m_length = 0.0;     // bar: loop length in beats
+        double m_bar_beats = 4.0;  // beats per bar at the start
         float m_last_x = 0.0f;
         float m_last_y = 0.0f;
         std::array<float, 5> m_ring_x{};  // raw last points

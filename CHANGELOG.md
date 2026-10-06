@@ -49,7 +49,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   takes through RCU; lanes save as validated JSON. `set_playback_length(BarsN)` plays
   any lane stretched onto N bars from a bar line (Free: its recorded length). A new
   take replaces the playing lane from its first sample; if the take is dropped the
-  old lane stays deleted. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
+  old lane stays deleted. `MotionRecorderConfig::m_snap_to_bars` ends free takes after
+  16 bars and stretches them onto the nearest of 1, 2, 4, 8 or 16 bars. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
   `motion_recording.md`.
 - `thl::modulation::XYController`: XY dots (voices), each with touch input and a
   recorder, as `<id>.x` / `.y` / `.active` matrix sources. It runs once per block from

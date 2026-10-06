@@ -23,6 +23,14 @@ using thl::dsp::transport::TransportInfo;
 namespace {
 
 constexpr size_t k_min_take_points = 4;
+constexpr double k_max_snap_bars = 16.0;
+
+// Nearest of 1, 2, 4, 8, 16 bars by ratio (log2), so the stretch is the smallest.
+double snap_bars(double bars) {
+    if (!(bars > 0.0)) { return 1.0; }
+    const double exponent = std::clamp(std::round(std::log2(bars)), 0.0, 4.0);
+    return std::exp2(exponent);
+}
 constexpr size_t k_min_capacity = 16;
 // Below this the running playback phase is kept as is (bit-exact continuity,
 // also across an aligned DAW loop wrap or a hint without a real jump).
@@ -418,8 +426,11 @@ void MotionRecorder::start_take(const TransportInfo& t,
                                         static_cast<double>(m_config.m_max_tpb));
     const uint32_t bars = bars_of(m_arm_length);
     const auto max_points = static_cast<double>(m_config.m_max_points);
+    const int sig_num = t.m_sig_num > 0 ? t.m_sig_num : 4;
+    const int sig_denom = t.m_sig_denom > 0 ? t.m_sig_denom : 4;
     Take& k = m_take;
     k = Take{};
+    k.m_bar_beats = static_cast<double>(sig_num) * 4.0 / static_cast<double>(sig_denom);
 
     if (bars > 0) {
         const int num = t.m_sig_num > 0 ? t.m_sig_num : 4;
@@ -453,6 +464,13 @@ void MotionRecorder::start_take(const TransportInfo& t,
         k.m_tick_step = m_sample_rate / m_config.m_rate;
         k.m_tick_base = 0.0;
         k.m_clock = 0.0;
+    }
+    if (bars == 0 && m_config.m_snap_to_bars) {
+        // A snapped take ends after 16 bars (of the tempo at the start when stopped).
+        const double max_beats = k_max_snap_bars * k.m_bar_beats;
+        const double limit =
+            k.m_beats ? max_beats / k.m_tick_step : max_beats * 60.0 / bpm * m_config.m_rate;
+        k.m_capacity = std::min(k.m_capacity, static_cast<size_t>(std::ceil(limit)));
     }
     k.m_active = true;
     k.m_buffer = buffer;
@@ -597,6 +615,16 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
         b.m_length = k.m_length;
         b.m_anchor = 0.0;
         b.m_rate = static_cast<double>(n) / k.m_length;
+        points_per_second = b.m_rate * bpm / 60.0;
+    } else if (m_config.m_snap_to_bars) {
+        const double beats = k.m_beats ? static_cast<double>(n) * k.m_tick_step
+                                       : static_cast<double>(n) / m_config.m_rate * bpm / 60.0;
+        const double length = snap_bars(beats / k.m_bar_beats) * k.m_bar_beats;
+        b.m_timebase = MotionTimebase::Beats;
+        b.m_length = length;
+        b.m_anchor =
+            detail::wrap_phase(std::round(k.m_start_beat / k.m_bar_beats) * k.m_bar_beats, length);
+        b.m_rate = static_cast<double>(n) / length;
         points_per_second = b.m_rate * bpm / 60.0;
     } else if (k.m_beats) {
         // Free take while the transport plays: round to whole beats, stretch at read time.

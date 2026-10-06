@@ -54,6 +54,10 @@ cannot feed back as a fake touch.
   lane: the old lane stops, and stays deleted if the take is dropped.
 - `disarm()`: cancel arming. A running free take finishes and plays; a running
   bar take is dropped.
+- With `MotionRecorderConfig::m_snap_to_bars`, a free take ends on release or
+  after 16 bars and is stretched onto the nearest (by ratio) of 1, 2, 4, 8 or
+  16 bars, as a Beats lane starting on the bar line nearest its start. Nothing a
+  user records is dropped for not filling a bar grid.
 - `set_playback_length(len)`: play every lane as `len`. `BarsN` stretches it onto
   exactly N bars of the current time signature from a bar line, faster or slower
   than recorded (a free take or a 2-bar take as one bar); `Free` plays the
