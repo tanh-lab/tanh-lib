@@ -1,53 +1,13 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
+#include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
 #include <optional>
 
 namespace thl::dsp::transport {
-
-/**
- * @brief Musical time divisions for division_in_block().
- *
- * All divisions are expressed as beat multiples where 1 beat = quarter note.
- * Bar length depends on the active time signature: sig_num * (4 / sig_denom).
- * For example 4/4 → 4 beats, 6/8 → 3 beats, 7/8 → 3.5 beats.
- */
-enum class Division {
-    Bar,
-    Half,       ///< Half note      (2 beats)
-    Beat,       ///< Quarter note   (1 beat)
-    Eighth,     ///< Eighth note    (0.5 beats)
-    Sixteenth,  ///< Sixteenth note (0.25 beats)
-    NumDivisions
-};
-
-/**
- * @brief Beat length of a division. Bar = sig_num * (4 / sig_denom).
- */
-[[nodiscard]] inline double beats_per_division(Division div, int sig_num, int sig_denom) {
-    switch (div) {
-        case Division::Bar:
-            return static_cast<double>(sig_num) * 4.0 / static_cast<double>(sig_denom);
-        case Division::Half: return 2.0;
-        case Division::Beat: return 1.0;
-        case Division::Eighth: return 0.5;
-        case Division::Sixteenth: return 0.25;
-        case Division::NumDivisions: break;
-    }
-    return 1.0;
-}
-
-/**
- * @brief Map an int to a Division, clamped to a valid value.
- *        Returns Division::Beat for out-of-range input.
- */
-[[nodiscard]] inline Division division_from_int(int value) {
-    if (value < 0 || value >= static_cast<int>(Division::NumDivisions)) { return Division::Beat; }
-    return static_cast<Division>(value);
-}
 
 /**
  * @class TransportClock
@@ -69,9 +29,11 @@ enum class Division {
  *   beat_at_sample() and is_playing() are only valid between those two calls.
  *
  * @par Link compatibility
- *   host_time_micros in begin_block() carries the hardware output timestamp
- *   (callback host time + output latency). Ignored by InternalTransportClock,
- *   required by a future LinkTransportClock.
+ *   host_time_micros in begin_block() carries the callback's host time. Ignored
+ *   by InternalTransportClock and HostTransportClock, used by LinkTransportClock.
+ *
+ * block_info() returns the whole block as a TransportInfo, including the
+ * discontinuity flags.
  */
 class TANH_API TransportClock {
 public:
@@ -88,8 +50,8 @@ public:
      * BPM changes, play/stop, and seeks take effect here — never mid-block.
      *
      * @param frame_count       Number of samples in this block.
-     * @param host_time_micros  Hardware output timestamp in microseconds.
-     *                          Required for Link; pass nullopt otherwise.
+     * @param host_time_micros  Callback host time in microseconds, without output
+     *                          latency. Used for Link; pass nullopt otherwise.
      */
     virtual void begin_block(uint32_t frame_count,
                              std::optional<int64_t> host_time_micros = std::nullopt)
@@ -103,8 +65,6 @@ public:
      * begin_block() so that beat_at_sample() computes offsets relative to the
      * start of the current block throughout processing.
      *
-     * A future LinkTransportClock also requires this call to commit its audio
-     * session state to the Link timeline at the correct moment.
      */
     virtual void end_block() TANH_NONBLOCKING_FUNCTION = 0;
 
@@ -156,6 +116,27 @@ public:
     virtual void play() TANH_NONBLOCKING_FUNCTION = 0;
     virtual void stop() TANH_NONBLOCKING_FUNCTION = 0;
     virtual void set_position_beats(double beats) TANH_NONBLOCKING_FUNCTION = 0;
+
+    // ── Block snapshot (audio thread, between begin_block and end_block) ──────
+
+    /**
+     * @brief The current block as a TransportInfo.
+     *
+     * The default builds it from the getters and reports no discontinuities and no
+     * block length. The tanh clocks override it with their tracked snapshot.
+     */
+    [[nodiscard]] virtual TransportInfo block_info() const TANH_NONBLOCKING_FUNCTION {
+        TransportInfo info;
+        info.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
+                       TransportInfo::k_has_time_signature;
+        if (is_playing()) { info.m_flags |= TransportInfo::k_is_playing; }
+        info.m_bpm = bpm();
+        info.m_beat_position = beat_at_sample(0);
+        info.m_beats_per_sample = beat_at_sample(1) - info.m_beat_position;
+        info.m_sig_num = sig_num();
+        info.m_sig_denom = sig_denom();
+        return info;
+    }
 };
 
 }  // namespace thl::dsp::transport

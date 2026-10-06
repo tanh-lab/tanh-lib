@@ -9,6 +9,9 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MorphFilter.cpp
 	test_StereoFDN.cpp
 	test_InternalTransportClock.cpp
+	test_TransportInfo.cpp
+	test_HostTransportClock.cpp
+	test_LinkTransportClock.cpp
 	test_MetronomePlayer.cpp
 	test_Granular.cpp
 	test_MorphWindow.cpp
