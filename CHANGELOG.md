@@ -49,10 +49,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   takes through RCU; lanes save as validated JSON. `set_playback_length(BarsN)` plays
   any lane stretched onto N bars from a bar line (Free: its recorded length). A new
   take replaces the playing lane from its first sample; if the take is dropped the
-  old lane stays deleted. `MotionRecorderConfig::m_bar_aligned_takes` starts every take
-  on a bar line and records lifts as gate 0; free takes end at the first of 1, 2, 4, 8
-  or 16 bars reached with the finger up, and `disarm()` / `stop()` pad a take instead of
-  dropping it. `overdub()` punches into the playing lane while touched; `undo()` /
+  old lane stays deleted. `MotionRecorderConfig::m_bar_aligned_takes` makes every take a
+  Beats lane of whole bars: `BarsN` starts on a bar line, records lifts as gate 0 and
+  `disarm()` / `stop()` pad it instead of dropping it; `Free` runs from the first touch
+  to the release (16 bars at most), drops its still ends and is stretched onto the
+  nearest of 1, 2, 4, 8 or 16 bars, so it loops without a pause. `undo()` /
   `redo()` keep one previous lane; `set_smoothing()` plays the raw lane through a
   circular zero-phase Gaussian. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
   `motion_recording.md`.

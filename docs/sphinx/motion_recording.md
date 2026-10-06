@@ -56,24 +56,25 @@ cannot feed back as a fake touch.
   down); until then the old lane keeps playing. `record(len)` starts at the next
   block without waiting. From its first sample the new take replaces the old
   lane: the old lane stops, and stays deleted if the take is dropped.
-- `disarm()`: cancel arming and overdub. A running free take finishes and
-  plays; a running bar take is dropped.
+- `disarm()`: cancel arming. A running free take finishes and plays; a running
+  bar take is dropped.
 - With `MotionRecorderConfig::m_bar_aligned_takes`, every take is a Beats lane
-  that starts on the bar line at or before its first touch (the time before the
-  touch is recorded lifted, gate 0) and records lifts as gate 0. `BarsN` records
-  exactly N bars. `Free` ends at the first of 1, 2, 4, 8 or 16 bars from its
-  start reached with the finger up (16 at most); nothing is stretched.
-  `disarm()` / `stop()` end a take at once, padded with gate 0 to N bars or the
-  next free boundary; only a take that was never touched is dropped (the old
-  lane then plays on).
-- `overdub()`: while a lane plays, a touch writes (x, y, gate 1) into a copy of
-  it at the playback positions under the finger (respecting playback length and
-  reverse); untouched points and the length stay. Each release publishes the
-  edit as a new take (one undo step per punch); the output glides back to the
-  edited lane. With nothing playing, `overdub()` arms a take of the playback
-  length first. `arm()`, `record()`, `disarm()` and `stop()` leave overdub.
+  of whole bars:
+  - `BarsN` starts on the bar line at or before its first touch (the time
+    before the touch is recorded lifted, gate 0), records lifts as gate 0 and
+    lasts exactly N bars. `disarm()` / `stop()` end it at once, padded with
+    gate 0 to N bars.
+  - `Free` runs from the first touch to the release, 16 bars of the tempo at
+    its start at most (`record(Free)` also waits for the touch). The still
+    ends (the finger down but not yet or no longer moving) are dropped, the
+    seam is blended, and the take is stretched onto the nearest (by ratio) of
+    1, 2, 4, 8 or 16 bars, anchored on the bar line nearest its first point:
+    it loops as one continuous movement, without a pause. Lifting ends it, so
+    a free take holds no gaps: record gaps with a fixed `BarsN` length.
+    `disarm()` / `stop()` end it there and keep it.
+  - A take that was never touched is dropped and the old lane plays on.
 - `undo()` / `redo()` (message thread): one level. Every publication (take,
-  punch, load, clear) keeps the previous lane; `undo()` republishes it under a
+  load, clear) keeps the previous lane; `undo()` republishes it under a
   new take id and enables `redo()`; a new publication drops the redo lane.
   `clear_history()` forgets both (preset load).
 - `set_playback_length(len)`: play every lane as `len`. `BarsN` stretches it onto
@@ -90,7 +91,7 @@ cannot feed back as a fake touch.
 ## Threading contract
 
 - ctor, `prepare()`: message thread, audio stopped (allocates).
-- `arm`, `record`, `overdub`, `disarm`, `play`, `stop`, `set_reverse`,
+- `arm`, `record`, `disarm`, `play`, `stop`, `set_reverse`,
   `set_playback_length`: one UI thread,
   through a lock-free queue of `k_motion_command_capacity` (32) entries, applied
   at the next block start. They are `[[nodiscard]]` and return false when the
@@ -113,9 +114,8 @@ The RCU writer locks and allocates, so the audio thread never publishes. Each
 recorder owns two take buffers. The audio thread writes one, finalises it in
 place on finish and plays straight from it; `service()` copies it into a
 `MotionLane` and publishes it; the next block switches to the published lane
-(silently, or with a glide when it plays smoothed) and frees the buffer. An
-overdub punch copies the playing lane into a free buffer (a bounded copy into
-preallocated memory), plays and edits it, and hands it over the same way. If both buffers wait for
+(silently, or with a glide when it plays smoothed) and frees the buffer. If
+both buffers wait for
 `service()`, arming waits and `MotionSnapshot::m_busy` is set. Take ids come
 from one counter shared with `load_lane()` and `clear()`, and the newest id
 always plays.
@@ -171,5 +171,6 @@ capacity.
   (`MotionSnapshot::m_refused`).
 - **Release tail.** A still tail before the release of at most one block is
   dropped from a free take: without event timestamps the release can arrive a
-  block late.
+  block late. With `m_bar_aligned_takes` every still end of a free take is
+  dropped.
 - **Commands.** Check the return value: a full queue drops the command.
