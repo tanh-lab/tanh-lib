@@ -377,6 +377,10 @@ bool XYController::service() {
     return any;
 }
 
+void XYController::set_smoothing(float amount) {
+    for (auto& v : m_voices) { v->m_recorder.set_smoothing(amount); }
+}
+
 bool XYController::read_frame(XYFrame& out) {
     return m_frames.read(out);
 }

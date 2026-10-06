@@ -130,7 +130,7 @@ static_assert(std::is_trivially_copyable_v<XYFrame>);
  * other finger holds and moves only that voice until it is released.
  *
  * Threading:
- * - ctor, dtor, route, unroute, set_route_*, service: message thread.
+ * - ctor, dtor, route, unroute, set_route_*, service, set_smoothing: message thread.
  * - touch, touch_voice, release, release_all, flush, read_frame, drain_trail,
  *   read_path: one UI thread, lock-free.
  * - set_latch, set_voice_enabled, set_ui_attached: any thread.
@@ -200,6 +200,8 @@ public:
     [[nodiscard]] MotionRecorder& recorder(uint32_t voice = 0);
     /// MotionRecorder::service() for every voice (message-thread timer, 10 Hz or more).
     bool service();
+    /// MotionRecorder::set_smoothing() for every voice (message thread).
+    void set_smoothing(float amount);
 
     /// Copy the newest frame into @p out. False, with @p out untouched, if nothing is new.
     bool read_frame(XYFrame& out);
