@@ -1,5 +1,6 @@
 #include "tanh/modulation/InputEventQueue.h"
 
+#include <tanh/modulation/detail/EventSpread.h>
 #include <tanh/state/ModulationScope.h>
 
 #include <cassert>
@@ -110,8 +111,7 @@ size_t InputEventQueue::drain_spread(uint32_t block_size, const OnEvent& cb) {
         const size_t n = idx.size();
         if (n == 0) { return; }
         for (size_t i = 0; i < n; ++i) {
-            const auto offset = static_cast<uint32_t>((i * static_cast<size_t>(block_size)) / n);
-            cb(m_drain_buffer[idx[i]], offset);
+            cb(m_drain_buffer[idx[i]], detail::spread_offset(i, n, block_size));
         }
     };
 
