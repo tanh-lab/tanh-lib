@@ -524,6 +524,7 @@ if(TANH_BUILD_GRAPH)
     add_library(${PROJECT_NAME}_graph
         src/graph/Node.cpp
         src/graph/Graph.cpp
+        src/graph/ProcessorNode.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_graph PROPERTIES

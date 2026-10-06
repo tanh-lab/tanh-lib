@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <type_traits>
 #include <map>
 #include <utility>
@@ -36,7 +37,7 @@ public:
 
     // ─── Editing (control thread) ────────────
     template <typename T, typename... Args>
-    NodeId add_node(Args&&... args) {
+    std::optional<NodeId> add_node(Args&&... args) {
         static_assert(std::is_base_of_v<Node, T>);
         return add_node_impl(std::make_shared<T>(std::forward<Args>(args)...));
     }
@@ -46,6 +47,8 @@ public:
     bool disconnect(PortRef to);
 
     NodeId graph_output() const { return k_output_id; }
+
+    std::set<const void*> exclusive_resources() const;
 
     void prepare(const ProcessSpec& spec);
 
@@ -64,7 +67,7 @@ private:
     struct ProcessingStep;
     struct CompiledGraph;
 
-    NodeId add_node_impl(std::shared_ptr<Node> node);
+    std::optional<NodeId> add_node_impl(std::shared_ptr<Node> node);
 
     bool exists(NodeId id) const { return m_nodes.contains(id); }
     bool path_exists(NodeId from, NodeId to) const;
