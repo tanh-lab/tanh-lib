@@ -9,8 +9,12 @@ loop on release.
   time signature at arm time (they end after exactly one loop).
 - **Recording** runs at control rate into preallocated memory: 200 points per
   second, or `round(200 · 60 / bpm)` ticks per beat (24 to 512) while the
-  transport plays. A 5-tap binomial filter removes touch jitter and a
-  raised-cosine blend closes the loop seam.
+  transport plays. Points are stored raw; a raised-cosine blend closes the loop
+  seam.
+- **Smoothing** (`set_smoothing(amount)`, 0 to 1) is non-destructive: the lane
+  stays raw and plays through a circular, zero-phase Gaussian over x and y
+  (sigma up to a quarter beat, or 250 ms for Seconds lanes), computed on the
+  message thread and published with the lane. The gate is not smoothed.
 - **Playback** interpolates with uniform Catmull-Rom across the seam, clamped
   to [0, 1], evaluated every 32 samples with a linear ramp in between. Beats
   lanes follow the transport's tempo; Seconds lanes run on their own clock.
@@ -52,12 +56,26 @@ cannot feed back as a fake touch.
   down); until then the old lane keeps playing. `record(len)` starts at the next
   block without waiting. From its first sample the new take replaces the old
   lane: the old lane stops, and stays deleted if the take is dropped.
-- `disarm()`: cancel arming. A running free take finishes and plays; a running
-  bar take is dropped.
-- With `MotionRecorderConfig::m_snap_to_bars`, a free take ends on release or
-  after 16 bars and is stretched onto the nearest (by ratio) of 1, 2, 4, 8 or
-  16 bars, as a Beats lane starting on the bar line nearest its start. Nothing a
-  user records is dropped for not filling a bar grid.
+- `disarm()`: cancel arming and overdub. A running free take finishes and
+  plays; a running bar take is dropped.
+- With `MotionRecorderConfig::m_bar_aligned_takes`, every take is a Beats lane
+  that starts on the bar line at or before its first touch (the time before the
+  touch is recorded lifted, gate 0) and records lifts as gate 0. `BarsN` records
+  exactly N bars. `Free` ends at the first of 1, 2, 4, 8 or 16 bars from its
+  start reached with the finger up (16 at most); nothing is stretched.
+  `disarm()` / `stop()` end a take at once, padded with gate 0 to N bars or the
+  next free boundary; only a take that was never touched is dropped (the old
+  lane then plays on).
+- `overdub()`: while a lane plays, a touch writes (x, y, gate 1) into a copy of
+  it at the playback positions under the finger (respecting playback length and
+  reverse); untouched points and the length stay. Each release publishes the
+  edit as a new take (one undo step per punch); the output glides back to the
+  edited lane. With nothing playing, `overdub()` arms a take of the playback
+  length first. `arm()`, `record()`, `disarm()` and `stop()` leave overdub.
+- `undo()` / `redo()` (message thread): one level. Every publication (take,
+  punch, load, clear) keeps the previous lane; `undo()` republishes it under a
+  new take id and enables `redo()`; a new publication drops the redo lane.
+  `clear_history()` forgets both (preset load).
 - `set_playback_length(len)`: play every lane as `len`. `BarsN` stretches it onto
   exactly N bars of the current time signature from a bar line, faster or slower
   than recorded (a free take or a 2-bar take as one bar); `Free` plays the
@@ -72,16 +90,19 @@ cannot feed back as a fake touch.
 ## Threading contract
 
 - ctor, `prepare()`: message thread, audio stopped (allocates).
-- `arm`, `record`, `disarm`, `play`, `stop`, `set_reverse`: one UI thread,
+- `arm`, `record`, `overdub`, `disarm`, `play`, `stop`, `set_reverse`,
+  `set_playback_length`: one UI thread,
   through a lock-free queue of `k_motion_command_capacity` (32) entries, applied
   at the next block start. They are `[[nodiscard]]` and return false when the
   queue is full; the command is then dropped.
-- `set_stopped_transport()`: any thread.
+- `set_stopped_transport()`, `smoothing()`: any thread.
 - `process()`, the outputs and `snapshot()`: audio thread.
-- `service()`, `load_lane()`, `clear()`: one message thread (RCU publication,
-  allocates). Call `service()` from a timer at 10 Hz or more.
-- `lane()`, `read_lane(f)`, `lane_version()`: message or UI thread;
-  `lane_version()` bumps on every publication.
+- `service()`, `load_lane()`, `clear()`, `undo()`, `redo()`, `can_undo()`,
+  `can_redo()`, `clear_history()`, `set_smoothing()`: one message thread (RCU
+  publication, allocates). Call `service()` from a timer at 10 Hz or more.
+- `lane()` (raw), `played_lane()` (smoothed), `read_lane(f)`, `lane_version()`:
+  message or UI thread; `lane_version()` bumps on every publication, including
+  a smoothing change.
 
 A UI reads the recorder's state from `XYFrame::m_voices[v].m_motion`
 (a `MotionSnapshot`), not from the recorder.
@@ -92,7 +113,9 @@ The RCU writer locks and allocates, so the audio thread never publishes. Each
 recorder owns two take buffers. The audio thread writes one, finalises it in
 place on finish and plays straight from it; `service()` copies it into a
 `MotionLane` and publishes it; the next block switches to the published lane
-(bit-identical, so silently) and frees the buffer. If both buffers wait for
+(silently, or with a glide when it plays smoothed) and frees the buffer. An
+overdub punch copies the playing lane into a free buffer (a bounded copy into
+preallocated memory), plays and edits it, and hands it over the same way. If both buffers wait for
 `service()`, arming waits and `MotionSnapshot::m_busy` is set. Take ids come
 from one counter shared with `load_lane()` and `clear()`, and the newest id
 always plays.

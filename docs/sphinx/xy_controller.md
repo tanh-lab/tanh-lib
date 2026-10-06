@@ -114,7 +114,8 @@ stops frame and trail publication.
 ## Threading contract
 
 - ctor, dtor, `route`, `unroute`, `set_route_enabled`, `set_route_depth`,
-  `service`: message thread.
+  `service`, `set_smoothing` (every voice's `MotionRecorder::set_smoothing()`):
+  message thread.
 - `touch`, `touch_voice`, `release`, `release_all`, `flush`, `read_frame`,
   `drain_trail`, `read_path`: one UI thread, lock-free.
 - `set_latch`, `set_voice_enabled`, `set_ui_attached`: any thread.
