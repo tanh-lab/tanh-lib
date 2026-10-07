@@ -5,7 +5,10 @@
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/graph/Graph.h>
 #include <tanh/graph/Node.h>
-#include <tanh/graph/ProcessorNode.h>
+#include <tanh/graph/nodes/ChannelMerge.h>
+#include <tanh/graph/nodes/ChannelSplit.h>
+#include <tanh/graph/nodes/InputMix.h>
+#include <tanh/graph/nodes/ProcessorNode.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -13,6 +16,7 @@
 #include <memory>
 
 using namespace thl::graph;
+using namespace thl::graph::nodes;
 using thl::core::Buffer;
 using thl::core::BufferView;
 
@@ -82,6 +86,25 @@ private:
     size_t m_num_channels;
 };
 
+/// Fills channel ch with ch + 1.
+class ChannelNumberNode final : public Node {
+public:
+    explicit ChannelNumberNode(size_t num_channels) : m_num_channels(num_channels) {}
+
+    PortLayout ports() const override { return {.inputs = {}, .outputs = {m_num_channels}}; }
+
+private:
+    void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
+        for (size_t ch = 0; ch < m_num_channels; ++ch) {
+            std::fill_n(context.outputs[0].get_write_pointer(ch),
+                        context.num_frames,
+                        static_cast<float>(ch + 1));
+        }
+    }
+
+    size_t m_num_channels;
+};
+
 /// x -> 2x + 1, in place. Records what prepare() received.
 class TestProcessor final : public thl::dsp::BaseProcessor {
 public:
@@ -116,13 +139,15 @@ Buffer<float> make_output(size_t num_frames = k_block) {
     return output;
 }
 
-void expect_all(const Buffer<float>& buffer, float value) {
-    for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
-        for (size_t i = 0; i < buffer.get_num_samples(); ++i) {
-            ASSERT_FLOAT_EQ(buffer.get_read_pointer(ch)[i], value)
-                << "channel " << ch << ", frame " << i;
-        }
+void expect_channel(const Buffer<float>& buffer, size_t ch, float value) {
+    for (size_t i = 0; i < buffer.get_num_samples(); ++i) {
+        ASSERT_FLOAT_EQ(buffer.get_read_pointer(ch)[i], value)
+            << "channel " << ch << ", frame " << i;
     }
+}
+
+void expect_all(const Buffer<float>& buffer, float value) {
+    for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) { expect_channel(buffer, ch, value); }
 }
 
 }  // namespace
@@ -445,4 +470,106 @@ TEST(ProcessorNode, SameProcessorCanOnlyBeAddedOnce) {
 
     EXPECT_TRUE(graph.remove_node(*first));
     EXPECT_TRUE(graph.add_node<ProcessorNode>(processor, k_channels));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Routing nodes
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(ChannelSplit, SendsEachChannelToItsOwnOutput) {
+    constexpr size_t num_channels = 3;
+    for (uint32_t port = 0; port < num_channels; ++port) {
+        SCOPED_TRACE(port);
+        Graph graph(1);
+        const auto source = graph.add_node<ChannelNumberNode>(num_channels);
+        const auto splitter = graph.add_node<ChannelSplit>(num_channels);
+        ASSERT_TRUE(source && splitter);
+        EXPECT_EQ(graph.node(*splitter)->ports().outputs, std::vector<size_t>(num_channels, 1));
+        ASSERT_TRUE(graph.connect({*source, 0}, {*splitter, 0}));
+        ASSERT_TRUE(graph.connect({*splitter, port}, {graph.graph_output(), 0}));
+        graph.prepare(k_spec);
+
+        Buffer<float> output(1, k_block);
+        graph.process(output);
+        expect_all(output, static_cast<float>(port + 1));
+    }
+}
+
+TEST(InputMix, AveragesItsInputs) {
+    Graph graph(k_channels);
+    const auto a = graph.add_node<ConstantNode>(k_channels, 0.5f);
+    const auto b = graph.add_node<ConstantNode>(k_channels, 0.25f);
+    const auto mixer = graph.add_node<InputMix>(2, k_channels);
+    ASSERT_TRUE(a && b && mixer);
+    ASSERT_TRUE(graph.connect({*a, 0}, {*mixer, 0}));
+    ASSERT_TRUE(graph.connect({*b, 0}, {*mixer, 1}));
+    ASSERT_TRUE(graph.connect({*mixer, 0}, {graph.graph_output(), 0}));
+    graph.prepare(k_spec);
+
+    auto output = make_output();
+    graph.process(output);
+    expect_all(output, 0.375f);
+}
+
+TEST(InputMix, SumsItsInputs) {
+    Graph graph(k_channels);
+    const auto a = graph.add_node<ConstantNode>(k_channels, 0.5f);
+    const auto b = graph.add_node<ConstantNode>(k_channels, 0.25f);
+    const auto mixer = graph.add_node<InputMix>(2, k_channels, InputMix::Mode::Sum);
+    ASSERT_TRUE(a && b && mixer);
+    ASSERT_TRUE(graph.connect({*a, 0}, {*mixer, 0}));
+    ASSERT_TRUE(graph.connect({*b, 0}, {*mixer, 1}));
+    ASSERT_TRUE(graph.connect({*mixer, 0}, {graph.graph_output(), 0}));
+    graph.prepare(k_spec);
+
+    auto output = make_output();
+    graph.process(output);
+    expect_all(output, 0.75f);
+}
+
+TEST(InputMix, UnconnectedInputCountsAsSilence) {
+    Graph graph(k_channels);
+    const auto source = graph.add_node<ConstantNode>(k_channels, 0.6f);
+    const auto mixer = graph.add_node<InputMix>(3, k_channels);
+    ASSERT_TRUE(source && mixer);
+    ASSERT_TRUE(graph.connect({*source, 0}, {*mixer, 1}));
+    ASSERT_TRUE(graph.connect({*mixer, 0}, {graph.graph_output(), 0}));
+    graph.prepare(k_spec);
+
+    auto output = make_output();
+    graph.process(output);
+    expect_all(output, 0.2f);
+}
+
+TEST(ChannelMerge, SwapsChannelsWithSplit) {
+    Graph graph(k_channels);
+    const auto source = graph.add_node<ChannelNumberNode>(k_channels);
+    const auto split = graph.add_node<ChannelSplit>(k_channels);
+    const auto merge = graph.add_node<ChannelMerge>(k_channels);
+    ASSERT_TRUE(source && split && merge);
+    ASSERT_TRUE(graph.connect({*source, 0}, {*split, 0}));
+    ASSERT_TRUE(graph.connect({*split, 0}, {*merge, 1}));
+    ASSERT_TRUE(graph.connect({*split, 1}, {*merge, 0}));
+    ASSERT_TRUE(graph.connect({*merge, 0}, {graph.graph_output(), 0}));
+    graph.prepare(k_spec);
+
+    auto output = make_output();
+    graph.process(output);
+    expect_channel(output, 0, 2.0f);
+    expect_channel(output, 1, 1.0f);
+}
+
+TEST(ChannelMerge, MonoToStereo) {
+    Graph graph(k_channels);
+    const auto mono = graph.add_node<ConstantNode>(1, 0.5f);
+    const auto merge = graph.add_node<ChannelMerge>(k_channels);
+    ASSERT_TRUE(mono && merge);
+    ASSERT_TRUE(graph.connect({*mono, 0}, {*merge, 0}));
+    ASSERT_TRUE(graph.connect({*mono, 0}, {*merge, 1}));
+    ASSERT_TRUE(graph.connect({*merge, 0}, {graph.graph_output(), 0}));
+    graph.prepare(k_spec);
+
+    auto output = make_output();
+    graph.process(output);
+    expect_all(output, 0.5f);
 }
