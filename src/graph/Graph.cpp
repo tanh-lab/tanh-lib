@@ -124,6 +124,7 @@ std::optional<NodeId> Graph::add_node(std::shared_ptr<Node> node) {
     }
     const NodeId id{m_next_id++};
     m_nodes.emplace(id, std::move(node));
+    m_dirty = true;
     return id;
 }
 
@@ -135,6 +136,7 @@ bool Graph::remove_node(NodeId id) {
         const auto& [to, from] = entry;
         return to.node == id || from.node == id;
     });
+    m_dirty = true;
     return true;
 }
 
@@ -168,10 +170,15 @@ bool Graph::connect(PortRef from, PortRef to) {
     if (path_exists(to.node, from.node)) { return false; }
 
     m_connections.emplace(to, from);
+    m_dirty = true;
     return true;
 }
 
-bool Graph::disconnect(PortRef to) { return m_connections.erase(to) > 0; }
+bool Graph::disconnect(PortRef to) {
+    if (m_connections.erase(to) == 0) { return false; }
+    m_dirty = true;
+    return true;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prepare / compile / publish
@@ -286,6 +293,7 @@ bool Graph::commit() {
     // The previous snapshot is retired and freed later, on this thread, once
     // the audio thread has left it.
     m_compiled_graph.replace([&](CompiledGraph& g) { g = std::move(*compiled); });
+    m_dirty = false;
     return true;
 }
 
