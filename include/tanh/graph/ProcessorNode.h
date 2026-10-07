@@ -24,10 +24,11 @@ public:
 
     PortLayout ports() const override;
     std::vector<const void*> exclusive_resources() const override { return {m_processor.get()}; }
+
+private:
     void prepare(const ProcessSpec& spec) override;
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override;
 
-private:
     std::shared_ptr<thl::dsp::BaseProcessor> m_processor;
     size_t m_num_channels;
     Type m_type;

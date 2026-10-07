@@ -21,9 +21,10 @@ public:
     explicit OutputNode(size_t num_channels)
         : m_layout{.inputs = {num_channels}, .outputs = {}} {}
     PortLayout ports() const override { return m_layout; }
-    void process(const ProcessContext&) TANH_NONBLOCKING_FUNCTION override {}
 
 private:
+    void process(const ProcessContext&) TANH_NONBLOCKING_FUNCTION override {}
+
     PortLayout m_layout;
 };
 
@@ -70,16 +71,50 @@ Graph::~Graph() = default;
 // Editing
 // ─────────────────────────────────────────────────────────────────────────────
 
+Node* Graph::node(NodeId id) {
+    const auto it = m_nodes.find(id);
+    return it == m_nodes.end() ? nullptr : it->second.get();
+}
+
+const Node* Graph::node(NodeId id) const {
+    const auto it = m_nodes.find(id);
+    return it == m_nodes.end() ? nullptr : it->second.get();
+}
+
+std::vector<NodeId> Graph::nodes() const {
+    std::vector<NodeId> ids;
+    ids.reserve(m_nodes.size());
+    for (const auto& [id, node] : m_nodes) { ids.push_back(id); }
+    return ids;
+}
+
+std::vector<Connection> Graph::connections() const {
+    std::vector<Connection> result;
+    result.reserve(m_connections.size());
+    for (const auto& [to, from] : m_connections) { result.push_back({.from = from, .to = to}); }
+    return result;
+}
+
+std::optional<PortRef> Graph::source_of(PortRef to) const {
+    const auto it = m_connections.find(to);
+    if (it == m_connections.end()) { return std::nullopt; }
+    return it->second;
+}
+
 std::set<const void*> Graph::exclusive_resources() const {
     std::set<const void*> resources;
     for (const auto& [id, node] : m_nodes) {
+        resources.insert(node.get());
         for (const void* resource : node->exclusive_resources()) { resources.insert(resource); }
     }
     return resources;
 }
 
-std::optional<NodeId> Graph::add_node_impl(std::shared_ptr<Node> node) {
+std::optional<NodeId> Graph::add_node(std::shared_ptr<Node> node) {
+    if (!node) { return std::nullopt; }
+
     std::set<const void*> in_use = exclusive_resources();
+    if (!in_use.insert(node.get()).second) { return std::nullopt; }
     for (const void* resource : node->exclusive_resources()) {
         if (!in_use.insert(resource).second) { return std::nullopt; }
     }
