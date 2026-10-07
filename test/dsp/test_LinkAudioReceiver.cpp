@@ -186,6 +186,37 @@ TEST(LinkAudioReceiver, ATimelineJumpBackRestarts) {
     EXPECT_NEAR(b.m_data[0][0], 0.05, 1e-5);
 }
 
+TEST(LinkAudioReceiver, ALostPacketIsSkippedNotADropout) {
+    LinkAudioReceiver r;
+    FakeSharing s;
+    double beat = s.add_run(0.0, 10);
+    beat += 256 * k_beats_per_frame;  // the network lost the next packet
+    s.add_run(beat, 30);
+    Block b(128);
+    double at = 0.01;
+    for (int block = 0; block < 60; ++block) {
+        EXPECT_TRUE(render(r, s, b, at)) << "block " << block;
+        at += b.m_frames * k_beats_per_frame;
+    }
+    EXPECT_EQ(r.num_underruns(), 0u);
+}
+
+TEST(LinkAudioReceiver, APacketOutOfOrderIsDropped) {
+    LinkAudioReceiver r;
+    FakeSharing s;
+    constexpr double span = 256 * k_beats_per_frame;
+    for (const int i : {0, 1, 3, 2, 4, 5, 6, 7, 8, 9, 10, 11}) {
+        s.add(i * span, 256, 2, k_beats_per_frame);
+    }
+    Block b(128);
+    double at = 0.001;
+    for (int block = 0; block < 20; ++block) {
+        EXPECT_TRUE(render(r, s, b, at)) << "block " << block;
+        at += b.m_frames * k_beats_per_frame;
+    }
+    EXPECT_EQ(r.num_underruns(), 0u);
+}
+
 TEST(LinkAudioReceiver, IgnoresEmptyOrOversizedPackets) {
     LinkAudioReceiver r;
     FakeSharing s;

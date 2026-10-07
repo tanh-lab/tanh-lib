@@ -62,8 +62,9 @@ public:
  * that covers the network (after Ableton's LinkAudioHut renderer). The buffered packets are
  * read across their boundaries with cubic interpolation at the rate that maps the range onto
  * the block, which also follows tempo changes and a sender running at another sample rate.
- * Until the packets cover a range (start, a gap, a timeline jump) the block is silent and the
- * receiver starts over.
+ * Until the packets cover a range (start, audio arriving too late, a timeline jump) the block
+ * is silent and the receiver starts over. A packet the network lost is skipped (the audio
+ * around it plays on); one that arrives out of order is dropped.
  *
  * Audio thread only, after construction (which allocates the packet ring).
  */
@@ -71,6 +72,10 @@ class TANH_API LinkAudioReceiver {
 public:
     /// Packets held (about three seconds of stereo at 48 kHz); the oldest go when it is full.
     static constexpr size_t k_capacity = 512;
+    /// A packet starting this far before the last one's end is reordered and dropped.
+    static constexpr double k_order_tolerance_beats = 1e-4;
+    /// A packet starting this far before the last one's end means the timeline jumped back.
+    static constexpr double k_jump_beats = 0.25;
 
     LinkAudioReceiver();
 
@@ -100,6 +105,9 @@ public:
     /// much margin the latency leaves. Negative or 0 while not playing.
     [[nodiscard]] double margin_beats() const { return m_margin_beats; }
 
+    /// Packets taken from the backend since construction (unusable ones included).
+    [[nodiscard]] uint64_t num_received() const { return m_received; }
+
     /// Times playback stopped because the audio for a range had not arrived (a dropout: raise
     /// the latency). Counts from construction.
     [[nodiscard]] uint64_t num_underruns() const { return m_underruns; }
@@ -122,6 +130,7 @@ private:
     double m_read_frame = 0.0;  // in the first packet, frames (fractional)
     double m_margin_beats = 0.0;
     uint64_t m_underruns = 0;
+    uint64_t m_received = 0;
 };
 
 }  // namespace thl::dsp::transport

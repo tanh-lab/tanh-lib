@@ -79,11 +79,25 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
         }
         auto& slot = m_ring[(m_head + m_count) % k_capacity];
         if (!backend.pop(slot)) { break; }
+        ++m_received;
         const bool usable = slot.m_num_frames > 0 && slot.m_num_channels > 0 &&
                             static_cast<size_t>(slot.m_num_frames) * slot.m_num_channels <=
                                 LinkAudioPacket::k_max_samples &&
                             slot.m_end_beat > slot.m_begin_beat;
-        if (usable) { ++m_count; }
+        if (!usable) { continue; }
+        // Packets come in beat order. One behind the last (reordered or repeated by the
+        // network) is dropped; one far behind means the timeline jumped back: start over.
+        if (m_count > 0) {
+            const double last_end = packet(m_count - 1).m_end_beat;
+            if (slot.m_begin_beat < last_end - k_jump_beats) {
+                const LinkAudioPacket jumped = slot;
+                reset();
+                m_ring[m_head] = jumped;
+            } else if (slot.m_begin_beat < last_end - k_order_tolerance_beats) {
+                continue;
+            }
+        }
+        ++m_count;
     }
 
     if (num_frames == 0) { return m_playing; }
@@ -93,43 +107,42 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
     }
     const double end_beat = begin_beat + (static_cast<double>(num_frames) * beats_per_sample);
 
-    // Start at the packet that holds the range's first beat, dropping everything before it
-    // (after a timeline jump back, the packets before it belong to beats not reached yet).
+    // Start at the first packet that reaches past the range's first beat (older ones go). A
+    // packet that only starts later in the range is played from its start: the hole before it
+    // was a lost packet. One that starts after the range has not arrived for it yet.
     if (!m_playing) {
-        size_t start = m_count;
-        for (size_t i = 0; i < m_count; ++i) {
-            const auto& p = packet(i);
-            if (p.m_begin_beat <= begin_beat && begin_beat < p.m_end_beat) {
-                start = i;
-                break;
-            }
-        }
-        if (start == m_count) {  // not arrived yet: drop what is older, keep what is newer
-            while (m_count > 0 && packet(0).m_end_beat <= begin_beat) { pop_front(); }
+        while (m_count > 0 && packet(0).m_end_beat <= begin_beat) { pop_front(); }
+        if (m_count == 0 || packet(0).m_begin_beat > end_beat) {
             stop(out, num_channels, num_frames);
             return false;
         }
-        for (size_t i = 0; i < start; ++i) { pop_front(); }
-        m_read_frame = frame_at(packet(0), begin_beat);
+        m_read_frame = std::max(0.0, frame_at(packet(0), begin_beat));
     }
 
-    // The source frames that cover the range: up to the packet holding its last beat.
+    // The source frames up to the range's last beat. A beat in a hole (a packet the network
+    // lost) maps to the start of the next packet: the hole is skipped, not a dropout. Only a
+    // beat past the last packet is missing audio.
     double frames_to_end = 0.0;
     bool covered = false;
     for (size_t i = 0; i < m_count; ++i) {
         const auto& p = packet(i);
-        if (end_beat >= p.m_begin_beat && end_beat < p.m_end_beat) {
-            frames_to_end += frame_at(p, end_beat);
+        if (end_beat < p.m_end_beat) {
+            frames_to_end += frame_at(p, std::max(end_beat, p.m_begin_beat));
             covered = true;
             break;
         }
         frames_to_end += static_cast<double>(p.m_num_frames);
     }
     const double source_frames = frames_to_end - m_read_frame;
-    if (!covered || source_frames <= 0.0) {  // not arrived yet, or the timeline jumped
+    if (!covered || source_frames < 0.0) {  // not arrived yet, or the timeline jumped back
         if (!covered && m_playing) { ++m_underruns; }
         stop(out, num_channels, num_frames);
         return false;
+    }
+    if (source_frames == 0.0) {  // the whole range lies in a hole: its audio was lost
+        for (uint32_t ch = 0; ch < num_channels; ++ch) { std::fill_n(out[ch], num_frames, 0.0f); }
+        m_playing = true;
+        return true;
     }
 
     // Read at the rate that maps the range onto the block (tempo and sample rate follow).
