@@ -42,6 +42,7 @@ option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
+option(TANH_BUILD_GRAPH "Build Graph component" OFF)
 # Off by default: this is the only component that links a network stack, and
 # consumers embedding tanh::Core (anira) must not inherit it implicitly.
 option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
@@ -512,6 +513,36 @@ if(TANH_BUILD_AUDIO_IO)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
 endif()
 
+if(TANH_BUILD_GRAPH)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Graph component requires Core Component")
+    endif()
+    if(NOT TARGET ${PROJECT_NAME}_dsp)
+        message(FATAL_ERROR "Graph component requires DSP component")
+    endif()
+
+    add_library(${PROJECT_NAME}_graph
+        src/graph/Graph.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_graph PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+    
+    add_library(${PROJECT_NAME}::Graph ALIAS ${PROJECT_NAME}_graph)
+
+    target_include_directories(${PROJECT_NAME}_graph
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_graph PUBLIC ${PROJECT_NAME}_core ${PROJECT_NAME}_dsp)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_graph)
+
+endif()
+
 if(TANH_BUILD_NET)
     if(NOT TARGET ${PROJECT_NAME}_core)
         message(FATAL_ERROR "Net component requires Core component")
@@ -651,6 +682,7 @@ foreach(_pair
         "${PROJECT_NAME}_resonator=Resonator"
         "${PROJECT_NAME}_modulation=Modulation"
         "${PROJECT_NAME}_audio_io=AudioIO"
+        "${PROJECT_NAME}_graph=Graph"
         "${PROJECT_NAME}_net=Net")
     string(REPLACE "=" ";" _pair "${_pair}")
     list(GET _pair 0 _target)
@@ -685,6 +717,9 @@ if (TANH_WITH_TESTS)
     include(CTest)
     include(cmake/tanh/test-deps.cmake)
     tanh_fetch_googletest(VERSION v1.14.0)
+    # test-deps.cmake includes GoogleTest inside a function, which breaks test discovery on
+    # older CMake (e.g. 3.28). Remove once tanh-tooling includes it at file scope.
+    include(GoogleTest)
     tanh_fetch_googlebenchmark(VERSION v1.9.1)
     if (TANH_BUILD_CORE)
         add_subdirectory(test/core)
@@ -704,6 +739,9 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_NET)
         add_subdirectory(test/net)
     endif()
+    if (TANH_BUILD_GRAPH)
+        add_subdirectory(test/graph)
+    endif()
 
     # The export-table invariant, on the desktop formats where it can be inspected.
     if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
@@ -716,7 +754,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net benchmark_state benchmark_modulation benchmark_dsp)
+    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net test_graph benchmark_state benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()
