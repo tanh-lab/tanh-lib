@@ -10,7 +10,7 @@
 #include <memory>
 #include <vector>
 
-namespace thl::graph {
+namespace thl::graph::nodes {
 
 class TANH_API ProcessorNode final : public Node {
 public:
@@ -34,4 +34,4 @@ private:
     Type m_type;
 };
 
-}  // namespace thl::graph
+}  // namespace thl::graph::nodes

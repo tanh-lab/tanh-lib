@@ -1,9 +1,9 @@
-#include <tanh/graph/ProcessorNode.h>
+#include <tanh/graph/nodes/ProcessorNode.h>
 
 #include <algorithm>
 #include <utility>
 
-namespace thl::graph {
+namespace thl::graph::nodes {
 
 ProcessorNode::ProcessorNode(std::shared_ptr<thl::dsp::BaseProcessor> processor,
                              size_t num_channels,
@@ -35,4 +35,4 @@ void ProcessorNode::process(const ProcessContext& context) TANH_NONBLOCKING_FUNC
     m_processor->process_modulated(output);
 }
 
-}  // namespace thl::graph
+}  // namespace thl::graph::nodes

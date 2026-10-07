@@ -42,7 +42,7 @@ option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
-option(TANH_BUILD_GRAPH "Build Graph component" ON)
+option(TANH_BUILD_GRAPH "Build Graph component" OFF)
 # Off by default: this is the only component that links a network stack, and
 # consumers embedding tanh::Core (anira) must not inherit it implicitly.
 option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
@@ -524,7 +524,10 @@ if(TANH_BUILD_GRAPH)
     add_library(${PROJECT_NAME}_graph
         src/graph/Node.cpp
         src/graph/Graph.cpp
-        src/graph/ProcessorNode.cpp
+        src/graph/nodes/ProcessorNode.cpp
+        src/graph/nodes/ChannelSplit.cpp
+        src/graph/nodes/ChannelMerge.cpp
+        src/graph/nodes/InputMix.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_graph PROPERTIES
