@@ -24,7 +24,7 @@ namespace thl::graph {
 
 struct Graph::Node {
     std::unique_ptr<thl::dsp::BaseProcessor> m_processor;
-    MixMode m_mix_mode = MixMode::Sum;
+    MixMode m_mix_mode = MixMode::Average;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ struct Graph::Node {
 
 struct Graph::ProcessingStep {
     thl::dsp::BaseProcessor* m_processor = nullptr;
-    MixMode m_mix_mode = MixMode::Sum;
+    MixMode m_mix_mode = MixMode::Average;
     std::vector<BufferIndex> m_sources;
     BufferIndex m_buffer = 0;
 };
@@ -45,7 +45,7 @@ struct Graph::CompiledGraph {
     std::vector<thl::core::Buffer<float>> m_buffers;
     std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
     std::vector<BufferIndex> m_output_sources;
-    MixMode m_output_mix_mode = MixMode::Sum;
+    MixMode m_output_mix_mode = MixMode::Average;
     size_t m_num_channels = 0;
     size_t m_max_block_size = 0;
 };
