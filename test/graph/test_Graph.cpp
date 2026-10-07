@@ -184,10 +184,10 @@ TEST(Graph, FanOutFeedsEveryNode) {
 
     auto buffer = make_buffer(0.4f);
     graph.process(buffer);
-    expect_all(buffer, 0.4f * 2.0f + 0.4f * 0.5f);
+    expect_all(buffer, (0.4f * 2.0f + 0.4f * 0.5f) / 2.0f);
 }
 
-TEST(Graph, MixModeSumsOrAveragesConnectedSources) {
+TEST(Graph, MixModeAveragesConnectedSourcesByDefaultOrSums) {
     Graph graph;
     const auto a = graph.add_node<ConstantProcessor>(0.5f);
     const auto b = graph.add_node<ConstantProcessor>(0.25f);
@@ -199,12 +199,12 @@ TEST(Graph, MixModeSumsOrAveragesConnectedSources) {
 
     auto buffer = make_buffer(0.0f);
     graph.process(buffer);
-    expect_all(buffer, 0.75f);
+    expect_all(buffer, 0.375f);
 
-    ASSERT_TRUE(graph.set_mix_mode(graph.graph_output(), Graph::MixMode::Average));
+    ASSERT_TRUE(graph.set_mix_mode(graph.graph_output(), Graph::MixMode::Sum));
     ASSERT_TRUE(graph.commit());
     graph.process(buffer);
-    expect_all(buffer, 0.375f);
+    expect_all(buffer, 0.75f);
 }
 
 TEST(Graph, MixModeAppliesToProcessorNodes) {
@@ -216,12 +216,12 @@ TEST(Graph, MixModeAppliesToProcessorNodes) {
     ASSERT_TRUE(graph.connect(*a, *gain));
     ASSERT_TRUE(graph.connect(*b, *gain));
     ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
-    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Average));
+    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Sum));
     prepare(graph);
 
     auto buffer = make_buffer(0.0f);
     graph.process(buffer);
-    expect_all(buffer, 0.375f * 2.0f);
+    expect_all(buffer, 0.75f * 2.0f);
 }
 
 TEST(Graph, UnconnectedOutputIsSilent) {
@@ -357,9 +357,9 @@ TEST(Graph, HasUncommittedChangesTracksEdits) {
     EXPECT_TRUE(graph.has_uncommitted_changes());
     ASSERT_TRUE(graph.commit());
 
-    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Sum));  // unchanged
+    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Average));  // unchanged
     EXPECT_FALSE(graph.has_uncommitted_changes());
-    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Average));
+    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Sum));
     EXPECT_TRUE(graph.has_uncommitted_changes());
     ASSERT_TRUE(graph.commit());
 
