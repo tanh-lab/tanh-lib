@@ -14,7 +14,10 @@ namespace thl::graph::nodes {
 
 class TANH_API ProcessorNode final : public Node {
 public:
-    enum class Type : uint8_t { Effect, Generator };  // Effect: input -> output; Generator: output only
+    enum class Type : uint8_t {
+        Effect,
+        Generator
+    };  // Effect: input -> output; Generator: output only
 
     ProcessorNode(std::shared_ptr<thl::dsp::BaseProcessor> processor,
                   size_t num_channels,

@@ -6,13 +6,14 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <type_traits>
-#include <map>
 #include <utility>
 #include <vector>
+
 #include "tanh/core/threading/RCU.h"
 
 namespace thl::graph {
@@ -20,14 +21,14 @@ namespace thl::graph {
 enum class NodeId : uint64_t {};
 
 struct PortRef {
-    NodeId node{};
-    uint32_t port = 0;
+    NodeId m_node{};
+    uint32_t m_port = 0;
     friend auto operator<=>(const PortRef&, const PortRef&) = default;
 };
 
 struct Connection {
-    PortRef from;
-    PortRef to;
+    PortRef m_from;
+    PortRef m_to;
     friend auto operator<=>(const Connection&, const Connection&) = default;
 };
 
@@ -76,7 +77,6 @@ public:
     void register_audio_thread() const;
 
     void process(thl::core::BufferView output) TANH_NONBLOCKING_FUNCTION;
-
 
 private:
     using BufferIndex = uint32_t;

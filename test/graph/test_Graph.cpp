@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
@@ -9,11 +8,14 @@
 #include <tanh/graph/nodes/ChannelSplit.h>
 #include <tanh/graph/nodes/InputMix.h>
 #include <tanh/graph/nodes/ProcessorNode.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <vector>
 
 using namespace thl::graph;
 using namespace thl::graph::nodes;
@@ -24,19 +26,19 @@ namespace {
 
 constexpr size_t k_channels = 2;
 constexpr size_t k_block = 64;
-constexpr ProcessSpec k_spec{.sample_rate = 48000.0, .max_block_size = k_block};
+constexpr ProcessSpec k_spec{.m_sample_rate = 48000.0, .m_max_block_size = k_block};
 constexpr float k_untouched = -1.0f;
 
 class ConstantNode final : public Node {
 public:
     ConstantNode(size_t num_channels, float value) : m_num_channels(num_channels), m_value(value) {}
 
-    PortLayout ports() const override { return {.inputs = {}, .outputs = {m_num_channels}}; }
+    PortLayout ports() const override { return {.m_inputs = {}, .m_outputs = {m_num_channels}}; }
 
 private:
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            std::fill_n(context.outputs[0].get_write_pointer(ch), context.num_frames, m_value);
+            std::fill_n(context.m_outputs[0].get_write_pointer(ch), context.m_num_frames, m_value);
         }
     }
 
@@ -49,15 +51,15 @@ public:
     GainNode(size_t num_channels, float gain) : m_num_channels(num_channels), m_gain(gain) {}
 
     PortLayout ports() const override {
-        return {.inputs = {m_num_channels}, .outputs = {m_num_channels}};
+        return {.m_inputs = {m_num_channels}, .m_outputs = {m_num_channels}};
     }
 
 private:
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            const float* in = context.inputs[0].get_read_pointer(ch);
-            float* out = context.outputs[0].get_write_pointer(ch);
-            for (size_t i = 0; i < context.num_frames; ++i) { out[i] = in[i] * m_gain; }
+            const float* in = context.m_inputs[0].get_read_pointer(ch);
+            float* out = context.m_outputs[0].get_write_pointer(ch);
+            for (size_t i = 0; i < context.m_num_frames; ++i) { out[i] = in[i] * m_gain; }
         }
     }
 
@@ -70,16 +72,16 @@ public:
     explicit SumNode(size_t num_channels) : m_num_channels(num_channels) {}
 
     PortLayout ports() const override {
-        return {.inputs = {m_num_channels, m_num_channels}, .outputs = {m_num_channels}};
+        return {.m_inputs = {m_num_channels, m_num_channels}, .m_outputs = {m_num_channels}};
     }
 
 private:
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            const float* a = context.inputs[0].get_read_pointer(ch);
-            const float* b = context.inputs[1].get_read_pointer(ch);
-            float* out = context.outputs[0].get_write_pointer(ch);
-            for (size_t i = 0; i < context.num_frames; ++i) { out[i] = a[i] + b[i]; }
+            const float* a = context.m_inputs[0].get_read_pointer(ch);
+            const float* b = context.m_inputs[1].get_read_pointer(ch);
+            float* out = context.m_outputs[0].get_write_pointer(ch);
+            for (size_t i = 0; i < context.m_num_frames; ++i) { out[i] = a[i] + b[i]; }
         }
     }
 
@@ -91,13 +93,13 @@ class ChannelNumberNode final : public Node {
 public:
     explicit ChannelNumberNode(size_t num_channels) : m_num_channels(num_channels) {}
 
-    PortLayout ports() const override { return {.inputs = {}, .outputs = {m_num_channels}}; }
+    PortLayout ports() const override { return {.m_inputs = {}, .m_outputs = {m_num_channels}}; }
 
 private:
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            std::fill_n(context.outputs[0].get_write_pointer(ch),
-                        context.num_frames,
+            std::fill_n(context.m_outputs[0].get_write_pointer(ch),
+                        context.m_num_frames,
                         static_cast<float>(ch + 1));
         }
     }
@@ -116,8 +118,8 @@ public:
         prepared_channels = num_channels;
     }
 
-    void process(BufferView buffer, uint32_t /*modulation_offset*/)
-        TANH_NONBLOCKING_FUNCTION override {
+    void process(BufferView buffer,
+                 uint32_t /*modulation_offset*/) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
             float* samples = buffer.get_write_pointer(ch);
             for (size_t i = 0; i < buffer.get_num_samples(); ++i) {
@@ -272,7 +274,7 @@ TEST(Graph, ConnectRejectsInvalidConnections) {
     EXPECT_FALSE(graph.connect({NodeId{999}, 0}, output));  // unknown node
     EXPECT_FALSE(graph.connect({*a, 0}, {*a, 0}));          // self-connection
     EXPECT_TRUE(graph.connect({*a, 0}, {*b, 0}));
-    EXPECT_FALSE(graph.connect({*b, 0}, {*a, 0}));          // cycle
+    EXPECT_FALSE(graph.connect({*b, 0}, {*a, 0}));  // cycle
 }
 
 TEST(Graph, RemoveNodeDropsConnections) {
@@ -332,7 +334,7 @@ TEST(Graph, NodeLooksUpById) {
     const Graph& read_only = graph;
     const Node* output = read_only.node(graph.graph_output());
     ASSERT_NE(output, nullptr);
-    EXPECT_EQ(output->ports().inputs, std::vector<size_t>{k_channels});
+    EXPECT_EQ(output->ports().m_inputs, std::vector<size_t>{k_channels});
 }
 
 TEST(Graph, NodesListsEveryNode) {
@@ -357,8 +359,8 @@ TEST(Graph, ConnectionsListsEveryConnection) {
     ASSERT_TRUE(graph.connect({*gain, 0}, output_port));
 
     auto connections = graph.connections();
-    std::vector<Connection> expected{{.from = {*source, 0}, .to = {*gain, 0}},
-                                     {.from = {*gain, 0}, .to = output_port}};
+    std::vector<Connection> expected{{.m_from = {*source, 0}, .m_to = {*gain, 0}},
+                                     {.m_from = {*gain, 0}, .m_to = output_port}};
     std::ranges::sort(connections);
     std::ranges::sort(expected);
     EXPECT_EQ(connections, expected);
@@ -434,8 +436,8 @@ TEST(ProcessorNode, EffectProcessesItsInput) {
     ASSERT_TRUE(graph.connect({*effect, 0}, {graph.graph_output(), 0}));
     graph.prepare(k_spec);
 
-    EXPECT_DOUBLE_EQ(processor->prepared_sample_rate, k_spec.sample_rate);
-    EXPECT_EQ(processor->prepared_block_size, k_spec.max_block_size);
+    EXPECT_DOUBLE_EQ(processor->prepared_sample_rate, k_spec.m_sample_rate);
+    EXPECT_EQ(processor->prepared_block_size, k_spec.m_max_block_size);
     EXPECT_EQ(processor->prepared_channels, k_channels);
 
     auto output = make_output();
@@ -484,7 +486,7 @@ TEST(ChannelSplit, SendsEachChannelToItsOwnOutput) {
         const auto source = graph.add_node<ChannelNumberNode>(num_channels);
         const auto splitter = graph.add_node<ChannelSplit>(num_channels);
         ASSERT_TRUE(source && splitter);
-        EXPECT_EQ(graph.node(*splitter)->ports().outputs, std::vector<size_t>(num_channels, 1));
+        EXPECT_EQ(graph.node(*splitter)->ports().m_outputs, std::vector<size_t>(num_channels, 1));
         ASSERT_TRUE(graph.connect({*source, 0}, {*splitter, 0}));
         ASSERT_TRUE(graph.connect({*splitter, port}, {graph.graph_output(), 0}));
         graph.prepare(k_spec);
