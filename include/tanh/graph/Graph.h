@@ -1,8 +1,12 @@
 #pragma once
 
+#include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
-#include <tanh/graph/Node.h>
+#include <tanh/core/threading/LockFreeQueue.h>
+#include <tanh/dsp/BaseProcessor.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
+#include <atomic>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -10,32 +14,34 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include "tanh/core/threading/RCU.h"
 
 namespace thl::graph {
 
 enum class NodeId : uint64_t {};
 
-struct PortRef {
-    NodeId m_node{};
-    uint32_t m_port = 0;
-    friend auto operator<=>(const PortRef&, const PortRef&) = default;
-};
-
 struct Connection {
-    PortRef m_from;
-    PortRef m_to;
+    NodeId m_from{};
+    NodeId m_to{};
     friend auto operator<=>(const Connection&, const Connection&) = default;
 };
 
-class TANH_API Graph {
+/// A graph of BaseProcessors that is itself a BaseProcessor. process() feeds the incoming buffer to
+/// graph_input() and overwrites it with what reaches graph_output(). Every node runs with the
+/// channel count given to prepare().
+///
+/// Edits are made on the control thread and take effect at commit(). The audio thread switches to
+/// the committed version at its next block.
+class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
-    explicit Graph(size_t num_output_channels);
-    ~Graph();
+    /// How a node combines its sources.
+    enum class MixMode : uint8_t { Sum, Average };
+
+    Graph();
+    ~Graph() override;
 
     Graph(const Graph&) = delete;
     Graph& operator=(const Graph&) = delete;
@@ -45,61 +51,90 @@ public:
     // ─── Editing (control thread) ────────────
     template <typename T, typename... Args>
     std::optional<NodeId> add_node(Args&&... args) {
-        static_assert(std::is_base_of_v<Node, T>);
-        return add_node(std::make_shared<T>(std::forward<Args>(args)...));
+        static_assert(std::is_base_of_v<thl::dsp::BaseProcessor, T>);
+        return add_node(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
-    std::optional<NodeId> add_node(std::shared_ptr<Node> node);
+    std::optional<NodeId> add_node(std::unique_ptr<thl::dsp::BaseProcessor> processor);
 
     bool remove_node(NodeId id);
-    bool connect(PortRef from, PortRef to);
-    bool disconnect(PortRef to);
-
-    NodeId graph_output() const { return k_output_id; }
-
-    Node* node(NodeId id);
-    const Node* node(NodeId id) const;
-
-    std::vector<NodeId> nodes() const;
-    std::vector<Connection> connections() const;
-    std::optional<PortRef> source_of(PortRef to) const;
-
-    std::set<const void*> exclusive_resources() const;
-
-    /// Prepares every node and commits, including pending edits. Call only while process() is not
-    /// running.
-    void prepare(const ProcessSpec& spec);
+    bool connect(NodeId from, NodeId to);
+    bool disconnect(NodeId from, NodeId to);
+    bool set_mix_mode(NodeId id, MixMode mode);
 
     bool commit();
     bool has_uncommitted_changes() const { return m_dirty; }
 
-    // ─── Processing (audio thread) ───────────
-    void register_audio_thread() const;
+    NodeId graph_input() const { return k_input_id; }
+    NodeId graph_output() const { return k_output_id; }
 
-    void process(thl::core::BufferView output) TANH_NONBLOCKING_FUNCTION;
+    /// nullptr for graph_input(), graph_output() and unknown ids.
+    thl::dsp::BaseProcessor* node(NodeId id);
+    const thl::dsp::BaseProcessor* node(NodeId id) const;
+
+    std::vector<NodeId> nodes() const;
+    std::vector<Connection> connections() const;
+    std::vector<NodeId> sources_of(NodeId id) const;
+
+    // ─── BaseProcessor ───────────────────────
+    /// Prepares every node and commits, including pending edits. Call only while process() is not
+    /// running.
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override;
+
+    void process(thl::core::BufferView buffer,
+                 uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
 
 private:
     using BufferIndex = uint32_t;
-    static constexpr BufferIndex k_zeros_buffer = 0;
-    struct GraphBuffers;
+    struct Node;
     struct ProcessingStep;
     struct CompiledGraph;
+
+    struct RetiredNode {
+        std::unique_ptr<Node> m_node;
+        uint64_t m_last_generation;  // newest compiled version that may still use it
+    };
 
     bool exists(NodeId id) const { return m_nodes.contains(id); }
     bool path_exists(NodeId from, NodeId to) const;
 
     std::optional<std::vector<NodeId>> sort_graph_dfs() const;
-    std::optional<CompiledGraph> compile() const;
+    std::unique_ptr<CompiledGraph> compile() const;
+
+    void publish(std::unique_ptr<CompiledGraph> compiled);
+    void collect_garbage();
+    void free_all_compiled();
+
+    void take_pending() TANH_NONBLOCKING_FUNCTION;
+    static void mix_sources(const CompiledGraph& compiled,
+                            std::span<const BufferIndex> sources,
+                            MixMode mode,
+                            thl::core::BufferView destination) TANH_NONBLOCKING_FUNCTION;
 
     static constexpr NodeId k_output_id{0};
-    uint64_t m_next_id = 1;
+    static constexpr NodeId k_input_id{1};
+    uint64_t m_next_id = 2;
 
-    std::map<NodeId, std::shared_ptr<Node>> m_nodes;
-    std::map<PortRef, PortRef> m_connections;  // destination -> source
-    ProcessSpec m_spec{};
+    // ─── Control thread ──────────────────────
+    std::map<NodeId, std::unique_ptr<Node>> m_nodes;
+    std::set<Connection> m_connections;
+    std::vector<RetiredNode> m_retired_nodes;
+    double m_sample_rate = 0.0;
+    size_t m_max_block_size = 0;
+    size_t m_num_channels = 0;
     bool m_dirty = false;
 
-    thl::RCU<CompiledGraph> m_compiled_graph;
+    uint64_t m_next_generation = 1;
+    std::set<uint64_t> m_live_generations;  // handed to the audio thread and not yet freed
+
+    // ─── Control thread -> audio thread ──────
+    std::atomic<CompiledGraph*> m_pending{nullptr};
+    thl::core::LockFreeQueue<CompiledGraph*, 8> m_returned;  // audio thread -> control thread
+
+    // ─── Audio thread ────────────────────────
+    CompiledGraph* m_active = nullptr;
 };
 
 }  // namespace thl::graph

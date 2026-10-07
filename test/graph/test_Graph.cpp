@@ -3,142 +3,109 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/graph/Graph.h>
-#include <tanh/graph/Node.h>
-#include <tanh/graph/nodes/ChannelMerge.h>
-#include <tanh/graph/nodes/ChannelSplit.h>
-#include <tanh/graph/nodes/InputMix.h>
-#include <tanh/graph/nodes/ProcessorNode.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 using namespace thl::graph;
-using namespace thl::graph::nodes;
 using thl::core::Buffer;
 using thl::core::BufferView;
+using thl::dsp::BaseProcessor;
 
 namespace {
 
 constexpr size_t k_channels = 2;
 constexpr size_t k_block = 64;
-constexpr ProcessSpec k_spec{.m_sample_rate = 48000.0, .m_max_block_size = k_block};
-constexpr float k_untouched = -1.0f;
+constexpr double k_sample_rate = 48000.0;
 
-class ConstantNode final : public Node {
+/// Overwrites the buffer with a constant: a generator.
+class ConstantProcessor final : public BaseProcessor {
 public:
-    ConstantNode(size_t num_channels, float value) : m_num_channels(num_channels), m_value(value) {}
+    explicit ConstantProcessor(float value) : m_value(value) {}
 
-    PortLayout ports() const override { return {.m_inputs = {}, .m_outputs = {m_num_channels}}; }
+    void prepare(const double&, const size_t&, const size_t&) override {}
 
-private:
-    void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
-        for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            std::fill_n(context.m_outputs[0].get_write_pointer(ch), context.m_num_frames, m_value);
+    void process(BufferView buffer,
+                 uint32_t /*modulation_offset*/) TANH_NONBLOCKING_FUNCTION override {
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            std::fill_n(buffer.get_write_pointer(ch), buffer.get_num_samples(), m_value);
         }
     }
 
-    size_t m_num_channels;
+private:
     float m_value;
 };
 
-class GainNode final : public Node {
+class GainProcessor final : public BaseProcessor {
 public:
-    GainNode(size_t num_channels, float gain) : m_num_channels(num_channels), m_gain(gain) {}
+    explicit GainProcessor(float gain) : m_gain(gain) {}
 
-    PortLayout ports() const override {
-        return {.m_inputs = {m_num_channels}, .m_outputs = {m_num_channels}};
-    }
-
-private:
-    void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
-        for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            const float* in = context.m_inputs[0].get_read_pointer(ch);
-            float* out = context.m_outputs[0].get_write_pointer(ch);
-            for (size_t i = 0; i < context.m_num_frames; ++i) { out[i] = in[i] * m_gain; }
-        }
-    }
-
-    size_t m_num_channels;
-    float m_gain;
-};
-
-class SumNode final : public Node {
-public:
-    explicit SumNode(size_t num_channels) : m_num_channels(num_channels) {}
-
-    PortLayout ports() const override {
-        return {.m_inputs = {m_num_channels, m_num_channels}, .m_outputs = {m_num_channels}};
-    }
-
-private:
-    void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
-        for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            const float* a = context.m_inputs[0].get_read_pointer(ch);
-            const float* b = context.m_inputs[1].get_read_pointer(ch);
-            float* out = context.m_outputs[0].get_write_pointer(ch);
-            for (size_t i = 0; i < context.m_num_frames; ++i) { out[i] = a[i] + b[i]; }
-        }
-    }
-
-    size_t m_num_channels;
-};
-
-/// Fills channel ch with ch + 1.
-class ChannelNumberNode final : public Node {
-public:
-    explicit ChannelNumberNode(size_t num_channels) : m_num_channels(num_channels) {}
-
-    PortLayout ports() const override { return {.m_inputs = {}, .m_outputs = {m_num_channels}}; }
-
-private:
-    void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
-        for (size_t ch = 0; ch < m_num_channels; ++ch) {
-            std::fill_n(context.m_outputs[0].get_write_pointer(ch),
-                        context.m_num_frames,
-                        static_cast<float>(ch + 1));
-        }
-    }
-
-    size_t m_num_channels;
-};
-
-/// x -> 2x + 1, in place. Records what prepare() received.
-class TestProcessor final : public thl::dsp::BaseProcessor {
-public:
-    void prepare(const double& sample_rate,
-                 const size_t& samples_per_block,
-                 const size_t& num_channels) override {
-        prepared_sample_rate = sample_rate;
-        prepared_block_size = samples_per_block;
-        prepared_channels = num_channels;
-    }
+    void prepare(const double&, const size_t&, const size_t&) override {}
 
     void process(BufferView buffer,
                  uint32_t /*modulation_offset*/) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
             float* samples = buffer.get_write_pointer(ch);
-            for (size_t i = 0; i < buffer.get_num_samples(); ++i) {
-                samples[i] = 2.0f * samples[i] + 1.0f;
-            }
+            for (size_t i = 0; i < buffer.get_num_samples(); ++i) { samples[i] *= m_gain; }
         }
     }
 
-    double prepared_sample_rate = 0.0;
-    size_t prepared_block_size = 0;
-    size_t prepared_channels = 0;
+private:
+    float m_gain;
 };
 
-Buffer<float> make_output(size_t num_frames = k_block) {
-    Buffer<float> output(k_channels, num_frames);
-    for (size_t ch = 0; ch < k_channels; ++ch) {
-        std::fill_n(output.get_write_pointer(ch), num_frames, k_untouched);
+class PrepareRecorder final : public BaseProcessor {
+public:
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override {
+        m_sample_rate = sample_rate;
+        m_samples_per_block = samples_per_block;
+        m_num_channels = num_channels;
     }
-    return output;
+
+    void process(BufferView, uint32_t) TANH_NONBLOCKING_FUNCTION override {}
+
+    double m_sample_rate = 0.0;
+    size_t m_samples_per_block = 0;
+    size_t m_num_channels = 0;
+};
+
+/// Counts its own destruction in `destroyed`.
+class LifetimeProcessor final : public BaseProcessor {
+public:
+    explicit LifetimeProcessor(int& destroyed) : m_destroyed(&destroyed) {}
+    ~LifetimeProcessor() override { ++*m_destroyed; }
+
+    LifetimeProcessor(const LifetimeProcessor&) = delete;
+    LifetimeProcessor& operator=(const LifetimeProcessor&) = delete;
+    LifetimeProcessor(LifetimeProcessor&&) = delete;
+    LifetimeProcessor& operator=(LifetimeProcessor&&) = delete;
+
+    void prepare(const double&, const size_t&, const size_t&) override {}
+    void process(BufferView, uint32_t) TANH_NONBLOCKING_FUNCTION override {}
+
+private:
+    int* m_destroyed;
+};
+
+void prepare(Graph& graph) {
+    graph.prepare(k_sample_rate, k_block, k_channels);
+}
+
+Buffer<float> make_buffer(float value, size_t num_frames = k_block) {
+    Buffer<float> buffer(k_channels, num_frames);
+    for (size_t ch = 0; ch < k_channels; ++ch) {
+        std::fill_n(buffer.get_write_pointer(ch), num_frames, value);
+    }
+    return buffer;
 }
 
 void expect_channel(const Buffer<float>& buffer, size_t ch, float value) {
@@ -159,419 +126,357 @@ void expect_all(const Buffer<float>& buffer, float value) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(Graph, SilentBeforePrepare) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    ASSERT_TRUE(source);
-    ASSERT_TRUE(graph.connect({*source, 0}, {graph.graph_output(), 0}));
+    Graph graph;
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.0f);
+}
+
+TEST(Graph, InputPassesToOutput) {
+    Graph graph;
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.5f);
+}
+
+TEST(Graph, ChainProcessesInOrder) {
+    Graph graph;
+    const auto half = graph.add_node<GainProcessor>(0.5f);
+    const auto triple = graph.add_node<GainProcessor>(3.0f);
+    ASSERT_TRUE(half && triple);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *half));
+    ASSERT_TRUE(graph.connect(*half, *triple));
+    ASSERT_TRUE(graph.connect(*triple, graph.graph_output()));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.2f);
+    graph.process(buffer);
+    expect_all(buffer, 0.2f * 0.5f * 3.0f);
+}
+
+TEST(Graph, GeneratorWithoutSources) {
+    Graph graph;
+    const auto constant = graph.add_node<ConstantProcessor>(0.25f);
+    ASSERT_TRUE(constant);
+    ASSERT_TRUE(graph.connect(*constant, graph.graph_output()));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.9f);
+    graph.process(buffer);
+    expect_all(buffer, 0.25f);
+}
+
+TEST(Graph, FanOutFeedsEveryNode) {
+    Graph graph;
+    const auto double_it = graph.add_node<GainProcessor>(2.0f);
+    const auto halve_it = graph.add_node<GainProcessor>(0.5f);
+    ASSERT_TRUE(double_it && halve_it);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *double_it));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *halve_it));
+    ASSERT_TRUE(graph.connect(*double_it, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*halve_it, graph.graph_output()));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.4f);
+    graph.process(buffer);
+    expect_all(buffer, 0.4f * 2.0f + 0.4f * 0.5f);
+}
+
+TEST(Graph, MixModeSumsOrAveragesConnectedSources) {
+    Graph graph;
+    const auto a = graph.add_node<ConstantProcessor>(0.5f);
+    const auto b = graph.add_node<ConstantProcessor>(0.25f);
+    const auto unused = graph.add_node<ConstantProcessor>(1.0f);
+    ASSERT_TRUE(a && b && unused);
+    ASSERT_TRUE(graph.connect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.0f);
+    graph.process(buffer);
+    expect_all(buffer, 0.75f);
+
+    ASSERT_TRUE(graph.set_mix_mode(graph.graph_output(), Graph::MixMode::Average));
     ASSERT_TRUE(graph.commit());
-
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.0f);
+    graph.process(buffer);
+    expect_all(buffer, 0.375f);
 }
 
-TEST(Graph, ChainProducesExpectedSamples) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto gain = graph.add_node<GainNode>(k_channels, 2.0f);
-    ASSERT_TRUE(source && gain);
-    ASSERT_TRUE(graph.connect({*source, 0}, {*gain, 0}));
-    ASSERT_TRUE(graph.connect({*gain, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
+TEST(Graph, MixModeAppliesToProcessorNodes) {
+    Graph graph;
+    const auto a = graph.add_node<ConstantProcessor>(0.5f);
+    const auto b = graph.add_node<ConstantProcessor>(0.25f);
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(a && b && gain);
+    ASSERT_TRUE(graph.connect(*a, *gain));
+    ASSERT_TRUE(graph.connect(*b, *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Average));
+    prepare(graph);
 
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 1.0f);
-
-    auto short_output = make_output(k_block / 4);
-    graph.process(short_output);
-    expect_all(short_output, 1.0f);
-}
-
-TEST(Graph, FanOutFeedsEveryInput) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.25f);
-    const auto gain_a = graph.add_node<GainNode>(k_channels, 2.0f);
-    const auto gain_b = graph.add_node<GainNode>(k_channels, 4.0f);
-    const auto sum = graph.add_node<SumNode>(k_channels);
-    ASSERT_TRUE(source && gain_a && gain_b && sum);
-    ASSERT_TRUE(graph.connect({*source, 0}, {*gain_a, 0}));
-    ASSERT_TRUE(graph.connect({*source, 0}, {*gain_b, 0}));
-    ASSERT_TRUE(graph.connect({*gain_a, 0}, {*sum, 0}));
-    ASSERT_TRUE(graph.connect({*gain_b, 0}, {*sum, 1}));
-    ASSERT_TRUE(graph.connect({*sum, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
-
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.25f * 2.0f + 0.25f * 4.0f);
-}
-
-TEST(Graph, UnconnectedInputReadsZeros) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.75f);
-    const auto sum = graph.add_node<SumNode>(k_channels);
-    ASSERT_TRUE(source && sum);
-    ASSERT_TRUE(graph.connect({*source, 0}, {*sum, 0}));
-    ASSERT_TRUE(graph.connect({*sum, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
-
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.75f);
+    auto buffer = make_buffer(0.0f);
+    graph.process(buffer);
+    expect_all(buffer, 0.375f * 2.0f);
 }
 
 TEST(Graph, UnconnectedOutputIsSilent) {
-    Graph graph(k_channels);
-    ASSERT_TRUE(graph.add_node<ConstantNode>(k_channels, 0.5f));
-    graph.prepare(k_spec);
+    Graph graph;
+    ASSERT_TRUE(graph.add_node<ConstantProcessor>(1.0f));
+    prepare(graph);
 
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.0f);
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.0f);
 }
 
-TEST(Graph, BlockLongerThanMaxIsSilent) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    ASSERT_TRUE(source);
-    ASSERT_TRUE(graph.connect({*source, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
+TEST(Graph, BufferNotMatchingPrepareIsSilent) {
+    Graph graph;
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
 
-    auto output = make_output(k_block * 2);
-    graph.process(output);
-    expect_all(output, 0.0f);
+    auto too_long = make_buffer(0.5f, k_block + 1);
+    graph.process(too_long);
+    expect_all(too_long, 0.0f);
+
+    Buffer<float> mono(1, k_block);
+    std::fill_n(mono.get_write_pointer(0), k_block, 0.5f);
+    graph.process(mono);
+    expect_all(mono, 0.0f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Editing
+// Editing and inspection
 // ─────────────────────────────────────────────────────────────────────────────
-
-TEST(Graph, ConnectRejectsOccupiedInput) {
-    Graph graph(k_channels);
-    const auto a = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto b = graph.add_node<ConstantNode>(k_channels, 0.25f);
-    ASSERT_TRUE(a && b);
-    const PortRef output{graph.graph_output(), 0};
-
-    EXPECT_TRUE(graph.connect({*a, 0}, output));
-    EXPECT_FALSE(graph.connect({*b, 0}, output));
-    EXPECT_TRUE(graph.disconnect(output));
-    EXPECT_TRUE(graph.connect({*b, 0}, output));
-}
-
-TEST(Graph, ConnectRejectsInvalidConnections) {
-    Graph graph(k_channels);
-    const auto mono = graph.add_node<ConstantNode>(1, 1.0f);
-    const auto a = graph.add_node<GainNode>(k_channels, 1.0f);
-    const auto b = graph.add_node<GainNode>(k_channels, 1.0f);
-    ASSERT_TRUE(mono && a && b);
-    const PortRef output{graph.graph_output(), 0};
-
-    EXPECT_FALSE(graph.connect({*mono, 0}, output));        // channel mismatch
-    EXPECT_FALSE(graph.connect({*a, 1}, output));           // no output port 1
-    EXPECT_FALSE(graph.connect({*a, 0}, {*b, 1}));          // no input port 1
-    EXPECT_FALSE(graph.connect({NodeId{999}, 0}, output));  // unknown node
-    EXPECT_FALSE(graph.connect({*a, 0}, {*a, 0}));          // self-connection
-    EXPECT_TRUE(graph.connect({*a, 0}, {*b, 0}));
-    EXPECT_FALSE(graph.connect({*b, 0}, {*a, 0}));  // cycle
-}
-
-TEST(Graph, RemoveNodeDropsConnections) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    ASSERT_TRUE(source);
-    const PortRef output_port{graph.graph_output(), 0};
-    ASSERT_TRUE(graph.connect({*source, 0}, output_port));
-    graph.prepare(k_spec);
-
-    EXPECT_FALSE(graph.remove_node(graph.graph_output()));
-    EXPECT_TRUE(graph.remove_node(*source));
-    EXPECT_FALSE(graph.remove_node(*source));
-    ASSERT_TRUE(graph.commit());
-
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.0f);
-
-    const auto replacement = graph.add_node<ConstantNode>(k_channels, 0.25f);
-    ASSERT_TRUE(replacement);
-    EXPECT_TRUE(graph.connect({*replacement, 0}, output_port));
-}
 
 TEST(Graph, AddNodeRejectsNullptr) {
-    Graph graph(k_channels);
+    Graph graph;
     EXPECT_FALSE(graph.add_node(nullptr));
 }
 
-TEST(Graph, SameNodeCanOnlyBeAddedOnce) {
-    auto node = std::make_shared<ConstantNode>(k_channels, 0.5f);
-    Graph graph(k_channels);
+TEST(Graph, ConnectRejectsInvalidConnections) {
+    Graph graph;
+    const auto a = graph.add_node<GainProcessor>(1.0f);
+    const auto b = graph.add_node<GainProcessor>(1.0f);
+    ASSERT_TRUE(a && b);
 
-    EXPECT_TRUE(graph.add_node(node));
-    EXPECT_FALSE(graph.add_node(node));
+    EXPECT_FALSE(graph.connect(NodeId{999}, *a));           // unknown node
+    EXPECT_FALSE(graph.connect(*a, *a));                    // self-connection
+    EXPECT_FALSE(graph.connect(*a, graph.graph_input()));   // into the input
+    EXPECT_FALSE(graph.connect(graph.graph_output(), *a));  // out of the output
+    EXPECT_TRUE(graph.connect(*a, *b));
+    EXPECT_FALSE(graph.connect(*a, *b));  // already connected
+    EXPECT_FALSE(graph.connect(*b, *a));  // cycle
 }
 
-TEST(Graph, RemovedNodeCanBeAddedAgain) {
-    auto node = std::make_shared<ConstantNode>(k_channels, 0.5f);
-    Graph graph(k_channels);
+TEST(Graph, DisconnectRemovesOneConnection) {
+    Graph graph;
+    const auto a = graph.add_node<ConstantProcessor>(0.5f);
+    const auto b = graph.add_node<ConstantProcessor>(0.25f);
+    ASSERT_TRUE(a && b);
+    ASSERT_TRUE(graph.connect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
 
-    const auto first = graph.add_node(node);
-    ASSERT_TRUE(first);
-    EXPECT_TRUE(graph.remove_node(*first));
-    EXPECT_TRUE(graph.add_node(node));
+    EXPECT_TRUE(graph.disconnect(*a, graph.graph_output()));
+    EXPECT_FALSE(graph.disconnect(*a, graph.graph_output()));
+    EXPECT_EQ(graph.sources_of(graph.graph_output()), std::vector<NodeId>{*b});
 }
 
-TEST(Graph, NodeLooksUpById) {
-    auto node = std::make_shared<ConstantNode>(k_channels, 0.5f);
-    Graph graph(k_channels);
-    const auto id = graph.add_node(node);
+TEST(Graph, RemoveNodeDropsConnections) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+
+    EXPECT_FALSE(graph.remove_node(graph.graph_input()));
+    EXPECT_FALSE(graph.remove_node(graph.graph_output()));
+    EXPECT_TRUE(graph.remove_node(*gain));
+    EXPECT_FALSE(graph.remove_node(*gain));
+    EXPECT_TRUE(graph.connections().empty());
+}
+
+TEST(Graph, NodeReturnsTheProcessor) {
+    auto gain = std::make_unique<GainProcessor>(2.0f);
+    const BaseProcessor* raw = gain.get();
+    Graph graph;
+    const auto id = graph.add_node(std::move(gain));
     ASSERT_TRUE(id);
 
-    EXPECT_EQ(graph.node(*id), node.get());
-    EXPECT_EQ(graph.node(NodeId{12345}), nullptr);
-
-    const Graph& read_only = graph;
-    const Node* output = read_only.node(graph.graph_output());
-    ASSERT_NE(output, nullptr);
-    EXPECT_EQ(output->ports().m_inputs, std::vector<size_t>{k_channels});
+    EXPECT_EQ(graph.node(*id), raw);
+    EXPECT_EQ(graph.node(graph.graph_input()), nullptr);
+    EXPECT_EQ(graph.node(graph.graph_output()), nullptr);
+    EXPECT_EQ(graph.node(NodeId{999}), nullptr);
 }
 
-TEST(Graph, NodesListsEveryNode) {
-    Graph graph(k_channels);
-    const auto first = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto second = graph.add_node<ConstantNode>(k_channels, 0.25f);
-    ASSERT_TRUE(first && second);
+TEST(Graph, NodesAndConnectionsListTheGraph) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
 
-    EXPECT_EQ(graph.nodes(), (std::vector<NodeId>{graph.graph_output(), *first, *second}));
-
-    ASSERT_TRUE(graph.remove_node(*first));
-    EXPECT_EQ(graph.nodes(), (std::vector<NodeId>{graph.graph_output(), *second}));
-}
-
-TEST(Graph, ConnectionsListsEveryConnection) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto gain = graph.add_node<GainNode>(k_channels, 2.0f);
-    ASSERT_TRUE(source && gain);
-    const PortRef output_port{graph.graph_output(), 0};
-    ASSERT_TRUE(graph.connect({*source, 0}, {*gain, 0}));
-    ASSERT_TRUE(graph.connect({*gain, 0}, output_port));
+    EXPECT_EQ(graph.nodes(),
+              (std::vector<NodeId>{graph.graph_output(), graph.graph_input(), *gain}));
 
     auto connections = graph.connections();
-    std::vector<Connection> expected{{.m_from = {*source, 0}, .m_to = {*gain, 0}},
-                                     {.m_from = {*gain, 0}, .m_to = output_port}};
+    std::vector<Connection> expected{{.m_from = graph.graph_input(), .m_to = *gain},
+                                     {.m_from = *gain, .m_to = graph.graph_output()}};
     std::ranges::sort(connections);
     std::ranges::sort(expected);
     EXPECT_EQ(connections, expected);
+
+    EXPECT_EQ(graph.sources_of(*gain), std::vector<NodeId>{graph.graph_input()});
 }
 
-TEST(Graph, SourceOfFindsWhatFeedsAnInput) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto sum = graph.add_node<SumNode>(k_channels);
-    ASSERT_TRUE(source && sum);
-    ASSERT_TRUE(graph.connect({*source, 0}, {*sum, 0}));
-
-    EXPECT_EQ(graph.source_of({*sum, 0}), (PortRef{*source, 0}));
-    EXPECT_EQ(graph.source_of({*sum, 1}), std::nullopt);
-
-    ASSERT_TRUE(graph.disconnect({*sum, 0}));
-    EXPECT_EQ(graph.source_of({*sum, 0}), std::nullopt);
+TEST(Graph, SetMixModeRejectsInputAndUnknownNodes) {
+    Graph graph;
+    EXPECT_FALSE(graph.set_mix_mode(graph.graph_input(), Graph::MixMode::Average));
+    EXPECT_FALSE(graph.set_mix_mode(NodeId{999}, Graph::MixMode::Average));
+    EXPECT_TRUE(graph.set_mix_mode(graph.graph_output(), Graph::MixMode::Average));
 }
 
 TEST(Graph, HasUncommittedChangesTracksEdits) {
-    Graph graph(k_channels);
+    Graph graph;
     EXPECT_FALSE(graph.has_uncommitted_changes());
 
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    ASSERT_TRUE(source);
+    const auto gain = graph.add_node<GainProcessor>(1.0f);
+    ASSERT_TRUE(gain);
     EXPECT_TRUE(graph.has_uncommitted_changes());
     ASSERT_TRUE(graph.commit());
     EXPECT_FALSE(graph.has_uncommitted_changes());
 
-    const PortRef output_port{graph.graph_output(), 0};
-    EXPECT_FALSE(graph.connect({*source, 0}, {*source, 0}));
+    EXPECT_FALSE(graph.connect(*gain, *gain));
     EXPECT_FALSE(graph.has_uncommitted_changes());
 
-    ASSERT_TRUE(graph.connect({*source, 0}, output_port));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
     EXPECT_TRUE(graph.has_uncommitted_changes());
     ASSERT_TRUE(graph.commit());
 
-    ASSERT_TRUE(graph.disconnect(output_port));
+    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Sum));  // unchanged
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Average));
     EXPECT_TRUE(graph.has_uncommitted_changes());
     ASSERT_TRUE(graph.commit());
 
-    ASSERT_TRUE(graph.remove_node(*source));
+    ASSERT_TRUE(graph.disconnect(*gain, graph.graph_output()));
+    EXPECT_TRUE(graph.has_uncommitted_changes());
+    ASSERT_TRUE(graph.commit());
+
+    ASSERT_TRUE(graph.remove_node(*gain));
     EXPECT_TRUE(graph.has_uncommitted_changes());
     ASSERT_TRUE(graph.commit());
     EXPECT_FALSE(graph.has_uncommitted_changes());
 }
 
-TEST(Graph, PrepareCommitsPendingEdits) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    ASSERT_TRUE(source);
-    ASSERT_TRUE(graph.connect({*source, 0}, {graph.graph_output(), 0}));
-
-    graph.prepare(k_spec);
-    EXPECT_FALSE(graph.has_uncommitted_changes());
-
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.5f);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// ProcessorNode
+// Prepare
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST(ProcessorNode, EffectProcessesItsInput) {
-    auto processor = std::make_shared<TestProcessor>();
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto effect = graph.add_node<ProcessorNode>(processor, k_channels);
-    ASSERT_TRUE(source && effect);
-    ASSERT_TRUE(graph.connect({*source, 0}, {*effect, 0}));
-    ASSERT_TRUE(graph.connect({*effect, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
+TEST(Graph, PrepareReachesEveryProcessor) {
+    auto before = std::make_unique<PrepareRecorder>();
+    auto after = std::make_unique<PrepareRecorder>();
+    const PrepareRecorder* added_before = before.get();
+    const PrepareRecorder* added_after = after.get();
 
-    EXPECT_DOUBLE_EQ(processor->prepared_sample_rate, k_spec.m_sample_rate);
-    EXPECT_EQ(processor->prepared_block_size, k_spec.m_max_block_size);
-    EXPECT_EQ(processor->prepared_channels, k_channels);
+    Graph graph;
+    ASSERT_TRUE(graph.add_node(std::move(before)));
+    prepare(graph);
+    ASSERT_TRUE(graph.add_node(std::move(after)));
 
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 2.0f * 0.5f + 1.0f);
-}
-
-TEST(ProcessorNode, GeneratorStartsFromSilence) {
-    auto processor = std::make_shared<TestProcessor>();
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto generator =
-        graph.add_node<ProcessorNode>(processor, k_channels, ProcessorNode::Type::Generator);
-    ASSERT_TRUE(source && generator);
-    EXPECT_FALSE(graph.connect({*source, 0}, {*generator, 0}));
-    ASSERT_TRUE(graph.connect({*generator, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
-
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 1.0f);
-}
-
-TEST(ProcessorNode, SameProcessorCanOnlyBeAddedOnce) {
-    auto processor = std::make_shared<TestProcessor>();
-    Graph graph(k_channels);
-
-    const auto first = graph.add_node<ProcessorNode>(processor, k_channels);
-    ASSERT_TRUE(first);
-    EXPECT_FALSE(graph.add_node<ProcessorNode>(processor, k_channels));
-    EXPECT_TRUE(graph.add_node<ProcessorNode>(std::make_shared<TestProcessor>(), k_channels));
-
-    EXPECT_TRUE(graph.remove_node(*first));
-    EXPECT_TRUE(graph.add_node<ProcessorNode>(processor, k_channels));
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Routing nodes
-// ─────────────────────────────────────────────────────────────────────────────
-
-TEST(ChannelSplit, SendsEachChannelToItsOwnOutput) {
-    constexpr size_t num_channels = 3;
-    for (uint32_t port = 0; port < num_channels; ++port) {
-        SCOPED_TRACE(port);
-        Graph graph(1);
-        const auto source = graph.add_node<ChannelNumberNode>(num_channels);
-        const auto splitter = graph.add_node<ChannelSplit>(num_channels);
-        ASSERT_TRUE(source && splitter);
-        EXPECT_EQ(graph.node(*splitter)->ports().m_outputs, std::vector<size_t>(num_channels, 1));
-        ASSERT_TRUE(graph.connect({*source, 0}, {*splitter, 0}));
-        ASSERT_TRUE(graph.connect({*splitter, port}, {graph.graph_output(), 0}));
-        graph.prepare(k_spec);
-
-        Buffer<float> output(1, k_block);
-        graph.process(output);
-        expect_all(output, static_cast<float>(port + 1));
+    for (const PrepareRecorder* recorder : {added_before, added_after}) {
+        EXPECT_DOUBLE_EQ(recorder->m_sample_rate, k_sample_rate);
+        EXPECT_EQ(recorder->m_samples_per_block, k_block);
+        EXPECT_EQ(recorder->m_num_channels, k_channels);
     }
 }
 
-TEST(InputMix, AveragesItsInputs) {
-    Graph graph(k_channels);
-    const auto a = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto b = graph.add_node<ConstantNode>(k_channels, 0.25f);
-    const auto mixer = graph.add_node<InputMix>(2, k_channels);
-    ASSERT_TRUE(a && b && mixer);
-    ASSERT_TRUE(graph.connect({*a, 0}, {*mixer, 0}));
-    ASSERT_TRUE(graph.connect({*b, 0}, {*mixer, 1}));
-    ASSERT_TRUE(graph.connect({*mixer, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
+TEST(Graph, PrepareCommitsPendingEdits) {
+    Graph graph;
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+    EXPECT_FALSE(graph.has_uncommitted_changes());
 
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.375f);
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.5f);
 }
 
-TEST(InputMix, SumsItsInputs) {
-    Graph graph(k_channels);
-    const auto a = graph.add_node<ConstantNode>(k_channels, 0.5f);
-    const auto b = graph.add_node<ConstantNode>(k_channels, 0.25f);
-    const auto mixer = graph.add_node<InputMix>(2, k_channels, InputMix::Mode::Sum);
-    ASSERT_TRUE(a && b && mixer);
-    ASSERT_TRUE(graph.connect({*a, 0}, {*mixer, 0}));
-    ASSERT_TRUE(graph.connect({*b, 0}, {*mixer, 1}));
-    ASSERT_TRUE(graph.connect({*mixer, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
+// ─────────────────────────────────────────────────────────────────────────────
+// Handing versions to the audio thread
+// ─────────────────────────────────────────────────────────────────────────────
 
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.75f);
+TEST(Graph, CommitTakesEffectAtTheNextBlock) {
+    Graph graph;
+    prepare(graph);
+
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.0f);
+
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.0f);  // not committed yet
+
+    ASSERT_TRUE(graph.commit());
+    buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.5f);
 }
 
-TEST(InputMix, UnconnectedInputCountsAsSilence) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ConstantNode>(k_channels, 0.6f);
-    const auto mixer = graph.add_node<InputMix>(3, k_channels);
-    ASSERT_TRUE(source && mixer);
-    ASSERT_TRUE(graph.connect({*source, 0}, {*mixer, 1}));
-    ASSERT_TRUE(graph.connect({*mixer, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
+TEST(Graph, NewestCommitWinsWhenSeveralArriveBetweenBlocks) {
+    Graph graph;
+    const auto a = graph.add_node<ConstantProcessor>(0.25f);
+    const auto b = graph.add_node<ConstantProcessor>(0.75f);
+    ASSERT_TRUE(a && b);
+    prepare(graph);
 
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.2f);
+    ASSERT_TRUE(graph.connect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    ASSERT_TRUE(graph.disconnect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+
+    auto buffer = make_buffer(0.0f);
+    graph.process(buffer);
+    expect_all(buffer, 0.75f);
 }
 
-TEST(ChannelMerge, SwapsChannelsWithSplit) {
-    Graph graph(k_channels);
-    const auto source = graph.add_node<ChannelNumberNode>(k_channels);
-    const auto split = graph.add_node<ChannelSplit>(k_channels);
-    const auto merge = graph.add_node<ChannelMerge>(k_channels);
-    ASSERT_TRUE(source && split && merge);
-    ASSERT_TRUE(graph.connect({*source, 0}, {*split, 0}));
-    ASSERT_TRUE(graph.connect({*split, 0}, {*merge, 1}));
-    ASSERT_TRUE(graph.connect({*split, 1}, {*merge, 0}));
-    ASSERT_TRUE(graph.connect({*merge, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
+TEST(Graph, RemovedNodeLivesUntilTheAudioThreadIsDoneWithIt) {
+    int destroyed = 0;
+    Graph graph;
+    const auto node = graph.add_node<LifetimeProcessor>(destroyed);
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+    prepare(graph);
 
-    auto output = make_output();
-    graph.process(output);
-    expect_channel(output, 0, 2.0f);
-    expect_channel(output, 1, 1.0f);
+    ASSERT_TRUE(graph.remove_node(*node));
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(destroyed, 0);  // the audio thread has not switched yet
+
+    auto buffer = make_buffer(0.0f);
+    graph.process(buffer);    // switches and hands the old version back
+    EXPECT_EQ(destroyed, 0);  // handed back, but not freed until the control thread collects it
+
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(destroyed, 1);
 }
 
-TEST(ChannelMerge, MonoToStereo) {
-    Graph graph(k_channels);
-    const auto mono = graph.add_node<ConstantNode>(1, 0.5f);
-    const auto merge = graph.add_node<ChannelMerge>(k_channels);
-    ASSERT_TRUE(mono && merge);
-    ASSERT_TRUE(graph.connect({*mono, 0}, {*merge, 0}));
-    ASSERT_TRUE(graph.connect({*mono, 0}, {*merge, 1}));
-    ASSERT_TRUE(graph.connect({*merge, 0}, {graph.graph_output(), 0}));
-    graph.prepare(k_spec);
-
-    auto output = make_output();
-    graph.process(output);
-    expect_all(output, 0.5f);
+TEST(Graph, DestructorFreesEverything) {
+    int destroyed = 0;
+    {
+        Graph graph;
+        ASSERT_TRUE(graph.add_node<LifetimeProcessor>(destroyed));
+        const auto removed = graph.add_node<LifetimeProcessor>(destroyed);
+        ASSERT_TRUE(removed);
+        prepare(graph);
+        ASSERT_TRUE(graph.remove_node(*removed));
+        ASSERT_TRUE(graph.commit());
+    }
+    EXPECT_EQ(destroyed, 2);
 }
