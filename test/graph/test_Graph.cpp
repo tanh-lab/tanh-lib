@@ -353,6 +353,48 @@ TEST(Graph, SourceOfFindsWhatFeedsAnInput) {
     EXPECT_EQ(graph.source_of({*sum, 0}), std::nullopt);
 }
 
+TEST(Graph, HasUncommittedChangesTracksEdits) {
+    Graph graph(k_channels);
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+
+    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
+    ASSERT_TRUE(source);
+    EXPECT_TRUE(graph.has_uncommitted_changes());
+    ASSERT_TRUE(graph.commit());
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+
+    const PortRef output_port{graph.graph_output(), 0};
+    EXPECT_FALSE(graph.connect({*source, 0}, {*source, 0}));
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+
+    ASSERT_TRUE(graph.connect({*source, 0}, output_port));
+    EXPECT_TRUE(graph.has_uncommitted_changes());
+    ASSERT_TRUE(graph.commit());
+
+    ASSERT_TRUE(graph.disconnect(output_port));
+    EXPECT_TRUE(graph.has_uncommitted_changes());
+    ASSERT_TRUE(graph.commit());
+
+    ASSERT_TRUE(graph.remove_node(*source));
+    EXPECT_TRUE(graph.has_uncommitted_changes());
+    ASSERT_TRUE(graph.commit());
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+}
+
+TEST(Graph, PrepareCommitsPendingEdits) {
+    Graph graph(k_channels);
+    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
+    ASSERT_TRUE(source);
+    ASSERT_TRUE(graph.connect({*source, 0}, {graph.graph_output(), 0}));
+
+    graph.prepare(k_spec);
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+
+    auto output = make_output();
+    graph.process(output);
+    expect_all(output, 0.5f);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ProcessorNode
 // ─────────────────────────────────────────────────────────────────────────────

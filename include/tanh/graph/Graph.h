@@ -65,10 +65,12 @@ public:
 
     std::set<const void*> exclusive_resources() const;
 
-    /// Prepares every node and commits. Call only while process() is not running.
+    /// Prepares every node and commits, including pending edits. Call only while process() is not
+    /// running.
     void prepare(const ProcessSpec& spec);
 
     bool commit();
+    bool has_uncommitted_changes() const { return m_dirty; }
 
     // ─── Processing (audio thread) ───────────
     void register_audio_thread() const;
@@ -95,6 +97,7 @@ private:
     std::map<NodeId, std::shared_ptr<Node>> m_nodes;
     std::map<PortRef, PortRef> m_connections;  // destination -> source
     ProcessSpec m_spec{};
+    bool m_dirty = false;
 
     thl::RCU<CompiledGraph> m_compiled_graph;
 };
