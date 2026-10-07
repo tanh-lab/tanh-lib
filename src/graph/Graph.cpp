@@ -1,65 +1,52 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/dsp/BaseProcessor.h>
 #include <tanh/graph/Graph.h>
-#include <tanh/graph/Node.h>
-#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
-#include <set>
 #include <span>
 #include <utility>
 #include <vector>
 
 namespace thl::graph {
 
-namespace {
-
-/// The graph's forced output: one input port, no outputs. process() is a
-/// no-op; Graph::process() copies the buffer feeding its input to the
-/// external output.
-class OutputNode final : public Node {
-public:
-    explicit OutputNode(size_t num_channels)
-        : m_layout{.m_inputs = {num_channels}, .m_outputs = {}} {}
-    PortLayout ports() const override { return m_layout; }
-
-private:
-    void process(const ProcessContext&) TANH_NONBLOCKING_FUNCTION override {}
-
-    PortLayout m_layout;
-};
-
-}  // namespace
-
 // ─────────────────────────────────────────────────────────────────────────────
-// The compiled snapshot. Built on the control thread, read by the audio thread.
-// The audio thread writes into GraphBuffers every block, so it sits behind a
-// pointer: RCU readers only get const access to the snapshot itself.
+// Node: what the graph keeps per node. graph_input() and graph_output() have no
+// processor.
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct Graph::GraphBuffers {
-    std::vector<thl::core::Buffer<float>> m_buffers;        // zeros, then one per output port
-    std::vector<thl::core::ConstBufferView> m_input_views;  // reused by every step
-    std::vector<thl::core::BufferView> m_output_views;      // reused by every step
+struct Graph::Node {
+    std::unique_ptr<thl::dsp::BaseProcessor> m_processor;
+    MixMode m_mix_mode = MixMode::Sum;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The compiled version of the graph. Built on the control thread, then owned by
+// the audio thread until it hands it back through m_returned.
+// ─────────────────────────────────────────────────────────────────────────────
 
 struct Graph::ProcessingStep {
-    Node* m_node = nullptr;
-    PortLayout m_ports;
-    std::vector<BufferIndex> m_input_buffers;   // per input port; k_zeros_buffer if unconnected
-    std::vector<BufferIndex> m_output_buffers;  // per output port
+    thl::dsp::BaseProcessor* m_processor = nullptr;
+    MixMode m_mix_mode = MixMode::Sum;
+    std::vector<BufferIndex> m_sources;
+    BufferIndex m_buffer = 0;
 };
 
 struct Graph::CompiledGraph {
-    std::vector<std::shared_ptr<Node>> m_nodes;  // keeps nodes alive while this snapshot is in use
-    std::vector<ProcessingStep> m_steps;         // in processing order
-    std::unique_ptr<GraphBuffers> m_buffers;
-    BufferIndex m_output_buffer = k_zeros_buffer;  // what feeds the output node
+    uint64_t m_generation = 0;
+    std::vector<ProcessingStep> m_steps;  // in processing order
+    std::vector<thl::core::Buffer<float>> m_buffers;
+    std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
+    std::vector<BufferIndex> m_output_sources;
+    MixMode m_output_mix_mode = MixMode::Sum;
+    size_t m_num_channels = 0;
     size_t m_max_block_size = 0;
 };
 
@@ -67,24 +54,27 @@ struct Graph::CompiledGraph {
 // Construction
 // ─────────────────────────────────────────────────────────────────────────────
 
-Graph::Graph(size_t num_output_channels) : m_compiled_graph(CompiledGraph{}) {
-    m_nodes.emplace(k_output_id, std::make_shared<OutputNode>(num_output_channels));
+Graph::Graph() {
+    m_nodes.emplace(k_output_id, std::make_unique<Node>());
+    m_nodes.emplace(k_input_id, std::make_unique<Node>());
 }
 
-Graph::~Graph() = default;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Editing
-// ─────────────────────────────────────────────────────────────────────────────
-
-Node* Graph::node(NodeId id) {
-    const auto it = m_nodes.find(id);
-    return it == m_nodes.end() ? nullptr : it->second.get();
+Graph::~Graph() {
+    free_all_compiled();
 }
 
-const Node* Graph::node(NodeId id) const {
+// ─────────────────────────────────────────────────────────────────────────────
+// Inspection
+// ─────────────────────────────────────────────────────────────────────────────
+
+thl::dsp::BaseProcessor* Graph::node(NodeId id) {
     const auto it = m_nodes.find(id);
-    return it == m_nodes.end() ? nullptr : it->second.get();
+    return it == m_nodes.end() ? nullptr : it->second->m_processor.get();
+}
+
+const thl::dsp::BaseProcessor* Graph::node(NodeId id) const {
+    const auto it = m_nodes.find(id);
+    return it == m_nodes.end() ? nullptr : it->second->m_processor.get();
 }
 
 std::vector<NodeId> Graph::nodes() const {
@@ -95,50 +85,45 @@ std::vector<NodeId> Graph::nodes() const {
 }
 
 std::vector<Connection> Graph::connections() const {
-    std::vector<Connection> result;
-    result.reserve(m_connections.size());
-    for (const auto& [to, from] : m_connections) { result.push_back({.m_from = from, .m_to = to}); }
-    return result;
+    return {m_connections.begin(), m_connections.end()};
 }
 
-std::optional<PortRef> Graph::source_of(PortRef to) const {
-    const auto it = m_connections.find(to);
-    if (it == m_connections.end()) { return std::nullopt; }
-    return it->second;
-}
-
-std::set<const void*> Graph::exclusive_resources() const {
-    std::set<const void*> resources;
-    for (const auto& [id, node] : m_nodes) {
-        resources.insert(node.get());
-        for (const void* resource : node->exclusive_resources()) { resources.insert(resource); }
+std::vector<NodeId> Graph::sources_of(NodeId id) const {
+    std::vector<NodeId> sources;
+    for (const Connection& connection : m_connections) {
+        if (connection.m_to == id) { sources.push_back(connection.m_from); }
     }
-    return resources;
+    return sources;
 }
 
-std::optional<NodeId> Graph::add_node(std::shared_ptr<Node> node) {
-    if (!node) { return std::nullopt; }
+// ─────────────────────────────────────────────────────────────────────────────
+// Editing
+// ─────────────────────────────────────────────────────────────────────────────
 
-    std::set<const void*> in_use = exclusive_resources();
-    if (!in_use.insert(node.get()).second) { return std::nullopt; }
-    for (const void* resource : node->exclusive_resources()) {
-        if (!in_use.insert(resource).second) { return std::nullopt; }
+std::optional<NodeId> Graph::add_node(std::unique_ptr<thl::dsp::BaseProcessor> processor) {
+    if (!processor) { return std::nullopt; }
+
+    if (m_max_block_size > 0) {
+        processor->prepare(m_sample_rate, m_max_block_size, m_num_channels);
     }
-
-    if (m_spec.m_max_block_size > 0) { node->prepare(m_spec); }
     const NodeId id{m_next_id++};
-    m_nodes.emplace(id, std::move(node));
+    m_nodes.emplace(id, std::make_unique<Node>(Node{.m_processor = std::move(processor)}));
     m_dirty = true;
     return id;
 }
 
 bool Graph::remove_node(NodeId id) {
-    if (id == k_output_id) { return false; }
-    if (m_nodes.erase(id) == 0) { return false; }
+    if (id == k_input_id || id == k_output_id) { return false; }
+    const auto it = m_nodes.find(id);
+    if (it == m_nodes.end()) { return false; }
 
-    std::erase_if(m_connections, [id](const auto& entry) {
-        const auto& [to, from] = entry;
-        return to.m_node == id || from.m_node == id;
+    // Versions already handed to the audio thread may still run this node.
+    m_retired_nodes.push_back(
+        {.m_node = std::move(it->second), .m_last_generation = m_next_generation - 1});
+    m_nodes.erase(it);
+
+    std::erase_if(m_connections, [id](const Connection& connection) {
+        return connection.m_from == id || connection.m_to == id;
     });
     m_dirty = true;
     return true;
@@ -153,34 +138,37 @@ bool Graph::path_exists(NodeId from, NodeId to) const {
         if (n == to) { return true; }
         if (std::ranges::find(visited, n) != visited.end()) { continue; }
         visited.push_back(n);
-        for (const auto& [to, from] : m_connections) {
-            if (from.m_node == n) { stack.push_back(to.m_node); }
+        for (const Connection& connection : m_connections) {
+            if (connection.m_from == n) { stack.push_back(connection.m_to); }
         }
     }
     return false;
 }
 
-bool Graph::connect(PortRef from, PortRef to) {
-    if (!exists(from.m_node) || !exists(to.m_node) || from.m_node == to.m_node) { return false; }
+bool Graph::connect(NodeId from, NodeId to) {
+    if (!exists(from) || !exists(to) || from == to) { return false; }
+    if (from == k_output_id || to == k_input_id) { return false; }
+    if (path_exists(to, from)) { return false; }
 
-    const PortLayout from_ports = m_nodes.at(from.m_node)->ports();
-    const PortLayout to_ports = m_nodes.at(to.m_node)->ports();
-    if (from.m_port >= from_ports.m_outputs.size() || to.m_port >= to_ports.m_inputs.size()) {
-        return false;
-    }
-    if (from_ports.m_outputs[from.m_port] != to_ports.m_inputs[to.m_port]) { return false; }
-
-    if (m_connections.contains(to)) { return false; }  // an input has exactly one source
-    if (path_exists(to.m_node, from.m_node)) { return false; }
-
-    m_connections.emplace(to, from);
+    if (!m_connections.insert({.m_from = from, .m_to = to}).second) { return false; }
     m_dirty = true;
     return true;
 }
 
-bool Graph::disconnect(PortRef to) {
-    if (m_connections.erase(to) == 0) { return false; }
+bool Graph::disconnect(NodeId from, NodeId to) {
+    if (m_connections.erase({.m_from = from, .m_to = to}) == 0) { return false; }
     m_dirty = true;
+    return true;
+}
+
+bool Graph::set_mix_mode(NodeId id, MixMode mode) {
+    const auto it = m_nodes.find(id);
+    if (it == m_nodes.end() || id == k_input_id) { return false; }
+
+    if (it->second->m_mix_mode != mode) {
+        it->second->m_mix_mode = mode;
+        m_dirty = true;
+    }
     return true;
 }
 
@@ -188,18 +176,34 @@ bool Graph::disconnect(PortRef to) {
 // Prepare / compile / publish
 // ─────────────────────────────────────────────────────────────────────────────
 
-void Graph::prepare(const ProcessSpec& spec) {
-    m_spec = spec;
-    for (auto& [id, node] : m_nodes) { node->prepare(spec); }
-    commit();
+void Graph::prepare(const double& sample_rate,
+                    const size_t& samples_per_block,
+                    const size_t& num_channels) {
+    m_sample_rate = sample_rate;
+    m_max_block_size = samples_per_block;
+    m_num_channels = num_channels;
+    for (auto& [id, node] : m_nodes) {
+        if (node->m_processor) {
+            node->m_processor->prepare(sample_rate, samples_per_block, num_channels);
+        }
+    }
+
+    // process() is not running, so nothing has to be handed over.
+    free_all_compiled();
+    auto compiled = compile();
+    if (!compiled) { return; }
+    compiled->m_generation = m_next_generation++;
+    m_live_generations.insert(compiled->m_generation);
+    m_active = compiled.release();
+    m_dirty = false;
 }
 
 std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {
     enum class VisitState : uint8_t { InProgress, Done };
     struct Frame {
         NodeId m_node;
-        size_t m_num_inputs;
-        uint32_t m_next_port = 0;
+        std::vector<NodeId> m_sources;
+        size_t m_next_source = 0;
     };
 
     std::map<NodeId, VisitState> state;
@@ -208,28 +212,24 @@ std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {
 
     const auto push = [&](NodeId id) {
         state[id] = VisitState::InProgress;
-        stack.push_back({.m_node = id, .m_num_inputs = m_nodes.at(id)->ports().m_inputs.size()});
+        stack.push_back({.m_node = id, .m_sources = sources_of(id)});
     };
     push(k_output_id);
 
     while (!stack.empty()) {
         Frame& frame = stack.back();
 
-        if (frame.m_next_port == frame.m_num_inputs) {  // every source of this node is in `order`
+        if (frame.m_next_source == frame.m_sources.size()) {  // every source is in `order`
             state[frame.m_node] = VisitState::Done;
             order.push_back(frame.m_node);
             stack.pop_back();
             continue;
         }
 
-        const auto source =
-            m_connections.find(PortRef{.m_node = frame.m_node, .m_port = frame.m_next_port++});
-        if (source == m_connections.end()) { continue; }  // unconnected input
-
-        const NodeId source_node = source->second.m_node;
-        const auto it = state.find(source_node);
+        const NodeId source = frame.m_sources[frame.m_next_source++];
+        const auto it = state.find(source);
         if (it == state.end()) {
-            push(source_node);  // may invalidate `frame`; it is not used again this iteration
+            push(source);  // may invalidate `frame`; it is not used again this iteration
         } else if (it->second == VisitState::InProgress) {
             return std::nullopt;  // back on our own path: cycle
         }
@@ -237,120 +237,160 @@ std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {
     return order;
 }
 
-std::optional<Graph::CompiledGraph> Graph::compile() const {
+std::unique_ptr<Graph::CompiledGraph> Graph::compile() const {
     const auto order = sort_graph_dfs();
-    if (!order) { return std::nullopt; }
+    if (!order) { return nullptr; }
 
-    CompiledGraph compiled;
-    compiled.m_max_block_size = m_spec.m_max_block_size;
-    compiled.m_buffers = std::make_unique<GraphBuffers>();
-    auto& buffers = compiled.m_buffers->m_buffers;
-
-    buffers.emplace_back();  // k_zeros_buffer; sized after the loop, once the widest input is known
-    size_t max_input_channels = 0;
-    size_t max_inputs = 0;
-    size_t max_outputs = 0;
+    auto compiled = std::make_unique<CompiledGraph>();
+    compiled->m_num_channels = m_num_channels;
+    compiled->m_max_block_size = m_max_block_size;
 
     // `order` has every node after its sources, so a source's buffer always
-    // exists by the time an input looks it up.
-    std::map<PortRef, BufferIndex> output_buffers;  // output port -> its buffer
+    // exists by the time a node looks it up.
+    std::map<NodeId, BufferIndex> buffer_of;
     for (const NodeId id : *order) {
-        const std::shared_ptr<Node>& node = m_nodes.at(id);
-        const PortLayout layout = node->ports();
-        ProcessingStep step{.m_node = node.get(), .m_ports = layout};
+        const Node& node = *m_nodes.at(id);
+        std::vector<BufferIndex> sources;
+        for (const NodeId source : sources_of(id)) { sources.push_back(buffer_of.at(source)); }
 
-        for (uint32_t port = 0; port < layout.m_inputs.size(); ++port) {
-            const auto source = m_connections.find(PortRef{.m_node = id, .m_port = port});
-            step.m_input_buffers.push_back(
-                source == m_connections.end() ? k_zeros_buffer : output_buffers.at(source->second));
-            max_input_channels = std::max(max_input_channels, layout.m_inputs[port]);
+        if (id == k_output_id) {
+            compiled->m_output_sources = std::move(sources);
+            compiled->m_output_mix_mode = node.m_mix_mode;
+            continue;
         }
-        for (uint32_t port = 0; port < layout.m_outputs.size(); ++port) {
-            const auto index = static_cast<BufferIndex>(buffers.size());
-            buffers.emplace_back(layout.m_outputs[port], m_spec.m_max_block_size);
-            output_buffers.emplace(PortRef{.m_node = id, .m_port = port}, index);
-            step.m_output_buffers.push_back(index);
+
+        const auto index = static_cast<BufferIndex>(compiled->m_buffers.size());
+        compiled->m_buffers.emplace_back(m_num_channels, m_max_block_size);
+        buffer_of.emplace(id, index);
+
+        if (id == k_input_id) {
+            compiled->m_input_buffer = index;
+            continue;
         }
-        max_inputs = std::max(max_inputs, layout.m_inputs.size());
-        max_outputs = std::max(max_outputs, layout.m_outputs.size());
-
-        compiled.m_nodes.push_back(node);
-        compiled.m_steps.push_back(std::move(step));
+        compiled->m_steps.push_back({.m_processor = node.m_processor.get(),
+                                     .m_mix_mode = node.m_mix_mode,
+                                     .m_sources = std::move(sources),
+                                     .m_buffer = index});
     }
-
-    buffers[k_zeros_buffer] = thl::core::Buffer<float>(max_input_channels, m_spec.m_max_block_size);
-    compiled.m_buffers->m_input_views.resize(max_inputs);
-    compiled.m_buffers->m_output_views.resize(max_outputs);
-
-    const auto source = m_connections.find(PortRef{.m_node = k_output_id, .m_port = 0});
-    if (source != m_connections.end()) {
-        compiled.m_output_buffer = output_buffers.at(source->second);
-    }
-
     return compiled;
 }
 
 bool Graph::commit() {
+    collect_garbage();
     auto compiled = compile();
     if (!compiled) { return false; }
 
-    // The previous snapshot is retired and freed later, on this thread, once
-    // the audio thread has left it.
-    m_compiled_graph.replace([&](CompiledGraph& g) { g = std::move(*compiled); });
+    compiled->m_generation = m_next_generation++;
+    publish(std::move(compiled));
     m_dirty = false;
     return true;
+}
+
+void Graph::publish(std::unique_ptr<CompiledGraph> compiled) {
+    m_live_generations.insert(compiled->m_generation);
+    CompiledGraph* stale = m_pending.exchange(compiled.release(), std::memory_order_acq_rel);
+
+    // The audio thread never picked this one up, so it can be freed right away.
+    if (stale != nullptr) {
+        m_live_generations.erase(stale->m_generation);
+        delete stale;
+    }
+}
+
+void Graph::collect_garbage() {
+    CompiledGraph* returned = nullptr;
+    while (m_returned.try_pop(returned)) {
+        m_live_generations.erase(returned->m_generation);
+        delete returned;
+    }
+
+    const uint64_t oldest_live = m_live_generations.empty() ? std::numeric_limits<uint64_t>::max()
+                                                            : *m_live_generations.begin();
+    std::erase_if(m_retired_nodes, [oldest_live](const RetiredNode& retired) {
+        return retired.m_last_generation < oldest_live;
+    });
+}
+
+void Graph::free_all_compiled() {
+    delete m_pending.exchange(nullptr, std::memory_order_acq_rel);
+    delete m_active;
+    m_active = nullptr;
+
+    CompiledGraph* returned = nullptr;
+    while (m_returned.try_pop(returned)) { delete returned; }
+
+    m_live_generations.clear();
+    m_retired_nodes.clear();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Processing
 // ─────────────────────────────────────────────────────────────────────────────
 
-void Graph::register_audio_thread() const {
-    m_compiled_graph.register_reader_thread();
+void Graph::take_pending() {
+    if (m_pending.load(std::memory_order_acquire) == nullptr) { return; }
+
+    // If the control thread has not emptied m_returned yet, switch at a later block instead.
+    if (m_active != nullptr && !m_returned.try_push(m_active)) { return; }
+    m_active = m_pending.exchange(nullptr, std::memory_order_acq_rel);
 }
 
-void Graph::process(thl::core::BufferView output) {
-    const auto scope = m_compiled_graph.read_scope();
-    const CompiledGraph& g = scope.data();
-    const size_t n = output.get_num_samples();
+void Graph::mix_sources(const CompiledGraph& compiled,
+                        std::span<const BufferIndex> sources,
+                        MixMode mode,
+                        thl::core::BufferView destination) {
+    const size_t n = destination.get_num_samples();
+    const float scale = 1.0f / static_cast<float>(sources.size());
 
-    // Silence until prepare() is called, or if the block is longer than prepare() allowed.
-    if (g.m_max_block_size == 0 || n > g.m_max_block_size) {
-        for (size_t ch = 0; ch < output.get_num_channels(); ++ch) {
-            std::fill_n(output.get_write_pointer(ch), n, 0.0f);
+    for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
+        float* out = destination.get_write_pointer(ch);
+        if (sources.empty()) {
+            std::fill_n(out, n, 0.0f);
+            continue;
+        }
+
+        std::copy_n(compiled.m_buffers[sources[0]].get_read_pointer(ch), n, out);
+        for (size_t s = 1; s < sources.size(); ++s) {
+            const float* in = compiled.m_buffers[sources[s]].get_read_pointer(ch);
+            for (size_t i = 0; i < n; ++i) { out[i] += in[i]; }
+        }
+        if (mode == MixMode::Average) {
+            for (size_t i = 0; i < n; ++i) { out[i] *= scale; }
+        }
+    }
+}
+
+void Graph::process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/) {
+    take_pending();
+    CompiledGraph* compiled = m_active;
+    const size_t n = buffer.get_num_samples();
+
+    // Silence until prepare() is called, or if the buffer does not fit what prepare() was given.
+    if (compiled == nullptr || n > compiled->m_max_block_size ||
+        buffer.get_num_channels() != compiled->m_num_channels) {
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            std::fill_n(buffer.get_write_pointer(ch), n, 0.0f);
         }
         return;
     }
-    GraphBuffers& b = *g.m_buffers;
 
-    for (const ProcessingStep& step : g.m_steps) {
-        for (size_t p = 0; p < step.m_input_buffers.size(); ++p) {
-            const auto& buffer = b.m_buffers[step.m_input_buffers[p]];
-            b.m_input_views[p] = thl::core::ConstBufferView(buffer.get_array_of_read_pointers(),
-                                                            step.m_ports.m_inputs[p],
-                                                            n);
+    if (compiled->m_input_buffer) {
+        auto& input = compiled->m_buffers[*compiled->m_input_buffer];
+        for (size_t ch = 0; ch < compiled->m_num_channels; ++ch) {
+            std::copy_n(buffer.get_read_pointer(ch), n, input.get_write_pointer(ch));
         }
-        for (size_t p = 0; p < step.m_output_buffers.size(); ++p) {
-            auto& buffer = b.m_buffers[step.m_output_buffers[p]];
-            b.m_output_views[p] = thl::core::BufferView(buffer.get_array_of_write_pointers(),
-                                                        step.m_ports.m_outputs[p],
-                                                        n);
-        }
-        step.m_node->process(
-            {.m_inputs = std::span(b.m_input_views).first(step.m_input_buffers.size()),
-             .m_outputs = std::span(b.m_output_views).first(step.m_output_buffers.size()),
-             .m_num_frames = n});
     }
 
-    const auto& out_buf = b.m_buffers[g.m_output_buffer];
-    for (size_t ch = 0; ch < output.get_num_channels(); ++ch) {
-        float* d = output.get_write_pointer(ch);
-        if (ch < out_buf.get_num_channels()) {
-            std::copy_n(out_buf.get_read_pointer(ch), n, d);
-        } else {
-            std::fill_n(d, n, 0.0f);
-        }
+    for (const ProcessingStep& step : compiled->m_steps) {
+        auto& own = compiled->m_buffers[step.m_buffer];
+        const thl::core::BufferView view(own.get_array_of_write_pointers(),
+                                         compiled->m_num_channels,
+                                         n);
+        mix_sources(*compiled, step.m_sources, step.m_mix_mode, view);
+        step.m_processor->process_modulated(view);
     }
+
+    mix_sources(*compiled, compiled->m_output_sources, compiled->m_output_mix_mode, buffer);
 }
 
 }  // namespace thl::graph

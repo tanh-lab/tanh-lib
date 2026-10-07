@@ -522,12 +522,7 @@ if(TANH_BUILD_GRAPH)
     endif()
 
     add_library(${PROJECT_NAME}_graph
-        src/graph/Node.cpp
         src/graph/Graph.cpp
-        src/graph/nodes/ProcessorNode.cpp
-        src/graph/nodes/ChannelSplit.cpp
-        src/graph/nodes/ChannelMerge.cpp
-        src/graph/nodes/InputMix.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_graph PROPERTIES
