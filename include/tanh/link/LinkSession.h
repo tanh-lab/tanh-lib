@@ -1,10 +1,15 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
+#include <tanh/dsp/transport/LinkAudio.h>
 #include <tanh/dsp/transport/LinkBackend.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace thl::link {
 
@@ -36,10 +41,17 @@ namespace thl::link {
  *   `NSLocalNetworkUsageDescription` and, for start/stop sync,
  *   `ABLLinkStartStopSyncSupported`.
  *
+ * Link Audio (sharing audio channels): set_audio_enabled() (desktop) or the
+ * settings view (iOS) shares audio. set_audio_input() subscribes to a peer's
+ * channel; audio_sharing().pop() hands its buffers to the audio thread, mapped to
+ * local beats, for a dsp::transport::LinkAudioReceiver to play. audio_sharing().send()
+ * publishes the app's output as its own channel. On iOS the app also needs the
+ * multicast networking entitlement and the Info.plist key ABLLinkAudioSupported.
+ *
  * Construction, destruction and the setters run on the message thread and may
  * block. The getters are callable from any thread except the audio thread
- * (tempo() captures Link's app session state). audio_backend()'s methods are for
- * the audio thread only.
+ * (tempo() captures Link's app session state). audio_backend()'s and
+ * audio_sharing()'s methods are for the audio thread only.
  *
  * Link is dual-licensed (GPLv2+ or a proprietary licence from Ableton). A product
  * that ships with TANH_WITH_LINK must be GPL-compatible or hold the proprietary
@@ -47,7 +59,9 @@ namespace thl::link {
  */
 class TANH_API LinkSession {
 public:
-    explicit LinkSession(double initial_bpm = 120.0);
+    /// @p peer_name names this app to the session's peers (Link Audio); on iOS the Info.plist
+    /// key ABLLinkPeerName and the settings view set it instead.
+    explicit LinkSession(double initial_bpm = 120.0, const std::string& peer_name = "Link App");
     ~LinkSession();
 
     LinkSession(const LinkSession&) = delete;
@@ -77,6 +91,38 @@ public:
 
     /// The audio-thread seam for LinkTransportClock.
     [[nodiscard]] dsp::transport::LinkBackend& audio_backend();
+
+    // ── Link Audio: sharing audio channels with peers ─────────────────────────────────────
+
+    /// Share audio (desktop; iOS: a user setting in the settings view, shown with the
+    /// Info.plist key ABLLinkAudioSupported). Off by default.
+    void set_audio_enabled(bool enabled);
+    [[nodiscard]] bool is_audio_enabled() const;
+
+    /// An audio channel a peer announces.
+    struct AudioChannel {
+        uint64_t m_id = 0;  ///< stable for the channel's lifetime
+        std::string m_name;
+        uint64_t m_peer_id = 0;
+        std::string m_peer_name;
+    };
+    /// The audio channels announced in the session now.
+    [[nodiscard]] std::vector<AudioChannel> audio_channels() const;
+
+    /// Receive channel @p id into audio_sharing().pop(); nullopt stops receiving.
+    void set_audio_input(std::optional<uint64_t> id);
+    [[nodiscard]] std::optional<uint64_t> audio_input() const;
+
+    /// Name of the channel audio_sharing().send() publishes (default "Main"). The channel is
+    /// announced while audio is shared and is only sent while a peer listens.
+    void set_audio_output_name(const std::string& name);
+
+    /// Quantum the received buffers are mapped to local beats with (default 4); use the
+    /// clock's (LinkTransportClock::quantum()).
+    void set_audio_quantum(double quantum);
+
+    /// The audio-thread seam for Link Audio: the received channel in, the output channel out.
+    [[nodiscard]] dsp::transport::LinkAudioBackend& audio_sharing();
 
 private:
     struct Impl;

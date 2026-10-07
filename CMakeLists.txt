@@ -288,6 +288,7 @@ if(TANH_BUILD_DSP)
         src/dsp/transport/InternalTransportClock.cpp
         src/dsp/transport/HostTransportClock.cpp
         src/dsp/transport/LinkTransportClock.cpp
+        src/dsp/transport/LinkAudio.cpp
 
         src/dsp/metronome/MetronomePlayer.cpp
     )

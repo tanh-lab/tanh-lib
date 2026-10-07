@@ -148,6 +148,53 @@ audio, and set the Info.plist keys `NSLocalNetworkUsageDescription` and
 `ABLLinkStartStopSyncSupported`. An installed static `tanh::Link` does not carry
 LinkKit: the app links `LinkKit.xcframework` itself (configure prints a NOTICE).
 
+## Link Audio
+
+Link Audio shares audio channels between the peers of a Link session (Link 4.1
+C++ SDK on desktop, LinkKit 4.1.2 on iOS). A `LinkSession` announces one output
+channel and can subscribe to one channel of another peer:
+
+```cpp
+thl::link::LinkSession session(120.0, "My App");          // message thread
+session.set_enabled(true);
+session.set_audio_enabled(true);                          // desktop; iOS: settings view
+session.set_audio_output_name("Main");
+for (const auto& channel : session.audio_channels()) { /* show channel.m_name */ }
+session.set_audio_input(channel_id);                      // receive one channel
+
+thl::dsp::transport::LinkAudioReceiver receiver;          // audio side, owns its ring
+
+// audio callback, after clock.begin_block():
+const auto info = clock.block_info();
+const double latency_beats = latency_seconds * info.m_bpm / 60.0;
+receiver.render(session.audio_sharing(), in, 2, frames,
+                info.m_beat_position - latency_beats, info.m_beats_per_sample);
+// ... process `in` ...
+session.audio_sharing().send(out, 2, frames,
+                             info.m_beat_position - latency_beats,  // the beat it belongs to
+                             clock.quantum(), sample_rate);
+```
+
+- **Receiving.** The SDK delivers 16-bit buffers on its own thread. The session
+  converts them to float, maps them to local beats and hands them to the audio
+  thread through a fixed lock-free queue (`audio_sharing().pop()`); nothing is
+  allocated or locked on the audio thread. `LinkAudioReceiver` plays the beat
+  range it is asked for, reading across buffers with cubic interpolation at the
+  rate that maps the range onto the block (tempo changes and other sample rates
+  follow). Until the buffered audio covers a range it renders silence and starts
+  over; `num_underruns()` counts those dropouts and `margin_beats()` shows how
+  much audio is buffered beyond the range, to size the latency.
+- **Latency.** Received audio is always behind: ask for the block's beats minus
+  a latency that covers the network (LinkAudioHut uses 4 beats). Send processed
+  audio with the beat it was received at, so the original sender can place it
+  on its timeline again.
+- **Sending.** `send()` converts to 16 bit and commits only while a peer
+  listens (it returns false otherwise). Link Audio carries mono or stereo.
+- **iOS.** Audio sharing is a user setting in LinkKit's settings view, shown
+  with the Info.plist key `ABLLinkAudioSupported`; the peer name comes from
+  `ABLLinkPeerName` and the settings view. Link Audio needs the multicast
+  networking entitlement (`com.apple.developer.networking.multicast`).
+
 ## Threading contract
 
 - `prepare()`: message thread, audio stopped.
@@ -156,6 +203,8 @@ LinkKit: the app links `LinkKit.xcframework` itself (configure prints a NOTICE).
 - The setters (`set_bpm()`, `play()`, `set_output_latency_samples()`, ...):
   any thread, lock-free.
 - `LinkSession`: message thread (may block); it outlives every clock built on it.
+  `audio_sharing()`'s `pop()` and `send()` and `LinkAudioReceiver`: audio thread
+  only, real-time safe.
 
 ## Testing Link
 
@@ -167,4 +216,6 @@ scripted fake session, including sample-exact latency compensation. With
 against an in-process peer. The peer tests need multicast on the local
 interfaces, skip when the peers do not find each other within 10 s and carry
 the CTest label `link-peers`; exclude them on CI with
-`ctest --preset <preset> -LE link-peers`.
+`ctest --preset <preset> -LE link-peers`. `LinkAudioReceiver.*` (`test/dsp`)
+plays scripted buffers; `LinkAudioPeers.*` (label `link-peers`) sends a channel
+from one session to another over the network.

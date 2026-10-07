@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tanh/dsp/transport/LinkAudio.h>
 #include <tanh/dsp/transport/LinkBackend.h>
 #include <tanh/dsp/transport/LinkTransportClock.h>
 #include <tanh/dsp/transport/TransportInfo.h>
@@ -7,11 +8,13 @@
 
 #include <ableton/Link.hpp>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -618,3 +621,78 @@ INSTANTIATE_TEST_SUITE_P(BlockSizes,
                          LinkPeersLatency,
                          ::testing::Values(64u, 512u, 2048u),
                          [](const auto& p) { return "Block" + std::to_string(p.param); });
+
+// Link Audio: a channel one session publishes reaches another session that subscribes to it,
+// as buffers on the local beat grid. Finds the channel by name, so other peers do no harm.
+TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
+    constexpr uint32_t frames = 256;
+    LinkSession sender(120.0, "tanh audio sender");
+    LinkSession receiver(120.0, "tanh audio receiver");
+    sender.set_audio_output_name("tanh test channel");
+    for (auto* session : {&sender, &receiver}) {
+        session->set_enabled(true);
+        session->set_audio_enabled(true);
+        EXPECT_TRUE(session->is_audio_enabled());
+    }
+
+    std::optional<uint64_t> channel;
+    const auto discovery_end = std::chrono::steady_clock::now() + k_discovery_timeout;
+    while (!channel && std::chrono::steady_clock::now() < discovery_end) {
+        for (const auto& c : receiver.audio_channels()) {
+            if (c.m_name == "tanh test channel" && c.m_peer_name == "tanh audio sender") {
+                channel = c.m_id;
+            }
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+    if (!channel) { GTEST_SKIP() << "no Link Audio channel discovered within 10 s"; }
+    receiver.set_audio_input(*channel);
+    EXPECT_EQ(receiver.audio_input(), channel);
+
+    // The sender's audio thread: a sine, block by block on its Link clock, for two seconds.
+    LinkTransportClock clock(sender.audio_backend());
+    clock.prepare(k_sr);
+    std::vector<float> left(frames);
+    std::vector<float> right(frames);
+    const std::array<const float*, 2> channels{left.data(), right.data()};
+    size_t sent = 0;
+    double phase = 0.0;
+    const auto send_end = std::chrono::steady_clock::now() + 2s;
+    while (std::chrono::steady_clock::now() < send_end) {
+        clock.begin_block(frames, sender.audio_backend().now_us());
+        for (uint32_t f = 0; f < frames; ++f) {
+            left[f] = right[f] = 0.5f * static_cast<float>(std::sin(phase));
+            phase += 2.0 * 3.141592653589793 * 440.0 / k_sr;
+        }
+        if (sender.audio_sharing().send(channels.data(),
+                                        2,
+                                        frames,
+                                        clock.block_info().m_beat_position,
+                                        k_quantum,
+                                        static_cast<uint32_t>(k_sr))) {
+            ++sent;
+        }
+        clock.end_block();
+        std::this_thread::sleep_for(
+            std::chrono::microseconds(static_cast<int64_t>(frames * 1e6 / k_sr)));
+    }
+    EXPECT_GT(sent, 0u) << "the sink never had a listener";
+
+    // The receiver's audio thread: the buffers arrived in order, on increasing beats (the
+    // queue holds 256; the rest was dropped while nobody drained it).
+    thl::dsp::transport::LinkAudioPacket packet;
+    size_t received = 0;
+    double last_end = -1e9;
+    while (receiver.audio_sharing().pop(packet)) {
+        EXPECT_EQ(packet.m_num_channels, 2u);
+        EXPECT_GT(packet.m_num_frames, 0u);
+        EXPECT_GT(packet.m_end_beat, packet.m_begin_beat);
+        // Link maps beats through whole microseconds: 1 µs is 2e-6 beats at 120 BPM.
+        EXPECT_GE(packet.m_begin_beat, last_end - 1e-5);
+        last_end = packet.m_end_beat;
+        ++received;
+    }
+    std::cout << "[ measured ] Link Audio: " << sent << " blocks sent, " << received
+              << " buffers received\n";
+    EXPECT_GT(received, 0u);
+}
