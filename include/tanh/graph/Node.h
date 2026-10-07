@@ -37,6 +37,9 @@ public:
 
     virtual std::vector<const void*> exclusive_resources() const { return {}; }
 
+private:
+    friend class Graph;
+
     virtual void prepare(const ProcessSpec& spec) { (void)spec; }
  
     virtual void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION = 0;

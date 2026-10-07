@@ -29,13 +29,13 @@ public:
 
     PortLayout ports() const override { return {.inputs = {}, .outputs = {m_num_channels}}; }
 
+private:
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < m_num_channels; ++ch) {
             std::fill_n(context.outputs[0].get_write_pointer(ch), context.num_frames, m_value);
         }
     }
 
-private:
     size_t m_num_channels;
     float m_value;
 };
@@ -48,6 +48,7 @@ public:
         return {.inputs = {m_num_channels}, .outputs = {m_num_channels}};
     }
 
+private:
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < m_num_channels; ++ch) {
             const float* in = context.inputs[0].get_read_pointer(ch);
@@ -56,7 +57,6 @@ public:
         }
     }
 
-private:
     size_t m_num_channels;
     float m_gain;
 };
@@ -69,6 +69,7 @@ public:
         return {.inputs = {m_num_channels, m_num_channels}, .outputs = {m_num_channels}};
     }
 
+private:
     void process(const ProcessContext& context) TANH_NONBLOCKING_FUNCTION override {
         for (size_t ch = 0; ch < m_num_channels; ++ch) {
             const float* a = context.inputs[0].get_read_pointer(ch);
@@ -78,7 +79,6 @@ public:
         }
     }
 
-private:
     size_t m_num_channels;
 };
 
@@ -270,6 +270,87 @@ TEST(Graph, RemoveNodeDropsConnections) {
     const auto replacement = graph.add_node<ConstantNode>(k_channels, 0.25f);
     ASSERT_TRUE(replacement);
     EXPECT_TRUE(graph.connect({*replacement, 0}, output_port));
+}
+
+TEST(Graph, AddNodeRejectsNullptr) {
+    Graph graph(k_channels);
+    EXPECT_FALSE(graph.add_node(nullptr));
+}
+
+TEST(Graph, SameNodeCanOnlyBeAddedOnce) {
+    auto node = std::make_shared<ConstantNode>(k_channels, 0.5f);
+    Graph graph(k_channels);
+
+    EXPECT_TRUE(graph.add_node(node));
+    EXPECT_FALSE(graph.add_node(node));
+}
+
+TEST(Graph, RemovedNodeCanBeAddedAgain) {
+    auto node = std::make_shared<ConstantNode>(k_channels, 0.5f);
+    Graph graph(k_channels);
+
+    const auto first = graph.add_node(node);
+    ASSERT_TRUE(first);
+    EXPECT_TRUE(graph.remove_node(*first));
+    EXPECT_TRUE(graph.add_node(node));
+}
+
+TEST(Graph, NodeLooksUpById) {
+    auto node = std::make_shared<ConstantNode>(k_channels, 0.5f);
+    Graph graph(k_channels);
+    const auto id = graph.add_node(node);
+    ASSERT_TRUE(id);
+
+    EXPECT_EQ(graph.node(*id), node.get());
+    EXPECT_EQ(graph.node(NodeId{12345}), nullptr);
+
+    const Graph& read_only = graph;
+    const Node* output = read_only.node(graph.graph_output());
+    ASSERT_NE(output, nullptr);
+    EXPECT_EQ(output->ports().inputs, std::vector<size_t>{k_channels});
+}
+
+TEST(Graph, NodesListsEveryNode) {
+    Graph graph(k_channels);
+    const auto first = graph.add_node<ConstantNode>(k_channels, 0.5f);
+    const auto second = graph.add_node<ConstantNode>(k_channels, 0.25f);
+    ASSERT_TRUE(first && second);
+
+    EXPECT_EQ(graph.nodes(), (std::vector<NodeId>{graph.graph_output(), *first, *second}));
+
+    ASSERT_TRUE(graph.remove_node(*first));
+    EXPECT_EQ(graph.nodes(), (std::vector<NodeId>{graph.graph_output(), *second}));
+}
+
+TEST(Graph, ConnectionsListsEveryConnection) {
+    Graph graph(k_channels);
+    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
+    const auto gain = graph.add_node<GainNode>(k_channels, 2.0f);
+    ASSERT_TRUE(source && gain);
+    const PortRef output_port{graph.graph_output(), 0};
+    ASSERT_TRUE(graph.connect({*source, 0}, {*gain, 0}));
+    ASSERT_TRUE(graph.connect({*gain, 0}, output_port));
+
+    auto connections = graph.connections();
+    std::vector<Connection> expected{{.from = {*source, 0}, .to = {*gain, 0}},
+                                     {.from = {*gain, 0}, .to = output_port}};
+    std::ranges::sort(connections);
+    std::ranges::sort(expected);
+    EXPECT_EQ(connections, expected);
+}
+
+TEST(Graph, SourceOfFindsWhatFeedsAnInput) {
+    Graph graph(k_channels);
+    const auto source = graph.add_node<ConstantNode>(k_channels, 0.5f);
+    const auto sum = graph.add_node<SumNode>(k_channels);
+    ASSERT_TRUE(source && sum);
+    ASSERT_TRUE(graph.connect({*source, 0}, {*sum, 0}));
+
+    EXPECT_EQ(graph.source_of({*sum, 0}), (PortRef{*source, 0}));
+    EXPECT_EQ(graph.source_of({*sum, 1}), std::nullopt);
+
+    ASSERT_TRUE(graph.disconnect({*sum, 0}));
+    EXPECT_EQ(graph.source_of({*sum, 0}), std::nullopt);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

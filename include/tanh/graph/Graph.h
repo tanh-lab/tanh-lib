@@ -25,6 +25,12 @@ struct PortRef {
     friend auto operator<=>(const PortRef&, const PortRef&) = default;
 };
 
+struct Connection {
+    PortRef from;
+    PortRef to;
+    friend auto operator<=>(const Connection&, const Connection&) = default;
+};
+
 class TANH_API Graph {
 public:
     explicit Graph(size_t num_output_channels);
@@ -39,8 +45,10 @@ public:
     template <typename T, typename... Args>
     std::optional<NodeId> add_node(Args&&... args) {
         static_assert(std::is_base_of_v<Node, T>);
-        return add_node_impl(std::make_shared<T>(std::forward<Args>(args)...));
+        return add_node(std::make_shared<T>(std::forward<Args>(args)...));
     }
+
+    std::optional<NodeId> add_node(std::shared_ptr<Node> node);
 
     bool remove_node(NodeId id);
     bool connect(PortRef from, PortRef to);
@@ -48,8 +56,16 @@ public:
 
     NodeId graph_output() const { return k_output_id; }
 
+    Node* node(NodeId id);
+    const Node* node(NodeId id) const;
+
+    std::vector<NodeId> nodes() const;
+    std::vector<Connection> connections() const;
+    std::optional<PortRef> source_of(PortRef to) const;
+
     std::set<const void*> exclusive_resources() const;
 
+    /// Prepares every node and commits. Call only while process() is not running.
     void prepare(const ProcessSpec& spec);
 
     bool commit();
@@ -66,8 +82,6 @@ private:
     struct GraphBuffers;
     struct ProcessingStep;
     struct CompiledGraph;
-
-    std::optional<NodeId> add_node_impl(std::shared_ptr<Node> node);
 
     bool exists(NodeId id) const { return m_nodes.contains(id); }
     bool path_exists(NodeId from, NodeId to) const;
