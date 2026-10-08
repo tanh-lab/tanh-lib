@@ -162,9 +162,13 @@ TEST(LinkAudioReceiver, AGapSilencesAndPlaybackRestartsWhenAudioReturns) {
     ASSERT_TRUE(render(r, s, b, beat));
     EXPECT_GT(r.margin_beats(), 0.0);
     EXPECT_EQ(r.num_underruns(), 0u);
-    // Past what arrived: silence, counted as a dropout.
-    beat = end + 0.01;
-    EXPECT_FALSE(render(r, s, b, beat));
+    // Playing on until the audio that arrived runs out: silence, counted as one dropout.
+    bool played = true;
+    while (played && beat < end + 0.1) {
+        beat += b.m_frames * k_beats_per_frame;
+        played = render(r, s, b, beat);
+    }
+    EXPECT_FALSE(played);
     EXPECT_EQ(b.m_data[0][0], 0.0f);
     EXPECT_EQ(r.num_underruns(), 1u);
     // The audio for later beats arrives: it plays from the right beat.
@@ -215,6 +219,43 @@ TEST(LinkAudioReceiver, APacketOutOfOrderIsDropped) {
         at += b.m_frames * k_beats_per_frame;
     }
     EXPECT_EQ(r.num_underruns(), 0u);
+}
+
+TEST(LinkAudioReceiver, ARangeThatMovesForwardRestartsThereInsteadOfSqueezing) {
+    // The latency got shorter: the next range starts 0.1 beat further on.
+    LinkAudioReceiver r;
+    FakeSharing s;
+    s.add_run(0.0, 60);
+    Block b(128);
+    ASSERT_TRUE(render(r, s, b, 0.05));
+    ASSERT_TRUE(render(r, s, b, 0.15));
+    for (uint32_t f = 0; f < b.m_frames; ++f) {
+        EXPECT_NEAR(b.m_data[0][f], 0.15 + (f * k_beats_per_frame), 1e-5) << "frame " << f;
+    }
+    EXPECT_EQ(r.num_underruns(), 0u);
+}
+
+TEST(LinkAudioReceiver, AFullRingKeepsItsPacketsWhileNothingNewArrives) {
+    LinkAudioReceiver r;
+    FakeSharing s;
+    s.add_run(10.0, static_cast<int>(LinkAudioReceiver::k_capacity));  // all ahead of the range
+    Block b(64);
+    for (int block = 0; block < 5; ++block) { EXPECT_FALSE(render(r, s, b, 1.0)); }
+    EXPECT_EQ(r.num_buffered(), LinkAudioReceiver::k_capacity);
+}
+
+TEST(LinkAudioReceiver, MakesPacketsFromReceivedBuffers) {
+    std::array<int16_t, 8> samples{16384, -16384, 0, 32767, -32768, 1, 2, 3};
+    LinkAudioPacket p;
+    ASSERT_TRUE(thl::dsp::transport::make_link_audio_packet(samples.data(), 2, 4, 1.0, 2.0, p));
+    EXPECT_EQ(p.m_num_channels, 2u);
+    EXPECT_EQ(p.m_num_frames, 4u);
+    EXPECT_FLOAT_EQ(p.m_samples[0], 0.5f);
+    EXPECT_FLOAT_EQ(p.m_samples[1], -0.5f);
+    EXPECT_DOUBLE_EQ(p.m_end_beat, 2.0);
+    EXPECT_FALSE(thl::dsp::transport::make_link_audio_packet(samples.data(), 2, 0, 1.0, 2.0, p));
+    EXPECT_EQ(thl::dsp::transport::to_link_audio_sample(2.0f), 32767);
+    EXPECT_EQ(thl::dsp::transport::to_link_audio_sample(-0.5f), -16384);
 }
 
 TEST(LinkAudioReceiver, IgnoresEmptyOrOversizedPackets) {

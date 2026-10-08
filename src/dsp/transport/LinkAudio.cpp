@@ -29,6 +29,34 @@ double frame_at(const LinkAudioPacket& packet, double beat) {
 
 }  // namespace
 
+int16_t to_link_audio_sample(float sample) {
+    return static_cast<int16_t>(std::lround(std::clamp(sample, -1.0f, 1.0f) * 32767.0f));
+}
+
+bool make_link_audio_packet(const int16_t* samples,
+                            size_t num_channels,
+                            size_t num_frames,
+                            double begin_beat,
+                            double end_beat,
+                            LinkAudioPacket& out) {
+    if (samples == nullptr || num_channels == 0 || num_frames == 0 || end_beat <= begin_beat) {
+        return false;
+    }
+    out.m_num_channels = static_cast<uint32_t>(std::min<size_t>(num_channels, 2));
+    const size_t frames = std::min(num_frames, LinkAudioPacket::k_max_samples / out.m_num_channels);
+    out.m_num_frames = static_cast<uint32_t>(frames);
+    for (size_t f = 0; f < frames; ++f) {
+        for (size_t ch = 0; ch < out.m_num_channels; ++ch) {
+            out.m_samples[(f * out.m_num_channels) + ch] =
+                static_cast<float>(samples[(f * num_channels) + ch]) / 32768.0f;
+        }
+    }
+    out.m_begin_beat = begin_beat;
+    out.m_end_beat = begin_beat + ((end_beat - begin_beat) * static_cast<double>(frames) /
+                                   static_cast<double>(num_frames));
+    return true;
+}
+
 LinkAudioReceiver::LinkAudioReceiver() : m_ring(k_capacity) {}
 
 void LinkAudioReceiver::reset() TANH_NONBLOCKING_FUNCTION {
@@ -71,32 +99,30 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
                                uint32_t num_frames,
                                double begin_beat,
                                double beats_per_sample) TANH_NONBLOCKING_FUNCTION {
-    // Take what arrived; a full ring loses its oldest packet (and the playback position).
-    while (true) {
+    // Take what arrived. Packets come in beat order: one behind the last (reordered or repeated
+    // by the network) is dropped, one far behind means the timeline jumped back (start over). A
+    // full ring makes room by losing its oldest packet, and with it the playback position.
+    while (backend.pop(m_incoming)) {
+        ++m_received;
+        const bool usable =
+            m_incoming.m_num_frames > 0 && m_incoming.m_num_channels > 0 &&
+            static_cast<size_t>(m_incoming.m_num_frames) * m_incoming.m_num_channels <=
+                LinkAudioPacket::k_max_samples &&
+            m_incoming.m_end_beat > m_incoming.m_begin_beat;
+        if (!usable) { continue; }
+        if (m_count > 0) {
+            const double last_end = packet(m_count - 1).m_end_beat;
+            if (m_incoming.m_begin_beat < last_end - k_jump_beats) {
+                reset();
+            } else if (m_incoming.m_begin_beat < last_end - k_order_tolerance_beats) {
+                continue;
+            }
+        }
         if (m_count == k_capacity) {
             pop_front();
             m_playing = false;
         }
-        auto& slot = m_ring[(m_head + m_count) % k_capacity];
-        if (!backend.pop(slot)) { break; }
-        ++m_received;
-        const bool usable = slot.m_num_frames > 0 && slot.m_num_channels > 0 &&
-                            static_cast<size_t>(slot.m_num_frames) * slot.m_num_channels <=
-                                LinkAudioPacket::k_max_samples &&
-                            slot.m_end_beat > slot.m_begin_beat;
-        if (!usable) { continue; }
-        // Packets come in beat order. One behind the last (reordered or repeated by the
-        // network) is dropped; one far behind means the timeline jumped back: start over.
-        if (m_count > 0) {
-            const double last_end = packet(m_count - 1).m_end_beat;
-            if (slot.m_begin_beat < last_end - k_jump_beats) {
-                const LinkAudioPacket jumped = slot;
-                reset();
-                m_ring[m_head] = jumped;
-            } else if (slot.m_begin_beat < last_end - k_order_tolerance_beats) {
-                continue;
-            }
-        }
+        m_ring[(m_head + m_count) % k_capacity] = m_incoming;
         ++m_count;
     }
 
@@ -105,7 +131,22 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
         stop(out, num_channels, num_frames);
         return false;
     }
-    const double end_beat = begin_beat + (static_cast<double>(num_frames) * beats_per_sample);
+    const double block_beats = static_cast<double>(num_frames) * beats_per_sample;
+    const double end_beat = begin_beat + block_beats;
+
+    // The range must continue where the last block ended. If it moved ahead of the read position
+    // (the latency got shorter, the tempo changed, the clock seeked), start over at the new beat
+    // instead of squeezing the audio in between into this block. A read position ahead of the
+    // range is a skipped hole (the hole case below) or a jump back (stops below).
+    if (m_playing && m_count > 0) {
+        const auto& p = packet(0);
+        const double read_beat =
+            p.m_begin_beat +
+            (m_read_frame / static_cast<double>(p.m_num_frames) * (p.m_end_beat - p.m_begin_beat));
+        if (begin_beat - read_beat > k_seek_tolerance * block_beats) {
+            m_playing = false;
+        }
+    }
 
     // Start at the first packet that reaches past the range's first beat (older ones go). A
     // packet that only starts later in the range is played from its start: the hole before it
@@ -134,12 +175,12 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
         frames_to_end += static_cast<double>(p.m_num_frames);
     }
     const double source_frames = frames_to_end - m_read_frame;
-    if (!covered || source_frames < 0.0) {  // not arrived yet, or the timeline jumped back
+    if (!covered || source_frames < -k_frame_epsilon) {  // not arrived yet, or jumped back
         if (!covered && m_playing) { ++m_underruns; }
         stop(out, num_channels, num_frames);
         return false;
     }
-    if (source_frames == 0.0) {  // the whole range lies in a hole: its audio was lost
+    if (source_frames <= k_frame_epsilon) {  // the whole range lies in a hole: its audio was lost
         for (uint32_t ch = 0; ch < num_channels; ++ch) { std::fill_n(out[ch], num_frames, 0.0f); }
         m_playing = true;
         return true;
@@ -161,8 +202,9 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
         }
     }
     m_read_frame += source_frames;
-    while (m_count > 0 && m_read_frame >= static_cast<double>(packet(0).m_num_frames)) {
-        m_read_frame -= static_cast<double>(packet(0).m_num_frames);
+    while (m_count > 0 &&
+           m_read_frame >= static_cast<double>(packet(0).m_num_frames) - k_frame_epsilon) {
+        m_read_frame = std::max(0.0, m_read_frame - static_cast<double>(packet(0).m_num_frames));
         pop_front();
     }
     m_playing = true;

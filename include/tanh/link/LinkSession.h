@@ -60,8 +60,11 @@ namespace thl::link {
 class TANH_API LinkSession {
 public:
     /// @p peer_name names this app to the session's peers (Link Audio); on iOS the Info.plist
-    /// key ABLLinkPeerName and the settings view set it instead.
-    explicit LinkSession(double initial_bpm = 120.0, const std::string& peer_name = "Link App");
+    /// key ABLLinkPeerName and the settings view set it instead. @p output_name names the channel
+    /// audio_sharing().send() publishes (fixed: the SDKs cannot rename it while audio runs).
+    explicit LinkSession(double initial_bpm = 120.0,
+                         const std::string& peer_name = "Link App",
+                         const std::string& output_name = "Main");
     ~LinkSession();
 
     LinkSession(const LinkSession&) = delete;
@@ -106,16 +109,12 @@ public:
         uint64_t m_peer_id = 0;
         std::string m_peer_name;
     };
-    /// The audio channels announced in the session now.
+    /// The audio channels the session's other peers announce now (not our own output).
     [[nodiscard]] std::vector<AudioChannel> audio_channels() const;
 
     /// Receive channel @p id into audio_sharing().pop(); nullopt stops receiving.
     void set_audio_input(std::optional<uint64_t> id);
     [[nodiscard]] std::optional<uint64_t> audio_input() const;
-
-    /// Name of the channel audio_sharing().send() publishes (default "Main"). The channel is
-    /// announced while audio is shared and is only sent while a peer listens.
-    void set_audio_output_name(const std::string& name);
 
     /// Quantum the received buffers are mapped to local beats with (default 4); use the
     /// clock's (LinkTransportClock::quantum()).

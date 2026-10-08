@@ -626,9 +626,8 @@ INSTANTIATE_TEST_SUITE_P(BlockSizes,
 // as buffers on the local beat grid. Finds the channel by name, so other peers do no harm.
 TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
     constexpr uint32_t frames = 256;
-    LinkSession sender(120.0, "tanh audio sender");
+    LinkSession sender(120.0, "tanh audio sender", "tanh test channel");
     LinkSession receiver(120.0, "tanh audio receiver");
-    sender.set_audio_output_name("tanh test channel");
     for (auto* session : {&sender, &receiver}) {
         session->set_enabled(true);
         session->set_audio_enabled(true);
@@ -646,6 +645,10 @@ TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
         std::this_thread::sleep_for(50ms);
     }
     if (!channel) { GTEST_SKIP() << "no Link Audio channel discovered within 10 s"; }
+    // A session does not list its own output.
+    for (const auto& c : sender.audio_channels()) {
+        EXPECT_FALSE(c.m_name == "tanh test channel" && c.m_peer_name == "tanh audio sender");
+    }
     receiver.set_audio_input(*channel);
     EXPECT_EQ(receiver.audio_input(), channel);
 

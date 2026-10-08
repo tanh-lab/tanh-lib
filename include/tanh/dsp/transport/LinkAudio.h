@@ -27,6 +27,23 @@ struct LinkAudioPacket {
     double m_end_beat = 0.0;    ///< local beat just after the last frame
 };
 
+/// A Link Audio sample from a float sample (clipped to -1..1).
+[[nodiscard]] TANH_API int16_t to_link_audio_sample(float sample);
+
+/**
+ * @brief Fills @p out from a received Link Audio buffer (interleaved 16-bit samples) whose
+ *        first frame is at local beat @p begin_beat and which ends at @p end_beat.
+ *
+ * Keeps at most two channels and LinkAudioPacket::k_max_samples samples; the end beat follows
+ * the frames kept. Returns false for an empty buffer.
+ */
+TANH_API bool make_link_audio_packet(const int16_t* samples,
+                                     size_t num_channels,
+                                     size_t num_frames,
+                                     double begin_beat,
+                                     double end_beat,
+                                     LinkAudioPacket& out);
+
 /**
  * @brief Audio-thread seam for Link Audio: the subscribed channel in, our channel out.
  *
@@ -64,7 +81,8 @@ public:
  * the block, which also follows tempo changes and a sender running at another sample rate.
  * Until the packets cover a range (start, audio arriving too late, a timeline jump) the block
  * is silent and the receiver starts over. A packet the network lost is skipped (the audio
- * around it plays on); one that arrives out of order is dropped.
+ * around it plays on); one that arrives out of order is dropped. When the requested range moves
+ * (a latency or tempo change, a seek), playback restarts at the new beat.
  *
  * Audio thread only, after construction (which allocates the packet ring).
  */
@@ -76,6 +94,10 @@ public:
     static constexpr double k_order_tolerance_beats = 1e-4;
     /// A packet starting this far before the last one's end means the timeline jumped back.
     static constexpr double k_jump_beats = 0.25;
+    /// A range that moved more than this share of a block from where playback is restarts there.
+    static constexpr double k_seek_tolerance = 0.5;
+    /// Frames closer than this count as equal (positions add up in floating point).
+    static constexpr double k_frame_epsilon = 1e-6;
 
     LinkAudioReceiver();
 
@@ -124,6 +146,7 @@ private:
               uint32_t num_frames) TANH_NONBLOCKING_FUNCTION;
 
     std::vector<LinkAudioPacket> m_ring;
+    LinkAudioPacket m_incoming;  // the packet being taken from the backend
     size_t m_head = 0;
     size_t m_count = 0;
     bool m_playing = false;

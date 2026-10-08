@@ -10,12 +10,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Added
 
 - Link Audio (`TANH_WITH_LINK`): `LinkSession` shares audio channels with Link peers
-  (`set_audio_enabled()`, `audio_channels()`, `set_audio_input()`,
-  `set_audio_output_name()`) on the C++ SDK's `LinkAudio` and LinkKit's audio API.
+  (`set_audio_enabled()`, `audio_channels()`, `set_audio_input()`; the output channel
+  is named at construction) on the C++ SDK's `LinkAudio` and LinkKit's audio API.
   `audio_sharing()` is the audio-thread seam (`dsp::transport::LinkAudioBackend`:
   received buffers in, our output out) and `dsp::transport::LinkAudioReceiver` plays
   the received channel on the local beat grid a latency behind, with underrun and
-  margin counters. The constructor takes the peer name. Tests: `LinkAudioReceiver.*`,
+  margin counters; lost packets are skipped, reordered ones dropped, and a moved range
+  restarts. The constructor takes the peer and output names. Tests: `LinkAudioReceiver.*`,
   `LinkAudioPeers.*`. Docs: `transport.md`.
 
 - `thl::modulation::ParameterBackend`: `ModulationMatrix` reads parameters through a

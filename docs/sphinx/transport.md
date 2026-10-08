@@ -155,10 +155,9 @@ C++ SDK on desktop, LinkKit 4.1.2 on iOS). A `LinkSession` announces one output
 channel and can subscribe to one channel of another peer:
 
 ```cpp
-thl::link::LinkSession session(120.0, "My App");          // message thread
+thl::link::LinkSession session(120.0, "My App", "Main");  // peer and output names
 session.set_enabled(true);
 session.set_audio_enabled(true);                          // desktop; iOS: settings view
-session.set_audio_output_name("Main");
 for (const auto& channel : session.audio_channels()) { /* show channel.m_name */ }
 session.set_audio_input(channel_id);                      // receive one channel
 
@@ -189,7 +188,12 @@ session.audio_sharing().send(out, 2, frames,
   audio with the beat it was received at, so the original sender can place it
   on its timeline again.
 - **Sending.** `send()` converts to 16 bit and commits only while a peer
-  listens (it returns false otherwise). Link Audio carries mono or stereo.
+  listens (it returns false otherwise), with the session state the clock captured
+  for the block. Link Audio carries mono or stereo. The output channel's name is
+  fixed at construction.
+- **Gaps and jumps.** A packet the network lost is skipped (the audio around it
+  plays on), one out of order is dropped. When the requested range moves (the
+  latency or tempo changes, the clock seeks) the receiver restarts at the new beat.
 - **iOS.** Audio sharing is a user setting in LinkKit's settings view, shown
   with the Info.plist key `ABLLinkAudioSupported`; the peer name comes from
   `ABLLinkPeerName` and the settings view. Link Audio needs the multicast
