@@ -14,7 +14,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `AtomicMotionShapeMix` stores a mix in one 64-bit atomic, and `render_motion_path()`
   samples what a mix plays over a lane. The recorder's undo history and glide are
   separate units (`detail/MotionHistory.h`, `detail/MotionGlide.h`), and take recording
-  (the running take and its two buffers) is `detail::MotionTakeWriter`. `LoopLength` and
+  (the running take and its two buffers) is `detail::MotionTakeWriter`, and the block
+  clock (transport or free-run) is `detail::MotionClock`. `LoopLength` and
   `MotionRecorderConfig` live in `MotionTypes.h`. Tests:
   `MotionLaneProcessing.*`, `MotionHistory.*`.
 - Motion shapes: `MotionShape` (18 stock closed paths: circle, square, Lissajous,

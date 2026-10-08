@@ -8,6 +8,7 @@
 #include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/MotionShape.h>
 #include <tanh/modulation/MotionTypes.h>
+#include <tanh/modulation/detail/MotionClock.h>
 #include <tanh/modulation/detail/MotionGlide.h>
 #include <tanh/modulation/detail/MotionHistory.h>
 #include <tanh/modulation/detail/MotionTakes.h>
@@ -345,8 +346,7 @@ private:
     Source m_source = Source::Lane;
     uint32_t m_playing_take_id = 0;
     uint32_t m_playing_version = 0;  // PlayedLane::m_version of the playing lane
-    bool m_have_clock = false;
-    double m_clock_end = 0.0;  // beat at the end of the previous block
+    detail::MotionClock m_clock;
 
     // Playback phase (seconds or beats into the loop) at the start of the
     // current segment, and at the end of the last block.

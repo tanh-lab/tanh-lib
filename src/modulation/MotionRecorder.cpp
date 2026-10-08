@@ -89,7 +89,7 @@ void MotionRecorder::prepare(double sample_rate,
     m_ramp_restart = true;
     m_ramp_position = 0;
     m_glide.cancel();
-    m_have_clock = false;
+    m_clock.reset();
     m_jump_glides = 0;
     m_busy = false;
 }
@@ -566,25 +566,13 @@ void MotionRecorder::process(const TransportInfo& t,
     // Clock: the transport while it plays, else a free-running (or held) beat.
     // The transport's discontinuity flags are the only jump detector (see
     // "Clock discontinuities" in docs/sphinx/motion_recording.md).
-    const double bpm = t.m_bpm > 0.0 ? t.m_bpm : 120.0;
-    const double nominal = bpm / (60.0 * m_sample_rate);
-    const bool playing = t.is_playing();
-    const bool timeline_reset = t.has(TransportInfo::k_timeline_reset);
-    const bool jumped = t.has(TransportInfo::k_jumped) || t.has(TransportInfo::k_started);
-    // A timeline reset also restarts the stopped free-run from the transport's beat.
-    if (timeline_reset) { m_have_clock = false; }
-    const bool hold = m_stopped_mode.load(std::memory_order_relaxed) == StoppedTransport::Hold;
-    double b0 = t.m_beat_position;
-    double slope = nominal;
-    if (playing) {
-        if (t.m_beats_per_sample > 0.0) { slope = t.m_beats_per_sample; }
-    } else {
-        if (m_have_clock) { b0 = m_clock_end; }
-        slope = hold ? 0.0 : nominal;
-    }
-    // A take integrates tempo on its own clock and never stops.
-    const double rec_slope = playing && t.m_beats_per_sample > 0.0 ? t.m_beats_per_sample : nominal;
-    m_have_clock = true;
+    const detail::MotionBlockClock clock =
+        m_clock.begin(t,
+                      m_sample_rate,
+                      m_stopped_mode.load(std::memory_order_relaxed) == StoppedTransport::Hold);
+    const double bpm = clock.m_bpm;
+    const double b0 = clock.m_beat;
+    const double slope = clock.m_slope;
     if (t.m_sig_num > 0 && t.m_sig_denom > 0) {
         m_sig_num = t.m_sig_num;
         m_sig_denom = t.m_sig_denom;
@@ -641,10 +629,10 @@ void MotionRecorder::process(const TransportInfo& t,
                     2.0 * view.m_length / static_cast<double>(view.m_num_points);
                 if (d <= k_keep_phase_eps) {
                     m_segment_phase = m_phase;
-                } else if (timeline_reset) {
+                } else if (clock.m_timeline_reset) {
                     m_segment_phase = fresh;
                     m_ramp_restart = true;
-                } else if (jumped && playing) {
+                } else if (clock.m_jumped && clock.m_playing) {
                     m_segment_phase = fresh;
                     m_ramp_restart = true;
                     if (d > two_points) {
@@ -718,7 +706,7 @@ void MotionRecorder::process(const TransportInfo& t,
                 view = playback_view(lane);  // shapes pause during the take
             }
         }
-        if (m_takes.active()) { on_take(m_takes.step(live, lx, ly, rec_slope, bpm, n)); }
+        if (m_takes.active()) { on_take(m_takes.step(live, lx, ly, clock.m_rec_slope, bpm, n)); }
 
         if (m_need_phase) {
             relock(i);
@@ -815,7 +803,7 @@ void MotionRecorder::process(const TransportInfo& t,
     } else {
         m_phase = 0.0;
     }
-    m_clock_end = b0 + (static_cast<double>(n) * slope);
+    m_clock.end(clock, n);
     m_previous_phase_step = dphase;
     m_view_timebase = view.m_timebase;
     m_view_length = view.empty() ? 0.0 : view.m_length;
