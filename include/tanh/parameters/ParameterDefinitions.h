@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/core/parameters/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 
 #include <algorithm>
 #include <cmath>

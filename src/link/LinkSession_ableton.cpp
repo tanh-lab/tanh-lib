@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "detail/LinkSharing.h"
+#include "LinkSharing.h"
 #include "tanh/link/LinkSession.h"
 
 namespace thl::link {

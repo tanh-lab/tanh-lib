@@ -6,7 +6,7 @@
 #include <string_view>
 
 #include "tanh/core/Exports.h"
-#include "tanh/core/parameters/ParameterExceptions.h"
+#include "tanh/parameters/ParameterExceptions.h"
 
 namespace thl {
 

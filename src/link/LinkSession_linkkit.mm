@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "detail/LinkSharing.h"
+#include "LinkSharing.h"
 
 namespace thl::link {
 

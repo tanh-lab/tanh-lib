@@ -53,7 +53,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `thl::SeqLock` (core): the sequence counter of a wait-free seqlock over atomics; the
   matrix's batched `set_routings_enabled()` uses it. Tests: `SeqLock.*`.
 - The parameter types State and Modulation share (`ParameterDefinition`, `Range`,
-  `ModulationScope`) moved to `tanh/core/parameters/`; the `tanh/state/` headers
+  `ModulationScope`) moved to `tanh/parameters/`; the `tanh/state/` headers
   forward. New `thl::ParameterNotFoundException` (core), the base of
   `StateKeyNotFoundException` and `StateGroupNotFoundException`, with
   `ParameterTypeMismatchException` beside it: `get_smart_handle()` throws it for an

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <tanh/core/parameters/ParameterDefinitions.h>
+#include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>

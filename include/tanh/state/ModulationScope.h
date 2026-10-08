@@ -1,4 +1,5 @@
 #pragma once
 
-// Moved to core: shared by State and Modulation (which builds without State).
-#include <tanh/core/parameters/ModulationScope.h>
+// Deprecated: moved to the Parameters component (shared by State and Modulation, which
+// builds without State). Kept for one release; include <tanh/parameters/ModulationScope.h>.
+#include <tanh/parameters/ModulationScope.h>

@@ -15,8 +15,8 @@
 #include <utility>
 
 #include "tanh/core/Exports.h"
-#include "tanh/core/parameters/ModulationScope.h"
-#include "tanh/core/parameters/ParameterDefinitions.h"
+#include "tanh/parameters/ModulationScope.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/state/Exceptions.h"
 #include "tanh/state/Parameter.h"
 #include "tanh/state/ParameterListener.h"

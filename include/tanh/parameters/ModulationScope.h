@@ -20,7 +20,7 @@ namespace thl::modulation {
 // this name — ModulationMatrix::register_scope rejects "global" and hands back
 // the global handle.
 //
-// Physical location note: this header lives under tanh/core/parameters/
+// Physical location note: this header lives under tanh/parameters/
 // because ParameterDefinition stores a ModulationScope and both tanh_state and
 // tanh_modulation (which builds without State) use it. The namespace is
 // `thl::modulation` because scope is a modulation concept semantically — the

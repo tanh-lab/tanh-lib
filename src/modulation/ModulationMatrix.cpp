@@ -28,9 +28,9 @@
 #include <vector>
 
 #include "tanh/core/Logger.h"
-#include "tanh/core/parameters/ModulationScope.h"
-#include "tanh/core/parameters/ParameterDefinitions.h"
-#include "tanh/core/parameters/ParameterExceptions.h"
+#include "tanh/parameters/ModulationScope.h"
+#include "tanh/parameters/ParameterDefinitions.h"
+#include "tanh/parameters/ParameterExceptions.h"
 #include "tanh/modulation/ModulationRouting.h"
 #include "tanh/modulation/ParameterBackend.h"
 #include "tanh/modulation/ResolvedRouting.h"

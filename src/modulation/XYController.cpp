@@ -1,6 +1,6 @@
 #include "tanh/modulation/XYController.h"
 
-#include <tanh/core/parameters/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>

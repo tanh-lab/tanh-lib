@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/core/parameters/ParameterDefinitions.h>
+#include <tanh/parameters/ParameterDefinitions.h>
 
 #include <stdexcept>
 #include <string>
@@ -21,6 +21,9 @@ class TANH_API ParameterNotFoundException : public std::runtime_error {
 public:
     explicit ParameterNotFoundException(std::string_view key)
         : ParameterNotFoundException(key, "Parameter not found: " + std::string(key)) {}
+    ParameterNotFoundException(const ParameterNotFoundException&) = default;
+    ParameterNotFoundException& operator=(const ParameterNotFoundException&) = default;
+    ~ParameterNotFoundException() override;  // out of line: one typeinfo, in tanh::Parameters
 
     /// The key that was looked up.
     const std::string& key() const { return m_key; }
@@ -44,6 +47,9 @@ public:
               "ParameterHandle type mismatch: requested handle type does not match parameter type")
         , m_requested(requested)
         , m_actual(actual) {}
+    ParameterTypeMismatchException(const ParameterTypeMismatchException&) = default;
+    ParameterTypeMismatchException& operator=(const ParameterTypeMismatchException&) = default;
+    ~ParameterTypeMismatchException() override;  // out of line: one typeinfo, in tanh::Parameters
 
     ParameterType requested() const { return m_requested; }
     ParameterType actual() const { return m_actual; }

@@ -4,8 +4,8 @@
 #include <array>
 #include <cstdint>
 
-#include "detail/LinkAudioCodec.h"
-#include "detail/LinkSharing.h"
+#include "LinkAudioCodec.h"
+#include "LinkSharing.h"
 
 using thl::dsp::transport::LinkAudioPacket;
 namespace detail = thl::link::detail;

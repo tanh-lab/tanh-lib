@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/core/parameters/ParameterDefinitions.h>
+#include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 

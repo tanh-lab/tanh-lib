@@ -3,7 +3,7 @@
 include(CMakeFindDependencyMacro)
 
 # Components built into this installation, by public component name
-# (Core, State, DSP, Resonator, Modulation, AudioIO, Net, Link). Each maps to an
+# (Core, Parameters, State, DSP, Resonator, Modulation, AudioIO, Net, Link). Each maps to an
 # imported target tanh::<Component>.
 #
 # Net is off by default (TANH_BUILD_NET): it is the only component that links a
@@ -12,9 +12,10 @@ include(CMakeFindDependencyMacro)
 # installation was built with it.
 set(tanh_AVAILABLE_COMPONENTS @TANH_EXPORTED_COMPONENTS@)
 
-# Every component other than Core depends on Core; Modulation additionally
-# depends on DSP, and on State when the installation has it (Modulation then
-# links it). Resolve the closure of what was requested.
+# Every component other than Core depends on Core; State and Modulation depend on
+# Parameters; Modulation additionally depends on DSP, and on State when the
+# installation has it (Modulation then links it); Link depends on DSP. Resolve the
+# closure of what was requested.
 set(_tanh_required ${tanh_FIND_COMPONENTS})
 if(NOT _tanh_required)
     set(_tanh_required ${tanh_AVAILABLE_COMPONENTS})
@@ -22,8 +23,11 @@ endif()
 if("Link" IN_LIST _tanh_required)
     list(APPEND _tanh_required DSP)
 endif()
+if("State" IN_LIST _tanh_required)
+    list(APPEND _tanh_required Parameters)
+endif()
 if("Modulation" IN_LIST _tanh_required)
-    list(APPEND _tanh_required DSP)
+    list(APPEND _tanh_required DSP Parameters)
     if("State" IN_LIST tanh_AVAILABLE_COMPONENTS)
         list(APPEND _tanh_required State)
     endif()

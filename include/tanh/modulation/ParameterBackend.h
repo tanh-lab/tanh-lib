@@ -1,7 +1,7 @@
 #pragma once
 
-#include <tanh/core/parameters/ParameterDefinitions.h>
-#include <tanh/core/parameters/ParameterExceptions.h>
+#include <tanh/parameters/ParameterDefinitions.h>
+#include <tanh/parameters/ParameterExceptions.h>
 
 #include <atomic>
 #include <optional>

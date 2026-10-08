@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/core/parameters/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/core/threading/SeqLock.h>
 #include <tanh/dsp/transport/TransportInfo.h>

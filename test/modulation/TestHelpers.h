@@ -1,7 +1,7 @@
 #pragma once
 
-#include <tanh/core/parameters/ModulationScope.h>
-#include <tanh/core/parameters/ParameterDefinitions.h>
+#include <tanh/parameters/ModulationScope.h>
+#include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/modulation/LFOSource.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ResolvedTarget.h>

@@ -154,7 +154,7 @@ or other `BlockProcessor`s that follow the transport, pass the block's
   subclass: a State-backed matrix throws `StateKeyNotFoundException` or
   `StateGroupNotFoundException`), `thl::ParameterTypeMismatchException` when `T`
   does not match the bound atomic and `std::invalid_argument` when the parameter
-  is not modulatable. The types live in `tanh/core/parameters/`, so they need no
+  is not modulatable. The types live in `tanh/parameters/`, so they need no
   State.
 - **No State.** `ModulationMatrix(thl::State&)` and `state()` exist only when
   tanh is built with State; `state()` throws `std::logic_error` on a matrix

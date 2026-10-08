@@ -7,7 +7,7 @@
 
 #include "ParameterListener.h"
 #include "tanh/core/Exports.h"
-#include "tanh/core/parameters/ParameterDefinitions.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl {

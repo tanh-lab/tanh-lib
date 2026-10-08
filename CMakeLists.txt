@@ -213,7 +213,36 @@ if(TANH_BUILD_STATE OR TANH_BUILD_MODULATION)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-# State component (depends on Core)
+# Parameters component (depends on Core): what a parameter is (definition, range,
+# modulation scope) and the lookup errors, shared by State and Modulation. Built
+# whenever one of them is; it carries no option of its own.
+if(TANH_BUILD_STATE OR TANH_BUILD_MODULATION)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Parameters component requires Core component")
+    endif()
+
+    add_library(${PROJECT_NAME}_parameters
+        src/parameters/ParameterExceptions.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_parameters PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Parameters ALIAS ${PROJECT_NAME}_parameters)
+
+    target_include_directories(${PROJECT_NAME}_parameters
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_parameters PUBLIC ${PROJECT_NAME}_core)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_parameters)
+endif()
+
+# State component (depends on Core and Parameters)
 if(TANH_BUILD_STATE)
     if(NOT TARGET ${PROJECT_NAME}_core)
         message(FATAL_ERROR "State component requires Core component")
@@ -240,6 +269,7 @@ if(TANH_BUILD_STATE)
     target_link_libraries(${PROJECT_NAME}_state 
         PUBLIC 
             ${PROJECT_NAME}_core 
+            ${PROJECT_NAME}_parameters
             nlohmann_json::nlohmann_json
     )
 
@@ -360,10 +390,9 @@ if(TANH_BUILD_DSP)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
 endif()
 
-# Modulation component (depends on DSP; State is optional). Parameters are read
-# through a ParameterBackend. With State, StateParameterBackend and
-# ModulationMatrix(thl::State&) are compiled in; without it only the
-# header-only definition types under include/tanh/state are used.
+# Modulation component (depends on DSP and Parameters; State is optional).
+# Parameters are read through a ParameterBackend. With State,
+# StateParameterBackend and ModulationMatrix(thl::State&) are compiled in.
 if(TANH_BUILD_MODULATION)
     if(NOT TARGET ${PROJECT_NAME}_dsp)
         message(FATAL_ERROR "Modulation component requires DSP component")
@@ -416,6 +445,7 @@ if(TANH_BUILD_MODULATION)
     target_link_libraries(${PROJECT_NAME}_modulation
         PUBLIC
         ${PROJECT_NAME}_dsp
+        ${PROJECT_NAME}_parameters
         nlohmann_json::nlohmann_json
     )
 
@@ -628,14 +658,19 @@ if(TANH_BUILD_LINK)
         message(FATAL_ERROR "Link component requires DSP component")
     endif()
 
+    # One platform source (below); the wire-format and sharing helpers both SDK
+    # backends use are header-only and private (src/link).
     add_library(${PROJECT_NAME}_link)
-    # Link Audio's wire format, shared by both SDK backends (private: src/link/detail).
-    target_sources(${PROJECT_NAME}_link PRIVATE src/link/detail/LinkAudioCodec.cpp)
 
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
         # The C++ SDK is not for iOS ("iOS developers should not use this repo");
         # LinkKit ships as a binary release. Custom LinkKit builds are GPL and not
         # App Store compatible, so only the official release zip is used.
+        if(CMAKE_VERSION VERSION_LESS 3.28)
+            # target_link_libraries() links an .xcframework from CMake 3.28 on.
+            message(FATAL_ERROR "TANH_BUILD_LINK on iOS needs CMake 3.28 or newer "
+                "(LinkKit is an .xcframework); this is ${CMAKE_VERSION}")
+        endif()
         FetchContent_Declare(
             linkkit
             URL https://github.com/Ableton/LinkKit/releases/download/LinkKit-4.1.2/LinkKit.zip
@@ -672,7 +707,10 @@ if(TANH_BUILD_LINK)
            OR TANH_OPERATING_SYSTEM STREQUAL "Windows")
         # Header-only C++ SDK pinned to the commit of tag Link-4.1; asio-standalone is
         # a submodule. SOURCE_SUBDIR points nowhere so Link's own examples and
-        # tests are not added.
+        # tests are not added. Unlike the other pins: no GIT_SHALLOW (a shallow
+        # clone cannot check out a commit hash) and no SYSTEM (that marks only
+        # add_subdirectory()'d targets; the SDK's config makes Ableton::Link an
+        # imported target, whose headers are system headers already).
         FetchContent_Declare(
             abletonlink
             GIT_REPOSITORY https://github.com/Ableton/link.git
@@ -779,6 +817,7 @@ endforeach()
 # and `add_subdirectory(tanh-lib)` consumers link identically.
 foreach(_pair
         "${PROJECT_NAME}_core=Core"
+        "${PROJECT_NAME}_parameters=Parameters"
         "${PROJECT_NAME}_state=State"
         "${PROJECT_NAME}_dsp=DSP"
         "${PROJECT_NAME}_resonator=Resonator"

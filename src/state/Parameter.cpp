@@ -10,7 +10,7 @@
 #include <string_view>
 
 #include "tanh/core/Exports.h"
-#include "tanh/core/parameters/ParameterDefinitions.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/state/Exceptions.h"
 #include "tanh/state/ParameterListener.h"
 #include "tanh/state/StateGroup.h"

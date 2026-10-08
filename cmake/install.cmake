@@ -38,6 +38,7 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/tanh/utils
 # Resonator component is only ever built together with DSP).
 set(_tanh_header_dirs
     "${PROJECT_NAME}_core=core"
+    "${PROJECT_NAME}_parameters=parameters"
     "${PROJECT_NAME}_state=state"
     "${PROJECT_NAME}_dsp=dsp"
     "${PROJECT_NAME}_modulation=modulation"
@@ -45,6 +46,7 @@ set(_tanh_header_dirs
     "${PROJECT_NAME}_link=link")
 set(_tanh_umbrella_headers
     "${PROJECT_NAME}_core=core.h"
+    "${PROJECT_NAME}_parameters=parameters.h"
     "${PROJECT_NAME}_state=state.h"
     "${PROJECT_NAME}_dsp=dsp.h"
     "${PROJECT_NAME}_audio_io=audio_io.h"

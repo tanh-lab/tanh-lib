@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/core/parameters/ParameterDefinitions.h>
+#include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/ParameterBackend.h>
 

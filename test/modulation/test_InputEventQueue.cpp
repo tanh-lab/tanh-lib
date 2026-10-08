@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <tanh/core/parameters/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 #include <tanh/modulation/InputEventQueue.h>
 
 #include <cstddef>
