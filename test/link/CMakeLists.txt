@@ -35,8 +35,8 @@ endif()
 
 # TEST-PLAN cases against a second, raw Link SDK peer in the same process (desktop
 # only: Ableton::Link is the C++ SDK target). Real network, so they carry the label
-# "link-peers", which every test preset excludes (CMakePresets.json); run them with
-# `ctest -L link-peers`.
+# "link-peers", which every test preset excludes (CMakePresets.json); run them
+# without a preset: `ctest --test-dir <build> -L link-peers`.
 if(TARGET Ableton::Link)
 	add_executable(test_link_peers)
 	target_sources(test_link_peers PRIVATE

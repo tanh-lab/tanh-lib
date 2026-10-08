@@ -234,8 +234,9 @@ scripted fake session, including sample-exact latency compensation. With
 against an in-process peer. The peer tests need multicast on the local
 interfaces, skip when the peers do not find each other within 10 s and carry
 the CTest label `link-peers`. Every test preset excludes that label, so
-`ctest --preset <preset>` skips them; run them with `ctest --preset <preset>
--L link-peers` (the test presets' exclude filter does not apply to `-L`). Every
+`ctest --preset <preset>` skips them; run them without the preset, e.g.
+`ctest --test-dir build/desktop/Debug -L link-peers` (with the preset its
+exclude filter still applies). Every
 test that enables Link holds the CTest resource lock `link-network`, so
 `ctest -j` never runs two at once (they would discover each other). `LinkAudioReceiver.*` (`test/dsp`)
 plays scripted buffers; `LinkAudioPeers.*` (label `link-peers`) sends a channel
