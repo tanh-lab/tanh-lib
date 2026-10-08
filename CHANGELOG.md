@@ -17,7 +17,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (the running take and its two buffers) is `detail::MotionTakeWriter`, and the block
   clock (transport or free-run) is `detail::MotionClock`. `LoopLength` and
   `MotionRecorderConfig` live in `MotionTypes.h`. Tests:
-  `MotionLaneProcessing.*`, `MotionHistory.*`.
+  `MotionLaneProcessing.*`, `MotionHistory.*`, `MotionClock.*`.
 - Motion shapes: `MotionShape` (18 stock closed paths: circle, square, Lissajous,
   roses, spiral, heart, star, ...) and `MotionShapeMix` (slots A and B, each a shape or
   the take, a morph between them, size and rotation). `MotionRecorder::set_shapes()`
