@@ -40,6 +40,24 @@ struct ResolvedRouting {
     uint32_t m_replace_hold_priority = 0;
     bool m_skip_during_gesture = false;
 
+    // Enabled flag, written by ModulationMatrix::set_routing_enabled() (any
+    // non-RT thread) and loaded once per block on the audio thread. A disabled
+    // routing writes nothing to its target.
+    mutable std::atomic<bool> m_enabled{true};
+
+    // Audio-thread copy of m_enabled from the previous block, for edge
+    // detection: a disable edge clears the held state, and both edges flag a
+    // change point at offset 0 of the target.
+    mutable bool m_block_enabled = true;
+
+    // Set by a schedule rebuild: the first block of the new config flags offset
+    // 0 of the target even without an edge, because a flag change that landed
+    // with the rebuild has no previous block in this config to compare against.
+    mutable bool m_enabled_edge_pending = true;
+
+    // Scratch for the audio thread's seqlock read of m_enabled.
+    mutable bool m_loaded_enabled = true;
+
     // Pre-computed per-sample depth multiplier, set at schedule-build time.
     // For linear targets: depth * (max - min) converts normalized depth to plain units.
     // For non-linear targets (additive only): depth in normalized space.
@@ -126,6 +144,10 @@ struct ResolvedRouting {
         , m_replace_priority(other.m_replace_priority)
         , m_replace_hold_priority(other.m_replace_hold_priority)
         , m_skip_during_gesture(other.m_skip_during_gesture)
+        , m_enabled(other.m_enabled.load(std::memory_order_relaxed))
+        , m_block_enabled(other.m_block_enabled)
+        , m_enabled_edge_pending(other.m_enabled_edge_pending)
+        , m_loaded_enabled(other.m_loaded_enabled)
         , m_depth_abs_precomputed(other.m_depth_abs_precomputed.load(std::memory_order_relaxed))
         , m_replace_range_min(other.m_replace_range_min.load(std::memory_order_relaxed))
         , m_replace_range_max(other.m_replace_range_max.load(std::memory_order_relaxed))
@@ -155,6 +177,11 @@ struct ResolvedRouting {
             m_replace_priority = other.m_replace_priority;
             m_replace_hold_priority = other.m_replace_hold_priority;
             m_skip_during_gesture = other.m_skip_during_gesture;
+            m_enabled.store(other.m_enabled.load(std::memory_order_relaxed),
+                            std::memory_order_relaxed);
+            m_block_enabled = other.m_block_enabled;
+            m_enabled_edge_pending = other.m_enabled_edge_pending;
+            m_loaded_enabled = other.m_loaded_enabled;
             m_depth_abs_precomputed.store(
                 other.m_depth_abs_precomputed.load(std::memory_order_relaxed),
                 std::memory_order_relaxed);

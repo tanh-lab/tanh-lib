@@ -13,6 +13,7 @@ components, all in namespace ``thl``:
 - **tanh::Modulation** — modulation matrix with change-point sub-blocking
 - **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
+- **tanh::Link** — Ableton Link session (``TANH_WITH_LINK``, off by default)
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
 
@@ -27,6 +28,10 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    symbol_visibility
    change_points
    modulation
+   host_parameters
+   transport
+   motion_recording
+   xy_controller
    audio_io
    api/index
    changelog
@@ -44,7 +49,12 @@ other; :doc:`realtime_safety` lists the rules every ``process()`` path follows.
 :doc:`change_points` shows, with an interactive figure, how a processor renders a
 block in pieces that start where its modulated parameters change.
 :doc:`symbol_visibility`, :doc:`modulation` and :doc:`audio_io` are the design
-notes that used to live in the README.
+notes that used to live in the README. :doc:`host_parameters` drives the
+matrix from a host's parameter store; :doc:`transport` covers musical time
+(``TransportInfo``, host/internal/Link clocks) and Ableton Link;
+:doc:`motion_recording` records and loops XY gestures, and
+:doc:`xy_controller` combines touch input, recorder and a UI snapshot into
+matrix sources.
 
 The :doc:`api/index` is generated from the public headers under
 ``include/tanh/``.

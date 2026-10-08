@@ -15,6 +15,7 @@
 #include "core/threading/LockFreeQueue.h"
 #include "core/threading/RCU.h"
 #include "core/threading/Thread.h"
+#include "core/threading/TripleBuffer.h"
 
 // Core utility functions available to all components
 namespace thl::core {

@@ -1,9 +1,9 @@
-#include <tanh/dsp/transport/InternalTransportClock.h>
-#include <tanh/dsp/transport/TransportClock.h>
+#include "tanh/dsp/transport/InternalTransportClock.h"
+
+#include <tanh/dsp/transport/TransportInfo.h>
 
 #include <algorithm>
 #include <atomic>
-#include <cmath>
 #include <cstdint>
 #include <optional>
 
@@ -13,6 +13,7 @@ namespace thl::dsp::transport {
 
 void InternalTransportClock::prepare(double sample_rate) {
     m_sample_rate = sample_rate;
+    m_tracker.prepare(sample_rate);
 }
 
 // ── Audio thread ──────────────────────────────────────────────────────────────
@@ -23,10 +24,17 @@ void InternalTransportClock::begin_block(uint32_t frame_count,
 
     // Latch — changes from any thread take effect here, never mid-block
     m_active_playing = m_playing.load(std::memory_order_acquire);
-    m_active_bpm = m_pending_bpm.load(std::memory_order_acquire);
+    const double new_bpm = m_pending_bpm.load(std::memory_order_acquire);
     m_active_sig_num = m_pending_sig_num.load(std::memory_order_acquire);
     m_active_sig_denom = m_pending_sig_denom.load(std::memory_order_acquire);
 
+    // Tempo change: keep the beat continuous by anchoring at the current
+    // position before the slope changes.
+    if (new_bpm != m_active_bpm) {
+        m_anchor_beat = raw_beat(0);
+        m_anchor_sample = m_sample_position;
+        m_active_bpm = new_bpm;
+    }
     m_active_beats_per_sample = m_active_bpm / (60.0 * m_sample_rate);
 
     // Seek — flag read last so position is visible before we act on it
@@ -34,50 +42,60 @@ void InternalTransportClock::begin_block(uint32_t frame_count,
         const double beats = m_pending_position_beats.load(std::memory_order_acquire);
         const double clamped = std::max(0.0, beats);
         m_sample_position = static_cast<uint64_t>(clamped * 60.0 * m_sample_rate / m_active_bpm);
+        m_anchor_beat = clamped;
+        m_anchor_sample = m_sample_position;
     }
+
+    m_info.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
+                     TransportInfo::k_has_time_signature;
+    if (m_active_playing) { m_info.m_flags |= TransportInfo::k_is_playing; }
+    m_info.m_bpm = m_active_bpm;
+    m_info.m_sig_num = m_active_sig_num;
+    m_info.m_sig_denom = m_active_sig_denom;
+    m_info.m_beat_position = raw_beat(0);
+    m_tracker.resolve(m_info, raw_beat(frame_count), frame_count);
 }
 
 void InternalTransportClock::end_block() {
     if (m_active_playing) { m_sample_position += m_frame_count; }
 }
 
+double InternalTransportClock::raw_beat(uint32_t offset) const {
+    const uint64_t pos = m_active_playing ? m_sample_position + offset : m_sample_position;
+    return m_anchor_beat + static_cast<double>(pos - m_anchor_sample) * m_active_beats_per_sample;
+}
+
 double InternalTransportClock::beat_at_sample(uint32_t offset) const {
-    if (!m_active_playing) {
-        return static_cast<double>(m_sample_position) * m_active_beats_per_sample;
-    }
-    return static_cast<double>(m_sample_position + offset) * m_active_beats_per_sample;
+    return m_info.beat_at(offset);
 }
 
 bool InternalTransportClock::division_in_block(Division div) const {
-    if (!m_active_playing) { return false; }
-
-    const double size = beats_per_division(div, m_active_sig_num, m_active_sig_denom);
-    const double start = beat_at_sample(0);
-    const double end = beat_at_sample(m_frame_count);
-    // Half-open [start, end): a boundary at offset = frame_count belongs to
-    // the next block, not this one.
-    const double next = std::ceil(start / size) * size;
-    return next < end;
+    // Half-open [start, end): a boundary at the block end belongs to the next block.
+    return m_info.is_playing() && m_info.division_in_block(div);
 }
 
 bool InternalTransportClock::is_playing() const {
-    return m_active_playing;
+    return m_info.is_playing();
 }
 
 double InternalTransportClock::bpm() const {
-    return m_active_bpm;
+    return m_info.m_bpm;
 }
 
 int InternalTransportClock::sig_num() const {
-    return m_active_sig_num;
+    return m_info.m_sig_num;
 }
 
 int InternalTransportClock::sig_denom() const {
-    return m_active_sig_denom;
+    return m_info.m_sig_denom;
 }
 
 uint64_t InternalTransportClock::sample_position() const {
     return m_sample_position;
+}
+
+TransportInfo InternalTransportClock::block_info() const {
+    return m_info;
 }
 
 // ── Any thread ────────────────────────────────────────────────────────────────

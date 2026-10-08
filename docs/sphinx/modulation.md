@@ -150,3 +150,7 @@ this template. Mono-only sources construct
 `InputEventQueue(true, N, cap)` and dispatch whichever bucket each event
 came from.
 
+
+## See also
+
+- [Modulation with host parameters (JUCE)](host_parameters.md): drive the matrix from a host parameter store such as JUCE's AudioProcessorValueTreeState instead of `thl::State`.

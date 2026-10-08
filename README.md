@@ -51,6 +51,7 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_BUILD_MODULATION` | ON | Build the Modulation component |
 | `TANH_BUILD_AUDIO_IO` | ON | Build the AudioIO component |
 | `TANH_BUILD_NET` | OFF | Build the Net component (links a platform HTTP stack) |
+| `TANH_WITH_LINK` | OFF | Build the Link component (Ableton Link: C++ SDK on desktop, LinkKit on iOS; GPLv2+/proprietary licence) |
 | `TANH_WITH_TESTS` | ON | Build test targets |
 | `TANH_WITH_EXAMPLES` | ON | Build the example projects (iOS audio-io app) |
 | `TANH_WITH_DOCS` | OFF | Add the `sphinx-docs` target (Doxygen + Sphinx) |

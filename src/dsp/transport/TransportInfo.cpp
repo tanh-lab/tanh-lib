@@ -1,0 +1,108 @@
+#include "tanh/dsp/transport/TransportInfo.h"
+
+#include <tanh/utils/RealtimeSanitizer.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
+namespace thl::dsp::transport {
+
+namespace {
+
+// Below this the raw beat is taken as is: exact clocks (internal, free-run)
+// differ from the predicted end only by rounding, and snapping would move them
+// off their closed form.
+constexpr double k_exact_epsilon = 1e-9;
+constexpr double k_min_tolerance = 1e-6;
+constexpr double k_tempo_epsilon = 1e-6;
+
+}  // namespace
+
+void ContinuityTracker::prepare(double sample_rate) {
+    if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
+    reset();
+}
+
+void ContinuityTracker::set_tolerance_samples(double samples) {
+    if (samples >= 0.0) { m_tolerance_samples = samples; }
+}
+
+void ContinuityTracker::set_tempo_window_samples(double samples) {
+    if (samples >= 0.0) { m_tempo_window_samples = samples; }
+}
+
+void ContinuityTracker::reset() TANH_NONBLOCKING_FUNCTION {
+    m_reset_pending = true;
+}
+
+double ContinuityTracker::tolerance_beats(double bpm) const {
+    const double per_sample = std::abs(bpm) / (60.0 * m_sample_rate);
+    return std::max(m_tolerance_samples * per_sample, k_min_tolerance);
+}
+
+void ContinuityTracker::resolve(TransportInfo& io,
+                                double raw_end_beat,
+                                uint32_t frames) TANH_NONBLOCKING_FUNCTION {
+    io.m_flags &= ~TransportInfo::k_discontinuity_mask;
+    io.m_jump_delta_beats = 0.0;
+    io.m_num_samples = frames;
+
+    const bool playing = io.is_playing();
+    double start = io.m_beat_position;
+    double end = raw_end_beat;
+
+    if (m_reset_pending) {
+        io.m_flags |= TransportInfo::k_timeline_reset;
+        m_reset_pending = false;
+    } else {
+        // The start may differ from the previous end by up to the window
+        // [min(0, e, -w) - tol, max(0, e, w) + tol] without being a jump:
+        // - tol: jitter, N samples worth of beats (set_tolerance_samples()).
+        // - e: a source that reports one tempo per block (JUCE, VST3) predicted
+        //   the previous end with the previous block's tempo, so a tempo step or
+        //   ramp inside that block moved the real position by at most
+        //   prev_frames * (bps - prev_bps), in the direction of the change.
+        // - w: a change dated up to the window before or after the block start
+        //   (Link: one timeline line, the change at a peer's output time) moves
+        //   the start by up to window * |bps - prev_bps| in either direction. The
+        //   window and e cover the same lateness, so they are not added: a change
+        //   dated more than the window in the past is still a jump.
+        const double delta = start - m_prev_end;
+        const double jitter = tolerance_beats(io.m_bpm);
+        const double tempo_step = (io.m_bpm - m_prev_bpm) / (60.0 * m_sample_rate);
+        const double tempo_extra = m_prev_moving ? m_prev_frames * tempo_step : 0.0;
+        const double tempo_window =
+            m_prev_moving ? m_tempo_window_samples * std::abs(tempo_step) : 0.0;
+        const double low = std::min({0.0, tempo_extra, -tempo_window}) - jitter;
+        const double high = std::max({0.0, tempo_extra, tempo_window}) + jitter;
+        if (delta < low || delta > high) {
+            io.m_flags |= TransportInfo::k_jumped;
+            io.m_jump_delta_beats = delta;
+        } else if (std::abs(delta) > k_exact_epsilon) {
+            // Keep the timeline continuous. A holding source holds at the
+            // expected beat; a moving one is re-sloped to land on its raw end,
+            // so the difference is caught up within this block and nothing
+            // accumulates.
+            const bool holding = end == start;
+            start = m_prev_end;
+            if (holding) { end = start; }
+        }
+        if (playing && !m_prev_playing) { io.m_flags |= TransportInfo::k_started; }
+        if (!playing && m_prev_playing) { io.m_flags |= TransportInfo::k_stopped; }
+        if (std::abs(io.m_bpm - m_prev_bpm) > k_tempo_epsilon) {
+            io.m_flags |= TransportInfo::k_tempo_changed;
+        }
+    }
+
+    io.m_beat_position = start;
+    io.m_beats_per_sample = frames > 0 ? (end - start) / static_cast<double>(frames) : 0.0;
+
+    m_prev_end = frames > 0 ? end : start;
+    m_prev_frames = static_cast<double>(frames);
+    m_prev_moving = frames > 0 && end != start;
+    m_prev_bpm = io.m_bpm;
+    m_prev_playing = playing;
+}
+
+}  // namespace thl::dsp::transport

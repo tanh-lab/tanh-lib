@@ -45,6 +45,14 @@ option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 # Off by default: this is the only component that links a network stack, and
 # consumers embedding tanh::Core (anira) must not inherit it implicitly.
 option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
+# Ableton Link (tanh::Link): the C++ Link SDK on macOS/Linux/Windows, LinkKit on
+# iOS, both fetched at configure time. Off by default because of the licence:
+# Link is GPLv2+ or proprietary (LinkKit proprietary only), so a product built
+# with it must be GPL-compatible or hold Ableton's proprietary Link licence.
+# Without this option no Link code is fetched or linked.
+option(TANH_WITH_LINK
+    "Build tanh::Link (Ableton Link). Link is GPLv2+/proprietary: products need the proprietary Link licence unless GPL"
+    OFF)
 # Use the libcurl backend even on Apple. The only way to exercise the
 # non-Apple transport from a Mac, which is otherwise reachable only by
 # pushing to CI.
@@ -184,19 +192,14 @@ if(TANH_BUILD_CORE)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
 endif()
 
-# State component (depends on Core)
-if(TANH_BUILD_STATE)
-    if(NOT TARGET ${PROJECT_NAME}_core)
-        message(FATAL_ERROR "State component requires Core component")
-    endif()
-
-    # nlohmann_json is a PUBLIC dependency of State: when tanh installs, install
-    # its headers + CMake package too so tanhConfig.cmake's
-    # find_dependency(nlohmann_json) resolves for consumers.
+# nlohmann_json is a PUBLIC dependency of State and Modulation: when tanh
+# installs, install its headers + CMake package too so tanhConfig.cmake's
+# find_dependency(nlohmann_json) resolves for consumers.
+if(TANH_BUILD_STATE OR TANH_BUILD_MODULATION)
     if(TANH_WITH_INSTALL)
         set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
     endif()
-    
+
     # Fetch the release tarball instead of cloning the repo — the full git
     # history is ~150MB while the release archive is a few MB, and the tarball
     # is content-addressable so CMake will reuse a cached copy across build
@@ -208,7 +211,14 @@ if(TANH_BUILD_STATE)
         SYSTEM
     )
     FetchContent_MakeAvailable(nlohmann_json)
-    
+endif()
+
+# State component (depends on Core)
+if(TANH_BUILD_STATE)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "State component requires Core component")
+    endif()
+
     add_library(${PROJECT_NAME}_state
         src/state/Parameter.cpp
         src/state/StateGroup.cpp
@@ -274,7 +284,11 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/ConstellationReverb.cpp
         src/dsp/fx/StereoFDN.cpp
 
+        src/dsp/transport/TransportInfo.cpp
         src/dsp/transport/InternalTransportClock.cpp
+        src/dsp/transport/HostTransportClock.cpp
+        src/dsp/transport/LinkTransportClock.cpp
+        src/dsp/transport/LinkAudio.cpp
 
         src/dsp/metronome/MetronomePlayer.cpp
     )
@@ -345,13 +359,13 @@ if(TANH_BUILD_DSP)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
 endif()
 
-# Modulation component (depends on DSP and State)
+# Modulation component (depends on DSP; State is optional). Parameters are read
+# through a ParameterBackend. With State, StateParameterBackend and
+# ModulationMatrix(thl::State&) are compiled in; without it only the
+# header-only definition types under include/tanh/state are used.
 if(TANH_BUILD_MODULATION)
     if(NOT TARGET ${PROJECT_NAME}_dsp)
         message(FATAL_ERROR "Modulation component requires DSP component")
-    endif()
-    if(NOT TARGET ${PROJECT_NAME}_state)
-        message(FATAL_ERROR "Modulation component requires State component")
     endif()
 
     # moodycamel/readerwriterqueue — header-only lock-free SPSC queue used by
@@ -369,6 +383,11 @@ if(TANH_BUILD_MODULATION)
         src/modulation/ModulationMatrix.cpp
         src/modulation/LFOSource.cpp
         src/modulation/InputEventQueue.cpp
+        src/modulation/XYPad.cpp
+        src/modulation/MotionLane.cpp
+        src/modulation/MotionRecorder.cpp
+        src/modulation/MotionShape.cpp
+        src/modulation/XYController.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES
@@ -393,8 +412,13 @@ if(TANH_BUILD_MODULATION)
     target_link_libraries(${PROJECT_NAME}_modulation
         PUBLIC
         ${PROJECT_NAME}_dsp
-        ${PROJECT_NAME}_state
+        nlohmann_json::nlohmann_json
     )
+
+    if(TARGET ${PROJECT_NAME}_state)
+        target_sources(${PROJECT_NAME}_modulation PRIVATE src/modulation/StateParameterBackend.cpp)
+        target_link_libraries(${PROJECT_NAME}_modulation PUBLIC ${PROJECT_NAME}_state)
+    endif()
 
     target_compile_definitions(${PROJECT_NAME}_modulation
         PUBLIC
@@ -591,6 +615,109 @@ if(TANH_BUILD_NET)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_net)
 endif()
 
+# Link component (depends on DSP). LinkTransportClock and the LinkBackend seam
+# live in DSP and need no Link SDK; this target adds LinkSession over the
+# platform SDK. Link headers stay private (pimpl), so nothing Link-specific
+# reaches consumers' include paths.
+if(TANH_WITH_LINK)
+    if(NOT TARGET ${PROJECT_NAME}_dsp)
+        message(FATAL_ERROR "Link component requires DSP component")
+    endif()
+
+    add_library(${PROJECT_NAME}_link)
+
+    if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+        # The C++ SDK is not for iOS ("iOS developers should not use this repo");
+        # LinkKit ships as a binary release. Custom LinkKit builds are GPL and not
+        # App Store compatible, so only the official release zip is used.
+        FetchContent_Declare(
+            linkkit
+            URL https://github.com/Ableton/LinkKit/releases/download/LinkKit-4.1.2/LinkKit.zip
+            URL_HASH SHA256=874665a33178403cb5051148467db73cab46397e73d2a0790b5725754df11e66
+        )
+        FetchContent_MakeAvailable(linkkit)
+        set(TANH_LINKKIT_DIR "${linkkit_SOURCE_DIR}" CACHE INTERNAL
+            "LinkKit release (LinkKit.xcframework, LinkKitResources.bundle)")
+        # Apps must copy this bundle into their resources (settings view strings).
+        set(TANH_LINKKIT_RESOURCES_BUNDLE "${linkkit_SOURCE_DIR}/LinkKitResources.bundle"
+            CACHE INTERNAL "LinkKitResources.bundle to bundle with the app")
+
+        target_sources(${PROJECT_NAME}_link PRIVATE src/link/LinkSession_linkkit.mm)
+        set_source_files_properties(src/link/LinkSession_linkkit.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        # The headers are identical in every slice; CMake picks the library slice.
+        target_include_directories(${PROJECT_NAME}_link SYSTEM PRIVATE
+            "${linkkit_SOURCE_DIR}/LinkKit.xcframework/ios-arm64/Headers")
+        # LinkKit is not installed: an installed static tanh_link needs the
+        # consumer to link LinkKit.xcframework itself.
+        if(TANH_WITH_INSTALL AND NOT BUILD_SHARED_LIBS)
+            message(NOTICE "tanh: an installed static tanh::Link does not carry LinkKit; "
+                "link ${linkkit_SOURCE_DIR}/LinkKit.xcframework in the consuming app")
+        endif()
+        target_link_libraries(${PROJECT_NAME}_link PRIVATE
+            "$<BUILD_INTERFACE:${linkkit_SOURCE_DIR}/LinkKit.xcframework>"
+            "-framework AudioToolbox"
+            "-framework Foundation"
+            "-framework UIKit"
+            "-framework CoreGraphics"
+            "-lobjc"
+        )
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "macOS" OR TANH_OPERATING_SYSTEM STREQUAL "Linux"
+           OR TANH_OPERATING_SYSTEM STREQUAL "Windows")
+        # Header-only C++ SDK pinned to the commit of tag Link-4.1; asio-standalone is
+        # a submodule. SOURCE_SUBDIR points nowhere so Link's own examples and
+        # tests are not added.
+        FetchContent_Declare(
+            abletonlink
+            GIT_REPOSITORY https://github.com/Ableton/link.git
+            GIT_TAG 9c9091275e707ab09d09a5a608fcdb84bf0dec85  # Link-4.1
+            GIT_SUBMODULES_RECURSE TRUE
+            SOURCE_SUBDIR tanh-no-add-subdirectory
+        )
+        FetchContent_MakeAvailable(abletonlink)
+        # AbletonLinkConfig.cmake sets CMAKE_CXX_STANDARD 17; a function scope keeps
+        # that from leaking into tanh while the imported target stays visible.
+        function(tanh_include_ableton_link link_dir)
+            include("${link_dir}/AbletonLinkConfig.cmake")
+        endfunction()
+        tanh_include_ableton_link("${abletonlink_SOURCE_DIR}")
+
+        target_sources(${PROJECT_NAME}_link PRIVATE src/link/LinkSession_ableton.cpp)
+        target_link_libraries(${PROJECT_NAME}_link PRIVATE $<BUILD_INTERFACE:Ableton::Link>)
+        # The system libraries Ableton::Link adds, named again so that an installed
+        # static tanh_link still carries them (BUILD_INTERFACE drops them from the
+        # export). Windows gets its libraries through #pragma comment(lib).
+        if(TANH_OPERATING_SYSTEM STREQUAL "Linux")
+            target_link_libraries(${PROJECT_NAME}_link PRIVATE atomic pthread)
+        endif()
+        if(TANH_OPERATING_SYSTEM STREQUAL "Windows")
+            link_pin_win32_winnt(${PROJECT_NAME}_link)  # uniform _WIN32_WINNT (Link README)
+        endif()
+    else()
+        # Android: the C++ SDK documents only macOS/Linux/Windows; unverified.
+        message(FATAL_ERROR
+            "TANH_WITH_LINK is not supported on ${TANH_OPERATING_SYSTEM} (Link is verified on "
+            "macOS, Linux, Windows and iOS only)")
+    endif()
+
+    set_target_properties(${PROJECT_NAME}_link PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Link ALIAS ${PROJECT_NAME}_link)
+
+    target_include_directories(${PROJECT_NAME}_link
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_link PUBLIC ${PROJECT_NAME}_dsp)
+    target_compile_definitions(${PROJECT_NAME}_link PUBLIC -DTANH_LINK_ENABLED)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_link)
+endif()
+
 # ==============================================================================
 # Symbol policy and common settings of every component (cmake/tanh/symbol-policy.cmake)
 # ==============================================================================
@@ -651,7 +778,8 @@ foreach(_pair
         "${PROJECT_NAME}_resonator=Resonator"
         "${PROJECT_NAME}_modulation=Modulation"
         "${PROJECT_NAME}_audio_io=AudioIO"
-        "${PROJECT_NAME}_net=Net")
+        "${PROJECT_NAME}_net=Net"
+        "${PROJECT_NAME}_link=Link")
     string(REPLACE "=" ";" _pair "${_pair}")
     list(GET _pair 0 _target)
     list(GET _pair 1 _export_name)
@@ -704,6 +832,9 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_NET)
         add_subdirectory(test/net)
     endif()
+    if (TANH_WITH_LINK)
+        add_subdirectory(test/link)
+    endif()
 
     # The export-table invariant, on the desktop formats where it can be inspected.
     if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
@@ -716,7 +847,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net benchmark_state benchmark_modulation benchmark_dsp)
+    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net test_link benchmark_state benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()

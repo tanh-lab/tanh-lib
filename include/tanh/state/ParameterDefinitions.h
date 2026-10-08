@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace thl {
@@ -17,6 +18,23 @@ namespace thl {
 // ── Parameter type enumeration ─────────────────────────────────────────────
 
 enum class ParameterType : uint8_t { Double, Float, Int, Bool, String };
+
+/// The ParameterType of a numeric value type (float, double, int or bool).
+template <typename T>
+constexpr ParameterType parameter_type_of() {
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, int> ||
+                      std::is_same_v<T, bool>,
+                  "parameter_type_of supports float, double, int and bool");
+    if constexpr (std::is_same_v<T, double>) {
+        return ParameterType::Double;
+    } else if constexpr (std::is_same_v<T, float>) {
+        return ParameterType::Float;
+    } else if constexpr (std::is_same_v<T, int>) {
+        return ParameterType::Int;
+    } else {
+        return ParameterType::Bool;
+    }
+}
 
 // ── Slider polarity ────────────────────────────────────────────────────────
 

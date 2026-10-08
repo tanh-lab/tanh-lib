@@ -267,3 +267,50 @@ TEST(RCU, ReadScopeNeverOutlivesItsVersion) {
     EXPECT_EQ(violations.load(), 0U);
     EXPECT_GT(reads.load(), 100U);
 }
+
+// A reader slot from add_reader() is not tied to a thread: a host may call the
+// render callback from a different thread every block. Reading through the slot
+// from a fresh thread per batch must stay protected (no version reclaimed while
+// in a section) and must not register any thread (no per-thread node).
+TEST(RCU, OwnedReaderProtectsAcrossChangingThreads) {
+    RCU<TrackedVersion> rcu;
+    auto& table = version_table();
+    auto& reader = rcu.add_reader();
+    const unsigned int readers_before = rcu.get_reader_count();
+
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> violations{0};
+    std::atomic<uint64_t> reads{0};
+
+    std::thread writer([&]() {
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (table.m_next_seq.load(std::memory_order_relaxed) + 16 >= k_version_table_size) {
+                break;
+            }
+            rcu.replace([](TrackedVersion&) {});
+        }
+    });
+
+    // Sequential "render threads": never two at the same time, like a host.
+    for (int batch = 0; batch < 50; ++batch) {
+        std::thread render([&]() {
+            for (int i = 0; i < 2000; ++i) {
+                auto scope = rcu.read_scope(reader);
+                const uint64_t seq = scope.data().m_seq;
+                for (volatile int spin = 0; spin < 100; spin = spin + 1) {}
+                if (seq >= k_version_table_size || table.m_destroyed[seq].load() != 0) {
+                    violations.fetch_add(1, std::memory_order_relaxed);
+                }
+                reads.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+        render.join();
+    }
+
+    stop.store(true, std::memory_order_relaxed);
+    writer.join();
+
+    EXPECT_EQ(violations.load(), 0U);
+    EXPECT_EQ(reads.load(), 50U * 2000U);
+    EXPECT_EQ(rcu.get_reader_count(), readers_before);  // no thread registered itself
+}
