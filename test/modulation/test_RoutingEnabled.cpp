@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
+#include <tanh/core/parameters/ParameterDefinitions.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/SmartHandle.h>
-#include <tanh/state/ParameterDefinitions.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>

@@ -1,12 +1,12 @@
 #include "tanh/modulation/XYController.h"
 
+#include <tanh/core/parameters/ModulationScope.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/detail/XYPad.h>
-#include <tanh/state/ModulationScope.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>

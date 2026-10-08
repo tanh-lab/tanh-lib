@@ -14,6 +14,7 @@
 #include "core/WavReader.h"
 #include "core/threading/LockFreeQueue.h"
 #include "core/threading/RCU.h"
+#include "core/threading/SeqLock.h"
 #include "core/threading/Thread.h"
 #include "core/threading/TripleBuffer.h"
 

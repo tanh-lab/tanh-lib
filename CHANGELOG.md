@@ -32,9 +32,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `thl::State`, so a host binds its own parameter store without mirroring it.
   `ModulationMatrix(thl::State&)` keeps working through `StateParameterBackend` and,
   with `state()`, is only declared when tanh is built with State. Modulation builds
-  with `TANH_BUILD_STATE=OFF` (CI job `modulation_without_state`); `get_smart_handle`
-  keeps the 0.4.0 error contract on every backend. New `thl::parameter_type_of<T>()`.
-  Tests: `ParameterBackend.*`, `StateParameterBackend.*`. Docs: `host_parameters.md`.
+  with `TANH_BUILD_STATE=OFF` (CI job `modulation_without_state`). New
+  `thl::parameter_type_of<T>()`. Tests: `ParameterBackend.*`, `StateParameterBackend.*`.
+  Docs: `host_parameters.md`.
+- The parameter types State and Modulation share (`ParameterDefinition`, `Range`,
+  `ModulationScope`) moved to `tanh/core/parameters/`; the `tanh/state/` headers
+  forward. New `thl::ParameterNotFoundException` (core), the base of
+  `StateKeyNotFoundException` and `StateGroupNotFoundException`, with
+  `ParameterTypeMismatchException` beside it: `get_smart_handle()` throws it for an
+  unknown key through `ParameterBackend::throw_not_found()` (a State-backed matrix
+  still throws State's subclasses). `State::find_record()` replaces the
+  `StateParameterBackend` friendship.
 - `thl::RCU::add_reader()` / `read_scope(reader)`: a reader slot owned by the RCU
   instance, not by a thread. `ModulationMatrix::audio_read_scope()` and `process()`
   use one, so a host rendering on changing threads no longer allocates and locks on

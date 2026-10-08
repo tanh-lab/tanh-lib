@@ -27,6 +27,9 @@ public:
     explicit StateParameterBackend(thl::State& state) : m_state(state) {}
 
     [[nodiscard]] std::optional<ParameterBinding> find(std::string_view key) const override;
+    /// Throws what thl::State throws for @p key: StateKeyNotFoundException, or
+    /// StateGroupNotFoundException for a missing group.
+    [[noreturn]] void throw_not_found(std::string_view key) const override;
 
 private:
     thl::State& m_state;

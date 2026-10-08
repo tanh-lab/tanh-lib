@@ -9,9 +9,9 @@
 #include <variant>
 #include <vector>
 
+#include "tanh/core/parameters/ModulationScope.h"
+#include "tanh/core/parameters/ParameterDefinitions.h"
 #include "tanh/modulation/ParameterBackend.h"
-#include "tanh/state/ModulationScope.h"
-#include "tanh/state/ParameterDefinitions.h"
 
 namespace thl::modulation {
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <tanh/state/ParameterDefinitions.h>
+#include <tanh/core/parameters/ParameterDefinitions.h>
+#include <tanh/core/parameters/ParameterExceptions.h>
 
 #include <atomic>
 #include <optional>
@@ -82,6 +83,14 @@ public:
 
     /// Look up a parameter by key. Returns std::nullopt if the key is unknown.
     [[nodiscard]] virtual std::optional<ParameterBinding> find(std::string_view key) const = 0;
+
+    /// Report an unknown @p key (find() returned std::nullopt) to a caller that
+    /// requires it, e.g. ModulationMatrix::get_smart_handle(). Throws
+    /// thl::ParameterNotFoundException; a backend may throw a more specific
+    /// subclass (StateParameterBackend throws what thl::State does).
+    [[noreturn]] virtual void throw_not_found(std::string_view key) const {
+        throw thl::ParameterNotFoundException(key);
+    }
 };
 
 }  // namespace thl::modulation

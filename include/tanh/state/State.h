@@ -7,10 +7,6 @@
 #include "StateGroup.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl::modulation {
-class StateParameterBackend;
-}
-
 namespace thl {
 
 /**
@@ -307,6 +303,21 @@ public:
     nlohmann::json group_to_json(std::string_view group_prefix,
                                  bool include_definitions = true) const;
 
+    // ── Record access ────────────────────────────────────────────────────
+
+    /**
+     * @brief The record behind @p key, or nullptr if there is none.
+     *
+     * Records are heap-owned by the State and never move until clear() or the
+     * State's destruction, so a parameter backend can bind their atomics
+     * (StateParameterBackend does).
+     *
+     * @warning NOT real-time safe (reads the key index).
+     */
+    [[nodiscard]] ParameterRecord* find_record(std::string_view key) const {
+        return get_record(key);
+    }
+
     // ── State management ─────────────────────────────────────────────────
 
     void clear() override;
@@ -315,7 +326,6 @@ public:
 private:
     friend class Parameter;
     friend class StateGroup;
-    friend class modulation::StateParameterBackend;
 
     static std::string& m_temp_buffer_0() noexcept {
         static thread_local std::string s;

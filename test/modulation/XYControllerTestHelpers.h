@@ -1,8 +1,8 @@
 #pragma once
 
+#include <tanh/core/parameters/ParameterDefinitions.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/ParameterBackend.h>
-#include <tanh/state/ParameterDefinitions.h>
 
 #include <atomic>
 #include <cstdint>

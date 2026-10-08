@@ -275,7 +275,7 @@ TEST(RCU, ReadScopeNeverOutlivesItsVersion) {
 TEST(RCU, OwnedReaderProtectsAcrossChangingThreads) {
     RCU<TrackedVersion> rcu;
     auto& table = version_table();
-    auto& reader = rcu.add_reader();
+    const auto reader = rcu.add_reader();
     const unsigned int readers_before = rcu.get_reader_count();
 
     std::atomic<bool> stop{false};

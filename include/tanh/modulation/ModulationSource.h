@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/state/ModulationScope.h>
+#include <tanh/core/parameters/ModulationScope.h>
 
 #include <cassert>
 #include <cstddef>

@@ -417,7 +417,7 @@ private:
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
     std::array<TakeBuffer, 2> m_takes;
     RCU<PlayedLane> m_lanes;
-    thl::detail::RcuReaderNode* m_audio_reader = nullptr;
+    RCU<PlayedLane>::Reader m_audio_reader;
     std::atomic<uint32_t> m_next_take_id{1};
     std::atomic<uint32_t> m_lane_version{0};
     std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};

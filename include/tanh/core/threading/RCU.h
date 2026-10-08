@@ -5,6 +5,7 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -350,6 +351,22 @@ public:
     void register_reader_thread() const { (void)thread_reader(); }
 
     /**
+     * @brief A reader slot from add_reader(): a non-owning handle, cheap to copy.
+     *
+     * Default-constructed it is empty and must not be passed to read_scope().
+     */
+    class Reader {
+    public:
+        Reader() = default;
+        [[nodiscard]] explicit operator bool() const { return m_node != nullptr; }
+
+    private:
+        friend class RCU;
+        explicit Reader(detail::RcuReaderNode& node) : m_node(&node) {}
+        detail::RcuReaderNode* m_node = nullptr;
+    };
+
+    /**
      * @brief Create a reader slot owned by this instance instead of by a thread
      *
      * For a reader that is one logical client but may run on changing threads,
@@ -362,12 +379,12 @@ public:
      * RCU is destroyed. A slot must not be used by two threads at the same
      * time (one open read section per slot).
      */
-    detail::RcuReaderNode& add_reader() const {
+    [[nodiscard]] Reader add_reader() const {
         const std::scoped_lock lock(m_writer_mutex);
         // Owned by this instance: the destructor deletes every node in the list.
         auto* node = new detail::RcuReaderNode();
         link_reader_with_lock(*node);
-        return *node;
+        return Reader(*node);
     }
 
     unsigned int get_reader_count() const {
@@ -437,8 +454,9 @@ public:
      * @brief Open a read section on a reader slot from add_reader(). Real-time
      * safe on any thread, as long as the slot is not used concurrently.
      */
-    ReadScope read_scope(detail::RcuReaderNode& reader) const TANH_NONBLOCKING_FUNCTION {
-        return ReadScope(this, reader);
+    ReadScope read_scope(Reader reader) const TANH_NONBLOCKING_FUNCTION {
+        assert(reader && "RCU::read_scope: empty Reader");
+        return ReadScope(this, *reader.m_node);
     }
 
 private:

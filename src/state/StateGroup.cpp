@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "tanh/core/Exports.h"
+#include "tanh/core/parameters/ParameterDefinitions.h"
 #include "tanh/state/Exceptions.h"
 #include "tanh/state/Parameter.h"
-#include "tanh/state/ParameterDefinitions.h"
 #include "tanh/state/ParameterListener.h"
 #include "tanh/state/State.h"
 #include "tanh/state/path_helpers.h"

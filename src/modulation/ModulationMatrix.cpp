@@ -26,14 +26,14 @@
 #include <vector>
 
 #include "tanh/core/Logger.h"
+#include "tanh/core/parameters/ModulationScope.h"
+#include "tanh/core/parameters/ParameterDefinitions.h"
+#include "tanh/core/parameters/ParameterExceptions.h"
 #include "tanh/modulation/ModulationRouting.h"
 #include "tanh/modulation/ParameterBackend.h"
 #include "tanh/modulation/ResolvedRouting.h"
 #include "tanh/modulation/ResolvedTarget.h"
 #include "tanh/modulation/SmartHandle.h"
-#include "tanh/state/Exceptions.h"
-#include "tanh/state/ModulationScope.h"
-#include "tanh/state/ParameterDefinitions.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 #if defined(TANH_STATE_ENABLED)
@@ -100,14 +100,7 @@ SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_k
     // Same checks, order and exception types as State::get_handle<T>()
     // followed by the modulatable check, for every backend.
     auto binding = m_backend.find(param_key);
-    if (!binding) {
-#if defined(TANH_STATE_ENABLED)
-        // Rethrow State's own exception: a missing group in a dotted key is a
-        // StateGroupNotFoundException there. The key is unknown, so this throws.
-        if (m_state != nullptr) { (void)m_state->get_handle<T>(param_key); }
-#endif
-        throw thl::StateKeyNotFoundException(param_key);
-    }
+    if (!binding) { m_backend.throw_not_found(param_key); }
 
     // An existing target's binding is authoritative (it may predate this lookup).
     const auto existing = m_targets.find(param_key);
@@ -657,17 +650,16 @@ bool ModulationMatrix::update_routing_replace_range_normalized(std::string_view 
                                                                std::string_view target_id,
                                                                float norm_min,
                                                                float norm_max) {
-    std::optional<ParameterBinding> binding;
-    {
-        std::scoped_lock const lock(m_writer_mutex);
-        binding = m_backend.find(target_id);
-    }
-    if (!binding) { return false; }
-    const auto& range = binding->m_def.m_range;
-    return update_routing_replace_range(source_id,
-                                        target_id,
-                                        range.from_normalized(norm_min),
-                                        range.from_normalized(norm_max));
+    std::scoped_lock const lock(m_writer_mutex);
+    auto* routing = find_user_routing_with_lock(source_id, target_id);
+    if (!routing) { return false; }
+    // A routing's target was resolved when it was added: its cached definition is the range.
+    const auto target = m_targets.find(target_id);
+    if (target == m_targets.end()) { return false; }
+    const Range& range = target->second.m_def.m_range;
+    return update_routing_replace_range_with_lock(*routing,
+                                                  range.from_normalized(norm_min),
+                                                  range.from_normalized(norm_max));
 }
 
 bool ModulationMatrix::clear_routing_replace_range(std::string_view source_id,
@@ -705,13 +697,9 @@ bool ModulationMatrix::set_routing_enabled(std::string_view source_id,
 
 size_t ModulationMatrix::set_routings_enabled(std::span<const RoutingEnabled> changes) {
     std::scoped_lock const lock(m_writer_mutex);
-    // Seqlock write; the mutex makes this the only writer. Odd epoch = write in
-    // progress. The release fence keeps the flag stores below from becoming
-    // visible before the odd epoch; the final release store publishes them with
-    // the next even epoch (see snapshot_routing_enabled() for the reader).
-    const uint32_t epoch = m_enabled_epoch.load(std::memory_order_relaxed);
-    m_enabled_epoch.store(epoch + 1, std::memory_order_relaxed);
-    std::atomic_thread_fence(std::memory_order_release);
+    // One seqlock batch (the mutex makes this the only writer): the audio
+    // thread sees all of these flags or none (snapshot_routing_enabled()).
+    m_enabled_lock.write_begin();
 
     size_t applied = 0;
     m_config.read([&](const ProcessingConfig& config) {
@@ -724,7 +712,7 @@ size_t ModulationMatrix::set_routings_enabled(std::span<const RoutingEnabled> ch
         }
     });
 
-    m_enabled_epoch.store(epoch + 2, std::memory_order_release);
+    m_enabled_lock.write_end();
     return applied;
 }
 
@@ -1659,25 +1647,14 @@ void ModulationMatrix::snapshot_routing_enabled(const ProcessingConfig& config,
 
     // Seqlock read of every routing's flag: a batch written by
     // set_routings_enabled() is seen completely or not at all. While a write is
-    // in progress (odd epoch) or raced the loads, the previous block's flags
-    // stay in force for one more block. Wait-free: no retry.
-    //
-    // Memory orders (pairs with set_routings_enabled()):
-    // - acquire on the first epoch load: an even epoch makes every flag store of
-    //   the batch that published it visible to the relaxed flag loads below.
-    // - acquire fence before the second epoch load: the flag loads cannot be
-    //   reordered after it, so if a writer's odd store (followed by its release
-    //   fence) is not seen there, none of its flag stores was read either.
-    const uint32_t epoch = m_enabled_epoch.load(std::memory_order_acquire);
-    bool take = (epoch & 1u) == 0;
-    if (take) {
-        for (const auto& r : config.m_routings) {
-            r.m_loaded_enabled = r.m_enabled.load(std::memory_order_relaxed);
-        }
-        std::atomic_thread_fence(std::memory_order_acquire);
-        take = m_enabled_epoch.load(std::memory_order_relaxed) == epoch;
+    // in progress or raced the loads, the previous block's flags stay in force
+    // for one more block. Wait-free: no retry.
+    const auto token = m_enabled_lock.read_begin();
+    if (!token) { return; }
+    for (const auto& r : config.m_routings) {
+        r.m_loaded_enabled = r.m_enabled.load(std::memory_order_relaxed);
     }
-    if (!take) { return; }
+    if (!m_enabled_lock.read_valid(*token)) { return; }
     for (const auto& r : config.m_routings) { apply_routing_enabled(r, r.m_loaded_enabled); }
 }
 

@@ -156,7 +156,7 @@ void smooth_gaussian(const std::vector<float>& in,
 
 }  // namespace
 
-MotionRecorder::MotionRecorder() : m_audio_reader(&m_lanes.add_reader()) {}
+MotionRecorder::MotionRecorder() : m_audio_reader(m_lanes.add_reader()) {}
 
 MotionRecorder::~MotionRecorder() = default;
 
@@ -1069,7 +1069,7 @@ void MotionRecorder::process(const TransportInfo& t,
     apply_commands(bpm);
     apply_shapes();
 
-    const auto scope = m_lanes.read_scope(*m_audio_reader);
+    const auto scope = m_lanes.read_scope(m_audio_reader);
     const PlayedLane& lane = scope.data();
     select_source(lane);
 

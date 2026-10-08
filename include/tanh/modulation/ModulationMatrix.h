@@ -1,14 +1,15 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
+#include <tanh/core/parameters/ModulationScope.h>
 #include <tanh/core/threading/RCU.h>
+#include <tanh/core/threading/SeqLock.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/ResolvedRouting.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/modulation/SmartHandle.h>
-#include <tanh/state/ModulationScope.h>
 
 #include <atomic>
 #include <cstddef>
@@ -146,7 +147,7 @@ public:
     /// safe on whatever thread the host renders on. The audio path must not run
     /// on two threads at the same time.
     [[nodiscard]] ReadScope audio_read_scope() const TANH_NONBLOCKING_FUNCTION {
-        return m_config.read_scope(*m_audio_reader);
+        return m_config.read_scope(m_audio_reader);
     }
 
     // Process all sources and fill modulation buffers for all targets.
@@ -224,9 +225,10 @@ public:
     // alternative: float, double, int, bool).
     //
     // Same error contract for every backend, checked in this order:
-    // - thl::StateKeyNotFoundException if the backend doesn't know the key
-    //   (for a State-backed matrix exactly what State::get_handle<T>(key)
-    //   throws, e.g. thl::StateGroupNotFoundException for a missing group);
+    // - thl::ParameterNotFoundException if the backend doesn't know the key
+    //   (ParameterBackend::throw_not_found(); a State-backed matrix throws
+    //   State's subclasses, e.g. thl::StateGroupNotFoundException for a
+    //   missing group);
     // - thl::ParameterTypeMismatchException if T doesn't match the type of
     //   the bound base atomic;
     // - std::invalid_argument if the parameter has modulation disabled.
@@ -257,12 +259,11 @@ public:
                                       float range_max);
     bool update_routing_replace_range(uint32_t routing_id, float range_min, float range_max);
 
-    // Normalized-[0,1] variant: looks up the target parameter's Range via the
-    // matrix's backend and converts the endpoints to plain units internally.
+    // Normalized-[0,1] variant: converts the endpoints to plain units with the
+    // target parameter's Range (cached when the routing was added).
     // Callers that already work in normalized coordinates can avoid a
     // separate lookup.
-    // Returns false if the backend doesn't know the target or the routing was
-    // not found.
+    // Returns false if the routing was not found.
     bool update_routing_replace_range_normalized(std::string_view source_id,
                                                  std::string_view target_id,
                                                  float norm_min,
@@ -381,9 +382,9 @@ private:
     // Writer mutex — serializes all non-RT methods
     std::mutex m_writer_mutex;
 
-    // Seqlock epoch over the routings' enabled flags (odd while
-    // set_routings_enabled() writes). Written under m_writer_mutex.
-    std::atomic<uint32_t> m_enabled_epoch{0};
+    // Seqlock over the routings' enabled flags (set_routings_enabled() batches).
+    // Written under m_writer_mutex.
+    thl::SeqLock m_enabled_lock;
 
     // Registered sources (not owned) — protected by m_writer_mutex
     std::map<std::string, ModulationSource*, std::less<>> m_sources;
@@ -403,7 +404,7 @@ private:
     thl::RCU<ProcessingConfig> m_config;
 
     // Reader slot of the audio path (audio_read_scope(), process()); owned by m_config.
-    thl::detail::RcuReaderNode* m_audio_reader = &m_config.add_reader();
+    ConfigRCU::Reader m_audio_reader = m_config.add_reader();
 
     // Scope registry. Entries in m_scope_names own the name strings; the
     // c_str() pointers from these std::string nodes are stored on

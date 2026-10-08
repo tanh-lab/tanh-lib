@@ -148,10 +148,13 @@ call `set_transport()` on each before the matrix runs.
   routings only (`"enabled": false` for disabled ones). Store that JSON next to
   the APVTS tree in `getStateInformation`.
 - **Errors.** `get_smart_handle<T>(key)` throws
-  `thl::StateKeyNotFoundException` for an unknown key,
-  `thl::ParameterTypeMismatchException` when `T` does not match the bound
-  atomic and `std::invalid_argument` when the parameter is not modulatable, on
-  every backend. `tanh/state/Exceptions.h` is installed without State too.
+  `thl::ParameterNotFoundException` for an unknown key (through
+  `ParameterBackend::throw_not_found()`, which a backend may override with a
+  subclass: a State-backed matrix throws `StateKeyNotFoundException` or
+  `StateGroupNotFoundException`), `thl::ParameterTypeMismatchException` when `T`
+  does not match the bound atomic and `std::invalid_argument` when the parameter
+  is not modulatable. The types live in `tanh/core/parameters/`, so they need no
+  State.
 - **No State.** `ModulationMatrix(thl::State&)` and `state()` exist only when
   tanh is built with State; `state()` throws `std::logic_error` on a matrix
   built from a backend. A `SmartHandle`'s metadata accessors (`def()`,

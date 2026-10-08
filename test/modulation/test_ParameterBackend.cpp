@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
+#include <tanh/core/parameters/ParameterDefinitions.h>
+#include <tanh/core/parameters/ParameterExceptions.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/SmartHandle.h>
-#include <tanh/state/Exceptions.h>
-#include <tanh/state/ParameterDefinitions.h>
 
 #include <array>
 #include <atomic>
@@ -316,7 +316,7 @@ TEST(ParameterBackend, LookupErrors) {
     ConstSource src;
     matrix.add_source("src", &src);
 
-    EXPECT_THROW(matrix.get_smart_handle<float>("missing"), thl::StateKeyNotFoundException);
+    EXPECT_THROW(matrix.get_smart_handle<float>("missing"), thl::ParameterNotFoundException);
     EXPECT_THROW(matrix.get_smart_handle<float>("fixed"), std::invalid_argument);
     EXPECT_THROW(matrix.get_smart_handle<int>("gain"), thl::ParameterTypeMismatchException);
 
@@ -325,8 +325,8 @@ TEST(ParameterBackend, LookupErrors) {
     EXPECT_NE(matrix.add_routing({"src", "gain"}), k_invalid_routing_id);
 }
 
-// Same exception types (and messages) as a State-backed matrix.
-TEST(ParameterBackend, LookupErrorTypesMatchState) {
+// The library's parameter exceptions, independent of thl::State.
+TEST(ParameterBackend, LookupErrorTypes) {
     FakeBackend backend;
     backend.add("gain", mod_float(thl::Range::linear(0.0f, 1.0f), 0.0f));
     backend.add("fixed",
@@ -336,10 +336,10 @@ TEST(ParameterBackend, LookupErrorTypesMatchState) {
 
     try {
         (void)matrix.get_smart_handle<float>("missing");
-        FAIL() << "expected StateKeyNotFoundException";
-    } catch (const thl::StateKeyNotFoundException& e) {
+        FAIL() << "expected ParameterNotFoundException";
+    } catch (const thl::ParameterNotFoundException& e) {
         EXPECT_EQ(e.key(), "missing");
-        EXPECT_STREQ(e.what(), "Key not found in state: missing");
+        EXPECT_STREQ(e.what(), "Parameter not found: missing");
     }
 
     try {
