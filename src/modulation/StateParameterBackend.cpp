@@ -4,8 +4,8 @@
 #include <string_view>
 #include <variant>
 
-#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/modulation/ParameterBackend.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/state/Exceptions.h"
 #include "tanh/state/Parameter.h"
 #include "tanh/state/State.h"

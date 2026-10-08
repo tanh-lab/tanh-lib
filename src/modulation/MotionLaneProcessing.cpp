@@ -1,12 +1,13 @@
 #include "tanh/modulation/MotionLaneProcessing.h"
 
 #include <tanh/modulation/MotionLane.h>
-#include "MotionSeam.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <vector>
+
+#include "MotionSeam.h"
 
 namespace thl::modulation {
 

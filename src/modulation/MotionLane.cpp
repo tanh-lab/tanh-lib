@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+
 #include "MotionInterpolation.h"
 
 namespace thl::modulation {

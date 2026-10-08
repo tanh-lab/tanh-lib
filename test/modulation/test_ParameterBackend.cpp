@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
-#include <tanh/parameters/ParameterDefinitions.h>
-#include <tanh/parameters/ParameterExceptions.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/SmartHandle.h>
+#include <tanh/parameters/ParameterDefinitions.h>
+#include <tanh/parameters/ParameterExceptions.h>
 
 #include <array>
 #include <atomic>

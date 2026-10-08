@@ -41,8 +41,8 @@ using ParameterBaseValue = std::variant<std::monostate,
  *
  * Returned by ParameterBackend::find() and copied into the matrix's
  * ResolvedTarget the first time a key is resolved (get_smart_handle(),
- * add_routing()); the matrix never asks the backend about that key again. The pointed-to atomics must therefore stay valid (same
- * address) for the lifetime of the ModulationMatrix.
+ * add_routing()); the matrix never asks the backend about that key again. The pointed-to atomics
+ * must therefore stay valid (same address) for the lifetime of the ModulationMatrix.
  */
 struct ParameterBinding {
     /// Immutable metadata: range (normalized depth, replace range, snapping),

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/modulation/ResolvedTarget.h>
+#include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>

@@ -4,7 +4,6 @@
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/MotionTypes.h>
-#include "MotionSeam.h"
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -14,7 +13,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
 #include "MotionInterpolation.h"
+#include "MotionSeam.h"
 
 namespace thl::modulation::detail {
 

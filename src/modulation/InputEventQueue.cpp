@@ -1,12 +1,13 @@
 #include "tanh/modulation/InputEventQueue.h"
 
 #include <tanh/parameters/ModulationScope.h>
-#include "EventSpread.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "EventSpread.h"
 
 namespace thl::modulation {
 

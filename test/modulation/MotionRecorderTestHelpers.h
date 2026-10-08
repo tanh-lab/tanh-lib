@@ -5,7 +5,6 @@
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/XYController.h>
-#include "XYPad.h"
 
 #include <algorithm>
 #include <cmath>
@@ -15,6 +14,7 @@
 #include <vector>
 
 #include "../dsp/SimHost.h"
+#include "XYPad.h"
 
 namespace motion_test {
 
