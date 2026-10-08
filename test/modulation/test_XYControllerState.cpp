@@ -39,8 +39,8 @@ TEST(XYControllerState, TouchDrivesStateParameters) {
     matrix.prepare(xy_test::k_sr, k_block_size);
     xy_test::SimTransport t;
     auto block = [&] {
-        c.set_transport(t.next(k_block_size));
-        matrix.process(k_block_size);
+        const auto info = t.next(k_block_size);
+        matrix.process(k_block_size, &info);
     };
 
     block();

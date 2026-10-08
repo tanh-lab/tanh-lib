@@ -31,30 +31,25 @@ to let go of them. The matrix must outlive the controller.
 
 ## Per block
 
-Give every controller the block's transport before the matrix runs.
-`pre_process_block()` is not given the block length, so the controller takes it
-from `TransportInfo::m_num_samples`:
+Pass the block's transport to the matrix; every controller on it renders with
+that transport:
 
 ```cpp
-const auto t = clock.block_info();
-for (auto& pad : pads) { pad->set_transport(t); }
+const auto& t = clock.block_info();
 const auto scope = matrix.audio_read_scope();
-matrix.process_with_scope(scope.data(), t.m_num_samples);
+matrix.process_with_scope(scope.data(), t.m_num_samples, &t);
 ```
 
-The controller runs once per block, from whichever of its sources the matrix
-reaches first: per voice it renders the touch input, runs the recorder and
-writes x, y, active, the layer and the change points. The sources only copy
-those buffers, so neither the matrix's source order nor the controller order
-matters.
+The controller is a `BlockProcessor` of the matrix (`BlockProcessor.h`): the
+matrix runs it once per block, before its sources' `pre_process_block()`. Per
+voice it renders the touch input, runs the recorder and writes x, y, active,
+the layer and the change points; the sources only copy those buffers, so
+neither the matrix's source order nor the controller order matters.
 
-- Without a fresh `set_transport()` debug builds assert; release builds
-  continue the previous transport and count `stale_transport_blocks()`.
-- `process_block(t)` runs the controller directly. The matrix's next pass then
-  reuses that render; a render no matrix pass consumed is discarded by the next
-  `set_transport()`.
-- A transport longer than the prepared size runs as prepared-size chunks with
-  the same result as prepared-size blocks; the outputs hold the last chunk.
+- Without a transport (`matrix.process(n)`) the recorders free-run as on a
+  stopped transport.
+- Blocks are at most the prepared size; an engine splits larger host blocks
+  (see [Transport](transport.md), "Block size").
 - `reset()` (host reset) re-locks the recorders without a glide and closes
   latched gates.
 
@@ -95,7 +90,7 @@ instead, and the block's callback time on the same clock:
 ```cpp
 // UI thread (iOS: per coalesced UITouch, timestamp in seconds of uptime).
 pad.touch(id, x, y, std::llround(touch.timestamp * 1e9));
-// Audio thread, every block, before set_transport() / process_block().
+// Audio thread, every block, before matrix.process().
 pad.set_block_time(thl::modulation::XYController::clock_now_ns());
 ```
 
@@ -144,12 +139,12 @@ stops frame and trail publication.
   `drain_trail`, `read_path`: one UI thread, lock-free.
 - `set_latch`, `set_voice_enabled`, `set_ui_attached`: any thread.
 - `recorder(v)`: as documented on `MotionRecorder`.
-- `set_block_time`, `set_transport`, `process_block`, `reset`, `out_*`: audio
-  thread, real-time safe.
+- `set_block_time`, `reset`, `out_*`: audio thread, real-time safe.
 
 ## Pitfalls
 
-- Call `set_transport()` on every controller every block, before the matrix.
+- Pass the transport to `matrix.process()` every block, or the recorders
+  free-run instead of following it.
 - Call `service()` from a message-thread timer (10 Hz or more), or finished
   takes are never published and arming stalls once both take buffers wait.
 - A controller cannot be moved: the matrix holds pointers to its sources.

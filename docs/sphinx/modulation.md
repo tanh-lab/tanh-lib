@@ -148,6 +148,17 @@ this template. Mono-only sources construct
 came from.
 
 
+## Rendering several sources together
+
+A component whose sources share one render (an `XYController` renders every
+dot's x, y and gate in one pass) or that follows the transport registers a
+`BlockProcessor` with `ModulationMatrix::add_block_processor()`. The matrix
+calls its `process_block(BlockContext)` once per block, after the sources'
+`clear_per_block()` and before their `pre_process_block()`, with the block
+length and the `TransportInfo` passed to `process()` (or null). The sources
+then only copy what it rendered. No source has to know which of them the
+matrix reaches first.
+
 ## See also
 
 - [Modulation with host parameters (JUCE)](host_parameters.md): drive the matrix from a host parameter store such as JUCE's AudioProcessorValueTreeState instead of `thl::State`.

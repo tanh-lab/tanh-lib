@@ -57,8 +57,8 @@ uint64_t hash_combine(uint64_t hash, uint64_t value) {
 
 }  // namespace
 
-// One matrix source of a voice. The first source the matrix reaches in a block
-// runs the whole controller; process() only copies the voice's buffers.
+// One matrix source of a voice: process() copies what the controller rendered
+// for the block (MatrixHook) into the source's buffers.
 class XYController::Output final : public ModulationSource {
 public:
     Output(XYController& controller, uint32_t voice, XYPadAxis axis)
@@ -67,22 +67,9 @@ public:
         , m_voice(voice)
         , m_axis(axis) {}
 
-    void prepare(double sample_rate, size_t samples_per_block, uint32_t voice_count) override {
+    void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
         resize_buffers(samples_per_block, voice_count);
-        // One source prepares the controller: the controller registers voice 0's
-        // x first, before any of its sources is visible to the audio thread.
-        if (m_voice == 0 && m_axis == XYPadAxis::X) {
-            m_controller.prepare(sample_rate, samples_per_block);
-        }
     }
-
-    // The matrix calls every clear_per_block() before the first pre_process_block().
-    void clear_per_block() override {
-        ModulationSource::clear_per_block();
-        m_controller.m_matrix_block_pending = true;
-    }
-
-    void pre_process_block() override { m_controller.run_for_matrix(); }
 
     void process(size_t num_samples, size_t offset) override;
 
@@ -173,6 +160,9 @@ XYController::XYController(ModulationMatrix& matrix, XYControllerConfig config)
     for (uint32_t v = 0; v < m_num_voices; ++v) {
         m_voices.push_back(std::make_unique<Voice>(*this, v, m_config));
     }
+    // The hook first: the matrix prepares it before any of the sources is visible
+    // to the audio thread.
+    m_matrix.add_block_processor(m_hook);
     for (uint32_t v = 0; v < m_num_voices; ++v) {
         auto& voice = *m_voices[v];
         m_matrix.add_source(source_id(XYPadAxis::X, v), &voice.m_out_x);
@@ -188,6 +178,7 @@ XYController::~XYController() {
         m_matrix.remove_source(source_id(XYPadAxis::Y, v));
         m_matrix.remove_source(source_id(XYPadAxis::Active, v));
     }
+    m_matrix.remove_block_processor(m_hook);
 }
 
 std::string XYController::source_id(XYPadAxis axis, uint32_t voice) const {
@@ -242,7 +233,6 @@ void XYController::prepare(double sample_rate, size_t max_block_size) {
     m_frame_interval = static_cast<uint32_t>(std::max(1.0, std::floor(sample_rate / hz)));
     m_num_samples = 0;
     m_sample_time = 0;
-    m_rendered_ahead = false;
     m_since_publish = m_frame_interval;  // publish the first block
 }
 
@@ -466,55 +456,26 @@ void XYController::set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION {
     m_block_time_fresh = true;
 }
 
-// Run-once per block: set_transport() opens a block; process_block() renders it
-// ahead of the matrix; the matrix pass then runs the controller only if nothing
-// rendered it. A new set_transport() discards a render the matrix never consumed.
-void XYController::set_transport(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION {
-    m_transport = transport;
-    m_transport_fresh = true;
-    m_rendered_ahead = false;
-}
-
-void XYController::process_block(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION {
-    m_transport = transport;
-    m_transport_fresh = false;
-    run(m_transport);
-    m_rendered_ahead = true;
-}
-
 void XYController::reset() TANH_NONBLOCKING_FUNCTION {
     m_reset_pending = true;
     for (auto& v : m_voices) { v->m_latched = false; }
 }
 
-void XYController::run_for_matrix() {
-    if (!m_matrix_block_pending) { return; }
-    m_matrix_block_pending = false;
-    if (m_rendered_ahead) {
-        m_rendered_ahead = false;
-        return;
-    }
-    if (!m_transport_fresh) {
-        // Engine bug: no set_transport() for this block. Continue the last one.
-        assert(false && "XYController: set_transport() missing before matrix.process()");
-        ++m_stale_transport_blocks;
-        m_transport.m_beat_position = m_transport.beat_end();
-        m_transport.m_flags &= ~TransportInfo::k_discontinuity_mask;
-        if (m_transport.m_num_samples == 0) {
-            m_transport.m_num_samples = static_cast<uint32_t>(m_capacity);
-        }
-    }
-    m_transport_fresh = false;
-    run(m_transport);
+void XYController::process_block(const BlockContext& context) TANH_NONBLOCKING_FUNCTION {
+    const auto n = static_cast<uint32_t>(std::min(context.m_num_samples, m_capacity));
+    // Without a transport the recorders free-run (a stopped transport at 120 BPM).
+    TransportInfo transport;
+    if (context.m_transport != nullptr) { transport = *context.m_transport; }
+    transport.m_num_samples = n;
+    run(transport);
 }
 
 void XYController::run(const TransportInfo& transport) {
-    const auto capacity = static_cast<uint32_t>(m_capacity);
-    const uint32_t total = capacity == 0 ? 0 : transport.m_num_samples;
     // The block time places timestamped touches in this block only.
-    const bool timed = m_block_time_fresh;
+    m_run_time_ns.reset();
+    if (m_block_time_fresh) { m_run_time_ns = m_block_time_ns; }
     m_block_time_fresh = false;
-    if (total == 0) {
+    if (transport.m_num_samples == 0) {
         m_num_samples = 0;
         for (auto& v : m_voices) { v->m_num_change_points = 0; }
         return;
@@ -526,21 +487,8 @@ void XYController::run(const TransportInfo& transport) {
         t.m_flags |= TransportInfo::k_timeline_reset;
         m_reset_pending = false;
     }
-    // A block larger than the prepared size runs as prepared-size chunks, exactly
-    // like the same audio in prepared-size blocks. The outputs keep the last chunk.
-    for (uint32_t offset = 0; offset < total; offset += capacity) {
-        m_chunk_time_ns.reset();
-        if (timed) {
-            m_chunk_time_ns = m_block_time_ns +
-                              static_cast<int64_t>(
-                                  std::llround(static_cast<double>(offset) * 1e9 / m_sample_rate));
-        }
-        run_chunk(t.sub_block(offset, std::min(capacity, total - offset)));
-    }
-}
 
-void XYController::run_chunk(const TransportInfo& transport) {
-    const uint32_t n = transport.m_num_samples;
+    const uint32_t n = t.m_num_samples;
     m_num_samples = n;
 
     const bool latch = m_latch.load(std::memory_order_relaxed);
@@ -549,7 +497,7 @@ void XYController::run_chunk(const TransportInfo& transport) {
     const bool ui = m_ui_attached.load(std::memory_order_relaxed);
 
     for (uint32_t i = 0; i < m_num_voices; ++i) {
-        run_voice(*m_voices[i], i, transport, latch_changed, ui);
+        run_voice(*m_voices[i], i, t, latch_changed, ui);
     }
     m_sample_time += n;
     if (ui) { publish_frame(n); }
@@ -565,7 +513,7 @@ void XYController::run_voice(Voice& v,
 
     // The recorder composes touch over playback, including the glide back after
     // a release, so the controller only adds the latch and the layer.
-    v.m_pad.process_block(n, m_chunk_time_ns);
+    v.m_pad.process_block(n, m_run_time_ns);
     v.m_recorder.process(transport, v.m_pad.output(), n);
 
     const uint8_t* gate = v.m_recorder.out_gate();

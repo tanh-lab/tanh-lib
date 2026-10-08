@@ -63,10 +63,10 @@ struct Engine {
     SmartHandle<float> handle(int n, const char* p) {
         return matrix->get_smart_handle<float>(slot(n, p));
     }
-    void block(std::span<XYController* const> controllers, uint32_t n = k_bs) {
+    // Every controller on the matrix renders with the transport it passes.
+    void block(std::span<XYController* const> /*controllers*/, uint32_t n = k_bs) {
         const TransportInfo t = transport.next(n);
-        for (auto* c : controllers) { c->set_transport(t); }
-        matrix->process(n);
+        matrix->process(n, &t);
     }
 
     FakeBackend backend;
@@ -260,8 +260,7 @@ TEST(XYController, ResetRelocksWithoutGlide) {
         t.m_flags |= TransportInfo::k_jumped;
         t.m_jump_delta_beats = 1.3;
         if (with_reset) { c.reset(); }
-        c.set_transport(t);
-        e.matrix->process(k_bs);
+        e.matrix->process(k_bs, &t);
 
         const float want = lane.sample(std::fmod(t.m_beat_position, 4.0)).m_x;
         if (with_reset) {
@@ -394,32 +393,25 @@ TEST(XYController, EightControllersDriveEightSlotsWithoutCrosstalk) {
     }
 }
 
-// Whichever output the matrix reaches first drives the controller, exactly
-// once per block.
-TEST(XYController, DrivesOncePerBlockInAnyOutputOrder) {
+// The matrix runs the controller once per block, before its sources copy the
+// dots out, whatever order the matrix keeps the sources in.
+TEST(XYController, DrivesOncePerMatrixBlock) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));
-    c.prepare(k_sr, k_bs);
-    std::array<ModulationSource*, 3> outs{&c.source(XYPadAxis::X),
-                                          &c.source(XYPadAxis::Y),
-                                          &c.source(XYPadAxis::Active)};
-    std::array<size_t, 3> order{0, 1, 2};
-    int perm = 0;
-    SimTransport t;
-    do {
-        const float x = 0.1f * static_cast<float>(perm + 1);
+    c.route(XYPadAxis::X, "s1.a");
+    c.route(XYPadAxis::Y, "s1.b");
+    c.route(XYPadAxis::Active, "s1.wet");
+    e.matrix->prepare(k_sr, k_bs);
+    XYController* cs[] = {&c};
+    for (int b = 0; b < 4; ++b) {
+        const float x = 0.1f * static_cast<float>(b + 1);
         c.touch(1, x, 1.0f - x);
         const uint64_t driven = c.blocks_driven();
-        c.set_transport(t.next(k_bs));
-        for (auto* o : outs) { o->clear_per_block(); }
-        for (const size_t i : order) { outs[i]->pre_process_block(); }
-        for (const size_t i : order) { outs[i]->process(k_bs, 0); }
+        e.block(cs);
         EXPECT_EQ(c.blocks_driven(), driven + 1);
-        EXPECT_FLOAT_EQ(outs[0]->get_output_at(k_bs - 1), x);
-        EXPECT_FLOAT_EQ(outs[1]->get_output_at(k_bs - 1), 1.0f - x);
-        EXPECT_FLOAT_EQ(outs[2]->get_output_at(k_bs - 1), 1.0f);
-        ++perm;
-    } while (std::next_permutation(order.begin(), order.end()));
+        EXPECT_FLOAT_EQ(e.handle(1, "a").load(k_bs - 1), x);
+        EXPECT_FLOAT_EQ(e.handle(1, "b").load(k_bs - 1), 1.0f - x);
+    }
 }
 
 // Two matrices, the same two controllers registered in opposite orders and
@@ -465,46 +457,27 @@ TEST(XYController, MatrixSourceOrderDoesNotChangeTheOutput) {
     for (size_t i = 0; i < a.size(); ++i) { ASSERT_EQ(a[i], b[i]) << i; }
 }
 
-TEST(XYController, ProcessBlockBeforeTheMatrixIsNotDrivenTwice) {
-    Engine e(1);
-    XYController c(*e.matrix, config("pad"));
-    c.route(XYPadAxis::X, "s1.a");
-    e.matrix->prepare(k_sr, k_bs);
-    SimTransport t;
-    c.touch(1, 0.25f, 0.5f);
-    for (int b = 0; b < 4; ++b) {
-        c.process_block(t.next(100));  // a short host block, pre-matrix
-        e.matrix->process(100);
-    }
-    EXPECT_EQ(c.blocks_driven(), 4u);
-    EXPECT_EQ(c.num_samples(), 100u);
-    EXPECT_EQ(c.stale_transport_blocks(), 0u);
-    EXPECT_FLOAT_EQ(e.handle(1, "a").load(99), 0.25f);
-}
-
-// A process_block() whose block the matrix never runs must not make the matrix
-// skip the next block, and an empty matrix block changes nothing.
-TEST(XYController, RenderAheadIsDiscardedByTheNextTransport) {
+// Without a transport the controller still renders (recorders free-run), and an
+// empty matrix block changes nothing.
+TEST(XYController, RendersWithoutATransportAndSkipsEmptyBlocks) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));
     c.route(XYPadAxis::X, "s1.a");
     e.matrix->prepare(k_sr, k_bs);
     XYController* cs[] = {&c};
-    SimTransport t;
 
-    c.process_block(t.next(k_bs));  // no matrix in this block
     c.touch(1, 0.75f, 0.5f);
-    e.block(cs);
-    EXPECT_EQ(c.blocks_driven(), 2u);
+    e.matrix->process(k_bs);  // no transport
+    EXPECT_EQ(c.blocks_driven(), 1u);
     EXPECT_FLOAT_EQ(e.handle(1, "a").load(k_bs - 1), 0.75f);
 
-    c.set_transport(e.transport.next(0));
-    e.matrix->process(0);
+    const TransportInfo empty = e.transport.next(0);
+    e.matrix->process(0, &empty);
+    EXPECT_EQ(c.blocks_driven(), 1u);
     c.touch(1, 0.25f, 0.5f);
     e.block(cs);
-    EXPECT_EQ(c.blocks_driven(), 3u);
+    EXPECT_EQ(c.blocks_driven(), 2u);
     EXPECT_FLOAT_EQ(e.handle(1, "a").load(k_bs - 1), 0.25f);
-    EXPECT_EQ(c.stale_transport_blocks(), 0u);
 }
 
 // A host prepare with an unchanged rate and block size still aborts a running

@@ -77,14 +77,7 @@ struct Bench {
 
     void matrix_block(uint32_t n) {
         const auto t = transport.next(n);
-        single->set_transport(t);
-        for (auto& p : pads) { p->set_transport(t); }
-        matrix->process(n);
-    }
-
-    void controllers_block(uint32_t n) {
-        const auto t = transport.next(n);
-        for (auto& p : pads) { p->process_block(t); }
+        matrix->process(n, &t);
     }
 
     xy_test::FakeBackend backend;
@@ -95,17 +88,6 @@ struct Bench {
 };
 
 }  // namespace
-
-// The 8 one-voice controllers alone (pad, recorder, buffers, frames), without the matrix.
-static void bm_xy_8_controllers(benchmark::State& state) {
-    const auto n = static_cast<uint32_t>(state.range(0));
-    Bench b(n);
-    for (auto _ : state) {
-        b.controllers_block(n);
-        benchmark::DoNotOptimize(b.pads[0]->out_x(0));
-    }
-}
-BENCHMARK(bm_xy_8_controllers)->Arg(32)->Arg(128)->Arg(256)->Arg(512);
 
 // The full matrix: 9 controllers, 24 targets, 40 routings.
 static void bm_xy_matrix_9_controllers_24_targets(benchmark::State& state) {

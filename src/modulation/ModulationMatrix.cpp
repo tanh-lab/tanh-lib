@@ -312,6 +312,9 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
     // notion is not invalidated by routing churn).
     m_num_processed_samples = 0;
 
+    for (auto* processor : m_block_processors) {
+        processor->prepare(sample_rate, samples_per_block);
+    }
     for (auto& [id, source] : m_sources) {
         source->prepare(sample_rate, samples_per_block, voice_count(source->scope()));
     }
@@ -321,13 +324,16 @@ void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
     rebuild_schedule_with_lock();
 }
 
-void ModulationMatrix::process(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+void ModulationMatrix::process(size_t num_samples, const dsp::transport::TransportInfo* transport)
+    TANH_NONBLOCKING_FUNCTION {
     const auto scope = audio_read_scope();
-    process_with_scope(scope.data(), num_samples);
+    process_with_scope(scope.data(), num_samples, transport);
 }
 
 void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
-                                          size_t num_samples) TANH_NONBLOCKING_FUNCTION {
+                                          size_t num_samples,
+                                          const dsp::transport::TransportInfo* transport)
+    TANH_NONBLOCKING_FUNCTION {
     // 0. Every buffer holds the prepared maximum: the caller splits larger host
     //    blocks (see "Block size" in docs/sphinx/transport.md). Clamp so a
     //    violation in a release build cannot write past the buffers.
@@ -346,6 +352,11 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
     //    Runs *before* pre_process_block so event-driven sources that write
     //    CPs during draining don't have them immediately wiped.
     for (auto* source : config.m_all_sources) { source->clear_per_block(); }
+
+    // 1b. Block processors render what their sources copy out below (e.g. an
+    //     XYController's dots), once per block and before the drain pass.
+    const BlockContext context{.m_num_samples = num_samples, .m_transport = transport};
+    for (auto* processor : config.m_block_processors) { processor->process_block(context); }
 
     // 2. Drain pass — every registered source consumes its event queue and
     //    freezes per-block input state (values + masks + CPs). Runs exactly
@@ -423,6 +434,25 @@ void ModulationMatrix::add_source(const std::string_view id, ModulationSource* s
     }
     m_sources.emplace(std::string(id), source);
     rebuild_schedule_with_lock();
+}
+
+void ModulationMatrix::add_block_processor(BlockProcessor& processor) {
+    std::scoped_lock const lock(m_writer_mutex);
+    if (std::find(m_block_processors.begin(), m_block_processors.end(), &processor) !=
+        m_block_processors.end()) {
+        return;
+    }
+    // Prepared before it is published, like a source added after prepare().
+    if (m_sample_rate > 0.0) { processor.prepare(m_sample_rate, m_samples_per_block); }
+    m_block_processors.push_back(&processor);
+    rebuild_schedule_with_lock();
+}
+
+void ModulationMatrix::remove_block_processor(BlockProcessor& processor) {
+    std::scoped_lock const lock(m_writer_mutex);
+    std::erase(m_block_processors, &processor);
+    rebuild_schedule_with_lock();
+    m_config.synchronize();
 }
 
 void ModulationMatrix::remove_source(const std::string_view id) {
@@ -1071,6 +1101,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         config.m_schedule = std::move(new_schedule);
         config.m_active_targets = std::move(new_active_targets);
         config.m_all_sources = std::move(new_all_sources);
+        config.m_block_processors = m_block_processors;
         config.m_max_block_size = m_samples_per_block;
         config.m_routings_by_source.clear();
         for (const auto& r : config.m_routings) {

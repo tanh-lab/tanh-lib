@@ -108,8 +108,8 @@ TEST(XYControllerThreads, SnapshotConsistentUnderConcurrentUiMessageAndAudio) {
 
     std::thread audio([&] {
         for (int b = 0; b < k_blocks; ++b) {
-            c.set_transport(fx.transport.next(k_bs));
-            fx.matrix->process(k_bs);
+            const TransportInfo t = fx.transport.next(k_bs);
+            fx.matrix->process(k_bs, &t);
         }
         audio_done.store(true, std::memory_order_release);
     });
@@ -190,8 +190,7 @@ float run_block(ModulationMatrix& matrix,
                 std::span<XYController* const> controllers,
                 const TransportInfo& t,
                 SmartHandle<float>& probe) {
-    for (auto* c : controllers) { c->set_transport(t); }
-    matrix.process(t.m_num_samples);
+    matrix.process(t.m_num_samples, &t);
     float acc = probe.load(0);
     for (auto* c : controllers) {
         acc += c->out_x(0)[0] + static_cast<float>(c->change_points(0).size());
@@ -278,5 +277,4 @@ TEST(XYController, FullScenario) {
     multi.set_ui_attached(false);
     run(5);
     EXPECT_TRUE(std::isfinite(acc));
-    EXPECT_EQ(multi.stale_transport_blocks(), 0u);
 }

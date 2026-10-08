@@ -119,8 +119,9 @@ void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override 
 ```
 
 Keep the scope open while the processors read their `SmartHandle`s: the
-modulation buffers are RCU-protected. With [XY controllers](xy_controller.md),
-call `set_transport()` on each before the matrix runs.
+modulation buffers are RCU-protected. With [XY controllers](xy_controller.md)
+or other `BlockProcessor`s that follow the transport, pass the block's
+`TransportInfo` to `process_with_scope()`.
 
 ## Threading contract
 

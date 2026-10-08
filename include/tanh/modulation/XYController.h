@@ -4,6 +4,7 @@
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/core/threading/TripleBuffer.h>
 #include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
@@ -125,10 +126,10 @@ static_assert(std::is_trivially_copyable_v<XYFrame>);
  *        dots, exposed as matrix sources.
  *
  * Every voice (dot) has a touch pad and a MotionRecorder and registers three
- * matrix sources: x, y and active. The controller runs once per block, from the
- * first of its sources the matrix reaches, so the engine only calls
- * set_transport() before matrix.process(). Blocks larger than the prepared
- * size run as prepared-size chunks.
+ * matrix sources: x, y and active. The controller is a BlockProcessor of the
+ * matrix: it renders every voice once per block, before the sources copy their
+ * buffers out, synced to the transport the engine passes to
+ * ModulationMatrix::process() (free-running without one).
  *
  * With several voices, a new touch grabs the nearest enabled voice that no
  * other finger holds and moves only that voice until it is released.
@@ -140,7 +141,7 @@ static_assert(std::is_trivially_copyable_v<XYFrame>);
  *   read_path: one UI thread, lock-free.
  * - set_latch, set_voice_enabled, set_ui_attached: any thread.
  * - recorder(v): as documented on MotionRecorder.
- * - set_transport, process_block, reset and the out_* getters: audio thread.
+ * - set_block_time, reset and the out_* getters: audio thread.
  *
  * The matrix must outlive the controller.
  */
@@ -162,10 +163,6 @@ public:
     [[nodiscard]] uint32_t num_voices() const { return m_num_voices; }
     [[nodiscard]] std::string source_id(XYPadAxis axis, uint32_t voice = 0) const;
     [[nodiscard]] ModulationSource& source(XYPadAxis axis, uint32_t voice = 0);
-
-    /// Allocate for blocks of up to @p max_block_size and abort running takes.
-    /// The matrix calls it from its prepare(); the audio thread must be stopped.
-    void prepare(double sample_rate, size_t max_block_size);
 
     /// Route one voice's axis to @p target_id. Returns the routing id, or
     /// k_invalid_routing_id if the matrix rejected it.
@@ -237,22 +234,14 @@ public:
     [[nodiscard]] static int64_t clock_now_ns() TANH_NONBLOCKING_FUNCTION;
     /// The time of the block's audio callback, on the clock of the touch
     /// timestamps (any monotonic nanosecond clock, e.g. clock_now_ns()). Call
-    /// once per block before set_transport() / process_block() to place
-    /// timestamped touches; a block without it spreads its touches as if untimed.
+    /// once per block before matrix.process() to place timestamped touches; a
+    /// block without it spreads its touches as if untimed.
     void set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION;
 
-    /// The block's transport (m_num_samples = block length). Call before
-    /// matrix.process() every block.
-    void set_transport(const thl::dsp::transport::TransportInfo& transport)
-        TANH_NONBLOCKING_FUNCTION;
-    /// Run the controller now for @p transport; the matrix's next pass reuses
-    /// this render instead of running again.
-    void process_block(const thl::dsp::transport::TransportInfo& transport)
-        TANH_NONBLOCKING_FUNCTION;
     /// Host reset: the next block re-locks playback without a glide and latched gates close.
     void reset() TANH_NONBLOCKING_FUNCTION;
 
-    /// Output of the last driven block (the last chunk of an oversized block).
+    /// Output of the last driven block.
     [[nodiscard]] const float* out_x(uint32_t voice) const TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] const float* out_y(uint32_t voice) const TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] const uint8_t* out_active(uint32_t voice) const TANH_NONBLOCKING_FUNCTION;
@@ -264,14 +253,25 @@ public:
     [[nodiscard]] uint64_t blocks_driven() const TANH_NONBLOCKING_FUNCTION {
         return m_blocks_driven;
     }
-    /// Blocks the matrix ran without a fresh set_transport() (an engine bug).
-    [[nodiscard]] uint64_t stale_transport_blocks() const TANH_NONBLOCKING_FUNCTION {
-        return m_stale_transport_blocks;
-    }
 
 private:
     class Output;
     struct Voice;
+
+    // The matrix's per-block hook (prepare and render).
+    class MatrixHook final : public BlockProcessor {
+    public:
+        explicit MatrixHook(XYController& controller) : m_controller(controller) {}
+        void prepare(double sample_rate, size_t max_block_size) override {
+            m_controller.prepare(sample_rate, max_block_size);
+        }
+        void process_block(const BlockContext& context) override {
+            m_controller.process_block(context);
+        }
+
+    private:
+        XYController& m_controller;
+    };
 
     struct UiTouch {
         TouchId m_id = 0;
@@ -279,9 +279,12 @@ private:
     };
 
     [[nodiscard]] const MotionRecorder& voice_recorder(uint32_t voice) const;
-    void run_for_matrix();
+    // Allocate for blocks of up to @p max_block_size and abort running takes
+    // (from the matrix's prepare(), audio stopped).
+    void prepare(double sample_rate, size_t max_block_size);
+    // One matrix block.
+    void process_block(const BlockContext& context) TANH_NONBLOCKING_FUNCTION;
     void run(const thl::dsp::transport::TransportInfo& transport);
-    void run_chunk(const thl::dsp::transport::TransportInfo& transport);
     void run_voice(Voice& voice,
                    uint32_t index,
                    const thl::dsp::transport::TransportInfo& transport,
@@ -308,21 +311,18 @@ private:
     TripleBuffer<XYFrame> m_frames;
     thl::core::LockFreeQueue<XYPathPoint, k_xy_trail_capacity> m_trail;
 
+    MatrixHook m_hook{*this};
+
     // Audio thread.
-    thl::dsp::transport::TransportInfo m_transport;
-    bool m_transport_fresh = false;
-    bool m_matrix_block_pending = false;
-    bool m_rendered_ahead = false;  // process_block() ran for the coming matrix block
     bool m_reset_pending = false;
     bool m_block_time_fresh = false;
     int64_t m_block_time_ns = 0;
-    std::optional<int64_t> m_chunk_time_ns;  // clock time of the running chunk
+    std::optional<int64_t> m_run_time_ns;  // clock time of the running block (timed touches)
     double m_sample_rate = 0.0;
     bool m_last_latch = false;
     uint32_t m_num_samples = 0;
     uint64_t m_sample_time = 0;
     uint64_t m_blocks_driven = 0;
-    uint64_t m_stale_transport_blocks = 0;
     uint64_t m_frame_sequence = 0;
     uint32_t m_trail_dropped = 0;
     uint32_t m_frame_interval = 200;

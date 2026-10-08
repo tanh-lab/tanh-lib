@@ -104,13 +104,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `XYController`) keeps the end-to-start step as a hard edge and smooths without
   crossing it. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
   `motion_recording.md`.
+- `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
+  before any source (`add_block_processor()`), given a `BlockContext` with the block
+  length and the transport now passed to `process()` / `process_with_scope()`.
 - `thl::modulation::XYController`: XY dots (voices), each with touch input and a
-  recorder, as `<id>.x` / `.y` / `.active` matrix sources. It runs once per block from
-  the first of its sources the matrix reaches, with the transport from
-  `set_transport()`, owns its routings and publishes an `XYFrame` per block through a
-  `TripleBuffer`, plus a recording trail and the recorded path. Blocks above the
-  prepared size run as prepared-size chunks. Tests: `XYController*.*`, `XYPad.*`,
-  `OversizedBlocks.*`. Docs: `xy_controller.md`.
+  recorder, as `<id>.x` / `.y` / `.active` matrix sources. A `BlockProcessor` of the
+  matrix, it renders once per block with the matrix's transport (free-running
+  without one), owns its routings and publishes an `XYFrame` per block through a
+  `TripleBuffer`, plus a recording trail and the recorded path. Tests:
+  `XYController*.*`, `XYPad.*`. Docs: `xy_controller.md`.
 - Timestamped touch input: `XYController::touch()` / `touch_voice()` / `release()`
   take an optional `time_ns`, and `set_block_time(now_ns)` once per block places them
   at their own sample, `m_input_delay_ms` late (default one prepared block + 5 ms);
@@ -144,12 +146,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   trusts its play flag only with tempo, beat or time signature. Tests:
   `HostTransportClockTempoMap.*`, `LinkTransportClock.JoinRealignmentAfterTheEpochResets`,
   `HostTransportClock.SeekWhileHostSuppliesBeatWaitsForFreeRun`.
-- `XYController`: a `process_block()` render no matrix pass consumed is discarded by
-  the next `set_transport()`; a repeated `prepare()` re-prepares the recorders; a
-  take published by `service()` during a block no longer switches that block to the
-  older lane it still reads. Tests:
-  `XYController.RenderAheadIsDiscardedByTheNextTransport`,
-  `MotionRecorderConcurrency.ConcurrentServiceKeepsTheHandoffSilent`.
+- `XYController`: a repeated `prepare()` re-prepares the recorders; a take published
+  by `service()` during a block no longer switches that block to the older lane it
+  still reads. Tests: `MotionRecorderConcurrency.ConcurrentServiceKeepsTheHandoffSilent`.
 
 ## [0.4.0] - 2026-09-21
 

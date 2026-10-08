@@ -4,6 +4,8 @@
 #include <tanh/core/parameters/ModulationScope.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/core/threading/SeqLock.h>
+#include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ParameterBackend.h>
@@ -62,6 +64,9 @@ struct ProcessingConfig {
     // source per block, before any ScheduleStep. Contains every source added
     // via add_source(), including sources with no routings.
     std::vector<ModulationSource*> m_all_sources;
+
+    // Every add_block_processor(), run once per block before the drain pass.
+    std::vector<BlockProcessor*> m_block_processors;
 
     // samples_per_block of the prepare() this config was built for: the length
     // of every source and target buffer, and the largest num_samples
@@ -156,12 +161,19 @@ public:
     // asserts and is clamped.
     // Convenience wrapper that opens a read scope internally — use when the
     // caller doesn't need to extend the scope across downstream DSP work.
-    void process(size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+    //
+    // @p transport is the block's musical time for the block processors
+    // (BlockContext::m_transport): pass the clock's block (or the chunk of it,
+    // TransportInfo::sub_block()) when a processor follows the transport.
+    void process(size_t num_samples, const dsp::transport::TransportInfo* transport = nullptr)
+        TANH_NONBLOCKING_FUNCTION;
 
     // Process variant assuming the caller already holds an open ReadScope.
     // The config reference must come from that scope's data().
     void process_with_scope(const ProcessingConfig& config,
-                            size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+                            size_t num_samples,
+                            const dsp::transport::TransportInfo* transport = nullptr)
+        TANH_NONBLOCKING_FUNCTION;
 
     // Total number of samples passed through process_with_scope() since the
     // last prepare(). Monotonically increasing within a prepare()-bounded
@@ -209,6 +221,13 @@ public:
     // rebuild so affected VoiceBuffers are re-sized. No-op if scope is
     // k_global_scope or not registered.
     void set_voice_count(ModulationScope scope, uint32_t voice_count);
+
+    // Block processors: run once per block before any source (BlockProcessor.h).
+    // add_block_processor() prepares @p processor if the matrix is prepared.
+    // remove_block_processor() blocks until the audio thread no longer uses it.
+    // The processor must stay alive while registered.
+    void add_block_processor(BlockProcessor& processor);
+    void remove_block_processor(BlockProcessor& processor);
 
     // Source management
     void add_source(const std::string_view id, ModulationSource* source);
@@ -388,6 +407,10 @@ private:
 
     // Registered sources (not owned) — protected by m_writer_mutex
     std::map<std::string, ModulationSource*, std::less<>> m_sources;
+
+    // Registered block processors (not owned), in registration order — protected
+    // by m_writer_mutex.
+    std::vector<BlockProcessor*> m_block_processors;
 
     // Registered targets (owned) — protected by m_writer_mutex.
     // Pointer stability guaranteed by std::unordered_map.

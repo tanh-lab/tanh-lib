@@ -16,6 +16,7 @@
 #include "XYControllerTestHelpers.h"
 
 using namespace thl::modulation;
+using thl::dsp::transport::TransportInfo;
 using xy_test::FakeBackend;
 using xy_test::k_sr;
 using xy_test::SimTransport;
@@ -37,11 +38,12 @@ struct Rig {
         cfg.m_input_delay_ms = delay_ms;
         matrix = std::make_unique<ModulationMatrix>(backend);
         controller = std::make_unique<XYController>(*matrix, cfg);
-        controller->prepare(k_sr, prepared);
+        matrix->prepare(k_sr, prepared);
     }
     void block(int index, uint32_t n = k_bs, bool timed = true) {
         if (timed) { controller->set_block_time(block_time(index)); }
-        controller->process_block(transport.next(n));
+        const TransportInfo t = transport.next(n);
+        matrix->process(n, &t);
     }
 
     FakeBackend backend;
@@ -121,12 +123,19 @@ TEST(XYControllerInput, DefaultDelayIsOnePreparedBlockPlusFiveMs) {
     EXPECT_EQ(c.out_active(0)[144], 1);
 }
 
+// A host block larger than the prepared size runs as prepared-size matrix
+// blocks, each with its own block time (as an engine chunks it).
 TEST(XYControllerInput, OversizedBlockChunksKeepTheTiming) {
     Rig rig(20.0);
     XYController& c = *rig.controller;
     // Sample 700 of a 960-sample block = sample 220 of its second chunk.
     c.touch(1, 0.3f, 0.7f, block_time(0) - (20 * k_ms) + (700 * k_ms / 48));
-    rig.block(0, 2 * k_bs);
+    const TransportInfo host = rig.transport.next(2 * k_bs);
+    for (uint32_t offset = 0; offset < host.m_num_samples; offset += k_bs) {
+        c.set_block_time(block_time(0) + static_cast<int64_t>(offset * 1'000'000'000LL / 48000));
+        const TransportInfo chunk = host.sub_block(offset, k_bs);
+        rig.matrix->process(k_bs, &chunk);
+    }
     EXPECT_EQ(c.num_samples(), k_bs);
     EXPECT_EQ(c.out_active(0)[219], 0);
     EXPECT_EQ(c.out_active(0)[220], 1);
@@ -174,11 +183,13 @@ TEST(XYControllerInput, ConcurrentTimedTouchesAndAudio) {
     std::thread audio([&] {
         while (!done.load(std::memory_order_acquire)) {
             c.set_block_time(XYController::clock_now_ns());
-            c.process_block(rig.transport.next(64));
+            const TransportInfo t = rig.transport.next(64);
+            rig.matrix->process(64, &t);
         }
         for (int i = 0; i < 8; ++i) {
             c.set_block_time(XYController::clock_now_ns() + (100 * k_ms));
-            c.process_block(rig.transport.next(64));
+            const TransportInfo t = rig.transport.next(64);
+            rig.matrix->process(64, &t);
         }
     });
 
