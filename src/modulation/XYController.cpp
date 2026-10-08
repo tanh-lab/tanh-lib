@@ -2,10 +2,14 @@
 
 #include <tanh/core/parameters/ModulationScope.h>
 #include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/MotionRecorder.h>
+#include <tanh/modulation/MotionTypes.h>
+#include <tanh/modulation/XYFrame.h>
+#include <tanh/modulation/XYTypes.h>
 #include <tanh/modulation/detail/XYPad.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -166,6 +170,9 @@ XYController::XYController(ModulationMatrix& matrix, XYControllerConfig config)
     }
 }
 
+// Only allocation can throw here (the matrix's removals); terminating then is the right
+// outcome for a destructor, which must not leave sources the matrix still calls.
+// NOLINTNEXTLINE(bugprone-exception-escape)
 XYController::~XYController() {
     unroute_all();
     for (uint32_t v = 0; v < m_num_voices; ++v) {

@@ -1,6 +1,8 @@
 #include "tanh/modulation/ModulationMatrix.h"
 
 #include <tanh/core/Exports.h>
+#include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/modulation/BlockProcessor.h>
 
 #include <algorithm>
 #include <atomic>
@@ -438,10 +440,7 @@ void ModulationMatrix::add_source(const std::string_view id, ModulationSource* s
 
 void ModulationMatrix::add_block_processor(BlockProcessor& processor) {
     std::scoped_lock const lock(m_writer_mutex);
-    if (std::find(m_block_processors.begin(), m_block_processors.end(), &processor) !=
-        m_block_processors.end()) {
-        return;
-    }
+    if (std::ranges::find(m_block_processors, &processor) != m_block_processors.end()) { return; }
     // Prepared before it is published, like a source added after prepare().
     if (m_sample_rate > 0.0) { processor.prepare(m_sample_rate, m_samples_per_block); }
     m_block_processors.push_back(&processor);

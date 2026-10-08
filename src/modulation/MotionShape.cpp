@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <string_view>
 
@@ -197,7 +198,7 @@ MotionShape to_shape(uint64_t bits) {
 }  // namespace
 
 uint64_t AtomicMotionShapeMix::pack(const MotionShapeMix& mix) {
-    double turns = static_cast<double>(mix.m_rotation);
+    auto turns = static_cast<double>(mix.m_rotation);
     turns = std::isfinite(turns) ? turns - std::floor(turns) : 0.0;
     const double morph = std::isfinite(mix.m_morph) ? mix.m_morph : 0.0;
     const double size = std::isfinite(mix.m_size) ? mix.m_size : 1.0;

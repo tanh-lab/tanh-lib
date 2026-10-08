@@ -1,5 +1,6 @@
 #include "tanh/dsp/transport/ContinuityTracker.h"
 
+#include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>

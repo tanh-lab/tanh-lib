@@ -7,10 +7,9 @@
 #include <ableton/LinkAudio.hpp>
 #include <ableton/link/NodeId.hpp>
 #include <ableton/link_audio/ApiConfig.hpp>
-#include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -38,24 +37,25 @@ public:
         m_captures.captured();
     }
     [[nodiscard]] double beat_at(int64_t t_us, double quantum) const override {
-        return m_state->beatAtTime(microseconds(t_us), quantum);
+        return session().beatAtTime(microseconds(t_us), quantum);
     }
     [[nodiscard]] dsp::transport::LinkState state() const override {
-        return {.m_tempo = m_state->tempo(),
-                .m_playing = m_state->isPlaying(),
-                .m_play_time_us = m_state->timeForIsPlaying().count()};
+        const auto& state = session();
+        return {.m_tempo = state.tempo(),
+                .m_playing = state.isPlaying(),
+                .m_play_time_us = state.timeForIsPlaying().count()};
     }
     void set_tempo(double bpm, int64_t t_us) override {
-        m_state->setTempo(bpm, microseconds(t_us));
+        session().setTempo(bpm, microseconds(t_us));
     }
     void set_playing(bool playing, int64_t t_us) override {
-        m_state->setIsPlaying(playing, microseconds(t_us));
+        session().setIsPlaying(playing, microseconds(t_us));
     }
     void request_beat_at_start(double beat, double quantum) override {
-        m_state->requestBeatAtStartPlayingTime(beat, quantum);
+        session().requestBeatAtStartPlayingTime(beat, quantum);
     }
     void request_beat_at(double beat, int64_t t_us, double quantum) override {
-        m_state->requestBeatAtTime(beat, microseconds(t_us), quantum);
+        session().requestBeatAtTime(beat, microseconds(t_us), quantum);
     }
     void commit() override {
         // Link 4.1 wakes its dispatcher thread with condition_variable::notify_one()
@@ -63,7 +63,7 @@ public:
         // which Ableton documents as realtime-safe. RTSan intercepts every
         // pthread_cond_signal, so this one SDK call is exempted.
         TANH_NONBLOCKING_SCOPED_DISABLER
-        m_link.commitAudioSessionState(*m_state);
+        m_link.commitAudioSessionState(session());
     }
     [[nodiscard]] int64_t now_us() const override { return m_link.clock().micros().count(); }
     [[nodiscard]] uint64_t timeline_epoch() const override {
@@ -81,6 +81,17 @@ public:
     }
 
 private:
+    // The captured state. The seam's contract: the clock calls capture() before any
+    // query or request of the block.
+    [[nodiscard]] const ableton::LinkAudio::SessionState& session() const {
+        assert(m_state.has_value() && "LinkBackend: session state used before capture()");
+        return *m_state;  // NOLINT(bugprone-unchecked-optional-access): the contract above
+    }
+    [[nodiscard]] ableton::LinkAudio::SessionState& session() {
+        assert(m_state.has_value() && "LinkBackend: session state used before capture()");
+        return *m_state;  // NOLINT(bugprone-unchecked-optional-access): the contract above
+    }
+
     ableton::LinkAudio& m_link;
     const detail::SessionShared& m_shared;
     detail::CaptureTracker m_captures;
@@ -201,6 +212,9 @@ LinkSession::LinkSession(double initial_bpm,
                          const std::string& output_name)
     : m_impl(std::make_unique<Impl>(initial_bpm, peer_name, output_name)) {}
 
+// Only allocation can throw here (the SDK's callbacks are std::function); terminating
+// then is the right outcome for a destructor.
+// NOLINTNEXTLINE(bugprone-exception-escape)
 LinkSession::~LinkSession() {
     m_impl->m_source.reset();
     m_impl->m_link.enableLinkAudio(false);

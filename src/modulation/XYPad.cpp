@@ -1,7 +1,7 @@
 #include "tanh/modulation/detail/XYPad.h"
 
-#include <tanh/modulation/MotionRecorder.h>
-#include <tanh/modulation/XYController.h>
+#include <tanh/modulation/MotionTypes.h>
+#include <tanh/modulation/XYTypes.h>
 #include <tanh/modulation/detail/EventSpread.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 

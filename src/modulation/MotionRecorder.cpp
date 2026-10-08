@@ -4,7 +4,8 @@
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/MotionShape.h>
-#include <tanh/modulation/detail/MotionSeam.h>
+#include <tanh/modulation/MotionTypes.h>
+#include <tanh/modulation/detail/MotionClock.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -14,7 +15,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <numbers>
 #include <span>
 #include <utility>
 #include <vector>

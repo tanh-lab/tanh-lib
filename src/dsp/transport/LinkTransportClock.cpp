@@ -2,6 +2,7 @@
 
 #include <tanh/dsp/transport/LinkBackend.h>
 #include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <atomic>

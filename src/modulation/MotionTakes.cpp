@@ -2,6 +2,7 @@
 
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
+#include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/detail/MotionSeam.h>
 #include <tanh/utils/RealtimeSanitizer.h>
