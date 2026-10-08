@@ -625,7 +625,7 @@ INSTANTIATE_TEST_SUITE_P(BlockSizes,
 
 // Link Audio: a channel one session publishes reaches another session that subscribes to it,
 // as buffers on the local beat grid. Finds the channel by name, so other peers do no harm.
-TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
+TEST(LinkPeersAudio, AChannelOneSessionSendsReachesAnother) {
     constexpr uint32_t frames = 256;
     LinkSession sender(120.0, "tanh audio sender", "tanh test channel");
     LinkSession receiver(120.0, "tanh audio receiver");

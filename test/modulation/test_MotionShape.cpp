@@ -7,8 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "MotionRecorderTestHelpers.h"
 #include "MotionInterpolation.h"
+#include "MotionRecorderTestHelpers.h"
 
 using motion_test::beats_lane;
 using motion_test::k_sr;

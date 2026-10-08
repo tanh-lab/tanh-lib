@@ -3,7 +3,6 @@
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/XYController.h>
-#include "XYPad.h"
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -19,6 +18,7 @@
 #include <vector>
 
 #include "MotionRecorderTestHelpers.h"
+#include "XYPad.h"
 
 using namespace thl::modulation;
 using motion_test::k_sr;
@@ -30,7 +30,7 @@ using motion_test::playing_info;
 // service(), load_lane(), clear() and lane() in a loop. Audio thread: 200k
 // blocks of random size. No data race (TSan), output finite and in [0, 1],
 // published take ids increase.
-TEST(MotionRecorderConcurrency, Stress) {
+TEST(MotionRecorderThreads, Stress) {
     constexpr uint32_t k_max_block = 256;
     constexpr int k_blocks = 200000;
     MotionRecorder rec;
@@ -156,7 +156,7 @@ TEST(MotionRecorderConcurrency, Stress) {
 // is serviced from another thread plays bit-identical to one serviced between
 // blocks, because the switch from a take buffer to its published copy is
 // silent. Under TSan this also checks the handoff's memory ordering.
-TEST(MotionRecorderConcurrency, ConcurrentServiceKeepsTheHandoffSilent) {
+TEST(MotionRecorderThreads, ConcurrentServiceKeepsTheHandoffSilent) {
     constexpr uint32_t k_bs = 16;
     constexpr int k_takes = 300;
     MotionRecorderConfig config;
@@ -238,7 +238,7 @@ float run_block(detail::XYPad& pad, MotionRecorder& rec, const TransportInfo& t,
 
 // Arm, record, auto-finish, publish, touch override, lane load, a transport
 // jump, reverse and clear on one recorder. The RTSan preset checks the audio path.
-TEST(MotionRecorder, FullScenario) {
+TEST(MotionRecorderThreads, FullScenario) {
     constexpr uint32_t k_bs = 256;
     MotionRecorder rec;
     detail::XYPad pad{1, MonoPriority::Last};

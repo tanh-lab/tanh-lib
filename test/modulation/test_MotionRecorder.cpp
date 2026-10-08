@@ -2,7 +2,6 @@
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionRecorder.h>
-#include "XYPad.h"
 
 #include <algorithm>
 #include <cmath>
@@ -15,8 +14,9 @@
 #include <random>
 #include <vector>
 
-#include "MotionRecorderTestHelpers.h"
 #include "MotionInterpolation.h"
+#include "MotionRecorderTestHelpers.h"
+#include "XYPad.h"
 
 using namespace thl::modulation;
 using motion_test::k_sr;

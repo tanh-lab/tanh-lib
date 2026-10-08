@@ -39,7 +39,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `capabilities()` and `is_connected()` describe what each platform's SDK allows. The
   wire-format helpers are private to `tanh::Link`; both SDK backends share them.
   The option is `TANH_BUILD_LINK`, like the other components, with a `tanh/link.h`
-  umbrella. Tests: `LinkAudioReceiver.*`, `LinkAudioCodec.*`, `LinkAudioPeers.*`.
+  umbrella. Tests: `LinkAudioReceiver.*`, `LinkAudioCodec.*`, `LinkPeersAudio.*`.
   Docs: `transport.md`.
 
 - `thl::modulation::ParameterBackend`: `ModulationMatrix` reads parameters through a
@@ -161,7 +161,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `HostTransportClock.SeekWhileHostSuppliesBeatWaitsForFreeRun`.
 - `XYController`: a repeated `prepare()` re-prepares the recorders; a take published
   by `service()` during a block no longer switches that block to the older lane it
-  still reads. Tests: `MotionRecorderConcurrency.ConcurrentServiceKeepsTheHandoffSilent`.
+  still reads. Tests: `MotionRecorderThreads.ConcurrentServiceKeepsTheHandoffSilent`.
 
 ## [0.4.0] - 2026-09-21
 

@@ -239,5 +239,5 @@ the CTest label `link-peers`. Every test preset excludes that label, so
 exclude filter still applies). Every
 test that enables Link holds the CTest resource lock `link-network`, so
 `ctest -j` never runs two at once (they would discover each other). `LinkAudioReceiver.*` (`test/dsp`)
-plays scripted buffers; `LinkAudioPeers.*` (label `link-peers`) sends a channel
+plays scripted buffers; `LinkPeersAudio.*` (label `link-peers`) sends a channel
 from one session to another over the network.

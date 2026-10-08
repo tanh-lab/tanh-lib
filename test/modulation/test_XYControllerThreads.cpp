@@ -202,7 +202,7 @@ float run_block(ModulationMatrix& matrix,
 // Touches (nearest dot), recording, publication, playback, glide, latch, frames,
 // trail, routing toggles and reset() on several controllers. The RTSan preset
 // checks the audio path.
-TEST(XYController, FullScenario) {
+TEST(XYControllerThreads, FullScenario) {
     FakeBackend backend;
     for (int n = 1; n <= 4; ++n) {
         backend.add("s" + std::to_string(n) + ".a", 0.0f);
