@@ -1,8 +1,6 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/core/threading/LockFreeQueue.h>
-#include <tanh/core/threading/TripleBuffer.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
@@ -15,7 +13,6 @@
 #include <tanh/modulation/detail/XYTouchTable.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
-#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +21,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 

@@ -36,17 +36,19 @@ public:
     ~TripleBuffer() = default;
 
     /// Publish a copy of @p value.
-    void write(const T& value) TANH_NONBLOCKING_FUNCTION {
+    void write(const T& value) noexcept TANH_NONBLOCKING_FUNCTION {
         m_slots[m_back].m_value = value;
         publish();
     }
 
     /// The writer's slot, to fill in place before publish(). Its content is a
     /// stale value from some earlier publication, not the last one written.
-    [[nodiscard]] T& write_buffer() TANH_NONBLOCKING_FUNCTION { return m_slots[m_back].m_value; }
+    [[nodiscard]] T& write_buffer() noexcept TANH_NONBLOCKING_FUNCTION {
+        return m_slots[m_back].m_value;
+    }
 
     /// Publish write_buffer().
-    void publish() TANH_NONBLOCKING_FUNCTION {
+    void publish() noexcept TANH_NONBLOCKING_FUNCTION {
         const auto old =
             m_middle.exchange(static_cast<uint8_t>(m_back | k_dirty), std::memory_order_acq_rel);
         m_back = static_cast<uint8_t>(old & k_index_mask);
@@ -54,7 +56,7 @@ public:
 
     /// True if a value was published since the last read() (a hint: the
     /// writer may publish right after).
-    [[nodiscard]] bool has_new() const TANH_NONBLOCKING_FUNCTION {
+    [[nodiscard]] bool has_new() const noexcept TANH_NONBLOCKING_FUNCTION {
         return (m_middle.load(std::memory_order_relaxed) & k_dirty) != 0;
     }
 
@@ -62,7 +64,7 @@ public:
      * @brief Copy the latest value into @p out if one was published since the
      *        last read(). Returns false (and leaves @p out untouched) otherwise.
      */
-    bool read(T& out) TANH_NONBLOCKING_FUNCTION {
+    bool read(T& out) noexcept TANH_NONBLOCKING_FUNCTION {
         if (!update()) { return false; }
         out = m_slots[m_front].m_value;
         return true;
@@ -72,7 +74,7 @@ public:
      * @brief Take the latest publication (if any) into the reader's slot.
      * @return true if it is new. latest() then refers to it until the next call.
      */
-    bool update() TANH_NONBLOCKING_FUNCTION {
+    bool update() noexcept TANH_NONBLOCKING_FUNCTION {
         if ((m_middle.load(std::memory_order_relaxed) & k_dirty) == 0) { return false; }
         const auto old = m_middle.exchange(m_front, std::memory_order_acq_rel);
         m_front = static_cast<uint8_t>(old & k_index_mask);
@@ -80,7 +82,7 @@ public:
     }
 
     /// The reader's current value (the default/initial value before the first update()).
-    [[nodiscard]] const T& latest() const TANH_NONBLOCKING_FUNCTION {
+    [[nodiscard]] const T& latest() const noexcept TANH_NONBLOCKING_FUNCTION {
         return m_slots[m_front].m_value;
     }
 

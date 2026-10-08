@@ -17,7 +17,8 @@ namespace thl::dsp::transport {
  * session when the buffer arrived), so the buffer can be placed on the receiver's timeline.
  */
 struct LinkAudioPacket {
-    /// A Link Audio network packet carries at most 563 16-bit samples (1200-byte messages).
+    /// A Link Audio network packet carries at most 563 16-bit samples (1200-byte messages);
+    /// the storage is rounded up to a multiple of 64 samples (576).
     static constexpr size_t k_max_samples = 576;
 
     std::array<float, k_max_samples> m_samples{};

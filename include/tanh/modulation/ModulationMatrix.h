@@ -155,21 +155,22 @@ public:
         return m_config.read_scope(m_audio_reader);
     }
 
-    // Process all sources and fill modulation buffers for all targets.
-    // num_samples must not exceed the prepared samples_per_block (the length of
-    // every buffer): split larger host blocks into chunks. A larger value
-    // asserts and is clamped.
-    // Convenience wrapper that opens a read scope internally — use when the
-    // caller doesn't need to extend the scope across downstream DSP work.
-    //
-    // @p transport is the block's musical time for the block processors
-    // (BlockContext::m_transport): pass the clock's block (or the chunk of it,
-    // TransportInfo::sub_block()) when a processor follows the transport.
+    /// Process all sources and fill modulation buffers for all targets.
+    /// num_samples must not exceed the prepared samples_per_block (the length of
+    /// every buffer): split larger host blocks into chunks. A larger value
+    /// asserts and is clamped.
+    /// Convenience wrapper that opens a read scope internally — use when the
+    /// caller doesn't need to extend the scope across downstream DSP work.
+    ///
+    /// @p transport is the block's musical time for the block processors
+    /// (BlockContext::m_transport): pass the clock's block (or the chunk of it,
+    /// TransportInfo::sub_block()) when a processor follows the transport.
     void process(size_t num_samples, const dsp::transport::TransportInfo* transport = nullptr)
         TANH_NONBLOCKING_FUNCTION;
 
-    // Process variant assuming the caller already holds an open ReadScope.
-    // The config reference must come from that scope's data().
+    /// Process variant assuming the caller already holds an open ReadScope.
+    /// The config reference must come from that scope's data(); @p transport as
+    /// for process().
     void process_with_scope(const ProcessingConfig& config,
                             size_t num_samples,
                             const dsp::transport::TransportInfo* transport = nullptr)
@@ -222,10 +223,10 @@ public:
     // k_global_scope or not registered.
     void set_voice_count(ModulationScope scope, uint32_t voice_count);
 
-    // Block processors: run once per block before any source (BlockProcessor.h).
-    // add_block_processor() prepares @p processor if the matrix is prepared.
-    // remove_block_processor() blocks until the audio thread no longer uses it.
-    // The processor must stay alive while registered.
+    /// Block processors: run once per block before any source (BlockProcessor.h).
+    /// add_block_processor() prepares @p processor if the matrix is prepared.
+    /// remove_block_processor() blocks until the audio thread no longer uses it.
+    /// The processor must stay alive while registered.
     void add_block_processor(BlockProcessor& processor);
     void remove_block_processor(BlockProcessor& processor);
 
