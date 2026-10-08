@@ -145,12 +145,21 @@ clock.end_block();
 - **Tempo.** The clock never pushes the local tempo on its own; do not push a
   preset tempo while `num_peers() > 0`.
 
-iOS apps also bundle `TANH_LINKKIT_RESOURCES_BUNDLE`, present
+iOS apps also bundle LinkKit's resources, present
 `session.settings_view_controller()` (enabling Link and start/stop sync are
 user settings there), call `session.set_active(false)` when backgrounded without
 audio, and set the Info.plist keys `NSLocalNetworkUsageDescription` and
-`ABLLinkStartStopSyncSupported`. An installed static `tanh::Link` does not carry
-LinkKit: the app links `LinkKit.xcframework` itself (configure prints a NOTICE).
+`ABLLinkStartStopSyncSupported`. On iOS the option needs CMake 3.28 or newer
+(LinkKit is an `.xcframework`), and the configure step sets two cache variables
+for the app's own CMake:
+
+- `TANH_LINKKIT_RESOURCES_BUNDLE`: `LinkKitResources.bundle`, to copy into the
+  app's resources (the settings view's strings);
+- `TANH_LINKKIT_DIR`: the unpacked LinkKit release.
+
+They exist only in a build that adds tanh-lib as a subdirectory: LinkKit is not
+installed. An installed static `tanh::Link` does not carry LinkKit either; the
+app links `LinkKit.xcframework` itself (configure prints a NOTICE).
 
 ## Link Audio
 
@@ -224,7 +233,10 @@ scripted fake session, including sample-exact latency compensation. With
 [TEST-PLAN](https://github.com/Ableton/link/blob/master/TEST-PLAN.md) cases
 against an in-process peer. The peer tests need multicast on the local
 interfaces, skip when the peers do not find each other within 10 s and carry
-the CTest label `link-peers`; exclude them on CI with
-`ctest --preset <preset> -LE link-peers`. `LinkAudioReceiver.*` (`test/dsp`)
+the CTest label `link-peers`. Every test preset excludes that label, so
+`ctest --preset <preset>` skips them; run them with `ctest --preset <preset>
+-L link-peers` (the test presets' exclude filter does not apply to `-L`). Every
+test that enables Link holds the CTest resource lock `link-network`, so
+`ctest -j` never runs two at once (they would discover each other). `LinkAudioReceiver.*` (`test/dsp`)
 plays scripted buffers; `LinkAudioPeers.*` (label `link-peers`) sends a channel
 from one session to another over the network.

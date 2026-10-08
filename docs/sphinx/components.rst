@@ -1,10 +1,11 @@
 Components
 ==========
 
-tanh-lib is six independently buildable library targets. Each is an
+tanh-lib is a set of independently buildable library targets. Each is an
 ``add_library`` of its own, exported as ``tanh::<Component>`` both in-tree and
-from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option.
-Everything lives in namespace ``thl``.
+from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option
+(Parameters has none: it is built with State or Modulation). Everything lives
+in namespace ``thl``.
 
 .. graphviz::
    :align: center
@@ -15,6 +16,7 @@ Everything lives in namespace ``thl``.
        edge [color="#5b6b82", arrowsize=0.7];
 
        core       [label="tanh::Core\nDispatcher, Logger, RCU,\nLockFreeQueue, Buffer, WavReader"];
+       parameters [label="tanh::Parameters\ndefinitions, ranges,\nscopes, lookup errors"];
        state      [label="tanh::State\nhierarchical parameters,\nRCU reads, JSON"];
        dsp        [label="tanh::DSP\nprocessors, effects,\ngranular, Rings resonator"];
        modulation [label="tanh::Modulation\nmodulation matrix,\nchange-point sub-blocking"];
@@ -22,12 +24,13 @@ Everything lives in namespace ``thl``.
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
        link       [label="tanh::Link\nLinkSession (Ableton Link)", style="rounded,dashed"];
 
-       state -> core;
+       parameters -> core;
+       state -> parameters;
        dsp -> core;
        audio_io -> core;
        net -> core;
-       modulation -> core;
-       modulation -> state;
+       modulation -> parameters;
+       modulation -> state [style=dashed, label="optional", fontsize=9];
        modulation -> dsp;
        link -> dsp;
    }
@@ -56,6 +59,18 @@ Core links no platform system library by default; the Linux journald sink is
 opt-in through ``TANH_WITH_JOURNALD``. Allocation failure in the containers
 throws ``std::bad_alloc``; contract violations ``assert``.
 
+Parameters
+----------
+
+``tanh::Parameters`` (``include/tanh/parameters/``) describes a parameter
+independently of where its value is stored:
+:cpp:struct:`thl::ParameterDefinition` (type, ``Range``, flags, formatters),
+the modulation scope it belongs to and the lookup errors
+(:cpp:class:`thl::ParameterNotFoundException`,
+:cpp:class:`thl::ParameterTypeMismatchException`). State and Modulation both
+depend on it, so Modulation builds without State. It has no option of its own:
+it is built whenever State or Modulation is. Depends on Core.
+
 State
 -----
 
@@ -64,7 +79,7 @@ addressed by dot-separated paths such as ``"oscillator.frequency"``. Reads are
 RCU-protected, so the audio thread can look a value up without taking a lock;
 numeric parameter types (``double``, ``float``, ``int``, ``bool``) are fully
 real-time safe. Serialization to and from JSON goes through nlohmann_json.
-Depends on Core.
+Depends on Core and Parameters.
 
 DSP
 ---
@@ -84,8 +99,13 @@ Modulation
 (LFOs, UI-driven input queues and any other
 :cpp:class:`thl::modulation::ModulationSource`) to DSP parameters through the
 :cpp:class:`thl::modulation::ModulationMatrix`. The matrix records change
-points per block and drives the processors' sub-blocking. See :doc:`modulation`
-for the input-event design. Depends on Core, State and DSP.
+points per block and drives the processors' sub-blocking. It reads parameters
+through a :cpp:class:`thl::modulation::ParameterBackend`, so a host binds its
+own parameter store (:doc:`host_parameters`); with State built, a matrix can
+also be built straight from a :cpp:class:`thl::State`. It also holds the XY
+controller and the motion recorder (:doc:`xy_controller`,
+:doc:`motion_recording`). See :doc:`modulation` for the input-event design.
+Depends on Core, Parameters and DSP; on State when it is built.
 
 AudioIO
 -------
@@ -129,4 +149,5 @@ which ``tanh::Core`` carries as a public compile definition.
 Licenses
 --------
 
-Core is Apache-2.0; every other component is AGPL-3.0. See :doc:`license`.
+Core is Apache-2.0; every other component is AGPL-3.0, and ``TANH_BUILD_LINK``
+adds Ableton Link's own terms. See :doc:`license`.

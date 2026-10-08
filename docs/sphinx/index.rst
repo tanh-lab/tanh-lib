@@ -1,19 +1,23 @@
 tanh-lib
 ========
 
-Modular, real-time-safe C++20 audio library. Six independently buildable
+Modular, real-time-safe C++20 audio library. Independently buildable
 components, all in namespace ``thl``:
 
 - **tanh::Core** — Dispatcher, Logger (with a real-time path), RCU, lock-free
   queue, generic buffers, header-only WAV decoder
+- **tanh::Parameters** — parameter definitions, ranges, modulation scopes and
+  lookup errors, shared by State and Modulation
 - **tanh::State** — hierarchical parameter storage with RCU lock-free reads and
   JSON serialization
 - **tanh::DSP** — processors, effects, filters, granular engine, Rings resonator
   model (also available alone as ``tanh::Resonator``)
-- **tanh::Modulation** — modulation matrix with change-point sub-blocking
+- **tanh::Modulation** — modulation matrix with change-point sub-blocking, XY
+  touch control and motion recording
 - **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
-- **tanh::Link** — Ableton Link session (``TANH_BUILD_LINK``, off by default)
+- **tanh::Link** — Ableton Link session and Link Audio (``TANH_BUILD_LINK``,
+  off by default)
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
 
