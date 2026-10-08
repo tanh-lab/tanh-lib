@@ -149,6 +149,32 @@ shifts a running take: it keeps recording on its own clock, writes every index
 once and ends after its length; only playback re-locks. Only `prepare()`
 aborts a take (the previous lane is kept, `MotionSnapshot::m_aborted`).
 
+## Shapes
+
+`set_shapes(MotionShapeMix)` (any thread, applied from the next block) plays stock paths
+instead of, or blended with, the lane. The mix has two slots, A and B, each a
+`MotionShape` or `MotionShape::Take` (the lane), crossfaded point by point at the same
+position in the loop by `m_morph`. `m_size` and `m_rotation` scale and turn the shape
+slots around the pad centre; the take keeps its own position.
+
+- Both slots on Take: nothing changes, the lane plays.
+- A slot on Take with a lane: the shapes follow the lane's loop (length, anchor,
+  playback length, reverse); without a lane the Take slot is the centre.
+- No Take slot (or no lane): the shapes loop over the playback length as a Beats
+  loop from the bar line, one bar while it is Free.
+- The gate stays open while a shape slot is heard (morph weight above 0), else it is
+  the lane's.
+- A slot change re-seeks and glides like a new lane; morph, size and rotation are read
+  once per block and follow at the render interval, so host automation is smooth.
+- While a shape plays, a touch moves the shape's centre to the finger; the release
+  glides back.
+- Shapes pause while a take records: the output, the gate and the live trail are the
+  recording, as without shapes. They resume over the new take when it plays.
+
+Every shape starts at the top of the pad and turns clockwise where it has a direction,
+so a morph does not collapse through the centre. `played_path(n)` returns what plays as
+`n` points over one loop for drawing; `shapes_version()` changes with the mix.
+
 ## MotionLane and JSON
 
 A `MotionLane` holds a take id, a timebase (Seconds or Beats), the loop length,

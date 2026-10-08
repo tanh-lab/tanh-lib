@@ -5,6 +5,7 @@
 #include <tanh/core/threading/RCU.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
+#include <tanh/modulation/MotionShape.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -122,6 +123,12 @@ struct MotionSnapshot {
  * which is smoothed by set_smoothing(). Every publication can be undone once
  * (undo(), redo()).
  *
+ * set_shapes() plays stock shapes in place of the lane, or morphs between a
+ * shape and the lane (MotionShapeMix). A shape loops over the playback length
+ * (one bar while it is Free), or over the lane's loop when a slot plays the
+ * take. While a shape plays, a touch moves its centre instead of replacing it;
+ * shapes pause while a take records.
+ *
  * XYController owns one recorder per voice and calls process(); recorder(v)
  * gives the UI and message thread access to the rest.
  *
@@ -129,11 +136,12 @@ struct MotionSnapshot {
  * - ctor, prepare: message thread, audio stopped (allocates).
  * - arm, record, disarm, play, stop, set_reverse, set_playback_length:
  *   one UI thread (lock-free queue).
- * - set_stopped_transport, smoothing, loop_end: any thread.
+ * - set_stopped_transport, smoothing, loop_end, set_shapes, shapes,
+ *   shapes_version: any thread.
  * - process and the audio getters: audio thread.
  * - service, load_lane, clear, undo, redo, can_undo, can_redo, clear_history,
  *   set_smoothing, set_loop_end: one message thread (RCU publication, allocates).
- * - lane, played_lane, read_lane, lane_version: message or UI thread.
+ * - lane, played_lane, played_path, read_lane, lane_version: message or UI thread.
  */
 class TANH_API MotionRecorder {
 public:
@@ -261,11 +269,29 @@ public:
     void set_loop_end(LoopEnd mode);
     [[nodiscard]] LoopEnd loop_end() const { return m_loop_end.load(std::memory_order_relaxed); }
 
+    /**
+     * @brief Play shapes in place of, or blended with, the lane.
+     *
+     * Applied from the next block. A slot change glides like a new lane; morph,
+     * size and rotation follow at the render interval. With both slots on Take
+     * the lane plays as without shapes.
+     */
+    void set_shapes(const MotionShapeMix& mix);
+    [[nodiscard]] MotionShapeMix shapes() const;
+    /// Bumped by every set_shapes() that changes the mix: redraw played_path().
+    [[nodiscard]] uint32_t shapes_version() const {
+        return m_shapes_version.load(std::memory_order_acquire);
+    }
+
     /// Copy of the published lane (raw, with the recorded seam; allocates).
     [[nodiscard]] MotionLane lane() const;
     /// Copy of the published lane with the x and y that play: seam closed and
     /// smoothed (allocates).
     [[nodiscard]] MotionLane played_lane() const;
+
+    /// What plays over one loop: played_lane(), or with shapes (set_shapes()) the
+    /// mix sampled at @p num_points points, gate 1 where a shape sounds (allocates).
+    [[nodiscard]] MotionLane played_path(size_t num_points = 512) const;
 
     /// Call @p f with the published (raw) lane inside an RCU read section.
     template <typename F>
@@ -322,6 +348,8 @@ private:
         MotionTimebase m_timebase = MotionTimebase::Seconds;
         double m_length = 0.0;
         double m_anchor = 0.0;
+        // Shapes play (m_shapes): m_x / m_y / m_gate are the take, or null without one.
+        bool m_shaped = false;
         [[nodiscard]] bool empty() const { return m_num_points == 0 || !(m_length > 0.0); }
     };
 
@@ -358,6 +386,10 @@ private:
     [[nodiscard]] LaneView view_of(Source source, const PlayedLane& lane) const;
     // view_of() the playing source, empty while a new take replaces it.
     [[nodiscard]] LaneView playback_view(const PlayedLane& lane) const;
+    // @p lane with the block's shapes: the lane as the take slot, or a shape loop.
+    [[nodiscard]] LaneView shaped_view(LaneView lane) const;
+    // Read set_shapes() for the block; a slot change re-seeks with a glide.
+    void apply_shapes();
     void switch_to(Source source, uint32_t id, bool silent);
     void glide_in_place();
     void start_take(const thl::dsp::transport::TransportInfo& transport,
@@ -393,6 +425,12 @@ private:
     std::atomic<uint32_t> m_clear_request{0};
     std::atomic<float> m_smoothing{0.0f};
     std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
+    std::atomic<MotionShape> m_shape_a{MotionShape::Take};
+    std::atomic<MotionShape> m_shape_b{MotionShape::Take};
+    std::atomic<float> m_shape_morph{0.0f};
+    std::atomic<float> m_shape_size{1.0f};
+    std::atomic<float> m_shape_rotation{0.0f};
+    std::atomic<uint32_t> m_shapes_version{0};
 
     // Message thread only.
     uint32_t m_published_id = 0;
@@ -411,6 +449,8 @@ private:
     bool m_reverse = false;
     bool m_reverse_pending = false;
     LoopLength m_playback_length = LoopLength::Free;
+    MotionShapeMix m_shapes;          // set_shapes() for this block
+    bool m_shape_gate = false;        // a shape slot sounds: the gate stays open
     uint32_t m_replaced_take_id = 0;  // lane muted by the running take (0 = none)
     int m_sig_num = 4;                // time signature of the last block
     int m_sig_denom = 4;

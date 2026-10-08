@@ -22,6 +22,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MotionRecorderTakes.cpp
 	test_MotionRecorderFreeTakes.cpp
 	test_MotionRecorderSmoothing.cpp
+	test_MotionShape.cpp
 	test_OversizedBlocks.cpp
 )
 

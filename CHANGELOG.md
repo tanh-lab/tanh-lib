@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Motion shapes: `MotionShape` (18 stock closed paths: circle, square, Lissajous,
+  roses, spiral, heart, star, ...) and `MotionShapeMix` (slots A and B, each a shape or
+  the take, a morph between them, size and rotation). `MotionRecorder::set_shapes()`
+  plays the mix on the audio thread in place of, or blended with, the lane, over the
+  playback length (one bar while Free) or the lane's loop; a touch moves a playing
+  shape's centre. `played_path()` samples what plays for drawing, `shapes_version()`
+  tells when to redraw. Tests: `MotionShape.*`. Docs: `motion_recording.md`.
+
 - Link Audio (`TANH_WITH_LINK`): `LinkSession` shares audio channels with Link peers
   (`set_audio_enabled()`, `audio_channels()`, `set_audio_input()`; the output channel
   is named at construction) on the C++ SDK's `LinkAudio` and LinkKit's audio API.

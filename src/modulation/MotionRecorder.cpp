@@ -2,6 +2,7 @@
 
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
+#include <tanh/modulation/MotionShape.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -32,6 +33,9 @@ constexpr double k_tick_eps = 1e-9;
 // A snapped free take counts as still while x and y stay within this distance
 // (pad units, |dx| + |dy|) of its first or last point: finger jitter, no move.
 constexpr double k_still_distance = 0.002;
+// Grid of a shape loop without a take: the jump detector's "two points" and the
+// phase the UI shows; shapes themselves are evaluated exactly.
+constexpr size_t k_shape_points = 256;
 
 // Nearest of 1, 2, 4, 8, 16 bars by ratio (log2), so the stretch is the smallest.
 double snap_bars(double bars) {
@@ -460,6 +464,62 @@ MotionLane MotionRecorder::played_lane() const {
     return copy;
 }
 
+void MotionRecorder::set_shapes(const MotionShapeMix& mix) {
+    const MotionShapeMix old = shapes();
+    m_shape_a.store(mix.m_a, std::memory_order_relaxed);
+    m_shape_b.store(mix.m_b, std::memory_order_relaxed);
+    m_shape_morph.store(mix.m_morph, std::memory_order_relaxed);
+    m_shape_size.store(mix.m_size, std::memory_order_relaxed);
+    m_shape_rotation.store(mix.m_rotation, std::memory_order_relaxed);
+    if (old.m_a != mix.m_a || old.m_b != mix.m_b || old.m_morph != mix.m_morph ||
+        old.m_size != mix.m_size || old.m_rotation != mix.m_rotation) {
+        m_shapes_version.fetch_add(1, std::memory_order_release);
+    }
+}
+
+MotionShapeMix MotionRecorder::shapes() const {
+    MotionShapeMix mix;
+    mix.m_a = m_shape_a.load(std::memory_order_relaxed);
+    mix.m_b = m_shape_b.load(std::memory_order_relaxed);
+    mix.m_morph = m_shape_morph.load(std::memory_order_relaxed);
+    mix.m_size = m_shape_size.load(std::memory_order_relaxed);
+    mix.m_rotation = m_shape_rotation.load(std::memory_order_relaxed);
+    return mix;
+}
+
+MotionLane MotionRecorder::played_path(size_t num_points) const {
+    MotionLane lane = played_lane();
+    const MotionShapeMix mix = shapes();
+    if (!mix.active() || num_points == 0) { return lane; }
+    const bool take = mix.uses_take() && !lane.empty();
+    const float morph = std::clamp(mix.m_morph, 0.0f, 1.0f);
+    const bool shape_sounds = (mix.m_a != MotionShape::Take && morph < 1.0f) ||
+                              (mix.m_b != MotionShape::Take && morph > 0.0f) || !take;
+    MotionLane path;
+    path.m_take_id = lane.m_take_id;
+    path.m_timebase = take ? lane.m_timebase : MotionTimebase::Beats;
+    path.m_length = take ? lane.m_length : 4.0;
+    path.m_rate = static_cast<double>(num_points) / path.m_length;
+    path.m_x.resize(num_points);
+    path.m_y.resize(num_points);
+    path.m_gate.resize(num_points);
+    for (size_t i = 0; i < num_points; ++i) {
+        const double u = static_cast<double>(i) / static_cast<double>(num_points);
+        MotionShapePoint at{.m_x = 0.5f, .m_y = 0.5f};
+        uint8_t gate = 1;
+        if (take) {
+            const MotionPoint p = lane.sample(u * lane.m_length);
+            at = {.m_x = p.m_x, .m_y = p.m_y};
+            gate = shape_sounds ? 1 : p.m_gate;
+        }
+        const MotionShapePoint p = mix_motion_shapes(mix, u, at);
+        path.m_x[i] = p.m_x;
+        path.m_y[i] = p.m_y;
+        path.m_gate[i] = gate;
+    }
+    return path;
+}
+
 MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
     const bool has_lane = m_view_length > 0.0;
     MotionSnapshot s;
@@ -525,6 +585,37 @@ MotionRecorder::LaneView MotionRecorder::view_of(Source src, const PlayedLane& p
 MotionRecorder::LaneView MotionRecorder::playback_view(const PlayedLane& lane) const {
     if (m_replaced_take_id != 0 && m_playing_take_id == m_replaced_take_id) { return {}; }
     return view_of(m_source, lane);
+}
+
+MotionRecorder::LaneView MotionRecorder::shaped_view(LaneView lane) const {
+    // Shapes pause while a take records: the output and the trail are the recording.
+    if (!m_shapes.active() || m_take.m_active) { return lane; }
+    if (m_shapes.uses_take() && !lane.empty()) {
+        lane.m_shaped = true;
+        return lane;
+    }
+    // No take to follow: the shapes loop over the playback length, one bar while it is Free.
+    LaneView v;
+    v.m_shaped = true;
+    v.m_num_points = k_shape_points;
+    v.m_timebase = MotionTimebase::Beats;
+    v.m_length = std::max<uint32_t>(bars_of(m_playback_length), 1) *
+                 static_cast<double>(m_sig_num) * 4.0 / static_cast<double>(m_sig_denom);
+    return v;
+}
+
+void MotionRecorder::apply_shapes() {
+    const MotionShapeMix mix = shapes();
+    if (mix.m_a != m_shapes.m_a || mix.m_b != m_shapes.m_b) {
+        // Another curve, and maybe another loop: re-seek and glide like a new lane.
+        m_need_phase = true;
+        m_ramp_restart = true;
+        if (!m_last_live) { start_glide(); }
+    }
+    m_shapes = mix;
+    const float morph = std::clamp(mix.m_morph, 0.0f, 1.0f);
+    m_shape_gate = (mix.m_a != MotionShape::Take && morph < 1.0f) ||
+                   (mix.m_b != MotionShape::Take && morph > 0.0f);
 }
 
 void MotionRecorder::start_glide() {
@@ -976,12 +1067,13 @@ void MotionRecorder::process(const TransportInfo& t,
     }
 
     apply_commands(bpm);
+    apply_shapes();
 
     const auto scope = m_lanes.read_scope(*m_audio_reader);
     const PlayedLane& lane = scope.data();
     select_source(lane);
 
-    LaneView view = playback_view(lane);
+    LaneView view = shaped_view(playback_view(lane));
     double dphase = 0.0;
     auto direction = [&](const LaneView& v) {
         if (v.m_timebase == MotionTimebase::Beats) { return m_reverse ? -slope : slope; }
@@ -1045,7 +1137,7 @@ void MotionRecorder::process(const TransportInfo& t,
     }
 
     auto relock = [&](uint32_t offset) {
-        view = playback_view(lane);
+        view = shaped_view(playback_view(lane));
         m_need_phase = false;
         m_segment_start = offset;
         m_ramp_restart = true;
@@ -1063,6 +1155,23 @@ void MotionRecorder::process(const TransportInfo& t,
     size_t in_cp = 0;
     const uint32_t interval = m_config.m_render_interval;
     const auto inv_interval = static_cast<float>(1.0 / interval);
+    // The played x and y at @p phase: the lane, or the shapes over it.
+    auto render = [&](double phase, float& x, float& y) {
+        const double index = phase * static_cast<double>(view.m_num_points) / view.m_length;
+        if (!view.m_shaped) {
+            x = detail::catmull_rom_wrap(view.m_x, view.m_num_points, index);
+            y = detail::catmull_rom_wrap(view.m_y, view.m_num_points, index);
+            return;
+        }
+        MotionShapePoint take{.m_x = 0.5f, .m_y = 0.5f};
+        if (view.m_x != nullptr) {
+            take = {.m_x = detail::catmull_rom_wrap(view.m_x, view.m_num_points, index),
+                    .m_y = detail::catmull_rom_wrap(view.m_y, view.m_num_points, index)};
+        }
+        const MotionShapePoint p = mix_motion_shapes(m_shapes, phase / view.m_length, take);
+        x = p.m_x;
+        y = p.m_y;
+    };
 
     for (uint32_t i = 0; i < n; ++i) {
         const uint32_t j = i;
@@ -1079,7 +1188,11 @@ void MotionRecorder::process(const TransportInfo& t,
         // Recording.
         if (!m_take.m_active && m_armed && (live || m_force_start)) {
             start_take(t, in, j, b0 + (static_cast<double>(i) * slope));
-            if (m_take.m_active && m_replaced_take_id != 0) { view = {}; }
+            if (m_take.m_active && m_replaced_take_id != 0) {
+                view = {};
+            } else if (m_take.m_active && view.m_shaped) {
+                view = playback_view(lane);  // shapes pause during the take
+            }
         }
         if (m_take.m_active) {
             Take& k = m_take;
@@ -1134,7 +1247,7 @@ void MotionRecorder::process(const TransportInfo& t,
             if (p < 0.0 || p >= view.m_length) { p = detail::wrap_phase(p, view.m_length); }
             auto gi = static_cast<size_t>(p * scale);
             if (gi >= view.m_num_points) { gi = view.m_num_points - 1; }
-            pg = view.m_gate[gi];
+            pg = (m_shape_gate || view.m_gate == nullptr) ? 1 : view.m_gate[gi];
             // The render grid restarts at every loop wrap, so each loop is
             // rendered on the same ticks (loop n == loop 1).
             const double half = 0.5 * view.m_length;
@@ -1144,8 +1257,7 @@ void MotionRecorder::process(const TransportInfo& t,
             if (wrapped) { m_ramp_restart = true; }
             if (m_ramp_restart || m_ramp_position >= interval) {
                 if (m_ramp_restart) {
-                    m_ramp_to_x = detail::catmull_rom_wrap(view.m_x, view.m_num_points, p * scale);
-                    m_ramp_to_y = detail::catmull_rom_wrap(view.m_y, view.m_num_points, p * scale);
+                    render(p, m_ramp_to_x, m_ramp_to_y);
                     m_ramp_restart = false;
                 }
                 m_ramp_from_x = m_ramp_to_x;
@@ -1154,8 +1266,7 @@ void MotionRecorder::process(const TransportInfo& t,
                 if (ahead < 0.0 || ahead >= view.m_length) {
                     ahead = detail::wrap_phase(ahead, view.m_length);
                 }
-                m_ramp_to_x = detail::catmull_rom_wrap(view.m_x, view.m_num_points, ahead * scale);
-                m_ramp_to_y = detail::catmull_rom_wrap(view.m_y, view.m_num_points, ahead * scale);
+                render(ahead, m_ramp_to_x, m_ramp_to_y);
                 m_ramp_position = 0;
                 cp = true;
             }
@@ -1172,6 +1283,11 @@ void MotionRecorder::process(const TransportInfo& t,
         if (live) {
             ox = lx;
             oy = ly;
+            if (pb_on && view.m_shaped) {
+                // A playing shape follows the finger: the touch is its centre.
+                ox = clamp01(static_cast<double>(px) + lx - 0.5);
+                oy = clamp01(static_cast<double>(py) + ly - 0.5);
+            }
             og = 1;
             m_glide_left = 0;
         } else if (pb_on) {
