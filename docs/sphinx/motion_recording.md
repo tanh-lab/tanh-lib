@@ -19,7 +19,8 @@ loop on release.
   did not quite end where it started still loops without a jump. Then x and y
   run through a circular, zero-phase Gaussian with sigma = amount² × half a
   beat (250 ms for Seconds lanes; 0.2 gives 0.02 beat, 10 ms at 120 bpm),
-  capped at a sixth of the loop. The gate is not smoothed.
+  capped at a sixth of the loop. The gate is not smoothed. The same curve comes from
+  `make_played_curve(lane, amount, loop_end)` for any lane.
 - **Loop end** (`set_loop_end(LoopEnd::Jump)`): keep the seam step as a hard
   edge (a drawn line that jumps back to its start). The Gaussian then treats
   the take as an open sequence (mirrored at both ends) and does not smooth

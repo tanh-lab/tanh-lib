@@ -5,7 +5,10 @@
 #include <tanh/core/threading/RCU.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
+#include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/MotionShape.h>
+#include <tanh/modulation/detail/MotionGlide.h>
+#include <tanh/modulation/detail/MotionHistory.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -42,12 +45,6 @@ enum class LoopLength : uint8_t { Free, Bars1, Bars2, Bars4, Bars8, Bars16 };
 enum class StoppedTransport : uint8_t {
     FreeRun,  ///< keep moving at the last tempo from the last beat (default)
     Hold      ///< freeze the output
-};
-
-/// How the played lane treats the step from the end of the loop to its start.
-enum class LoopEnd : uint8_t {
-    Smooth,  ///< spread the step over a window that grows with the smoothing amount (default)
-    Jump     ///< keep the step as a hard edge; smoothing does not cross it
 };
 
 /// Recorder state as a UI shows it.
@@ -248,8 +245,8 @@ public:
     bool undo();
     /// Republish the lane the last undo() replaced. A new publication drops it.
     bool redo();
-    [[nodiscard]] bool can_undo() const { return m_has_undo; }
-    [[nodiscard]] bool can_redo() const { return m_has_redo; }
+    [[nodiscard]] bool can_undo() const { return m_history.can_undo(); }
+    [[nodiscard]] bool can_redo() const { return m_history.can_redo(); }
     /// Forget the undo and redo lanes (preset load).
     void clear_history();
 
@@ -404,14 +401,13 @@ private:
     // keep_replaced: the old lane plays on (prepare()); otherwise service() clears it.
     void abort_take(bool keep_replaced = false);
     void finalise(TakeBuffer& buffer, size_t num_points);
-    void start_glide();
+    void start_glide() { m_glide.start(m_last_x, m_last_y); }
     void publish(MotionLane lane, bool record_history = true);
     void publish_played(MotionLane lane);
 
     MotionRecorderConfig m_config;
     double m_sample_rate = 48000.0;
     size_t m_max_block = 0;
-    uint32_t m_glide_samples = 1200;
 
     // Shared between threads.
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
@@ -425,20 +421,13 @@ private:
     std::atomic<uint32_t> m_clear_request{0};
     std::atomic<float> m_smoothing{0.0f};
     std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
-    std::atomic<MotionShape> m_shape_a{MotionShape::Take};
-    std::atomic<MotionShape> m_shape_b{MotionShape::Take};
-    std::atomic<float> m_shape_morph{0.0f};
-    std::atomic<float> m_shape_size{1.0f};
-    std::atomic<float> m_shape_rotation{0.0f};
+    AtomicMotionShapeMix m_shape_mix;
     std::atomic<uint32_t> m_shapes_version{0};
 
     // Message thread only.
     uint32_t m_published_id = 0;
     uint32_t m_played_version = 0;
-    MotionLane m_undo_lane;
-    MotionLane m_redo_lane;
-    bool m_has_undo = false;
-    bool m_has_redo = false;
+    detail::MotionHistory m_history;
 
     // Audio thread only: commands and take.
     Take m_take;
@@ -484,10 +473,7 @@ private:
     float m_ramp_to_x = 0.0f;
     float m_ramp_to_y = 0.0f;
 
-    // Glide.
-    uint32_t m_glide_left = 0;
-    float m_glide_from_x = 0.0f;
-    float m_glide_from_y = 0.0f;
+    detail::MotionGlide m_glide;
     uint64_t m_jump_glides = 0;
 
     // Output and last state.

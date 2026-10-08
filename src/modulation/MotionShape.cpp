@@ -1,9 +1,11 @@
 #include "tanh/modulation/MotionShape.h"
 
+#include <tanh/modulation/MotionLane.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <numbers>
@@ -175,6 +177,82 @@ MotionShapePoint mix_motion_shapes(const MotionShapeMix& mix,
         mix.m_b == MotionShape::Take ? take : place_motion_shape(mix.m_b, mix, u);
     const double w = std::clamp(static_cast<double>(mix.m_morph), 0.0, 1.0);
     return point(a.m_x + ((b.m_x - a.m_x) * w), a.m_y + ((b.m_y - a.m_y) * w));
+}
+
+namespace {
+constexpr double k_fraction_steps = 65535.0;
+
+uint64_t to_fraction(double value) {
+    return static_cast<uint64_t>(std::lround(std::clamp(value, 0.0, 1.0) * k_fraction_steps));
+}
+
+float from_fraction(uint64_t bits) {
+    return static_cast<float>(static_cast<double>(bits & 0xFFFFu) / k_fraction_steps);
+}
+
+MotionShape to_shape(uint64_t bits) {
+    const auto index = static_cast<size_t>(bits & 0xFFu);
+    return index < k_motion_shape_count ? static_cast<MotionShape>(index) : MotionShape::Take;
+}
+}  // namespace
+
+uint64_t AtomicMotionShapeMix::pack(const MotionShapeMix& mix) {
+    double turns = static_cast<double>(mix.m_rotation);
+    turns = std::isfinite(turns) ? turns - std::floor(turns) : 0.0;
+    const double morph = std::isfinite(mix.m_morph) ? mix.m_morph : 0.0;
+    const double size = std::isfinite(mix.m_size) ? mix.m_size : 1.0;
+    return static_cast<uint64_t>(mix.m_a) | (static_cast<uint64_t>(mix.m_b) << 8) |
+           (to_fraction(morph) << 16) | (to_fraction(size) << 32) |
+           (std::min<uint64_t>(to_fraction(turns), 65534) << 48);  // 1 turn wraps to 0
+}
+
+bool AtomicMotionShapeMix::store(const MotionShapeMix& mix) TANH_NONBLOCKING_FUNCTION {
+    const uint64_t packed = pack(mix);
+    return m_packed.exchange(packed, std::memory_order_acq_rel) != packed;
+}
+
+MotionShapeMix AtomicMotionShapeMix::load() const TANH_NONBLOCKING_FUNCTION {
+    const uint64_t packed = m_packed.load(std::memory_order_acquire);
+    MotionShapeMix mix;
+    mix.m_a = to_shape(packed);
+    mix.m_b = to_shape(packed >> 8);
+    mix.m_morph = from_fraction(packed >> 16);
+    mix.m_size = from_fraction(packed >> 32);
+    mix.m_rotation = from_fraction(packed >> 48);
+    return mix;
+}
+
+MotionLane render_motion_path(const MotionLane& lane,
+                              const MotionShapeMix& mix,
+                              size_t num_points) {
+    if (!mix.active() || num_points == 0) { return lane; }
+    const bool take = mix.uses_take() && !lane.empty();
+    const float morph = std::clamp(mix.m_morph, 0.0f, 1.0f);
+    const bool shape_sounds = (mix.m_a != MotionShape::Take && morph < 1.0f) ||
+                              (mix.m_b != MotionShape::Take && morph > 0.0f) || !take;
+    MotionLane path;
+    path.m_take_id = lane.m_take_id;
+    path.m_timebase = take ? lane.m_timebase : MotionTimebase::Beats;
+    path.m_length = take ? lane.m_length : 4.0;
+    path.m_rate = static_cast<double>(num_points) / path.m_length;
+    path.m_x.resize(num_points);
+    path.m_y.resize(num_points);
+    path.m_gate.resize(num_points);
+    for (size_t i = 0; i < num_points; ++i) {
+        const double u = static_cast<double>(i) / static_cast<double>(num_points);
+        MotionShapePoint at{.m_x = 0.5f, .m_y = 0.5f};
+        uint8_t gate = 1;
+        if (take) {
+            const MotionPoint p = lane.sample(u * lane.m_length);
+            at = {.m_x = p.m_x, .m_y = p.m_y};
+            gate = shape_sounds ? 1 : p.m_gate;
+        }
+        const MotionShapePoint p = mix_motion_shapes(mix, u, at);
+        path.m_x[i] = p.m_x;
+        path.m_y[i] = p.m_y;
+        path.m_gate[i] = gate;
+    }
+    return path;
 }
 
 }  // namespace thl::modulation

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
+#include <tanh/modulation/MotionLane.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -90,5 +92,36 @@ struct MotionShapeMix {
                                                           double u,
                                                           MotionShapePoint take)
     TANH_NONBLOCKING_FUNCTION;
+
+/**
+ * @brief A MotionShapeMix any thread can store and the audio thread can load whole.
+ *
+ * Packed into one 64-bit atomic, so a load never mixes two store()s: slots as
+ * 8 bits each, morph, size and rotation (turns, wrapped to [0, 1)) as 16-bit
+ * fractions (steps of 1/65535). Lock-free and real-time safe on both sides.
+ */
+class TANH_API AtomicMotionShapeMix {
+public:
+    /// Stores @p mix; returns true if the stored value changed.
+    bool store(const MotionShapeMix& mix) TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] MotionShapeMix load() const TANH_NONBLOCKING_FUNCTION;
+
+private:
+    std::atomic<uint64_t> m_packed{pack(MotionShapeMix{})};
+
+    [[nodiscard]] static uint64_t pack(const MotionShapeMix& mix);
+};
+
+/**
+ * @brief What @p mix plays over one loop of @p lane, as @p num_points points (allocates).
+ *
+ * The take slots follow @p lane (the played curve, MotionRecorder::played_lane());
+ * without a lane they sit at the centre and the result spans one 4-beat loop.
+ * The gate is open wherever a shape slot sounds, otherwise the lane's. Without
+ * shapes (MotionShapeMix::active() false) it returns @p lane unchanged.
+ */
+[[nodiscard]] TANH_API MotionLane render_motion_path(const MotionLane& lane,
+                                                     const MotionShapeMix& mix,
+                                                     size_t num_points);
 
 }  // namespace thl::modulation

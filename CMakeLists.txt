@@ -386,6 +386,7 @@ if(TANH_BUILD_MODULATION)
         src/modulation/InputEventQueue.cpp
         src/modulation/XYPad.cpp
         src/modulation/MotionLane.cpp
+        src/modulation/MotionLaneProcessing.cpp
         src/modulation/MotionRecorder.cpp
         src/modulation/MotionShape.cpp
         src/modulation/XYController.cpp

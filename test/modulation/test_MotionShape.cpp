@@ -226,3 +226,18 @@ TEST(MotionShape, ShapesPauseWhileATakeRecords) {
     EXPECT_EQ(a.m_y, b.m_y);
     EXPECT_EQ(a.m_gate, b.m_gate);
 }
+
+TEST(MotionShape, AtomicMixRoundTripsWithinAStep) {
+    thl::modulation::AtomicMotionShapeMix stored;
+    MotionShapeMix mix = mix_of(MotionShape::Heart, MotionShape::Spiral, 0.3f);
+    mix.m_size = 0.65f;
+    mix.m_rotation = 1.25f;  // wraps to a quarter turn
+    EXPECT_TRUE(stored.store(mix));
+    EXPECT_FALSE(stored.store(mix));  // unchanged
+    const MotionShapeMix back = stored.load();
+    EXPECT_EQ(back.m_a, MotionShape::Heart);
+    EXPECT_EQ(back.m_b, MotionShape::Spiral);
+    EXPECT_NEAR(back.m_morph, 0.3f, 1e-4f);
+    EXPECT_NEAR(back.m_size, 0.65f, 1e-4f);
+    EXPECT_NEAR(back.m_rotation, 0.25f, 1e-4f);
+}

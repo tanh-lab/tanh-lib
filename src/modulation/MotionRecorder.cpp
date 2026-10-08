@@ -2,7 +2,9 @@
 
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
+#include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/MotionShape.h>
+#include <tanh/modulation/detail/MotionSeam.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -23,7 +25,7 @@ using thl::dsp::transport::TransportInfo;
 
 namespace {
 
-constexpr size_t k_min_take_points = 4;
+using detail::k_motion_min_points;
 constexpr size_t k_max_aligned_bars = 16;
 constexpr size_t k_min_capacity = 16;
 // Below this the running playback phase is kept as is (bit-exact continuity,
@@ -63,95 +65,6 @@ double circular_distance(double a, double b, double length) {
 
 float clamp01(double v) {
     return static_cast<float>(std::clamp(v, 0.0, 1.0));
-}
-
-// Seam window at amount 0, in lane units: 150 ms, or 0.3 beat (150 ms at 120 bpm).
-constexpr double k_seam_window_seconds = 0.15;
-constexpr double k_seam_window_beats = 0.3;
-// Smoothing sigma at amount 1, in lane units (half a beat, or 250 ms).
-constexpr double k_max_sigma_beats = 0.5;
-constexpr double k_max_sigma_seconds = 0.25;
-// Below this many points of sigma the kernel is a no-op.
-constexpr double k_min_smoothing_points = 0.05;
-// Sigma is capped at this fraction of the loop: a short Seconds lane at a large
-// amount flattens towards its mean instead of wrapping the kernel many times.
-constexpr double k_max_sigma_fraction = 1.0 / 6.0;
-
-// Seam window at amount 0 in points, at most a quarter of the loop.
-size_t base_seam_window(size_t n, double length, MotionTimebase timebase) {
-    const double units =
-        timebase == MotionTimebase::Beats ? k_seam_window_beats : k_seam_window_seconds;
-    const double points_per_unit = static_cast<double>(n) / length;
-    return static_cast<size_t>(std::max(
-        1.0,
-        std::min(std::floor(static_cast<double>(n) / 4.0), std::round(units * points_per_unit))));
-}
-
-// The step from the last point to the first beyond the expected step, which is
-// the mean velocity on both sides (three points each, robust against a single
-// jittery point). at(i) is the i-th recorded point, n >= k_min_take_points.
-template <typename At>
-double seam_error(At at, size_t n) {
-    const double p0 = at(0);
-    const double pn = at(n - 1);
-    const double vel = n >= 8 ? (((at(3) - p0) / 3.0) + ((pn - at(n - 4)) / 3.0)) * 0.5
-                              : static_cast<double>(at(1)) - p0;
-    return (p0 - pn) - vel;
-}
-
-// Add @p error to the last @p window points with a raised-cosine ramp: the
-// last point moves by the whole error, the point before the window not at all.
-template <typename At>
-void spread_seam(At at, size_t n, size_t window, double error) {
-    for (size_t j = 0; j < window; ++j) {
-        const double w = 0.5 * (1.0 - std::cos(std::numbers::pi * static_cast<double>(j + 1) /
-                                               static_cast<double>(window)));
-        float& v = at(n - window + j);
-        v = clamp01(static_cast<double>(v) + (error * w));
-    }
-}
-
-// Convolution of the loop with a sampled Gaussian, in recorded order from
-// @p seam. Periodic: the kernel wraps around the loop, so the seam is smoothed
-// like any other point. Otherwise both ends are mirrored (half-sample
-// reflection) and the edge at the seam stays sharp. The kernel is symmetric
-// (zero phase) and its weights sum to 1: the output stays inside [0, 1].
-void smooth_gaussian(const std::vector<float>& in,
-                     double sigma,
-                     size_t seam,
-                     bool periodic,
-                     std::vector<float>& out) {
-    const size_t n = in.size();
-    out.assign(n, 0.0f);
-    if (n == 0) { return; }
-    // Truncate at 3 sigma (sigma <= n / 6 keeps the kernel within one loop).
-    const auto radius =
-        static_cast<std::ptrdiff_t>(std::min(std::ceil(3.0 * sigma), static_cast<double>(n)));
-    std::vector<double> weights(static_cast<size_t>((2 * radius) + 1));
-    double sum = 0.0;
-    for (std::ptrdiff_t k = -radius; k <= radius; ++k) {
-        const auto d = static_cast<double>(k);
-        const double w = std::exp(-0.5 * d * d / (sigma * sigma));
-        weights[static_cast<size_t>(k + radius)] = w;
-        sum += w;
-    }
-    const auto len = static_cast<std::ptrdiff_t>(n);
-    auto source = [&](std::ptrdiff_t j) {
-        if (periodic) {
-            j %= len;
-            if (j < 0) { j += len; }
-        } else {
-            while (j < 0 || j >= len) { j = j < 0 ? -j - 1 : (2 * len) - 1 - j; }
-        }
-        return in[(seam + static_cast<size_t>(j)) % n];
-    };
-    for (std::ptrdiff_t i = 0; i < len; ++i) {
-        double acc = 0.0;
-        for (std::ptrdiff_t k = -radius; k <= radius; ++k) {
-            acc += weights[static_cast<size_t>(k + radius)] * static_cast<double>(source(i + k));
-        }
-        out[(seam + static_cast<size_t>(i)) % n] = clamp01(acc / sum);
-    }
 }
 
 }  // namespace
@@ -200,8 +113,8 @@ void MotionRecorder::prepare(double sample_rate,
     m_change_points.assign(max_block_size + 1, 0);
     m_num_change_points = 0;
     m_num_samples = 0;
-    m_glide_samples = static_cast<uint32_t>(
-        std::max(1.0, std::round(m_config.m_glide_ms * m_sample_rate / 1000.0)));
+    m_glide.set_length(static_cast<uint32_t>(
+        std::max(1.0, std::round(m_config.m_glide_ms * m_sample_rate / 1000.0))));
 
     // Playback re-locks to the next block's beat, without a glide.
     m_source = Source::Lane;
@@ -209,7 +122,7 @@ void MotionRecorder::prepare(double sample_rate,
     m_need_phase = true;
     m_ramp_restart = true;
     m_ramp_position = 0;
-    m_glide_left = 0;
+    m_glide.cancel();
     m_have_clock = false;
     m_jump_glides = 0;
     m_busy = false;
@@ -258,48 +171,18 @@ bool MotionRecorder::set_playback_length(LoopLength length) {
 }
 
 // Every publication goes through here: build the played x and y on this
-// thread, swap through RCU. The audio thread plays m_x / m_y.
-//
-// The published lane keeps the raw seam. LoopEnd::Smooth closes it in the
-// played copy over a window that grows from the base window (amount 0, as
-// finalise() does it) to the whole loop (amount 1, a smooth detrend), then runs
-// x and y through a circular Gaussian with sigma = max * amount^2.
-// LoopEnd::Jump keeps the seam and smooths the loop as an open sequence.
+// thread (make_played_curve()), swap through RCU. The audio thread plays m_x /
+// m_y; the published lane keeps the raw seam.
 void MotionRecorder::publish_played(MotionLane lane) {
     const uint32_t id = lane.m_take_id;
-    const double amount = m_smoothing.load(std::memory_order_relaxed);
-    const bool jump = m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Jump;
-    const size_t n = lane.num_points();
-    const size_t seam = lane.m_seam < n ? lane.m_seam : 0;
-    std::vector<float> x = lane.m_x;
-    std::vector<float> y = lane.m_y;
-    double sigma = 0.0;
-    if (n >= k_min_take_points && lane.m_length > 0.0) {
-        if (!jump) {
-            const size_t base = base_seam_window(n, lane.m_length, lane.m_timebase);
-            const size_t window =
-                base + static_cast<size_t>(std::round(amount * static_cast<double>(n - base)));
-            for (auto* p : {&x, &y}) {
-                auto at = [&](size_t i) -> float& { return (*p)[(seam + i) % n]; };
-                spread_seam(at, n, window, seam_error(at, n));
-            }
-        }
-        const double max_sigma =
-            lane.m_timebase == MotionTimebase::Beats ? k_max_sigma_beats : k_max_sigma_seconds;
-        const double points_per_unit = static_cast<double>(n) / lane.m_length;
-        sigma = std::min(max_sigma * amount * amount * points_per_unit,
-                         k_max_sigma_fraction * static_cast<double>(n));
-    }
+    PlayedCurve curve = make_played_curve(lane,
+                                          m_smoothing.load(std::memory_order_relaxed),
+                                          m_loop_end.load(std::memory_order_relaxed));
     const uint32_t version = ++m_played_version;
     m_lanes.replace([&](PlayedLane& l) {
-        if (sigma >= k_min_smoothing_points) {
-            smooth_gaussian(x, sigma, seam, !jump, l.m_x);
-            smooth_gaussian(y, sigma, seam, !jump, l.m_y);
-        } else {
-            l.m_x = std::move(x);
-            l.m_y = std::move(y);
-        }
-        l.m_smoothed = amount > 0.0 || jump;
+        l.m_x = std::move(curve.m_x);
+        l.m_y = std::move(curve.m_y);
+        l.m_smoothed = curve.m_smoothed;
         l.m_version = version;
         l.m_lane = std::move(lane);
     });
@@ -308,51 +191,30 @@ void MotionRecorder::publish_played(MotionLane lane) {
 }
 
 void MotionRecorder::publish(MotionLane lane, bool record_history) {
-    if (record_history) {
-        MotionLane previous = this->lane();
-        if (!previous.empty() || !lane.empty()) {
-            m_undo_lane = std::move(previous);
-            m_has_undo = true;
-            m_redo_lane = MotionLane{};
-            m_has_redo = false;
-        }
-    }
+    if (record_history) { m_history.record(this->lane(), lane.empty()); }
     publish_played(std::move(lane));
 }
 
 bool MotionRecorder::undo() {
     service();
-    if (!m_has_undo) { return false; }
-    MotionLane current = lane();
-    MotionLane restored = std::move(m_undo_lane);
-    restored.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
-    publish(std::move(restored), false);
-    m_undo_lane = MotionLane{};
-    m_has_undo = false;
-    m_redo_lane = std::move(current);
-    m_has_redo = true;
+    auto restored = m_history.undo(lane());
+    if (!restored) { return false; }
+    restored->m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
+    publish(std::move(*restored), false);
     return true;
 }
 
 bool MotionRecorder::redo() {
     service();
-    if (!m_has_redo) { return false; }
-    MotionLane current = lane();
-    MotionLane restored = std::move(m_redo_lane);
-    restored.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
-    publish(std::move(restored), false);
-    m_redo_lane = MotionLane{};
-    m_has_redo = false;
-    m_undo_lane = std::move(current);
-    m_has_undo = true;
+    auto restored = m_history.redo(lane());
+    if (!restored) { return false; }
+    restored->m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
+    publish(std::move(*restored), false);
     return true;
 }
 
 void MotionRecorder::clear_history() {
-    m_undo_lane = MotionLane{};
-    m_redo_lane = MotionLane{};
-    m_has_undo = false;
-    m_has_redo = false;
+    m_history.clear();
 }
 
 void MotionRecorder::set_smoothing(float amount) {
@@ -465,59 +327,15 @@ MotionLane MotionRecorder::played_lane() const {
 }
 
 void MotionRecorder::set_shapes(const MotionShapeMix& mix) {
-    const MotionShapeMix old = shapes();
-    m_shape_a.store(mix.m_a, std::memory_order_relaxed);
-    m_shape_b.store(mix.m_b, std::memory_order_relaxed);
-    m_shape_morph.store(mix.m_morph, std::memory_order_relaxed);
-    m_shape_size.store(mix.m_size, std::memory_order_relaxed);
-    m_shape_rotation.store(mix.m_rotation, std::memory_order_relaxed);
-    if (old.m_a != mix.m_a || old.m_b != mix.m_b || old.m_morph != mix.m_morph ||
-        old.m_size != mix.m_size || old.m_rotation != mix.m_rotation) {
-        m_shapes_version.fetch_add(1, std::memory_order_release);
-    }
+    if (m_shape_mix.store(mix)) { m_shapes_version.fetch_add(1, std::memory_order_release); }
 }
 
 MotionShapeMix MotionRecorder::shapes() const {
-    MotionShapeMix mix;
-    mix.m_a = m_shape_a.load(std::memory_order_relaxed);
-    mix.m_b = m_shape_b.load(std::memory_order_relaxed);
-    mix.m_morph = m_shape_morph.load(std::memory_order_relaxed);
-    mix.m_size = m_shape_size.load(std::memory_order_relaxed);
-    mix.m_rotation = m_shape_rotation.load(std::memory_order_relaxed);
-    return mix;
+    return m_shape_mix.load();
 }
 
 MotionLane MotionRecorder::played_path(size_t num_points) const {
-    MotionLane lane = played_lane();
-    const MotionShapeMix mix = shapes();
-    if (!mix.active() || num_points == 0) { return lane; }
-    const bool take = mix.uses_take() && !lane.empty();
-    const float morph = std::clamp(mix.m_morph, 0.0f, 1.0f);
-    const bool shape_sounds = (mix.m_a != MotionShape::Take && morph < 1.0f) ||
-                              (mix.m_b != MotionShape::Take && morph > 0.0f) || !take;
-    MotionLane path;
-    path.m_take_id = lane.m_take_id;
-    path.m_timebase = take ? lane.m_timebase : MotionTimebase::Beats;
-    path.m_length = take ? lane.m_length : 4.0;
-    path.m_rate = static_cast<double>(num_points) / path.m_length;
-    path.m_x.resize(num_points);
-    path.m_y.resize(num_points);
-    path.m_gate.resize(num_points);
-    for (size_t i = 0; i < num_points; ++i) {
-        const double u = static_cast<double>(i) / static_cast<double>(num_points);
-        MotionShapePoint at{.m_x = 0.5f, .m_y = 0.5f};
-        uint8_t gate = 1;
-        if (take) {
-            const MotionPoint p = lane.sample(u * lane.m_length);
-            at = {.m_x = p.m_x, .m_y = p.m_y};
-            gate = shape_sounds ? 1 : p.m_gate;
-        }
-        const MotionShapePoint p = mix_motion_shapes(mix, u, at);
-        path.m_x[i] = p.m_x;
-        path.m_y[i] = p.m_y;
-        path.m_gate[i] = gate;
-    }
-    return path;
+    return render_motion_path(played_lane(), shapes(), num_points);
 }
 
 MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
@@ -616,12 +434,6 @@ void MotionRecorder::apply_shapes() {
     const float morph = std::clamp(mix.m_morph, 0.0f, 1.0f);
     m_shape_gate = (mix.m_a != MotionShape::Take && morph < 1.0f) ||
                    (mix.m_b != MotionShape::Take && morph > 0.0f);
-}
-
-void MotionRecorder::start_glide() {
-    m_glide_left = m_glide_samples;
-    m_glide_from_x = m_last_x;
-    m_glide_from_y = m_last_y;
 }
 
 // Same lane, other curve (smoothing): keep the phase, glide to the new values.
@@ -892,10 +704,10 @@ void MotionRecorder::finalise(TakeBuffer& b, size_t n) {
     const size_t start = m_take.m_start_index;
     b.m_seam = start;
     b.m_seam_window = 0;
-    if (n < k_min_take_points || m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Jump) {
+    if (n < k_motion_min_points || m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Jump) {
         return;
     }
-    const size_t window = base_seam_window(n, b.m_length, b.m_timebase);
+    const size_t window = detail::motion_seam_window(n, b.m_length, b.m_timebase);
     assert(window <= b.m_raw_tail_x.size());
     auto close = [&](std::vector<float>& p, std::vector<float>& tail) {
         auto at = [&](size_t i) -> float& {
@@ -903,7 +715,7 @@ void MotionRecorder::finalise(TakeBuffer& b, size_t n) {
             return p[q >= n ? q - n : q];
         };
         for (size_t j = 0; j < window; ++j) { tail[j] = at(n - window + j); }
-        spread_seam(at, n, window, seam_error(at, n));
+        detail::motion_spread_seam(at, n, window, detail::motion_seam_error(at, n));
     };
     close(b.m_x, b.m_raw_tail_x);
     close(b.m_y, b.m_raw_tail_y);
@@ -929,7 +741,7 @@ void MotionRecorder::abort_take(bool keep_replaced) {
 void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     Take& k = m_take;
     if (!k.m_active) { return; }
-    if (!k.m_bar && !k.m_snap && trim_samples > 0 && k.m_count_at_change >= k_min_take_points) {
+    if (!k.m_bar && !k.m_snap && trim_samples > 0 && k.m_count_at_change >= k_motion_min_points) {
         // The release reaches us up to a block after the last move (events carry
         // no timestamps): a still tail no longer than that block is quantisation,
         // not gesture, and would put a pause into the loop.
@@ -943,7 +755,7 @@ void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
     if (k.m_snap) { trim_still_ends(); }
     const bool complete = k.m_aligned ? k.m_count == k.m_target
                           : k.m_bar   ? k.m_count == k.m_capacity
-                                      : k.m_count >= k_min_take_points;
+                                      : k.m_count >= k_motion_min_points;
     if (!complete) {
         abort_take();
         return;
@@ -1289,7 +1101,7 @@ void MotionRecorder::process(const TransportInfo& t,
                 oy = clamp01(static_cast<double>(py) + ly - 0.5);
             }
             og = 1;
-            m_glide_left = 0;
+            m_glide.cancel();
         } else if (pb_on) {
             if (m_last_live) {
                 start_glide();  // release: glide back to the running playback
@@ -1297,18 +1109,10 @@ void MotionRecorder::process(const TransportInfo& t,
             }
             ox = px;
             oy = py;
-            if (m_glide_left > 0) {
-                const double w =
-                    0.5 * (1.0 - std::cos(std::numbers::pi *
-                                          static_cast<double>(m_glide_samples - m_glide_left) /
-                                          static_cast<double>(m_glide_samples)));
-                ox = static_cast<float>(m_glide_from_x + ((px - m_glide_from_x) * w));
-                oy = static_cast<float>(m_glide_from_y + ((py - m_glide_from_y) * w));
-                --m_glide_left;
-            }
+            m_glide.apply(ox, oy);
             og = pg;
         } else {
-            m_glide_left = 0;
+            m_glide.cancel();
         }
         if (live != m_last_live || og != m_last_gate) { cp = true; }
 
