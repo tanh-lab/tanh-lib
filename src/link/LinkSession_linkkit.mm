@@ -128,7 +128,8 @@ public:
         }
         if (shape->m_samples > ABLLinkAudioSinkBufferHandleMaxNumSamples(buffer)) {
             ABLLinkAudioReleaseBuffer(buffer);
-            ABLLinkAudioSinkRequestMaxNumSamples(m_sink, shape->m_samples);  // from the next block
+            // From the next block on (at most 2 x a block of frames: fits 32 bits).
+            ABLLinkAudioSinkRequestMaxNumSamples(m_sink, static_cast<uint32_t>(shape->m_samples));
             return false;
         }
         detail::interleave(channels, *shape, ABLLinkAudioSinkBufferSamples(buffer));
