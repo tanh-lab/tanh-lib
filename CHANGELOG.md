@@ -108,13 +108,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (`MotionLane::m_seam`, JSON `seam`); the played copy (`played_lane()`) closes the
   seam over 0.3 beat (150 ms), widening to the whole loop as `set_smoothing()` goes
   to 1, then runs x and y through a zero-phase Gaussian of sigma = amount² × half a
-  beat (250 ms for Seconds lanes). `set_loop_end(LoopEnd::Jump)` (also on
-  `XYController`) keeps the end-to-start step as a hard edge and smooths without
+  beat (250 ms for Seconds lanes). `set_loop_end(LoopEnd::Jump)` keeps the end-to-start step as a hard edge and smooths without
   crossing it. Tests: `MotionLane.*`, `MotionRecorder*.*`. Docs:
   `motion_recording.md`.
 - `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
   before any source (`add_block_processor()`), given a `BlockContext` with the block
   length and the transport now passed to `process()` / `process_with_scope()`.
+- The XY types live in `XYTypes.h` and the UI frames in `XYFrame.h`, so the touch pad
+  (`detail::XYPad`) no longer includes the controller; `MotionState`, `MotionInput` and
+  `MotionSnapshot` moved to `MotionTypes.h`. The controller's UI publication and finger
+  table are `detail::XYFramePublisher` and `detail::XYTouchTable`;
+  `for_each_recorder()` replaces its `set_smoothing()` / `set_loop_end()` forwarders.
 - `thl::modulation::XYController`: XY dots (voices), each with touch input and a
   recorder, as `<id>.x` / `.y` / `.active` matrix sources. A `BlockProcessor` of the
   matrix, it renders once per block with the matrix's transport (free-running

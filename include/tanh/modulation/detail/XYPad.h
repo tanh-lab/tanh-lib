@@ -2,8 +2,8 @@
 
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
-#include <tanh/modulation/MotionRecorder.h>
-#include <tanh/modulation/XYController.h>
+#include <tanh/modulation/MotionTypes.h>
+#include <tanh/modulation/XYTypes.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>

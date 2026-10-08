@@ -133,8 +133,8 @@ stops frame and trail publication.
 ## Threading contract
 
 - ctor, dtor, `route`, `unroute`, `set_route_enabled`, `set_route_depth`,
-  `service`, `set_smoothing`, `set_loop_end` (every voice's recorder):
-  message thread.
+  `service`: message thread. Settings of the recorders go through `recorder(v)`
+  or `for_each_recorder(f)`, with `MotionRecorder`'s threading.
 - `touch`, `touch_voice`, `release`, `release_all`, `flush`, `read_frame`,
   `drain_trail`, `read_path`: one UI thread, lock-free.
 - `set_latch`, `set_voice_enabled`, `set_ui_attached`: any thread.

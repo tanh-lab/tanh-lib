@@ -50,11 +50,6 @@ int64_t pad_time(std::optional<int64_t> time_ns) {
     return time_ns.value_or(detail::k_xy_pad_untimed);
 }
 
-uint64_t hash_combine(uint64_t hash, uint64_t value) {
-    hash ^= value + 0x9E3779B97F4A7C15ull + (hash << 6) + (hash >> 2);
-    return hash;
-}
-
 }  // namespace
 
 // One matrix source of a voice: process() copies what the controller rendered
@@ -229,11 +224,9 @@ void XYController::prepare(double sample_rate, size_t max_block_size) {
         v.m_num_change_points = 0;
         v.m_trail_countdown = 0;
     }
-    const double hz = m_config.m_frame_rate_hz > 0.0 ? m_config.m_frame_rate_hz : 240.0;
-    m_frame_interval = static_cast<uint32_t>(std::max(1.0, std::floor(sample_rate / hz)));
+    m_frames.prepare(sample_rate, m_config.m_frame_rate_hz, m_config.m_trail_interval);
     m_num_samples = 0;
     m_sample_time = 0;
-    m_since_publish = m_frame_interval;  // publish the first block
 }
 
 uint32_t XYController::route(XYPadAxis axis,
@@ -283,16 +276,8 @@ bool XYController::set_route_depth(uint32_t routing_id, float depth) {
     return m_matrix.update_routing_depth(routing_id, depth);
 }
 
-uint32_t XYController::find_touch(TouchId id) const {
-    for (uint32_t i = 0; i < m_ui_touches.size(); ++i) {
-        if (m_ui_touches[i].m_voice != k_no_voice && m_ui_touches[i].m_id == id) { return i; }
-    }
-    return k_no_voice;
-}
-
 uint32_t XYController::voice_of(TouchId id) const {
-    const uint32_t slot = find_touch(id);
-    return slot == k_no_voice ? k_no_voice : m_ui_touches[slot].m_voice;
+    return m_touches.voice_of(id);
 }
 
 // The nearest enabled voice that no finger holds, else the nearest enabled one,
@@ -308,8 +293,7 @@ uint32_t XYController::pick_voice(float x, float y) const {
         const auto [vx, vy] =
             unpack_position(m_voices[v]->m_position.load(std::memory_order_relaxed));
         const float d = ((vx - x) * (vx - x)) + ((vy - y) * (vy - y));
-        const bool held =
-            std::ranges::any_of(m_ui_touches, [v](const UiTouch& t) { return t.m_voice == v; });
+        const bool held = m_touches.held(v);
         if (best_any == k_no_voice || d < distance_any) {
             best_any = v;
             distance_any = d;
@@ -324,10 +308,8 @@ uint32_t XYController::pick_voice(float x, float y) const {
 
 bool XYController::touch(TouchId id, float x, float y, std::optional<int64_t> time_ns) {
     if (!std::isfinite(x) || !std::isfinite(y)) { return false; }
-    const uint32_t slot = find_touch(id);
-    if (slot != k_no_voice) {
-        return m_voices[m_ui_touches[slot].m_voice]->m_pad.touch(id, x, y, pad_time(time_ns));
-    }
+    const uint32_t held = m_touches.voice_of(id);
+    if (held != k_no_voice) { return m_voices[held]->m_pad.touch(id, x, y, pad_time(time_ns)); }
     return touch_voice(pick_voice(std::clamp(x, 0.0f, 1.0f), std::clamp(y, 0.0f, 1.0f)),
                        id,
                        x,
@@ -341,31 +323,29 @@ bool XYController::touch_voice(uint32_t voice,
                                float y,
                                std::optional<int64_t> time_ns) {
     if (voice >= m_num_voices || !std::isfinite(x) || !std::isfinite(y)) { return false; }
-    const uint32_t slot = find_touch(id);
-    if (slot != k_no_voice) {
+    const uint32_t held = m_touches.voice_of(id);
+    if (held != k_no_voice) {
         // A held touch keeps its voice.
-        return m_voices[m_ui_touches[slot].m_voice]->m_pad.touch(id, x, y, pad_time(time_ns));
+        return m_voices[held]->m_pad.touch(id, x, y, pad_time(time_ns));
     }
-    const auto free_slot = std::ranges::find_if(m_ui_touches, [](const UiTouch& t) {
-        return t.m_voice == k_no_voice;
-    });
-    if (free_slot == m_ui_touches.end()) { return false; }
-    if (!m_voices[voice]->m_pad.touch(id, x, y, pad_time(time_ns))) { return false; }
-    *free_slot = UiTouch{.m_id = id, .m_voice = voice};
+    // A free slot first, so a full table rejects the touch before the pad sees it.
+    if (!m_touches.add(id, voice)) { return false; }
+    if (!m_voices[voice]->m_pad.touch(id, x, y, pad_time(time_ns))) {
+        (void)m_touches.remove(id);
+        return false;
+    }
     return true;
 }
 
 bool XYController::release(TouchId id, std::optional<int64_t> time_ns) {
-    const uint32_t slot = find_touch(id);
-    if (slot == k_no_voice) { return false; }
-    const uint32_t voice = m_ui_touches[slot].m_voice;
-    m_ui_touches[slot] = UiTouch{};
+    const uint32_t voice = m_touches.remove(id);
+    if (voice == k_no_voice) { return false; }
     return m_voices[voice]->m_pad.release(id, pad_time(time_ns));
 }
 
 void XYController::release_all() {
     for (auto& v : m_voices) { v->m_pad.release_all(); }
-    m_ui_touches.fill(UiTouch{});
+    m_touches.clear();
 }
 
 bool XYController::flush() {
@@ -398,22 +378,12 @@ bool XYController::service() {
     return any;
 }
 
-void XYController::set_smoothing(float amount) {
-    for (auto& v : m_voices) { v->m_recorder.set_smoothing(amount); }
-}
-
-void XYController::set_loop_end(LoopEnd mode) {
-    for (auto& v : m_voices) { v->m_recorder.set_loop_end(mode); }
-}
-
 bool XYController::read_frame(XYFrame& out) {
     return m_frames.read(out);
 }
 
 size_t XYController::drain_trail(std::span<XYPathPoint> out) {
-    size_t n = 0;
-    while (n < out.size() && m_trail.try_pop(out[n])) { ++n; }
-    return n;
+    return m_frames.drain(out);
 }
 
 const float* XYController::out_x(uint32_t voice) const TANH_NONBLOCKING_FUNCTION {
@@ -500,7 +470,7 @@ void XYController::run(const TransportInfo& transport) {
         run_voice(*m_voices[i], i, t, latch_changed, ui);
     }
     m_sample_time += n;
-    if (ui) { publish_frame(n); }
+    if (ui) { m_frames.publish(m_sample_time, m_num_voices, m_last_latch, n); }
 }
 
 void XYController::run_voice(Voice& v,
@@ -546,24 +516,19 @@ void XYController::run_voice(Voice& v,
 
     const MotionSnapshot motion = v.m_recorder.snapshot();
 
-    // Live trail while recording; drop-oldest when the UI does not drain.
     if (motion.m_state == MotionState::Recording) {
-        const uint32_t interval = m_config.m_trail_interval;
-        uint32_t i = std::min(v.m_trail_countdown, n);
-        for (; i < n; i += interval) {
-            const XYPathPoint p{.m_x = x[i],
-                                .m_y = y[i],
-                                .m_progress = motion.m_progress,
-                                .m_voice = static_cast<uint8_t>(index),
-                                .m_active = gate[i]};
-            m_trail_dropped += static_cast<uint32_t>(m_trail.push_overwrite(p));
-        }
-        v.m_trail_countdown = i - n;
+        m_frames.add_trail(static_cast<uint8_t>(index),
+                           x,
+                           y,
+                           gate,
+                           n,
+                           motion.m_progress,
+                           v.m_trail_countdown);
     } else {
         v.m_trail_countdown = 0;
     }
 
-    XYVoiceFrame& f = m_frames.write_buffer().m_voices[index];
+    XYVoiceFrame& f = m_frames.voice(index);
     f.m_x = x[n - 1];
     f.m_y = y[n - 1];
     f.m_active = v.m_active[n - 1];
@@ -572,40 +537,6 @@ void XYController::run_voice(Voice& v,
     f.m_layer = v.m_layer[n - 1];
     f.m_path_version = v.m_recorder.lane_version();
     f.m_motion = motion;
-}
-
-// Publishes at once when anything discrete changed, else at the frame rate.
-void XYController::publish_frame(uint32_t num_samples) {
-    XYFrame& frame = m_frames.write_buffer();
-    frame.m_sample_time = m_sample_time;
-    frame.m_num_voices = m_num_voices;
-    frame.m_trail_dropped = m_trail_dropped;
-    frame.m_latch = m_last_latch;
-    for (uint32_t v = m_num_voices; v < XYFrame::k_max_voices; ++v) {
-        frame.m_voices[v] = XYVoiceFrame{};
-    }
-
-    uint64_t signature = m_last_latch ? 1u : 0u;
-    for (uint32_t v = 0; v < m_num_voices; ++v) {
-        const auto& f = frame.m_voices[v];
-        signature = hash_combine(signature, static_cast<uint64_t>(f.m_motion.m_state));
-        signature = hash_combine(signature, f.m_motion.m_take_id);
-        signature = hash_combine(signature, f.m_path_version);
-        signature = hash_combine(signature, static_cast<uint64_t>(f.m_layer));
-        signature = hash_combine(signature,
-                                 (f.m_active != 0 ? 1u : 0u) | (f.m_touched ? 2u : 0u) |
-                                     (f.m_motion.m_playing ? 4u : 0u) |
-                                     (f.m_motion.m_reverse ? 8u : 0u) | (f.m_has_value ? 16u : 0u));
-    }
-    m_since_publish += num_samples;
-    if (signature == m_last_signature && m_since_publish < m_frame_interval &&
-        m_frame_sequence > 0) {
-        return;
-    }
-    m_last_signature = signature;
-    m_since_publish = 0;
-    frame.m_sequence = ++m_frame_sequence;
-    m_frames.publish();
 }
 
 }  // namespace thl::modulation

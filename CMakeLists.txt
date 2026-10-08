@@ -391,6 +391,7 @@ if(TANH_BUILD_MODULATION)
         src/modulation/MotionShape.cpp
         src/modulation/MotionTakes.cpp
         src/modulation/XYController.cpp
+        src/modulation/XYFramePublisher.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES
