@@ -100,26 +100,30 @@ SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_k
     std::scoped_lock const lock(m_writer_mutex);
 
     // Same checks, order and exception types as State::get_handle<T>()
-    // followed by the modulatable check, for every backend.
-    auto binding = m_backend.find(param_key);
-    if (!binding) { m_backend.throw_not_found(param_key); }
-
-    // An existing target's binding is authoritative (it may predate this lookup).
+    // followed by the modulatable check, for every backend. A resolved target
+    // holds the binding: the backend is asked only the first time.
     const auto existing = m_targets.find(param_key);
+    std::optional<ParameterBinding> binding;
+    if (existing == m_targets.end()) {
+        binding = m_backend.find(param_key);
+        if (!binding) { m_backend.throw_not_found(param_key); }
+    }
     const ParameterBaseValue& base_value =
-        existing != m_targets.end() ? existing->second.m_base : binding->m_base;
+        binding ? binding->m_base : existing->second.m_base;
+    const ParameterDefinition& def = binding ? binding->m_def : existing->second.m_def;
+
     auto* const* base = std::get_if<std::atomic<T>*>(&base_value);
     if (base == nullptr || *base == nullptr) {
-        throw thl::ParameterTypeMismatchException(
-            thl::parameter_type_of<T>(),
-            stored_parameter_type(base_value, binding->m_def.m_type));
+        throw thl::ParameterTypeMismatchException(thl::parameter_type_of<T>(),
+                                                  stored_parameter_type(base_value, def.m_type));
     }
 
-    if (!binding->m_def.is_modulatable()) {
+    if (!def.is_modulatable()) {
         throw std::invalid_argument("Parameter '" + std::string(param_key) +
                                     "' has modulation disabled");
     }
 
+    if (!binding) { return {*base, &existing->second}; }
     return {*base, &ensure_target_with_lock(param_key, *binding)};
 }
 
@@ -503,9 +507,15 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
         return k_invalid_routing_id;
     }
 
-    // Reject routing if target parameter is unknown or not modulatable
-    const auto binding = m_backend.find(routing.m_target_id);
-    if (!binding || !binding->m_def.is_modulatable()) {
+    // Reject routing if target parameter is unknown or not modulatable. A
+    // resolved target holds the binding: the backend is asked only the first time.
+    const auto existing = m_targets.find(routing.m_target_id);
+    std::optional<ParameterBinding> binding;
+    if (existing == m_targets.end()) { binding = m_backend.find(routing.m_target_id); }
+    const bool modulatable = existing != m_targets.end()
+                                 ? existing->second.m_def.is_modulatable()
+                                 : binding && binding->m_def.is_modulatable();
+    if (!modulatable) {
         thl::Logger::logf(thl::Logger::LogLevel::Warning,
                           "modulation",
                           "Routing rejected: target '%s' is not a modulatable parameter.",
@@ -513,8 +523,7 @@ uint32_t ModulationMatrix::add_routing(const ModulationRouting& routing) {
         return k_invalid_routing_id;
     }
 
-    // Resolve target if not yet in m_targets
-    ensure_target_with_lock(routing.m_target_id, *binding);
+    if (binding) { ensure_target_with_lock(routing.m_target_id, *binding); }
 
     const uint32_t id = m_next_routing_id++;
     m_user_routings.push_back(routing);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/parameters/ParameterExceptions.h>
 
@@ -39,8 +40,8 @@ using ParameterBaseValue = std::variant<std::monostate,
  * @brief Everything the modulation matrix needs to know about one parameter.
  *
  * Returned by ParameterBackend::find() and copied into the matrix's
- * ResolvedTarget the first time a key is resolved; it is never re-queried for
- * that key afterwards. The pointed-to atomics must therefore stay valid (same
+ * ResolvedTarget the first time a key is resolved (get_smart_handle(),
+ * add_routing()); the matrix never asks the backend about that key again. The pointed-to atomics must therefore stay valid (same
  * address) for the lifetime of the ModulationMatrix.
  */
 struct ParameterBinding {
@@ -64,14 +65,13 @@ struct ParameterBinding {
  *
  * Decouples the matrix from thl::State: a host implements find() on top of
  * its own parameter store. find() is only called from non-real-time matrix
- * methods (get_smart_handle(), add_routing(),
- * update_routing_replace_range_normalized()) under the matrix's writer
- * mutex, so it may allocate and lock.
+ * methods (get_smart_handle() and add_routing(), for a key not resolved yet)
+ * under the matrix's writer mutex, so it may allocate and lock.
  *
  * StateParameterBackend (tanh/modulation/StateParameterBackend.h) is the
  * implementation used by ModulationMatrix(thl::State&).
  */
-class ParameterBackend {
+class TANH_API ParameterBackend {
 public:
     ParameterBackend() = default;
     virtual ~ParameterBackend() = default;

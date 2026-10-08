@@ -43,6 +43,7 @@ public:
     }
 
     std::optional<ParameterBinding> find(std::string_view key) const override {
+        ++m_finds;
         auto it = m_entries.find(key);
         if (it == m_entries.end()) { return std::nullopt; }
         Entry& e = *it->second;
@@ -54,6 +55,7 @@ public:
     }
 
     bool m_bind_gesture = true;
+    mutable int m_finds = 0;  // find() calls
 
 private:
     std::map<std::string, std::unique_ptr<Entry>, std::less<>> m_entries;
@@ -354,6 +356,20 @@ TEST(ParameterBackend, LookupErrorTypes) {
     EXPECT_THROW(matrix.get_smart_handle<int>("fixed"), thl::ParameterTypeMismatchException);
     // A failed lookup creates no target.
     EXPECT_EQ(matrix.get_target("gain"), nullptr);
+}
+
+// The backend is asked about a key once; the matrix's target holds the binding.
+TEST(ParameterBackend, FindsEachKeyOnce) {
+    FakeBackend backend;
+    backend.add("gain", mod_float(thl::Range::linear(0.0f, 1.0f), 0.0f));
+    ModulationMatrix matrix(backend);
+    ConstSource src;
+    matrix.add_source("src", &src);
+    (void)matrix.get_smart_handle<float>("gain");
+    (void)matrix.get_smart_handle<float>("gain");
+    EXPECT_NE(matrix.add_routing({"src", "gain"}), k_invalid_routing_id);
+    EXPECT_TRUE(matrix.update_routing_replace_range_normalized("src", "gain", 0.2f, 0.8f));
+    EXPECT_EQ(backend.m_finds, 1);
 }
 
 TEST(ParameterBackend, JsonRoundTripWithoutState) {
