@@ -27,6 +27,11 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_OversizedBlocks.cpp
 )
 
+# The touch pad and the motion helpers are private to tanh::Modulation (src/modulation):
+# the tests include them directly and compile the pad in (it is not exported).
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../src/modulation)
+target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../src/modulation/XYPad.cpp)
+
 target_link_libraries(${PROJECT_NAME}
 	PRIVATE
 		tanh::Modulation

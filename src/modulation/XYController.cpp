@@ -10,7 +10,7 @@
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYFrame.h>
 #include <tanh/modulation/XYTypes.h>
-#include <tanh/modulation/detail/XYPad.h>
+#include "XYPad.h"
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>

@@ -3,8 +3,8 @@
 // Closing the step at a loop's seam, shared by MotionRecorder (in place on a
 // take buffer, real-time) and make_played_curve() (on a published lane).
 
+#include <tanh/core/Numbers.h>
 #include <tanh/modulation/MotionLane.h>
-#include <tanh/modulation/detail/MotionMath.h>
 
 #include <algorithm>
 #include <cmath>
@@ -46,7 +46,7 @@ template <typename At>
 template <typename At>
 void motion_spread_seam(At at, size_t n, size_t window, double error) {
     for (size_t j = 0; j < window; ++j) {
-        const double w = 0.5 * (1.0 - std::cos(k_motion_pi * static_cast<double>(j + 1) /
+        const double w = 0.5 * (1.0 - std::cos(std::numbers::pi * static_cast<double>(j + 1) /
                                                static_cast<double>(window)));
         float& v = at(n - window + j);
         v = static_cast<float>(std::clamp(static_cast<double>(v) + (error * w), 0.0, 1.0));

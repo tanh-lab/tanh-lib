@@ -1,6 +1,5 @@
 #pragma once
 
-#include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYTypes.h>
@@ -60,7 +59,7 @@ struct XYPadTiming {
  * Timestamped events land at their own sample when process_block() gets the
  * block's clock time, and x / y ramp linearly between two timed moves.
  */
-class TANH_API XYPad {
+class XYPad {
 public:
     XYPad(uint32_t max_touches, MonoPriority priority);
 

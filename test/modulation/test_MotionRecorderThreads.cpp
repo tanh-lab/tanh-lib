@@ -3,7 +3,7 @@
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/XYController.h>
-#include <tanh/modulation/detail/XYPad.h>
+#include "XYPad.h"
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>

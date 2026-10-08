@@ -1,7 +1,7 @@
 #include "tanh/modulation/MotionLaneProcessing.h"
 
 #include <tanh/modulation/MotionLane.h>
-#include <tanh/modulation/detail/MotionSeam.h>
+#include "MotionSeam.h"
 
 #include <algorithm>
 #include <cmath>

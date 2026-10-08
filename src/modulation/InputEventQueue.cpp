@@ -1,7 +1,7 @@
 #include "tanh/modulation/InputEventQueue.h"
 
 #include <tanh/parameters/ModulationScope.h>
-#include <tanh/modulation/detail/EventSpread.h>
+#include "EventSpread.h"
 
 #include <cassert>
 #include <cstddef>

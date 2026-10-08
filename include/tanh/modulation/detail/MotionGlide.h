@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tanh/modulation/detail/MotionMath.h>
+#include <tanh/core/Numbers.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -26,7 +26,7 @@ public:
     void apply(float& x, float& y) TANH_NONBLOCKING_FUNCTION {
         if (m_left == 0) { return; }
         const double w =
-            0.5 * (1.0 - std::cos(k_motion_pi * static_cast<double>(m_length - m_left) /
+            0.5 * (1.0 - std::cos(std::numbers::pi * static_cast<double>(m_length - m_left) /
                                   static_cast<double>(m_length)));
         x = static_cast<float>(m_from_x + ((x - m_from_x) * w));
         y = static_cast<float>(m_from_y + ((y - m_from_y) * w));

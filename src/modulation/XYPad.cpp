@@ -1,8 +1,8 @@
-#include "tanh/modulation/detail/XYPad.h"
+#include "XYPad.h"
 
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYTypes.h>
-#include <tanh/modulation/detail/EventSpread.h>
+#include "EventSpread.h"
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/XYController.h>
-#include <tanh/modulation/detail/XYPad.h>
+#include "XYPad.h"
 
 #include <atomic>
 #include <cmath>
