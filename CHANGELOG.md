@@ -13,7 +13,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and Gaussian smoothing `MotionRecorder` plays, as a function on a `MotionLane`.
   `AtomicMotionShapeMix` stores a mix in one 64-bit atomic, and `render_motion_path()`
   samples what a mix plays over a lane. The recorder's undo history and glide are
-  separate units (`detail/MotionHistory.h`, `detail/MotionGlide.h`). Tests:
+  separate units (`detail/MotionHistory.h`, `detail/MotionGlide.h`), and take recording
+  (the running take and its two buffers) is `detail::MotionTakeWriter`. `LoopLength` and
+  `MotionRecorderConfig` live in `MotionTypes.h`. Tests:
   `MotionLaneProcessing.*`, `MotionHistory.*`.
 - Motion shapes: `MotionShape` (18 stock closed paths: circle, square, Lissajous,
   roses, spiral, heart, star, ...) and `MotionShapeMix` (slots A and B, each a shape or

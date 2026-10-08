@@ -3,12 +3,12 @@
 // Closing the step at a loop's seam, shared by MotionRecorder (in place on a
 // take buffer, real-time) and make_played_curve() (on a published lane).
 
+#include <tanh/core/Numbers.h>
 #include <tanh/modulation/MotionLane.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <numbers>
 
 namespace thl::modulation::detail {
 

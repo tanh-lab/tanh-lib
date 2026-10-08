@@ -1,11 +1,11 @@
 #pragma once
 
+#include <tanh/core/Numbers.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <numbers>
 
 namespace thl::modulation::detail {
 

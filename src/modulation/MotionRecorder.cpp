@@ -25,38 +25,13 @@ using thl::dsp::transport::TransportInfo;
 
 namespace {
 
-using detail::k_motion_min_points;
-constexpr size_t k_max_aligned_bars = 16;
 constexpr size_t k_min_capacity = 16;
 // Below this the running playback phase is kept as is (bit-exact continuity,
 // also across an aligned DAW loop wrap or a hint without a real jump).
 constexpr double k_keep_phase_eps = 1e-6;
-constexpr double k_tick_eps = 1e-9;
-// A snapped free take counts as still while x and y stay within this distance
-// (pad units, |dx| + |dy|) of its first or last point: finger jitter, no move.
-constexpr double k_still_distance = 0.002;
 // Grid of a shape loop without a take: the jump detector's "two points" and the
 // phase the UI shows; shapes themselves are evaluated exactly.
 constexpr size_t k_shape_points = 256;
-
-// Nearest of 1, 2, 4, 8, 16 bars by ratio (log2), so the stretch is the smallest.
-double snap_bars(double bars) {
-    if (!(bars > 0.0)) { return 1.0; }
-    const double exponent = std::clamp(std::round(std::log2(bars)), 0.0, 4.0);
-    return std::exp2(exponent);
-}
-
-uint32_t bars_of(LoopLength length) {
-    switch (length) {
-        case LoopLength::Free: return 0;
-        case LoopLength::Bars1: return 1;
-        case LoopLength::Bars2: return 2;
-        case LoopLength::Bars4: return 4;
-        case LoopLength::Bars8: return 8;
-        case LoopLength::Bars16: return 16;
-    }
-    return 0;
-}
 
 double circular_distance(double a, double b, double length) {
     const double d = std::abs(a - b);
@@ -78,13 +53,13 @@ void MotionRecorder::prepare(double sample_rate,
                              const MotionRecorderConfig& config) {
     // Keep what was recorded: publish finished takes before resetting.
     service();
-    if (m_take.m_active) {
-        abort_take(true);
+    if (m_takes.active()) {
+        m_takes.abort();
+        on_take(TakeOutcome::Cancelled);  // the lane the take replaced plays on
         m_aborted = true;
     }
     m_armed = false;
     m_force_start = false;
-    for (auto& b : m_takes) { b.m_state.store(BufferState::Free, std::memory_order_relaxed); }
 
     m_config = config;
     m_config.m_max_points = std::max(m_config.m_max_points, k_min_capacity);
@@ -95,16 +70,7 @@ void MotionRecorder::prepare(double sample_rate,
     if (!(m_config.m_glide_ms >= 0.0)) { m_config.m_glide_ms = 25.0; }
     if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
 
-    for (auto& b : m_takes) {
-        if (b.m_x.size() != m_config.m_max_points) {
-            b.m_x.assign(m_config.m_max_points, 0.0f);
-            b.m_y.assign(m_config.m_max_points, 0.0f);
-            b.m_gate.assign(m_config.m_max_points, 0);
-            // The seam window is at most a quarter of the take.
-            b.m_raw_tail_x.assign(m_config.m_max_points / 4, 0.0f);
-            b.m_raw_tail_y.assign(m_config.m_max_points / 4, 0.0f);
-        }
-    }
+    m_takes.prepare(m_config, m_sample_rate);
     m_max_block = max_block_size;
     m_out_x.assign(max_block_size, m_last_x);
     m_out_y.assign(max_block_size, m_last_y);
@@ -129,14 +95,7 @@ void MotionRecorder::prepare(double sample_rate,
 }
 
 size_t MotionRecorder::take_buffer_bytes() const {
-    size_t bytes = 0;
-    for (const auto& b : m_takes) {
-        bytes += (b.m_x.capacity() + b.m_y.capacity() + b.m_raw_tail_x.capacity() +
-                  b.m_raw_tail_y.capacity()) *
-                     sizeof(float) +
-                 b.m_gate.capacity();
-    }
-    return bytes;
+    return m_takes.buffer_bytes();
 }
 
 bool MotionRecorder::arm(LoopLength length) {
@@ -233,7 +192,7 @@ void MotionRecorder::set_loop_end(LoopEnd mode) {
 bool MotionRecorder::service() {
     std::array<TakeBuffer*, 2> finished{};
     size_t count = 0;
-    for (auto& b : m_takes) {
+    for (auto& b : m_takes.buffers()) {
         if (b.m_state.load(std::memory_order_acquire) == BufferState::Finished) {
             finished[count++] = &b;
         }
@@ -341,7 +300,7 @@ MotionLane MotionRecorder::played_path(size_t num_points) const {
 MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
     const bool has_lane = m_view_length > 0.0;
     MotionSnapshot s;
-    if (m_take.m_active) {
+    if (m_takes.active()) {
         s.m_state = MotionState::Recording;
     } else if (m_armed) {
         s.m_state = MotionState::Armed;
@@ -355,10 +314,7 @@ MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
     s.m_refused = m_refused;
     s.m_aborted = m_aborted;
     s.m_phase = has_lane ? clamp01(m_phase / m_view_length) : 0.0f;
-    if (m_take.m_active && m_take.m_target > 0) {
-        s.m_progress =
-            clamp01(static_cast<double>(m_take.m_count) / static_cast<double>(m_take.m_target));
-    }
+    s.m_progress = m_takes.progress();
     s.m_take_id = has_lane ? m_playing_take_id : 0;
     s.m_length = m_view_length;
     return s;
@@ -381,7 +337,7 @@ MotionRecorder::LaneView MotionRecorder::view_of(Source src, const PlayedLane& p
         v.m_anchor = lane.m_anchor;
     } else if (src == Source::Buffer0 || src == Source::Buffer1) {
         // A take buffer plays raw until service() publishes it.
-        const TakeBuffer& b = m_takes[src == Source::Buffer0 ? 0 : 1];
+        const TakeBuffer& b = m_takes.buffers()[src == Source::Buffer0 ? 0 : 1];
         v.m_x = b.m_x.data();
         v.m_y = b.m_y.data();
         v.m_gate = b.m_gate.data();
@@ -390,7 +346,7 @@ MotionRecorder::LaneView MotionRecorder::view_of(Source src, const PlayedLane& p
         v.m_length = b.m_length;
         v.m_anchor = b.m_anchor;
     }
-    const uint32_t bars = bars_of(m_playback_length);
+    const uint32_t bars = loop_length_bars(m_playback_length);
     if (bars > 0 && !v.empty()) {
         // Stretched onto N bars from a bar line: the grid scale follows the length.
         v.m_timebase = MotionTimebase::Beats;
@@ -407,7 +363,7 @@ MotionRecorder::LaneView MotionRecorder::playback_view(const PlayedLane& lane) c
 
 MotionRecorder::LaneView MotionRecorder::shaped_view(LaneView lane) const {
     // Shapes pause while a take records: the output and the trail are the recording.
-    if (!m_shapes.active() || m_take.m_active) { return lane; }
+    if (!m_shapes.active() || m_takes.active()) { return lane; }
     if (m_shapes.uses_take() && !lane.empty()) {
         lane.m_shaped = true;
         return lane;
@@ -417,7 +373,7 @@ MotionRecorder::LaneView MotionRecorder::shaped_view(LaneView lane) const {
     v.m_shaped = true;
     v.m_num_points = k_shape_points;
     v.m_timebase = MotionTimebase::Beats;
-    v.m_length = std::max<uint32_t>(bars_of(m_playback_length), 1) *
+    v.m_length = std::max<uint32_t>(loop_length_bars(m_playback_length), 1) *
                  static_cast<double>(m_sig_num) * 4.0 / static_cast<double>(m_sig_denom);
     return v;
 }
@@ -481,7 +437,7 @@ void MotionRecorder::select_source(const PlayedLane& played) {
     }
     for (uint32_t b = 0; b < 2; ++b) {
         const Source own = b == 0 ? Source::Buffer0 : Source::Buffer1;
-        TakeBuffer& buffer = m_takes[b];
+        TakeBuffer& buffer = m_takes.buffers()[b];
         if (m_source != own &&
             buffer.m_state.load(std::memory_order_acquire) == BufferState::Published) {
             buffer.m_state.store(BufferState::Free, std::memory_order_relaxed);
@@ -495,7 +451,7 @@ void MotionRecorder::apply_commands(double bpm) {
         switch (c.m_kind) {
             case CommandKind::Arm:
             case CommandKind::Record:
-                if (m_take.m_active) { break; }
+                if (m_takes.active()) { break; }
                 m_armed = true;
                 m_force_start = c.m_kind == CommandKind::Record;
                 m_arm_length = static_cast<LoopLength>(std::min<uint8_t>(c.m_arg, 5));
@@ -508,7 +464,7 @@ void MotionRecorder::apply_commands(double bpm) {
                 m_armed = false;
                 m_force_start = false;
                 m_busy = false;
-                if (m_take.m_active) { end_take(bpm); }
+                if (m_takes.active()) { on_take(m_takes.end(bpm)); }
                 if (c.m_kind == CommandKind::Stop) { m_play_enabled = false; }
                 break;
             case CommandKind::Play:
@@ -546,299 +502,55 @@ void MotionRecorder::start_take(const TransportInfo& t,
                                 const MotionInput& in,
                                 uint32_t offset,
                                 double clock_beat) {
-    uint32_t buffer = 2;
-    for (uint32_t b = 0; b < 2; ++b) {
-        if (m_takes[b].m_state.load(std::memory_order_acquire) == BufferState::Free) {
-            buffer = b;
-            break;
-        }
-    }
-    if (buffer == 2) {
-        m_busy = true;  // both buffers wait for service(); try again next sample
-        return;
-    }
-
-    const double bpm = t.m_bpm > 0.0 ? t.m_bpm : 120.0;
-    const double ideal_tpb = std::clamp(std::round(m_config.m_rate * 60.0 / bpm),
-                                        static_cast<double>(m_config.m_min_tpb),
-                                        static_cast<double>(m_config.m_max_tpb));
-    const uint32_t bars = bars_of(m_arm_length);
-    const auto max_points = static_cast<double>(m_config.m_max_points);
-    const int sig_num = t.m_sig_num > 0 ? t.m_sig_num : 4;
-    const int sig_denom = t.m_sig_denom > 0 ? t.m_sig_denom : 4;
-    Take& k = m_take;
-    k = Take{};
-    k.m_bar_beats = static_cast<double>(sig_num) * 4.0 / static_cast<double>(sig_denom);
     const bool has_in = in.m_x != nullptr && in.m_y != nullptr && offset < in.m_num_samples;
     const float first_x = has_in ? in.m_x[offset] : m_last_x;
     const float first_y = has_in ? in.m_y[offset] : m_last_y;
-
-    if (m_config.m_bar_aligned_takes) {
-        // Beats on the transport or the free-running clock. A free take reserves
-        // 16 bars, so a whole number of points per bar has to fit 16 times.
-        const size_t loop_bars = bars > 0 ? bars : k_max_aligned_bars;
-        const double per_bar = std::min(std::round(k.m_bar_beats * ideal_tpb),
-                                        std::floor(max_points / static_cast<double>(loop_bars)));
-        if (per_bar < (k.m_bar_beats * m_config.m_min_tpb) - k_tick_eps) {
-            m_refused = true;
-            m_armed = false;
-            m_force_start = false;
+    switch (m_takes.start(t, m_arm_length, first_x, first_y, clock_beat)) {
+        case detail::MotionTakeWriter::Start::Busy:
+            m_busy = true;  // both buffers wait for service(); try again next sample
             return;
-        }
-        k.m_aligned = bars > 0;
-        k.m_snap = bars == 0;
-        k.m_bar = bars > 0;
-        k.m_beats = true;
-        k.m_points_per_bar = static_cast<size_t>(per_bar);
-        k.m_capacity = loop_bars * k.m_points_per_bar;
-        k.m_target = bars > 0 ? k.m_capacity : k.m_points_per_bar;
-        k.m_length = static_cast<double>(loop_bars) * k.m_bar_beats;
-        k.m_tick_step = k.m_bar_beats / per_bar;
-        // A bar take's point 0 sits on the bar line at or before the touch; a
-        // free take's on the first touch (record() rebases it there).
-        k.m_bar_line = std::floor((clock_beat / k.m_bar_beats) + k_tick_eps) * k.m_bar_beats;
-        k.m_tick_base = bars > 0 ? k.m_bar_line : clock_beat;
-        k.m_clock = clock_beat;
-    } else if (bars > 0) {
-        const int num = t.m_sig_num > 0 ? t.m_sig_num : 4;
-        const int den = t.m_sig_denom > 0 ? t.m_sig_denom : 4;
-        const double length = bars * static_cast<double>(num) * 4.0 / static_cast<double>(den);
-        const double points = std::min(std::round(length * ideal_tpb), max_points);
-        if (points < (length * m_config.m_min_tpb) - k_tick_eps) {
+        case detail::MotionTakeWriter::Start::Refused:
             m_refused = true;  // the loop does not fit at the minimum resolution
             m_armed = false;
             m_force_start = false;
             return;
-        }
-        k.m_bar = true;
-        k.m_beats = true;
-        k.m_length = length;
-        k.m_capacity = static_cast<size_t>(points);
-        k.m_tick_step = length / points;
-        const double j0 = std::ceil((clock_beat / k.m_tick_step) - k_tick_eps);
-        k.m_tick_base = j0 * k.m_tick_step;
-        const double wrapped = j0 - (std::floor(j0 / points) * points);
-        k.m_start_index = std::min(static_cast<size_t>(wrapped), k.m_capacity - 1);
-        k.m_clock = clock_beat;
-    } else if (t.is_playing()) {
-        k.m_beats = true;
-        k.m_capacity = m_config.m_max_points;
-        k.m_tick_step = 1.0 / ideal_tpb;
-        k.m_tick_base = clock_beat;
-        k.m_clock = clock_beat;
-    } else {
-        k.m_capacity = m_config.m_max_points;
-        k.m_tick_step = m_sample_rate / m_config.m_rate;
-        k.m_tick_base = 0.0;
-        k.m_clock = 0.0;
-    }
-    if (!k.m_aligned && !k.m_snap) { k.m_target = k.m_capacity; }
-    k.m_active = true;
-    k.m_buffer = buffer;
-    k.m_start_beat = clock_beat;
-    k.m_last_x = first_x;
-    k.m_last_y = first_y;
-    m_takes[buffer].m_state.store(BufferState::Recording, std::memory_order_relaxed);
-    if (k.m_aligned) {
-        // The time from the bar line to the touch is lifted (gate 0) at the
-        // first position. At most one bar of points: a bounded loop.
-        const double ticks = std::ceil(((clock_beat - k.m_bar_line) / k.m_tick_step) - k_tick_eps);
-        const auto lead = std::min(static_cast<size_t>(std::max(ticks, 0.0)), k.m_target - 1);
-        for (size_t i = 0; i < lead; ++i) { write_point(first_x, first_y, 0); }
+        case detail::MotionTakeWriter::Start::Started: break;
     }
     m_force_start = false;
     m_busy = false;
     if (m_playing_take_id != 0 && m_view_length > 0.0) { m_replaced_take_id = m_playing_take_id; }
 }
 
-void MotionRecorder::write_point(float x, float y, uint8_t gate) {
-    Take& k = m_take;
-    TakeBuffer& b = m_takes[k.m_buffer];
-    const size_t l = k.m_count;
-    // Raw points: smoothing is a playback setting (set_smoothing()).
-    size_t p = k.m_start_index + l;
-    if (p >= k.m_capacity) { p -= k.m_capacity; }
-    b.m_x[p] = x;
-    b.m_y[p] = y;
-    b.m_gate[p] = gate;
-    if (l == 0 || x != k.m_last_x || y != k.m_last_y) { k.m_count_at_change = l + 1; }
-    k.m_count = l + 1;
-    k.m_last_x = x;
-    k.m_last_y = y;
-}
-
-// A snapped free take loops without a pause: drop the points before the finger
-// first moves and after it last moved (each run kept down to one point). The
-// shift is a bounded memmove inside the take buffer.
-void MotionRecorder::trim_still_ends() {
-    Take& k = m_take;
-    TakeBuffer& b = m_takes[k.m_buffer];
-    const size_t n = k.m_count;
-    auto distance = [&](size_t i, size_t j) {
-        return std::abs(static_cast<double>(b.m_x[i]) - b.m_x[j]) +
-               std::abs(static_cast<double>(b.m_y[i]) - b.m_y[j]);
-    };
-    size_t first = 0;
-    while (first < n && distance(first, 0) <= k_still_distance) { ++first; }
-    if (first == n) { return; }  // never moved: a held position, kept as it is
-    size_t last = n - 1;
-    while (last > 0 && distance(last, n - 1) <= k_still_distance) { --last; }
-    const size_t begin = first - 1;
-    const size_t end = std::min(n, std::max(last + 2, first + 1));
-    if (begin > 0) {
-        const auto from = static_cast<std::ptrdiff_t>(begin);
-        const auto to = static_cast<std::ptrdiff_t>(end);
-        std::copy(b.m_x.begin() + from, b.m_x.begin() + to, b.m_x.begin());
-        std::copy(b.m_y.begin() + from, b.m_y.begin() + to, b.m_y.begin());
-        std::copy(b.m_gate.begin() + from, b.m_gate.begin() + to, b.m_gate.begin());
-    }
-    k.m_start_beat += static_cast<double>(begin) * k.m_tick_step;
-    k.m_count = end - begin;
-}
-
-// LoopEnd::Smooth: close the seam in place so the buffer plays without a jump at the wrap until
-// service() publishes it (a finger held across the loop end). The raw values of
-// the blended points go to the raw tail: service() restores them, so the
-// published lane keeps the raw seam. Bounded work on preallocated memory.
-void MotionRecorder::finalise(TakeBuffer& b, size_t n) {
-    const size_t start = m_take.m_start_index;
-    b.m_seam = start;
-    b.m_seam_window = 0;
-    if (n < k_motion_min_points || m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Jump) {
-        return;
-    }
-    const size_t window = detail::motion_seam_window(n, b.m_length, b.m_timebase);
-    assert(window <= b.m_raw_tail_x.size());
-    auto close = [&](std::vector<float>& p, std::vector<float>& tail) {
-        auto at = [&](size_t i) -> float& {
-            const size_t q = start + i;
-            return p[q >= n ? q - n : q];
-        };
-        for (size_t j = 0; j < window; ++j) { tail[j] = at(n - window + j); }
-        detail::motion_spread_seam(at, n, window, detail::motion_seam_error(at, n));
-    };
-    close(b.m_x, b.m_raw_tail_x);
-    close(b.m_y, b.m_raw_tail_y);
-    b.m_seam_window = window;
-}
-
-void MotionRecorder::abort_take(bool keep_replaced) {
-    if (!m_take.m_active) { return; }
-    m_takes[m_take.m_buffer].m_state.store(BufferState::Free, std::memory_order_relaxed);
-    m_take.m_active = false;
-    m_armed = false;
-    m_force_start = false;
-    if (m_replaced_take_id != 0) {
-        if (keep_replaced) {
-            m_need_phase = true;  // the old lane plays on from the clock
-        } else {
-            m_clear_request.store(m_replaced_take_id, std::memory_order_release);
+void MotionRecorder::on_take(TakeOutcome outcome) {
+    switch (outcome) {
+        case TakeOutcome::Running: return;
+        case TakeOutcome::Finished: {
+            m_armed = false;
+            m_force_start = false;
+            m_play_enabled = true;
+            m_replaced_take_id = 0;
+            const uint32_t buffer = m_takes.finished_buffer();
+            switch_to(buffer == 0 ? Source::Buffer0 : Source::Buffer1,
+                      m_takes.buffers()[buffer].m_take_id,
+                      false);
+            return;
         }
+        case TakeOutcome::Dropped:
+            // Nothing kept: service() clears the lane the take replaced.
+            m_armed = false;
+            m_force_start = false;
+            if (m_replaced_take_id != 0) {
+                m_clear_request.store(m_replaced_take_id, std::memory_order_release);
+            }
+            return;
+        case TakeOutcome::Cancelled:
+            // Nothing recorded: the replaced lane plays on from the clock.
+            m_armed = false;
+            m_force_start = false;
+            if (m_replaced_take_id != 0) { m_need_phase = true; }
+            m_replaced_take_id = 0;
+            return;
     }
-    if (keep_replaced) { m_replaced_take_id = 0; }
-}
-
-void MotionRecorder::finish_take(double bpm, uint32_t trim_samples) {
-    Take& k = m_take;
-    if (!k.m_active) { return; }
-    if (!k.m_bar && !k.m_snap && trim_samples > 0 && k.m_count_at_change >= k_motion_min_points) {
-        // The release reaches us up to a block after the last move (events carry
-        // no timestamps): a still tail no longer than that block is quantisation,
-        // not gesture, and would put a pause into the loop.
-        const double samples_per_point =
-            k.m_beats ? k.m_tick_step * 60.0 * m_sample_rate / bpm : k.m_tick_step;
-        const auto tail = static_cast<double>(k.m_count - k.m_count_at_change);
-        if (tail * samples_per_point <= static_cast<double>(trim_samples)) {
-            k.m_count = k.m_count_at_change;
-        }
-    }
-    if (k.m_snap) { trim_still_ends(); }
-    const bool complete = k.m_aligned ? k.m_count == k.m_target
-                          : k.m_bar   ? k.m_count == k.m_capacity
-                                      : k.m_count >= k_motion_min_points;
-    if (!complete) {
-        abort_take();
-        return;
-    }
-    TakeBuffer& b = m_takes[k.m_buffer];
-    const size_t n = k.m_count;
-    if (k.m_bar && !k.m_aligned) {
-        b.m_timebase = MotionTimebase::Beats;
-        b.m_length = k.m_length;
-        b.m_anchor = 0.0;
-        b.m_rate = static_cast<double>(n) / k.m_length;
-    } else if (k.m_aligned) {
-        // Whole bars from the bar line: index 0 plays on that bar line.
-        const double length =
-            static_cast<double>(n) / static_cast<double>(k.m_points_per_bar) * k.m_bar_beats;
-        b.m_timebase = MotionTimebase::Beats;
-        b.m_length = length;
-        b.m_anchor = detail::wrap_phase(k.m_bar_line, length);
-        b.m_rate = static_cast<double>(n) / length;
-    } else if (k.m_snap) {
-        // Stretched onto the nearest of 1, 2, 4, 8 or 16 bars; index 0 plays on
-        // the bar line nearest the first kept point.
-        const double beats = static_cast<double>(n) * k.m_tick_step;
-        const double length = snap_bars(beats / k.m_bar_beats) * k.m_bar_beats;
-        b.m_timebase = MotionTimebase::Beats;
-        b.m_length = length;
-        b.m_anchor =
-            detail::wrap_phase(std::round(k.m_start_beat / k.m_bar_beats) * k.m_bar_beats, length);
-        b.m_rate = static_cast<double>(n) / length;
-    } else if (k.m_beats) {
-        // Free take while the transport plays: round to whole beats, stretch at read time.
-        const double elapsed = static_cast<double>(n) * k.m_tick_step;
-        const double length = std::max(1.0, std::round(elapsed));
-        b.m_timebase = MotionTimebase::Beats;
-        b.m_length = length;
-        b.m_anchor = detail::wrap_phase(std::round(k.m_start_beat * 16.0) / 16.0, length);
-        b.m_rate = 1.0 / k.m_tick_step;
-    } else {
-        b.m_timebase = MotionTimebase::Seconds;
-        b.m_rate = m_sample_rate / k.m_tick_step;
-        b.m_length = static_cast<double>(n) / b.m_rate;
-        b.m_anchor = 0.0;
-    }
-    finalise(b, n);
-    b.m_num_points = n;
-    b.m_take_id = m_next_take_id.fetch_add(1, std::memory_order_relaxed);
-    b.m_state.store(BufferState::Finished, std::memory_order_release);
-
-    k.m_active = false;
-    m_armed = false;
-    m_force_start = false;
-    m_play_enabled = true;
-    m_replaced_take_id = 0;
-    switch_to(k.m_buffer == 0 ? Source::Buffer0 : Source::Buffer1, b.m_take_id, false);
-}
-
-// disarm() / stop() never throw a touched bar-aligned take away: a BarsN take
-// ends at once with the rest of its N bars lifted, a free one where it is.
-// Padding writes at most m_max_points points into preallocated memory.
-void MotionRecorder::end_take(double bpm) {
-    const Take& k = m_take;
-    if (k.m_snap) {
-        if (k.m_saw_touch) {
-            finish_take(bpm);
-        } else {
-            abort_take(true);  // nothing recorded: the replaced lane plays on
-        }
-        return;
-    }
-    if (!k.m_aligned) {
-        if (k.m_bar) {
-            abort_take();
-        } else {
-            finish_take(bpm);
-        }
-        return;
-    }
-    if (!k.m_saw_touch) {
-        abort_take(true);  // nothing recorded: the replaced lane plays on
-        return;
-    }
-    while (k.m_count < k.m_target) { write_point(k.m_last_x, k.m_last_y, 0); }
-    finish_take(bpm);
 }
 
 void MotionRecorder::process(const TransportInfo& t,
@@ -998,48 +710,15 @@ void MotionRecorder::process(const TransportInfo& t,
         }
 
         // Recording.
-        if (!m_take.m_active && m_armed && (live || m_force_start)) {
+        if (!m_takes.active() && m_armed && (live || m_force_start)) {
             start_take(t, in, j, b0 + (static_cast<double>(i) * slope));
-            if (m_take.m_active && m_replaced_take_id != 0) {
+            if (m_takes.active() && m_replaced_take_id != 0) {
                 view = {};
-            } else if (m_take.m_active && view.m_shaped) {
+            } else if (m_takes.active() && view.m_shaped) {
                 view = playback_view(lane);  // shapes pause during the take
             }
         }
-        if (m_take.m_active) {
-            Take& k = m_take;
-            if (!k.m_bar && k.m_saw_touch && !live) {
-                finish_take(bpm, n);  // free take: ends on release
-            } else if (k.m_snap && !k.m_saw_touch && !live) {
-                // record(Free) without a finger: the take starts at the touch.
-                k.m_clock += rec_slope;
-            } else {
-                if (k.m_snap && !k.m_saw_touch) {
-                    k.m_tick_base = k.m_clock;
-                    k.m_start_beat = k.m_clock;
-                }
-                k.m_saw_touch = k.m_saw_touch || live;
-                const double next =
-                    k.m_tick_base + (static_cast<double>(k.m_count) * k.m_tick_step);
-                if (k.m_clock >= next - k_tick_eps) {
-                    if (live) {
-                        write_point(lx, ly, 1);
-                    } else {
-                        write_point(k.m_last_x, k.m_last_y, 0);
-                    }
-                    // A snapped free take ends after 16 bars with the finger
-                    // down; its progress runs to the next 1, 2, 4, 8 or 16 bars.
-                    if (k.m_count >= k.m_target) {
-                        if (k.m_count >= k.m_capacity) {
-                            finish_take(bpm);
-                        } else {
-                            k.m_target = std::min(k.m_target * 2, k.m_capacity);
-                        }
-                    }
-                }
-                k.m_clock += k.m_beats ? rec_slope : 1.0;
-            }
-        }
+        if (m_takes.active()) { on_take(m_takes.step(live, lx, ly, rec_slope, bpm, n)); }
 
         if (m_need_phase) {
             relock(i);

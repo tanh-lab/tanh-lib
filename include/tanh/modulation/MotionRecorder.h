@@ -7,8 +7,10 @@
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/MotionShape.h>
+#include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/detail/MotionGlide.h>
 #include <tanh/modulation/detail/MotionHistory.h>
+#include <tanh/modulation/detail/MotionTakes.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -36,11 +38,6 @@ struct MotionCommand {
 /// Capacity of a recorder's UI to audio command queue.
 inline constexpr size_t k_motion_command_capacity = 32;
 
-/// Loop length of a take (arm, record) or of playback (set_playback_length).
-/// Free lasts as long as the gesture; BarsN is N bars of the time signature,
-/// synced to the transport.
-enum class LoopLength : uint8_t { Free, Bars1, Bars2, Bars4, Bars8, Bars16 };
-
 /// Beats-lane playback while the transport is stopped.
 enum class StoppedTransport : uint8_t {
     FreeRun,  ///< keep moving at the last tempo from the last beat (default)
@@ -53,29 +50,6 @@ enum class MotionState : uint8_t {
     Armed,      ///< waiting for the first touch; the old lane keeps playing
     Recording,  ///< a take is being written
     Playing     ///< a lane is playing
-};
-
-struct MotionRecorderConfig {
-    /// Points per take buffer (two buffers per recorder, 11 bytes per point).
-    size_t m_max_points = k_motion_default_max_points;
-    /// Grid rate of Seconds takes in points per second. Beats takes use
-    /// round(rate * 60 / bpm) ticks per beat, clamped to [m_min_tpb, m_max_tpb].
-    double m_rate = 200.0;
-    uint32_t m_min_tpb = 24;  ///< below this a bar take is refused (capacity)
-    uint32_t m_max_tpb = 512;
-    /// Catmull-Rom is evaluated every this many samples; the output ramps linearly between.
-    uint32_t m_render_interval = 32;
-    double m_glide_ms = 25.0;  ///< raised-cosine glide after a jump, a new lane or a release
-    /// Every take becomes a Beats lane of whole bars:
-    /// - BarsN starts on the bar line at or before the first touch, records
-    ///   lifts as gate 0 and lasts exactly N bars; disarm() and stop() pad it
-    ///   with gate 0 instead of dropping it.
-    /// - Free runs from the first touch to the release (16 bars at most), drops
-    ///   the still ends and is stretched onto the nearest of 1, 2, 4, 8 or 16
-    ///   bars, so it loops without a pause. Lifting ends it: use BarsN to
-    ///   record gaps.
-    /// Off: free takes end on release and keep their length.
-    bool m_bar_aligned_takes = false;
 };
 
 /// One block of touch input for MotionRecorder::process().
@@ -306,7 +280,9 @@ private:
     using CommandKind = detail::MotionCommandKind;
     using Command = detail::MotionCommand;
 
-    enum class BufferState : uint8_t { Free, Recording, Finished, Published };
+    using TakeBuffer = detail::TakeBuffer;
+    using BufferState = detail::TakeBufferState;
+    using TakeOutcome = detail::MotionTakeWriter::Outcome;
 
     // The RCU payload: the published lane and the x and y that play.
     struct PlayedLane {
@@ -315,25 +291,6 @@ private:
         std::vector<float> m_y;
         bool m_smoothed = false;  // may differ from the finalised take buffer: glide on handoff
         uint32_t m_version = 0;   // per publication, also for a smoothing change
-    };
-
-    struct TakeBuffer {
-        std::atomic<BufferState> m_state{BufferState::Free};
-        std::vector<float> m_x;
-        std::vector<float> m_y;
-        std::vector<uint8_t> m_gate;
-        // Raw values of the points finalise() blended, for service() to restore.
-        std::vector<float> m_raw_tail_x;
-        std::vector<float> m_raw_tail_y;
-        // Written by the audio thread before Finished (release), read after (acquire).
-        size_t m_num_points = 0;
-        MotionTimebase m_timebase = MotionTimebase::Seconds;
-        double m_rate = 0.0;
-        double m_length = 0.0;
-        double m_anchor = 0.0;
-        uint32_t m_take_id = 0;
-        size_t m_seam = 0;         // index of the first recorded point
-        size_t m_seam_window = 0;  // points blended by finalise()
     };
 
     // What playback reads: a take buffer or the RCU lane, valid for one block.
@@ -352,32 +309,6 @@ private:
 
     enum class Source : uint8_t { Buffer0, Buffer1, Lane };
 
-    // The take being recorded (audio thread only).
-    struct Take {
-        bool m_active = false;
-        bool m_bar = false;
-        bool m_aligned = false;  // bar take from a bar line (m_bar_aligned_takes)
-        bool m_snap = false;     // free take snapped onto 1 to 16 bars (m_bar_aligned_takes)
-        bool m_beats = false;
-        bool m_saw_touch = false;
-        uint32_t m_buffer = 0;
-        size_t m_capacity = 0;  // bar: points per loop; free: max points
-        size_t m_target = 0;    // progress target (snapped free: the next bar boundary)
-        size_t m_points_per_bar = 0;
-        size_t m_count = 0;            // points written
-        size_t m_count_at_change = 0;  // points up to the last input change
-        size_t m_start_index = 0;      // bar: physical index of the first point
-        double m_clock = 0.0;          // samples (Seconds) or beats since start
-        double m_tick_base = 0.0;      // clock of tick 0
-        double m_tick_step = 0.0;      // clock units per point
-        double m_start_beat = 0.0;
-        double m_length = 0.0;     // bar: loop length in beats
-        double m_bar_beats = 4.0;  // beats per bar at the start
-        double m_bar_line = 0.0;   // aligned: beat of point 0
-        float m_last_x = 0.0f;
-        float m_last_y = 0.0f;
-    };
-
     void apply_commands(double bpm);
     void select_source(const PlayedLane& lane);
     [[nodiscard]] LaneView view_of(Source source, const PlayedLane& lane) const;
@@ -389,18 +320,13 @@ private:
     void apply_shapes();
     void switch_to(Source source, uint32_t id, bool silent);
     void glide_in_place();
+    // Opens a take at @p offset of this block (recording clock beat @p clock_beat).
     void start_take(const thl::dsp::transport::TransportInfo& transport,
                     const MotionInput& input,
                     uint32_t offset,
                     double clock_beat);
-    void write_point(float x, float y, uint8_t gate);
-    void trim_still_ends();
-    void finish_take(double bpm, uint32_t trim_samples = 0);
-    // disarm()/stop() during a take.
-    void end_take(double bpm);
-    // keep_replaced: the old lane plays on (prepare()); otherwise service() clears it.
-    void abort_take(bool keep_replaced = false);
-    void finalise(TakeBuffer& buffer, size_t num_points);
+    // What a take that ended or stopped means for arming and playback.
+    void on_take(TakeOutcome outcome);
     void start_glide() { m_glide.start(m_last_x, m_last_y); }
     void publish(MotionLane lane, bool record_history = true);
     void publish_played(MotionLane lane);
@@ -411,10 +337,11 @@ private:
 
     // Shared between threads.
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
-    std::array<TakeBuffer, 2> m_takes;
     RCU<PlayedLane> m_lanes;
     RCU<PlayedLane>::Reader m_audio_reader;
     std::atomic<uint32_t> m_next_take_id{1};
+    // The running take and the two take buffers (audio thread; service() reads Finished ones).
+    detail::MotionTakeWriter m_takes{m_next_take_id};
     std::atomic<uint32_t> m_lane_version{0};
     std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
     // Id of a lane a dropped take replaced; service() clears it if still published.
@@ -429,8 +356,7 @@ private:
     uint32_t m_played_version = 0;
     detail::MotionHistory m_history;
 
-    // Audio thread only: commands and take.
-    Take m_take;
+    // Audio thread only: commands and arming.
     bool m_armed = false;
     bool m_force_start = false;
     LoopLength m_arm_length = LoopLength::Free;
