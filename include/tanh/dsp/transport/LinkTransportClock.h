@@ -15,7 +15,7 @@ namespace thl::dsp::transport {
 /**
  * @brief TransportClock that follows an Ableton Link session.
  *
- * Built over a LinkBackend, usually thl::link::LinkSession::audio_backend()
+ * Built over a LinkBackend, usually thl::link::LinkSession::timeline_backend()
  * (TANH_BUILD_LINK); the clock itself has no Link dependency. Pass the
  * callback's host time on the Link clock to set_host_time_us() before every
  * begin_block(), without output latency, and keep the latency current with

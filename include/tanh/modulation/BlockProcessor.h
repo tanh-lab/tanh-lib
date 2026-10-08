@@ -36,8 +36,8 @@ public:
     BlockProcessor(BlockProcessor&&) = delete;
     BlockProcessor& operator=(BlockProcessor&&) = delete;
 
-    /// Allocate for blocks of up to @p max_block_size samples.
-    virtual void prepare(double sample_rate, size_t max_block_size) = 0;
+    /// Allocate for blocks of up to @p samples_per_block samples.
+    virtual void prepare(double sample_rate, size_t samples_per_block) = 0;
 
     /// One block, after the sources' clear_per_block() and before their pre_process_block().
     virtual void process_block(const BlockContext& context) TANH_NONBLOCKING_FUNCTION = 0;

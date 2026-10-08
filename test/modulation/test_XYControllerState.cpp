@@ -30,9 +30,9 @@ TEST(XYControllerState, TouchDrivesStateParameters) {
     XYControllerConfig cfg;
     cfg.m_id = "pad1";
     XYController c(matrix, cfg);
-    EXPECT_NE(c.route(XYPadAxis::X, "slot1.a"), k_invalid_routing_id);
-    EXPECT_NE(c.route(XYPadAxis::Y, "slot1.b"), k_invalid_routing_id);
-    EXPECT_NE(c.route(XYPadAxis::Active, "slot1.wet"), k_invalid_routing_id);
+    EXPECT_NE(c.route(XYOutput::X, "slot1.a"), k_invalid_routing_id);
+    EXPECT_NE(c.route(XYOutput::Y, "slot1.b"), k_invalid_routing_id);
+    EXPECT_NE(c.route(XYOutput::Active, "slot1.wet"), k_invalid_routing_id);
     auto a = matrix.get_smart_handle<float>("slot1.a");
     auto b = matrix.get_smart_handle<float>("slot1.b");
     auto wet = matrix.get_smart_handle<float>("slot1.wet");

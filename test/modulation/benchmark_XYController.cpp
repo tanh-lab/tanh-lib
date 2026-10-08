@@ -52,11 +52,11 @@ struct Bench {
             XYRouteOptions shared;
             shared.m_priority = 20;
             shared.m_enabled = false;
-            pads[n]->route(XYPadAxis::X, s + ".a", own);
-            pads[n]->route(XYPadAxis::Y, s + ".b", own);
-            single->route(XYPadAxis::X, s + ".a", shared, n);
-            single->route(XYPadAxis::Y, s + ".b", shared, n);
-            pads[n]->route(XYPadAxis::Active, s + ".wet");
+            pads[n]->route(XYOutput::X, s + ".a", own);
+            pads[n]->route(XYOutput::Y, s + ".b", own);
+            single->route(XYOutput::X, s + ".a", shared, n);
+            single->route(XYOutput::Y, s + ".b", shared, n);
+            pads[n]->route(XYOutput::Active, s + ".wet");
             if (n < 6) { pads[n]->recorder().load_lane(bench_lane(2.0 + static_cast<double>(n))); }
         }
         matrix->prepare(xy_test::k_sr, block);

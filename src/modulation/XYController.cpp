@@ -55,7 +55,7 @@ int64_t pad_time(std::optional<int64_t> time_ns) {
 // for the block (MatrixHook) into the source's buffers.
 class XYController::Output final : public ModulationSource {
 public:
-    Output(XYController& controller, uint32_t voice, XYPadAxis axis)
+    Output(XYController& controller, uint32_t voice, XYOutput axis)
         : ModulationSource(k_global_scope, /*fully_active=*/false)
         , m_controller(controller)
         , m_voice(voice)
@@ -70,15 +70,15 @@ public:
 private:
     XYController& m_controller;
     const uint32_t m_voice;
-    const XYPadAxis m_axis;
+    const XYOutput m_axis;
 };
 
 struct XYController::Voice {
     Voice(XYController& owner, uint32_t index, const XYControllerConfig& config)
         : m_pad(config.m_max_touches, config.m_mono_priority)
-        , m_out_x(owner, index, XYPadAxis::X)
-        , m_out_y(owner, index, XYPadAxis::Y)
-        , m_out_active(owner, index, XYPadAxis::Active) {}
+        , m_out_x(owner, index, XYOutput::X)
+        , m_out_y(owner, index, XYOutput::Y)
+        , m_out_active(owner, index, XYOutput::Active) {}
 
     detail::XYPad m_pad;
     MotionRecorder m_recorder;
@@ -122,9 +122,9 @@ void XYController::Output::process(size_t num_samples, size_t offset) {
     const float* values = nullptr;
     const uint8_t* gate = v.m_xy_mask.data();
     switch (m_axis) {
-        case XYPadAxis::X: values = v.m_recorder.out_x(); break;
-        case XYPadAxis::Y: values = v.m_recorder.out_y(); break;
-        case XYPadAxis::Active: gate = v.m_active.data(); break;
+        case XYOutput::X: values = v.m_recorder.out_x(); break;
+        case XYOutput::Y: values = v.m_recorder.out_y(); break;
+        case XYOutput::Active: gate = v.m_active.data(); break;
     }
     auto value_at = [&](size_t i) {
         return values != nullptr ? values[i] : static_cast<float>(gate[i]);
@@ -159,9 +159,9 @@ XYController::XYController(ModulationMatrix& matrix, XYControllerConfig config)
     m_matrix.add_block_processor(m_hook);
     for (uint32_t v = 0; v < m_num_voices; ++v) {
         auto& voice = *m_voices[v];
-        m_matrix.add_source(source_id(XYPadAxis::X, v), &voice.m_out_x);
-        m_matrix.add_source(source_id(XYPadAxis::Y, v), &voice.m_out_y);
-        m_matrix.add_source(source_id(XYPadAxis::Active, v), &voice.m_out_active);
+        m_matrix.add_source(source_id(XYOutput::X, v), &voice.m_out_x);
+        m_matrix.add_source(source_id(XYOutput::Y, v), &voice.m_out_y);
+        m_matrix.add_source(source_id(XYOutput::Active, v), &voice.m_out_active);
     }
 }
 
@@ -171,45 +171,45 @@ XYController::XYController(ModulationMatrix& matrix, XYControllerConfig config)
 XYController::~XYController() {
     unroute_all();
     for (uint32_t v = 0; v < m_num_voices; ++v) {
-        m_matrix.remove_source(source_id(XYPadAxis::X, v));
-        m_matrix.remove_source(source_id(XYPadAxis::Y, v));
-        m_matrix.remove_source(source_id(XYPadAxis::Active, v));
+        m_matrix.remove_source(source_id(XYOutput::X, v));
+        m_matrix.remove_source(source_id(XYOutput::Y, v));
+        m_matrix.remove_source(source_id(XYOutput::Active, v));
     }
     m_matrix.remove_block_processor(m_hook);
 }
 
-std::string XYController::source_id(XYPadAxis axis, uint32_t voice) const {
+std::string XYController::source_id(XYOutput axis, uint32_t voice) const {
     std::string id = m_config.m_id;
     if (m_num_voices > 1) {
         id += '.';
         id += std::to_string(voice);
     }
     switch (axis) {
-        case XYPadAxis::X: id += ".x"; break;
-        case XYPadAxis::Y: id += ".y"; break;
-        case XYPadAxis::Active: id += ".active"; break;
+        case XYOutput::X: id += ".x"; break;
+        case XYOutput::Y: id += ".y"; break;
+        case XYOutput::Active: id += ".active"; break;
     }
     return id;
 }
 
-ModulationSource& XYController::source(XYPadAxis axis, uint32_t voice) {
+ModulationSource& XYController::source(XYOutput axis, uint32_t voice) {
     auto& v = *m_voices.at(voice);
     switch (axis) {
-        case XYPadAxis::X: return v.m_out_x;
-        case XYPadAxis::Y: return v.m_out_y;
-        case XYPadAxis::Active: break;
+        case XYOutput::X: return v.m_out_x;
+        case XYOutput::Y: return v.m_out_y;
+        case XYOutput::Active: break;
     }
     return v.m_out_active;
 }
 
-void XYController::prepare(double sample_rate, size_t max_block_size) {
-    if (sample_rate <= 0.0 || max_block_size == 0) { return; }
-    m_capacity = max_block_size;
+void XYController::prepare(double sample_rate, size_t samples_per_block) {
+    if (sample_rate <= 0.0 || samples_per_block == 0) { return; }
+    m_capacity = samples_per_block;
     m_sample_rate = sample_rate;
     // Default delay: a touch stamped just before a callback still lands inside
     // the block that callback renders, with 5 ms left for UI delivery.
     const double delay_ms = m_config.m_input_delay_ms.value_or(
-        5.0 + (1000.0 * static_cast<double>(max_block_size) / sample_rate));
+        5.0 + (1000.0 * static_cast<double>(samples_per_block) / sample_rate));
     const detail::XYPadTiming timing{
         .m_sample_rate = sample_rate,
         .m_delay_ns = static_cast<int64_t>(std::max(delay_ms, 0.0) * 1e6),
@@ -217,12 +217,12 @@ void XYController::prepare(double sample_rate, size_t max_block_size) {
     };
     for (auto& voice : m_voices) {
         auto& v = *voice;
-        v.m_pad.prepare(max_block_size, timing);
-        v.m_recorder.prepare(sample_rate, max_block_size, m_config.m_recorder);
-        v.m_active.assign(max_block_size, 0);
-        v.m_xy_mask.assign(max_block_size, 0);
-        v.m_layer.assign(max_block_size, XYLayer::None);
-        v.m_change_points.assign(max_block_size + 1, 0);
+        v.m_pad.prepare(samples_per_block, timing);
+        v.m_recorder.prepare(sample_rate, samples_per_block, m_config.m_recorder);
+        v.m_active.assign(samples_per_block, 0);
+        v.m_xy_mask.assign(samples_per_block, 0);
+        v.m_layer.assign(samples_per_block, XYLayer::None);
+        v.m_change_points.assign(samples_per_block + 1, 0);
         v.m_num_change_points = 0;
         v.m_trail_countdown = 0;
     }
@@ -231,14 +231,14 @@ void XYController::prepare(double sample_rate, size_t max_block_size) {
     m_sample_time = 0;
 }
 
-uint32_t XYController::route(XYPadAxis axis,
+uint32_t XYController::route(XYOutput axis,
                              std::string_view target_id,
                              const XYRouteOptions& options,
                              uint32_t voice) {
     if (voice >= m_num_voices) { return k_invalid_routing_id; }
     ModulationRouting r(source_id(axis, voice), target_id, options.m_depth);
     r.m_combine_mode = options.m_combine.value_or(
-        axis == XYPadAxis::Active ? CombineMode::Replace : CombineMode::ReplaceHold);
+        axis == XYOutput::Active ? CombineMode::Replace : CombineMode::ReplaceHold);
     r.m_replace_priority = options.m_priority;
     r.m_replace_hold_priority = options.m_hold_priority;
     r.m_enabled = options.m_enabled;

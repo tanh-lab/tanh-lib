@@ -42,7 +42,7 @@ void LinkTransportClock::on_prepare(double sample_rate) {
     m_tempo_window_samples = k_peer_tempo_window_us * m_sample_rate / k_micros_per_second;
     m_sample_time = 0.0;
     m_host_time_us.reset();
-    m_host_time_filter.reset(m_sample_rate);
+    m_host_time_filter.prepare(m_sample_rate);
     m_seen_epoch = m_backend.timeline_epoch();
     m_epoch_armed = false;
 }

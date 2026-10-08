@@ -29,7 +29,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Link Audio (`TANH_BUILD_LINK`): `LinkSession` shares audio channels with Link peers
   (`set_audio_enabled()`, `audio_channels()`, `set_audio_input()`; the output channel
   is named at construction) on the C++ SDK's `LinkAudio` and LinkKit's audio API.
-  `audio_sharing()` is the audio-thread seam (`dsp::transport::LinkAudioBackend`:
+  `audio_backend()` is the audio-thread seam (`dsp::transport::LinkAudioBackend`:
   received buffers in, our output out) and `dsp::transport::LinkAudioReceiver` plays
   the received channel on the local beat grid a latency behind, with underrun and
   margin counters; lost packets are skipped, reordered ones dropped, and a moved range

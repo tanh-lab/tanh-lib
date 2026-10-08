@@ -45,10 +45,9 @@ struct Fixture {
         cfg.m_recorder.m_max_points = 4096;
         controller = std::make_unique<XYController>(*matrix, cfg);
         for (uint32_t n = 0; n < k_voices; ++n) {
+            routes.push_back(controller->route(XYOutput::X, "s" + std::to_string(n) + ".a", {}, n));
             routes.push_back(
-                controller->route(XYPadAxis::X, "s" + std::to_string(n) + ".a", {}, n));
-            routes.push_back(
-                controller->route(XYPadAxis::Active, "s" + std::to_string(n) + ".wet", {}, n));
+                controller->route(XYOutput::Active, "s" + std::to_string(n) + ".wet", {}, n));
         }
         matrix->prepare(k_sr, k_bs);
     }
@@ -226,8 +225,8 @@ TEST(XYController, FullScenario) {
         XYRouteOptions options;
         options.m_enabled = false;
         multi_routes.push_back(
-            multi.route(XYPadAxis::X, target, options, static_cast<uint32_t>(n - 1)));
-        single_routes.push_back(singles.back()->route(XYPadAxis::X, target));
+            multi.route(XYOutput::X, target, options, static_cast<uint32_t>(n - 1)));
+        single_routes.push_back(singles.back()->route(XYOutput::X, target));
     }
     auto use_multi = [&](bool on) {
         for (const uint32_t id : multi_routes) { multi.set_route_enabled(id, on); }

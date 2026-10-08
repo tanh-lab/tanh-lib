@@ -276,7 +276,7 @@ double LinkSession::tempo() const {
     return ABLLinkGetTempo(ABLLinkCaptureAppSessionState(m_impl->m_link));
 }
 
-dsp::transport::LinkBackend& LinkSession::audio_backend() {
+dsp::transport::LinkBackend& LinkSession::timeline_backend() {
     return m_impl->m_backend;
 }
 
@@ -322,7 +322,7 @@ double LinkSession::quantum() const {
     return m_impl->m_shared->m_quantum.load(std::memory_order_relaxed);
 }
 
-dsp::transport::LinkAudioBackend& LinkSession::audio_sharing() {
+dsp::transport::LinkAudioBackend& LinkSession::audio_backend() {
     return *m_impl->m_sharing;
 }
 

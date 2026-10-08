@@ -20,7 +20,7 @@ struct LinkState {
  * Mirrors the audio-thread subset of Ableton Link's API (captureAudioSessionState,
  * the SessionState queries/requests, commitAudioSessionState). Times are host
  * times in microseconds on the Link clock. Implementations: the C++ Link SDK on
- * desktop and LinkKit on iOS (thl::link::LinkSession::audio_backend(), built with
+ * desktop and LinkKit on iOS (thl::link::LinkSession::timeline_backend(), built with
  * TANH_BUILD_LINK), and a scripted fake in the tests.
  *
  * The clock calls every method from the audio thread only, the session-state

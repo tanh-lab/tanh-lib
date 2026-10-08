@@ -141,14 +141,14 @@ void render_block(LinkTransportClock& clock,
 class Ours {
 public:
     explicit Ours(double bpm, uint32_t frames = 256)
-        : m_frames(frames), m_session(bpm), m_clock(m_session.audio_backend()) {
+        : m_frames(frames), m_session(bpm), m_clock(m_session.timeline_backend()) {
         m_clock.prepare(k_sr);
         m_start_us = backend().now_us();
     }
 
     LinkSession& session() { return m_session; }
     LinkTransportClock& clock() { return m_clock; }
-    thl::dsp::transport::LinkBackend& backend() { return m_session.audio_backend(); }
+    thl::dsp::transport::LinkBackend& backend() { return m_session.timeline_backend(); }
     [[nodiscard]] uint32_t frames() const { return m_frames; }
     /// Every rendered block, in order.
     [[nodiscard]] const std::vector<Block>& blocks() const { return m_blocks; }
@@ -654,7 +654,7 @@ TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
     EXPECT_EQ(receiver.audio_input(), channel);
 
     // The sender's audio thread: a sine, block by block on its Link clock, for two seconds.
-    LinkTransportClock clock(sender.audio_backend());
+    LinkTransportClock clock(sender.timeline_backend());
     clock.prepare(k_sr);
     std::vector<float> left(frames);
     std::vector<float> right(frames);
@@ -663,13 +663,13 @@ TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
     double phase = 0.0;
     const auto send_end = std::chrono::steady_clock::now() + 2s;
     while (std::chrono::steady_clock::now() < send_end) {
-        clock.set_host_time_us(sender.audio_backend().now_us());
+        clock.set_host_time_us(sender.timeline_backend().now_us());
         clock.begin_block(frames);
         for (uint32_t f = 0; f < frames; ++f) {
             left[f] = right[f] = 0.5f * static_cast<float>(std::sin(phase));
             phase += 2.0 * 3.141592653589793 * 440.0 / k_sr;
         }
-        if (sender.audio_sharing().send(channels.data(),
+        if (sender.audio_backend().send(channels.data(),
                                         2,
                                         frames,
                                         clock.block_info().m_beat_position,
@@ -688,7 +688,7 @@ TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
     thl::dsp::transport::LinkAudioPacket packet;
     size_t received = 0;
     double last_end = -1e9;
-    while (receiver.audio_sharing().pop(packet)) {
+    while (receiver.audio_backend().pop(packet)) {
         EXPECT_EQ(packet.m_num_channels, 2u);
         EXPECT_GT(packet.m_num_frames, 0u);
         EXPECT_GT(packet.m_end_beat, packet.m_begin_beat);

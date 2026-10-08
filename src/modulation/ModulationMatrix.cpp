@@ -28,14 +28,14 @@
 #include <vector>
 
 #include "tanh/core/Logger.h"
-#include "tanh/parameters/ModulationScope.h"
-#include "tanh/parameters/ParameterDefinitions.h"
-#include "tanh/parameters/ParameterExceptions.h"
 #include "tanh/modulation/ModulationRouting.h"
 #include "tanh/modulation/ParameterBackend.h"
 #include "tanh/modulation/ResolvedRouting.h"
 #include "tanh/modulation/ResolvedTarget.h"
 #include "tanh/modulation/SmartHandle.h"
+#include "tanh/parameters/ModulationScope.h"
+#include "tanh/parameters/ParameterDefinitions.h"
+#include "tanh/parameters/ParameterExceptions.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 #if defined(TANH_STATE_ENABLED)
@@ -108,8 +108,7 @@ SmartHandle<T> ModulationMatrix::get_smart_handle(const std::string_view param_k
         binding = m_backend.find(param_key);
         if (!binding) { m_backend.throw_not_found(param_key); }
     }
-    const ParameterBaseValue& base_value =
-        binding ? binding->m_base : existing->second.m_base;
+    const ParameterBaseValue& base_value = binding ? binding->m_base : existing->second.m_base;
     const ParameterDefinition& def = binding ? binding->m_def : existing->second.m_def;
 
     auto* const* base = std::get_if<std::atomic<T>*>(&base_value);
@@ -343,9 +342,9 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
     // 0. Every buffer holds the prepared maximum: the caller splits larger host
     //    blocks (see "Block size" in docs/sphinx/transport.md). Clamp so a
     //    violation in a release build cannot write past the buffers.
-    assert(num_samples <= config.m_max_block_size &&
+    assert(num_samples <= config.m_samples_per_block &&
            "ModulationMatrix: num_samples exceeds the prepared samples_per_block");
-    num_samples = std::min(num_samples, config.m_max_block_size);
+    num_samples = std::min(num_samples, config.m_samples_per_block);
 
     // 1. Source per-block reset. Wipes change-point lists by default. Value
     //    buffers and active masks are intentionally *not* touched here —
@@ -1110,7 +1109,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         config.m_active_targets = std::move(new_active_targets);
         config.m_all_sources = std::move(new_all_sources);
         config.m_block_processors = m_block_processors;
-        config.m_max_block_size = m_samples_per_block;
+        config.m_samples_per_block = m_samples_per_block;
         config.m_routings_by_source.clear();
         for (const auto& r : config.m_routings) {
             config.m_routings_by_source[r.m_source].push_back(&r);

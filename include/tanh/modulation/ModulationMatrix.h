@@ -1,7 +1,6 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/parameters/ModulationScope.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/core/threading/SeqLock.h>
 #include <tanh/dsp/transport/TransportInfo.h>
@@ -12,6 +11,7 @@
 #include <tanh/modulation/ResolvedRouting.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/modulation/SmartHandle.h>
+#include <tanh/parameters/ModulationScope.h>
 
 #include <atomic>
 #include <cstddef>
@@ -71,7 +71,7 @@ struct ProcessingConfig {
     // samples_per_block of the prepare() this config was built for: the length
     // of every source and target buffer, and the largest num_samples
     // process_with_scope() accepts.
-    size_t m_max_block_size = 0;
+    size_t m_samples_per_block = 0;
 };
 
 class TANH_API ModulationMatrix {

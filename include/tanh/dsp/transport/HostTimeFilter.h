@@ -23,8 +23,13 @@ public:
     /// Blocks the regression spans.
     static constexpr size_t k_points = 512;
 
-    /// Forgets every point; @p sample_rate sets the slope used until there are two.
-    void reset(double sample_rate) TANH_NONBLOCKING_FUNCTION;
+    /// Sets the sample rate (the slope used until there are two points) and calls reset().
+    void prepare(double sample_rate) TANH_NONBLOCKING_FUNCTION;
+    /// Forgets every point.
+    void reset() TANH_NONBLOCKING_FUNCTION {
+        m_count = 0;
+        m_index = 0;
+    }
 
     /// Adds the point (@p sample_time, @p now_us) and returns the filtered host
     /// time of @p sample_time in microseconds.

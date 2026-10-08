@@ -111,7 +111,7 @@ Link in standalone apps; plugins follow the host's transport.
 
 ```cpp
 thl::link::LinkSession session(120.0);                         // message thread
-thl::dsp::transport::LinkTransportClock clock(session.audio_backend());
+thl::dsp::transport::LinkTransportClock clock(session.timeline_backend());
 clock.prepare(sample_rate);
 clock.set_output_latency_samples(device_output_latency);       // again on route changes
 session.set_enabled(true);                                     // desktop; iOS: settings view
@@ -179,10 +179,10 @@ thl::dsp::transport::LinkAudioReceiver receiver;          // audio side, owns it
 // audio callback, after clock.begin_block():
 const auto info = clock.block_info();
 const double latency_beats = latency_seconds * info.m_bpm / 60.0;
-receiver.render(session.audio_sharing(), in, 2, frames,
+receiver.render(session.audio_backend(), in, 2, frames,
                 info.m_beat_position - latency_beats, info.m_beats_per_sample);
 // ... process `in` ...
-session.audio_sharing().send(out, 2, frames,
+session.audio_backend().send(out, 2, frames,
                              info.m_beat_position - latency_beats,  // the beat it belongs to
                              clock.quantum(), sample_rate);
 ```
@@ -190,7 +190,7 @@ session.audio_sharing().send(out, 2, frames,
 - **Receiving.** The SDK delivers 16-bit buffers on its own thread. The session
   converts them to float, maps them to local beats (with the session's quantum)
   and hands them to the audio
-  thread through a fixed lock-free queue (`audio_sharing().pop()`); nothing is
+  thread through a fixed lock-free queue (`audio_backend().pop()`); nothing is
   allocated or locked on the audio thread. `LinkAudioReceiver` plays the beat
   range it is asked for, reading across buffers with cubic interpolation at the
   rate that maps the range onto the block (tempo changes and other sample rates
@@ -221,7 +221,7 @@ session.audio_sharing().send(out, 2, frames,
 - The setters (`set_bpm()`, `play()`, `set_output_latency_samples()`, ...):
   any thread, lock-free.
 - `LinkSession`: message thread (may block); it outlives every clock built on it.
-  `audio_sharing()`'s `pop()` and `send()` and `LinkAudioReceiver`: audio thread
+  `audio_backend()`'s `pop()` and `send()` and `LinkAudioReceiver`: audio thread
   only, real-time safe.
 
 ## Testing Link

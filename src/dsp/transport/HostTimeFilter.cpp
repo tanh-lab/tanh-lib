@@ -9,10 +9,9 @@
 
 namespace thl::dsp::transport {
 
-void HostTimeFilter::reset(double sample_rate) TANH_NONBLOCKING_FUNCTION {
-    m_count = 0;
-    m_index = 0;
+void HostTimeFilter::prepare(double sample_rate) TANH_NONBLOCKING_FUNCTION {
     if (sample_rate > 0.0) { m_default_slope = 1e6 / sample_rate; }
+    reset();
 }
 
 int64_t HostTimeFilter::add(double sample_time, int64_t now_us) TANH_NONBLOCKING_FUNCTION {

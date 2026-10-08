@@ -94,14 +94,14 @@ public:
     MotionRecorder& operator=(MotionRecorder&&) = delete;
 
     /**
-     * @brief Allocate everything for blocks of up to @p max_block_size samples.
+     * @brief Allocate everything for blocks of up to @p samples_per_block samples.
      *
      * Publishes finished takes first and aborts a take that is still recording
      * (the previous lane is kept). Playback re-locks to the next block's beat
      * without a glide.
      */
     void prepare(double sample_rate,
-                 size_t max_block_size,
+                 size_t samples_per_block,
                  const MotionRecorderConfig& config = MotionRecorderConfig{});
 
     [[nodiscard]] const MotionRecorderConfig& config() const { return m_config; }

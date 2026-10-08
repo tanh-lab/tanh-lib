@@ -18,11 +18,11 @@ namespace thl::link {
  *
  * Desktop (macOS, Linux, Windows) uses the Ableton Link C++ SDK, iOS uses
  * LinkKit (ABLLink). No Link header appears here (pimpl). Drive the audio side
- * with a thl::dsp::transport::LinkTransportClock over audio_backend():
+ * with a thl::dsp::transport::LinkTransportClock over timeline_backend():
  *
  * @code
  * thl::link::LinkSession session(120.0);
- * thl::dsp::transport::LinkTransportClock clock(session.audio_backend());
+ * thl::dsp::transport::LinkTransportClock clock(session.timeline_backend());
  * session.set_enabled(true);
  * @endcode
  *
@@ -43,15 +43,15 @@ namespace thl::link {
  *
  * Link Audio (sharing audio channels): set_audio_enabled() (desktop) or the
  * settings view (iOS) shares audio. set_audio_input() subscribes to a peer's
- * channel; audio_sharing().pop() hands its buffers to the audio thread, mapped to
- * local beats, for a dsp::transport::LinkAudioReceiver to play. audio_sharing().send()
+ * channel; audio_backend().pop() hands its buffers to the audio thread, mapped to
+ * local beats, for a dsp::transport::LinkAudioReceiver to play. audio_backend().send()
  * publishes the app's output as its own channel. On iOS the app also needs the
  * multicast networking entitlement and the Info.plist key ABLLinkAudioSupported.
  *
  * Construction, destruction and the setters run on the message thread and may
  * block. The getters are callable from any thread except the audio thread
- * (tempo() captures Link's app session state). audio_backend()'s and
- * audio_sharing()'s methods are for the audio thread only.
+ * (tempo() captures Link's app session state). timeline_backend()'s and
+ * audio_backend()'s methods are for the audio thread only.
  *
  * Link is dual-licensed (GPLv2+ or a proprietary licence from Ableton). A product
  * that ships with TANH_BUILD_LINK must be GPL-compatible or hold the proprietary
@@ -61,7 +61,7 @@ class TANH_API LinkSession {
 public:
     /// @p peer_name names this app to the session's peers (Link Audio); on iOS the Info.plist
     /// key ABLLinkPeerName and the settings view set it instead. @p output_name names the channel
-    /// audio_sharing().send() publishes (fixed: the SDKs cannot rename it while audio runs).
+    /// audio_backend().send() publishes (fixed: the SDKs cannot rename it while audio runs).
     explicit LinkSession(double initial_bpm = 120.0,
                          const std::string& peer_name = "Link App",
                          const std::string& output_name = "Main");
@@ -110,13 +110,13 @@ public:
     [[nodiscard]] double tempo() const;
 
     /// The quantum in beats (the phase unit shared with peers, default 4), any thread. The
-    /// clock over audio_backend() quantizes with it and received Link Audio is mapped to
+    /// clock over timeline_backend() quantizes with it and received Link Audio is mapped to
     /// beats with it.
     void set_quantum(double quantum);
     [[nodiscard]] double quantum() const;
 
     /// The audio-thread seam for LinkTransportClock.
-    [[nodiscard]] dsp::transport::LinkBackend& audio_backend();
+    [[nodiscard]] dsp::transport::LinkBackend& timeline_backend();
 
     // ── Link Audio: sharing audio channels with peers ─────────────────────────────────────
 
@@ -135,12 +135,12 @@ public:
     /// The audio channels the session's other peers announce now (not our own output).
     [[nodiscard]] std::vector<AudioChannel> audio_channels() const;
 
-    /// Receive channel @p id into audio_sharing().pop(); nullopt stops receiving.
+    /// Receive channel @p id into audio_backend().pop(); nullopt stops receiving.
     void set_audio_input(std::optional<uint64_t> id);
     [[nodiscard]] std::optional<uint64_t> audio_input() const;
 
     /// The audio-thread seam for Link Audio: the received channel in, the output channel out.
-    [[nodiscard]] dsp::transport::LinkAudioBackend& audio_sharing();
+    [[nodiscard]] dsp::transport::LinkAudioBackend& audio_backend();
 
 private:
     struct Impl;

@@ -63,8 +63,8 @@ class XYPad {
 public:
     XYPad(uint32_t max_touches, MonoPriority priority);
 
-    /// Allocate the stream for blocks of up to @p max_block_size samples.
-    void prepare(size_t max_block_size, const XYPadTiming& timing = {});
+    /// Allocate the stream for blocks of up to @p samples_per_block samples.
+    void prepare(size_t samples_per_block, const XYPadTiming& timing = {});
 
     /// Touch down (new id) or move (known id). False for a non-finite position,
     /// a full touch table, or a new touch that cannot be queued.

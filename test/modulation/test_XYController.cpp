@@ -5,7 +5,6 @@
 #include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/modulation/XYController.h>
-#include "XYPad.h"
 
 #include <algorithm>
 #include <array>
@@ -22,6 +21,7 @@
 
 #include "MotionRecorderTestHelpers.h"
 #include "XYControllerTestHelpers.h"
+#include "XYPad.h"
 
 using namespace thl::modulation;
 using thl::dsp::transport::TransportInfo;
@@ -94,20 +94,20 @@ TEST(XYController, RegistersSourcesAndRemovesThemAndItsRoutingsInDtor) {
     Engine e(2);
     {
         XYController c(*e.matrix, config("pad"));
-        EXPECT_EQ(c.source_id(XYPadAxis::X), "pad.x");
-        EXPECT_EQ(c.source_id(XYPadAxis::Active), "pad.active");
-        EXPECT_NE(c.route(XYPadAxis::X, "s1.a"), k_invalid_routing_id);
-        EXPECT_NE(c.route(XYPadAxis::Active, "s1.wet"), k_invalid_routing_id);
-        EXPECT_EQ(c.route(XYPadAxis::Y, "nope"), k_invalid_routing_id);
+        EXPECT_EQ(c.source_id(XYOutput::X), "pad.x");
+        EXPECT_EQ(c.source_id(XYOutput::Active), "pad.active");
+        EXPECT_NE(c.route(XYOutput::X, "s1.a"), k_invalid_routing_id);
+        EXPECT_NE(c.route(XYOutput::Active, "s1.wet"), k_invalid_routing_id);
+        EXPECT_EQ(c.route(XYOutput::Y, "nope"), k_invalid_routing_id);
         EXPECT_EQ(c.routes().size(), 2u);
-        EXPECT_TRUE(has_source(*e.matrix, &c.source(XYPadAxis::X)));
+        EXPECT_TRUE(has_source(*e.matrix, &c.source(XYOutput::X)));
         EXPECT_EQ(e.matrix->to_json(false).size(), 2u);
     }
     EXPECT_TRUE(e.matrix->get_schedule().empty());
     EXPECT_EQ(e.matrix->to_json(false).size(), 0u);
 
     XYController again(*e.matrix, config("pad", 3));  // same id, now with voices
-    EXPECT_EQ(again.source_id(XYPadAxis::Y, 2), "pad.2.y");
+    EXPECT_EQ(again.source_id(XYOutput::Y, 2), "pad.2.y");
     EXPECT_EQ(e.matrix->get_schedule().size(), 9u);
 }
 
@@ -115,8 +115,8 @@ TEST(XYController, UnrouteOnlyOwnedRoutings) {
     Engine e(2);
     XYController a(*e.matrix, config("a"));
     XYController b(*e.matrix, config("b"));
-    const uint32_t ra = a.route(XYPadAxis::X, "s1.a");
-    const uint32_t rb = b.route(XYPadAxis::X, "s2.a");
+    const uint32_t ra = a.route(XYOutput::X, "s1.a");
+    const uint32_t rb = b.route(XYOutput::X, "s2.a");
     EXPECT_FALSE(a.unroute(rb));
     EXPECT_FALSE(a.set_route_enabled(rb, false));
     EXPECT_FALSE(a.set_route_depth(rb, 0.5f));
@@ -130,9 +130,9 @@ TEST(XYController, TouchDrivesTargetsAndGateFallsBackOnRelease) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));
     XYController* cs[] = {&c};
-    c.route(XYPadAxis::X, "s1.a");
-    c.route(XYPadAxis::Y, "s1.b");
-    c.route(XYPadAxis::Active, "s1.wet");
+    c.route(XYOutput::X, "s1.a");
+    c.route(XYOutput::Y, "s1.b");
+    c.route(XYOutput::Active, "s1.wet");
     auto a = e.handle(1, "a");
     auto b = e.handle(1, "b");
     auto wet = e.handle(1, "wet");
@@ -163,7 +163,7 @@ TEST(XYController, TouchOverMotionHandoverIsTheRecordersSingleGlide) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));
     XYController* cs[] = {&c};
-    c.route(XYPadAxis::X, "s1.a");
+    c.route(XYOutput::X, "s1.a");
     e.matrix->prepare(k_sr, k_bs);
 
     detail::XYPad ref_pad(10, MonoPriority::Last);
@@ -280,7 +280,7 @@ TEST(XYController, LatchKeepsTheGateOpenUntilTurnedOff) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));
     XYController* cs[] = {&c};
-    c.route(XYPadAxis::Active, "s1.wet");
+    c.route(XYOutput::Active, "s1.wet");
     auto wet = e.handle(1, "wet");
     e.matrix->prepare(k_sr, k_bs);
     c.set_latch(true);
@@ -357,9 +357,9 @@ TEST(XYController, EightControllersDriveEightSlotsWithoutCrosstalk) {
         pads.push_back(
             std::make_unique<XYController>(*e.matrix, config("pad" + std::to_string(n))));
         ptrs.push_back(pads.back().get());
-        pads.back()->route(XYPadAxis::X, Engine::slot(n, "a"));
-        pads.back()->route(XYPadAxis::Y, Engine::slot(n, "b"));
-        pads.back()->route(XYPadAxis::Active, Engine::slot(n, "wet"));
+        pads.back()->route(XYOutput::X, Engine::slot(n, "a"));
+        pads.back()->route(XYOutput::Y, Engine::slot(n, "b"));
+        pads.back()->route(XYOutput::Active, Engine::slot(n, "wet"));
     }
     e.matrix->prepare(k_sr, k_bs);
     // Odd pads touched, even pads play a lane.
@@ -398,9 +398,9 @@ TEST(XYController, EightControllersDriveEightSlotsWithoutCrosstalk) {
 TEST(XYController, DrivesOncePerMatrixBlock) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));
-    c.route(XYPadAxis::X, "s1.a");
-    c.route(XYPadAxis::Y, "s1.b");
-    c.route(XYPadAxis::Active, "s1.wet");
+    c.route(XYOutput::X, "s1.a");
+    c.route(XYOutput::Y, "s1.b");
+    c.route(XYOutput::Active, "s1.wet");
     e.matrix->prepare(k_sr, k_bs);
     XYController* cs[] = {&c};
     for (int b = 0; b < 4; ++b) {
@@ -430,10 +430,10 @@ TEST(XYController, MatrixSourceOrderDoesNotChangeTheOutput) {
             one = std::make_unique<XYController>(*e.matrix, config("aa"));
             two = std::make_unique<XYController>(*e.matrix, config("zz"));
         }
-        one->route(XYPadAxis::X, "s1.a");
-        one->route(XYPadAxis::Y, "s1.b");
-        two->route(XYPadAxis::X, "s2.a");
-        two->route(XYPadAxis::Active, "s2.wet");
+        one->route(XYOutput::X, "s1.a");
+        one->route(XYOutput::Y, "s1.b");
+        two->route(XYOutput::X, "s2.a");
+        two->route(XYOutput::Active, "s2.wet");
         e.matrix->prepare(k_sr, k_bs);
         two->recorder().load_lane(motion_test::beats_lane(4.0, 96));
         XYController* cs[] = {one.get(), two.get()};
@@ -462,7 +462,7 @@ TEST(XYController, MatrixSourceOrderDoesNotChangeTheOutput) {
 TEST(XYController, RendersWithoutATransportAndSkipsEmptyBlocks) {
     Engine e(1);
     XYController c(*e.matrix, config("pad"));
-    c.route(XYPadAxis::X, "s1.a");
+    c.route(XYOutput::X, "s1.a");
     e.matrix->prepare(k_sr, k_bs);
     XYController* cs[] = {&c};
 

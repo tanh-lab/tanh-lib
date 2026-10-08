@@ -18,6 +18,7 @@
 #include <span>
 #include <utility>
 #include <vector>
+
 #include "MotionInterpolation.h"
 
 namespace thl::modulation {
@@ -50,7 +51,7 @@ MotionRecorder::MotionRecorder() : m_audio_reader(m_lanes.add_reader()) {}
 MotionRecorder::~MotionRecorder() = default;
 
 void MotionRecorder::prepare(double sample_rate,
-                             size_t max_block_size,
+                             size_t samples_per_block,
                              const MotionRecorderConfig& config) {
     // Keep what was recorded: publish finished takes before resetting.
     service();
@@ -72,12 +73,12 @@ void MotionRecorder::prepare(double sample_rate,
     if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
 
     m_takes.prepare(m_config, m_sample_rate);
-    m_max_block = max_block_size;
-    m_out_x.assign(max_block_size, m_last_x);
-    m_out_y.assign(max_block_size, m_last_y);
-    m_out_gate.assign(max_block_size, 0);
-    m_out_live.assign(max_block_size, 0);
-    m_change_points.assign(max_block_size + 1, 0);
+    m_max_block = samples_per_block;
+    m_out_x.assign(samples_per_block, m_last_x);
+    m_out_y.assign(samples_per_block, m_last_y);
+    m_out_gate.assign(samples_per_block, 0);
+    m_out_live.assign(samples_per_block, 0);
+    m_change_points.assign(samples_per_block + 1, 0);
     m_num_change_points = 0;
     m_num_samples = 0;
     m_glide.set_length(static_cast<uint32_t>(

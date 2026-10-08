@@ -15,7 +15,7 @@ constexpr uint32_t k_block = 256;
 
 TEST(HostTimeFilter, ExactClockMapsExactly) {
     HostTimeFilter filter;
-    filter.reset(k_rate);
+    filter.prepare(k_rate);
     for (int b = 0; b < 100; ++b) {
         const double sample_time = b * static_cast<double>(k_block);
         const auto now =
@@ -30,7 +30,7 @@ TEST(HostTimeFilter, ExactClockMapsExactly) {
 // regression keeps the mapped time within a fraction of that.
 TEST(HostTimeFilter, SmoothsCallbackJitter) {
     HostTimeFilter filter;
-    filter.reset(k_rate);
+    filter.prepare(k_rate);
     std::mt19937 rng(7);
     std::uniform_real_distribution<double> jitter(0.0, 1000.0);
     double worst = 0.0;

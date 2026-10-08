@@ -42,9 +42,9 @@ TEST(LinkSession, DisabledSessionIsALocalTimeline) {
     EXPECT_EQ(session.settings_view_controller(), nullptr);
 #endif
 
-    LinkTransportClock clk(session.audio_backend());
+    LinkTransportClock clk(session.timeline_backend());
     clk.prepare(k_sr);
-    auto& backend = session.audio_backend();
+    auto& backend = session.timeline_backend();
     const int64_t t0 = backend.now_us();
     for (int b = 0; b < 50; ++b) {
         clk.set_host_time_us(block_start_us(t0, b));
@@ -58,9 +58,9 @@ TEST(LinkSession, DisabledSessionIsALocalTimeline) {
 
 TEST(LinkSession, EnableWithoutPeersDoesNotMoveTheBeat) {  // BEATTIME-1
     LinkSession session(120.0);
-    LinkTransportClock clk(session.audio_backend());
+    LinkTransportClock clk(session.timeline_backend());
     clk.prepare(k_sr);
-    const int64_t t0 = session.audio_backend().now_us();
+    const int64_t t0 = session.timeline_backend().now_us();
     for (int b = 0; b < 40; ++b) {
         if (b == 20) { session.set_enabled(true); }
         clk.set_host_time_us(block_start_us(t0, b));
@@ -73,9 +73,9 @@ TEST(LinkSession, EnableWithoutPeersDoesNotMoveTheBeat) {  // BEATTIME-1
 
 TEST(LinkSession, LocalStartAndTempoRequest) {
     LinkSession session(100.0);
-    LinkTransportClock clk(session.audio_backend());
+    LinkTransportClock clk(session.timeline_backend());
     clk.prepare(k_sr);
-    const int64_t t0 = session.audio_backend().now_us();
+    const int64_t t0 = session.timeline_backend().now_us();
     clk.play();
     clk.set_bpm(150.0);
     clk.set_host_time_us(t0);
@@ -97,10 +97,10 @@ TEST(LinkSession, LocalStartAndTempoRequest) {
 // (capture/commit/beatAtTime/...) allocate, lock or make syscalls.
 TEST(LinkSession, LinkTransportClock_IsRealtimeSafe) {
     LinkSession session(120.0);
-    LinkTransportClock clk(session.audio_backend());
+    LinkTransportClock clk(session.timeline_backend());
     clk.prepare(k_sr);
     clk.set_output_latency_samples(128);
-    const int64_t t0 = session.audio_backend().now_us();
+    const int64_t t0 = session.timeline_backend().now_us();
     double acc = 0.0;
     for (int b = 0; b < 200; ++b) {
         if (b == 10) { clk.play(); }
@@ -130,12 +130,12 @@ TEST(LinkSession, TwoPeers_Loopback) {
         GTEST_SKIP() << "no Link peer discovered within 5 s (network/multicast unavailable)";
     }
 
-    LinkTransportClock ca(a.audio_backend());
-    LinkTransportClock cb(b.audio_backend());
+    LinkTransportClock ca(a.timeline_backend());
+    LinkTransportClock cb(b.timeline_backend());
     ca.prepare(k_sr);
     cb.prepare(k_sr);
     ca.set_bpm(133.0);
-    ca.set_host_time_us(a.audio_backend().now_us());
+    ca.set_host_time_us(a.timeline_backend().now_us());
     ca.begin_block(k_frames);
     ca.end_block();
 
@@ -148,7 +148,7 @@ TEST(LinkSession, TwoPeers_Loopback) {
     EXPECT_NEAR(b.tempo(), 133.0, 1e-3);  // Link sends tempo as µs per beat
 
     // Phase agrees modulo the quantum at the same host time (within 1 ms).
-    const int64_t t = a.audio_backend().now_us();
+    const int64_t t = a.timeline_backend().now_us();
     ca.set_host_time_us(t);
     ca.begin_block(k_frames);
     cb.set_host_time_us(t);

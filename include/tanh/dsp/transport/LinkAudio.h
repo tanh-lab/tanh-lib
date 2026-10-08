@@ -30,7 +30,7 @@ struct LinkAudioPacket {
 /**
  * @brief Audio-thread seam for Link Audio: the subscribed channel in, our channel out.
  *
- * thl::link::LinkSession::audio_sharing() implements it over the Link SDKs (TANH_BUILD_LINK);
+ * thl::link::LinkSession::audio_backend() implements it over the Link SDKs (TANH_BUILD_LINK);
  * tests script it. Both methods are called from the audio thread only and are real-time safe.
  */
 class TANH_API LinkAudioBackend {

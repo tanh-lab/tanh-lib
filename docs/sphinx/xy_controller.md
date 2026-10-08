@@ -16,9 +16,9 @@ cfg.m_id = "pad1";            // sources "pad1.x", "pad1.y", "pad1.active"
 cfg.m_num_voices = 1;         // > 1: "pad1.<v>.x" ...
 auto pad = std::make_unique<XYController>(matrix, cfg);   // message thread
 
-pad->route(XYPadAxis::X, "cutoff");         // ReplaceHold
-pad->route(XYPadAxis::Y, "resonance");
-pad->route(XYPadAxis::Active, "wet");       // Replace: back to the base value on release
+pad->route(XYOutput::X, "cutoff");         // ReplaceHold
+pad->route(XYOutput::Y, "resonance");
+pad->route(XYOutput::Active, "wet");       // Replace: back to the base value on release
 ```
 
 The constructor registers the sources; the matrix's `prepare()` prepares the

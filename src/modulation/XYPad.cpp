@@ -2,7 +2,6 @@
 
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYTypes.h>
-#include "EventSpread.h"
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -12,13 +11,15 @@
 #include <optional>
 #include <span>
 
+#include "EventSpread.h"
+
 namespace thl::modulation::detail {
 
 XYPad::XYPad(uint32_t max_touches, MonoPriority priority)
     : m_max_touches(std::clamp<uint32_t>(max_touches, 1, k_xy_controller_max_touches))
     , m_priority(priority) {}
 
-void XYPad::prepare(size_t max_block_size, const XYPadTiming& timing) {
+void XYPad::prepare(size_t samples_per_block, const XYPadTiming& timing) {
     m_timing = timing;
     m_timing.m_ramp_interval = std::max<uint32_t>(m_timing.m_ramp_interval, 1);
     // A timed event never waits longer than the delay plus one block: anything
@@ -26,12 +27,12 @@ void XYPad::prepare(size_t max_block_size, const XYPadTiming& timing) {
     const double delay_samples =
         static_cast<double>(m_timing.m_delay_ns) * m_timing.m_sample_rate * 1e-9;
     m_max_wait = static_cast<int64_t>(std::ceil(std::max(delay_samples, 0.0))) +
-                 static_cast<int64_t>(std::max(max_block_size, m_x.size()));
-    if (max_block_size <= m_x.size()) { return; }
-    m_x.assign(max_block_size, m_current_x);
-    m_y.assign(max_block_size, m_current_y);
-    m_active.assign(max_block_size, m_current_active);
-    m_change_points.assign(max_block_size, 0);
+                 static_cast<int64_t>(std::max(samples_per_block, m_x.size()));
+    if (samples_per_block <= m_x.size()) { return; }
+    m_x.assign(samples_per_block, m_current_x);
+    m_y.assign(samples_per_block, m_current_y);
+    m_active.assign(samples_per_block, m_current_active);
+    m_change_points.assign(samples_per_block, 0);
     m_num_samples = 0;
     m_num_change_points = 0;
 }

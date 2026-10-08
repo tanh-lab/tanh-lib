@@ -89,7 +89,7 @@ struct XYRouteOptions {
  */
 class TANH_API XYController {
 public:
-    static constexpr uint32_t k_no_voice = 0xFFFFFFFFu;
+    static constexpr uint32_t k_no_voice = k_xy_no_voice;
 
     /// Registers three sources per voice with @p matrix.
     XYController(ModulationMatrix& matrix, XYControllerConfig config);
@@ -103,12 +103,12 @@ public:
 
     [[nodiscard]] const XYControllerConfig& config() const { return m_config; }
     [[nodiscard]] uint32_t num_voices() const { return m_num_voices; }
-    [[nodiscard]] std::string source_id(XYPadAxis axis, uint32_t voice = 0) const;
-    [[nodiscard]] ModulationSource& source(XYPadAxis axis, uint32_t voice = 0);
+    [[nodiscard]] std::string source_id(XYOutput axis, uint32_t voice = 0) const;
+    [[nodiscard]] ModulationSource& source(XYOutput axis, uint32_t voice = 0);
 
     /// Route one voice's axis to @p target_id. Returns the routing id, or
     /// k_invalid_routing_id if the matrix rejected it.
-    uint32_t route(XYPadAxis axis,
+    uint32_t route(XYOutput axis,
                    std::string_view target_id,
                    const XYRouteOptions& options = {},
                    uint32_t voice = 0);
@@ -201,8 +201,8 @@ private:
     class MatrixHook final : public BlockProcessor {
     public:
         explicit MatrixHook(XYController& controller) : m_controller(controller) {}
-        void prepare(double sample_rate, size_t max_block_size) override {
-            m_controller.prepare(sample_rate, max_block_size);
+        void prepare(double sample_rate, size_t samples_per_block) override {
+            m_controller.prepare(sample_rate, samples_per_block);
         }
         void process_block(const BlockContext& context) override {
             m_controller.process_block(context);
@@ -213,9 +213,9 @@ private:
     };
 
     [[nodiscard]] const MotionRecorder& voice_recorder(uint32_t voice) const;
-    // Allocate for blocks of up to @p max_block_size and abort running takes
+    // Allocate for blocks of up to @p samples_per_block and abort running takes
     // (from the matrix's prepare(), audio stopped).
-    void prepare(double sample_rate, size_t max_block_size);
+    void prepare(double sample_rate, size_t samples_per_block);
     // One matrix block.
     void process_block(const BlockContext& context) TANH_NONBLOCKING_FUNCTION;
     void run(const thl::dsp::transport::TransportInfo& transport);
