@@ -404,7 +404,7 @@ namespace {
 
 double rt_block(HostTransportClock& clk, const TransportInfo& host) TANH_NONBLOCKING_FUNCTION {
     clk.set_host_info(host);
-    clk.begin_block(128, int64_t{42});
+    clk.begin_block(128);
     double sum = clk.beat_at_sample(0) + clk.beat_at_sample(127);
     sum += clk.division_in_block(Division::Beat) ? 1.0 : 0.0;
     sum += static_cast<double>(clk.block_info().m_num_samples);

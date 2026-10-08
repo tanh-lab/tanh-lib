@@ -1,11 +1,11 @@
 #pragma once
 
+#include <tanh/dsp/transport/ContinuityTracker.h>
 #include <tanh/dsp/transport/TransportClock.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 
 #include <atomic>
 #include <cstdint>
-#include <optional>
 
 namespace thl::dsp::transport {
 
@@ -34,28 +34,11 @@ namespace thl::dsp::transport {
  */
 class TANH_API HostTransportClock final : public TransportClock {
 public:
-    // ── Main thread ──────────────────────────────────────────────────────────
-    void prepare(double sample_rate) override;
-
     // ── Audio thread only ─────────────────────────────────────────────────────
 
     /// The host's view of the next block, consumed by begin_block(). Discontinuity
     /// bits in @p info are ignored.
     void set_host_info(const TransportInfo& info) TANH_NONBLOCKING_FUNCTION;
-
-    void begin_block(uint32_t frame_count,
-                     std::optional<int64_t> host_time_micros = std::nullopt) override;
-    void end_block() override;
-
-    [[nodiscard]] double beat_at_sample(uint32_t offset) const override;
-    [[nodiscard]] bool division_in_block(Division div) const override;
-    [[nodiscard]] bool is_playing() const override;
-    [[nodiscard]] double bpm() const override;
-    [[nodiscard]] int sig_num() const override;
-    [[nodiscard]] int sig_denom() const override;
-    /// Samples processed while playing since prepare().
-    [[nodiscard]] uint64_t sample_position() const override;
-    [[nodiscard]] TransportInfo block_info() const override;
 
     // ── Any thread — lock-free fallbacks for fields the host omits ────────────
     void set_bpm(double bpm) override;
@@ -64,19 +47,22 @@ public:
     void stop() override;
     void set_position_beats(double beats) override;
 
+protected:
+    void on_prepare(double sample_rate) override;
+    [[nodiscard]] TransportInfo compute_block(uint32_t frame_count) override;
+
 private:
     double m_sample_rate = 48000.0;
-    uint64_t m_sample_position = 0;
 
     TransportInfo m_host{};
-    TransportInfo m_info{};
     ContinuityTracker m_tracker;
 
     // Free-run: beat = anchor + samples * bpm / (60 * sample rate).
     double m_free_anchor_beat = 0.0;
     double m_free_bpm = 0.0;
     uint64_t m_free_samples = 0;
-    bool m_free_valid = false;  // false: re-anchor at the previous block's end
+    uint32_t m_free_advance = 0;  // samples the previous block free-ran, added at the next block
+    bool m_free_valid = false;    // false: re-anchor at the previous block's end
 
     std::atomic<double> m_fallback_bpm{120.0};
     std::atomic<int> m_fallback_sig_num{4};

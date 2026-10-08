@@ -50,7 +50,7 @@ option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
 # Link is GPLv2+ or proprietary (LinkKit proprietary only), so a product built
 # with it must be GPL-compatible or hold Ableton's proprietary Link licence.
 # Without this option no Link code is fetched or linked.
-option(TANH_WITH_LINK
+option(TANH_BUILD_LINK
     "Build tanh::Link (Ableton Link). Link is GPLv2+/proprietary: products need the proprietary Link licence unless GPL"
     OFF)
 # Use the libcurl backend even on Apple. The only way to exercise the
@@ -284,7 +284,8 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/ConstellationReverb.cpp
         src/dsp/fx/StereoFDN.cpp
 
-        src/dsp/transport/TransportInfo.cpp
+        src/dsp/transport/ContinuityTracker.cpp
+        src/dsp/transport/HostTimeFilter.cpp
         src/dsp/transport/InternalTransportClock.cpp
         src/dsp/transport/HostTransportClock.cpp
         src/dsp/transport/LinkTransportClock.cpp
@@ -619,12 +620,14 @@ endif()
 # live in DSP and need no Link SDK; this target adds LinkSession over the
 # platform SDK. Link headers stay private (pimpl), so nothing Link-specific
 # reaches consumers' include paths.
-if(TANH_WITH_LINK)
+if(TANH_BUILD_LINK)
     if(NOT TARGET ${PROJECT_NAME}_dsp)
         message(FATAL_ERROR "Link component requires DSP component")
     endif()
 
     add_library(${PROJECT_NAME}_link)
+    # Link Audio's wire format, shared by both SDK backends (private: src/link/detail).
+    target_sources(${PROJECT_NAME}_link PRIVATE src/link/detail/LinkAudioCodec.cpp)
 
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
         # The C++ SDK is not for iOS ("iOS developers should not use this repo");
@@ -696,7 +699,7 @@ if(TANH_WITH_LINK)
     else()
         # Android: the C++ SDK documents only macOS/Linux/Windows; unverified.
         message(FATAL_ERROR
-            "TANH_WITH_LINK is not supported on ${TANH_OPERATING_SYSTEM} (Link is verified on "
+            "TANH_BUILD_LINK is not supported on ${TANH_OPERATING_SYSTEM} (Link is verified on "
             "macOS, Linux, Windows and iOS only)")
     endif()
 
@@ -832,7 +835,7 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_NET)
         add_subdirectory(test/net)
     endif()
-    if (TANH_WITH_LINK)
+    if (TANH_BUILD_LINK)
         add_subdirectory(test/link)
     endif()
 

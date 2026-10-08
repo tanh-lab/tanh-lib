@@ -104,7 +104,7 @@ free-runs again.
 
 ## Ableton Link
 
-`TANH_WITH_LINK=ON` (default OFF) adds the `tanh::Link` component: the Link
+`TANH_BUILD_LINK=ON` (default OFF) adds the `tanh::Link` component: the Link
 C++ SDK 4.1 (FetchContent, pinned to the `Link-4.1` commit) on macOS, Linux
 and Windows, the LinkKit 4.1.2 release zip (pinned SHA256) on iOS; other
 platforms are a configure error. Link is GPLv2+ or proprietary, LinkKit
@@ -119,17 +119,23 @@ clock.set_output_latency_samples(device_output_latency);       // again on route
 session.set_enabled(true);                                     // desktop; iOS: settings view
 
 // audio callback
-clock.begin_block(num_frames, host_time_us);  // or std::nullopt, see below
+clock.set_host_time_us(host_time_us);  // only on Link's clock, see below
+clock.begin_block(num_frames);
 // ... clock.block_info() ...
 clock.end_block();
 ```
 
-- **Host time.** Pass the callback's host time in µs, without output latency,
-  only when it is on Link's clock. Otherwise pass `std::nullopt`: the clock then
-  maps its sample counter to Link time with a linear-regression filter.
+- **Host time.** Set the callback's host time in µs, without output latency,
+  only when it is on Link's clock. Otherwise skip it: the clock then maps its
+  sample counter to Link time with a `HostTimeFilter` (linear regression).
 - **Requests.** `set_bpm()`, `play()`, `stop()` and `set_position_beats()` are
   queued and applied at the block's output time; a local start is quantized to
-  `set_quantum()` (default 4).
+  the session's quantum (`LinkSession::set_quantum()`, default 4), which also
+  maps received Link Audio, so the two never disagree.
+- **Capabilities.** `LinkSession::capabilities()` says what the platform lets
+  the app control: on iOS enabling Link, start/stop sync and Link Audio are user
+  settings, `num_peers()` is 1 while connected (`is_connected()`), and
+  `set_active()` follows the app's lifecycle.
 - **Running while stopped.** The Link timeline keeps moving while stopped
   (`m_beats_per_sample > 0`); gate musical events on `is_playing()`. Starts and
   stops dated ahead land in the block that contains them.
@@ -175,7 +181,8 @@ session.audio_sharing().send(out, 2, frames,
 ```
 
 - **Receiving.** The SDK delivers 16-bit buffers on its own thread. The session
-  converts them to float, maps them to local beats and hands them to the audio
+  converts them to float, maps them to local beats (with the session's quantum)
+  and hands them to the audio
   thread through a fixed lock-free queue (`audio_sharing().pop()`); nothing is
   allocated or locked on the audio thread. `LinkAudioReceiver` plays the beat
   range it is asked for, reading across buffers with cubic interpolation at the
@@ -214,7 +221,7 @@ session.audio_sharing().send(out, 2, frames,
 
 `LinkTransportClock.*` (`test/dsp`, always built) checks the clock against a
 scripted fake session, including sample-exact latency compensation. With
-`TANH_WITH_LINK=ON`, `LinkSession.*` tests the real SDK backend, and on desktop
+`TANH_BUILD_LINK=ON`, `LinkSession.*` tests the real SDK backend, and on desktop
 `LinkPeers.*` runs Ableton's
 [TEST-PLAN](https://github.com/Ableton/link/blob/master/TEST-PLAN.md) cases
 against an in-process peer. The peer tests need multicast on the local

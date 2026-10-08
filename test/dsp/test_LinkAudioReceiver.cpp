@@ -244,20 +244,6 @@ TEST(LinkAudioReceiver, AFullRingKeepsItsPacketsWhileNothingNewArrives) {
     EXPECT_EQ(r.num_buffered(), LinkAudioReceiver::k_capacity);
 }
 
-TEST(LinkAudioReceiver, MakesPacketsFromReceivedBuffers) {
-    std::array<int16_t, 8> samples{16384, -16384, 0, 32767, -32768, 1, 2, 3};
-    LinkAudioPacket p;
-    ASSERT_TRUE(thl::dsp::transport::make_link_audio_packet(samples.data(), 2, 4, 1.0, 2.0, p));
-    EXPECT_EQ(p.m_num_channels, 2u);
-    EXPECT_EQ(p.m_num_frames, 4u);
-    EXPECT_FLOAT_EQ(p.m_samples[0], 0.5f);
-    EXPECT_FLOAT_EQ(p.m_samples[1], -0.5f);
-    EXPECT_DOUBLE_EQ(p.m_end_beat, 2.0);
-    EXPECT_FALSE(thl::dsp::transport::make_link_audio_packet(samples.data(), 2, 0, 1.0, 2.0, p));
-    EXPECT_EQ(thl::dsp::transport::to_link_audio_sample(2.0f), 32767);
-    EXPECT_EQ(thl::dsp::transport::to_link_audio_sample(-0.5f), -16384);
-}
-
 TEST(LinkAudioReceiver, IgnoresEmptyOrOversizedPackets) {
     LinkAudioReceiver r;
     FakeSharing s;

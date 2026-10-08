@@ -14,7 +14,7 @@
 namespace thl::link {
 
 /**
- * @brief Owns one Ableton Link instance (tanh::Link, built with TANH_WITH_LINK).
+ * @brief Owns one Ableton Link instance (tanh::Link, built with TANH_BUILD_LINK).
  *
  * Desktop (macOS, Linux, Windows) uses the Ableton Link C++ SDK, iOS uses
  * LinkKit (ABLLink). No Link header appears here (pimpl). Drive the audio side
@@ -28,7 +28,7 @@ namespace thl::link {
  *
  * The session must outlive every clock built on it.
  *
- * Platform differences:
+ * Platform differences (capabilities() reports them):
  * - Desktop: set_enabled() and set_start_stop_sync() switch Link; num_peers() is
  *   the peer count; set_active() is a no-op; settings_view_controller() is null.
  * - iOS (LinkKit): the user enables Link and start/stop sync in LinkKit's settings
@@ -54,7 +54,7 @@ namespace thl::link {
  * audio_sharing()'s methods are for the audio thread only.
  *
  * Link is dual-licensed (GPLv2+ or a proprietary licence from Ableton). A product
- * that ships with TANH_WITH_LINK must be GPL-compatible or hold the proprietary
+ * that ships with TANH_BUILD_LINK must be GPL-compatible or hold the proprietary
  * Link licence; LinkKit (iOS) is available under the proprietary licence only.
  */
 class TANH_API LinkSession {
@@ -80,8 +80,25 @@ public:
     void set_start_stop_sync(bool enabled);
     [[nodiscard]] bool is_start_stop_sync_enabled() const;
 
-    /// Peers in the session (iOS: 1 while connected).
+    /// What the platform's SDK lets the app do; where a flag is false the matching
+    /// calls are no-ops or report less.
+    struct Capabilities {
+        /// set_enabled(), set_start_stop_sync() and set_audio_enabled() switch Link
+        /// (desktop). False: they are user settings in settings_view_controller() (iOS).
+        bool m_app_controls_settings = true;
+        /// num_peers() counts the peers. False: it is 1 while connected (iOS).
+        bool m_counts_peers = true;
+        /// set_active() must follow the app's lifecycle (iOS).
+        bool m_has_lifecycle = false;
+        /// settings_view_controller() returns a view to present (iOS).
+        bool m_has_settings_view = false;
+    };
+    [[nodiscard]] static Capabilities capabilities();
+
+    /// Peers in the session (iOS: 1 while connected, see Capabilities::m_counts_peers).
     [[nodiscard]] size_t num_peers() const;
+    /// At least one other peer is in the session.
+    [[nodiscard]] bool is_connected() const;
 
     /// iOS lifecycle (ABLLinkSetActive); no-op elsewhere.
     void set_active(bool active);
@@ -91,6 +108,12 @@ public:
 
     /// Session tempo as seen by the application thread.
     [[nodiscard]] double tempo() const;
+
+    /// The quantum in beats (the phase unit shared with peers, default 4), any thread. The
+    /// clock over audio_backend() quantizes with it and received Link Audio is mapped to
+    /// beats with it.
+    void set_quantum(double quantum);
+    [[nodiscard]] double quantum() const;
 
     /// The audio-thread seam for LinkTransportClock.
     [[nodiscard]] dsp::transport::LinkBackend& audio_backend();
@@ -115,10 +138,6 @@ public:
     /// Receive channel @p id into audio_sharing().pop(); nullopt stops receiving.
     void set_audio_input(std::optional<uint64_t> id);
     [[nodiscard]] std::optional<uint64_t> audio_input() const;
-
-    /// Quantum the received buffers are mapped to local beats with (default 4); use the
-    /// clock's (LinkTransportClock::quantum()).
-    void set_audio_quantum(double quantum);
 
     /// The audio-thread seam for Link Audio: the received channel in, the output channel out.
     [[nodiscard]] dsp::transport::LinkAudioBackend& audio_sharing();

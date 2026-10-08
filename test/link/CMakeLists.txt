@@ -1,9 +1,11 @@
 set(PROJECT_NAME test_link)
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION})
 
-# Real Link SDK backends (TANH_WITH_LINK). The fake-backend clock tests live in
+# Real Link SDK backends (TANH_BUILD_LINK). The fake-backend clock tests live in
 # test/dsp and run without the option.
-add_executable(${PROJECT_NAME} test_LinkSession.cpp)
+add_executable(${PROJECT_NAME} test_LinkSession.cpp test_LinkAudioCodec.cpp)
+# The codec and sharing helpers are private to tanh::Link (src/link/detail).
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../src/link)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE

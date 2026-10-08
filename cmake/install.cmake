@@ -47,7 +47,8 @@ set(_tanh_umbrella_headers
     "${PROJECT_NAME}_core=core.h"
     "${PROJECT_NAME}_state=state.h"
     "${PROJECT_NAME}_dsp=dsp.h"
-    "${PROJECT_NAME}_audio_io=audio_io.h")
+    "${PROJECT_NAME}_audio_io=audio_io.h"
+    "${PROJECT_NAME}_link=link.h")
 
 foreach(target IN LISTS TANH_BUILT_COMPONENTS)
     foreach(_entry IN LISTS _tanh_header_dirs)

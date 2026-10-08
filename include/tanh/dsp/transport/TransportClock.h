@@ -5,7 +5,6 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
-#include <optional>
 
 namespace thl::dsp::transport {
 
@@ -13,101 +12,94 @@ namespace thl::dsp::transport {
  * @class TransportClock
  * @brief Abstract transport clock for sample-accurate timing.
  *
- * Driven entirely by the audio callback — no timers, no threads.
- * The sample counter is the authoritative time source; beat position
- * is derived from it on demand.
+ * Driven entirely by the audio callback — no timers, no threads. Every block,
+ * begin_block() asks the clock for the block's TransportInfo (compute_block());
+ * the getters read that snapshot, so they mean the same on every clock.
  *
  * @par Real-Time Safety
- *   begin_block() and end_block() must be real-time safe.
- *   beat_at_sample() must be real-time safe.
- *   Any-thread setters (set_bpm, play, stop, set_position_beats) must
- *   be lock-free.
+ *   begin_block(), end_block() and the getters are real-time safe.
+ *   Any-thread setters (set_bpm, play, stop, set_position_beats) are lock-free.
  *
  * @par Audio-thread contract
  *   Call begin_block() once at the start of every process() call.
  *   Call end_block()   once at the end   of every process() call.
- *   beat_at_sample() and is_playing() are only valid between those two calls.
+ *   The getters are only valid between those two calls.
  *
- * @par Link compatibility
- *   host_time_micros in begin_block() carries the callback's host time. Ignored
- *   by InternalTransportClock and HostTransportClock, used by LinkTransportClock.
- *
- * block_info() returns the whole block as a TransportInfo, including the
- * discontinuity flags.
+ * Clock-specific inputs are set before begin_block():
+ * HostTransportClock::set_host_info() and LinkTransportClock::set_host_time_us().
  */
 class TANH_API TransportClock {
 public:
+    TransportClock() = default;
     virtual ~TransportClock() = default;
 
-    virtual void prepare(double sample_rate) = 0;
+    TransportClock(const TransportClock&) = delete;
+    TransportClock& operator=(const TransportClock&) = delete;
+    TransportClock(TransportClock&&) = delete;
+    TransportClock& operator=(TransportClock&&) = delete;
+
+    /// Message thread, audio stopped: sets the sample rate and starts over (the
+    /// next block is a k_timeline_reset, sample_position() is 0).
+    void prepare(double sample_rate) {
+        m_info = TransportInfo{};
+        m_sample_position = 0;
+        on_prepare(sample_rate);
+    }
 
     // ── Audio thread only ─────────────────────────────────────────────────────
 
     /**
-     * @brief Latch pending state and cache derived values for this block.
+     * @brief Latch pending state and compute this block.
      *
-     * Must be the first call in every process() invocation.
-     * BPM changes, play/stop, and seeks take effect here — never mid-block.
-     *
-     * @param frame_count       Number of samples in this block.
-     * @param host_time_micros  Callback host time in microseconds, without output
-     *                          latency. Used for Link; pass nullopt otherwise.
+     * Must be the first call in every process() invocation. BPM changes,
+     * play/stop and seeks take effect here — never mid-block.
      */
-    virtual void begin_block(uint32_t frame_count,
-                             std::optional<int64_t> host_time_micros = std::nullopt)
-        TANH_NONBLOCKING_FUNCTION = 0;
+    void begin_block(uint32_t frame_count) TANH_NONBLOCKING_FUNCTION {
+        m_info = compute_block(frame_count);
+    }
 
-    /**
-     * @brief Finalise the block and advance the sample position.
-     *        Must be the last call in every process() invocation.
-     *
-     * Advancement is deferred to end_block() rather than done at the top of
-     * begin_block() so that beat_at_sample() computes offsets relative to the
-     * start of the current block throughout processing.
-     *
-     */
-    virtual void end_block() TANH_NONBLOCKING_FUNCTION = 0;
+    /// Finalise the block. Must be the last call in every process() invocation.
+    void end_block() TANH_NONBLOCKING_FUNCTION {
+        if (m_info.is_playing()) { m_sample_position += m_info.m_num_samples; }
+    }
+
+    /// The current block, including the discontinuity flags.
+    [[nodiscard]] const TransportInfo& block_info() const TANH_NONBLOCKING_FUNCTION {
+        return m_info;
+    }
 
     /**
      * @brief Beat position at a given sample offset within the current block.
      *
-     * Returns a continuous musical time as a double — e.g. 1.75 means
-     * three-quarters of the way through beat 2. Use this for modulation,
-     * visualisation, or any calculation that needs raw musical time.
-     *
-     * This is distinct from Division, which has only five fixed granularities
-     * and cannot represent an arbitrary position. From the returned value you
-     * can derive anything:
-     *
-     *   beat_phase     = fmod(pos, 1.0)   // phase within the current beat
-     *   bar_phase      = fmod(pos, 4.0)   // phase within the current bar
-     *   sixteenth_idx  = pos * 4.0        // which 16th note we are on
-     *
-     * Returns the same value for all offsets when stopped.
-     * Valid only between begin_block() and end_block().
+     * Continuous musical time in quarter notes, e.g. 1.75 is three quarters
+     * through beat 2. Derive phases from it (fmod(pos, 1.0) within the beat) or
+     * use TransportInfo::phase().
      *
      * @param offset  Sample offset within [0, frame_count).
      */
-    [[nodiscard]] virtual double beat_at_sample(uint32_t offset) const
-        TANH_NONBLOCKING_FUNCTION = 0;
+    [[nodiscard]] double beat_at_sample(uint32_t offset) const TANH_NONBLOCKING_FUNCTION {
+        return m_info.beat_at(offset);
+    }
 
     /**
-     * @brief Returns true if at least one boundary of @p div falls within the
-     *        current block, using the half-open interval [block_start, block_end).
+     * @brief True while playing if a boundary of @p div falls within the current
+     *        block, using the half-open interval [block_start, block_end).
      *
-     * A boundary that lands exactly on the first sample of the next block
-     * belongs to the next block, not the current one.
-     *
-     * Uses the frame_count latched by begin_block() — no argument needed.
-     * Valid only between begin_block() and end_block().
+     * A boundary exactly on the first sample of the next block belongs to the next
+     * block.
      */
-    [[nodiscard]] virtual bool division_in_block(Division div) const TANH_NONBLOCKING_FUNCTION = 0;
+    [[nodiscard]] bool division_in_block(Division div) const TANH_NONBLOCKING_FUNCTION {
+        return m_info.is_playing() && m_info.division_in_block(div);
+    }
 
-    [[nodiscard]] virtual bool is_playing() const TANH_NONBLOCKING_FUNCTION = 0;
-    [[nodiscard]] virtual double bpm() const TANH_NONBLOCKING_FUNCTION = 0;
-    [[nodiscard]] virtual int sig_num() const TANH_NONBLOCKING_FUNCTION = 0;
-    [[nodiscard]] virtual int sig_denom() const TANH_NONBLOCKING_FUNCTION = 0;
-    [[nodiscard]] virtual uint64_t sample_position() const TANH_NONBLOCKING_FUNCTION = 0;
+    [[nodiscard]] bool is_playing() const TANH_NONBLOCKING_FUNCTION { return m_info.is_playing(); }
+    [[nodiscard]] double bpm() const TANH_NONBLOCKING_FUNCTION { return m_info.m_bpm; }
+    [[nodiscard]] int sig_num() const TANH_NONBLOCKING_FUNCTION { return m_info.m_sig_num; }
+    [[nodiscard]] int sig_denom() const TANH_NONBLOCKING_FUNCTION { return m_info.m_sig_denom; }
+    /// Samples processed while playing since prepare().
+    [[nodiscard]] uint64_t sample_position() const TANH_NONBLOCKING_FUNCTION {
+        return m_sample_position;
+    }
 
     // ── Any thread — lock-free ────────────────────────────────────────────────
 
@@ -117,26 +109,23 @@ public:
     virtual void stop() TANH_NONBLOCKING_FUNCTION = 0;
     virtual void set_position_beats(double beats) TANH_NONBLOCKING_FUNCTION = 0;
 
-    // ── Block snapshot (audio thread, between begin_block and end_block) ──────
+protected:
+    /// prepare() for the subclass: the sample rate, and starting over.
+    virtual void on_prepare(double sample_rate) = 0;
 
     /**
-     * @brief The current block as a TransportInfo.
+     * @brief The block of @p frame_count samples starting now.
      *
-     * The default builds it from the getters and reports no discontinuities and no
-     * block length. The tanh clocks override it with their tracked snapshot.
+     * Called by begin_block(). block_info() still holds the previous block (the
+     * default TransportInfo after prepare()). Typically fills the raw beats and
+     * resolves them with a ContinuityTracker.
      */
-    [[nodiscard]] virtual TransportInfo block_info() const TANH_NONBLOCKING_FUNCTION {
-        TransportInfo info;
-        info.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
-                       TransportInfo::k_has_time_signature;
-        if (is_playing()) { info.m_flags |= TransportInfo::k_is_playing; }
-        info.m_bpm = bpm();
-        info.m_beat_position = beat_at_sample(0);
-        info.m_beats_per_sample = beat_at_sample(1) - info.m_beat_position;
-        info.m_sig_num = sig_num();
-        info.m_sig_denom = sig_denom();
-        return info;
-    }
+    [[nodiscard]] virtual TransportInfo compute_block(uint32_t frame_count)
+        TANH_NONBLOCKING_FUNCTION = 0;
+
+private:
+    TransportInfo m_info{};
+    uint64_t m_sample_position = 0;
 };
 
 }  // namespace thl::dsp::transport

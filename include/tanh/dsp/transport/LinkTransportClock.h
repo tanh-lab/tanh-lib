@@ -1,12 +1,12 @@
 #pragma once
 
+#include <tanh/dsp/transport/ContinuityTracker.h>
+#include <tanh/dsp/transport/HostTimeFilter.h>
 #include <tanh/dsp/transport/LinkBackend.h>
 #include <tanh/dsp/transport/TransportClock.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 
-#include <array>
 #include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -16,13 +16,14 @@ namespace thl::dsp::transport {
  * @brief TransportClock that follows an Ableton Link session.
  *
  * Built over a LinkBackend, usually thl::link::LinkSession::audio_backend()
- * (TANH_WITH_LINK); the clock itself has no Link dependency. Pass the callback's
- * host time on the Link clock to begin_block() without output latency and keep
- * the latency current with set_output_latency_samples(). Without a host time the
- * sample counter is mapped to Link time by a linear regression.
+ * (TANH_BUILD_LINK); the clock itself has no Link dependency. Pass the
+ * callback's host time on the Link clock to set_host_time_us() before every
+ * begin_block(), without output latency, and keep the latency current with
+ * set_output_latency_samples(). Without a host time the sample counter is
+ * mapped to Link time by a HostTimeFilter.
  *
  * - UI requests (tempo, play/stop, seek) are applied at the block's output time.
- *   A local start is quantized to the Link quantum.
+ *   A local start is quantized to the session's quantum (LinkBackend::quantum()).
  * - A start or stop dated ahead takes effect in the block that contains it;
  *   beats before a start are negative (count-in).
  * - The Link timeline keeps running while stopped (m_beats_per_sample > 0), so
@@ -41,29 +42,18 @@ class TANH_API LinkTransportClock final : public TransportClock {
 public:
     explicit LinkTransportClock(LinkBackend& backend);
 
-    // ── Main thread ──────────────────────────────────────────────────────────
-    void prepare(double sample_rate) override;
-
     // ── Any thread (atomics) ──────────────────────────────────────────────────
     /// Device output latency; re-send on device or audio-route changes.
     void set_output_latency_samples(uint32_t samples);
-    /// Link quantum in beats (the phase unit shared with peers), default 4.
-    void set_quantum(double beats);
-    [[nodiscard]] double quantum() const;
+    /// The session's quantum in beats (the phase unit shared with peers).
+    [[nodiscard]] double quantum() const { return m_backend.quantum(); }
 
     // ── Audio thread only ─────────────────────────────────────────────────────
-    void begin_block(uint32_t frame_count,
-                     std::optional<int64_t> host_time_micros = std::nullopt) override;
-    void end_block() override;
-
-    [[nodiscard]] double beat_at_sample(uint32_t offset) const override;
-    [[nodiscard]] bool division_in_block(Division div) const override;
-    [[nodiscard]] bool is_playing() const override;
-    [[nodiscard]] double bpm() const override;
-    [[nodiscard]] int sig_num() const override;
-    [[nodiscard]] int sig_denom() const override;
-    [[nodiscard]] uint64_t sample_position() const override;
-    [[nodiscard]] TransportInfo block_info() const override;
+    /// The callback's host time in microseconds on the Link clock, without output
+    /// latency, for the next begin_block() (consumed by it).
+    void set_host_time_us(int64_t host_time_us) TANH_NONBLOCKING_FUNCTION {
+        m_host_time_us = host_time_us;
+    }
     /// Output time in microseconds on the Link clock used for the current block.
     [[nodiscard]] int64_t output_time_us() const { return m_t0_us; }
 
@@ -79,33 +69,33 @@ public:
     /// Latency in µs for @p samples at @p sample_rate (rounded).
     [[nodiscard]] static int64_t latency_us(uint32_t samples, double sample_rate);
 
+protected:
+    void on_prepare(double sample_rate) override;
+    [[nodiscard]] TransportInfo compute_block(uint32_t frame_count) override;
+
 private:
-    // Linear regression sample time → host time over the last k_filter_points
-    // blocks (Ableton's HostTimeFilter, fixed storage).
-    static constexpr size_t k_filter_points = 512;
-    int64_t filtered_host_time_us(double sample_time);
+    /// The block's output time: the host time (or the filter's) plus the latency.
+    [[nodiscard]] int64_t output_time(uint32_t frame_count) TANH_NONBLOCKING_FUNCTION;
+    /// Arms the timeline reset for the next realignment after an epoch change.
+    void follow_epoch(int64_t t0) TANH_NONBLOCKING_FUNCTION;
+    /// Applies the queued UI requests at @p t0 to the captured state (commits if
+    /// any) and returns the state the block plays.
+    [[nodiscard]] LinkState apply_requests(int64_t t0, double quantum) TANH_NONBLOCKING_FUNCTION;
 
     LinkBackend& m_backend;
     double m_sample_rate = 48000.0;
-    uint64_t m_sample_position = 0;
+    double m_sample_time = 0.0;  // samples since prepare(), for the host-time filter
+    std::optional<int64_t> m_host_time_us;
     int64_t m_t0_us = 0;
     uint64_t m_seen_epoch = 0;
     bool m_epoch_armed = false;
     int64_t m_epoch_armed_until_us = 0;
     double m_tempo_window_samples = 0.0;
 
-    TransportInfo m_info{};
     ContinuityTracker m_tracker;
-
-    std::array<double, k_filter_points> m_filter_x{};
-    std::array<double, k_filter_points> m_filter_y{};
-    size_t m_filter_count = 0;
-    size_t m_filter_index = 0;
-    double m_filter_x0 = 0.0;
-    double m_filter_y0 = 0.0;
+    HostTimeFilter m_host_time_filter;
 
     std::atomic<uint32_t> m_latency_samples{0};
-    std::atomic<double> m_quantum{4.0};
     std::atomic<double> m_pending_bpm{120.0};
     std::atomic<bool> m_has_pending_bpm{false};
     std::atomic<int> m_pending_play{0};  // 0 none, 1 play, -1 stop

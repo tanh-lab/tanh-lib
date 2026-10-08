@@ -27,27 +27,10 @@ struct LinkAudioPacket {
     double m_end_beat = 0.0;    ///< local beat just after the last frame
 };
 
-/// A Link Audio sample from a float sample (clipped to -1..1).
-[[nodiscard]] TANH_API int16_t to_link_audio_sample(float sample);
-
-/**
- * @brief Fills @p out from a received Link Audio buffer (interleaved 16-bit samples) whose
- *        first frame is at local beat @p begin_beat and which ends at @p end_beat.
- *
- * Keeps at most two channels and LinkAudioPacket::k_max_samples samples; the end beat follows
- * the frames kept. Returns false for an empty buffer.
- */
-TANH_API bool make_link_audio_packet(const int16_t* samples,
-                                     size_t num_channels,
-                                     size_t num_frames,
-                                     double begin_beat,
-                                     double end_beat,
-                                     LinkAudioPacket& out);
-
 /**
  * @brief Audio-thread seam for Link Audio: the subscribed channel in, our channel out.
  *
- * thl::link::LinkSession::audio_sharing() implements it over the Link SDKs (TANH_WITH_LINK);
+ * thl::link::LinkSession::audio_sharing() implements it over the Link SDKs (TANH_BUILD_LINK);
  * tests script it. Both methods are called from the audio thread only and are real-time safe.
  */
 class TANH_API LinkAudioBackend {
@@ -59,6 +42,10 @@ public:
 
     /**
      * @brief Sends one block of our output (planar) to the peers listening to our channel.
+     *
+     * The SDK dates the buffer with the session state the block was rendered with: the one the
+     * LinkTransportClock on the same session captured in this block's begin_block(), or a fresh
+     * capture when no clock ran since the last send().
      *
      * @param begin_beat Local beat of the block's first frame: the beat the audio belongs to
      *                   (for processed received audio, the beat it was received at).

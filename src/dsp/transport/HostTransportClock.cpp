@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
-#include <optional>
 
 namespace thl::dsp::transport {
 
@@ -21,11 +20,11 @@ constexpr double k_min_bpm = 1.0;
 
 }  // namespace
 
-void HostTransportClock::prepare(double sample_rate) {
+void HostTransportClock::on_prepare(double sample_rate) {
     if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
     m_tracker.prepare(m_sample_rate);
-    m_sample_position = 0;
     m_free_valid = false;
+    m_free_advance = 0;
     m_host.m_flags = 0;
 }
 
@@ -34,8 +33,9 @@ void HostTransportClock::set_host_info(const TransportInfo& info) TANH_NONBLOCKI
     m_host.m_flags &= ~TransportInfo::k_discontinuity_mask;
 }
 
-void HostTransportClock::begin_block(uint32_t frame_count,
-                                     std::optional<int64_t> /*host_time_micros*/) {
+TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
+    if (m_free_valid) { m_free_samples += m_free_advance; }
+    m_free_advance = 0;
     const TransportInfo host = m_host;
     m_host.m_flags = 0;  // consumed: the next block without set_host_info() has no host data
 
@@ -73,7 +73,7 @@ void HostTransportClock::begin_block(uint32_t frame_count,
             m_free_bpm = bpm;
             m_free_valid = true;
         } else if (!m_free_valid || bpm != m_free_bpm) {
-            m_free_anchor_beat = m_info.beat_end();
+            m_free_anchor_beat = block_info().beat_end();
             m_free_samples = 0;
             m_free_bpm = bpm;
             m_free_valid = true;
@@ -81,6 +81,7 @@ void HostTransportClock::begin_block(uint32_t frame_count,
         start = m_free_anchor_beat + static_cast<double>(m_free_samples) * bps;
         end = playing ? m_free_anchor_beat + static_cast<double>(m_free_samples + frame_count) * bps
                       : start;
+        if (playing) { m_free_advance = frame_count; }
     }
 
     TransportInfo info;
@@ -93,45 +94,7 @@ void HostTransportClock::begin_block(uint32_t frame_count,
     info.m_beat_position = start;
 
     m_tracker.resolve(info, end, frame_count);
-    m_info = info;
-}
-
-void HostTransportClock::end_block() {
-    if (!m_info.is_playing()) { return; }
-    m_sample_position += m_info.m_num_samples;
-    if (m_free_valid) { m_free_samples += m_info.m_num_samples; }
-}
-
-double HostTransportClock::beat_at_sample(uint32_t offset) const {
-    return m_info.beat_at(offset);
-}
-
-bool HostTransportClock::division_in_block(Division div) const {
-    return m_info.is_playing() && m_info.division_in_block(div);
-}
-
-bool HostTransportClock::is_playing() const {
-    return m_info.is_playing();
-}
-
-double HostTransportClock::bpm() const {
-    return m_info.m_bpm;
-}
-
-int HostTransportClock::sig_num() const {
-    return m_info.m_sig_num;
-}
-
-int HostTransportClock::sig_denom() const {
-    return m_info.m_sig_denom;
-}
-
-uint64_t HostTransportClock::sample_position() const {
-    return m_sample_position;
-}
-
-TransportInfo HostTransportClock::block_info() const {
-    return m_info;
+    return info;
 }
 
 void HostTransportClock::set_bpm(double bpm) {

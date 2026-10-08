@@ -22,7 +22,8 @@ int64_t block_start_us(int64_t t0, int block) {
 }
 
 double rt_block(LinkTransportClock& clk, int64_t host_us) TANH_NONBLOCKING_FUNCTION {
-    clk.begin_block(k_frames, host_us);
+    clk.set_host_time_us(host_us);
+    clk.begin_block(k_frames);
     const double beat = clk.beat_at_sample(k_frames - 1);
     clk.end_block();
     return beat;
@@ -46,7 +47,8 @@ TEST(LinkSession, DisabledSessionIsALocalTimeline) {
     auto& backend = session.audio_backend();
     const int64_t t0 = backend.now_us();
     for (int b = 0; b < 50; ++b) {
-        clk.begin_block(k_frames, block_start_us(t0, b));
+        clk.set_host_time_us(block_start_us(t0, b));
+        clk.begin_block(k_frames);
         if (b > 0) { EXPECT_EQ(clk.block_info().discontinuities(), 0u) << "block " << b; }
         // Link time is integer µs, so the in-block slope carries ≤1 µs of rounding.
         EXPECT_NEAR(clk.block_info().m_beats_per_sample, 120.0 / (60.0 * k_sr), 1e-8);
@@ -61,7 +63,8 @@ TEST(LinkSession, EnableWithoutPeersDoesNotMoveTheBeat) {  // BEATTIME-1
     const int64_t t0 = session.audio_backend().now_us();
     for (int b = 0; b < 40; ++b) {
         if (b == 20) { session.set_enabled(true); }
-        clk.begin_block(k_frames, block_start_us(t0, b));
+        clk.set_host_time_us(block_start_us(t0, b));
+        clk.begin_block(k_frames);
         if (b > 0) { EXPECT_EQ(clk.block_info().discontinuities(), 0u) << "block " << b; }
         clk.end_block();
     }
@@ -75,7 +78,8 @@ TEST(LinkSession, LocalStartAndTempoRequest) {
     const int64_t t0 = session.audio_backend().now_us();
     clk.play();
     clk.set_bpm(150.0);
-    clk.begin_block(k_frames, t0);
+    clk.set_host_time_us(t0);
+    clk.begin_block(k_frames);
     EXPECT_TRUE(clk.is_playing());
     EXPECT_NEAR(clk.bpm(), 150.0, 1e-9);
     EXPECT_NEAR(clk.beat_at_sample(0), 0.0, 1e-6);  // quantized launch alone: beat 0 now
@@ -131,7 +135,8 @@ TEST(LinkSession, TwoPeers_Loopback) {
     ca.prepare(k_sr);
     cb.prepare(k_sr);
     ca.set_bpm(133.0);
-    ca.begin_block(k_frames, a.audio_backend().now_us());
+    ca.set_host_time_us(a.audio_backend().now_us());
+    ca.begin_block(k_frames);
     ca.end_block();
 
     // b converges on a's tempo.
@@ -144,8 +149,10 @@ TEST(LinkSession, TwoPeers_Loopback) {
 
     // Phase agrees modulo the quantum at the same host time (within 1 ms).
     const int64_t t = a.audio_backend().now_us();
-    ca.begin_block(k_frames, t);
-    cb.begin_block(k_frames, t);
+    ca.set_host_time_us(t);
+    ca.begin_block(k_frames);
+    cb.set_host_time_us(t);
+    cb.begin_block(k_frames);
     const double q = 4.0;
     const double pa = ca.block_info().phase(q);
     const double pb = cb.block_info().phase(q);

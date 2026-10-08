@@ -47,7 +47,8 @@ TEST(LinkTransportClock, FakeLink_DeterministicScript) {
             clk.play();
         }
 
-        clk.begin_block(k_frames, t0);
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
         const TransportInfo info = clk.block_info();
         flags.push_back(info.discontinuities());
 
@@ -102,7 +103,8 @@ TEST(LinkTransportClock, PeerTempoChangeInsidePreviousBlockIsNotAJump) {
         const int64_t t0 = b * k_block_us;
         if (b == 10) { link.peer_set_tempo(180.0, t0 - 4000); }  // 4 ms into block 9
         if (b == 20) { link.peer_set_tempo(90.0, t0 - 9000); }   // 1 ms into block 19
-        clk.begin_block(k_frames, t0);
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
         const auto info = clk.block_info();
         if (b > 0) {
             const uint32_t want = (b == 10 || b == 20) ? TransportInfo::k_tempo_changed : 0u;
@@ -133,7 +135,8 @@ TEST(LinkTransportClock, PeerTempoChangeDatedAwayFromTheBlockIsNotAJump) {
         if (b == 10) { link.peer_set_tempo(180.0, t0 + 8000); }   // inside block 10
         if (b == 20) { link.peer_set_tempo(90.0, t0 + 45000); }   // 4.5 blocks ahead
         if (b == 30) { link.peer_set_tempo(140.0, t0 - 40000); }  // 4 blocks late
-        clk.begin_block(k_frames, t0);
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
         const auto info = clk.block_info();
         if (b > 0) {
             const bool change = b == 10 || b == 20 || b == 30;
@@ -162,7 +165,8 @@ TEST(LinkTransportClock, PeerTempoChangeBeyondTheWindowIsAJump) {
         for (int b = 0; b < 20; ++b) {
             const int64_t t0 = b * k_block_us;
             if (b == 10) { link.peer_set_tempo(160.0, t0 + dated); }
-            clk.begin_block(k_frames, t0);
+            clk.set_host_time_us(t0);
+            clk.begin_block(k_frames);
             if (b == 10) { flags = clk.block_info().discontinuities(); }
             if (b > 0 && b != 10) {
                 EXPECT_EQ(clk.block_info().discontinuities(), 0u) << "block " << b;
@@ -191,7 +195,8 @@ TEST(LinkTransportClock, JoinRealignmentWithTempoChangeIsAJump) {
             link.peer_join_realign(0.005, t0);
             link.peer_set_tempo(130.0, t0 + 40000);
         }
-        clk.begin_block(k_frames, t0);
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
         if (b == 5) {
             EXPECT_EQ(clk.block_info().discontinuities(),
                       TransportInfo::k_jumped | TransportInfo::k_tempo_changed |
@@ -216,7 +221,8 @@ std::vector<uint32_t> join_flags(int epoch_block, int realign_block) {
         const int64_t t0 = b * k_block_us;
         if (b == epoch_block) { link.bump_epoch(); }
         if (b == realign_block) { link.realign(0.25, t0); }
-        clk.begin_block(k_frames, t0);
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
         flags.push_back(clk.block_info().discontinuities());
         clk.end_block();
     }
@@ -255,7 +261,8 @@ TEST(LinkTransportClock, PeerStopDatedAheadLandsInItsBlock) {
     for (int b = 0; b < 20; ++b) {
         const int64_t t0 = b * k_block_us;
         if (b == 10) { link.peer_stop((13 * k_block_us) + 2500); }
-        clk.begin_block(k_frames, t0);
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
         EXPECT_EQ(clk.is_playing(), b < 13) << "block " << b;
         if (b > 0) {
             EXPECT_EQ(clk.block_info().discontinuities(), b == 13 ? TransportInfo::k_stopped : 0u)
@@ -273,7 +280,8 @@ TEST(LinkTransportClock, HostTimeJitterRaisesNoFlags) {
     std::uniform_int_distribution<int64_t> jitter(-50, 50);
     double last = -1.0;
     for (int b = 0; b < 3000; ++b) {
-        clk.begin_block(k_frames, (b * k_block_us) + jitter(rng));
+        clk.set_host_time_us((b * k_block_us) + jitter(rng));
+        clk.begin_block(k_frames);
         const auto info = clk.block_info();
         if (b > 0) {
             ASSERT_EQ(info.discontinuities(), 0u) << "block " << b;
@@ -299,8 +307,10 @@ TEST(LinkTransportClock, LatencyCompensation) {
     constexpr uint32_t k_latency = 480;
     compensated.set_output_latency_samples(k_latency);
 
-    plain.begin_block(k_frames, 123456);
-    compensated.begin_block(k_frames, 123456);
+    plain.set_host_time_us(123456);
+    plain.begin_block(k_frames);
+    compensated.set_host_time_us(123456);
+    compensated.begin_block(k_frames);
     const double bps = plain.block_info().m_beats_per_sample;
     EXPECT_NEAR(compensated.beat_at_sample(0) - plain.beat_at_sample(0), k_latency * bps, 1e-9);
     EXPECT_EQ(compensated.output_time_us() - plain.output_time_us(), 10000);
@@ -328,7 +338,8 @@ TEST(LinkTransportClock, LatencyCompensatedClicksAreSampleExact) {
             for (uint64_t n = 0; n * frames < total; ++n) {
                 const auto host = static_cast<int64_t>(
                     std::llround(static_cast<double>(n * frames) * 1e6 / k_sr));
-                clk.begin_block(frames, host);
+                clk.set_host_time_us(host);
+                clk.begin_block(frames);
                 const auto info = clk.block_info();
                 for (double k = std::ceil(info.m_beat_position); k < info.beat_end(); k += 1.0) {
                     const double offset =
@@ -359,7 +370,8 @@ TEST(LinkTransportClock, EnableDisable_NoJumpWithoutPeers) {
     clk.prepare(k_sr);
     for (int b = 0; b < 20; ++b) {
         if (b == 5 || b == 12) { link.bump_epoch(); }  // BEATTIME-1
-        clk.begin_block(k_frames, b * k_block_us);
+        clk.set_host_time_us(b * k_block_us);
+        clk.begin_block(k_frames);
         if (b > 0) { EXPECT_EQ(clk.block_info().discontinuities(), 0u) << "block " << b; }
         clk.end_block();
     }
@@ -372,7 +384,8 @@ TEST(LinkTransportClock, NoLocalTempoPushOnEnable) {
     clk.prepare(k_sr);
     for (int b = 0; b < 10; ++b) {
         if (b == 3) { link.peer_join_realign(0.0, b * k_block_us); }
-        clk.begin_block(k_frames, b * k_block_us);
+        clk.set_host_time_us(b * k_block_us);
+        clk.begin_block(k_frames);
         EXPECT_DOUBLE_EQ(clk.bpm(), 97.0);
         clk.end_block();
     }
@@ -380,11 +393,13 @@ TEST(LinkTransportClock, NoLocalTempoPushOnEnable) {
     EXPECT_EQ(link.m_commits, 0);
 
     clk.set_bpm(133.0);  // explicit user request: applied once
-    clk.begin_block(k_frames, 10 * k_block_us);
+    clk.set_host_time_us(10 * k_block_us);
+    clk.begin_block(k_frames);
     EXPECT_DOUBLE_EQ(clk.bpm(), 133.0);
     EXPECT_TRUE(clk.block_info().has(TransportInfo::k_tempo_changed));
     clk.end_block();
-    clk.begin_block(k_frames, 11 * k_block_us);
+    clk.set_host_time_us(11 * k_block_us);
+    clk.begin_block(k_frames);
     clk.end_block();
     EXPECT_EQ(link.m_set_tempo_calls, 1);
     EXPECT_EQ(link.m_commits, 1);
@@ -395,20 +410,24 @@ TEST(LinkTransportClock, LocalStopAndSeek) {
     LinkTransportClock clk(link);
     clk.prepare(k_sr);
     clk.play();
-    clk.begin_block(k_frames, 0);
+    clk.set_host_time_us(0);
+    clk.begin_block(k_frames);
     clk.end_block();
-    clk.begin_block(k_frames, k_block_us);
+    clk.set_host_time_us(k_block_us);
+    clk.begin_block(k_frames);
     EXPECT_TRUE(clk.is_playing());
     clk.end_block();
 
     clk.set_position_beats(8.0);
-    clk.begin_block(k_frames, 2 * k_block_us);
+    clk.set_host_time_us(2 * k_block_us);
+    clk.begin_block(k_frames);
     EXPECT_DOUBLE_EQ(clk.beat_at_sample(0), 8.0);
     EXPECT_TRUE(clk.block_info().has(TransportInfo::k_jumped));
     clk.end_block();
 
     clk.stop();
-    clk.begin_block(k_frames, 3 * k_block_us);
+    clk.set_host_time_us(3 * k_block_us);
+    clk.begin_block(k_frames);
     EXPECT_FALSE(clk.is_playing());
     EXPECT_EQ(clk.block_info().discontinuities(), TransportInfo::k_stopped);
     EXPECT_GT(clk.block_info().m_beats_per_sample, 0.0);  // Link's timeline keeps running
@@ -436,7 +455,8 @@ TEST(LinkTransportClock, NoHostTimeUsesFilteredSampleClock) {
 namespace {
 
 double rt_link_block(LinkTransportClock& clk, int64_t t) TANH_NONBLOCKING_FUNCTION {
-    clk.begin_block(k_frames, t);
+    clk.set_host_time_us(t);
+    clk.begin_block(k_frames);
     const double v =
         clk.beat_at_sample(0) + static_cast<double>(clk.block_info().discontinuities());
     clk.end_block();

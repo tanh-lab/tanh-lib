@@ -17,15 +17,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   shape's centre. `played_path()` samples what plays for drawing, `shapes_version()`
   tells when to redraw. Tests: `MotionShape.*`. Docs: `motion_recording.md`.
 
-- Link Audio (`TANH_WITH_LINK`): `LinkSession` shares audio channels with Link peers
+- Link Audio (`TANH_BUILD_LINK`): `LinkSession` shares audio channels with Link peers
   (`set_audio_enabled()`, `audio_channels()`, `set_audio_input()`; the output channel
   is named at construction) on the C++ SDK's `LinkAudio` and LinkKit's audio API.
   `audio_sharing()` is the audio-thread seam (`dsp::transport::LinkAudioBackend`:
   received buffers in, our output out) and `dsp::transport::LinkAudioReceiver` plays
   the received channel on the local beat grid a latency behind, with underrun and
   margin counters; lost packets are skipped, reordered ones dropped, and a moved range
-  restarts. The constructor takes the peer and output names. Tests: `LinkAudioReceiver.*`,
-  `LinkAudioPeers.*`. Docs: `transport.md`.
+  restarts. The constructor takes the peer and output names. The session owns the
+  quantum (`set_quantum()`, read by the clock through `LinkBackend::quantum()`), and
+  `send()` commits with the clock's capture of the same block, never a stale one.
+  `capabilities()` and `is_connected()` describe what each platform's SDK allows. The
+  wire-format helpers are private to `tanh::Link`; both SDK backends share them.
+  The option is `TANH_BUILD_LINK`, like the other components, with a `tanh/link.h`
+  umbrella. Tests: `LinkAudioReceiver.*`, `LinkAudioCodec.*`, `LinkAudioPeers.*`.
+  Docs: `transport.md`.
 
 - `thl::modulation::ParameterBackend`: `ModulationMatrix` reads parameters through a
   backend (`find(key)` returns definition, base atomic and gesture flag) instead of
@@ -56,6 +62,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   wait-free seqlock, so a batch lands whole. Edges and the first block after a
   rebuild flag offset 0; a zero-sample block keeps the edge. `"enabled": false` is
   serialised only when disabled. Tests: `RoutingEnabled.*`.
+- `TransportClock` keeps the block itself: a subclass implements `compute_block()`
+  (and `on_prepare()`), and `block_info()`, `beat_at_sample()`, `division_in_block()`,
+  the tempo, signature and play getters are defined once in the base.
+  `sample_position()` counts samples played since `prepare()` on every clock.
+  `begin_block()` takes only the frame count; `LinkTransportClock::set_host_time_us()`
+  passes the callback's host time. `ContinuityTracker` has its own header, and
+  `HostTimeFilter` (the Link clock's sample-to-host-time regression) is public.
 - `thl::dsp::transport::TransportInfo`: trivially copyable per-block snapshot with
   the flags `k_jumped`, `k_started`, `k_stopped`, `k_tempo_changed` and
   `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
@@ -63,7 +76,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   beats. `TransportClock::block_info()`; `HostTransportClock` follows the host's
   playhead with fallbacks for omitted fields. Tests: `TransportInfo.*`,
   `ContinuityTracker.*`, `HostTransportClock*.*`. Docs: `transport.md`.
-- Ableton Link behind `TANH_WITH_LINK` (default OFF for its licence): `tanh::Link`
+- Ableton Link behind `TANH_BUILD_LINK` (default OFF for its licence): `tanh::Link`
   with `thl::link::LinkSession` over the Link 4.1 SDK (pinned commit) on desktop and
   LinkKit 4.1.2 (pinned SHA256) on iOS. `LinkTransportClock` sits in DSP behind the
   `LinkBackend` seam, compensates output latency and applies requests at the output

@@ -115,7 +115,7 @@ Link
 Windows, LinkKit on iOS. The audio side,
 :cpp:class:`thl::dsp::transport::LinkTransportClock`, lives in DSP and talks to
 the session through the ``LinkBackend`` seam, so it is testable without the
-SDK. Off by default (``TANH_WITH_LINK``) because Link brings its own licence
+SDK. Off by default (``TANH_BUILD_LINK``) because Link brings its own licence
 terms (GPLv2+ or proprietary). See :doc:`transport`. Depends on DSP.
 
 Platforms

@@ -29,34 +29,6 @@ double frame_at(const LinkAudioPacket& packet, double beat) {
 
 }  // namespace
 
-int16_t to_link_audio_sample(float sample) {
-    return static_cast<int16_t>(std::lround(std::clamp(sample, -1.0f, 1.0f) * 32767.0f));
-}
-
-bool make_link_audio_packet(const int16_t* samples,
-                            size_t num_channels,
-                            size_t num_frames,
-                            double begin_beat,
-                            double end_beat,
-                            LinkAudioPacket& out) {
-    if (samples == nullptr || num_channels == 0 || num_frames == 0 || end_beat <= begin_beat) {
-        return false;
-    }
-    out.m_num_channels = static_cast<uint32_t>(std::min<size_t>(num_channels, 2));
-    const size_t frames = std::min(num_frames, LinkAudioPacket::k_max_samples / out.m_num_channels);
-    out.m_num_frames = static_cast<uint32_t>(frames);
-    for (size_t f = 0; f < frames; ++f) {
-        for (size_t ch = 0; ch < out.m_num_channels; ++ch) {
-            out.m_samples[(f * out.m_num_channels) + ch] =
-                static_cast<float>(samples[(f * num_channels) + ch]) / 32768.0f;
-        }
-    }
-    out.m_begin_beat = begin_beat;
-    out.m_end_beat = begin_beat + ((end_beat - begin_beat) * static_cast<double>(frames) /
-                                   static_cast<double>(num_frames));
-    return true;
-}
-
 LinkAudioReceiver::LinkAudioReceiver() : m_ring(k_capacity) {}
 
 void LinkAudioReceiver::reset() TANH_NONBLOCKING_FUNCTION {
@@ -143,9 +115,7 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
         const double read_beat =
             p.m_begin_beat +
             (m_read_frame / static_cast<double>(p.m_num_frames) * (p.m_end_beat - p.m_begin_beat));
-        if (begin_beat - read_beat > k_seek_tolerance * block_beats) {
-            m_playing = false;
-        }
+        if (begin_beat - read_beat > k_seek_tolerance * block_beats) { m_playing = false; }
     }
 
     // Start at the first packet that reaches past the range's first beat (older ones go). A

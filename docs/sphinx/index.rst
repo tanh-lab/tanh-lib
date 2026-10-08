@@ -13,7 +13,7 @@ components, all in namespace ``thl``:
 - **tanh::Modulation** — modulation matrix with change-point sub-blocking
 - **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
-- **tanh::Link** — Ableton Link session (``TANH_WITH_LINK``, off by default)
+- **tanh::Link** — Ableton Link session (``TANH_BUILD_LINK``, off by default)
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
 

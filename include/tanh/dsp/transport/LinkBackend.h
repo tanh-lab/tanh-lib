@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
@@ -20,13 +21,13 @@ struct LinkState {
  * the SessionState queries/requests, commitAudioSessionState). Times are host
  * times in microseconds on the Link clock. Implementations: the C++ Link SDK on
  * desktop and LinkKit on iOS (thl::link::LinkSession::audio_backend(), built with
- * TANH_WITH_LINK), and a scripted fake in the tests.
+ * TANH_BUILD_LINK), and a scripted fake in the tests.
  *
  * The clock calls every method from the audio thread only, the session-state
  * calls between capture() and commit(). All must be real-time safe, as Link
  * documents its audio-thread calls.
  */
-class LinkBackend {
+class TANH_API LinkBackend {
 public:
     virtual ~LinkBackend() = default;
 
@@ -59,6 +60,11 @@ public:
      * Read from the audio thread before capture().
      */
     [[nodiscard]] virtual uint64_t timeline_epoch() const TANH_NONBLOCKING_FUNCTION { return 0; }
+
+    /// The session's quantum in beats (the phase unit shared with peers). The
+    /// clock quantizes with it and received Link Audio is mapped to beats with it,
+    /// so the two never disagree. Any thread.
+    [[nodiscard]] virtual double quantum() const TANH_NONBLOCKING_FUNCTION { return 4.0; }
 };
 
 }  // namespace thl::dsp::transport

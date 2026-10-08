@@ -1,6 +1,5 @@
 // LinkSession over the Ableton Link C++ SDK (macOS, Linux, Windows), with Link Audio.
 
-#include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/transport/LinkAudio.h>
 #include <tanh/dsp/transport/LinkBackend.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -20,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "detail/LinkSharing.h"
 #include "tanh/link/LinkSession.h"
 
 namespace thl::link {
@@ -30,9 +30,13 @@ using std::chrono::microseconds;
 
 class AbletonBackend final : public dsp::transport::LinkBackend {
 public:
-    explicit AbletonBackend(ableton::LinkAudio& link) : m_link(link) {}
+    AbletonBackend(ableton::LinkAudio& link, const detail::SessionShared& shared)
+        : m_link(link), m_shared(shared) {}
 
-    void capture() override { m_state.emplace(m_link.captureAudioSessionState()); }
+    void capture() override {
+        m_state.emplace(m_link.captureAudioSessionState());
+        m_captures.captured();
+    }
     [[nodiscard]] double beat_at(int64_t t_us, double quantum) const override {
         return m_state->beatAtTime(microseconds(t_us), quantum);
     }
@@ -65,53 +69,43 @@ public:
     [[nodiscard]] uint64_t timeline_epoch() const override {
         return m_epoch.load(std::memory_order_acquire);
     }
+    [[nodiscard]] double quantum() const override {
+        return m_shared.m_quantum.load(std::memory_order_relaxed);
+    }
 
     void bump_epoch() { m_epoch.fetch_add(1, std::memory_order_acq_rel); }
 
-    /// The state the clock captured for the current block (audio thread), if any.
-    [[nodiscard]] const std::optional<ableton::LinkAudio::SessionState>& captured() const {
-        return m_state;
+    /// Audio thread: the state the clock captured since the last call, once; null if none.
+    [[nodiscard]] const ableton::LinkAudio::SessionState* take_capture() {
+        return m_captures.take() && m_state ? &*m_state : nullptr;
     }
 
 private:
     ableton::LinkAudio& m_link;
+    const detail::SessionShared& m_shared;
+    detail::CaptureTracker m_captures;
     // SessionState has no default constructor; optional keeps it in place (no heap).
     std::optional<ableton::LinkAudio::SessionState> m_state;
     std::atomic<uint64_t> m_epoch{0};
 };
 
-// Received buffers waiting for the audio thread (about 1.5 s of stereo at 48 kHz).
-using PacketQueue = core::LockFreeQueue<dsp::transport::LinkAudioPacket, 256>;
-
-// What the receiving callback writes. Shared with the callback, which the SDK may still run
-// after its source is gone, so it outlives every callback.
-struct Received {
-    PacketQueue m_queue;
-    std::atomic<double> m_quantum{4.0};
-};
-
-// Link thread: a received buffer, to float on the local beat grid, for the audio thread.
+// Link thread: a received buffer, mapped to the local beat grid, for the audio thread.
 void on_buffer(ableton::LinkAudio& link,
-               Received& received,
+               detail::SessionShared& shared,
                const ableton::LinkAudioSource::BufferHandle& buffer) {
     const auto& info = buffer.info;
     if (info.numChannels == 0 || info.numFrames == 0) { return; }
-    const double quantum = received.m_quantum.load(std::memory_order_relaxed);
+    const double quantum = shared.m_quantum.load(std::memory_order_relaxed);
     const auto state = link.captureAppSessionState();
     const auto begin = info.beginBeats(state, quantum);
     const auto end = info.endBeats(state, quantum);
     if (!begin || !end) { return; }  // from another session
-
-    dsp::transport::LinkAudioPacket packet;
-    if (!dsp::transport::make_link_audio_packet(buffer.samples,
-                                                info.numChannels,
-                                                info.numFrames,
-                                                *begin,
-                                                *end,
-                                                packet)) {
-        return;
-    }
-    (void)received.m_queue.try_push(packet);  // a full queue drops the newest
+    detail::push_received(shared.m_received,
+                          buffer.samples,
+                          info.numChannels,
+                          info.numFrames,
+                          *begin,
+                          *end);
 }
 
 uint64_t to_u64(const ableton::ChannelId& id) {
@@ -130,15 +124,15 @@ ableton::ChannelId to_channel_id(uint64_t value) {
 class AbletonSharing final : public dsp::transport::LinkAudioBackend {
 public:
     AbletonSharing(ableton::LinkAudio& link,
-                   const AbletonBackend& clock,
-                   PacketQueue& queue,
+                   AbletonBackend& clock,
+                   detail::ReceivedQueue& received,
                    const std::string& output_name)
         : m_link(link)
         , m_clock(clock)
-        , m_queue(queue)
+        , m_received(received)
         , m_sink(link, output_name, k_initial_sink_samples) {}
 
-    bool pop(dsp::transport::LinkAudioPacket& out) override { return m_queue.try_pop(out); }
+    bool pop(dsp::transport::LinkAudioPacket& out) override { return m_received.try_pop(out); }
 
     bool send(const float* const* channels,
               uint32_t num_channels,
@@ -146,38 +140,34 @@ public:
               double begin_beat,
               double quantum,
               uint32_t sample_rate) override {
-        num_channels = std::min<uint32_t>(num_channels, 2);  // Link Audio carries mono or stereo
-        const size_t samples = static_cast<size_t>(num_frames) * num_channels;
-        if (num_channels == 0 || num_frames == 0 || sample_rate == 0) { return false; }
+        const auto shape = detail::send_shape(num_channels, num_frames, sample_rate);
+        if (!shape) { return false; }
         ableton::LinkAudioSink::BufferHandle buffer(m_sink);  // invalid while nobody listens
         if (!buffer) { return false; }
-        if (samples > buffer.maxNumSamples) {
-            m_sink.requestMaxNumSamples(samples);  // larger buffers from the next block on
+        if (shape->m_samples > buffer.maxNumSamples) {
+            m_sink.requestMaxNumSamples(shape->m_samples);  // larger buffers from the next block on
             return false;
         }
-        for (uint32_t f = 0; f < num_frames; ++f) {
-            for (uint32_t ch = 0; ch < num_channels; ++ch) {
-                buffer.samples[(static_cast<size_t>(f) * num_channels) + ch] =
-                    dsp::transport::to_link_audio_sample(channels[ch][f]);
-            }
-        }
-        // The state the block was rendered with (the clock's capture), as the SDK requires; a
-        // fresh capture only when no clock runs on this session.
-        const auto& captured = m_clock.captured();
-        return buffer.commit(captured ? *captured : m_link.captureAudioSessionState(),
-                             begin_beat,
-                             quantum,
-                             num_frames,
-                             num_channels,
-                             sample_rate);
+        detail::interleave(channels, *shape, buffer.samples);
+        auto commit = [&](const ableton::LinkAudio::SessionState& state) {
+            return buffer.commit(state,
+                                 begin_beat,
+                                 quantum,
+                                 shape->m_frames,
+                                 shape->m_channels,
+                                 sample_rate);
+        };
+        // The state the block was rendered with (the clock's capture), as the SDK requires.
+        if (const auto* captured = m_clock.take_capture()) { return commit(*captured); }
+        return commit(m_link.captureAudioSessionState());
     }
 
 private:
     static constexpr size_t k_initial_sink_samples = 4096;
 
     ableton::LinkAudio& m_link;
-    const AbletonBackend& m_clock;
-    PacketQueue& m_queue;
+    AbletonBackend& m_clock;
+    detail::ReceivedQueue& m_received;
     ableton::LinkAudioSink m_sink;
 };
 
@@ -186,9 +176,9 @@ private:
 struct LinkSession::Impl {
     Impl(double bpm, const std::string& peer_name, const std::string& output_name)
         : m_link(bpm, peer_name)
-        , m_backend(m_link)
-        , m_received(std::make_shared<Received>())
-        , m_sharing(m_link, m_backend, m_received->m_queue, output_name) {
+        , m_shared(std::make_shared<detail::SessionShared>())
+        , m_backend(m_link, *m_shared)
+        , m_sharing(m_link, m_backend, m_shared->m_received, output_name) {
         // Link thread: count peers, bump the epoch when the first one joins.
         m_link.setNumPeersCallback([this](std::size_t peers) {
             const size_t before = m_peers.exchange(peers, std::memory_order_acq_rel);
@@ -197,9 +187,9 @@ struct LinkSession::Impl {
     }
 
     ableton::LinkAudio m_link;
+    std::shared_ptr<detail::SessionShared> m_shared;  // also held by the receiving callback
     AbletonBackend m_backend;
     std::atomic<size_t> m_peers{0};
-    std::shared_ptr<Received> m_received;
     AbletonSharing m_sharing;
     // Message thread.
     std::optional<ableton::LinkAudioSource> m_source;  // last: gone before what it feeds
@@ -238,6 +228,17 @@ bool LinkSession::is_start_stop_sync_enabled() const {
 
 size_t LinkSession::num_peers() const {
     return m_impl->m_peers.load(std::memory_order_acquire);
+}
+
+bool LinkSession::is_connected() const {
+    return num_peers() > 0;
+}
+
+LinkSession::Capabilities LinkSession::capabilities() {
+    return {.m_app_controls_settings = true,
+            .m_counts_peers = true,
+            .m_has_lifecycle = false,
+            .m_has_settings_view = false};
 }
 
 void LinkSession::set_active(bool /*active*/) {}
@@ -280,9 +281,9 @@ void LinkSession::set_audio_input(std::optional<uint64_t> id) {
     if (id) {
         m_impl->m_source.emplace(m_impl->m_link,
                                  to_channel_id(*id),
-                                 [&link = m_impl->m_link, received = m_impl->m_received](
+                                 [&link = m_impl->m_link, shared = m_impl->m_shared](
                                      ableton::LinkAudioSource::BufferHandle buffer) {
-                                     on_buffer(link, *received, buffer);
+                                     on_buffer(link, *shared, buffer);
                                  });
     }
 }
@@ -291,8 +292,12 @@ std::optional<uint64_t> LinkSession::audio_input() const {
     return m_impl->m_source_id;
 }
 
-void LinkSession::set_audio_quantum(double quantum) {
-    m_impl->m_received->m_quantum.store(quantum, std::memory_order_relaxed);
+void LinkSession::set_quantum(double quantum) {
+    if (quantum > 0.0) { m_impl->m_shared->m_quantum.store(quantum, std::memory_order_relaxed); }
+}
+
+double LinkSession::quantum() const {
+    return m_impl->m_shared->m_quantum.load(std::memory_order_relaxed);
 }
 
 dsp::transport::LinkAudioBackend& LinkSession::audio_sharing() {

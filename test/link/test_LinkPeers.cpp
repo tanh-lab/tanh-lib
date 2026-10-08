@@ -129,7 +129,8 @@ void render_block(LinkTransportClock& clock,
                   uint32_t frames,
                   int64_t host_us,
                   Block& out) TANH_NONBLOCKING_FUNCTION {
-    clock.begin_block(frames, host_us);
+    clock.set_host_time_us(host_us);
+    clock.begin_block(frames);
     out.m_host_us = host_us;
     out.m_t0_us = clock.output_time_us();
     out.m_info = clock.block_info();
@@ -662,7 +663,8 @@ TEST(LinkAudioPeers, AChannelOneSessionSendsReachesAnother) {
     double phase = 0.0;
     const auto send_end = std::chrono::steady_clock::now() + 2s;
     while (std::chrono::steady_clock::now() < send_end) {
-        clock.begin_block(frames, sender.audio_backend().now_us());
+        clock.set_host_time_us(sender.audio_backend().now_us());
+        clock.begin_block(frames);
         for (uint32_t f = 0; f < frames; ++f) {
             left[f] = right[f] = 0.5f * static_cast<float>(std::sin(phase));
             phase += 2.0 * 3.141592653589793 * 440.0 / k_sr;
