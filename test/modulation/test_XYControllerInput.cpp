@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tanh/core/Clock.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/XYController.h>
@@ -182,12 +183,12 @@ TEST(XYControllerInput, ConcurrentTimedTouchesAndAudio) {
     std::atomic<bool> done{false};
     std::thread audio([&] {
         while (!done.load(std::memory_order_acquire)) {
-            c.set_block_time(XYController::clock_now_ns());
+            c.set_block_time(thl::core::uptime_ns());
             const TransportInfo t = rig.transport.next(64);
             rig.matrix->process(64, &t);
         }
         for (int i = 0; i < 8; ++i) {
-            c.set_block_time(XYController::clock_now_ns() + (100 * k_ms));
+            c.set_block_time(thl::core::uptime_ns() + (100 * k_ms));
             const TransportInfo t = rig.transport.next(64);
             rig.matrix->process(64, &t);
         }
@@ -196,14 +197,14 @@ TEST(XYControllerInput, ConcurrentTimedTouchesAndAudio) {
     std::mt19937 rng(3);
     std::uniform_real_distribution<float> pos(0.0f, 1.0f);
     for (int i = 0; i < 20000; ++i) {
-        const int64_t now = XYController::clock_now_ns();
+        const int64_t now = thl::core::uptime_ns();
         if (i % 50 == 49) {
             c.release(1, now);
         } else {
             c.touch(1, pos(rng), pos(rng), now);
         }
     }
-    c.release(1, XYController::clock_now_ns());
+    c.release(1, thl::core::uptime_ns());
     while (!c.flush()) { std::this_thread::yield(); }
     done.store(true, std::memory_order_release);
     audio.join();

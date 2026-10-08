@@ -1,6 +1,5 @@
 #include "tanh/modulation/XYController.h"
 
-#include <tanh/parameters/ModulationScope.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
@@ -10,7 +9,7 @@
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYFrame.h>
 #include <tanh/modulation/XYTypes.h>
-#include "XYPad.h"
+#include <tanh/parameters/ModulationScope.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -28,11 +27,7 @@
 #include <utility>
 #include <vector>
 
-#if defined(__APPLE__)
-#include <time.h>  // NOLINT(modernize-deprecated-headers): clock_gettime_nsec_np
-#else
-#include <chrono>
-#endif
+#include "XYPad.h"
 
 namespace thl::modulation {
 
@@ -413,19 +408,6 @@ std::span<const uint32_t> XYController::change_points(uint32_t voice) const
     TANH_NONBLOCKING_FUNCTION {
     const auto& v = *m_voices[voice];
     return {v.m_change_points.data(), v.m_num_change_points};
-}
-
-int64_t XYController::clock_now_ns() TANH_NONBLOCKING_FUNCTION {
-#if defined(__APPLE__)
-    // UIKit / AppKit event timestamps and AudioTimeStamp host times count
-    // uptime; libc++'s steady_clock counts sleep too (CLOCK_MONOTONIC_RAW).
-    return static_cast<int64_t>(
-        clock_gettime_nsec_np(CLOCK_UPTIME_RAW));  // NOLINT(misc-include-cleaner)
-#else
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-               std::chrono::steady_clock::now().time_since_epoch())
-        .count();
-#endif
 }
 
 void XYController::set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION {

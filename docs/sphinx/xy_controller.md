@@ -91,7 +91,7 @@ instead, and the block's callback time on the same clock:
 // UI thread (iOS: per coalesced UITouch, timestamp in seconds of uptime).
 pad.touch(id, x, y, std::llround(touch.timestamp * 1e9));
 // Audio thread, every block, before matrix.process().
-pad.set_block_time(thl::modulation::XYController::clock_now_ns());
+pad.set_block_time(thl::core::uptime_ns());
 ```
 
 - A touch plays at `time + m_input_delay_ms` (default one prepared block plus
@@ -100,7 +100,7 @@ pad.set_block_time(thl::modulation::XYController::clock_now_ns());
   finger stay sharp. The ramp covers the whole gap only while the delay exceeds
   one block plus the gap between moves (plus arrival jitter); otherwise x / y
   hold until the next move arrives.
-- `clock_now_ns()` is the uptime clock on Apple platforms (the clock of
+- `thl::core::uptime_ns()` (`tanh/core/Clock.h`) is the uptime clock on Apple platforms (the clock of
   `UITouch.timestamp`, `NSEvent.timestamp` and `AudioTimeStamp.mHostTime`) and
   `std::chrono::steady_clock` elsewhere. Any monotonic nanosecond clock works if
   both sides use it.

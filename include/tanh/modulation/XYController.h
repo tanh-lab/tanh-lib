@@ -171,12 +171,8 @@ public:
         voice_recorder(voice).read_lane(std::forward<F>(f));
     }
 
-    /// A monotonic clock in nanoseconds for touch and block times. On Apple
-    /// platforms it is the uptime clock (mach_absolute_time) of UITouch,
-    /// NSEvent and AudioTimeStamp host times; elsewhere std::chrono::steady_clock.
-    [[nodiscard]] static int64_t clock_now_ns() TANH_NONBLOCKING_FUNCTION;
     /// The time of the block's audio callback, on the clock of the touch
-    /// timestamps (any monotonic nanosecond clock, e.g. clock_now_ns()). Call
+    /// timestamps (any monotonic nanosecond clock, e.g. thl::core::uptime_ns()). Call
     /// once per block before matrix.process() to place timestamped touches; a
     /// block without it spreads its touches as if untimed.
     void set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION;

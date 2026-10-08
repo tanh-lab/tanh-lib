@@ -132,7 +132,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   late touches land at offset 0, later ones wait. x / y ramp linearly between timed
   moves (change point every `m_render_interval` samples); down, up and finger
   switches stay sharp. Untimed touches, or a block without a block time, spread as
-  before. `clock_now_ns()` is the Apple uptime clock (UITouch, NSEvent, host time),
+  before. `thl::core::uptime_ns()` (core) is the Apple uptime clock (UITouch, NSEvent, host time),
   elsewhere `steady_clock`. Tests: `XYControllerInput.*`, `XYPad.Timed*`.
 
 ### Changed

@@ -5,6 +5,7 @@
 
 #include "core/Buffer.h"
 #include "core/BufferView.h"
+#include "core/Clock.h"
 #include "core/Dispatcher.h"
 #include "core/Exports.h"
 #include "core/Logger.h"
