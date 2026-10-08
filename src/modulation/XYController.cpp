@@ -429,7 +429,7 @@ void XYController::process_block(const BlockContext& context) TANH_NONBLOCKING_F
     run(transport);
 }
 
-void XYController::run(const TransportInfo& transport) {
+void XYController::run(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION {
     // The block time places timestamped touches in this block only.
     m_run_time_ns.reset();
     if (m_block_time_fresh) { m_run_time_ns = m_block_time_ns; }
@@ -466,7 +466,7 @@ void XYController::run_voice(Voice& v,
                              uint32_t index,
                              const TransportInfo& transport,
                              bool latch_changed,
-                             bool ui) {
+                             bool ui) TANH_NONBLOCKING_FUNCTION {
     const uint32_t n = transport.m_num_samples;
     const bool latch = m_last_latch;
 

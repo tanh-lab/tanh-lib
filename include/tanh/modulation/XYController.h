@@ -214,12 +214,12 @@ private:
     void prepare(double sample_rate, size_t samples_per_block);
     // One matrix block.
     void process_block(const BlockContext& context) TANH_NONBLOCKING_FUNCTION;
-    void run(const thl::dsp::transport::TransportInfo& transport);
+    void run(const thl::dsp::transport::TransportInfo& transport) TANH_NONBLOCKING_FUNCTION;
     void run_voice(Voice& voice,
                    uint32_t index,
                    const thl::dsp::transport::TransportInfo& transport,
                    bool latch_changed,
-                   bool ui);
+                   bool ui) TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] uint32_t pick_voice(float x, float y) const;
 
     ModulationMatrix& m_matrix;
