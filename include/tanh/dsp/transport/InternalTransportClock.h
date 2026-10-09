@@ -2,6 +2,7 @@
 
 #include <tanh/dsp/transport/ContinuityTracker.h>
 #include <tanh/dsp/transport/TransportClock.h>
+#include <tanh/dsp/transport/detail/ClockRequests.h>
 
 #include <atomic>
 #include <cstdint>
@@ -68,13 +69,9 @@ private:
 
     // Written from any thread, read only inside begin_block
     std::atomic<double> m_pending_bpm{120.0};
-    std::atomic<int> m_pending_sig_num{4};
-    std::atomic<int> m_pending_sig_denom{4};
+    detail::AtomicTimeSignature m_time_signature;
     std::atomic<bool> m_playing{false};
-
-    // Seek — position written before flag to ensure visibility ordering
-    std::atomic<double> m_pending_position_beats{0.0};
-    std::atomic<bool> m_has_pending_position{false};
+    detail::PendingValue m_pending_position;
 };
 
 }  // namespace thl::dsp::transport

@@ -46,8 +46,9 @@ TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
     double bpm = m_fallback_bpm.load(std::memory_order_acquire);
     if (host.has(TransportInfo::k_has_tempo) && host.m_bpm >= k_min_bpm) { bpm = host.m_bpm; }
 
-    int num = m_fallback_sig_num.load(std::memory_order_acquire);
-    int den = m_fallback_sig_denom.load(std::memory_order_acquire);
+    const auto fallback_sig = m_fallback_time_signature.load();
+    int num = fallback_sig.m_num;
+    int den = fallback_sig.m_denom;
     if (host.has(TransportInfo::k_has_time_signature) && host.m_sig_num > 0 &&
         host.m_sig_denom > 0) {
         num = host.m_sig_num;
@@ -67,8 +68,8 @@ TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
     } else {
         // A seek is taken only here, so one made while the host supplied the beat
         // waits for the free-run instead of being dropped.
-        if (m_has_pending_position.exchange(false, std::memory_order_acq_rel)) {
-            m_free_anchor_beat = m_pending_position_beats.load(std::memory_order_acquire);
+        if (const auto beats = m_pending_position.take()) {
+            m_free_anchor_beat = *beats;
             m_free_samples = 0;
             m_free_bpm = bpm;
             m_free_valid = true;
@@ -102,9 +103,7 @@ void HostTransportClock::set_bpm(double bpm) {
 }
 
 void HostTransportClock::set_time_signature(int num, int denom) {
-    if (num <= 0 || denom <= 0) { return; }
-    m_fallback_sig_num.store(num, std::memory_order_release);
-    m_fallback_sig_denom.store(denom, std::memory_order_release);
+    m_fallback_time_signature.store(num, denom);
 }
 
 void HostTransportClock::play() {
@@ -116,8 +115,7 @@ void HostTransportClock::stop() {
 }
 
 void HostTransportClock::set_position_beats(double beats) {
-    m_pending_position_beats.store(beats, std::memory_order_release);
-    m_has_pending_position.store(true, std::memory_order_release);
+    m_pending_position.request(beats);
 }
 
 }  // namespace thl::dsp::transport

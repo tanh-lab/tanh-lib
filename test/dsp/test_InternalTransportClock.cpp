@@ -2,9 +2,11 @@
 #include <tanh/dsp/transport/InternalTransportClock.h>
 #include <tanh/dsp/transport/TransportClock.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <random>
+#include <thread>
 
 namespace {
 
@@ -296,6 +298,59 @@ TEST(InternalTransportClock, PrepareKeepsTheBeatAtANewSampleRate) {
     EXPECT_TRUE(std::isfinite(clk.beat_at_sample(512)));
     EXPECT_NEAR(clk.beat_at_sample(0), beat + (512.0 * 120.0 / (60.0 * 96000.0)), k_epsilon);
     clk.end_block();
+}
+
+// ── Any-thread setters ────────────────────────────────────────────────────────
+
+// A time signature set from another thread is seen whole, never half updated.
+TEST(InternalTransportClock, TimeSignatureIsNeverTorn) {
+    thl::dsp::transport::InternalTransportClock clk;
+    clk.prepare(k_sample_rate);
+    std::atomic<bool> done{false};
+    std::thread writer([&] {
+        while (!done.load(std::memory_order_relaxed)) {
+            clk.set_time_signature(4, 4);
+            clk.set_time_signature(7, 8);
+        }
+    });
+    int torn = 0;
+    for (int i = 0; i < 2000000; ++i) {
+        clk.begin_block(1);
+        const int num = clk.sig_num();
+        const int denom = clk.sig_denom();
+        torn += (num == 4 && denom == 4) || (num == 7 && denom == 8) ? 0 : 1;
+        clk.end_block();
+    }
+    done = true;
+    writer.join();
+    EXPECT_EQ(torn, 0);
+}
+
+// Every seek from another thread takes effect in one block only.
+TEST(InternalTransportClock, SeekAppliesOnce) {
+    thl::dsp::transport::InternalTransportClock clk;
+    clk.prepare(k_sample_rate);
+    clk.play();
+    std::atomic<bool> done{false};
+    std::thread writer([&] {
+        for (int k = 1; !done.load(std::memory_order_relaxed); ++k) {
+            clk.set_position_beats(1000.0 * k);
+        }
+    });
+    int twice = 0;
+    double last_target = -1.0;
+    for (int i = 0; i < 2000000; ++i) {
+        clk.begin_block(1);
+        if ((clk.block_info().m_flags & thl::dsp::transport::TransportInfo::k_jumped) != 0) {
+            const double target = clk.beat_at_sample(0);
+            twice += target == last_target ? 1 : 0;
+            last_target = target;
+        }
+        clk.end_block();
+    }
+    done = true;
+    writer.join();
+    EXPECT_EQ(twice, 0);
 }
 
 }  // namespace

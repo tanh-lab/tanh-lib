@@ -86,8 +86,8 @@ void LinkTransportClock::follow_epoch(int64_t t0) TANH_NONBLOCKING_FUNCTION {
 LinkState LinkTransportClock::apply_requests(int64_t t0, double quantum) TANH_NONBLOCKING_FUNCTION {
     LinkState state = m_backend.state();
     bool dirty = false;
-    if (m_has_pending_bpm.exchange(false, std::memory_order_acq_rel)) {
-        m_backend.set_tempo(m_pending_bpm.load(std::memory_order_acquire), t0);
+    if (const auto bpm = m_pending_bpm.take()) {
+        m_backend.set_tempo(*bpm, t0);
         dirty = true;
     }
     const int play_request = m_pending_play.exchange(0, std::memory_order_acq_rel);
@@ -99,10 +99,8 @@ LinkState LinkTransportClock::apply_requests(int64_t t0, double quantum) TANH_NO
         m_backend.set_playing(false, t0);
         dirty = true;
     }
-    if (m_has_pending_position.exchange(false, std::memory_order_acq_rel)) {
-        m_backend.request_beat_at(m_pending_position_beats.load(std::memory_order_acquire),
-                                  t0,
-                                  quantum);
+    if (const auto beats = m_pending_position.take()) {
+        m_backend.request_beat_at(*beats, t0, quantum);
         dirty = true;
     }
     if (!dirty) { return state; }
@@ -133,8 +131,9 @@ TransportInfo LinkTransportClock::compute_block(uint32_t frame_count) {
                    TransportInfo::k_has_time_signature;
     if (playing) { info.m_flags |= TransportInfo::k_is_playing; }
     info.m_bpm = state.m_tempo;
-    info.m_sig_num = m_sig_num.load(std::memory_order_relaxed);
-    info.m_sig_denom = m_sig_denom.load(std::memory_order_relaxed);
+    const auto sig = m_time_signature.load();
+    info.m_sig_num = sig.m_num;
+    info.m_sig_denom = sig.m_denom;
     info.m_beat_position = b0;
 
     // While armed a join's realignment must not be absorbed as a peer's tempo
@@ -149,14 +148,11 @@ TransportInfo LinkTransportClock::compute_block(uint32_t frame_count) {
 }
 
 void LinkTransportClock::set_bpm(double bpm) {
-    m_pending_bpm.store(std::max(bpm, k_min_bpm), std::memory_order_release);
-    m_has_pending_bpm.store(true, std::memory_order_release);
+    m_pending_bpm.request(std::max(bpm, k_min_bpm));
 }
 
 void LinkTransportClock::set_time_signature(int num, int denom) {
-    if (num <= 0 || denom <= 0) { return; }
-    m_sig_num.store(num, std::memory_order_relaxed);
-    m_sig_denom.store(denom, std::memory_order_relaxed);
+    m_time_signature.store(num, denom);
 }
 
 void LinkTransportClock::play() {
@@ -168,8 +164,7 @@ void LinkTransportClock::stop() {
 }
 
 void LinkTransportClock::set_position_beats(double beats) {
-    m_pending_position_beats.store(beats, std::memory_order_release);
-    m_has_pending_position.store(true, std::memory_order_release);
+    m_pending_position.request(beats);
 }
 
 }  // namespace thl::dsp::transport

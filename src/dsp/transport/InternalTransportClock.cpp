@@ -33,8 +33,7 @@ TransportInfo InternalTransportClock::compute_block(uint32_t frame_count) {
     // Latch — changes from any thread take effect here, never mid-block
     m_active_playing = m_playing.load(std::memory_order_acquire);
     const double new_bpm = m_pending_bpm.load(std::memory_order_acquire);
-    const int sig_num = m_pending_sig_num.load(std::memory_order_acquire);
-    const int sig_denom = m_pending_sig_denom.load(std::memory_order_acquire);
+    const auto sig = m_time_signature.load();
 
     // Tempo change: keep the beat continuous by anchoring at the current
     // position before the slope changes.
@@ -45,10 +44,8 @@ TransportInfo InternalTransportClock::compute_block(uint32_t frame_count) {
     }
     m_active_beats_per_sample = m_active_bpm / (60.0 * m_sample_rate);
 
-    // Seek — flag read last so position is visible before we act on it
-    if (m_has_pending_position.exchange(false, std::memory_order_acq_rel)) {
-        const double beats = m_pending_position_beats.load(std::memory_order_acquire);
-        const double clamped = std::max(0.0, beats);
+    if (const auto beats = m_pending_position.take()) {
+        const double clamped = std::max(0.0, *beats);
         m_timeline_samples = static_cast<uint64_t>(clamped * 60.0 * m_sample_rate / m_active_bpm);
         m_anchor_beat = clamped;
         m_anchor_sample = m_timeline_samples;
@@ -60,8 +57,8 @@ TransportInfo InternalTransportClock::compute_block(uint32_t frame_count) {
                    TransportInfo::k_has_time_signature;
     if (m_active_playing) { info.m_flags |= TransportInfo::k_is_playing; }
     info.m_bpm = m_active_bpm;
-    info.m_sig_num = sig_num;
-    info.m_sig_denom = sig_denom;
+    info.m_sig_num = sig.m_num;
+    info.m_sig_denom = sig.m_denom;
     info.m_beat_position = raw_beat(0);
     m_tracker.resolve(info, raw_beat(frame_count), frame_count);
     return info;
@@ -80,8 +77,7 @@ void InternalTransportClock::set_bpm(double bpm) {
 }
 
 void InternalTransportClock::set_time_signature(int num, int denom) {
-    m_pending_sig_num.store(num, std::memory_order_release);
-    m_pending_sig_denom.store(denom, std::memory_order_release);
+    m_time_signature.store(num, denom);
 }
 
 void InternalTransportClock::play() {
@@ -93,9 +89,7 @@ void InternalTransportClock::stop() {
 }
 
 void InternalTransportClock::set_position_beats(double beats) {
-    m_pending_position_beats.store(beats, std::memory_order_release);
-    // Flag written last — position must be visible before the audio thread acts on it
-    m_has_pending_position.store(true, std::memory_order_release);
+    m_pending_position.request(beats);
 }
 
 }  // namespace thl::dsp::transport

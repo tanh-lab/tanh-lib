@@ -5,6 +5,7 @@
 #include <tanh/dsp/transport/LinkBackend.h>
 #include <tanh/dsp/transport/TransportClock.h>
 #include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/dsp/transport/detail/ClockRequests.h>
 
 #include <atomic>
 #include <cstdint>
@@ -96,13 +97,10 @@ private:
     HostTimeFilter m_host_time_filter;
 
     std::atomic<uint32_t> m_latency_samples{0};
-    std::atomic<double> m_pending_bpm{120.0};
-    std::atomic<bool> m_has_pending_bpm{false};
+    detail::PendingValue m_pending_bpm;
     std::atomic<int> m_pending_play{0};  // 0 none, 1 play, -1 stop
-    std::atomic<double> m_pending_position_beats{0.0};
-    std::atomic<bool> m_has_pending_position{false};
-    std::atomic<int> m_sig_num{4};
-    std::atomic<int> m_sig_denom{4};
+    detail::PendingValue m_pending_position;
+    detail::AtomicTimeSignature m_time_signature;
 };
 
 }  // namespace thl::dsp::transport

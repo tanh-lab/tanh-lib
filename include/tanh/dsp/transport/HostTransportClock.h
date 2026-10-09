@@ -3,6 +3,7 @@
 #include <tanh/dsp/transport/ContinuityTracker.h>
 #include <tanh/dsp/transport/TransportClock.h>
 #include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/dsp/transport/detail/ClockRequests.h>
 
 #include <atomic>
 #include <cstdint>
@@ -65,11 +66,9 @@ private:
     bool m_free_valid = false;    // false: re-anchor at the previous block's end
 
     std::atomic<double> m_fallback_bpm{120.0};
-    std::atomic<int> m_fallback_sig_num{4};
-    std::atomic<int> m_fallback_sig_denom{4};
+    detail::AtomicTimeSignature m_fallback_time_signature;
     std::atomic<bool> m_fallback_playing{false};
-    std::atomic<double> m_pending_position_beats{0.0};
-    std::atomic<bool> m_has_pending_position{false};
+    detail::PendingValue m_pending_position;
 };
 
 }  // namespace thl::dsp::transport
