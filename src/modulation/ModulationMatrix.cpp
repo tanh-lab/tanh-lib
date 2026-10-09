@@ -301,13 +301,12 @@ thl::modulation::ModulationScope ModulationMatrix::resolve_parameter_scope_with_
 }
 
 void ModulationMatrix::prepare(double sample_rate, size_t samples_per_block) {
-    // See the threading contract on the header declaration: same-size and
-    // growing prepares are safe under concurrent process_with_scope(); shrinking
-    // prepares require quiescing the audio thread first.
+    // Audio must be stopped (see the threading contract on the declaration).
     std::scoped_lock const lock(m_writer_mutex);
 
     m_sample_rate = sample_rate;
     m_samples_per_block = samples_per_block;
+    m_prepared = true;
 
     // Reset the global sample counter. The freshly-built ResolvedRoutings in
     // rebuild_schedule_with_lock() default m_active_phase_start /
@@ -427,9 +426,7 @@ void ModulationMatrix::add_source(const std::string_view id, ModulationSource* s
     // If the matrix has already been prepared, immediately prepare the source
     // so its m_num_voices is populated. Without this, a source registered
     // after matrix.prepare() stays at 0 voices until the next scope resize.
-    if (m_sample_rate > 0.0) {
-        source->prepare(m_sample_rate, m_samples_per_block, voice_count(declared));
-    }
+    if (m_prepared) { source->prepare(m_sample_rate, m_samples_per_block, voice_count(declared)); }
 
     auto it = m_sources.find(id);
     if (it != m_sources.end()) {
@@ -445,7 +442,7 @@ void ModulationMatrix::add_block_processor(BlockProcessor& processor) {
     std::scoped_lock const lock(m_writer_mutex);
     if (std::ranges::find(m_block_processors, &processor) != m_block_processors.end()) { return; }
     // Prepared before it is published, like a source added after prepare().
-    if (m_sample_rate > 0.0) { processor.prepare(m_sample_rate, m_samples_per_block); }
+    if (m_prepared) { processor.prepare(m_sample_rate, m_samples_per_block); }
     m_block_processors.push_back(&processor);
     rebuild_schedule_with_lock();
 }

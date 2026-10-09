@@ -128,6 +128,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `SmartHandle<T>` reads the base value through the backend's atomic: it is built
   from `(std::atomic<T>*, ResolvedTarget*)`, and the metadata accessors and
   `load_normalized()` assert on a handle without a target.
+- `ModulationMatrix::prepare()` needs audio stopped, as a host's `prepareToPlay`
+  does: it re-prepares every source and block processor and resets the sample
+  counter. A same-size `prepare()` during audio was documented as safe but raced
+  that state. Sources and block processors added before the first `prepare()` are
+  prepared by it, not at once with a default rate and size.
 - `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
   (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
 
@@ -146,6 +151,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   trusts its play flag only with tempo, beat or time signature. Tests:
   `HostTransportClockTempoMap.*`, `LinkTransportClock.JoinRealignmentAfterTheEpochResets`,
   `HostTransportClock.SeekWhileHostSuppliesBeatWaitsForFreeRun`.
+- Clocks: a block that continues the previous one starts exactly at its end, so a
+  division boundary on a block edge counts once (it could count twice or not at
+  all with a host's sample-derived ppq); the time signature is set in one atomic,
+  never seen half updated; a seek or tempo request is taken once (it could apply
+  in two blocks); `InternalTransportClock::prepare()` keeps the beat at a new sample
+  rate. Tests: `HostTransportClock.DivisionsOnBlockEdgesCountOnce`,
+  `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate}`.
+- `MotionRecorder`: `LoopEnd::Jump` also leaves a new take's seam open while it plays
+  from its take buffer; a take that was never touched keeps nothing, also when it
+  reaches its length, and the old lane plays on; a lane deleted by a dropped take
+  stays muted through a later cancelled take. Tests:
+  `MotionRecorderSmoothing.LoopEndJumpLeavesANewTakeUnblended`,
+  `MotionRecorderTakes.{UntouchedTakeAtItsLengthKeepsTheLane,DroppedLaneStaysMutedThroughACancelledTake}`.
+- `XYController`: the trail keeps its spacing across blocks shorter than the trail
+  interval; a reset that closes a latched gate adds a change point at sample 0.
+  Tests: `XYFramePublisher.TrailKeepsItsSpacingAcrossShortBlocks`,
+  `XYController.LatchKeepsTheGateOpenUntilTurnedOff`.
 - `XYController`: a repeated `prepare()` re-prepares the recorders; a take published
   by `service()` during a block no longer switches that block to the older lane it
   still reads. Tests: `MotionRecorderThreads.ConcurrentServiceKeepsTheHandoffSilent`.

@@ -107,18 +107,11 @@ public:
     // barrier so in-flight audio blocks always see either the old or the new
     // buffer in full, never a torn mid-resize state.
     //
-    // Threading contract:
-    // - Same-size prepare (same samples_per_block) is safe to call concurrently
-    //   with process_with_scope(). The routing-churn race is closed by the flag
-    //   guards on every target-buffer access.
-    // - Shrinking prepare (new samples_per_block < the num_samples the audio
-    //   thread is currently calling process_with_scope() with) is NOT safe. The
-    //   apply_routing_* loops iterate over num_samples, which may now exceed
-    //   the newly-published m_block_size and write OOB into buffer storage.
-    //   Callers must quiesce audio — stop the driver, or call prepare() from
-    //   the driver's own reconfiguration callback — before reducing block
-    //   size. Growing prepare is safe because the old num_samples fits the
-    //   new larger storage.
+    // Threading contract: call with audio stopped (stop the driver, or call it
+    // from the driver's own reconfiguration callback, like a host's
+    // prepareToPlay). prepare() re-prepares every source and block processor
+    // and resets the sample counter, all audio-thread state. Routing and
+    // source changes stay safe while audio runs.
     void prepare(double sample_rate, size_t samples_per_block);
 
     using ConfigRCU = thl::RCU<ProcessingConfig>;
@@ -224,7 +217,7 @@ public:
     void set_voice_count(ModulationScope scope, uint32_t voice_count);
 
     /// Block processors: run once per block before any source (BlockProcessor.h).
-    /// add_block_processor() prepares @p processor if the matrix is prepared.
+    /// add_block_processor() prepares @p processor if prepare() was called.
     /// remove_block_processor() blocks until the audio thread no longer uses it.
     /// The processor must stay alive while registered.
     void add_block_processor(BlockProcessor& processor);
@@ -391,6 +384,7 @@ private:
 
     double m_sample_rate = 48000.0;
     size_t m_samples_per_block = 512;
+    bool m_prepared = false;  // prepare() was called
 
     // Monotonic count of samples processed since the last prepare(). Read
     // and advanced from the RT thread inside process_with_scope; reset to 0
