@@ -32,8 +32,12 @@ void XYFramePublisher::add_trail(uint8_t voice,
                                  uint32_t num_samples,
                                  float progress,
                                  uint32_t& countdown) TANH_NONBLOCKING_FUNCTION {
+    if (countdown >= num_samples) {  // the next point is in a later block
+        countdown -= num_samples;
+        return;
+    }
     // Drop-oldest when the UI does not drain.
-    uint32_t i = std::min(countdown, num_samples);
+    uint32_t i = countdown;
     for (; i < num_samples; i += m_trail_interval) {
         const XYPathPoint p{.m_x = x[i],
                             .m_y = y[i],

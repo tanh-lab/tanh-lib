@@ -5,6 +5,7 @@
 #include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/modulation/XYController.h>
+#include <tanh/modulation/detail/XYFramePublisher.h>
 
 #include <algorithm>
 #include <array>
@@ -617,4 +618,20 @@ TEST(XYController, TrailDropsOldestNotBlocks) {
     EXPECT_GE(pts[n - 1].m_progress, pts[0].m_progress);
     std::vector<XYPathPoint> none(4);
     EXPECT_EQ(ref.drain_trail(none), 0u);
+}
+
+// Blocks shorter than the trail interval keep the trail interval's spacing.
+TEST(XYFramePublisher, TrailKeepsItsSpacingAcrossShortBlocks) {
+    auto publisher = std::make_unique<detail::XYFramePublisher>();
+    publisher->prepare(k_sr, 60.0, 64);
+    std::array<float, 16> x{};
+    std::array<float, 16> y{};
+    std::array<uint8_t, 16> gate{};
+    gate.fill(1);
+    uint32_t countdown = 0;
+    for (int block = 0; block < 64; ++block) {  // 1024 samples in 16-sample blocks
+        publisher->add_trail(0, x.data(), y.data(), gate.data(), 16, 0.0f, countdown);
+    }
+    std::array<XYPathPoint, 256> points{};
+    EXPECT_EQ(publisher->drain(points), 16u);  // one every 64 samples
 }
