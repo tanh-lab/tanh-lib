@@ -229,3 +229,26 @@ TEST(MotionRecorderSmoothing, LoopEndChangeRepublishesAndGlides) {
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, id);
     EXPECT_LT(motion_test::max_sample_step(r.m_x, from, from + 2000), 0.002);
 }
+
+// Jump also leaves a new take's seam open while it plays from its take buffer.
+TEST(MotionRecorderSmoothing, LoopEndJumpLeavesANewTakeUnblended) {
+    Rig r(256);
+    r.m_rec.set_loop_end(LoopEnd::Jump);
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    const uint64_t begin = r.now();
+    const auto total = static_cast<uint64_t>(motion_test::k_sr);
+    while (r.now() < begin + total) {
+        const double u = static_cast<double>(r.now() - begin) / static_cast<double>(total);
+        r.m_pad.touch(1, static_cast<float>(0.3 + (0.2 * u)), 0.5f);
+        r.step();
+    }
+    r.m_pad.release(1);
+    r.step();
+    const size_t from = r.m_x.size();
+    r.run_until(r.now() + (2 * total));  // no service(): plays from the take buffer
+    float edge = 0.0f;                   // largest change within 480 samples
+    for (size_t i = from + 480; i < r.m_x.size(); ++i) {
+        edge = std::max(edge, std::abs(r.m_x[i] - r.m_x[i - 480]));
+    }
+    EXPECT_GT(edge, 0.15f);  // 0.5 to 0.3 at the wrap
+}

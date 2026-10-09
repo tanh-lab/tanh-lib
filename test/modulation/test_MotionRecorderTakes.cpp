@@ -125,3 +125,51 @@ TEST(MotionRecorderTakes, UndoAndRedoATakeAndAClear) {
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, r.m_rec.lane().m_take_id);
     EXPECT_EQ(r.m_rec.lane_version(), version);
 }
+
+// A take that reaches its length untouched keeps nothing: the lane plays on.
+TEST(MotionRecorderTakes, UntouchedTakeAtItsLengthKeepsTheLane) {
+    for (const bool bar_aligned : {false, true}) {
+        Rig r(256, 120.0, bar_aligned ? aligned() : MotionRecorderConfig{});
+        start(r);
+        const uint32_t kept = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
+        ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
+        r.run_until(r.now() + (3 * k_bar));
+        EXPECT_NE(r.m_rec.snapshot().m_state, MotionState::Recording) << bar_aligned;
+        EXPECT_FALSE(r.m_rec.service()) << bar_aligned;
+        EXPECT_EQ(r.m_rec.lane().m_take_id, kept) << bar_aligned;
+        EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept) << bar_aligned;
+
+        // Disarmed untouched: the same.
+        ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
+        r.run_until(r.now() + k_beat);
+        ASSERT_TRUE(r.m_rec.disarm());
+        r.step();
+        EXPECT_FALSE(r.m_rec.service()) << bar_aligned;
+        EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept) << bar_aligned;
+    }
+}
+
+// A dropped take deletes the lane it replaced, also when an untouched take
+// is recorded and cancelled before service() clears it.
+TEST(MotionRecorderTakes, DroppedLaneStaysMutedThroughACancelledTake) {
+    Rig r(256, 120.0, aligned());
+    start(r);
+    r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
+    r.run_until(r.now() + k_beat);
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    r.m_pad.touch(1, 0.3f, 0.3f);
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    r.m_pad.release(1);
+    r.step();  // too short: dropped, the lane it replaced is gone
+    ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    ASSERT_TRUE(r.m_rec.disarm());  // untouched: cancelled
+    r.step();
+    const size_t from = r.m_gate.size();
+    r.run_until(r.now() + k_beat);
+    for (size_t i = from; i < r.m_gate.size(); ++i) { ASSERT_EQ(r.m_gate[i], 0) << i; }
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_TRUE(r.m_rec.lane().empty());
+}

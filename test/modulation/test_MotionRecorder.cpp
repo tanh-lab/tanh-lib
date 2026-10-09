@@ -853,6 +853,7 @@ TEST(MotionRecorder, PlaybackLengthSpeedsUpABarTake) {
     Rig r(256);
     r.play_at(0);
     EXPECT_TRUE(r.m_rec.record(LoopLength::Bars2));
+    r.m_pad.touch(1, 0.5f, 0.5f);
     r.run_until(4 * 96000);  // the 2-bar take and some playback
     r.m_rec.service();
     EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 8.0);

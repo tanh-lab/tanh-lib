@@ -304,6 +304,8 @@ MotionTakeWriter::Outcome MotionTakeWriter::finish(double bpm, uint32_t trim_sam
             k.m_count = k.m_count_at_change;
         }
     }
+    // Never touched: nothing to keep, the lane it replaced plays on.
+    if (!k.m_saw_touch) { return drop(Outcome::Cancelled); }
     if (k.m_snap) { trim_still_ends(); }
     const bool complete = k.m_aligned ? k.m_count == k.m_target
                           : k.m_bar   ? k.m_count == k.m_capacity
@@ -363,9 +365,9 @@ MotionTakeWriter::Outcome MotionTakeWriter::finish(double bpm, uint32_t trim_sam
 MotionTakeWriter::Outcome MotionTakeWriter::end(double bpm) TANH_NONBLOCKING_FUNCTION {
     const Take& k = m_take;
     if (!k.m_active) { return Outcome::Running; }
-    if (k.m_snap) { return k.m_saw_touch ? finish(bpm) : drop(Outcome::Cancelled); }
-    if (!k.m_aligned) { return k.m_bar ? drop(Outcome::Dropped) : finish(bpm); }
     if (!k.m_saw_touch) { return drop(Outcome::Cancelled); }
+    if (k.m_snap) { return finish(bpm); }
+    if (!k.m_aligned) { return k.m_bar ? drop(Outcome::Dropped) : finish(bpm); }
     while (k.m_count < k.m_target) { write_point(k.m_last_x, k.m_last_y, 0); }
     return finish(bpm);
 }

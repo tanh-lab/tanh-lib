@@ -68,6 +68,8 @@ cannot feed back as a fake touch.
   lane: the old lane stops, and stays deleted if the take is dropped.
 - `disarm()`: cancel arming. A running free take finishes and plays; a running
   bar take is dropped.
+- A take that was never touched keeps nothing, also when it reaches its length:
+  the old lane plays on.
 - With `MotionRecorderConfig::m_bar_aligned_takes`, every take is a Beats lane
   of whole bars:
   - `BarsN` starts on the bar line at or before its first touch (the time

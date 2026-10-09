@@ -57,7 +57,8 @@ enum class StoppedTransport : uint8_t {
  *
  * A new take replaces the playing lane from its first sample: the old lane
  * stops playing, and if the take is then dropped (a cancelled bar take, a take
- * too short to keep) service() clears it.
+ * too short to keep) service() clears it. A take that was never touched keeps
+ * nothing and the old lane plays on.
  *
  * service() publishes the raw take and plays a copy whose seam is closed and
  * which is smoothed by set_smoothing(). Every publication can be undone once
@@ -116,8 +117,9 @@ public:
     /// with m_bar_aligned_takes still starts its points at the first touch).
     [[nodiscard]] bool record(LoopLength length);
     /// Cancel arming. A running free take ends there and plays; a bar-aligned
-    /// BarsN take is padded to its loop. A take that was never touched, and a
-    /// running bar take without m_bar_aligned_takes, is dropped.
+    /// BarsN take is padded to its loop; a running bar take without
+    /// m_bar_aligned_takes is dropped. A take that was never touched keeps
+    /// nothing and the old lane plays on.
     [[nodiscard]] bool disarm();
     /// Enable playback (the default).
     [[nodiscard]] bool play();

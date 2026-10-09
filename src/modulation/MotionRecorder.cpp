@@ -546,9 +546,14 @@ void MotionRecorder::on_take(TakeOutcome outcome) {
             }
             return;
         case TakeOutcome::Cancelled:
-            // Nothing recorded: the replaced lane plays on from the clock.
+            // Nothing recorded: the replaced lane plays on from the clock, unless
+            // an earlier dropped take deleted it and service() has not cleared it yet.
             m_armed = false;
             m_force_start = false;
+            if (m_replaced_take_id != 0 &&
+                m_clear_request.load(std::memory_order_relaxed) == m_replaced_take_id) {
+                return;
+            }
             if (m_replaced_take_id != 0) { m_need_phase = true; }
             m_replaced_take_id = 0;
             return;
@@ -582,6 +587,7 @@ void MotionRecorder::process(const TransportInfo& t,
 
     apply_commands(bpm);
     apply_shapes();
+    m_takes.set_loop_end(m_loop_end.load(std::memory_order_relaxed));
 
     const auto scope = m_lanes.read_scope(m_audio_reader);
     const PlayedLane& lane = scope.data();
