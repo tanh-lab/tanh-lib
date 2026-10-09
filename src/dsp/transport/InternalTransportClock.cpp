@@ -11,7 +11,17 @@ namespace thl::dsp::transport {
 // ── Main thread ───────────────────────────────────────────────────────────────
 
 void InternalTransportClock::on_prepare(double sample_rate) {
+    if (!(sample_rate > 0.0)) { return; }
+    // Keep the beat: re-anchor where the next block would start, then count
+    // samples at the new rate from there.
+    m_anchor_beat =
+        m_anchor_beat + (static_cast<double>(m_timeline_samples + m_advance - m_anchor_sample) *
+                         m_active_beats_per_sample);
+    m_timeline_samples = 0;
+    m_anchor_sample = 0;
+    m_advance = 0;
     m_sample_rate = sample_rate;
+    m_active_beats_per_sample = m_active_bpm / (60.0 * m_sample_rate);
     m_tracker.prepare(sample_rate);
 }
 

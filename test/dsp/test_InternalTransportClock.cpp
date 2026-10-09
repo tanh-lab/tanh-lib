@@ -275,4 +275,27 @@ TEST(InternalTransportClock, VariableBlockSizeAccuracy) {
     }
 }
 
+// ── Re-prepare ────────────────────────────────────────────────────────────────
+
+// A new sample rate keeps the beat and its tempo; an invalid one is ignored.
+TEST(InternalTransportClock, PrepareKeepsTheBeatAtANewSampleRate) {
+    thl::dsp::transport::InternalTransportClock clk;
+    clk.prepare(k_sample_rate);
+    clk.play();
+    for (int i = 0; i < 186; ++i) { tick(clk); }  // 95232 samples: beat 3.968
+    const double beat = 186.0 * 512.0 * 120.0 / (60.0 * k_sample_rate);
+
+    clk.prepare(96000.0);
+    clk.begin_block(512);
+    EXPECT_NEAR(clk.beat_at_sample(0), beat, k_epsilon);
+    EXPECT_NEAR(clk.beat_at_sample(512), beat + (512.0 * 120.0 / (60.0 * 96000.0)), k_epsilon);
+    clk.end_block();
+
+    clk.prepare(0.0);
+    clk.begin_block(512);
+    EXPECT_TRUE(std::isfinite(clk.beat_at_sample(512)));
+    EXPECT_NEAR(clk.beat_at_sample(0), beat + (512.0 * 120.0 / (60.0 * 96000.0)), k_epsilon);
+    clk.end_block();
+}
+
 }  // namespace

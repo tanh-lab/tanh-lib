@@ -21,7 +21,8 @@ namespace thl::dsp::transport {
  *
  * A tempo change keeps the beat continuous. block_info() reports seeks as
  * k_jumped, play/stop as k_started/k_stopped, tempo changes as k_tempo_changed
- * and the first block after prepare() as k_timeline_reset.
+ * and the first block after prepare() as k_timeline_reset. prepare() keeps the
+ * beat, also at a new sample rate.
  *
  * Drop-in replaceable with HostTransportClock or LinkTransportClock via the
  * TransportClock interface.
