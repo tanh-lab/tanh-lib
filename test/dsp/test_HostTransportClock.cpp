@@ -429,3 +429,31 @@ TEST(HostTransportClock, AudioPathIsRealtimeSafe) {
     }
     EXPECT_GT(acc, 0.0);
 }
+
+// A host that derives its ppq from the sample position: every sixteenth on a
+// block edge counts exactly once.
+TEST(HostTransportClock, DivisionsOnBlockEdgesCountOnce) {
+    for (const double bpm : {90.0, 120.0, 137.0}) {
+        for (const uint32_t frames : {32u, 64u, 100u}) {
+            HostTransportClock clk;
+            clk.prepare(k_sr);
+            TransportInfo host;
+            host.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
+                           TransportInfo::k_is_playing;
+            host.m_bpm = bpm;
+            const int blocks = 20000;
+            int hits = 0;
+            for (int b = 0; b < blocks; ++b) {
+                host.m_beat_position = static_cast<double>(b) * frames * bps(bpm);
+                clk.set_host_info(host);
+                clk.begin_block(frames);
+                hits += clk.division_in_block(Division::Sixteenth) ? 1 : 0;
+                clk.end_block();
+            }
+            // Boundaries in [0, end): one per quarter beat (a block holds at most one).
+            const double end = static_cast<double>(blocks) * frames * bps(bpm);
+            const auto expected = static_cast<int>(std::ceil(end * 4.0));
+            EXPECT_EQ(hits, expected) << bpm << " bpm, " << frames << " frames";
+        }
+    }
+}

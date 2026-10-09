@@ -11,10 +11,6 @@ namespace thl::dsp::transport {
 
 namespace {
 
-// Below this the raw beat is taken as is: exact clocks (internal, free-run)
-// differ from the predicted end only by rounding, and snapping would move them
-// off their closed form.
-constexpr double k_exact_epsilon = 1e-9;
 constexpr double k_min_tolerance = 1e-6;
 constexpr double k_tempo_epsilon = 1e-6;
 
@@ -80,8 +76,10 @@ void ContinuityTracker::resolve(TransportInfo& io,
         if (delta < low || delta > high) {
             io.m_flags |= TransportInfo::k_jumped;
             io.m_jump_delta_beats = delta;
-        } else if (std::abs(delta) > k_exact_epsilon) {
-            // Keep the timeline continuous. A holding source holds at the
+        } else {
+            // Keep the timeline continuous, also across rounding: the start is
+            // exactly the previous block's beat_end(), so a division boundary on
+            // the edge falls in one block only. A holding source holds at the
             // expected beat; a moving one is re-sloped to land on its raw end,
             // so the difference is caught up within this block and nothing
             // accumulates.
@@ -99,7 +97,7 @@ void ContinuityTracker::resolve(TransportInfo& io,
     io.m_beat_position = start;
     io.m_beats_per_sample = frames > 0 ? (end - start) / static_cast<double>(frames) : 0.0;
 
-    m_prev_end = frames > 0 ? end : start;
+    m_prev_end = io.beat_end();
     m_prev_frames = static_cast<double>(frames);
     m_prev_moving = frames > 0 && end != start;
     m_prev_bpm = io.m_bpm;
