@@ -304,9 +304,12 @@ TEST(XYController, LatchKeepsTheGateOpenUntilTurnedOff) {
     e.block(cs);
     c.release(2);
     e.block(cs);
-    c.reset();  // host reset closes a latched gate
+    c.reset();  // host reset closes a latched gate, from sample 0
     e.block(cs);
     EXPECT_FLOAT_EQ(wet.load(k_bs - 1), 0.3f);
+    EXPECT_FLOAT_EQ(wet.load(0), 0.3f);
+    ASSERT_FALSE(c.change_points(0).empty());
+    EXPECT_EQ(c.change_points(0).front(), 0u);
 }
 
 TEST(XYController, TouchGrabsTheNearestEnabledDotAndMovesOnlyThatVoice) {

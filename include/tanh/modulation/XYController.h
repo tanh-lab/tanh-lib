@@ -218,7 +218,7 @@ private:
     void run_voice(Voice& voice,
                    uint32_t index,
                    const thl::dsp::transport::TransportInfo& transport,
-                   bool latch_changed,
+                   bool gate_may_close,
                    bool ui) TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] uint32_t pick_voice(float x, float y) const;
 

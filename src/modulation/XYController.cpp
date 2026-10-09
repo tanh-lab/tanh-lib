@@ -442,7 +442,8 @@ void XYController::run(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION
     ++m_blocks_driven;
 
     TransportInfo t = transport;
-    if (m_reset_pending) {
+    const bool reset = m_reset_pending;
+    if (reset) {
         t.m_flags |= TransportInfo::k_timeline_reset;
         m_reset_pending = false;
     }
@@ -451,12 +452,13 @@ void XYController::run(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION
     m_num_samples = n;
 
     const bool latch = m_latch.load(std::memory_order_relaxed);
-    const bool latch_changed = latch != m_last_latch;
+    // A latch change or a reset can close a latched gate at sample 0.
+    const bool gate_may_close = reset || latch != m_last_latch;
     m_last_latch = latch;
     const bool ui = m_ui_attached.load(std::memory_order_relaxed);
 
     for (uint32_t i = 0; i < m_num_voices; ++i) {
-        run_voice(*m_voices[i], i, t, latch_changed, ui);
+        run_voice(*m_voices[i], i, t, gate_may_close, ui);
     }
     m_sample_time += n;
     if (ui) { m_frames.publish(m_sample_time, m_num_voices, m_last_latch, n); }
@@ -465,7 +467,7 @@ void XYController::run(const TransportInfo& transport) TANH_NONBLOCKING_FUNCTION
 void XYController::run_voice(Voice& v,
                              uint32_t index,
                              const TransportInfo& transport,
-                             bool latch_changed,
+                             bool gate_may_close,
                              bool ui) TANH_NONBLOCKING_FUNCTION {
     const uint32_t n = transport.m_num_samples;
     const bool latch = m_last_latch;
@@ -488,10 +490,11 @@ void XYController::run_voice(Voice& v,
         v.m_layer[i] = l ? XYLayer::Touch : (g ? XYLayer::Motion : XYLayer::None);
     }
 
-    // The recorder's change points, plus offset 0 when the latch flag changed.
+    // The recorder's change points, plus offset 0 when the latch flag changed
+    // or a reset released the latch.
     const auto cps = v.m_recorder.change_points();
     size_t k = 0;
-    if (latch_changed && (cps.empty() || cps.front() != 0)) { v.m_change_points[k++] = 0; }
+    if (gate_may_close && (cps.empty() || cps.front() != 0)) { v.m_change_points[k++] = 0; }
     for (const uint32_t cp : cps) {
         if (k < v.m_change_points.size()) { v.m_change_points[k++] = cp; }
     }
