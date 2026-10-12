@@ -205,6 +205,12 @@ void Graph::prepare(const double& sample_rate,
     m_num_channels = num_channels;
     for (auto& [id, node] : m_nodes) { prepare_node(*node); }
     commit();
+
+    switch_to_pending();
+    m_fade.reset(m_sample_rate, k_fade_seconds);
+    m_fade.set_current_and_target_value(1.0f);
+    m_fade_samples = static_cast<size_t>(k_fade_seconds * m_sample_rate) + 1;
+    m_fading_out = false;
 }
 
 void Graph::prepare_node(Node& node) const {
@@ -349,12 +355,41 @@ void Graph::free_all_compiled() {
 // Processing
 // ─────────────────────────────────────────────────────────────────────────────
 
-void Graph::take_pending() {
-    if (m_pending.load(std::memory_order_acquire) == nullptr) { return; }
+bool Graph::switch_to_pending() {
+    if (m_pending.load(std::memory_order_acquire) == nullptr) { return false; }
 
     // If the control thread has not emptied m_returned yet, switch at a later block instead.
-    if (m_active != nullptr && !m_returned.try_push(m_active)) { return; }
+    if (m_active != nullptr && !m_returned.try_push(m_active)) { return false; }
     m_active = m_pending.exchange(nullptr, std::memory_order_acq_rel);
+    return true;
+}
+
+void Graph::apply_fade(thl::core::BufferView buffer) {
+    const size_t n = buffer.get_num_samples();
+    const bool pending = m_pending.load(std::memory_order_acquire) != nullptr;
+    if (n == 0 || (!pending && m_fade.get_smoothed_value(0) == 1.0f)) { return; }
+
+    size_t fade_out_start = n;
+    if (pending && !m_fading_out) {
+        fade_out_start = n >= m_fade_samples ? n - m_fade_samples : 0;
+        m_fading_out = true;
+    }
+
+    for (size_t i = 0; i < n; ++i) {
+        if (i == fade_out_start) { m_fade.set_target_value(0.0f); }
+        const float gain = m_fade.get_smoothed_value();
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            buffer.get_write_pointer(ch)[i] *= gain;
+        }
+    }
+
+    if (!m_fading_out || m_fade.get_smoothed_value(0) != 0.0f) { return; }
+
+    const bool switched = switch_to_pending();
+    if (switched) {
+        m_fading_out = false;
+        m_fade.set_target_value(1.0f);
+    }
 }
 
 void Graph::mix_sources(const CompiledGraph& compiled,
@@ -436,7 +471,6 @@ void Graph::run_step(const ProcessingStep& step,
 }
 
 void Graph::process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/) {
-    take_pending();
     CompiledGraph* compiled = m_active;
     const size_t n = buffer.get_num_samples();
 
@@ -469,6 +503,7 @@ void Graph::process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/
     }
 
     mix_sources(*compiled, compiled->m_output_sources, *compiled->m_output_node, buffer);
+    apply_fade(buffer);
 }
 
 }  // namespace thl::graph
