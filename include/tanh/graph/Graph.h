@@ -38,7 +38,7 @@ struct Connection {
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
     /// How a node combines its sources.
-    enum class MixMode : uint8_t { Sum, Average };
+    enum class InputMix : uint8_t { Sum, Average };
 
     Graph();
     ~Graph() override;
@@ -60,7 +60,8 @@ public:
     bool remove_node(NodeId id);
     bool connect(NodeId from, NodeId to);
     bool disconnect(NodeId from, NodeId to);
-    bool set_mix_mode(NodeId id, MixMode mode);
+    bool set_input_mix(NodeId id, InputMix input_mix);
+    bool set_wet_mix(NodeId id, float wet_mix);
 
     bool commit();
     bool has_uncommitted_changes() const { return m_dirty; }
@@ -71,6 +72,7 @@ public:
     /// nullptr for graph_input(), graph_output() and unknown ids.
     thl::dsp::BaseProcessor* node(NodeId id);
     const thl::dsp::BaseProcessor* node(NodeId id) const;
+    std::optional<float> wet_mix(NodeId id) const;
 
     std::vector<NodeId> nodes() const;
     std::vector<Connection> connections() const;
@@ -99,6 +101,7 @@ private:
 
     bool exists(NodeId id) const { return m_nodes.contains(id); }
     bool path_exists(NodeId from, NodeId to) const;
+    void prepare_node(Node& node) const;
 
     std::optional<std::vector<NodeId>> sort_graph_dfs() const;
     std::unique_ptr<CompiledGraph> compile() const;
@@ -110,8 +113,11 @@ private:
     void take_pending() TANH_NONBLOCKING_FUNCTION;
     static void mix_sources(const CompiledGraph& compiled,
                             std::span<const BufferIndex> sources,
-                            MixMode mode,
+                            Node& node,
                             thl::core::BufferView destination) TANH_NONBLOCKING_FUNCTION;
+    static void run_step(const ProcessingStep& step,
+                         thl::core::BufferView buffer,
+                         thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
 
     static constexpr NodeId k_output_id{0};
     static constexpr NodeId k_input_id{1};

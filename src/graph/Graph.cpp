@@ -1,10 +1,12 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/graph/Graph.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -23,8 +25,13 @@ namespace thl::graph {
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Graph::Node {
+    static constexpr double k_ramp_seconds = 0.02;
+
     std::unique_ptr<thl::dsp::BaseProcessor> m_processor;
-    MixMode m_mix_mode = MixMode::Average;
+    std::atomic<InputMix> m_input_mix{InputMix::Average};
+    thl::dsp::utils::SmoothedValue m_input_mix_smoother;
+    std::atomic<float> m_wet_mix{1.0f};
+    thl::dsp::utils::SmoothedValue m_wet_mix_smoother;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,8 +40,7 @@ struct Graph::Node {
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Graph::ProcessingStep {
-    thl::dsp::BaseProcessor* m_processor = nullptr;
-    MixMode m_mix_mode = MixMode::Average;
+    Node* m_node = nullptr;
     std::vector<BufferIndex> m_sources;
     BufferIndex m_buffer = 0;
 };
@@ -43,9 +49,10 @@ struct Graph::CompiledGraph {
     uint64_t m_generation = 0;
     std::vector<ProcessingStep> m_steps;  // in processing order
     std::vector<thl::core::Buffer<float>> m_buffers;
+    thl::core::Buffer<float> m_dry;             // scratch for steps that blend dry and processed
     std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
     std::vector<BufferIndex> m_output_sources;
-    MixMode m_output_mix_mode = MixMode::Average;
+    Node* m_output_node = nullptr;
     size_t m_num_channels = 0;
     size_t m_max_block_size = 0;
 };
@@ -77,6 +84,13 @@ const thl::dsp::BaseProcessor* Graph::node(NodeId id) const {
     return it == m_nodes.end() ? nullptr : it->second->m_processor.get();
 }
 
+std::optional<float> Graph::wet_mix(NodeId id) const {
+    if (id == k_input_id || id == k_output_id) { return std::nullopt; }
+    const auto it = m_nodes.find(id);
+    if (it == m_nodes.end()) { return std::nullopt; }
+    return it->second->m_wet_mix.load(std::memory_order_relaxed);
+}
+
 std::vector<NodeId> Graph::nodes() const {
     std::vector<NodeId> ids;
     ids.reserve(m_nodes.size());
@@ -103,11 +117,12 @@ std::vector<NodeId> Graph::sources_of(NodeId id) const {
 std::optional<NodeId> Graph::add_node(std::unique_ptr<thl::dsp::BaseProcessor> processor) {
     if (!processor) { return std::nullopt; }
 
-    if (m_max_block_size > 0) {
-        processor->prepare(m_sample_rate, m_max_block_size, m_num_channels);
-    }
+    auto node = std::make_unique<Node>();
+    node->m_processor = std::move(processor);
+    if (m_max_block_size > 0) { prepare_node(*node); }
+
     const NodeId id{m_next_id++};
-    m_nodes.emplace(id, std::make_unique<Node>(Node{.m_processor = std::move(processor)}));
+    m_nodes.emplace(id, std::move(node));
     m_dirty = true;
     return id;
 }
@@ -161,14 +176,20 @@ bool Graph::disconnect(NodeId from, NodeId to) {
     return true;
 }
 
-bool Graph::set_mix_mode(NodeId id, MixMode mode) {
+bool Graph::set_input_mix(NodeId id, InputMix input_mix) {
     const auto it = m_nodes.find(id);
     if (it == m_nodes.end() || id == k_input_id) { return false; }
 
-    if (it->second->m_mix_mode != mode) {
-        it->second->m_mix_mode = mode;
-        m_dirty = true;
-    }
+    it->second->m_input_mix.store(input_mix, std::memory_order_relaxed);
+    return true;
+}
+
+bool Graph::set_wet_mix(NodeId id, float wet_mix) {
+    if (id == k_input_id || id == k_output_id || std::isnan(wet_mix)) { return false; }
+    const auto it = m_nodes.find(id);
+    if (it == m_nodes.end()) { return false; }
+
+    it->second->m_wet_mix.store(std::clamp(wet_mix, 0.0f, 1.0f), std::memory_order_relaxed);
     return true;
 }
 
@@ -182,12 +203,22 @@ void Graph::prepare(const double& sample_rate,
     m_sample_rate = sample_rate;
     m_max_block_size = samples_per_block;
     m_num_channels = num_channels;
-    for (auto& [id, node] : m_nodes) {
-        if (node->m_processor) {
-            node->m_processor->prepare(sample_rate, samples_per_block, num_channels);
-        }
-    }
+    for (auto& [id, node] : m_nodes) { prepare_node(*node); }
     commit();
+}
+
+void Graph::prepare_node(Node& node) const {
+    if (node.m_processor) {
+        node.m_processor->prepare(m_sample_rate, m_max_block_size, m_num_channels);
+    }
+    // Start at the current values instead of ramping to them.
+    const bool average = node.m_input_mix.load(std::memory_order_relaxed) == InputMix::Average;
+    node.m_input_mix_smoother.reset(m_sample_rate, Node::k_ramp_seconds);
+    node.m_input_mix_smoother.set_current_and_target_value(average ? 1.0f : 0.0f);
+
+    node.m_wet_mix_smoother.reset(m_sample_rate, Node::k_ramp_seconds);
+    node.m_wet_mix_smoother.set_current_and_target_value(
+        node.m_wet_mix.load(std::memory_order_relaxed));
 }
 
 std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {
@@ -236,18 +267,19 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() const {
     auto compiled = std::make_unique<CompiledGraph>();
     compiled->m_num_channels = m_num_channels;
     compiled->m_max_block_size = m_max_block_size;
+    compiled->m_dry = thl::core::Buffer<float>(m_num_channels, m_max_block_size);
 
     // `order` has every node after its sources, so a source's buffer always
     // exists by the time a node looks it up.
     std::map<NodeId, BufferIndex> buffer_of;
     for (const NodeId id : *order) {
-        const Node& node = *m_nodes.at(id);
+        Node& node = *m_nodes.at(id);
         std::vector<BufferIndex> sources;
         for (const NodeId source : sources_of(id)) { sources.push_back(buffer_of.at(source)); }
 
         if (id == k_output_id) {
             compiled->m_output_sources = std::move(sources);
-            compiled->m_output_mix_mode = node.m_mix_mode;
+            compiled->m_output_node = &node;
             continue;
         }
 
@@ -259,10 +291,8 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() const {
             compiled->m_input_buffer = index;
             continue;
         }
-        compiled->m_steps.push_back({.m_processor = node.m_processor.get(),
-                                     .m_mix_mode = node.m_mix_mode,
-                                     .m_sources = std::move(sources),
-                                     .m_buffer = index});
+        compiled->m_steps.push_back(
+            {.m_node = &node, .m_sources = std::move(sources), .m_buffer = index});
     }
     return compiled;
 }
@@ -329,25 +359,78 @@ void Graph::take_pending() {
 
 void Graph::mix_sources(const CompiledGraph& compiled,
                         std::span<const BufferIndex> sources,
-                        MixMode mode,
+                        Node& node,
                         thl::core::BufferView destination) {
     const size_t n = destination.get_num_samples();
-    const float scale = 1.0f / static_cast<float>(sources.size());
+    auto& smoother = node.m_input_mix_smoother;
+    const bool average = node.m_input_mix.load(std::memory_order_relaxed) == InputMix::Average;
+    const float target = average ? 1.0f : 0.0f;
+    smoother.set_target_value(target);
+
+    if (sources.empty()) {
+        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
+            std::fill_n(destination.get_write_pointer(ch), n, 0.0f);
+        }
+        smoother.get_smoothed_value(n);
+        return;
+    }
 
     for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
         float* out = destination.get_write_pointer(ch);
-        if (sources.empty()) {
-            std::fill_n(out, n, 0.0f);
-            continue;
-        }
-
         std::copy_n(compiled.m_buffers[sources[0]].get_read_pointer(ch), n, out);
         for (size_t s = 1; s < sources.size(); ++s) {
             const float* in = compiled.m_buffers[sources[s]].get_read_pointer(ch);
             for (size_t i = 0; i < n; ++i) { out[i] += in[i]; }
         }
-        if (mode == MixMode::Average) {
-            for (size_t i = 0; i < n; ++i) { out[i] *= scale; }
+    }
+
+    const float average_scale = 1.0f / static_cast<float>(sources.size());
+    if (smoother.get_smoothed_value(0) == target) {
+        if (!average) { return; }
+        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
+            float* out = destination.get_write_pointer(ch);
+            for (size_t i = 0; i < n; ++i) { out[i] *= average_scale; }
+        }
+        return;
+    }
+
+    for (size_t i = 0; i < n; ++i) {
+        const float amount = smoother.get_smoothed_value();
+        const float scale = (1.0f - amount) + average_scale * amount;
+        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
+            destination.get_write_pointer(ch)[i] *= scale;
+        }
+    }
+}
+
+void Graph::run_step(const ProcessingStep& step,
+                     thl::core::BufferView buffer,
+                     thl::core::BufferView dry) {
+    Node& node = *step.m_node;
+    auto& smoother = node.m_wet_mix_smoother;
+    const float target = node.m_wet_mix.load(std::memory_order_relaxed);
+    smoother.set_target_value(target);
+
+    if (smoother.get_smoothed_value(0) == target) {
+        if (target == 0.0f) { return; }  // bypassed: `buffer` already holds the sources
+        if (target == 1.0f) {
+            node.m_processor->process_modulated(buffer);
+            return;
+        }
+    }
+
+    const size_t n = buffer.get_num_samples();
+    for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+        std::copy_n(buffer.get_read_pointer(ch), n, dry.get_write_pointer(ch));
+    }
+    node.m_processor->process_modulated(buffer);
+
+    for (size_t i = 0; i < n; ++i) {
+        const float wet = smoother.get_smoothed_value();
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            const float d = dry.get_read_pointer(ch)[i];
+            float& out = buffer.get_write_pointer(ch)[i];
+            out = d * (1.0f - wet) + out * wet;
         }
     }
 }
@@ -373,16 +456,19 @@ void Graph::process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/
         }
     }
 
+    const thl::core::BufferView dry(compiled->m_dry.get_array_of_write_pointers(),
+                                    compiled->m_num_channels,
+                                    n);
     for (const ProcessingStep& step : compiled->m_steps) {
         auto& own = compiled->m_buffers[step.m_buffer];
-        const thl::core::BufferView view(own.get_array_of_write_pointers(),
-                                         compiled->m_num_channels,
-                                         n);
-        mix_sources(*compiled, step.m_sources, step.m_mix_mode, view);
-        step.m_processor->process_modulated(view);
+        const thl::core::BufferView node_buffer(own.get_array_of_write_pointers(),
+                                                compiled->m_num_channels,
+                                                n);
+        mix_sources(*compiled, step.m_sources, *step.m_node, node_buffer);
+        run_step(step, node_buffer, dry);
     }
 
-    mix_sources(*compiled, compiled->m_output_sources, compiled->m_output_mix_mode, buffer);
+    mix_sources(*compiled, compiled->m_output_sources, *compiled->m_output_node, buffer);
 }
 
 }  // namespace thl::graph
