@@ -5,8 +5,8 @@
 #include <string>
 #include <string_view>
 
-#include "ParameterDefinitions.h"
 #include "tanh/core/Exports.h"
+#include "tanh/parameters/ParameterExceptions.h"
 
 namespace thl {
 
@@ -14,29 +14,23 @@ namespace thl {
  * @class StateKeyNotFoundException
  * @brief Exception thrown when a parameter key is not found in the state.
  */
-class TANH_API StateKeyNotFoundException : public std::runtime_error {
+class TANH_API StateKeyNotFoundException : public ParameterNotFoundException {
 public:
     explicit StateKeyNotFoundException(std::string_view key)
-        : std::runtime_error("Key not found in state: " + std::string(key)), m_key(key) {}
-
-    const std::string& key() const { return m_key; }
-
-private:
-    std::string m_key;
+        : ParameterNotFoundException(key, "Key not found in state: " + std::string(key)) {}
 };
 
 /**
  * @class StateGroupNotFoundException
  * @brief Exception thrown when a state group is not found.
+ *
+ * A ParameterNotFoundException whose key() is the missing group's name.
  */
-class TANH_API StateGroupNotFoundException : public std::runtime_error {
+class TANH_API StateGroupNotFoundException : public ParameterNotFoundException {
 public:
     explicit StateGroupNotFoundException(std::string_view group_name)
-        : std::runtime_error("State group not found: " + std::string(group_name))
-        , m_group_name(group_name) {}
-
-private:
-    std::string m_group_name;
+        : ParameterNotFoundException(group_name,
+                                     "State group not found: " + std::string(group_name)) {}
 };
 
 /**
@@ -90,26 +84,6 @@ public:
 private:
     uint32_t m_id;
     std::string m_key;
-};
-
-/**
- * @class ParameterTypeMismatchException
- * @brief Exception thrown when a requested type does not match the parameter's native type.
- */
-class TANH_API ParameterTypeMismatchException : public std::runtime_error {
-public:
-    ParameterTypeMismatchException(ParameterType requested, ParameterType actual)
-        : std::runtime_error(
-              "ParameterHandle type mismatch: requested handle type does not match parameter type")
-        , m_requested(requested)
-        , m_actual(actual) {}
-
-    ParameterType requested() const { return m_requested; }
-    ParameterType actual() const { return m_actual; }
-
-private:
-    ParameterType m_requested;
-    ParameterType m_actual;
 };
 
 }  // namespace thl

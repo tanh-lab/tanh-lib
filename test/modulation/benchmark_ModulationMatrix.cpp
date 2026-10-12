@@ -3,6 +3,7 @@
 #include <tanh/modulation/InputEventQueue.h>
 #include <tanh/modulation/LFOSource.h>
 #include <tanh/modulation/ModulationMatrix.h>
+#include <tanh/modulation/MotionRecorder.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/State.h>
 
@@ -494,6 +495,40 @@ BENCHMARK(bm_input_event_queue_drain_spread)
     ->Args({1, 10})   // 10-voice simultaneous trigger (strum-fix case).
     ->Args({4, 4})    // moderate multi-touch drag.
     ->Args({8, 10});  // worst-case: dense drag across all voices.
+
+// =============================================================================
+// MotionRecorder: one recorder playing a 1-bar Beats lane (budget: <= 2 µs per
+// 256-sample block on Apple Silicon, release build).
+// =============================================================================
+
+static void bm_motion_recorder_playback(benchmark::State& state) {
+    const auto n = static_cast<uint32_t>(state.range(0));
+    MotionRecorder rec;
+    rec.prepare(k_sample_rate, n);
+    MotionLane lane;
+    lane.m_timebase = MotionTimebase::Beats;
+    lane.m_length = 4.0;
+    for (int i = 0; i < 400; ++i) {
+        const double ph = 2.0 * 3.14159265358979 * i / 400.0;
+        lane.m_x.push_back(static_cast<float>(0.5 + (0.4 * std::sin(ph))));
+        lane.m_y.push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
+        lane.m_gate.push_back(1);
+    }
+    rec.load_lane(lane);
+    dsp::transport::TransportInfo t;
+    t.m_flags = dsp::transport::TransportInfo::k_is_playing;
+    t.m_bpm = 120.0;
+    t.m_beats_per_sample = 120.0 / (60.0 * k_sample_rate);
+    double beat = 0.0;
+    for (auto _ : state) {
+        t.m_beat_position = beat;
+        t.m_num_samples = n;
+        rec.process(t, MotionInput{}, n);
+        benchmark::DoNotOptimize(rec.out_x());
+        beat += n * t.m_beats_per_sample;
+    }
+}
+BENCHMARK(bm_motion_recorder_playback)->Arg(64)->Arg(256)->Arg(1024);
 
 // =============================================================================
 // Main

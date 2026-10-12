@@ -3,7 +3,8 @@
 // A plugin-shaped shared object embedding every built tanh-lib component — what a
 // DAW plugin that uses tanh-lib looks like to the dynamic linker. test/exports checks
 // its export table: the one entry point below and nothing else (no thl::, nothing of
-// miniaudio, nlohmann::json or moodycamel), in both the static and the shared shape.
+// miniaudio, nlohmann::json, moodycamel or the Ableton Link SDK and its asio), in both
+// the static and the shared shape.
 //
 // Each component is referenced by address so that its archive is pulled into the link
 // in a static build; nothing is executed.
@@ -18,12 +19,18 @@
 #endif
 #ifdef TANH_MODULATION_ENABLED
 #include <tanh/modulation/ModulationMatrix.h>
+#include <tanh/modulation/ParameterBackend.h>
+#endif
+#ifdef TANH_LINK_ENABLED
+#include <tanh/link/LinkSession.h>
 #endif
 #ifdef TANH_AUDIO_IO_ENABLED
 #include <tanh/audio-io/AudioDeviceManager.h>
 #endif
 
 #include <cstddef>
+#include <optional>
+#include <string_view>
 
 #if defined(_WIN32)
 #define TANH_EXPORTS_MODULE_API __declspec(dllexport)
@@ -37,6 +44,17 @@ template <typename T>
 void* address_of(T* p) {
     return reinterpret_cast<void*>(p);
 }
+
+#ifdef TANH_MODULATION_ENABLED
+// A host's parameter store: Modulation without State is linked through this.
+class NoParameters final : public thl::modulation::ParameterBackend {
+public:
+    [[nodiscard]] std::optional<thl::modulation::ParameterBinding> find(
+        std::string_view /*key*/) const override {
+        return std::nullopt;
+    }
+};
+#endif
 
 }  // namespace
 
@@ -59,6 +77,19 @@ extern "C" TANH_EXPORTS_MODULE_API std::size_t tanh_exports_entry() {
         thl::modulation::ModulationMatrix matrix(state);
         (void)matrix;
 #endif
+    }
+#endif
+#ifdef TANH_MODULATION_ENABLED
+    if (references[0] == nullptr) {
+        NoParameters parameters;
+        thl::modulation::ModulationMatrix matrix(parameters);
+        (void)matrix;
+    }
+#endif
+#ifdef TANH_LINK_ENABLED
+    if (references[0] == nullptr) {
+        thl::link::LinkSession session;
+        (void)session;
     }
 #endif
 #ifdef TANH_DSP_ENABLED

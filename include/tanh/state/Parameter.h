@@ -5,9 +5,9 @@
 #include <string>
 #include <string_view>
 
-#include "ParameterDefinitions.h"
 #include "ParameterListener.h"
 #include "tanh/core/Exports.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl {

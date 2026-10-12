@@ -2,19 +2,26 @@
 
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/RCU.h>
+#include <tanh/core/threading/SeqLock.h>
+#include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationRouting.h>
 #include <tanh/modulation/ModulationSource.h>
+#include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/ResolvedRouting.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/modulation/SmartHandle.h>
-#include <tanh/state/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 
+#include <atomic>
 #include <cstddef>
 #include <list>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -36,6 +43,12 @@ struct CyclicStep {
 
 using ScheduleStep = std::variant<BulkStep, CyclicStep>;
 
+/// One entry of ModulationMatrix::set_routings_enabled().
+struct RoutingEnabled {
+    uint32_t m_routing_id = k_invalid_routing_id;
+    bool m_enabled = true;
+};
+
 // All state read by the RT thread — bundled into a single RCU instance for
 // atomic publication. Pointers in routings_by_source reference elements in
 // the routings vector of the same ProcessingConfig instance; they stay valid
@@ -51,21 +64,42 @@ struct ProcessingConfig {
     // source per block, before any ScheduleStep. Contains every source added
     // via add_source(), including sources with no routings.
     std::vector<ModulationSource*> m_all_sources;
+
+    // Every add_block_processor(), run once per block before the drain pass.
+    std::vector<BlockProcessor*> m_block_processors;
+
+    // samples_per_block of the prepare() this config was built for: the length
+    // of every source and target buffer, and the largest num_samples
+    // process_with_scope() accepts.
+    size_t m_samples_per_block = 0;
 };
 
 class TANH_API ModulationMatrix {
 public:
+    /// Read parameters through a host-provided backend. The backend, and every
+    /// atomic its bindings point at, must outlive the matrix. to_json() and
+    /// from_json() then only handle routings.
+    explicit ModulationMatrix(ParameterBackend& backend);
+
+#if defined(TANH_STATE_ENABLED)
+    /// Read parameters from a thl::State through an internally owned
+    /// StateParameterBackend. to_json() and from_json() include the State's
+    /// parameters. Only declared when tanh is built with the State component.
     explicit ModulationMatrix(thl::State& state);
+#endif
+
     ~ModulationMatrix();
 
     ModulationMatrix(const ModulationMatrix&) = delete;
     ModulationMatrix& operator=(const ModulationMatrix&) = delete;
 
-    // Access the underlying State — useful when downstream code holds only a
-    // ModulationMatrix& but still needs non-RT writes (e.g. setting string
-    // parameters, loading presets) that don't route through the matrix.
-    thl::State& state() { return m_state; }
-    const thl::State& state() const { return m_state; }
+#if defined(TANH_STATE_ENABLED)
+    /// The State this matrix was built from, for non-RT writes that don't go
+    /// through the matrix (string parameters, presets). Throws
+    /// std::logic_error if the matrix was built from a ParameterBackend.
+    thl::State& state();
+    const thl::State& state() const;
+#endif
 
     // Allocate internal buffers sized to samples_per_block and rebuild the
     // schedule. Every target's VoiceBuffers / MonoBuffers is freshly allocated
@@ -73,18 +107,11 @@ public:
     // barrier so in-flight audio blocks always see either the old or the new
     // buffer in full, never a torn mid-resize state.
     //
-    // Threading contract:
-    // - Same-size prepare (same samples_per_block) is safe to call concurrently
-    //   with process_with_scope(). The routing-churn race is closed by the flag
-    //   guards on every target-buffer access.
-    // - Shrinking prepare (new samples_per_block < the num_samples the audio
-    //   thread is currently calling process_with_scope() with) is NOT safe. The
-    //   apply_routing_* loops iterate over num_samples, which may now exceed
-    //   the newly-published m_block_size and write OOB into buffer storage.
-    //   Callers must quiesce audio — stop the driver, or call prepare() from
-    //   the driver's own reconfiguration callback — before reducing block
-    //   size. Growing prepare is safe because the old num_samples fits the
-    //   new larger storage.
+    // Threading contract: call with audio stopped (stop the driver, or call it
+    // from the driver's own reconfiguration callback, like a host's
+    // prepareToPlay). prepare() re-prepares every source and block processor
+    // and resets the sample counter, all audio-thread state. Routing and
+    // source changes stay safe while audio runs.
     void prepare(double sample_rate, size_t samples_per_block);
 
     using ConfigRCU = thl::RCU<ProcessingConfig>;
@@ -113,15 +140,34 @@ public:
         return m_config.read_scope();
     }
 
-    // Process all sources and fill modulation buffers for all targets.
-    // Convenience wrapper that opens a read scope internally — use when the
-    // caller doesn't need to extend the scope across downstream DSP work.
-    void process(size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+    /// Read section for the audio path on the matrix's own reader slot, which
+    /// process() uses too. Needs no per-thread registration, so it is real-time
+    /// safe on whatever thread the host renders on. The audio path must not run
+    /// on two threads at the same time.
+    [[nodiscard]] ReadScope audio_read_scope() const TANH_NONBLOCKING_FUNCTION {
+        return m_config.read_scope(m_audio_reader);
+    }
 
-    // Process variant assuming the caller already holds an open ReadScope.
-    // The config reference must come from that scope's data().
+    /// Process all sources and fill modulation buffers for all targets.
+    /// num_samples must not exceed the prepared samples_per_block (the length of
+    /// every buffer): split larger host blocks into chunks. A larger value
+    /// asserts and is clamped.
+    /// Convenience wrapper that opens a read scope internally — use when the
+    /// caller doesn't need to extend the scope across downstream DSP work.
+    ///
+    /// @p transport is the block's musical time for the block processors
+    /// (BlockContext::m_transport): pass the clock's block (or the chunk of it,
+    /// TransportInfo::sub_block()) when a processor follows the transport.
+    void process(size_t num_samples, const dsp::transport::TransportInfo* transport = nullptr)
+        TANH_NONBLOCKING_FUNCTION;
+
+    /// Process variant assuming the caller already holds an open ReadScope.
+    /// The config reference must come from that scope's data(); @p transport as
+    /// for process().
     void process_with_scope(const ProcessingConfig& config,
-                            size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+                            size_t num_samples,
+                            const dsp::transport::TransportInfo* transport = nullptr)
+        TANH_NONBLOCKING_FUNCTION;
 
     // Total number of samples passed through process_with_scope() since the
     // last prepare(). Monotonically increasing within a prepare()-bounded
@@ -170,6 +216,13 @@ public:
     // k_global_scope or not registered.
     void set_voice_count(ModulationScope scope, uint32_t voice_count);
 
+    /// Block processors: run once per block before any source (BlockProcessor.h).
+    /// add_block_processor() prepares @p processor if prepare() was called.
+    /// remove_block_processor() blocks until the audio thread no longer uses it.
+    /// The processor must stay alive while registered.
+    void add_block_processor(BlockProcessor& processor);
+    void remove_block_processor(BlockProcessor& processor);
+
     // Source management
     void add_source(const std::string_view id, ModulationSource* source);
 
@@ -177,15 +230,21 @@ public:
     // config. After this returns the caller may safely delete the source.
     void remove_source(const std::string_view id);
 
-    // Get a SmartHandle for a State parameter. Lazily creates a ResolvedTarget
+    // Get a SmartHandle for a backend parameter. Lazily creates a ResolvedTarget
     // the first time a parameter key is requested. The returned SmartHandle
     // holds a stable pointer into the target map — no registration needed.
     //
-    // T must match the parameter's native type (float, double, int, bool).
+    // T must match the parameter's native type (the ParameterBinding::m_base
+    // alternative: float, double, int, bool).
     //
-    // Throws StateKeyNotFoundException if the parameter doesn't exist in State.
-    // Throws std::invalid_argument if the parameter's definition has
-    // modulation disabled or if T doesn't match the parameter's type.
+    // Same error contract for every backend, checked in this order:
+    // - thl::ParameterNotFoundException if the backend doesn't know the key
+    //   (ParameterBackend::throw_not_found(); a State-backed matrix throws
+    //   State's subclasses, e.g. thl::StateGroupNotFoundException for a
+    //   missing group);
+    // - thl::ParameterTypeMismatchException if T doesn't match the type of
+    //   the bound base atomic;
+    // - std::invalid_argument if the parameter has modulation disabled.
     template <typename T>
     SmartHandle<T> get_smart_handle(std::string_view param_key);
 
@@ -213,11 +272,11 @@ public:
                                       float range_max);
     bool update_routing_replace_range(uint32_t routing_id, float range_min, float range_max);
 
-    // Normalized-[0,1] variant: looks up the target parameter's Range via the
-    // matrix's State reference and converts the endpoints to plain units
-    // internally. Callers that already work in normalized coordinates can
-    // avoid a separate State lookup.
-    // Returns false if the target is not in State or the routing was not found.
+    // Normalized-[0,1] variant: converts the endpoints to plain units with the
+    // target parameter's Range (cached when the routing was added).
+    // Callers that already work in normalized coordinates can avoid a
+    // separate lookup.
+    // Returns false if the routing was not found.
     bool update_routing_replace_range_normalized(std::string_view source_id,
                                                  std::string_view target_id,
                                                  float norm_min,
@@ -227,6 +286,20 @@ public:
     // Returns false if the routing was not found.
     bool clear_routing_replace_range(std::string_view source_id, std::string_view target_id);
     bool clear_routing_replace_range(uint32_t routing_id);
+
+    /// Enable or disable a routing without a schedule rebuild (non-RT; the
+    /// audio thread picks the flag up at the next block). A disabled routing
+    /// writes nothing to its target, including Replace and ReplaceHold, and
+    /// drops its held value. Both edges flag a change point at offset 0.
+    /// Returns false if the routing was not found.
+    bool set_routing_enabled(uint32_t routing_id, bool enabled);
+    bool set_routing_enabled(std::string_view source_id, std::string_view target_id, bool enabled);
+
+    /// Apply several enable flags as one batch: every audio block sees either
+    /// none or all of them, so switching between two sets of routings never
+    /// gives a block in which neither or both write. The audio thread never
+    /// waits. Unknown ids are skipped. Returns the number of routings found.
+    size_t set_routings_enabled(std::span<const RoutingEnabled> changes);
 
     // Access the resolved target for reading modulation data.
     const ResolvedTarget* get_target(const std::string_view id) const;
@@ -240,22 +313,27 @@ public:
 
     // ── Serialization ───────────────────────────────────────────────────
     // Serialize modulation routings (and optionally State parameters) to JSON.
-    // include_state=true wraps both under {"parameters":..., "modulation_routings":...}.
+    // include_state=true wraps both under {"parameters":..., "modulation_routings":...}
+    // ("parameters" is omitted when the matrix has no State).
     // include_state=false returns just the routings array.
     nlohmann::json to_json(bool include_state = true);
 
     // Deserialize from JSON. Reads "modulation_routings" if present, replaces
     // all user routings, and rebuilds the schedule. Forwards "parameters" to
-    // State::from_json() if present.
+    // State::from_json() if present and the matrix has a State (ignored
+    // otherwise).
     void from_json(const nlohmann::json& json);
 
 private:
+    // Constructor setup shared by both constructors.
+    void register_global_scope_and_reader();
+
     // Internal rebuild — must be called with m_writer_mutex held.
     void rebuild_schedule_with_lock();
 
-    // Ensure a target exists for the given id. Returns a stable pointer.
-    // Must be called with m_writer_mutex held.
-    ResolvedTarget* ensure_target_with_lock(const std::string_view id);
+    // Ensure a target exists for id, created from the backend's binding for
+    // it. Returns a stable reference. Must be called with m_writer_mutex held.
+    ResolvedTarget& ensure_target_with_lock(std::string_view id, const ParameterBinding& binding);
 
     // Routing lookup helpers — must be called with m_writer_mutex held.
     ModulationRouting* find_user_routing_with_lock(std::string_view source_id,
@@ -272,6 +350,12 @@ private:
                                                 float range_min,
                                                 float range_max);
     bool clear_routing_replace_range_with_lock(ModulationRouting& user_routing);
+    static void store_routing_enabled_with_lock(const ProcessingConfig& config,
+                                                uint32_t routing_id,
+                                                bool enabled);
+    // Audio thread: load every routing's enabled flag for this block.
+    void snapshot_routing_enabled(const ProcessingConfig& config,
+                                  size_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
     // Process helpers — called from within RCU read section.
     void process_source_bulk_with_scope(const ProcessingConfig& config,
@@ -290,10 +374,17 @@ private:
         const std::unordered_map<std::string, bool>& has_self_edge,
         std::vector<ScheduleStep>& out_schedule);
 
-    thl::State& m_state;
+    // The State constructor's backend. Declared before m_backend so it is
+    // initialised first.
+    std::unique_ptr<ParameterBackend> m_owned_backend;
+    ParameterBackend& m_backend;
+
+    // Non-null only for a matrix built from a thl::State.
+    thl::State* m_state = nullptr;
 
     double m_sample_rate = 48000.0;
     size_t m_samples_per_block = 512;
+    bool m_prepared = false;  // prepare() was called
 
     // Monotonic count of samples processed since the last prepare(). Read
     // and advanced from the RT thread inside process_with_scope; reset to 0
@@ -305,8 +396,16 @@ private:
     // Writer mutex — serializes all non-RT methods
     std::mutex m_writer_mutex;
 
+    // Seqlock over the routings' enabled flags (set_routings_enabled() batches).
+    // Written under m_writer_mutex.
+    thl::SeqLock m_enabled_lock;
+
     // Registered sources (not owned) — protected by m_writer_mutex
     std::map<std::string, ModulationSource*, std::less<>> m_sources;
+
+    // Registered block processors (not owned), in registration order — protected
+    // by m_writer_mutex.
+    std::vector<BlockProcessor*> m_block_processors;
 
     // Registered targets (owned) — protected by m_writer_mutex.
     // Pointer stability guaranteed by std::unordered_map.
@@ -321,6 +420,9 @@ private:
 
     // RT-safe processing config — RCU-protected for lock-free RT reads
     thl::RCU<ProcessingConfig> m_config;
+
+    // Reader slot of the audio path (audio_read_scope(), process()); owned by m_config.
+    ConfigRCU::Reader m_audio_reader = m_config.add_reader();
 
     // Scope registry. Entries in m_scope_names own the name strings; the
     // c_str() pointers from these std::string nodes are stored on

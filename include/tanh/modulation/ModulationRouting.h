@@ -101,6 +101,12 @@ struct ModulationRouting {
     // (i.e. the user is actively interacting with the parameter).
     bool m_skip_during_gesture = false;
 
+    // A disabled routing writes nothing to its target and drops its held
+    // value. Unlike a depth of 0 this also silences Replace / ReplaceHold.
+    // Toggled without a rebuild by ModulationMatrix::set_routing_enabled();
+    // serialised only when false, so older presets load as enabled.
+    bool m_enabled = true;
+
     ModulationRouting() = default;
 
     ModulationRouting(std::string_view view_source_id,
