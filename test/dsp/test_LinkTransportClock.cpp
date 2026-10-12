@@ -363,7 +363,10 @@ TEST(LinkTransportClock, LatencyCompensatedClicksAreSampleExact) {
                 clk.set_host_time_us(host);
                 clk.begin_block(frames);
                 const auto info = clk.block_info();
-                for (double k = std::ceil(info.m_beat_position); k < info.beat_end(); k += 1.0) {
+                for (auto beat = static_cast<int64_t>(std::ceil(info.m_beat_position));
+                     static_cast<double>(beat) < info.beat_end();
+                     ++beat) {
+                    const auto k = static_cast<double>(beat);
                     const double offset =
                         std::ceil((k - info.m_beat_position) / info.m_beats_per_sample);
                     if (offset < frames) {

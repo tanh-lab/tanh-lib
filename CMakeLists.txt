@@ -921,6 +921,14 @@ if (TANH_WITH_TESTS)
         add_subdirectory(test/graph)
     endif()
 
+    # clang-tidy checks every source under test/, also the install consumer, which is its
+    # own project: a target against the in-tree component gives it a compile-database
+    # entry (never built; test/install-modulation builds it against the installed package).
+    if(TARGET ${PROJECT_NAME}_modulation)
+        add_executable(install_modulation_consumer EXCLUDE_FROM_ALL test/install-modulation/main.cpp)
+        target_link_libraries(install_modulation_consumer PRIVATE ${PROJECT_NAME}::Modulation)
+    endif()
+
     # The export-table invariant, on the desktop formats where it can be inspected.
     if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
         add_subdirectory(test/exports)

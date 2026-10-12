@@ -224,9 +224,11 @@ private:
                    bool ui) TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] uint32_t pick_voice(float x, float y) const;
 
+    // Shared between threads: the UI side (frames and trail).
+    detail::XYFramePublisher m_frames;
+
     ModulationMatrix& m_matrix;
     XYControllerConfig m_config;
-    uint32_t m_num_voices = 1;
     std::vector<std::unique_ptr<Voice>> m_voices;
 
     // Message thread.
@@ -235,25 +237,26 @@ private:
     // UI thread.
     detail::XYTouchTable m_touches;
 
+    MatrixHook m_hook{*this};
+
+    // Audio thread.
+    int64_t m_block_time_ns = 0;
+    std::optional<int64_t> m_run_time_ns;  // clock time of the running block (timed touches)
+    double m_sample_rate = 0.0;
+    uint64_t m_sample_time = 0;
+    uint64_t m_blocks_driven = 0;
+    size_t m_capacity = 0;
+    uint32_t m_num_samples = 0;
+    uint32_t m_num_voices = 1;  // set at construction
+
     // Shared between threads.
     std::atomic<bool> m_latch{false};
     std::atomic<bool> m_ui_attached{true};
-    detail::XYFramePublisher m_frames;
-
-    MatrixHook m_hook{*this};
 
     // Audio thread.
     bool m_reset_pending = false;
     bool m_block_time_fresh = false;
-    int64_t m_block_time_ns = 0;
-    std::optional<int64_t> m_run_time_ns;  // clock time of the running block (timed touches)
-    double m_sample_rate = 0.0;
     bool m_last_latch = false;
-    uint32_t m_num_samples = 0;
-    uint64_t m_sample_time = 0;
-    uint64_t m_blocks_driven = 0;
-
-    size_t m_capacity = 0;
 };
 
 }  // namespace thl::modulation

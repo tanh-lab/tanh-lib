@@ -309,25 +309,62 @@ private:
     // Shared between threads.
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
     RCU<PlayedLane> m_lanes;
-    RCU<PlayedLane>::Reader m_audio_reader;
+    RCU<PlayedLane>::Reader m_audio_reader;  // after m_lanes: made from it
+    AtomicMotionShapeMix m_shape_mix;
     std::atomic<uint32_t> m_next_take_id{1};
-    // The running take and the two take buffers (audio thread; service() reads Finished ones).
-    detail::MotionTakeWriter m_takes{m_next_take_id};
     std::atomic<uint32_t> m_lane_version{0};
-    std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
+    // The running take and the two take buffers (audio thread; service() reads Finished ones).
+    detail::MotionTakeWriter m_takes{m_next_take_id};  // after m_next_take_id: binds it
     // Id of a lane a dropped take replaced; service() clears it if still published.
     std::atomic<uint32_t> m_clear_request{0};
     std::atomic<float> m_smoothing{0.0f};
-    std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
-    AtomicMotionShapeMix m_shape_mix;
     std::atomic<uint32_t> m_shapes_version{0};
+    std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
+    std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
 
     // Message thread only.
+    detail::MotionHistory m_history;
     uint32_t m_published_id = 0;
     uint32_t m_played_version = 0;
-    detail::MotionHistory m_history;
 
-    // Audio thread only: commands and arming.
+    // Audio thread only: playback clock and phase. The phase (seconds or beats into
+    // the loop) at the start of the current segment, and at the end of the last block.
+    detail::MotionClock m_clock;
+    double m_segment_phase = 0.0;
+    double m_phase = 0.0;
+    double m_view_length = 0.0;  // 0: no lane playing
+    // Render ramp between Catmull-Rom ticks.
+    double m_last_render_phase = 0.0;  // wrap detection
+    double m_previous_phase_step = 1.0;
+    detail::MotionGlide m_glide;
+    uint64_t m_jump_glides = 0;
+
+    // Output.
+    std::vector<float> m_out_x;
+    std::vector<float> m_out_y;
+    std::vector<uint8_t> m_out_gate;
+    std::vector<uint8_t> m_out_live;
+    std::vector<uint32_t> m_change_points;
+    size_t m_num_change_points = 0;
+
+    // Audio thread only, four-byte fields.
+    MotionShapeMix m_shapes;          // set_shapes() for this block
+    uint32_t m_replaced_take_id = 0;  // lane muted by the running take (0 = none)
+    int m_sig_num = 4;                // time signature of the last block
+    int m_sig_denom = 4;
+    uint32_t m_playing_take_id = 0;
+    uint32_t m_playing_version = 0;  // PlayedLane::m_version of the playing lane
+    uint32_t m_segment_start = 0;
+    uint32_t m_ramp_position = 0;
+    float m_ramp_from_x = 0.0f;
+    float m_ramp_from_y = 0.0f;
+    float m_ramp_to_x = 0.0f;
+    float m_ramp_to_y = 0.0f;
+    float m_last_x = 0.0f;  // last output
+    float m_last_y = 0.0f;
+    uint32_t m_num_samples = 0;
+
+    // Audio thread only, one-byte fields: commands and arming, playback, output.
     bool m_armed = false;
     bool m_force_start = false;
     LoopLength m_arm_length = LoopLength::Free;
@@ -335,55 +372,16 @@ private:
     bool m_reverse = false;
     bool m_reverse_pending = false;
     LoopLength m_playback_length = LoopLength::Free;
-    MotionShapeMix m_shapes;          // set_shapes() for this block
-    bool m_shape_gate = false;        // a shape slot sounds: the gate stays open
-    uint32_t m_replaced_take_id = 0;  // lane muted by the running take (0 = none)
-    int m_sig_num = 4;                // time signature of the last block
-    int m_sig_denom = 4;
+    bool m_shape_gate = false;  // a shape slot sounds: the gate stays open
     bool m_busy = false;
     bool m_refused = false;
     bool m_aborted = false;
-
-    // Audio thread only: playback source and clock.
     Source m_source = Source::Lane;
-    uint32_t m_playing_take_id = 0;
-    uint32_t m_playing_version = 0;  // PlayedLane::m_version of the playing lane
-    detail::MotionClock m_clock;
-
-    // Playback phase (seconds or beats into the loop) at the start of the
-    // current segment, and at the end of the last block.
-    double m_segment_phase = 0.0;
-    uint32_t m_segment_start = 0;
-    double m_phase = 0.0;
     bool m_need_phase = true;  // the next sample re-derives the phase (new lane)
     MotionTimebase m_view_timebase = MotionTimebase::Seconds;
-    double m_view_length = 0.0;  // 0: no lane playing
-
-    // Render ramp between Catmull-Rom ticks.
     bool m_ramp_restart = true;
-    uint32_t m_ramp_position = 0;
-    double m_last_render_phase = 0.0;  // wrap detection
-    double m_previous_phase_step = 1.0;
-    float m_ramp_from_x = 0.0f;
-    float m_ramp_from_y = 0.0f;
-    float m_ramp_to_x = 0.0f;
-    float m_ramp_to_y = 0.0f;
-
-    detail::MotionGlide m_glide;
-    uint64_t m_jump_glides = 0;
-
-    // Output and last state.
-    float m_last_x = 0.0f;
-    float m_last_y = 0.0f;
     uint8_t m_last_gate = 0;
     bool m_last_live = false;
-    uint32_t m_num_samples = 0;
-    std::vector<float> m_out_x;
-    std::vector<float> m_out_y;
-    std::vector<uint8_t> m_out_gate;
-    std::vector<uint8_t> m_out_live;
-    std::vector<uint32_t> m_change_points;
-    size_t m_num_change_points = 0;
 };
 
 }  // namespace thl::modulation

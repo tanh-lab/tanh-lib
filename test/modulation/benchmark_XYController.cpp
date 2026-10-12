@@ -93,7 +93,7 @@ struct Bench {
 static void bm_xy_matrix_9_controllers_24_targets(benchmark::State& state) {
     const auto n = static_cast<uint32_t>(state.range(0));
     Bench b(n);
-    for (auto _ : state) {
+    for ([[maybe_unused]] auto _ : state) {
         b.matrix_block(n);
         benchmark::DoNotOptimize(b.pads[0]->out_x(0));
     }

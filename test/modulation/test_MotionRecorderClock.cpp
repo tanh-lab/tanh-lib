@@ -611,7 +611,8 @@ BarTakeResult bar_take_on_tempo_map(Rig& r) {
     const MotionLane lane = r.m_rec.lane();
     EXPECT_EQ(lane.num_points(), static_cast<size_t>(k_lane_beats * lane.m_rate));
     double worst = 0.0;
-    for (double b = 0.05; b < k_lane_beats; b += 0.01) {
+    for (int step = 5; step * 0.01 < k_lane_beats; ++step) {
+        const double b = step * 0.01;
         const MotionPoint p = lane.sample(b);
         worst = std::max(worst, circ(beat_of_circle(p.m_x, p.m_y), b, k_lane_beats));
     }

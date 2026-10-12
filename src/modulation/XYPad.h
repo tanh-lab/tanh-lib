@@ -121,15 +121,13 @@ private:
     void apply(const XYPadEvent& event, uint32_t offset);
     void add_change_point(uint32_t offset);
 
-    uint32_t m_max_touches = 1;
-    MonoPriority m_priority = MonoPriority::Last;
+    // Grouped by size (padding), each group in thread order: shared, UI, audio.
     thl::core::LockFreeQueue<XYPadEvent, k_xy_pad_queue_capacity> m_queue;
 
     // UI thread only.
     std::array<Slot, k_xy_controller_max_touches> m_slots{};
     Pending m_pending;
     uint64_t m_press_counter = 0;
-    uint32_t m_driver = k_no_slot;  // the slot that drives the stream
 
     // Audio thread only.
     XYPadTiming m_timing;
@@ -141,18 +139,25 @@ private:
     std::array<Scheduled, k_xy_pad_queue_capacity> m_waiting{};
     size_t m_waiting_head = 0;
     size_t m_waiting_count = 0;
-    float m_current_x = 0.0f;  // value set by the last applied event
+    std::vector<float> m_x;
+    std::vector<float> m_y;
+    std::vector<uint8_t> m_active;
+    std::vector<uint32_t> m_change_points;
+
+    // Four-byte fields: configuration, UI, audio.
+    uint32_t m_max_touches = 1;
+    uint32_t m_driver = k_no_slot;  // UI: the slot that drives the stream
+    float m_current_x = 0.0f;       // audio: value set by the last applied event
     float m_current_y = 0.0f;
     float m_ramp_from_x = 0.0f;
     float m_ramp_from_y = 0.0f;
     uint32_t m_num_samples = 0;
     uint32_t m_num_change_points = 0;
+
+    // One-byte fields: configuration, audio.
+    MonoPriority m_priority = MonoPriority::Last;
     uint8_t m_current_active = 0;
     bool m_ramping = false;  // x / y ramp towards the oldest waiting event
-    std::vector<float> m_x;
-    std::vector<float> m_y;
-    std::vector<uint8_t> m_active;
-    std::vector<uint32_t> m_change_points;
 };
 
 }  // namespace thl::modulation::detail

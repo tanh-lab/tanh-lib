@@ -598,7 +598,10 @@ TEST_P(LinkPeersLatency, AudioEngine1_ClicksLandOnThePeersBeats) {
         const auto& b = ours.blocks()[i];
         const auto& info = b.m_info;
         if (!info.is_playing() || info.m_beats_per_sample <= 0.0) { continue; }
-        for (double k = std::ceil(info.m_beat_position); k < info.beat_end(); k += 1.0) {
+        for (auto beat = static_cast<int64_t>(std::ceil(info.m_beat_position));
+             static_cast<double>(beat) < info.beat_end();
+             ++beat) {
+            const auto k = static_cast<double>(beat);
             const double offset = std::ceil((k - info.m_beat_position) / info.m_beats_per_sample);
             if (offset >= frames) { break; }
             const double sounds_at =

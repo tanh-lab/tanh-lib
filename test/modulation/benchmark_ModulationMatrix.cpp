@@ -520,7 +520,7 @@ static void bm_motion_recorder_playback(benchmark::State& state) {
     t.m_bpm = 120.0;
     t.m_beats_per_sample = 120.0 / (60.0 * k_sample_rate);
     double beat = 0.0;
-    for (auto _ : state) {
+    for ([[maybe_unused]] auto _ : state) {
         t.m_beat_position = beat;
         t.m_num_samples = n;
         rec.process(t, MotionInput{}, n);

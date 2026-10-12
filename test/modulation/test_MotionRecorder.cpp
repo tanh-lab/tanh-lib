@@ -160,7 +160,9 @@ Figure8Result run_figure8(uint32_t block, uint32_t seed) {
     const double delta_max = (block / k_sr) + 0.010;
     double best_rms = 1e9;
     double best_delta = 0.0;
-    for (double delta = 0.0; delta <= delta_max + 1e-12; delta += 0.0001) {
+    const auto num_deltas = static_cast<int>(std::floor((delta_max + 1e-12) / 0.0001));
+    for (int step = 0; step <= num_deltas; ++step) {
+        const double delta = step * 0.0001;
         double acc = 0.0;
         size_t cnt = 0;
         for (size_t k = glide; k < 2 * loop; k += 16) {
