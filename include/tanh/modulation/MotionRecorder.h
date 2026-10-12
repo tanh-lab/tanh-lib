@@ -302,55 +302,45 @@ private:
     void publish(MotionLane lane, bool record_history = true);
     void publish_played(MotionLane lane);
 
-    // Shared between threads. The queue is cache-line aligned: first, so nothing pads up to it.
+    // Ordered by alignment and size (clang-analyzer padding check), not by thread.
+    // Threads: m_commands, the atomics, m_shape_mix, m_lanes and m_takes are shared;
+    // m_history, m_published_id and m_played_version belong to the message thread;
+    // every other field to the audio thread. m_next_take_id precedes m_takes (bound
+    // by it); m_audio_reader is set from m_lanes in the constructor body.
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
-
-    MotionRecorderConfig m_config;
     double m_sample_rate = 48000.0;
     size_t m_max_block = 0;
-
-    // Shared between threads.
-    RCU<PlayedLane> m_lanes;
-    RCU<PlayedLane>::Reader m_audio_reader;  // after m_lanes: made from it
+    RCU<PlayedLane>::Reader m_audio_reader;
     AtomicMotionShapeMix m_shape_mix;
-    std::atomic<uint32_t> m_next_take_id{1};
-    std::atomic<uint32_t> m_lane_version{0};
-    // The running take and the two take buffers (audio thread; service() reads Finished ones).
-    detail::MotionTakeWriter m_takes{m_next_take_id};  // after m_next_take_id: binds it
-    // Id of a lane a dropped take replaced; service() clears it if still published.
-    std::atomic<uint32_t> m_clear_request{0};
-    std::atomic<float> m_smoothing{0.0f};
-    std::atomic<uint32_t> m_shapes_version{0};
-    std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
-    std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
-
-    // Message thread only.
-    detail::MotionHistory m_history;
-    uint32_t m_published_id = 0;
-    uint32_t m_played_version = 0;
-
-    // Audio thread only: playback clock and phase. The phase (seconds or beats into
-    // the loop) at the start of the current segment, and at the end of the last block.
-    detail::MotionClock m_clock;
+    // Playback phase (seconds or beats into the loop) at the start of the current
+    // segment, and at the end of the last block.
     double m_segment_phase = 0.0;
     double m_phase = 0.0;
     double m_view_length = 0.0;  // 0: no lane playing
     // Render ramp between Catmull-Rom ticks.
     double m_last_render_phase = 0.0;  // wrap detection
     double m_previous_phase_step = 1.0;
-    detail::MotionGlide m_glide;
     uint64_t m_jump_glides = 0;
-
-    // Output.
+    size_t m_num_change_points = 0;
+    detail::MotionClock m_clock;
     std::vector<float> m_out_x;
     std::vector<float> m_out_y;
     std::vector<uint8_t> m_out_gate;
     std::vector<uint8_t> m_out_live;
     std::vector<uint32_t> m_change_points;
-    size_t m_num_change_points = 0;
-
-    // Audio thread only, four-byte fields.
-    MotionShapeMix m_shapes;          // set_shapes() for this block
+    MotionRecorderConfig m_config;
+    RCU<PlayedLane> m_lanes;
+    detail::MotionHistory m_history;
+    std::atomic<uint32_t> m_next_take_id{1};
+    // The running take and the two take buffers (audio thread; service() reads Finished ones).
+    detail::MotionTakeWriter m_takes{m_next_take_id};
+    std::atomic<uint32_t> m_lane_version{0};
+    // Id of a lane a dropped take replaced; service() clears it if still published.
+    std::atomic<uint32_t> m_clear_request{0};
+    std::atomic<float> m_smoothing{0.0f};
+    std::atomic<uint32_t> m_shapes_version{0};
+    uint32_t m_published_id = 0;
+    uint32_t m_played_version = 0;
     uint32_t m_replaced_take_id = 0;  // lane muted by the running take (0 = none)
     int m_sig_num = 4;                // time signature of the last block
     int m_sig_denom = 4;
@@ -365,8 +355,10 @@ private:
     float m_last_x = 0.0f;  // last output
     float m_last_y = 0.0f;
     uint32_t m_num_samples = 0;
-
-    // Audio thread only, one-byte fields: commands and arming, playback, output.
+    detail::MotionGlide m_glide;
+    MotionShapeMix m_shapes;  // set_shapes() for this block
+    std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
+    std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
     bool m_armed = false;
     bool m_force_start = false;
     LoopLength m_arm_length = LoopLength::Free;

@@ -46,7 +46,9 @@ float clamp01(double v) {
 
 }  // namespace
 
-MotionRecorder::MotionRecorder() : m_audio_reader(m_lanes.add_reader()) {}
+MotionRecorder::MotionRecorder() {
+    m_audio_reader = m_lanes.add_reader();
+}
 
 MotionRecorder::~MotionRecorder() = default;
 
