@@ -305,8 +305,8 @@ private:
     // Ordered by alignment and size (clang-analyzer padding check), not by thread.
     // Threads: m_commands, the atomics, m_shape_mix, m_lanes and m_takes are shared;
     // m_history, m_published_id and m_played_version belong to the message thread;
-    // every other field to the audio thread. m_next_take_id precedes m_takes (bound
-    // by it); m_audio_reader is set from m_lanes in the constructor body.
+    // every other field to the audio thread. m_audio_reader is set from m_lanes in the
+    // constructor body.
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
     double m_sample_rate = 48000.0;
     size_t m_max_block = 0;
@@ -331,9 +331,10 @@ private:
     MotionRecorderConfig m_config;
     RCU<PlayedLane> m_lanes;
     detail::MotionHistory m_history;
-    std::atomic<uint32_t> m_next_take_id{1};
     // The running take and the two take buffers (audio thread; service() reads Finished ones).
+    // It only stores the reference to m_next_take_id, declared after it (padding order).
     detail::MotionTakeWriter m_takes{m_next_take_id};
+    std::atomic<uint32_t> m_next_take_id{1};
     std::atomic<uint32_t> m_lane_version{0};
     // Id of a lane a dropped take replaced; service() clears it if still published.
     std::atomic<uint32_t> m_clear_request{0};
