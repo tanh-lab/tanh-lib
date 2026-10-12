@@ -440,7 +440,8 @@ void Graph::mix_sources(const CompiledGraph& compiled,
 
 void Graph::run_step(const ProcessingStep& step,
                      thl::core::BufferView buffer,
-                     thl::core::BufferView dry) {
+                     thl::core::BufferView dry,
+                     uint32_t modulation_offset) {
     Node& node = *step.m_node;
     auto& smoother = node.m_wet_mix_smoother;
     const float target = node.m_wet_mix.load(std::memory_order_relaxed);
@@ -449,7 +450,7 @@ void Graph::run_step(const ProcessingStep& step,
     if (smoother.get_smoothed_value(0) == target) {
         if (target == 0.0f) { return; }  // bypassed: `buffer` already holds the sources
         if (target == 1.0f) {
-            node.m_processor->process_modulated(buffer);
+            node.m_processor->process_modulated(buffer, modulation_offset);
             return;
         }
     }
@@ -458,7 +459,7 @@ void Graph::run_step(const ProcessingStep& step,
     for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
         std::copy_n(buffer.get_read_pointer(ch), n, dry.get_write_pointer(ch));
     }
-    node.m_processor->process_modulated(buffer);
+    node.m_processor->process_modulated(buffer, modulation_offset);
 
     for (size_t i = 0; i < n; ++i) {
         const float wet = smoother.get_smoothed_value();
@@ -470,7 +471,7 @@ void Graph::run_step(const ProcessingStep& step,
     }
 }
 
-void Graph::process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/) {
+void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     CompiledGraph* compiled = m_active;
     const size_t n = buffer.get_num_samples();
 
@@ -499,7 +500,7 @@ void Graph::process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/
                                                 compiled->m_num_channels,
                                                 n);
         mix_sources(*compiled, step.m_sources, *step.m_node, node_buffer);
-        run_step(step, node_buffer, dry);
+        run_step(step, node_buffer, dry, modulation_offset);
     }
 
     mix_sources(*compiled, compiled->m_output_sources, *compiled->m_output_node, buffer);
