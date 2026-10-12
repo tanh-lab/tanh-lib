@@ -747,3 +747,128 @@ TEST(Graph, DestructorFreesEverything) {
     }
     EXPECT_EQ(destroyed, 2);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Nested graphs
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(Graph, NestedGraphProcessesAsANode) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    const auto inner_gain = inner.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(inner_gain);
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *inner_gain));
+    ASSERT_TRUE(inner.connect(*inner_gain, inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    const auto outer_gain = outer.add_node<GainProcessor>(3.0f);
+    ASSERT_TRUE(nested && outer_gain);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, *outer_gain));
+    ASSERT_TRUE(outer.connect(*outer_gain, outer.graph_output()));
+    prepare(outer);
+
+    auto buffer = make_buffer(0.1f);
+    outer.process(buffer);
+    expect_all(buffer, 0.1f * 2.0f * 3.0f);
+}
+
+TEST(Graph, PrepareReachesNestedGraphs) {
+    auto before = std::make_unique<Graph>();
+    auto after = std::make_unique<Graph>();
+    const auto recorder_before = before->add_node<PrepareRecorder>();
+    const auto recorder_after = after->add_node<PrepareRecorder>();
+    ASSERT_TRUE(recorder_before && recorder_after);
+    const auto* added_before = static_cast<const PrepareRecorder*>(before->node(*recorder_before));
+    const auto* added_after = static_cast<const PrepareRecorder*>(after->node(*recorder_after));
+
+    Graph outer;
+    ASSERT_TRUE(outer.add_node(std::move(before)));
+    prepare(outer);
+    ASSERT_TRUE(outer.add_node(std::move(after)));
+
+    for (const PrepareRecorder* recorder : {added_before, added_after}) {
+        EXPECT_DOUBLE_EQ(recorder->m_sample_rate, k_sample_rate);
+        EXPECT_EQ(recorder->m_samples_per_block, k_block);
+        EXPECT_EQ(recorder->m_num_channels, k_channels);
+    }
+}
+
+TEST(Graph, NestedCommitTakesEffectWithoutOuterCommit) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+
+    const auto gain = inner.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(inner.disconnect(inner.graph_input(), inner.graph_output()));
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *gain));
+    ASSERT_TRUE(inner.connect(*gain, inner.graph_output()));
+    ASSERT_TRUE(inner.commit());
+    EXPECT_FALSE(outer.has_uncommitted_changes());
+
+    const auto buffer = process_blocks(outer, 0.5f, k_fade_blocks);
+    expect_all(buffer, 1.0f);
+}
+
+TEST(Graph, NestedCommitWaitsWhileTheNestedGraphIsBypassed) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    ASSERT_TRUE(outer.set_wet_mix(*nested, 0.0f));
+    prepare(outer);
+
+    const auto gain = inner.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(inner.disconnect(inner.graph_input(), inner.graph_output()));
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *gain));
+    ASSERT_TRUE(inner.connect(*gain, inner.graph_output()));
+    ASSERT_TRUE(inner.commit());
+
+    auto buffer = process_blocks(outer, 0.5f, k_fade_blocks);
+    expect_all(buffer, 0.5f);
+
+    // Running again, the nested graph starts by fading out its old version.
+    ASSERT_TRUE(outer.set_wet_mix(*nested, 1.0f));
+    buffer = process_blocks(outer, 0.5f, 1);
+    EXPECT_LT(buffer.get_read_pointer(0)[k_block - 1], 0.5f);
+
+    buffer = process_blocks(outer, 0.5f, k_ramp_blocks + k_fade_blocks);
+    expect_all(buffer, 1.0f);
+}
+
+TEST(Graph, RemovedNestedGraphFreesItsNodes) {
+    int destroyed = 0;
+    auto owned = std::make_unique<Graph>();
+    const auto lifetime = owned->add_node<LifetimeProcessor>(destroyed);
+    ASSERT_TRUE(lifetime);
+    ASSERT_TRUE(owned->connect(*lifetime, owned->graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+
+    ASSERT_TRUE(outer.remove_node(*nested));
+    ASSERT_TRUE(outer.commit());
+    process_blocks(outer, 0.0f, k_fade_out_blocks);
+    EXPECT_EQ(destroyed, 0);
+
+    ASSERT_TRUE(outer.commit());
+    EXPECT_EQ(destroyed, 1);
+}
