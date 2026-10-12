@@ -3,6 +3,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <thread>
 
@@ -45,12 +46,16 @@ TEST(SeqLock, AcceptedReadsAreNeverTorn) {
             lock.write_begin();
             for (auto& v : values) { v.store(batch, std::memory_order_relaxed); }
             lock.write_end();
+            std::this_thread::yield();  // leave the reader gaps, also on a busy single core
         }
     });
 
     uint64_t accepted = 0;
     uint64_t torn = 0;
-    for (int i = 0; i < 200000; ++i) {
+    // At least 200000 attempts and 1000 accepted reads, within 10 s on a slow runner.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    for (int i = 0; i < 200000 || (accepted < 1000 && std::chrono::steady_clock::now() < deadline);
+         ++i) {
         const auto token = lock.read_begin();
         if (!token) { continue; }
         std::array<uint32_t, k_values> read{};
@@ -67,5 +72,5 @@ TEST(SeqLock, AcceptedReadsAreNeverTorn) {
     writer.join();
 
     EXPECT_EQ(torn, 0u);
-    EXPECT_GT(accepted, 0u);
+    EXPECT_GE(accepted, 1000u);
 }
