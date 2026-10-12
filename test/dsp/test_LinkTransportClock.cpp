@@ -251,8 +251,8 @@ TEST(LinkTransportClock, EpochWithoutRealignmentExpires) {
     }
 }
 
-// Our own seek right after an epoch change is a plain jump; the armed reset
-// still waits for the join's realignment.
+// Our own seek right after an epoch change is a plain jump and ends the wait
+// for the join's realignment: a later realignment is a plain jump too.
 TEST(LinkTransportClock, OwnSeekAfterTheEpochIsNotAReset) {
     fake::FakeLinkBackend link;
     LinkTransportClock clk(link);
@@ -266,7 +266,7 @@ TEST(LinkTransportClock, OwnSeekAfterTheEpochIsNotAReset) {
         clk.set_host_time_us(t0);
         clk.begin_block(k_frames);
         const uint32_t want = b == 10   ? TransportInfo::k_jumped
-                              : b == 60 ? TransportInfo::k_jumped | TransportInfo::k_timeline_reset
+                              : b == 60 ? TransportInfo::k_jumped
                                         : 0u;
         if (b > 0) { EXPECT_EQ(clk.block_info().discontinuities(), want) << "block " << b; }
         clk.end_block();

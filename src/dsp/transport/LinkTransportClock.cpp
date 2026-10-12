@@ -150,9 +150,11 @@ TransportInfo LinkTransportClock::compute_block(uint32_t frame_count) {
     // change, so the tempo window is off.
     m_tracker.set_tempo_window_samples(m_epoch_armed ? 0.0 : m_tempo_window_samples);
     m_tracker.resolve(info, b1, frame_count);
-    // Our own play or seek is a plain jump; the join's realignment is still to come.
-    if (m_epoch_armed && !committed && info.has(TransportInfo::k_jumped)) {
-        info.m_flags |= TransportInfo::k_timeline_reset;
+    // The realignment after an epoch change is the reset. Our own play or seek
+    // places the timeline itself: a plain jump, and it ends the wait (which keeps
+    // the tempo window off, so a peer's tempo change would read as a jump).
+    if (m_epoch_armed && info.has(TransportInfo::k_jumped)) {
+        if (!committed) { info.m_flags |= TransportInfo::k_timeline_reset; }
         m_epoch_armed = false;
     }
     return info;
