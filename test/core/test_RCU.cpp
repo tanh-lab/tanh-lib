@@ -314,3 +314,30 @@ TEST(RCU, OwnedReaderProtectsAcrossChangingThreads) {
     EXPECT_EQ(reads.load(), 50U * 2000U);
     EXPECT_EQ(rcu.get_reader_count(), readers_before);  // no thread registered itself
 }
+
+// Read sections nest: closing an inner scope keeps the outer one's version
+// alive, on a reader slot and on a registered thread.
+TEST(RCU, NestedReadScopesKeepTheOuterVersion) {
+    RCU<TrackedVersion> rcu;
+    auto& table = version_table();
+    const auto reader = rcu.add_reader();
+    {
+        auto outer = rcu.read_scope(reader);
+        const uint64_t seq = outer.data().m_seq;
+        { auto inner = rcu.read_scope(reader); }
+        for (int i = 0; i < 4; ++i) {
+            rcu.replace([](TrackedVersion&) {});
+        }
+        EXPECT_EQ(table.m_destroyed[seq].load(), 0) << "slot";
+    }
+    rcu.register_reader_thread();
+    {
+        auto outer = rcu.read_scope();
+        const uint64_t seq = outer.data().m_seq;
+        { auto inner = rcu.read_scope(); }
+        for (int i = 0; i < 4; ++i) {
+            rcu.replace([](TrackedVersion&) {});
+        }
+        EXPECT_EQ(table.m_destroyed[seq].load(), 0) << "thread";
+    }
+}

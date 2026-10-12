@@ -26,6 +26,7 @@ namespace detail {
 /// only links it.
 struct RcuReaderNode {
     std::atomic<uint64_t> m_read_generation{0};
+    uint32_t m_depth = 0;  // open read sections; only the slot's one user touches it
     std::atomic<RcuReaderNode*> m_next{nullptr};
     std::atomic<bool> m_is_dead{false};  // Set when the owning thread exits
 };
@@ -412,8 +413,8 @@ public:
      * access). Opens rcu_read_lock() in the ctor and closes it in the dtor,
      * while exposing the current data pointer.
      *
-     * Non-copyable, non-movable. Must not outlive the RCU instance. Nested
-     * scopes on the same thread/instance are not supported.
+     * Non-copyable, non-movable. Must not outlive the RCU instance. Scopes on
+     * the same thread or reader slot nest: the outermost one holds the section.
      *
      * Usage:
      * ```cpp
@@ -540,6 +541,7 @@ private:
     }
 
     void rcu_read_lock(detail::RcuReaderNode& node) const {
+        if (node.m_depth++ > 0) { return; }  // nested: the outer section holds
         const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
         node.m_read_generation.store(current_period, std::memory_order_seq_cst);
     }
@@ -551,6 +553,7 @@ private:
     }
 
     void rcu_read_unlock(detail::RcuReaderNode& node) const {
+        if (--node.m_depth > 0) { return; }
         node.m_read_generation.store(0, std::memory_order_release);
     }
 
