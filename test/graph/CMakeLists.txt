@@ -21,3 +21,11 @@ if(CMAKE_CROSSCOMPILING)
 else()
 	gtest_discover_tests(${PROJECT_NAME})
 endif()
+
+add_executable(benchmark_graph benchmark_Graph.cpp)
+target_link_libraries(benchmark_graph
+	PRIVATE
+		tanh::Graph
+		benchmark::benchmark
+)
+tanh_copy_runtime_dlls(benchmark_graph)

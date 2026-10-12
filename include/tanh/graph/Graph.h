@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
@@ -56,7 +57,16 @@ public:
         return add_node(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
+    /// A prepared graph prepares the processor here, on the calling thread.
     std::optional<NodeId> add_node(std::unique_ptr<thl::dsp::BaseProcessor> processor);
+
+    /// A processor the caller already prepared, e.g. a heavy one on its own background thread,
+    /// for @p sample_rate, @p samples_per_block and @p num_channels. The graph prepares it again
+    /// only if they differ from its own (or prepare() runs again).
+    std::optional<NodeId> add_prepared_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
+                                            double sample_rate,
+                                            size_t samples_per_block,
+                                            size_t num_channels);
 
     bool remove_node(NodeId id);
     bool connect(NodeId from, NodeId to);
@@ -64,8 +74,16 @@ public:
     bool set_input_mix(NodeId id, InputMix input_mix);
     bool set_wet_mix(NodeId id, float wet_mix);
 
+    /// Hands the edited graph to the audio thread (a short fade out and in). Without changes
+    /// since the last commit it does nothing. False if the graph has a cycle.
     bool commit();
     bool has_uncommitted_changes() const { return m_dirty; }
+
+    /// Frees the versions the audio thread handed back and the removed nodes no running version
+    /// uses, also in nested graphs. commit() calls it; call it from a timer (e.g. 30 Hz on the
+    /// message thread) so removed processors go away without another edit. A nested graph that
+    /// does not run (wet 0) keeps its old version until it runs again.
+    void collect_garbage();
 
     NodeId graph_input() const { return k_input_id; }
     NodeId graph_output() const { return k_output_id; }
@@ -104,13 +122,18 @@ private:
 
     bool exists(NodeId id) const { return m_nodes.contains(id); }
     bool path_exists(NodeId from, NodeId to) const;
-    void prepare_node(Node& node) const;
+    std::optional<NodeId> insert_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
+                                      bool prepare_processor);
+    void prepare_node(Node& node, bool prepare_processor = true) const;
 
     std::optional<std::vector<NodeId>> sort_graph_dfs() const;
-    std::unique_ptr<CompiledGraph> compile() const;
+    std::unique_ptr<CompiledGraph> compile();
+    bool rebuild();
 
     void publish(std::unique_ptr<CompiledGraph> compiled);
-    void collect_garbage();
+    void collect_own_garbage();
+    void recycle(CompiledGraph* compiled);
+    [[nodiscard]] thl::core::Buffer<float> take_buffer();
     void free_all_compiled();
 
     bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
@@ -137,6 +160,9 @@ private:
     size_t m_max_block_size = 0;
     size_t m_num_channels = 0;
     bool m_dirty = false;
+    bool m_published = false;  // a version was published since prepare()
+    // Buffers of freed versions, sized for prepare(): compile() takes them first.
+    std::vector<thl::core::Buffer<float>> m_buffer_pool;
 
     uint64_t m_next_generation = 1;
     std::set<uint64_t> m_live_generations;  // handed to the audio thread and not yet freed
