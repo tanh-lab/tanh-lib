@@ -302,12 +302,14 @@ private:
     void publish(MotionLane lane, bool record_history = true);
     void publish_played(MotionLane lane);
 
+    // Shared between threads. The queue is cache-line aligned: first, so nothing pads up to it.
+    thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
+
     MotionRecorderConfig m_config;
     double m_sample_rate = 48000.0;
     size_t m_max_block = 0;
 
     // Shared between threads.
-    thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
     RCU<PlayedLane> m_lanes;
     RCU<PlayedLane>::Reader m_audio_reader;  // after m_lanes: made from it
     AtomicMotionShapeMix m_shape_mix;
