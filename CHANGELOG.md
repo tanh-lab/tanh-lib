@@ -168,6 +168,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   interval; a reset that closes a latched gate adds a change point at sample 0.
   Tests: `XYFramePublisher.TrailKeepsItsSpacingAcrossShortBlocks`,
   `XYController.LatchKeepsTheGateOpenUntilTurnedOff`.
+- Link clock: our own play or seek right after an epoch change is a plain jump,
+  not the join's `k_timeline_reset`, and ends the wait for it; the host-time filter
+  starts over after host times, so a stall while they arrived does not offset it.
+  Tests: `LinkTransportClock.{OwnSeekAfterTheEpochIsNotAReset,FilterStartsOverWhenHostTimesStop}`.
+- RCU: read scopes on one thread or reader slot nest; closing an inner one freed
+  the outer one's version (e.g. `audio_read_scope()` around `ModulationMatrix::process()`).
+  Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
+- `XYController::set_block_time()` holds for one `matrix.process()`: documented that
+  a host splitting its block sets it per chunk.
 - `XYController`: a repeated `prepare()` re-prepares the recorders; a take published
   by `service()` during a block no longer switches that block to the older lane it
   still reads. Tests: `MotionRecorderThreads.ConcurrentServiceKeepsTheHandoffSilent`.

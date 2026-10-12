@@ -94,6 +94,9 @@ pad.touch(id, x, y, std::llround(touch.timestamp * 1e9));
 pad.set_block_time(thl::core::uptime_ns());
 ```
 
+- The block time holds for one `matrix.process()`. A host block split into
+  chunks sets it per chunk: the callback time plus the chunk's offset at the
+  sample rate.
 - A touch plays at `time + m_input_delay_ms` (default one prepared block plus
   5 ms); one already late lands at offset 0, one due later waits for its block.
 - x / y ramp linearly between two timed moves; down, up and a switch to another

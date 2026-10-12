@@ -167,10 +167,12 @@ public:
         voice_recorder(voice).read_lane(std::forward<F>(f));
     }
 
-    /// The time of the block's audio callback, on the clock of the touch
-    /// timestamps (any monotonic nanosecond clock, e.g. thl::core::uptime_ns()). Call
-    /// once per block before matrix.process() to place timestamped touches; a
-    /// block without it spreads its touches as if untimed.
+    /// The time of the block's first sample, on the clock of the touch timestamps
+    /// (any monotonic nanosecond clock, e.g. thl::core::uptime_ns()). Call before
+    /// every matrix.process() to place timestamped touches; it holds for that call
+    /// only. A host block split into chunks needs one call per chunk: the callback
+    /// time plus the chunk's offset at the sample rate. A block without it spreads
+    /// its touches as if untimed.
     void set_block_time(int64_t now_ns) TANH_NONBLOCKING_FUNCTION;
 
     /// Host reset: the next block re-locks playback without a glide and latched gates close.
