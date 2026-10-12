@@ -65,9 +65,10 @@ TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
         // in-block tempo change is absorbed by the tracker at the next block.
         end = playing ? start + static_cast<double>(frame_count) * bps : start;
         m_free_valid = false;  // a later free-run continues from this block's end
+        // The host owns the beat: a seek made meanwhile is dropped, not applied
+        // whenever the host later stops sending the beat.
+        (void)m_pending_position.take();
     } else {
-        // A seek is taken only here, so one made while the host supplied the beat
-        // waits for the free-run instead of being dropped.
         if (const auto beats = m_pending_position.take()) {
             m_free_anchor_beat = *beats;
             m_free_samples = 0;

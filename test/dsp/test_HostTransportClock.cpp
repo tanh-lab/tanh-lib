@@ -129,21 +129,25 @@ TEST(HostTransportClock, FreeRunContinuesFromLastHostBeatAndFollowsSeek) {
     EXPECT_TRUE(info.has(TransportInfo::k_jumped));
 }
 
-TEST(HostTransportClock, SeekWhileHostSuppliesBeatWaitsForFreeRun) {
+// The host owns the beat while it supplies one: a seek made then is dropped,
+// not applied whenever the host later stops sending the beat.
+TEST(HostTransportClock, SeekWhileHostSuppliesBeatIsDropped) {
     HostTransportClock clk;
     clk.prepare(k_sr);
     TransportInfo host;
     host.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
                    TransportInfo::k_is_playing;
+    host.m_bpm = 120.0;
     host.m_beat_position = 10.0;
     clk.set_position_beats(32.0);
     EXPECT_DOUBLE_EQ(run(clk, &host, 480).m_beat_position, 10.0);  // the host's beat wins
 
     TransportInfo tempo_only;
     tempo_only.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_is_playing;
+    tempo_only.m_bpm = 120.0;
     const auto info = run(clk, &tempo_only, 480);
-    EXPECT_DOUBLE_EQ(info.m_beat_position, 32.0);
-    EXPECT_TRUE(info.has(TransportInfo::k_jumped));
+    EXPECT_NEAR(info.m_beat_position, 10.0 + 480 * bps(120.0), 1e-12);  // continues
+    EXPECT_EQ(info.discontinuities(), 0u);
 }
 
 TEST(HostTransportClock, StoppedBeatConstantInBlock) {

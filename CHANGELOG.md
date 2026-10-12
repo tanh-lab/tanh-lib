@@ -147,10 +147,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Clocks: a tempo change inside a block, or a Link peer's dated within 50 ms, is
   `k_tempo_changed`, not `k_jumped`; a Link stop dated ahead lands in its block; the
   first realignment within 1.5 s of a Link epoch change is the `k_timeline_reset`;
-  `HostTransportClock` keeps a seek pending while the host supplies the beat and
+  `HostTransportClock` drops a seek made while the host supplies the beat and
   trusts its play flag only with tempo, beat or time signature. Tests:
   `HostTransportClockTempoMap.*`, `LinkTransportClock.JoinRealignmentAfterTheEpochResets`,
-  `HostTransportClock.SeekWhileHostSuppliesBeatWaitsForFreeRun`.
+  `HostTransportClock.SeekWhileHostSuppliesBeatIsDropped`.
 - Clocks: a block that continues the previous one starts exactly at its end, so a
   division boundary on a block edge counts once (it could count twice or not at
   all with a host's sample-derived ppq); the time signature is set in one atomic,

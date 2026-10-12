@@ -97,8 +97,7 @@ Fields the host omits come from the fallbacks (`set_bpm()`,
 `set_time_signature()`, `play()` / `stop()`). The host's play flag counts only
 when it also sent tempo, beat or time signature. Without a host beat the clock
 free-runs from the previous block's end; `set_position_beats()` moves the
-free-run, and a seek made while the host supplies the beat waits until the beat
-free-runs again.
+free-run, and a seek made while the host supplies the beat is dropped.
 
 ## Ableton Link
 

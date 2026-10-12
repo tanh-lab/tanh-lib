@@ -24,7 +24,7 @@ namespace thl::dsp::transport {
  *   fallback.
  * - Beat: the host's if valid, else free-running from the previous block's end.
  *   set_position_beats() moves the free-running beat; a seek made while the host
- *   supplies the beat stays pending until the beat free-runs again.
+ *   supplies the beat is dropped.
  * - Time signature: the host's if valid, else the fallback.
  *
  * Discontinuity flags come from a ContinuityTracker, never from the host. A block
