@@ -187,15 +187,7 @@ void Graph::prepare(const double& sample_rate,
             node->m_processor->prepare(sample_rate, samples_per_block, num_channels);
         }
     }
-
-    // process() is not running, so nothing has to be handed over.
-    free_all_compiled();
-    auto compiled = compile();
-    if (!compiled) { return; }
-    compiled->m_generation = m_next_generation++;
-    m_live_generations.insert(compiled->m_generation);
-    m_active = compiled.release();
-    m_dirty = false;
+    commit();
 }
 
 std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {

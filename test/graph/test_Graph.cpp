@@ -406,6 +406,20 @@ TEST(Graph, PrepareCommitsPendingEdits) {
     expect_all(buffer, 0.5f);
 }
 
+TEST(Graph, PrepareAgainTakesEffectAtTheNextBlock) {
+    Graph graph;
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+    auto stereo = make_buffer(0.5f);
+    graph.process(stereo);
+
+    graph.prepare(k_sample_rate, k_block, 1);
+    Buffer<float> mono(1, k_block);
+    std::fill_n(mono.get_write_pointer(0), k_block, 0.5f);
+    graph.process(mono);
+    expect_all(mono, 0.5f);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Handing versions to the audio thread
 // ─────────────────────────────────────────────────────────────────────────────
