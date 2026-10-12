@@ -316,7 +316,7 @@ bool Graph::commit() {
 
 void Graph::publish(std::unique_ptr<CompiledGraph> compiled) {
     m_live_generations.insert(compiled->m_generation);
-    CompiledGraph* stale = m_pending.exchange(compiled.release(), std::memory_order_acq_rel);
+    const CompiledGraph* stale = m_pending.exchange(compiled.release(), std::memory_order_acq_rel);
 
     // The audio thread never picked this one up, so it can be freed right away.
     if (stale != nullptr) {
