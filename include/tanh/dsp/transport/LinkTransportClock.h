@@ -80,8 +80,10 @@ private:
     /// Arms the timeline reset for the next realignment after an epoch change.
     void follow_epoch(int64_t t0) TANH_NONBLOCKING_FUNCTION;
     /// Applies the queued UI requests at @p t0 to the captured state (commits if
-    /// any) and returns the state the block plays.
-    [[nodiscard]] LinkState apply_requests(int64_t t0, double quantum) TANH_NONBLOCKING_FUNCTION;
+    /// any, then sets @p committed) and returns the state the block plays.
+    [[nodiscard]] LinkState apply_requests(int64_t t0,
+                                           double quantum,
+                                           bool& committed) TANH_NONBLOCKING_FUNCTION;
 
     LinkBackend& m_backend;
     double m_sample_rate = 48000.0;

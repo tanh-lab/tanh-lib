@@ -251,6 +251,28 @@ TEST(LinkTransportClock, EpochWithoutRealignmentExpires) {
     }
 }
 
+// Our own seek right after an epoch change is a plain jump; the armed reset
+// still waits for the join's realignment.
+TEST(LinkTransportClock, OwnSeekAfterTheEpochIsNotAReset) {
+    fake::FakeLinkBackend link;
+    LinkTransportClock clk(link);
+    clk.prepare(k_sr);
+    link.m_session.m_playing = true;
+    for (int b = 0; b < 100; ++b) {
+        const int64_t t0 = b * k_block_us;
+        if (b == 5) { link.bump_epoch(); }
+        if (b == 10) { clk.set_position_beats(16.0); }
+        if (b == 60) { link.realign(0.25, t0); }
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
+        const uint32_t want = b == 10   ? TransportInfo::k_jumped
+                              : b == 60 ? TransportInfo::k_jumped | TransportInfo::k_timeline_reset
+                                        : 0u;
+        if (b > 0) { EXPECT_EQ(clk.block_info().discontinuities(), want) << "block " << b; }
+        clk.end_block();
+    }
+}
+
 // A peer stopping at its output time sends a stop dated ahead: we keep playing
 // until the block that contains it (STARTSTOPSTATE-1), like a start.
 TEST(LinkTransportClock, PeerStopDatedAheadLandsInItsBlock) {
@@ -450,6 +472,30 @@ TEST(LinkTransportClock, NoHostTimeUsesFilteredSampleClock) {
         }
         clk.end_block();
     }
+}
+
+// The filter starts over when host times stop: a stall while they arrived
+// (the device's sample clock fell behind) does not offset the filtered times.
+TEST(LinkTransportClock, FilterStartsOverWhenHostTimesStop) {
+    fake::FakeLinkBackend link;
+    LinkTransportClock clk(link);
+    clk.prepare(k_sr);
+    int64_t now = 5000000;
+    auto block = [&](bool host_time) {
+        link.m_now = now;
+        if (host_time) { clk.set_host_time_us(now); }
+        clk.begin_block(k_frames);
+        clk.end_block();
+        now += k_block_us;
+    };
+    for (int b = 0; b < 600; ++b) { block(false); }
+    for (int b = 0; b < 50; ++b) { block(true); }
+    now += 500000;  // a 0.5 s stall with host times
+    for (int b = 0; b < 50; ++b) { block(true); }
+    link.m_now = now;
+    clk.begin_block(k_frames);
+    EXPECT_NEAR(clk.output_time_us(), now, 1000.0);
+    clk.end_block();
 }
 
 namespace {

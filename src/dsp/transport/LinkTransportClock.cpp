@@ -57,10 +57,16 @@ void LinkTransportClock::set_output_latency_samples(uint32_t samples) {
 }
 
 int64_t LinkTransportClock::output_time(uint32_t frame_count) TANH_NONBLOCKING_FUNCTION {
-    // Output time t0: the samples of this block leave the speaker at t0.
-    const int64_t host_us = m_host_time_us.has_value()
-                                ? *m_host_time_us
-                                : m_host_time_filter.add(m_sample_time, m_backend.now_us());
+    // Output time t0: the samples of this block leave the speaker at t0. The
+    // filter starts over after host times: the sample clock may have fallen
+    // behind meanwhile (a stall), which its old points would not know.
+    int64_t host_us = 0;
+    if (m_host_time_us.has_value()) {
+        host_us = *m_host_time_us;
+        m_host_time_filter.reset();
+    } else {
+        host_us = m_host_time_filter.add(m_sample_time, m_backend.now_us());
+    }
     m_host_time_us.reset();
     m_sample_time += static_cast<double>(frame_count);
     return host_us + latency_us(m_latency_samples.load(std::memory_order_relaxed), m_sample_rate);
@@ -83,7 +89,9 @@ void LinkTransportClock::follow_epoch(int64_t t0) TANH_NONBLOCKING_FUNCTION {
     if (m_epoch_armed && t0 >= m_epoch_armed_until_us) { m_epoch_armed = false; }
 }
 
-LinkState LinkTransportClock::apply_requests(int64_t t0, double quantum) TANH_NONBLOCKING_FUNCTION {
+LinkState LinkTransportClock::apply_requests(int64_t t0,
+                                             double quantum,
+                                             bool& committed) TANH_NONBLOCKING_FUNCTION {
     LinkState state = m_backend.state();
     bool dirty = false;
     if (const auto bpm = m_pending_bpm.take()) {
@@ -103,6 +111,7 @@ LinkState LinkTransportClock::apply_requests(int64_t t0, double quantum) TANH_NO
         m_backend.request_beat_at(*beats, t0, quantum);
         dirty = true;
     }
+    committed = dirty;
     if (!dirty) { return state; }
     m_backend.commit();
     return m_backend.state();
@@ -116,7 +125,8 @@ TransportInfo LinkTransportClock::compute_block(uint32_t frame_count) {
 
     // Capture, apply queued UI requests at the output time, commit if changed.
     m_backend.capture();
-    const LinkState state = apply_requests(t0, q);
+    bool committed = false;
+    const LinkState state = apply_requests(t0, q, committed);
 
     const int64_t t1 =
         t0 + std::llround(static_cast<double>(frame_count) * k_micros_per_second / m_sample_rate);
@@ -140,7 +150,8 @@ TransportInfo LinkTransportClock::compute_block(uint32_t frame_count) {
     // change, so the tempo window is off.
     m_tracker.set_tempo_window_samples(m_epoch_armed ? 0.0 : m_tempo_window_samples);
     m_tracker.resolve(info, b1, frame_count);
-    if (m_epoch_armed && info.has(TransportInfo::k_jumped)) {
+    // Our own play or seek is a plain jump; the join's realignment is still to come.
+    if (m_epoch_armed && !committed && info.has(TransportInfo::k_jumped)) {
         info.m_flags |= TransportInfo::k_timeline_reset;
         m_epoch_armed = false;
     }
