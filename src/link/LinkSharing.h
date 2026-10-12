@@ -22,8 +22,10 @@ using ReceivedQueue = core::LockFreeQueue<dsp::transport::LinkAudioPacket, 256>;
 /**
  * @brief What the session shares between the SDK's threads and the audio thread.
  *
- * The receiving callback may still run after its source is gone, so the session
- * keeps this alive (shared ownership) until every callback is done.
+ * Owned by the session; no receiving callback outlives it. C++ SDK: the source
+ * swaps its callback under the lock it runs under, so none runs once
+ * ~LinkAudioSource() returns, and the session destroys its source first.
+ * LinkKit: the callback's context is the session, alive until ABLLinkDelete().
  */
 struct SessionShared {
     ReceivedQueue m_received;

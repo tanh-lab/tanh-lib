@@ -187,9 +187,8 @@ private:
 struct LinkSession::Impl {
     Impl(double bpm, const std::string& peer_name, const std::string& output_name)
         : m_link(bpm, peer_name)
-        , m_shared(std::make_shared<detail::SessionShared>())
-        , m_backend(m_link, *m_shared)
-        , m_sharing(m_link, m_backend, m_shared->m_received, output_name) {
+        , m_backend(m_link, m_shared)
+        , m_sharing(m_link, m_backend, m_shared.m_received, output_name) {
         // Link thread: count peers, bump the epoch when the first one joins.
         m_link.setNumPeersCallback([this](std::size_t peers) {
             const size_t before = m_peers.exchange(peers, std::memory_order_acq_rel);
@@ -198,7 +197,7 @@ struct LinkSession::Impl {
     }
 
     ableton::LinkAudio m_link;
-    std::shared_ptr<detail::SessionShared> m_shared;  // also held by the receiving callback
+    detail::SessionShared m_shared;
     AbletonBackend m_backend;
     std::atomic<size_t> m_peers{0};
     AbletonSharing m_sharing;
@@ -295,9 +294,9 @@ void LinkSession::set_audio_input(std::optional<uint64_t> id) {
     if (id) {
         m_impl->m_source.emplace(m_impl->m_link,
                                  to_channel_id(*id),
-                                 [&link = m_impl->m_link, shared = m_impl->m_shared](
+                                 [&link = m_impl->m_link, &shared = m_impl->m_shared](
                                      ableton::LinkAudioSource::BufferHandle buffer) {
-                                     on_buffer(link, *shared, buffer);
+                                     on_buffer(link, shared, buffer);
                                  });
     }
 }
@@ -307,11 +306,11 @@ std::optional<uint64_t> LinkSession::audio_input() const {
 }
 
 void LinkSession::set_quantum(double quantum) {
-    if (quantum > 0.0) { m_impl->m_shared->m_quantum.store(quantum, std::memory_order_relaxed); }
+    if (quantum > 0.0) { m_impl->m_shared.m_quantum.store(quantum, std::memory_order_relaxed); }
 }
 
 double LinkSession::quantum() const {
-    return m_impl->m_shared->m_quantum.load(std::memory_order_relaxed);
+    return m_impl->m_shared.m_quantum.load(std::memory_order_relaxed);
 }
 
 dsp::transport::LinkAudioBackend& LinkSession::audio_backend() {
