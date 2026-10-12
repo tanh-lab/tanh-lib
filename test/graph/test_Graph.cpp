@@ -2,10 +2,12 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/graph/Graph.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -25,7 +27,9 @@ namespace {
 constexpr size_t k_channels = 2;
 constexpr size_t k_block = 64;
 constexpr double k_sample_rate = 48000.0;
-constexpr size_t k_ramp_blocks = 15;  // 20 ms at 48 kHz, in blocks of 64
+constexpr size_t k_ramp_blocks = 15;     // 20 ms at 48 kHz, in blocks of 64
+constexpr size_t k_fade_out_blocks = 8;  // 10 ms at 48 kHz, in blocks of 64, rounded up
+constexpr size_t k_fade_blocks = 2 * k_fade_out_blocks + 1;  // out, in, then one at full level
 
 /// Overwrites the buffer with a constant: a generator.
 class ConstantProcessor final : public BaseProcessor {
@@ -126,6 +130,16 @@ Buffer<float> make_buffer(float value, size_t num_frames = k_block) {
     Buffer<float> buffer(k_channels, num_frames);
     for (size_t ch = 0; ch < k_channels; ++ch) {
         std::fill_n(buffer.get_write_pointer(ch), num_frames, value);
+    }
+    return buffer;
+}
+
+/// Processes `num_blocks` blocks of `value` and returns the last one.
+Buffer<float> process_blocks(Graph& graph, float value, size_t num_blocks) {
+    auto buffer = make_buffer(value);
+    for (size_t block = 0; block < num_blocks; ++block) {
+        buffer = make_buffer(value);
+        graph.process(buffer);
     }
     return buffer;
 }
@@ -357,23 +371,34 @@ TEST(Graph, WetMixChangeRampsWithoutCommit) {
 
 TEST(Graph, WetMixRampContinuesAcrossCommit) {
     Graph graph;
-    const auto gain = graph.add_node<GainProcessor>(2.0f);
-    ASSERT_TRUE(gain);
-    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
-    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
-    prepare(graph);
-
-    ASSERT_TRUE(graph.set_wet_mix(*gain, 0.0f));
-    auto buffer = make_buffer(0.5f);
-    graph.process(buffer);
-    const float last = buffer.get_read_pointer(0)[k_block - 1];
+    Graph reference;
+    for (Graph* g : {&graph, &reference}) {
+        const auto gain = g->add_node<GainProcessor>(2.0f);
+        ASSERT_TRUE(gain);
+        ASSERT_TRUE(g->connect(g->graph_input(), *gain));
+        ASSERT_TRUE(g->connect(*gain, g->graph_output()));
+        prepare(*g);
+        ASSERT_TRUE(g->set_wet_mix(*gain, 0.0f));
+    }
 
     ASSERT_TRUE(graph.commit());
-    buffer = make_buffer(0.5f);
+    process_blocks(graph, 0.5f, k_fade_out_blocks);
+    process_blocks(reference, 0.5f, k_fade_out_blocks);
+
+    thl::dsp::utils::SmoothedValue fade_in;
+    fade_in.reset(k_sample_rate, 0.01);
+    fade_in.set_current_and_target_value(0.0f);
+    fade_in.set_target_value(1.0f);
+
+    auto buffer = make_buffer(0.5f);
     graph.process(buffer);
-    const float first = buffer.get_read_pointer(0)[0];
-    EXPECT_LT(first, last);
-    EXPECT_NEAR(first, last, 0.001f);
+    auto expected = make_buffer(0.5f);
+    reference.process(expected);
+    for (size_t i = 0; i < k_block; ++i) {
+        EXPECT_NEAR(buffer.get_read_pointer(0)[i],
+                    expected.get_read_pointer(0)[i] * fade_in.get_smoothed_value(),
+                    1e-6f);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -566,7 +591,7 @@ TEST(Graph, PrepareAgainTakesEffectAtTheNextBlock) {
 // Handing versions to the audio thread
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST(Graph, CommitTakesEffectAtTheNextBlock) {
+TEST(Graph, CommitTakesEffectAfterTheFade) {
     Graph graph;
     prepare(graph);
 
@@ -580,9 +605,97 @@ TEST(Graph, CommitTakesEffectAtTheNextBlock) {
     expect_all(buffer, 0.0f);  // not committed yet
 
     ASSERT_TRUE(graph.commit());
+    buffer = process_blocks(graph, 0.5f, k_fade_blocks);
+    expect_all(buffer, 0.5f);
+}
+
+TEST(Graph, CommitFadesOutThenIn) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    ASSERT_TRUE(graph.disconnect(graph.graph_input(), graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+
+    std::vector<float> output;
+    for (size_t block = 0; block < k_fade_blocks; ++block) {
+        auto buffer = make_buffer(0.5f);
+        graph.process(buffer);
+        const float* samples = buffer.get_read_pointer(0);
+        output.insert(output.end(), samples, samples + k_block);
+    }
+
+    const size_t switch_at = k_fade_out_blocks * k_block;
+    const auto first_silent = static_cast<size_t>(std::ranges::find(output, 0.0f) - output.begin());
+    ASSERT_LT(first_silent, switch_at);
+    EXPECT_LT(switch_at - first_silent, k_block);
+    for (size_t i = first_silent; i < switch_at; ++i) { EXPECT_EQ(output[i], 0.0f); }
+    EXPECT_GT(output[switch_at], 0.0f);
+
+    for (size_t i = 1; i < output.size(); ++i) {
+        if (i < switch_at) {
+            EXPECT_LE(output[i], output[i - 1]);
+        } else {
+            EXPECT_GE(output[i], output[i - 1]);
+        }
+        EXPECT_LT(std::abs(output[i] - output[i - 1]), 0.0025f) << "jump at sample " << i;
+    }
+    EXPECT_FLOAT_EQ(output.back(), 1.0f);
+}
+
+TEST(Graph, FadeOutEndsWithABlockLongEnoughForIt) {
+    constexpr size_t k_long_block = 1024;
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    graph.prepare(k_sample_rate, k_long_block, k_channels);
+
+    ASSERT_TRUE(graph.disconnect(graph.graph_input(), graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+
+    auto buffer = make_buffer(0.5f, k_long_block);
+    graph.process(buffer);
+    const float* samples = buffer.get_read_pointer(0);
+    EXPECT_FLOAT_EQ(samples[0], 0.5f);
+    EXPECT_GT(samples[k_long_block - 3], 0.0f);
+    EXPECT_EQ(samples[k_long_block - 1], 0.0f);
+
+    buffer = make_buffer(0.5f, k_long_block);
+    graph.process(buffer);
+    samples = buffer.get_read_pointer(0);
+    EXPECT_GT(samples[0], 0.0f);
+    EXPECT_FLOAT_EQ(samples[k_long_block - 1], 1.0f);
+}
+
+TEST(Graph, CommitDuringFadeInFadesOutFromTheCurrentLevel) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    prepare(graph);
+
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    auto buffer = process_blocks(graph, 0.5f, k_fade_out_blocks + 3);
+    const float level = buffer.get_read_pointer(0)[k_block - 1];
+    ASSERT_GT(level, 0.0f);
+    ASSERT_LT(level, 1.0f);
+
+    ASSERT_TRUE(graph.disconnect(*gain, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
     buffer = make_buffer(0.5f);
     graph.process(buffer);
-    expect_all(buffer, 0.5f);
+    const float* samples = buffer.get_read_pointer(0);
+    EXPECT_LT(samples[0], level);
+    EXPECT_NEAR(samples[0], level, 0.0025f);
+    for (size_t i = 1; i < k_block; ++i) { EXPECT_LE(samples[i], samples[i - 1]); }
 }
 
 TEST(Graph, NewestCommitWinsWhenSeveralArriveBetweenBlocks) {
@@ -598,8 +711,7 @@ TEST(Graph, NewestCommitWinsWhenSeveralArriveBetweenBlocks) {
     ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
     ASSERT_TRUE(graph.commit());
 
-    auto buffer = make_buffer(0.0f);
-    graph.process(buffer);
+    const auto buffer = process_blocks(graph, 0.0f, k_fade_blocks);
     expect_all(buffer, 0.75f);
 }
 
@@ -615,8 +727,7 @@ TEST(Graph, RemovedNodeLivesUntilTheAudioThreadIsDoneWithIt) {
     ASSERT_TRUE(graph.commit());
     EXPECT_EQ(destroyed, 0);  // the audio thread has not switched yet
 
-    auto buffer = make_buffer(0.0f);
-    graph.process(buffer);    // switches and hands the old version back
+    process_blocks(graph, 0.0f, k_fade_out_blocks);  // fades out, switches, hands the old one back
     EXPECT_EQ(destroyed, 0);  // handed back, but not freed until the control thread collects it
 
     ASSERT_TRUE(graph.commit());

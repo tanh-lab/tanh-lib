@@ -4,6 +4,7 @@
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <atomic>
@@ -33,8 +34,8 @@ struct Connection {
 /// graph_input() and overwrites it with what reaches graph_output(). Every node runs with the
 /// channel count given to prepare().
 ///
-/// Edits are made on the control thread and take effect at commit(). The audio thread switches to
-/// the committed version at its next block.
+/// Edits are made on the control thread and take effect at commit(). The audio thread then fades
+/// out the current version, switches to the committed one and fades it in.
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
     /// How a node combines its sources.
@@ -110,7 +111,8 @@ private:
     void collect_garbage();
     void free_all_compiled();
 
-    void take_pending() TANH_NONBLOCKING_FUNCTION;
+    bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
+    void apply_fade(thl::core::BufferView buffer) TANH_NONBLOCKING_FUNCTION;
     static void mix_sources(const CompiledGraph& compiled,
                             std::span<const BufferIndex> sources,
                             Node& node,
@@ -121,6 +123,7 @@ private:
 
     static constexpr NodeId k_output_id{0};
     static constexpr NodeId k_input_id{1};
+    static constexpr double k_fade_seconds = 0.01;
     uint64_t m_next_id = 2;
 
     // ─── Control thread ──────────────────────
@@ -141,6 +144,9 @@ private:
 
     // ─── Audio thread ────────────────────────
     CompiledGraph* m_active = nullptr;
+    thl::dsp::utils::SmoothedValue m_fade;
+    size_t m_fade_samples = 0;
+    bool m_fading_out = false;
 };
 
 }  // namespace thl::graph
