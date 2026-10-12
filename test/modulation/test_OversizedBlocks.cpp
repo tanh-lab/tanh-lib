@@ -15,6 +15,7 @@ constexpr uint32_t k_bs = 256;  // prepared maximum
 // matrix blocks (docs/sphinx/transport.md, "Block size").
 // The matrix's buffers hold the prepared maximum: a larger num_samples is a
 // contract violation (assert), clamped in a release build.
+#if GTEST_HAS_DEATH_TEST  // not on iOS
 TEST(OversizedBlocksDeathTest, MatrixRejectsBlocksAboveThePreparedSize) {
     FakeBackend backend;
     backend.add("p", 0.0f);
@@ -22,7 +23,13 @@ TEST(OversizedBlocksDeathTest, MatrixRejectsBlocksAboveThePreparedSize) {
     matrix.prepare(k_sr, k_bs);
     matrix.process(k_bs);
     // Under RTSan the assert's own message write is reported first (the matrix
-    // runs as a non-blocking function), so either report marks the violation.
-    EXPECT_DEBUG_DEATH(matrix.process(k_bs + 1),
-                       "exceeds the prepared samples_per_block|RealtimeSanitizer");
+    // runs as a non-blocking function). One pattern per build: Windows' simple
+    // regex has no alternation.
+#if defined(TANH_WITH_RTSAN)
+    constexpr const char* k_report = "RealtimeSanitizer";
+#else
+    constexpr const char* k_report = "exceeds the prepared samples_per_block";
+#endif
+    EXPECT_DEBUG_DEATH(matrix.process(k_bs + 1), k_report);
 }
+#endif
