@@ -383,6 +383,7 @@ TEST(Graph, WetMixRampContinuesAcrossCommit) {
         ASSERT_TRUE(g->set_wet_mix(*gain, 0.0f));
     }
 
+    ASSERT_TRUE(graph.add_node<GainProcessor>(1.0f));  // an edit, so the commit switches
     ASSERT_TRUE(graph.commit());
     process_blocks(graph, 0.5f, k_fade_out_blocks);
     process_blocks(reference, 0.5f, k_fade_out_blocks);
@@ -955,4 +956,120 @@ TEST(Graph, NestedGraphNodesGetTheModulationOffset) {
     outer.process(view.sub_block(0, 40), 0);
     outer.process(view.sub_block(40, 24), 40);
     EXPECT_EQ(recorder.calls(), (Calls{{0, 16}, {16, 24}, {40, 8}, {48, 16}}));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Control-thread cost: no-op commits, garbage, prepared nodes, buffer reuse
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A commit without edits hands nothing over: no fade.
+TEST(Graph, CommitWithoutChangesDoesNotFade) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    prepare(graph);
+    process_blocks(graph, 0.5f, 1);
+
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+    ASSERT_TRUE(graph.commit());
+    ASSERT_TRUE(graph.commit());
+    expect_all(process_blocks(graph, 0.5f, k_fade_blocks), 1.0f);
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 1.0f);
+}
+
+// collect_garbage() alone frees a removed node once the audio thread let go of it.
+TEST(Graph, CollectGarbageFreesRemovedNodesWithoutAnotherCommit) {
+    int destroyed = 0;
+    Graph graph;
+    const auto node = graph.add_node<LifetimeProcessor>(destroyed);
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+    prepare(graph);
+
+    ASSERT_TRUE(graph.remove_node(*node));
+    ASSERT_TRUE(graph.commit());
+    graph.collect_garbage();
+    EXPECT_EQ(destroyed, 0);  // the audio thread still runs the old version
+
+    process_blocks(graph, 0.0f, k_fade_out_blocks);  // switches and hands the old one back
+    graph.collect_garbage();
+    EXPECT_EQ(destroyed, 1);
+}
+
+// One collect_garbage() on the outer graph also frees a nested graph's removed nodes.
+TEST(Graph, CollectGarbageReachesNestedGraphs) {
+    int destroyed = 0;
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    const auto node = inner.add_node<LifetimeProcessor>(destroyed);
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(inner.connect(*node, inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+
+    ASSERT_TRUE(inner.remove_node(*node));
+    ASSERT_TRUE(inner.commit());
+    process_blocks(outer, 0.0f, k_fade_out_blocks);
+    EXPECT_EQ(destroyed, 0);
+    outer.collect_garbage();
+    EXPECT_EQ(destroyed, 1);
+}
+
+// A node prepared by the caller for the graph's configuration is not prepared again;
+// one prepared for another configuration is.
+TEST(Graph, AddPreparedNodePreparesOnlyOnAMismatch) {
+    Graph graph;
+    prepare(graph);
+
+    auto matching = std::make_unique<PrepareRecorder>();
+    matching->prepare(k_sample_rate, k_block, k_channels);
+    PrepareRecorder& matching_ref = *matching;
+    matching_ref.m_sample_rate = -1.0;  // marks "not prepared by the graph"
+    ASSERT_TRUE(graph.add_prepared_node(std::move(matching), k_sample_rate, k_block, k_channels));
+    EXPECT_EQ(matching_ref.m_sample_rate, -1.0);
+
+    auto other = std::make_unique<PrepareRecorder>();
+    PrepareRecorder& other_ref = *other;
+    ASSERT_TRUE(graph.add_prepared_node(std::move(other), 44100.0, k_block, k_channels));
+    EXPECT_EQ(other_ref.m_sample_rate, k_sample_rate);
+    EXPECT_EQ(other_ref.m_samples_per_block, k_block);
+    EXPECT_EQ(other_ref.m_num_channels, k_channels);
+
+    graph.prepare(96000.0, k_block, k_channels);  // prepare() reaches every node again
+    EXPECT_EQ(matching_ref.m_sample_rate, 96000.0);
+}
+
+// Rewiring back and forth reuses the freed versions' buffers; the output stays right.
+TEST(Graph, RewiringKeepsTheOutputWithReusedBuffers) {
+    Graph graph;
+    const auto doubler = graph.add_node<GainProcessor>(2.0f);
+    const auto tripler = graph.add_node<GainProcessor>(3.0f);
+    const auto constant = graph.add_node<ConstantProcessor>(0.25f);
+    ASSERT_TRUE(doubler && tripler && constant);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *doubler));
+    ASSERT_TRUE(graph.connect(*doubler, graph.graph_output()));
+    prepare(graph);
+
+    for (int round = 0; round < 6; ++round) {
+        const bool tripled = round % 2 == 0;
+        ASSERT_TRUE(graph.disconnect(graph.graph_input(), tripled ? *doubler : *tripler));
+        ASSERT_TRUE(graph.disconnect(tripled ? *doubler : *tripler, graph.graph_output()));
+        ASSERT_TRUE(graph.connect(graph.graph_input(), tripled ? *tripler : *doubler));
+        ASSERT_TRUE(graph.connect(tripled ? *tripler : *doubler, graph.graph_output()));
+        if (round == 3) { ASSERT_TRUE(graph.connect(*constant, graph.graph_output())); }
+        ASSERT_TRUE(graph.commit());
+        auto buffer = process_blocks(graph, 0.5f, k_fade_blocks);
+        const float gain = tripled ? 1.5f : 1.0f;
+        // From round 3 the output averages the gain with the generator.
+        expect_all(buffer, round >= 3 ? (gain + 0.25f) * 0.5f : gain);
+        graph.collect_garbage();
+    }
 }

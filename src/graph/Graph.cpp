@@ -115,11 +115,25 @@ std::vector<NodeId> Graph::sources_of(NodeId id) const {
 // ─────────────────────────────────────────────────────────────────────────────
 
 std::optional<NodeId> Graph::add_node(std::unique_ptr<thl::dsp::BaseProcessor> processor) {
+    return insert_node(std::move(processor), true);
+}
+
+std::optional<NodeId> Graph::add_prepared_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
+                                               double sample_rate,
+                                               size_t samples_per_block,
+                                               size_t num_channels) {
+    const bool matches = sample_rate == m_sample_rate && samples_per_block == m_max_block_size &&
+                         num_channels == m_num_channels;
+    return insert_node(std::move(processor), !matches);
+}
+
+std::optional<NodeId> Graph::insert_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
+                                         bool prepare_processor) {
     if (!processor) { return std::nullopt; }
 
     auto node = std::make_unique<Node>();
     node->m_processor = std::move(processor);
-    if (m_max_block_size > 0) { prepare_node(*node); }
+    if (m_max_block_size > 0) { prepare_node(*node, prepare_processor); }
 
     const NodeId id{m_next_id++};
     m_nodes.emplace(id, std::move(node));
@@ -203,8 +217,9 @@ void Graph::prepare(const double& sample_rate,
     m_sample_rate = sample_rate;
     m_max_block_size = samples_per_block;
     m_num_channels = num_channels;
+    m_buffer_pool.clear();  // sized for the previous prepare()
     for (auto& [id, node] : m_nodes) { prepare_node(*node); }
-    commit();
+    rebuild();
 
     switch_to_pending();
     m_fade.reset(m_sample_rate, k_fade_seconds);
@@ -213,8 +228,8 @@ void Graph::prepare(const double& sample_rate,
     m_fading_out = false;
 }
 
-void Graph::prepare_node(Node& node) const {
-    if (node.m_processor) {
+void Graph::prepare_node(Node& node, bool prepare_processor) const {
+    if (prepare_processor && node.m_processor) {
         node.m_processor->prepare(m_sample_rate, m_max_block_size, m_num_channels);
     }
     // Start at the current values instead of ramping to them.
@@ -266,14 +281,14 @@ std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {
     return order;
 }
 
-std::unique_ptr<Graph::CompiledGraph> Graph::compile() const {
+std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
     const auto order = sort_graph_dfs();
     if (!order) { return nullptr; }
 
     auto compiled = std::make_unique<CompiledGraph>();
     compiled->m_num_channels = m_num_channels;
     compiled->m_max_block_size = m_max_block_size;
-    compiled->m_dry = thl::core::Buffer<float>(m_num_channels, m_max_block_size);
+    compiled->m_dry = take_buffer();
 
     // `order` has every node after its sources, so a source's buffer always
     // exists by the time a node looks it up.
@@ -290,7 +305,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() const {
         }
 
         const auto index = static_cast<BufferIndex>(compiled->m_buffers.size());
-        compiled->m_buffers.emplace_back(m_num_channels, m_max_block_size);
+        compiled->m_buffers.push_back(take_buffer());
         buffer_of.emplace(id, index);
 
         if (id == k_input_id) {
@@ -304,6 +319,14 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() const {
 }
 
 bool Graph::commit() {
+    if (!m_dirty && m_published) {  // nothing to hand over: no fade
+        collect_garbage();
+        return true;
+    }
+    return rebuild();
+}
+
+bool Graph::rebuild() {
     collect_garbage();
     auto compiled = compile();
     if (!compiled) { return false; }
@@ -316,20 +339,61 @@ bool Graph::commit() {
 
 void Graph::publish(std::unique_ptr<CompiledGraph> compiled) {
     m_live_generations.insert(compiled->m_generation);
-    const CompiledGraph* stale = m_pending.exchange(compiled.release(), std::memory_order_acq_rel);
+    m_published = true;
+    CompiledGraph* stale = m_pending.exchange(compiled.release(), std::memory_order_acq_rel);
 
     // The audio thread never picked this one up, so it can be freed right away.
     if (stale != nullptr) {
         m_live_generations.erase(stale->m_generation);
-        delete stale;
+        recycle(stale);
     }
 }
 
+void Graph::recycle(CompiledGraph* compiled) {
+    // Keep its buffers for the next compile() if they still fit prepare(); enough
+    // for every node, the dry scratch and the input.
+    const size_t limit = m_nodes.size() + 2;
+    const auto keep = [&](thl::core::Buffer<float>& buffer) {
+        if (m_buffer_pool.size() < limit && buffer.get_num_channels() == m_num_channels &&
+            buffer.get_num_samples() == m_max_block_size) {
+            m_buffer_pool.push_back(std::move(buffer));
+        }
+    };
+    for (auto& buffer : compiled->m_buffers) { keep(buffer); }
+    keep(compiled->m_dry);
+    delete compiled;
+}
+
+thl::core::Buffer<float> Graph::take_buffer() {
+    if (m_buffer_pool.empty()) { return {m_num_channels, m_max_block_size}; }
+    thl::core::Buffer<float> buffer = std::move(m_buffer_pool.back());
+    m_buffer_pool.pop_back();
+    for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+        std::fill_n(buffer.get_write_pointer(ch), buffer.get_num_samples(), 0.0f);
+    }
+    return buffer;
+}
+
 void Graph::collect_garbage() {
+    // Nested graphs keep their own versions; one timer on the outer graph serves all.
+    std::vector<Graph*> graphs{this};
+    while (!graphs.empty()) {
+        Graph* graph = graphs.back();
+        graphs.pop_back();
+        graph->collect_own_garbage();
+        for (auto& [id, node] : graph->m_nodes) {
+            if (auto* nested = dynamic_cast<Graph*>(node->m_processor.get())) {
+                graphs.push_back(nested);
+            }
+        }
+    }
+}
+
+void Graph::collect_own_garbage() {
     CompiledGraph* returned = nullptr;
     while (m_returned.try_pop(returned)) {
         m_live_generations.erase(returned->m_generation);
-        delete returned;
+        recycle(returned);
     }
 
     const uint64_t oldest_live = m_live_generations.empty() ? std::numeric_limits<uint64_t>::max()
