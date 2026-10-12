@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -24,6 +25,7 @@ namespace {
 constexpr size_t k_channels = 2;
 constexpr size_t k_block = 64;
 constexpr double k_sample_rate = 48000.0;
+constexpr size_t k_ramp_blocks = 15;  // 20 ms at 48 kHz, in blocks of 64
 
 /// Overwrites the buffer with a constant: a generator.
 class ConstantProcessor final : public BaseProcessor {
@@ -59,6 +61,26 @@ public:
 
 private:
     float m_gain;
+};
+
+/// Doubles the buffer and counts its calls in `calls`.
+class CountingDoubler final : public BaseProcessor {
+public:
+    explicit CountingDoubler(int& calls) : m_calls(&calls) {}
+
+    void prepare(const double&, const size_t&, const size_t&) override {}
+
+    void process(BufferView buffer,
+                 uint32_t /*modulation_offset*/) TANH_NONBLOCKING_FUNCTION override {
+        ++*m_calls;
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            float* samples = buffer.get_write_pointer(ch);
+            for (size_t i = 0; i < buffer.get_num_samples(); ++i) { samples[i] *= 2.0f; }
+        }
+    }
+
+private:
+    int* m_calls;
 };
 
 class PrepareRecorder final : public BaseProcessor {
@@ -187,7 +209,7 @@ TEST(Graph, FanOutFeedsEveryNode) {
     expect_all(buffer, (0.4f * 2.0f + 0.4f * 0.5f) / 2.0f);
 }
 
-TEST(Graph, MixModeAveragesConnectedSourcesByDefaultOrSums) {
+TEST(Graph, InputMixAveragesConnectedSourcesByDefaultOrSums) {
     Graph graph;
     const auto a = graph.add_node<ConstantProcessor>(0.5f);
     const auto b = graph.add_node<ConstantProcessor>(0.25f);
@@ -201,13 +223,12 @@ TEST(Graph, MixModeAveragesConnectedSourcesByDefaultOrSums) {
     graph.process(buffer);
     expect_all(buffer, 0.375f);
 
-    ASSERT_TRUE(graph.set_mix_mode(graph.graph_output(), Graph::MixMode::Sum));
-    ASSERT_TRUE(graph.commit());
-    graph.process(buffer);
+    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Sum));
+    for (size_t block = 0; block <= k_ramp_blocks; ++block) { graph.process(buffer); }
     expect_all(buffer, 0.75f);
 }
 
-TEST(Graph, MixModeAppliesToProcessorNodes) {
+TEST(Graph, InputMixAppliesToProcessorNodes) {
     Graph graph;
     const auto a = graph.add_node<ConstantProcessor>(0.5f);
     const auto b = graph.add_node<ConstantProcessor>(0.25f);
@@ -216,12 +237,35 @@ TEST(Graph, MixModeAppliesToProcessorNodes) {
     ASSERT_TRUE(graph.connect(*a, *gain));
     ASSERT_TRUE(graph.connect(*b, *gain));
     ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
-    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Sum));
+    ASSERT_TRUE(graph.set_input_mix(*gain, Graph::InputMix::Sum));
     prepare(graph);
 
     auto buffer = make_buffer(0.0f);
     graph.process(buffer);
     expect_all(buffer, 0.75f * 2.0f);
+}
+
+TEST(Graph, InputMixChangeRampsWithoutCommit) {
+    Graph graph;
+    const auto a = graph.add_node<ConstantProcessor>(0.5f);
+    const auto b = graph.add_node<ConstantProcessor>(0.25f);
+    ASSERT_TRUE(a && b);
+    ASSERT_TRUE(graph.connect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
+    prepare(graph);
+
+    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Sum));
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+
+    auto buffer = make_buffer(0.0f);
+    graph.process(buffer);
+    for (size_t ch = 0; ch < k_channels; ++ch) {
+        const float* samples = buffer.get_read_pointer(ch);
+        EXPECT_GT(samples[0], 0.375f);
+        EXPECT_LT(samples[0], 0.38f);
+        for (size_t i = 1; i < k_block; ++i) { EXPECT_GE(samples[i], samples[i - 1]); }
+        EXPECT_LT(samples[k_block - 1], 0.75f);
+    }
 }
 
 TEST(Graph, UnconnectedOutputIsSilent) {
@@ -247,6 +291,89 @@ TEST(Graph, BufferNotMatchingPrepareIsSilent) {
     std::fill_n(mono.get_write_pointer(0), k_block, 0.5f);
     graph.process(mono);
     expect_all(mono, 0.0f);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wet mix
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(Graph, WetMixZeroSkipsTheProcessor) {
+    int calls = 0;
+    Graph graph;
+    const auto node = graph.add_node<CountingDoubler>(calls);
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *node));
+    ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*node, 0.0f));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    expect_all(buffer, 0.5f);
+    EXPECT_EQ(calls, 0);
+}
+
+TEST(Graph, WetMixBlendsDryAndProcessed) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*gain, 0.5f));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.4f);
+    graph.process(buffer);
+    expect_all(buffer, 0.4f * 0.5f + 0.8f * 0.5f);
+}
+
+TEST(Graph, WetMixChangeRampsWithoutCommit) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    prepare(graph);
+
+    ASSERT_TRUE(graph.set_wet_mix(*gain, 0.0f));
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    for (size_t ch = 0; ch < k_channels; ++ch) {
+        const float* samples = buffer.get_read_pointer(ch);
+        EXPECT_LT(samples[0], 1.0f);
+        EXPECT_GT(samples[0], 0.99f);
+        for (size_t i = 1; i < k_block; ++i) { EXPECT_LE(samples[i], samples[i - 1]); }
+        EXPECT_GT(samples[k_block - 1], 0.5f);
+    }
+
+    for (size_t block = 0; block < k_ramp_blocks; ++block) {
+        buffer = make_buffer(0.5f);
+        graph.process(buffer);
+    }
+    expect_all(buffer, 0.5f);
+}
+
+TEST(Graph, WetMixRampContinuesAcrossCommit) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *gain));
+    ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
+    prepare(graph);
+
+    ASSERT_TRUE(graph.set_wet_mix(*gain, 0.0f));
+    auto buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    const float last = buffer.get_read_pointer(0)[k_block - 1];
+
+    ASSERT_TRUE(graph.commit());
+    buffer = make_buffer(0.5f);
+    graph.process(buffer);
+    const float first = buffer.get_read_pointer(0)[0];
+    EXPECT_LT(first, last);
+    EXPECT_NEAR(first, last, 0.001f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -333,11 +460,32 @@ TEST(Graph, NodesAndConnectionsListTheGraph) {
     EXPECT_EQ(graph.sources_of(*gain), std::vector<NodeId>{graph.graph_input()});
 }
 
-TEST(Graph, SetMixModeRejectsInputAndUnknownNodes) {
+TEST(Graph, SetInputMixRejectsInputAndUnknownNodes) {
     Graph graph;
-    EXPECT_FALSE(graph.set_mix_mode(graph.graph_input(), Graph::MixMode::Average));
-    EXPECT_FALSE(graph.set_mix_mode(NodeId{999}, Graph::MixMode::Average));
-    EXPECT_TRUE(graph.set_mix_mode(graph.graph_output(), Graph::MixMode::Average));
+    EXPECT_FALSE(graph.set_input_mix(graph.graph_input(), Graph::InputMix::Average));
+    EXPECT_FALSE(graph.set_input_mix(NodeId{999}, Graph::InputMix::Average));
+    EXPECT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Average));
+}
+
+TEST(Graph, SetWetMixClampsAndRejectsEndpointsUnknownNodesAndNaN) {
+    Graph graph;
+    const auto gain = graph.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    EXPECT_EQ(graph.wet_mix(*gain), 1.0f);
+
+    EXPECT_TRUE(graph.set_wet_mix(*gain, 1.5f));
+    EXPECT_EQ(graph.wet_mix(*gain), 1.0f);
+    EXPECT_TRUE(graph.set_wet_mix(*gain, -0.5f));
+    EXPECT_EQ(graph.wet_mix(*gain), 0.0f);
+    EXPECT_FALSE(graph.set_wet_mix(*gain, std::numeric_limits<float>::quiet_NaN()));
+    EXPECT_EQ(graph.wet_mix(*gain), 0.0f);
+
+    EXPECT_FALSE(graph.set_wet_mix(graph.graph_input(), 0.5f));
+    EXPECT_FALSE(graph.set_wet_mix(graph.graph_output(), 0.5f));
+    EXPECT_FALSE(graph.set_wet_mix(NodeId{999}, 0.5f));
+    EXPECT_FALSE(graph.wet_mix(graph.graph_input()));
+    EXPECT_FALSE(graph.wet_mix(graph.graph_output()));
+    EXPECT_FALSE(graph.wet_mix(NodeId{999}));
 }
 
 TEST(Graph, HasUncommittedChangesTracksEdits) {
@@ -354,12 +502,6 @@ TEST(Graph, HasUncommittedChangesTracksEdits) {
     EXPECT_FALSE(graph.has_uncommitted_changes());
 
     ASSERT_TRUE(graph.connect(*gain, graph.graph_output()));
-    EXPECT_TRUE(graph.has_uncommitted_changes());
-    ASSERT_TRUE(graph.commit());
-
-    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Average));  // unchanged
-    EXPECT_FALSE(graph.has_uncommitted_changes());
-    ASSERT_TRUE(graph.set_mix_mode(*gain, Graph::MixMode::Sum));
     EXPECT_TRUE(graph.has_uncommitted_changes());
     ASSERT_TRUE(graph.commit());
 
