@@ -2,8 +2,8 @@
 #include <tanh/dsp/transport/LinkAudio.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <vector>
 
 using thl::dsp::transport::LinkAudioBackend;
@@ -19,10 +19,10 @@ constexpr double k_beats_per_frame = k_bpm / (60.0 * k_rate);
 // Packets scripted by the test; send() is not used here.
 class FakeSharing final : public LinkAudioBackend {
 public:
+    // Called from the receiver's real-time render(): reads by index, frees nothing.
     bool pop(LinkAudioPacket& out) override {
-        if (m_packets.empty()) { return false; }
-        out = m_packets.front();
-        m_packets.pop_front();
+        if (m_next >= m_packets.size()) { return false; }
+        out = m_packets[m_next++];
         return true;
     }
     bool send(const float* const*, uint32_t, uint32_t, double, double, uint32_t) override {
@@ -62,7 +62,8 @@ public:
     }
 
 private:
-    std::deque<LinkAudioPacket> m_packets;
+    std::vector<LinkAudioPacket> m_packets;  // pushed by the test, outside render()
+    size_t m_next = 0;
 };
 
 struct Block {

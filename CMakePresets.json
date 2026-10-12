@@ -280,8 +280,7 @@
                 "TANH_WITH_EXAMPLES": "OFF",
                 "TANH_WITH_DOCS": "OFF",
                 "TANH_WITH_INSTALL": "OFF",
-                "TANH_BUILD_NET": "ON",
-                "TANH_BUILD_GRAPH": "ON"
+                "TANH_BUILD_NET": "ON"
             }
         },
         {
