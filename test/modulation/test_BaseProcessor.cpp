@@ -78,13 +78,14 @@ TEST(BaseProcessor, ProcessModulatedSkipsInvalidChangePoints) {
 TEST(BaseProcessor, ProcessModulatedAtAnOffsetSplitsAtBlockPositions) {
     class OffsetRecorder : public thl::dsp::BaseProcessor {
     public:
-        std::vector<std::pair<uint32_t, size_t>> m_calls;
+        std::vector<std::pair<uint32_t, size_t>> m_calls;  // reserved: process() runs under RTSan
         void prepare(const double&, const size_t&, const size_t&) override {}
         void process(thl::core::BufferView buffer, uint32_t modulation_offset) override {
             m_calls.emplace_back(modulation_offset, buffer.get_num_samples());
         }
     };
     OffsetRecorder proc;
+    proc.m_calls.reserve(8);
     std::vector<float> audio(64, 0.0f);
     thl::core::BufferView view(audio.data(), 64);
     const std::vector<uint32_t> cps = {16, 40, 48, 100};  // 16 before, 100 after the part
