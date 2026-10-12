@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "DspFixture.h"
 #include "TestHelpers.h"
 
 using namespace thl::modulation;
@@ -54,7 +55,10 @@ private:
     std::vector<uint32_t> m_change_points;
 };
 
-TEST(Integration, LFOModulatesLimiterThreshold) {
+// Runs directly and inside the graph hosts (DspFixture.h).
+class IntegrationHosts : public ::testing::TestWithParam<dsp_fixture::Host> {};
+
+TEST_P(IntegrationHosts, LFOModulatesLimiterThreshold) {
     // Setup
     thl::State state;
     state.create(LimiterID::k_attack, modulatable_float(LimiterID::k_attack_default));
@@ -91,7 +95,8 @@ TEST(Integration, LFOModulatesLimiterThreshold) {
     thl::core::BufferView view(audio.data(), k_block_size);
 
     // Process with modulation change points
-    test_limiter.process_modulated(view);
+    dsp_fixture::Hosted hosted(test_limiter, GetParam(), 1);
+    hosted.process(view);
 
     // Verify that the audio was actually processed (not silent)
     bool has_nonzero = false;
@@ -103,6 +108,11 @@ TEST(Integration, LFOModulatesLimiterThreshold) {
     }
     EXPECT_TRUE(has_nonzero);
 }
+
+INSTANTIATE_TEST_SUITE_P(Hosts,
+                         IntegrationHosts,
+                         ::testing::ValuesIn(dsp_fixture::hosts()),
+                         dsp_fixture::host_name);
 
 // ── Constant-output source for depth mode tests ──────────────────────────────
 

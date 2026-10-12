@@ -29,6 +29,7 @@
 #include <string_view>
 #include <vector>
 
+#include "DspFixture.h"
 #include "TestHelpers.h"
 
 using namespace thl::modulation;
@@ -103,25 +104,13 @@ static void register_wavefolder_params(thl::State& state,
             .modulatable(true));
 }
 
-// Runs N blocks of `input` through the processor while the matrix advances.
-// Returns the (in-place) processed output as a flat vector.
+// Runs N blocks of `input` through the processor, hosted as @p host, while the
+// matrix advances. Returns the (in-place) processed output as a flat vector.
 static std::vector<float> run_blocks(ModulationMatrix& matrix,
                                      TestWavefolder& wf,
-                                     const std::vector<float>& input) {
-    std::vector<float> output;
-    output.reserve(input.size());
-    const size_t num_blocks = input.size() / k_block_size;
-    std::vector<float> block(k_block_size);
-    for (size_t b = 0; b < num_blocks; ++b) {
-        std::copy(input.begin() + static_cast<ptrdiff_t>(b * k_block_size),
-                  input.begin() + static_cast<ptrdiff_t>((b + 1) * k_block_size),
-                  block.begin());
-        matrix.process(k_block_size);
-        thl::core::BufferView view(block.data(), k_block_size);
-        wf.process_modulated(view);
-        output.insert(output.end(), block.begin(), block.end());
-    }
-    return output;
+                                     const std::vector<float>& input,
+                                     dsp_fixture::Host host) {
+    return dsp_fixture::run_blocks_mono(matrix, wf, input, host);
 }
 
 static float max_abs(const std::vector<float>& v) {
@@ -142,13 +131,15 @@ static void expect_all_finite(const std::vector<float>& v) {
     }
 }
 
+class DspFixtureWavefolder : public ::testing::TestWithParam<dsp_fixture::Host> {};
+
 // ── Test 1 — Silence in must give silence out ────────────────────────────────
 //
 // With non-zero static symmetry, the wavefolder's transfer function evaluates
 // to sin(symmetry · drive · (1 + folds)) on a zero input — i.e. it synthesises
 // a DC offset out of silence. This is the "clicks/hum with no audio playing"
 // report: any subsequent change to Drive/Symmetry/Folds steps that DC.
-TEST(DspFixtureWavefolder, SilenceInSilenceOutWithStaticOffset) {
+TEST_P(DspFixtureWavefolder, SilenceInSilenceOutWithStaticOffset) {
     thl::State state;
     register_wavefolder_params(state,
                                /*drive*/ 5.0f,
@@ -162,7 +153,7 @@ TEST(DspFixtureWavefolder, SilenceInSilenceOutWithStaticOffset) {
     wf.prepare(k_sample_rate, k_block_size, 1);
 
     std::vector<float> in(10 * k_block_size, 0.0f);
-    auto out = run_blocks(matrix, wf, in);
+    auto out = run_blocks(matrix, wf, in, GetParam());
 
     expect_all_finite(out);
     EXPECT_LT(max_abs(out), 1e-4f)
@@ -214,7 +205,7 @@ struct KnobLikeLfos {
 // input is 0) to step instantaneously → audible click. With 5 ms smoothing
 // the step is spread over 240 samples and the per-sample delta drops by orders
 // of magnitude.
-TEST(DspFixtureWavefolder, NoClicksWithModulatedSilence) {
+TEST_P(DspFixtureWavefolder, NoClicksWithModulatedSilence) {
     thl::State state;
     register_wavefolder_params(state);
     ModulationMatrix matrix(state);
@@ -227,7 +218,7 @@ TEST(DspFixtureWavefolder, NoClicksWithModulatedSilence) {
     wf.prepare(k_sample_rate, k_block_size, 1);
 
     std::vector<float> in(40 * k_block_size, 0.0f);
-    auto out = run_blocks(matrix, wf, in);
+    auto out = run_blocks(matrix, wf, in, GetParam());
 
     expect_all_finite(out);
     const float step = max_sample_step(out);
@@ -249,7 +240,7 @@ TEST(DspFixtureWavefolder, NoClicksWithModulatedSilence) {
 // should be of the same order as the un-modulated reference (the legitimate
 // sample step of the folded sine itself). Without smoothing the steps spike
 // by many times the reference at every parameter transition.
-TEST(DspFixtureWavefolder, NoClicksWithModulatedSine) {
+TEST_P(DspFixtureWavefolder, NoClicksWithModulatedSine) {
     constexpr size_t k_num_blocks = 40;
     constexpr float k_two_pi = 2.0f * std::numbers::pi_v<float>;
 
@@ -267,7 +258,7 @@ TEST(DspFixtureWavefolder, NoClicksWithModulatedSine) {
         TestWavefolder wf(matrix);
         matrix.prepare(k_sample_rate, k_block_size);
         wf.prepare(k_sample_rate, k_block_size, 1);
-        return run_blocks(matrix, wf, input);
+        return run_blocks(matrix, wf, input, GetParam());
     }();
 
     // Modulated run.
@@ -282,7 +273,7 @@ TEST(DspFixtureWavefolder, NoClicksWithModulatedSine) {
     matrix.prepare(k_sample_rate, k_block_size);
     wf.prepare(k_sample_rate, k_block_size, 1);
 
-    auto modulated_out = run_blocks(matrix, wf, input);
+    auto modulated_out = run_blocks(matrix, wf, input, GetParam());
 
     expect_all_finite(modulated_out);
     const float ref_step = max_sample_step(reference_out);
@@ -298,3 +289,27 @@ TEST(DspFixtureWavefolder, NoClicksWithModulatedSine) {
                               << ")"
                               << " — parameter smoothing missing on at least one wavefolder param.";
 }
+
+// The graph hosts are identities around the processor: under modulation their
+// output matches the direct one sample for sample (the modulation offset reaches
+// every part of a split block).
+TEST_P(DspFixtureWavefolder, HostMatchesDirect) {
+    const auto input = dsp_fixture::make_test_sine(40, 220.0f, 0.5f);
+    auto run = [&](dsp_fixture::Host host) {
+        thl::State state;
+        register_wavefolder_params(state);
+        ModulationMatrix matrix(state);
+        TestWavefolder wf(matrix);
+        KnobLikeLfos lfos;
+        lfos.wire(matrix);
+        matrix.prepare(k_sample_rate, k_block_size);
+        wf.prepare(k_sample_rate, k_block_size, 1);
+        return run_blocks(matrix, wf, input, host);
+    };
+    EXPECT_EQ(run(GetParam()), run(dsp_fixture::Host::Direct));
+}
+
+INSTANTIATE_TEST_SUITE_P(Hosts,
+                         DspFixtureWavefolder,
+                         ::testing::ValuesIn(dsp_fixture::hosts()),
+                         dsp_fixture::host_name);

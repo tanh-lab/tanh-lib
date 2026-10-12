@@ -113,8 +113,10 @@ struct KnobLfos {
 
 }  // namespace
 
+class DspFixtureLimiter : public ::testing::TestWithParam<dsp_fixture::Host> {};
+
 // ── Test 1 — Silence in → silence out ────────────────────────────────────────
-TEST(DspFixtureLimiter, SilenceInSilenceOut) {
+TEST_P(DspFixtureLimiter, SilenceInSilenceOut) {
     thl::State state;
     register_limiter_params(state);
     ModulationMatrix matrix(state);
@@ -124,14 +126,14 @@ TEST(DspFixtureLimiter, SilenceInSilenceOut) {
     lim.prepare(k_sample_rate, k_block_size, 1);
 
     std::vector<float> in(10 * k_block_size, 0.0f);
-    auto out = run_blocks_mono(matrix, lim, in);
+    auto out = run_blocks_mono(matrix, lim, in, GetParam());
 
     expect_all_finite(out);
     EXPECT_LT(max_abs(out), 1e-6f) << "Limiter must pass silence unchanged.";
 }
 
 // ── Test 2 — No clicks with modulated silence ────────────────────────────────
-TEST(DspFixtureLimiter, NoClicksWithModulatedSilence) {
+TEST_P(DspFixtureLimiter, NoClicksWithModulatedSilence) {
     thl::State state;
     register_limiter_params(state);
     ModulationMatrix matrix(state);
@@ -144,7 +146,7 @@ TEST(DspFixtureLimiter, NoClicksWithModulatedSilence) {
     lim.prepare(k_sample_rate, k_block_size, 1);
 
     std::vector<float> in(20 * k_block_size, 0.0f);
-    auto out = run_blocks_mono(matrix, lim, in);
+    auto out = run_blocks_mono(matrix, lim, in, GetParam());
 
     expect_all_finite(out);
     EXPECT_LT(max_sample_step(out), 1e-6f)
@@ -158,7 +160,7 @@ TEST(DspFixtureLimiter, NoClicksWithModulatedSilence) {
 // reduction over much of each cycle; threshold modulation directly changes
 // the target_gain, so without smoothing each sub-block transition causes a
 // step in the applied gain → click in the output.
-TEST(DspFixtureLimiter, NoClicksWithModulatedSine) {
+TEST_P(DspFixtureLimiter, NoClicksWithModulatedSine) {
     constexpr size_t k_num_blocks = 40;
 
     auto input = make_test_sine(k_num_blocks, 220.0f, 0.5f);
@@ -171,7 +173,7 @@ TEST(DspFixtureLimiter, NoClicksWithModulatedSine) {
         TestLimiter lim(matrix);
         matrix.prepare(k_sample_rate, k_block_size);
         lim.prepare(k_sample_rate, k_block_size, 1);
-        return run_blocks_mono(matrix, lim, input);
+        return run_blocks_mono(matrix, lim, input, GetParam());
     }();
 
     // Modulated run.
@@ -186,7 +188,7 @@ TEST(DspFixtureLimiter, NoClicksWithModulatedSine) {
     matrix.prepare(k_sample_rate, k_block_size);
     lim.prepare(k_sample_rate, k_block_size, 1);
 
-    auto modulated_out = run_blocks_mono(matrix, lim, input);
+    auto modulated_out = run_blocks_mono(matrix, lim, input, GetParam());
 
     expect_all_finite(modulated_out);
     const float ref_step = max_sample_step(reference_out);
@@ -199,3 +201,27 @@ TEST(DspFixtureLimiter, NoClicksWithModulatedSine) {
         << "Modulated step envelope " << mod_step << " ≫ reference " << ref_step
         << " — threshold modulation is bypassing the gain envelope smoother.";
 }
+
+// The graph hosts are identities around the processor: under modulation their
+// output matches the direct one sample for sample (the modulation offset reaches
+// every part of a split block).
+TEST_P(DspFixtureLimiter, HostMatchesDirect) {
+    const auto input = dsp_fixture::make_test_sine(40, 220.0f, 0.5f);
+    auto run = [&](dsp_fixture::Host host) {
+        thl::State state;
+        register_limiter_params(state);
+        ModulationMatrix matrix(state);
+        TestLimiter lim(matrix);
+        KnobLfos lfos;
+        lfos.wire(matrix);
+        matrix.prepare(k_sample_rate, k_block_size);
+        lim.prepare(k_sample_rate, k_block_size, 1);
+        return run_blocks_mono(matrix, lim, input, host);
+    };
+    EXPECT_EQ(run(GetParam()), run(dsp_fixture::Host::Direct));
+}
+
+INSTANTIATE_TEST_SUITE_P(Hosts,
+                         DspFixtureLimiter,
+                         ::testing::ValuesIn(dsp_fixture::hosts()),
+                         dsp_fixture::host_name);
