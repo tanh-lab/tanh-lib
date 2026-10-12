@@ -86,6 +86,8 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
 
+    /// @p modulation_offset: the position of @p buffer in the block when the caller runs the
+    /// block in parts; every node gets it, so it reads its modulation at the block position.
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
 
@@ -119,7 +121,8 @@ private:
                             thl::core::BufferView destination) TANH_NONBLOCKING_FUNCTION;
     static void run_step(const ProcessingStep& step,
                          thl::core::BufferView buffer,
-                         thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
+                         thl::core::BufferView dry,
+                         uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 
     static constexpr NodeId k_output_id{0};
     static constexpr NodeId k_input_id{1};

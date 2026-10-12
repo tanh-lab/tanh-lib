@@ -7,6 +7,7 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -871,4 +873,78 @@ TEST(Graph, RemovedNestedGraphFreesItsNodes) {
 
     ASSERT_TRUE(outer.commit());
     EXPECT_EQ(destroyed, 1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modulation offset
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// Has change points at 16 and 48 of a 64-sample block and records the
+/// (modulation_offset, length) of every process() call.
+class OffsetRecorder final : public BaseProcessor {
+public:
+    void prepare(const double&, const size_t&, const size_t&) override {}
+
+    void process(BufferView buffer, uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION override {
+        m_calls.emplace_back(modulation_offset, static_cast<uint32_t>(buffer.get_num_samples()));
+    }
+
+    std::vector<std::pair<uint32_t, uint32_t>> m_calls;
+
+protected:
+    std::span<const uint32_t> get_change_points() TANH_NONBLOCKING_FUNCTION override {
+        return m_change_points;
+    }
+
+private:
+    std::array<uint32_t, 2> m_change_points{16, 48};
+};
+
+using Calls = std::vector<std::pair<uint32_t, uint32_t>>;
+
+}  // namespace
+
+// A host that splits the graph's block passes each part's position; every node
+// reads its modulation (and splits at its change points) at the block position.
+TEST(Graph, NodesGetTheModulationOffsetOfASplitBlock) {
+    auto owned = std::make_unique<OffsetRecorder>();
+    OffsetRecorder& recorder = *owned;
+    Graph graph;
+    const auto node = graph.add_node(std::move(owned));
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *node));
+    ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+    prepare(graph);
+
+    auto buffer = make_buffer(0.5f);
+    const BufferView view(buffer.get_array_of_write_pointers(), k_channels, k_block);
+    graph.process(view.sub_block(0, 32), 0);
+    graph.process(view.sub_block(32, 32), 32);
+    EXPECT_EQ(recorder.m_calls, (Calls{{0, 16}, {16, 16}, {32, 16}, {48, 16}}));
+}
+
+// The same through a nested graph: the outer graph passes its offset on.
+TEST(Graph, NestedGraphNodesGetTheModulationOffset) {
+    auto owned_recorder = std::make_unique<OffsetRecorder>();
+    OffsetRecorder& recorder = *owned_recorder;
+    auto inner = std::make_unique<Graph>();
+    const auto node = inner->add_node(std::move(owned_recorder));
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(inner->connect(inner->graph_input(), *node));
+    ASSERT_TRUE(inner->connect(*node, inner->graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(inner));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+
+    auto buffer = make_buffer(0.5f);
+    const BufferView view(buffer.get_array_of_write_pointers(), k_channels, k_block);
+    outer.process(view.sub_block(0, 40), 0);
+    outer.process(view.sub_block(40, 24), 40);
+    EXPECT_EQ(recorder.m_calls, (Calls{{0, 16}, {16, 24}, {40, 8}, {48, 16}}));
 }

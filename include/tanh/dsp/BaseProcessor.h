@@ -19,19 +19,27 @@ public:
     virtual void process(thl::core::BufferView buffer,
                          uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION = 0;
 
+    // Splits @p buffer at the change points and calls process() per part with the
+    // part's position in the block. @p buffer starts at sample @p modulation_offset
+    // of the block (a caller that splits the block itself, e.g. a Graph run in
+    // parts); change points are positions in the block.
+
     // Self-driven: calls get_change_points() to obtain split positions
-    void process_modulated(const thl::core::BufferView& buffer) TANH_NONBLOCKING_FUNCTION;
+    void process_modulated(const thl::core::BufferView& buffer,
+                           uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION;
 
     // Caller-injected: uses externally supplied change points
     void process_modulated(const thl::core::BufferView& buffer,
-                           std::span<const uint32_t> change_points) TANH_NONBLOCKING_FUNCTION;
+                           std::span<const uint32_t> change_points,
+                           uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION;
 
 protected:
     virtual std::span<const uint32_t> get_change_points() TANH_NONBLOCKING_FUNCTION { return {}; }
 
 private:
     void split_and_process(const thl::core::BufferView& buffer,
-                           std::span<const uint32_t> change_points) TANH_NONBLOCKING_FUNCTION;
+                           std::span<const uint32_t> change_points,
+                           uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 };
 
 }  // namespace thl::dsp
