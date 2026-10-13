@@ -243,6 +243,7 @@ uint32_t XYController::route(XYOutput axis,
     r.m_replace_hold_priority = options.m_hold_priority;
     r.m_enabled = options.m_enabled;
     r.m_max_decimation = options.m_max_decimation;
+    r.m_skip_during_gesture = options.m_skip_during_gesture;
     const uint32_t id = m_matrix.add_routing(r);
     if (id == k_invalid_routing_id) { return id; }
     if (options.m_range_normalized) {

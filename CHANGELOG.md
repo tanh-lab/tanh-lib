@@ -88,8 +88,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `BlockProcessor` of the matrix, it renders once per block with the matrix's
   transport (free-running without one), owns its routings and publishes an `XYFrame`
   per block, plus a recording trail and the recorded path. `for_each_recorder()`
-  reaches every voice's recorder. Tests: `XYController*.*`, `XYPad.*`. Docs:
-  `xy_controller.md`.
+  reaches every voice's recorder. `XYRouteOptions::m_skip_during_gesture` leaves a
+  target alone while its knob is held (a host gesture). Tests: `XYController*.*`,
+  `XYPad.*`. Docs: `xy_controller.md`.
 - Timestamped touch input: `XYController::touch()` / `touch_voice()` / `release()`
   take an optional `time_ns`, and `set_block_time(now_ns)` once per block places them
   at their own sample, `m_input_delay_ms` late (default one prepared block + 5 ms);

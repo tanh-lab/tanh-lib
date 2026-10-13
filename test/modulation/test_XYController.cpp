@@ -638,3 +638,30 @@ TEST(XYFramePublisher, TrailKeepsItsSpacingAcrossShortBlocks) {
     std::array<XYPathPoint, 256> points{};
     EXPECT_EQ(publisher->drain(points), 16u);  // one every 64 samples
 }
+
+// With m_skip_during_gesture, a held knob (a host gesture on the target) wins over the pad: the
+// target keeps its base value until the gesture ends.
+TEST(XYController, RouteSkipsTheTargetWhileItIsInAGesture) {
+    Engine e(1);
+    XYController c(*e.matrix, config("pad"));
+    XYController* cs[] = {&c};
+    XYRouteOptions options;
+    options.m_combine = CombineMode::Replace;
+    options.m_skip_during_gesture = true;
+    c.route(XYOutput::X, "s1.a", options);
+    e.matrix->prepare(k_sr, k_bs);
+    auto handle = e.matrix->get_smart_handle<float>("s1.a");
+
+    c.touch(1, 0.9f, 0.5f);
+    e.block(cs);
+    e.block(cs);
+    EXPECT_NEAR(handle.load(k_bs - 1), 0.9f, 1e-4f);  // the pad owns it
+
+    e.backend.set_gesture("s1.a", true);
+    e.block(cs);
+    EXPECT_NEAR(handle.load(k_bs - 1), 0.05f, 1e-4f);  // the held knob: its base value
+
+    e.backend.set_gesture("s1.a", false);
+    e.block(cs);
+    EXPECT_NEAR(handle.load(k_bs - 1), 0.9f, 1e-4f);  // released: the pad again
+}

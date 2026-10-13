@@ -31,15 +31,21 @@ public:
         auto it = m_entries.find(key);
         if (it == m_entries.end()) { return std::nullopt; }
         return thl::modulation::ParameterBinding{.m_def = it->second->m_def,
-                                                 .m_base = &it->second->m_value};
+                                                 .m_base = &it->second->m_value,
+                                                 .m_in_gesture = &it->second->m_in_gesture};
     }
 
 private:
     struct Entry {
         thl::ParameterDefinition m_def;
         std::atomic<float> m_value{0.0f};
+        std::atomic<bool> m_in_gesture{false};
     };
     std::map<std::string, std::unique_ptr<Entry>, std::less<>> m_entries;
+
+public:
+    /// A host gesture on @p key (a knob held), as the host's begin/end change gesture.
+    void set_gesture(const std::string& key, bool on) { m_entries.at(key)->m_in_gesture.store(on); }
 };
 
 /// A playing transport at a fixed tempo; next(n) returns the block's info and advances.
