@@ -99,6 +99,13 @@ bool MotionRecorder::set_playback_length(LoopLength length) {
         {.m_kind = CommandKind::PlaybackLength, .m_arg = static_cast<uint8_t>(length)});
 }
 
+uint32_t MotionRecorder::clear() {
+    // A looper records until disarm: what its take holds must not come back after the clear.
+    m_store.drop_take(m_take_serial.load(std::memory_order_acquire));
+    (void)m_commands.try_push({.m_kind = CommandKind::Abort, .m_arg = 0});
+    return m_store.clear();
+}
+
 void MotionRecorder::set_transform_settings(uint64_t settings) {
     if (m_transform_settings.exchange(settings, std::memory_order_acq_rel) != settings) {
         m_transform_version.fetch_add(1, std::memory_order_acq_rel);
@@ -158,6 +165,12 @@ void MotionRecorder::apply_commands() TANH_NONBLOCKING_FUNCTION {
                 m_playback_length = static_cast<LoopLength>(std::min<uint8_t>(c.m_arg, 5));
                 break;
             case CommandKind::Reverse: m_reverse = c.m_arg != 0; break;
+            case CommandKind::Abort:  // clear(): the take keeps nothing
+                m_takes.abort();
+                m_armed = false;
+                m_force_start = false;
+                m_finish_pending = false;
+                break;
         }
     }
 }
@@ -193,12 +206,13 @@ void MotionRecorder::start_take(const TransportInfo& t,
         m_force_start = false;
         return;
     }
-    ++m_take_serial;
+    m_take_serial.fetch_add(1, std::memory_order_acq_rel);
     m_force_start = false;
 }
 
 void MotionRecorder::submit_finished() TANH_NONBLOCKING_FUNCTION {
-    m_finish_pending = !m_store.submit(m_takes.take(), m_take_serial);
+    m_finish_pending =
+        !m_store.submit(m_takes.take(), m_take_serial.load(std::memory_order_relaxed));
     m_handed_over = m_handed_over || !m_finish_pending;
 }
 
@@ -207,7 +221,9 @@ void MotionRecorder::on_take(TakeEvent event) TANH_NONBLOCKING_FUNCTION {
         case TakeEvent::None: return;
         case TakeEvent::Revision:
             // A busy hand-over skips it: the next revision or the end carries the loop.
-            m_handed_over = m_store.submit(m_takes.take(), m_take_serial) || m_handed_over;
+            m_handed_over =
+                m_store.submit(m_takes.take(), m_take_serial.load(std::memory_order_relaxed)) ||
+                m_handed_over;
             m_play_enabled = true;
             return;
         case TakeEvent::Finished:

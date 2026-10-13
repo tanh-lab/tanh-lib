@@ -197,3 +197,57 @@ TEST(MotionRecorderOverwrite, LiftedLooperPlaysSmoothedAndTransformed) {
     const size_t last = r.m_x.size() - 1;
     EXPECT_NEAR(r.m_x[last], played.sample(std::fmod(r.m_beat[last], 4.0)).m_x, 2e-3);
 }
+
+// Clearing a looper that still records ends it with nothing kept: recording again starts from an
+// empty loop, and the old one never comes back.
+TEST(MotionRecorderOverwrite, ClearEndsARunningLooper) {
+    Rig r(256, 120.0);
+    start(r);
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    r.m_pad.touch(1, 0.2f, 0.2f);
+    r.run_until(r.now() + (2 * k_bar));
+    r.m_pad.release(1);
+    r.step();
+    ASSERT_TRUE(r.m_rec.service());
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+
+    r.m_rec.clear();
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Idle);
+    EXPECT_TRUE(r.m_rec.lane().empty());
+    ASSERT_TRUE(r.m_rec.disarm());  // record pressed again: nothing to end
+    r.step();
+    EXPECT_FALSE(r.m_rec.service());
+    EXPECT_TRUE(r.m_rec.lane().empty());
+
+    // A new take records from nothing and plays.
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    r.m_pad.touch(1, 0.8f, 0.8f);
+    r.run_until(r.now() + k_beat);
+    r.m_pad.release(1);
+    r.step();
+    ASSERT_TRUE(r.m_rec.service());
+    const MotionLane lane = r.m_rec.lane();
+    for (size_t i = 0; i < lane.num_points(); ++i) { ASSERT_NE(lane.m_x[i], 0.2f) << i; }
+    r.run_until(r.now() + k_bar);
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    EXPECT_GT(r.m_rec.snapshot().m_take_id, 0u);
+}
+
+// A take handed over just before the clear, not yet published, is dropped with it.
+TEST(MotionRecorderOverwrite, ClearDropsAnUnpublishedRevision) {
+    Rig r(256, 120.0);
+    start(r);
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    r.m_pad.touch(1, 0.2f, 0.2f);
+    r.run_until(r.now() + k_beat);
+    r.m_pad.release(1);
+    r.step();  // handed over, not published
+    r.m_rec.clear();
+    r.step();
+    r.m_rec.service();
+    EXPECT_TRUE(r.m_rec.lane().empty());
+    r.run_until(r.now() + k_beat);
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
+    EXPECT_EQ(r.m_gate.back(), 0);
+}

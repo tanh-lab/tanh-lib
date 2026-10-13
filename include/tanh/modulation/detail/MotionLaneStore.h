@@ -82,6 +82,9 @@ public:
     uint32_t load(MotionLane lane, size_t max_points);
     /// Publish an empty lane; its id.
     uint32_t clear();
+    /// Any thread: forget what take @p serial handed over and still hands over (a take cleared
+    /// while it runs): it neither plays nor is published.
+    void drop_take(uint32_t serial) { m_dropped_serial.store(serial, std::memory_order_release); }
     bool undo();
     bool redo();
     [[nodiscard]] bool can_undo() const { return m_history.can_undo(); }
@@ -128,6 +131,7 @@ private:
     std::array<Slot, 2> m_slots;
     MotionHistory m_history;
     std::atomic<uint32_t> m_next_id{1};
+    std::atomic<uint32_t> m_dropped_serial{0};
     std::atomic<uint32_t> m_version{0};
     std::atomic<float> m_smoothing{0.0f};
     std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};

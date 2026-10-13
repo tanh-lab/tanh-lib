@@ -24,7 +24,16 @@ namespace thl::modulation {
 
 namespace detail {
 
-enum class MotionCommandKind : uint8_t { Arm, Record, Disarm, Play, Stop, Reverse, PlaybackLength };
+enum class MotionCommandKind : uint8_t {
+    Arm,
+    Record,
+    Disarm,
+    Play,
+    Stop,
+    Reverse,
+    PlaybackLength,
+    Abort
+};
 
 /// One UI to audio recorder command.
 struct MotionCommand {
@@ -173,8 +182,9 @@ public:
     uint32_t load_lane(MotionLane lane) {
         return m_store.load(std::move(lane), m_config.m_max_points);
     }
-    /// Publish an empty lane: playback stops (gate 0, x and y hold). Returns the new id.
-    uint32_t clear() { return m_store.clear(); }
+    /// Publish an empty lane: playback stops (gate 0, x and y hold). A running take ends with
+    /// it, keeping nothing, and arming is cancelled. Returns the new id.
+    uint32_t clear();
 
     /// Republish the lane before the last publication (a take, a load, a clear) under a new
     /// take id. Publishes handed-over takes first. False if there is none.
@@ -266,7 +276,7 @@ private:
     double m_sample_rate = 48000.0;
     size_t m_max_block = 0;
     uint32_t m_num_samples = 0;
-    uint32_t m_take_serial = 0;
+    std::atomic<uint32_t> m_take_serial{0};  // written by the audio thread, read by clear()
     int m_sig_num = 4;
     int m_sig_denom = 4;
     LoopLength m_arm_length = LoopLength::Free;
