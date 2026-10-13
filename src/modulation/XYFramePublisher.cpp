@@ -26,24 +26,29 @@ void XYFramePublisher::prepare(double sample_rate, double frame_rate_hz, uint32_
 }
 
 void XYFramePublisher::add_trail(uint8_t voice,
-                                 const float* x,
-                                 const float* y,
-                                 const uint8_t* gate,
-                                 uint32_t num_samples,
-                                 float progress,
+                                 const TrailBlock& b,
                                  uint32_t& countdown) TANH_NONBLOCKING_FUNCTION {
+    const uint32_t num_samples = b.m_num_samples;
     if (countdown >= num_samples) {  // the next point is in a later block
         countdown -= num_samples;
         return;
     }
+    // The loop position runs linearly through the block, across the loop line.
+    float span = b.m_position_to - b.m_position_from;
+    if (span < 0.0f) { span += 1.0f; }
+    const float step = span / static_cast<float>(num_samples);
     // Drop-oldest when the UI does not drain.
     uint32_t i = countdown;
     for (; i < num_samples; i += m_trail_interval) {
-        const XYPathPoint p{.m_x = x[i],
-                            .m_y = y[i],
-                            .m_progress = progress,
+        float position = b.m_position_from + (step * static_cast<float>(i + 1));
+        if (position >= 1.0f) { position -= 1.0f; }
+        const XYPathPoint p{.m_x = b.m_x[i],
+                            .m_y = b.m_y[i],
+                            .m_progress = b.m_progress,
+                            .m_position = position,
                             .m_voice = voice,
-                            .m_active = gate[i]};
+                            .m_active = b.m_gate[i],
+                            .m_live = b.m_live[i]};
         m_trail_dropped += static_cast<uint32_t>(m_trail.push_overwrite(p));
     }
     countdown = i - num_samples;

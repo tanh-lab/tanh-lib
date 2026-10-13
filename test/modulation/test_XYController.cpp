@@ -632,11 +632,46 @@ TEST(XYFramePublisher, TrailKeepsItsSpacingAcrossShortBlocks) {
     std::array<uint8_t, 16> gate{};
     gate.fill(1);
     uint32_t countdown = 0;
-    for (int block = 0; block < 64; ++block) {  // 1024 samples in 16-sample blocks
-        publisher->add_trail(0, x.data(), y.data(), gate.data(), 16, 0.0f, countdown);
+    const detail::XYFramePublisher::TrailBlock block{.m_x = x.data(),
+                                                     .m_y = y.data(),
+                                                     .m_gate = gate.data(),
+                                                     .m_live = gate.data(),
+                                                     .m_num_samples = 16};
+    for (int b = 0; b < 64; ++b) {  // 1024 samples in 16-sample blocks
+        publisher->add_trail(0, block, countdown);
     }
     std::array<XYPathPoint, 256> points{};
     EXPECT_EQ(publisher->drain(points), 16u);  // one every 64 samples
+}
+
+// Trail points carry the finger and the take's loop position, run through the block and
+// across the loop line.
+TEST(XYFramePublisher, TrailPointsCarryTheLoopPositionAndTheFinger) {
+    auto publisher = std::make_unique<detail::XYFramePublisher>();
+    publisher->prepare(k_sr, 60.0, 4);
+    std::array<float, 16> x{};
+    std::array<float, 16> y{};
+    std::array<uint8_t, 16> gate{};
+    std::array<uint8_t, 16> live{};
+    gate.fill(1);
+    live[8] = 1;
+    uint32_t countdown = 0;
+    publisher->add_trail(0,
+                         {.m_x = x.data(),
+                          .m_y = y.data(),
+                          .m_gate = gate.data(),
+                          .m_live = live.data(),
+                          .m_num_samples = 16,
+                          .m_position_from = 0.9f,
+                          .m_position_to = 0.1f},
+                         countdown);
+    std::array<XYPathPoint, 8> points{};
+    ASSERT_EQ(publisher->drain(points), 4u);  // samples 0, 4, 8, 12
+    EXPECT_NEAR(points[0].m_position, 0.9f + (0.2f / 16.0f), 1e-6f);
+    EXPECT_NEAR(points[2].m_position, 0.9f + (0.2f * 9.0f / 16.0f) - 1.0f, 1e-6f);
+    EXPECT_NEAR(points[3].m_position, 0.9f + (0.2f * 13.0f / 16.0f) - 1.0f, 1e-6f);
+    EXPECT_EQ(points[1].m_live, 0);
+    EXPECT_EQ(points[2].m_live, 1);
 }
 
 // With m_skip_during_gesture, a held knob (a host gesture on the target) wins over the pad: the

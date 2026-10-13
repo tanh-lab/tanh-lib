@@ -92,6 +92,7 @@ struct XYController::Voice {
     bool m_has_value = false;
     bool m_latched = false;
     uint32_t m_trail_countdown = 0;
+    float m_trail_position = -1.0f;  // the take's loop position at the last block's end
 
     // Shared: x / y at block end for touch selection, and the enabled flag.
     std::atomic<uint64_t> m_position{0};
@@ -225,6 +226,7 @@ void XYController::prepare(double sample_rate, size_t samples_per_block) {
         v.m_change_points.assign(samples_per_block + 1, 0);
         v.m_num_change_points = 0;
         v.m_trail_countdown = 0;
+        v.m_trail_position = -1.0f;
     }
     m_frames.prepare(sample_rate, m_config.m_frame_rate_hz, m_config.m_trail_interval);
     m_num_samples = 0;
@@ -510,15 +512,22 @@ void XYController::run_voice(Voice& v,
     const MotionSnapshot motion = v.m_recorder.snapshot();
 
     if (motion.m_state == MotionState::Recording) {
+        // A take's first block: its points get the block-end position.
+        const float from = v.m_trail_position >= 0.0f ? v.m_trail_position : motion.m_progress;
         m_frames.add_trail(static_cast<uint8_t>(index),
-                           x,
-                           y,
-                           gate,
-                           n,
-                           motion.m_progress,
+                           {.m_x = x,
+                            .m_y = y,
+                            .m_gate = gate,
+                            .m_live = live,
+                            .m_num_samples = n,
+                            .m_progress = motion.m_progress,
+                            .m_position_from = from,
+                            .m_position_to = motion.m_progress},
                            v.m_trail_countdown);
+        v.m_trail_position = motion.m_progress;
     } else {
         v.m_trail_countdown = 0;
+        v.m_trail_position = -1.0f;
     }
 
     XYVoiceFrame& f = m_frames.voice(index);

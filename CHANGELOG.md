@@ -70,7 +70,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `MotionRecorderConfig::m_overwrite_loops` makes a bar-aligned `BarsN` take loop over
   its N bars from the loop line until `disarm()` / `stop()`: it starts as the playing
   lane (unsmoothed), overwrites where the finger is down and plays what it holds where
-  it is up; one undo step (`MotionRecorderOverwrite.*`). `undo()` /
+  it is up; one undo step (`MotionRecorderOverwrite.*`). Its trail points carry the
+  loop position (`XYPathPoint::m_position`) and the finger (`m_live`), so a UI can draw
+  the loop as it is overwritten. `undo()` /
   `redo()` keep one previous lane. The published lane stays raw, seam included
   (`MotionLane::m_seam`, JSON `seam`); what plays (`played_lane()`, also
   `make_played_curve()` for any lane) closes the seam over 0.3 beat (150 ms), widening

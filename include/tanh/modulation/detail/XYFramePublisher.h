@@ -30,6 +30,19 @@ public:
         return m_frames.write_buffer().m_voices[index];
     }
 
+    /// One block of a recording voice.
+    struct TrailBlock {
+        const float* m_x = nullptr;
+        const float* m_y = nullptr;
+        const uint8_t* m_gate = nullptr;
+        const uint8_t* m_live = nullptr;
+        uint32_t m_num_samples = 0;
+        float m_progress = 0.0f;
+        // The take's loop position at the block's start and end (0..1, may wrap).
+        float m_position_from = 0.0f;
+        float m_position_to = 0.0f;
+    };
+
     /**
      * @brief Audio thread: trail points of a recording voice, every trail interval.
      *
@@ -37,11 +50,7 @@ public:
      *                  (0 when the voice starts recording).
      */
     void add_trail(uint8_t voice,
-                   const float* x,
-                   const float* y,
-                   const uint8_t* gate,
-                   uint32_t num_samples,
-                   float progress,
+                   const TrailBlock& block,
                    uint32_t& countdown) TANH_NONBLOCKING_FUNCTION;
 
     /// Audio thread: completes the block's frame and publishes it when due.
