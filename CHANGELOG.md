@@ -83,7 +83,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `MotionLaneProcessing.*`. Docs: `motion_recording.md`.
 - Motion shapes: `MotionShape` (18 stock closed paths: circle, square, Lissajous,
   roses, spiral, heart, star, ...) and `MotionShapeMix` (slots A and B, each a shape or
-  the take, a morph between them, size and rotation). `MotionRecorder::set_shapes()`
+  the take, a morph between them, size and rotation, which move the take as well:
+  `place_motion_take()`). `MotionRecorder::set_shapes()`
   plays the mix on the audio thread in place of, or blended with, the lane, over the
   playback length (one bar while Free) or the lane's loop; a touch overrides a playing
   shape as it does the lane, and shapes pause while a take records. `played_path()` /

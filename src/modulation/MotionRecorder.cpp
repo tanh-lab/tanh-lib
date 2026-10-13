@@ -378,6 +378,7 @@ MotionRecorder::LaneView MotionRecorder::shaped_view(LaneView lane) const {
         lane.m_shaped = true;
         return lane;
     }
+    if (!m_shapes.has_shape()) { return lane; }  // a moved take without a take
     // No take to follow: the shapes loop over the playback length, one bar while it is Free.
     LaneView v;
     v.m_shaped = true;

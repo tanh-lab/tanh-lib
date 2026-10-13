@@ -167,10 +167,12 @@ aborts a take (the previous lane is kept, `MotionSnapshot::m_aborted`).
 `set_shapes(MotionShapeMix)` (any thread, applied from the next block) plays stock paths
 instead of, or blended with, the lane. The mix has two slots, A and B, each a
 `MotionShape` or `MotionShape::Take` (the lane), crossfaded point by point at the same
-position in the loop by `m_morph`. `m_size` and `m_rotation` scale and turn the shape
-slots around the pad centre; the take keeps its own position.
+position in the loop by `m_morph`. `m_size` and `m_rotation` scale and turn both around
+the pad centre: a shape at size 1 reaches the pad's edges, the take at size 1 is as
+recorded (`place_motion_shape()`, `place_motion_take()`).
 
-- Both slots on Take: nothing changes, the lane plays.
+- Both slots on Take, size 1 and no rotation: nothing changes, the lane plays. A
+  smaller size or a rotation moves the lane; without a lane there is nothing to move.
 - A slot on Take with a lane: the shapes follow the lane's loop (length, anchor,
   playback length, reverse); without a lane the Take slot is the centre.
 - No Take slot (or no lane): the shapes loop over the playback length as a Beats
@@ -179,8 +181,8 @@ slots around the pad centre; the take keeps its own position.
   the lane's.
 - A slot change re-seeks and glides like a new lane; morph, size and rotation are read
   once per block and follow at the render interval, so host automation is smooth.
-- While a shape plays, a touch moves the shape's centre to the finger; the release
-  glides back.
+- While a shape plays, a touch overrides it as it does the lane; the release glides
+  back.
 - Shapes pause while a take records: the output, the gate and the live trail are the
   recording, as without shapes. They resume over the new take when it plays.
 

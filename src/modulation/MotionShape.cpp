@@ -169,13 +169,29 @@ MotionShapePoint place_motion_shape(MotionShape shape,
     return point(std::clamp(0.5 + (x * size), 0.0, 1.0), std::clamp(0.5 + (y * size), 0.0, 1.0));
 }
 
+MotionShapePoint place_motion_take(const MotionShapeMix& mix,
+                                   MotionShapePoint take) TANH_NONBLOCKING_FUNCTION {
+    if (!mix.transforms_take()) { return take; }
+    const double angle = k_tau * static_cast<double>(mix.m_rotation);
+    const double c = std::cos(angle);
+    const double s = std::sin(angle);
+    const double size = std::clamp(static_cast<double>(mix.m_size), 0.0, 1.0);
+    const double dx = static_cast<double>(take.m_x) - 0.5;
+    const double dy = static_cast<double>(take.m_y) - 0.5;
+    // Clockwise with y up, as the shapes turn.
+    const double x = (dx * c) + (dy * s);
+    const double y = (dy * c) - (dx * s);
+    return point(std::clamp(0.5 + (x * size), 0.0, 1.0), std::clamp(0.5 + (y * size), 0.0, 1.0));
+}
+
 MotionShapePoint mix_motion_shapes(const MotionShapeMix& mix,
                                    double u,
                                    MotionShapePoint take) TANH_NONBLOCKING_FUNCTION {
+    const MotionShapePoint placed = mix.uses_take() ? place_motion_take(mix, take) : take;
     const MotionShapePoint a =
-        mix.m_a == MotionShape::Take ? take : place_motion_shape(mix.m_a, mix, u);
+        mix.m_a == MotionShape::Take ? placed : place_motion_shape(mix.m_a, mix, u);
     const MotionShapePoint b =
-        mix.m_b == MotionShape::Take ? take : place_motion_shape(mix.m_b, mix, u);
+        mix.m_b == MotionShape::Take ? placed : place_motion_shape(mix.m_b, mix, u);
     const double w = std::clamp(static_cast<double>(mix.m_morph), 0.0, 1.0);
     return point(a.m_x + ((b.m_x - a.m_x) * w), a.m_y + ((b.m_y - a.m_y) * w));
 }
@@ -228,6 +244,7 @@ MotionLane render_motion_path(const MotionLane& lane,
                               size_t num_points) {
     if (!mix.active() || num_points == 0) { return lane; }
     const bool take = mix.uses_take() && !lane.empty();
+    if (!take && !mix.has_shape()) { return lane; }  // a moved take without a take
     const float morph = std::clamp(mix.m_morph, 0.0f, 1.0f);
     const bool shape_sounds = (mix.m_a != MotionShape::Take && morph < 1.0f) ||
                               (mix.m_b != MotionShape::Take && morph > 0.0f) || !take;

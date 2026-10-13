@@ -77,9 +77,30 @@ TEST(MotionShape, SizeAndRotationPlaceTheShape) {
 }
 
 TEST(MotionShape, WithoutShapesTheMixIsInactive) {
-    const MotionShapeMix mix;
+    MotionShapeMix mix;
+    EXPECT_FALSE(mix.active());
+    mix.m_morph = 0.7f;
     EXPECT_FALSE(mix.active());
     EXPECT_TRUE(mix_of(MotionShape::Take, MotionShape::Heart).active());
+    mix.m_size = 0.5f;  // moves the take
+    EXPECT_TRUE(mix.active());
+    mix.m_size = 1.0f;
+    mix.m_rotation = 0.25f;
+    EXPECT_TRUE(mix.active());
+}
+
+TEST(MotionShape, SizeAndRotationPlaceTheTake) {
+    MotionShapeMix mix;
+    const MotionShapePoint top{.m_x = 0.5f, .m_y = 0.9f};
+    MotionShapePoint p = thl::modulation::place_motion_take(mix, top);
+    EXPECT_EQ(p.m_x, top.m_x);  // size 1, no rotation: as recorded
+    EXPECT_EQ(p.m_y, top.m_y);
+    // A quarter turn clockwise moves the top to the right, half size halfway.
+    mix.m_size = 0.5f;
+    mix.m_rotation = 0.25f;
+    p = thl::modulation::place_motion_take(mix, top);
+    EXPECT_NEAR(p.m_x, 0.7f, 1e-6);
+    EXPECT_NEAR(p.m_y, 0.5f, 1e-6);
 }
 
 TEST(MotionShape, RecorderPlaysAShapeWithoutALane) {
@@ -161,7 +182,7 @@ TEST(MotionShape, TouchOverridesAPlayingShape) {
     }
 }
 
-TEST(MotionShape, BothSlotsOnTakePlayTheLaneUnchanged) {
+TEST(MotionShape, BothSlotsOnTakePlayTheLaneUnchangedAtFullSize) {
     Rig with(k_block);
     Rig without(k_block);
     for (Rig* r : {&with, &without}) {
@@ -170,7 +191,6 @@ TEST(MotionShape, BothSlotsOnTakePlayTheLaneUnchanged) {
     }
     MotionShapeMix mix;
     mix.m_morph = 0.7f;
-    mix.m_size = 0.3f;
     with.m_rec.set_shapes(mix);
     with.run_until(2 * k_bar);
     without.run_until(2 * k_bar);
@@ -179,6 +199,44 @@ TEST(MotionShape, BothSlotsOnTakePlayTheLaneUnchanged) {
         ASSERT_EQ(with.m_x[i], without.m_x[i]) << i;
         ASSERT_EQ(with.m_y[i], without.m_y[i]) << i;
     }
+}
+
+// Size and rotation move the take as they move a shape: the lane plays scaled and turned around
+// the centre, and the played path shows it.
+TEST(MotionShape, SizeAndRotationMoveThePlayingTake) {
+    Rig r(k_block);
+    r.play_at(0);
+    ASSERT_NE(r.m_rec.load_lane(beats_lane(4.0, 64)), 0u);
+    MotionShapeMix mix;
+    mix.m_size = 0.5f;
+    mix.m_rotation = 0.125f;
+    r.m_rec.set_shapes(mix);
+    r.run_until(2 * k_bar);
+    for (size_t i = k_settled; i < 2 * k_bar; i += 997) {
+        const double ph = thl::modulation::detail::wrap_phase(r.m_beat[i], 4.0);
+        const double angle = 2.0 * 3.14159265358979323846 * ph / 4.0;
+        const MotionShapePoint e = thl::modulation::place_motion_take(
+            mix,
+            {.m_x = static_cast<float>(0.5 + (0.4 * std::sin(angle))),
+             .m_y = static_cast<float>(0.5 + (0.4 * std::cos(angle)))});
+        EXPECT_NEAR(r.m_x[i], e.m_x, 3e-3) << i;
+        EXPECT_NEAR(r.m_y[i], e.m_y, 3e-3) << i;
+    }
+    const thl::modulation::MotionLane lane = r.m_rec.lane();
+    const thl::modulation::MotionLane path = r.m_rec.played_path(lane.num_points());
+    ASSERT_EQ(path.num_points(), lane.num_points());
+    const MotionShapePoint e =
+        thl::modulation::place_motion_take(mix, {.m_x = lane.m_x[10], .m_y = lane.m_y[10]});
+    EXPECT_NEAR(path.m_x[10], e.m_x, 1e-3);
+    EXPECT_NEAR(path.m_y[10], e.m_y, 1e-3);
+
+    // Without a take there is nothing to move: no output.
+    Rig empty(k_block);
+    empty.play_at(0);
+    empty.m_rec.set_shapes(mix);
+    empty.run_until(k_bar);
+    EXPECT_EQ(empty.m_gate.back(), 0);
+    EXPECT_TRUE(empty.m_rec.played_path().empty());
 }
 
 TEST(MotionShape, PlayedPathSamplesTheMix) {

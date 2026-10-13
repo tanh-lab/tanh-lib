@@ -61,20 +61,25 @@ struct MotionShapePoint {
  * @brief What a MotionRecorder plays in place of, or blended with, its lane.
  *
  * Two slots, A and B, each a shape or the take, crossfaded point by point at the same
- * position in the loop by m_morph. m_size and m_rotation transform the shape slots (not the
- * take) around the pad centre. With both slots on Take nothing changes: the lane plays.
+ * position in the loop by m_morph. m_size and m_rotation transform both around the pad centre:
+ * a shape at size 1 reaches the pad's edges, the take at size 1 is as recorded. With both slots
+ * on Take, size 1 and no rotation nothing changes: the lane plays.
  */
 struct MotionShapeMix {
     MotionShape m_a = MotionShape::Take;
     MotionShape m_b = MotionShape::Take;
     float m_morph = 0.0f;     ///< 0 = A, 1 = B
-    float m_size = 1.0f;      ///< 0..1: 1 reaches the pad's edges
+    float m_size = 1.0f;      ///< 0..1: a shape reaches the pad's edges, the take is as recorded
     float m_rotation = 0.0f;  ///< turns, clockwise (0..1)
 
     /// True when a shape slot is in use.
-    [[nodiscard]] bool active() const {
+    [[nodiscard]] bool has_shape() const {
         return m_a != MotionShape::Take || m_b != MotionShape::Take;
     }
+    /// True when size or rotation move the take.
+    [[nodiscard]] bool transforms_take() const { return m_size < 1.0f || m_rotation != 0.0f; }
+    /// True when the mix changes what plays: a shape slot, or a moved take.
+    [[nodiscard]] bool active() const { return has_shape() || (uses_take() && transforms_take()); }
     /// True when a slot plays the take.
     [[nodiscard]] bool uses_take() const {
         return m_a == MotionShape::Take || m_b == MotionShape::Take;
@@ -87,7 +92,13 @@ struct MotionShapeMix {
                                                            const MotionShapeMix& mix,
                                                            double u) TANH_NONBLOCKING_FUNCTION;
 
-/// Pad position of @p mix at @p u; @p take is the take's pad position there (for Take slots).
+/// Pad position of the take's point @p take: scaled by m_size, turned by m_rotation around the
+/// centre.
+[[nodiscard]] TANH_API MotionShapePoint
+    place_motion_take(const MotionShapeMix& mix, MotionShapePoint take) TANH_NONBLOCKING_FUNCTION;
+
+/// Pad position of @p mix at @p u; @p take is the take's pad position there (for Take slots,
+/// placed by place_motion_take()).
 [[nodiscard]] TANH_API MotionShapePoint mix_motion_shapes(const MotionShapeMix& mix,
                                                           double u,
                                                           MotionShapePoint take)
