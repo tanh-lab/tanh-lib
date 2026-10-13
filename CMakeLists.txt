@@ -421,6 +421,10 @@ if(TANH_BUILD_MODULATION)
         src/modulation/MotionRecorder.cpp
         src/modulation/MotionShape.cpp
         src/modulation/MotionTakes.cpp
+        src/modulation/MotionTakeRecorder.cpp
+        src/modulation/MotionLaneStore.cpp
+        src/modulation/MotionLanePlayer.cpp
+        src/modulation/MotionCompositor.cpp
         src/modulation/XYController.cpp
         src/modulation/XYFramePublisher.cpp
     )

@@ -21,6 +21,10 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MotionRecorderThreads.cpp
 	test_MotionRecorderTakes.cpp
 	test_MotionRecorderOverwrite.cpp
+	test_MotionTakeRecorder.cpp
+	test_MotionLaneStore.cpp
+	test_MotionLanePlayer.cpp
+	test_MotionCompositor.cpp
 	test_MotionRecorderFreeTakes.cpp
 	test_MotionRecorderSmoothing.cpp
 	test_MotionShape.cpp
