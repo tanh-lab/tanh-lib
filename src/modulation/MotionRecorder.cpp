@@ -302,16 +302,23 @@ void MotionRecorder::process(const TransportInfo& t,
             ++in_cp;
         }
 
-        // Recording: a take hands its loop over; it plays from the next block.
+        // Recording: a take hands its loop over; it plays from the next block. It records what
+        // plays at the finger through the transform, so the take plays where the finger drew.
+        float rx = lx;
+        float ry = ly;
+        if (has_in && m_transform != nullptr && !m_transform->unplace(transform_settings, rx, ry)) {
+            rx = lx;
+            ry = ly;
+        }
         if (!m_takes.active() && m_armed && !m_finish_pending && (live || m_force_start)) {
             // Lifted before the touch, at the touch (record() without one: where the output is).
             start_take(info,
                        clock.m_beat + (static_cast<double>(i) * clock.m_rec_slope),
-                       lx,
-                       ly,
+                       rx,
+                       ry,
                        playing);
         }
-        if (m_takes.active()) { on_take(m_takes.step(live, lx, ly, clock.m_rec_slope)); }
+        if (m_takes.active()) { on_take(m_takes.step(live, rx, ry, clock.m_rec_slope)); }
         if (m_handed_over) {  // plays from this sample
             m_handed_over = false;
             playing = m_store.select(scope.data());

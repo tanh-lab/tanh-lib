@@ -152,6 +152,11 @@ public:
     void place(uint64_t /*settings*/, double /*u*/, float& x, float& /*y*/) const override {
         x = std::min(1.0f, x + 0.1f);
     }
+    bool unplace(uint64_t settings, float& x, float& /*y*/) const override {
+        if (settings != 2) { return false; }  // 2: records through the shift
+        x = std::max(0.0f, x - 0.1f);
+        return true;
+    }
 };
 
 }  // namespace
@@ -250,4 +255,23 @@ TEST(MotionRecorderOverwrite, ClearDropsAnUnpublishedRevision) {
     r.run_until(r.now() + k_beat);
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
     EXPECT_EQ(r.m_gate.back(), 0);
+}
+
+// A take records through the transform: what it records plays back where the finger drew.
+TEST(MotionRecorderOverwrite, TakeRecordsThroughTheTransform) {
+    Rig r(256, 120.0);
+    start(r);
+    const Shift shift;
+    r.m_rec.set_transform(&shift);
+    r.m_rec.set_transform_settings(2);
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    r.m_pad.touch(1, 0.6f, 0.5f);
+    r.run_until(r.now() + k_bar);
+    EXPECT_EQ(r.m_x.back(), 0.6f);  // the finger, live
+    r.m_pad.release(1);
+    r.step();
+    ASSERT_TRUE(r.m_rec.service());
+    EXPECT_NEAR(r.m_rec.lane().m_x[200], 0.5f, 1e-6);  // recorded under the shift
+    r.run_until(r.now() + k_bar);
+    EXPECT_NEAR(r.m_x.back(), 0.6f, 1e-5);  // plays where the finger was
 }

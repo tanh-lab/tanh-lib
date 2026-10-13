@@ -42,6 +42,14 @@ public:
     /// The point that plays at @p u (0..1 of the loop) where the lane is at (@p x, @p y), the
     /// pad centre without a lane; written back into @p x and @p y, in [0, 1].
     virtual void place(uint64_t settings, double u, float& x, float& y) const = 0;
+    /**
+     * @brief The lane point that plays at the pad point (@p x, @p y), written back: what a take
+     *        records, so it plays where the finger drew.
+     *
+     * False when there is none (another path is heard as well, or the lane is scaled to
+     * nothing): the take records the finger as it is. The default has none.
+     */
+    virtual bool unplace(uint64_t /*settings*/, float& /*x*/, float& /*y*/) const { return false; }
 };
 
 /**
