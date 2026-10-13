@@ -49,6 +49,11 @@ struct MotionRecorderConfig {
     ///   record gaps.
     /// Off: free takes end on release and keep their length.
     bool m_bar_aligned_takes = false;
+    /// With m_bar_aligned_takes: a BarsN take loops over the N bars from the loop line
+    /// (a multiple of N bars) and keeps recording until disarm() or stop(). Where the finger
+    /// is down it overwrites, where it is up the motion that played when the take started
+    /// (or that an earlier pass recorded) stays and plays on. One take, one undo step.
+    bool m_overwrite_loops = false;
 };
 
 /// Recorder state as a UI shows it.

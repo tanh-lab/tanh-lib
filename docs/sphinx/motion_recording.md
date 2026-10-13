@@ -85,6 +85,16 @@ cannot feed back as a fake touch.
     a free take holds no gaps: record gaps with a fixed `BarsN` length.
     `disarm()` / `stop()` end it there and keep it.
   - A take that was never touched is dropped and the old lane plays on.
+  - With `m_overwrite_loops` as well, `BarsN` records like a looper: the take
+    loops over the N bars from the loop line (a multiple of N bars, where
+    `set_playback_length(BarsN)` plays it) and runs until `disarm()` /
+    `stop()`, so a take started halfway records over the loop line into the
+    start. It starts as the playing lane (unsmoothed, its seam closed; a
+    reversed or Seconds lane, or none, starts it lifted as above). Where the
+    finger is down it overwrites, where it is up the point keeps its motion,
+    and once its whole loop holds motion (from the start, or after the first
+    loop line) it plays from its buffer while it records. It ends as one lane,
+    one undo step, its seam where the last pass meets the one before.
 - `undo()` / `redo()` (message thread): one level. Every publication (take,
   load, clear) keeps the previous lane; `undo()` republishes it under a
   new take id and enables `redo()`; a new publication drops the redo lane.

@@ -260,6 +260,10 @@ private:
         MotionLane m_lane;
         std::vector<float> m_x;
         std::vector<float> m_y;
+        // The lane unsmoothed with its seam closed, when m_x / m_y differ from it (smoothed):
+        // what an overwriting take starts from, so overdubs do not smooth it again.
+        std::vector<float> m_seed_x;
+        std::vector<float> m_seed_y;
         bool m_smoothed = false;  // may differ from the finalised take buffer: glide on handoff
         uint32_t m_version = 0;   // per publication, also for a smoothing change
     };
@@ -291,11 +295,14 @@ private:
     void apply_shapes();
     void switch_to(Source source, uint32_t id, bool silent);
     void glide_in_place();
+    // The motion an overwriting take starts from: the playing lane, empty when none plays.
+    [[nodiscard]] detail::TakeSeed seed_of(const PlayedLane& lane) const;
     // Opens a take at @p offset of this block (recording clock beat @p clock_beat).
     void start_take(const thl::dsp::transport::TransportInfo& transport,
                     const MotionInput& input,
                     uint32_t offset,
-                    double clock_beat);
+                    double clock_beat,
+                    const PlayedLane& lane);
     // What a take that ended or stopped means for arming and playback.
     void on_take(TakeOutcome outcome);
     void start_glide() { m_glide.start(m_last_x, m_last_y); }
@@ -377,6 +384,7 @@ private:
     bool m_ramp_restart = true;
     uint8_t m_last_gate = 0;
     bool m_last_live = false;
+    bool m_take_plays = false;  // an overwriting take plays from its buffer
 };
 
 }  // namespace thl::modulation

@@ -66,7 +66,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Beats lane of whole bars: `BarsN` starts on a bar line, records lifts as gate 0 and
   `disarm()` / `stop()` pad it instead of dropping it; `Free` runs from the first touch
   to the release (16 bars at most), drops its still ends and is stretched onto the
-  nearest of 1, 2, 4, 8 or 16 bars, so it loops without a pause. `undo()` /
+  nearest of 1, 2, 4, 8 or 16 bars, so it loops without a pause.
+  `MotionRecorderConfig::m_overwrite_loops` makes a bar-aligned `BarsN` take loop over
+  its N bars from the loop line until `disarm()` / `stop()`: it starts as the playing
+  lane (unsmoothed), overwrites where the finger is down and plays what it holds where
+  it is up; one undo step (`MotionRecorderOverwrite.*`). `undo()` /
   `redo()` keep one previous lane. The published lane stays raw, seam included
   (`MotionLane::m_seam`, JSON `seam`); what plays (`played_lane()`, also
   `make_played_curve()` for any lane) closes the seam over 0.3 beat (150 ms), widening

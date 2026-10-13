@@ -38,6 +38,17 @@ struct TakeBuffer {
     size_t m_seam_window = 0;  // points blended by the seam closing
 };
 
+/// What played when an overwriting take starts (a Beats loop): the take starts as it.
+struct TakeSeed {
+    const float* m_x = nullptr;
+    const float* m_y = nullptr;
+    const uint8_t* m_gate = nullptr;  ///< null: all down
+    size_t m_num_points = 0;
+    double m_length = 0.0;  ///< beats
+    double m_anchor = 0.0;  ///< beat of point 0
+    [[nodiscard]] bool empty() const { return m_num_points == 0 || !(m_length > 0.0); }
+};
+
 /**
  * @brief Records takes into two preallocated buffers on the audio thread.
  *
@@ -74,13 +85,15 @@ public:
 
     /**
      * @brief Opens a take of @p length at @p clock_beat (the recording clock's beat
-     *        at this sample), starting from (@p first_x, @p first_y).
+     *        at this sample), starting from (@p first_x, @p first_y). An overwriting
+     *        take (MotionRecorderConfig::m_overwrite_loops) starts as @p seed.
      */
     [[nodiscard]] Start start(const dsp::transport::TransportInfo& transport,
                               LoopLength length,
                               float first_x,
                               float first_y,
-                              double clock_beat) TANH_NONBLOCKING_FUNCTION;
+                              double clock_beat,
+                              const TakeSeed& seed = {}) TANH_NONBLOCKING_FUNCTION;
 
     /**
      * @brief One sample of the running take.
@@ -97,13 +110,21 @@ public:
                                uint32_t block_samples) TANH_NONBLOCKING_FUNCTION;
 
     /// disarm() / stop() during a take: a touched bar-aligned BarsN take is padded to its
-    /// loop, a free one ends where it is; other takes are dropped or cancelled.
+    /// loop (an overwriting one keeps what it holds), a free one ends where it is; other
+    /// takes are dropped or cancelled.
     [[nodiscard]] Outcome end(double bpm) TANH_NONBLOCKING_FUNCTION;
 
     /// Drops the running take, keeping nothing (prepare() during a take).
     void abort() TANH_NONBLOCKING_FUNCTION;
 
     [[nodiscard]] bool active() const { return m_take.m_active; }
+    /// An overwriting take whose whole loop holds motion: it plays from its buffer
+    /// (the running take's) while it records.
+    [[nodiscard]] bool playable() const {
+        return m_take.m_active && m_take.m_overwrite && m_take.m_full;
+    }
+    /// The running take's buffer.
+    [[nodiscard]] uint32_t buffer() const { return m_take.m_buffer; }
     /// Recording progress, 0..1 of the current loop target; 0 without a take.
     [[nodiscard]] float progress() const;
     /// The buffer of the last Finished outcome.
@@ -120,11 +141,13 @@ private:
         bool m_snap = false;     // free take snapped onto 1 to 16 bars (m_bar_aligned_takes)
         bool m_beats = false;
         bool m_saw_touch = false;
+        bool m_overwrite = false;  // loops until end() (m_overwrite_loops)
+        bool m_full = false;       // overwrite: every point holds motion (seeded, or a pass done)
         uint32_t m_buffer = 0;
         size_t m_capacity = 0;  // bar: points per loop; free: max points
         size_t m_target = 0;    // progress target (snapped free: the next bar boundary)
         size_t m_points_per_bar = 0;
-        size_t m_count = 0;            // points written
+        size_t m_count = 0;            // points written (overwrite: into this pass)
         size_t m_count_at_change = 0;  // points up to the last input change
         size_t m_start_index = 0;      // bar: physical index of the first point
         double m_clock = 0.0;          // samples (Seconds) or beats since start
@@ -133,12 +156,13 @@ private:
         double m_start_beat = 0.0;
         double m_length = 0.0;     // bar: loop length in beats
         double m_bar_beats = 4.0;  // beats per bar at the start
-        double m_bar_line = 0.0;   // aligned: beat of point 0
+        double m_bar_line = 0.0;   // aligned: beat of point 0 (overwrite: the loop line)
         float m_last_x = 0.0f;
         float m_last_y = 0.0f;
     };
 
     void write_point(float x, float y, uint8_t gate) TANH_NONBLOCKING_FUNCTION;
+    void seed(const TakeSeed& seed) TANH_NONBLOCKING_FUNCTION;
     void trim_still_ends() TANH_NONBLOCKING_FUNCTION;
     void close_seam(TakeBuffer& buffer, size_t num_points) TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] Outcome finish(double bpm, uint32_t trim_samples = 0) TANH_NONBLOCKING_FUNCTION;

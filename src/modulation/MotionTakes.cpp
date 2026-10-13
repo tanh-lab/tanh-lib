@@ -80,7 +80,8 @@ MotionTakeWriter::Start MotionTakeWriter::start(const TransportInfo& t,
                                                 LoopLength length,
                                                 float first_x,
                                                 float first_y,
-                                                double clock_beat) TANH_NONBLOCKING_FUNCTION {
+                                                double clock_beat,
+                                                const TakeSeed& seed) TANH_NONBLOCKING_FUNCTION {
     uint32_t buffer = 2;
     for (uint32_t b = 0; b < 2; ++b) {
         if (m_buffers[b].m_state.load(std::memory_order_acquire) == TakeBufferState::Free) {
@@ -112,15 +113,18 @@ MotionTakeWriter::Start MotionTakeWriter::start(const TransportInfo& t,
         k.m_aligned = bars > 0;
         k.m_snap = bars == 0;
         k.m_bar = bars > 0;
+        k.m_overwrite = bars > 0 && m_config.m_overwrite_loops;
         k.m_beats = true;
         k.m_points_per_bar = static_cast<size_t>(per_bar);
         k.m_capacity = loop_bars * k.m_points_per_bar;
         k.m_target = bars > 0 ? k.m_capacity : k.m_points_per_bar;
         k.m_length = static_cast<double>(loop_bars) * k.m_bar_beats;
         k.m_tick_step = k.m_bar_beats / per_bar;
-        // A bar take's point 0 sits on the bar line at or before the touch; a
+        // A bar take's point 0 sits on the bar line at or before the touch (an
+        // overwriting take's on the loop line, as a playback length plays it); a
         // free take's on the first touch (record() rebases it there).
-        k.m_bar_line = std::floor((clock_beat / k.m_bar_beats) + k_tick_eps) * k.m_bar_beats;
+        const double grid = k.m_overwrite ? k.m_length : k.m_bar_beats;
+        k.m_bar_line = std::floor((clock_beat / grid) + k_tick_eps) * grid;
         k.m_tick_base = bars > 0 ? k.m_bar_line : clock_beat;
         k.m_clock = clock_beat;
     } else if (bars > 0) {
@@ -156,13 +160,32 @@ MotionTakeWriter::Start MotionTakeWriter::start(const TransportInfo& t,
     k.m_start_beat = clock_beat;
     k.m_last_x = first_x;
     k.m_last_y = first_y;
-    m_buffers[buffer].m_state.store(TakeBufferState::Recording, std::memory_order_relaxed);
+    TakeBuffer& b = m_buffers[buffer];
+    b.m_state.store(TakeBufferState::Recording, std::memory_order_relaxed);
+    if (k.m_overwrite) {
+        // Plays from its buffer while it records: the loop is known from the start.
+        b.m_timebase = MotionTimebase::Beats;
+        b.m_length = k.m_length;
+        b.m_anchor = wrap_phase(k.m_bar_line, k.m_length);
+        b.m_rate = static_cast<double>(k.m_capacity) / k.m_length;
+        b.m_num_points = k.m_capacity;
+        b.m_seam = 0;
+        b.m_seam_window = 0;
+        if (!seed.empty()) {
+            this->seed(seed);
+            k.m_full = true;
+        }
+    }
     if (k.m_aligned) {
         // The time from the bar line to the touch is lifted (gate 0) at the
-        // first position. At most one bar of points: a bounded loop.
+        // first position, or keeps the seed. At most one loop of points: a bounded loop.
         const double ticks = std::ceil(((clock_beat - k.m_bar_line) / k.m_tick_step) - k_tick_eps);
         const auto lead = std::min(static_cast<size_t>(std::max(ticks, 0.0)), k.m_target - 1);
-        for (size_t i = 0; i < lead; ++i) { write_point(first_x, first_y, 0); }
+        if (k.m_full) {
+            k.m_count = lead;
+        } else {
+            for (size_t i = 0; i < lead; ++i) { write_point(first_x, first_y, 0); }
+        }
     }
     return Start::Started;
 }
@@ -193,8 +216,18 @@ MotionTakeWriter::Outcome MotionTakeWriter::step(bool live,
     if (k.m_clock >= next - k_tick_eps) {
         if (live) {
             write_point(x, y, 1);
+        } else if (k.m_full) {
+            ++k.m_count;  // overwrite, lifted: the point keeps its motion
         } else {
             write_point(k.m_last_x, k.m_last_y, 0);
+        }
+        if (k.m_overwrite && k.m_count >= k.m_capacity) {
+            // The loop line: the next pass writes over this one.
+            k.m_tick_base += static_cast<double>(k.m_capacity) * k.m_tick_step;
+            k.m_count = 0;
+            k.m_full = true;
+            k.m_clock += k.m_beats ? rec_slope : 1.0;
+            return Outcome::Running;
         }
         // A snapped free take ends after 16 bars with the finger down; its
         // progress runs to the next 1, 2, 4, 8 or 16 bars.
@@ -208,6 +241,22 @@ MotionTakeWriter::Outcome MotionTakeWriter::step(bool live,
     }
     k.m_clock += k.m_beats ? rec_slope : 1.0;
     return outcome;
+}
+
+// The seed as it plays on this take's grid, from the loop line. Bounded work: one
+// interpolation per point of the loop.
+void MotionTakeWriter::seed(const TakeSeed& s) TANH_NONBLOCKING_FUNCTION {
+    const Take& k = m_take;
+    TakeBuffer& b = m_buffers[k.m_buffer];
+    const auto n = static_cast<double>(s.m_num_points);
+    for (size_t i = 0; i < k.m_capacity; ++i) {
+        const double beat = k.m_bar_line + (static_cast<double>(i) * k.m_tick_step);
+        const double index = wrap_phase(beat - s.m_anchor, s.m_length) * n / s.m_length;
+        b.m_x[i] = std::clamp(catmull_rom_wrap(s.m_x, s.m_num_points, index), 0.0f, 1.0f);
+        b.m_y[i] = std::clamp(catmull_rom_wrap(s.m_y, s.m_num_points, index), 0.0f, 1.0f);
+        const size_t g = std::min(static_cast<size_t>(index), s.m_num_points - 1);
+        b.m_gate[i] = s.m_gate != nullptr ? s.m_gate[g] : 1;
+    }
 }
 
 void MotionTakeWriter::write_point(float x, float y, uint8_t gate) TANH_NONBLOCKING_FUNCTION {
@@ -307,6 +356,11 @@ MotionTakeWriter::Outcome MotionTakeWriter::finish(double bpm, uint32_t trim_sam
     // Never touched: nothing to keep, the lane it replaced plays on.
     if (!k.m_saw_touch) { return drop(Outcome::Cancelled); }
     if (k.m_snap) { trim_still_ends(); }
+    if (k.m_overwrite) {
+        // The whole loop; its seam is where this pass meets the last one.
+        k.m_start_index = k.m_count % k.m_capacity;
+        k.m_count = k.m_capacity;
+    }
     const bool complete = k.m_aligned ? k.m_count == k.m_target
                           : k.m_bar   ? k.m_count == k.m_capacity
                                       : k.m_count >= k_motion_min_points;
@@ -368,6 +422,7 @@ MotionTakeWriter::Outcome MotionTakeWriter::end(double bpm) TANH_NONBLOCKING_FUN
     if (!k.m_saw_touch) { return drop(Outcome::Cancelled); }
     if (k.m_snap) { return finish(bpm); }
     if (!k.m_aligned) { return k.m_bar ? drop(Outcome::Dropped) : finish(bpm); }
+    if (k.m_full) { return finish(bpm); }
     while (k.m_count < k.m_target) { write_point(k.m_last_x, k.m_last_y, 0); }
     return finish(bpm);
 }

@@ -6,6 +6,7 @@
 #include <tanh/modulation/MotionShape.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/detail/MotionClock.h>
+#include <tanh/modulation/detail/MotionTakes.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -62,6 +63,7 @@ void MotionRecorder::prepare(double sample_rate,
         on_take(TakeOutcome::Cancelled);  // the lane the take replaced plays on
         m_aborted = true;
     }
+    m_take_plays = false;
     m_armed = false;
     m_force_start = false;
 
@@ -138,13 +140,17 @@ bool MotionRecorder::set_playback_length(LoopLength length) {
 // m_y; the published lane keeps the raw seam.
 void MotionRecorder::publish_played(MotionLane lane) {
     const uint32_t id = lane.m_take_id;
-    PlayedCurve curve = make_played_curve(lane,
-                                          m_smoothing.load(std::memory_order_relaxed),
-                                          m_loop_end.load(std::memory_order_relaxed));
+    const float smoothing = m_smoothing.load(std::memory_order_relaxed);
+    const LoopEnd loop_end = m_loop_end.load(std::memory_order_relaxed);
+    PlayedCurve curve = make_played_curve(lane, smoothing, loop_end);
+    PlayedCurve seed;
+    if (smoothing > 0.0f) { seed = make_played_curve(lane, 0.0f, loop_end); }
     const uint32_t version = ++m_played_version;
     m_lanes.replace([&](PlayedLane& l) {
         l.m_x = std::move(curve.m_x);
         l.m_y = std::move(curve.m_y);
+        l.m_seed_x = std::move(seed.m_x);
+        l.m_seed_y = std::move(seed.m_y);
         l.m_smoothed = curve.m_smoothed;
         l.m_version = version;
         l.m_lane = std::move(lane);
@@ -502,14 +508,35 @@ void MotionRecorder::apply_commands(double bpm) {
     }
 }
 
+// What plays, unsmoothed: overdubs keep it as it was recorded. Only a forward Beats
+// loop maps onto the take's grid; anything else starts the take afresh.
+detail::TakeSeed MotionRecorder::seed_of(const PlayedLane& played) const {
+    if (!m_play_enabled || m_reverse) { return {}; }
+    const LaneView v = playback_view(played);
+    if (v.empty() || v.m_timebase != MotionTimebase::Beats) { return {}; }
+    detail::TakeSeed s{.m_x = v.m_x,
+                       .m_y = v.m_y,
+                       .m_gate = v.m_gate,
+                       .m_num_points = v.m_num_points,
+                       .m_length = v.m_length,
+                       .m_anchor = v.m_anchor};
+    if (m_source == Source::Lane && played.m_seed_x.size() >= v.m_num_points &&
+        played.m_seed_y.size() >= v.m_num_points) {
+        s.m_x = played.m_seed_x.data();
+        s.m_y = played.m_seed_y.data();
+    }
+    return s;
+}
+
 void MotionRecorder::start_take(const TransportInfo& t,
                                 const MotionInput& in,
                                 uint32_t offset,
-                                double clock_beat) {
+                                double clock_beat,
+                                const PlayedLane& lane) {
     const bool has_in = in.m_x != nullptr && in.m_y != nullptr && offset < in.m_num_samples;
     const float first_x = has_in ? in.m_x[offset] : m_last_x;
     const float first_y = has_in ? in.m_y[offset] : m_last_y;
-    switch (m_takes.start(t, m_arm_length, first_x, first_y, clock_beat)) {
+    switch (m_takes.start(t, m_arm_length, first_x, first_y, clock_beat, seed_of(lane))) {
         case detail::MotionTakeWriter::Start::Busy:
             m_busy = true;  // both buffers wait for service(); try again next sample
             return;
@@ -534,13 +561,16 @@ void MotionRecorder::on_take(TakeOutcome outcome) {
             m_play_enabled = true;
             m_replaced_take_id = 0;
             const uint32_t buffer = m_takes.finished_buffer();
+            // An overwriting take already plays from this buffer, on the same loop.
             switch_to(buffer == 0 ? Source::Buffer0 : Source::Buffer1,
                       m_takes.buffers()[buffer].m_take_id,
-                      false);
+                      m_take_plays);
+            m_take_plays = false;
             return;
         }
         case TakeOutcome::Dropped:
             // Nothing kept: service() clears the lane the take replaced.
+            m_take_plays = false;
             m_armed = false;
             m_force_start = false;
             if (m_replaced_take_id != 0) {
@@ -550,6 +580,7 @@ void MotionRecorder::on_take(TakeOutcome outcome) {
         case TakeOutcome::Cancelled:
             // Nothing recorded: the replaced lane plays on from the clock, unless
             // an earlier dropped take deleted it and service() has not cleared it yet.
+            m_take_plays = false;
             m_armed = false;
             m_force_start = false;
             if (m_replaced_take_id != 0 &&
@@ -595,7 +626,14 @@ void MotionRecorder::process(const TransportInfo& t,
     const PlayedLane& lane = scope.data();
     select_source(lane);
 
-    LaneView view = shaped_view(playback_view(lane));
+    // An overwriting take plays its own buffer once its whole loop holds motion.
+    auto current_view = [&] {
+        if (m_takes.playable()) {
+            return view_of(m_takes.buffer() == 0 ? Source::Buffer0 : Source::Buffer1, lane);
+        }
+        return shaped_view(playback_view(lane));
+    };
+    LaneView view = current_view();
     double dphase = 0.0;
     auto direction = [&](const LaneView& v) {
         if (v.m_timebase == MotionTimebase::Beats) { return m_reverse ? -slope : slope; }
@@ -659,7 +697,7 @@ void MotionRecorder::process(const TransportInfo& t,
     }
 
     auto relock = [&](uint32_t offset) {
-        view = shaped_view(playback_view(lane));
+        view = current_view();
         m_need_phase = false;
         m_segment_start = offset;
         m_ramp_restart = true;
@@ -709,7 +747,7 @@ void MotionRecorder::process(const TransportInfo& t,
 
         // Recording.
         if (!m_takes.active() && m_armed && (live || m_force_start)) {
-            start_take(t, in, j, b0 + (static_cast<double>(i) * slope));
+            start_take(t, in, j, b0 + (static_cast<double>(i) * slope), lane);
             if (m_takes.active() && m_replaced_take_id != 0) {
                 view = {};
             } else if (m_takes.active() && view.m_shaped) {
@@ -717,6 +755,13 @@ void MotionRecorder::process(const TransportInfo& t,
             }
         }
         if (m_takes.active()) { on_take(m_takes.step(live, lx, ly, clock.m_rec_slope, bpm, n)); }
+        if (m_takes.playable() && !m_take_plays) {
+            // Seeded at its start, or past its first loop line: play what it holds.
+            m_take_plays = true;
+            m_play_enabled = true;
+            m_need_phase = true;
+            if (!m_last_live) { start_glide(); }
+        }
 
         if (m_need_phase) {
             relock(i);
