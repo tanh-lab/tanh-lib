@@ -67,8 +67,8 @@ enum class StoppedTransport : uint8_t {
  * set_shapes() plays stock shapes in place of the lane, or morphs between a
  * shape and the lane (MotionShapeMix). A shape loops over the playback length
  * (one bar while it is Free), or over the lane's loop when a slot plays the
- * take. While a shape plays, a touch moves its centre instead of replacing it;
- * shapes pause while a take records.
+ * take. A touch overrides a playing shape as it does the lane (glide back on
+ * release); shapes pause while a take records.
  *
  * XYController owns one recorder per voice and calls process(); recorder(v)
  * gives the UI and message thread access to the rest.

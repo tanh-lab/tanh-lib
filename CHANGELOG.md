@@ -79,8 +79,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   roses, spiral, heart, star, ...) and `MotionShapeMix` (slots A and B, each a shape or
   the take, a morph between them, size and rotation). `MotionRecorder::set_shapes()`
   plays the mix on the audio thread in place of, or blended with, the lane, over the
-  playback length (one bar while Free) or the lane's loop; a touch moves a playing
-  shape's centre, and shapes pause while a take records. `played_path()` /
+  playback length (one bar while Free) or the lane's loop; a touch overrides a playing
+  shape as it does the lane, and shapes pause while a take records. `played_path()` /
   `render_motion_path()` sample what plays for drawing, `shapes_version()` tells when
   to redraw. Tests: `MotionShape.*`. Docs: `motion_recording.md`.
 - `thl::modulation::XYController`: XY dots (voices), each with touch input and a

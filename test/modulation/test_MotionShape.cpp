@@ -136,7 +136,9 @@ TEST(MotionShape, TakeSlotFollowsTheLane) {
     }
 }
 
-TEST(MotionShape, TouchMovesTheShapeCentre) {
+// A touch overrides a playing shape, as a gesture overrides host automation: the dot stays under
+// the finger; on release it glides back to the shape.
+TEST(MotionShape, TouchOverridesAPlayingShape) {
     Rig r(k_block);
     r.play_at(0);
     const MotionShapeMix mix = mix_of(MotionShape::Circle, MotionShape::Circle);
@@ -146,9 +148,16 @@ TEST(MotionShape, TouchMovesTheShapeCentre) {
     const uint64_t from = r.now();
     r.run_until(from + k_bar);
     for (size_t i = from + k_block; i < r.now(); i += 997) {
+        EXPECT_FLOAT_EQ(r.m_x[i], 0.7f) << i;
+        EXPECT_FLOAT_EQ(r.m_y[i], 0.4f) << i;
+    }
+    r.m_pad.release(1);
+    const uint64_t released = r.now();
+    r.run_until(released + k_bar);
+    for (size_t i = released + k_bar / 2; i < r.now(); i += 997) {
         const MotionShapePoint e = expected(r, mix, i, 4.0);
-        EXPECT_NEAR(r.m_x[i], std::clamp(e.m_x + 0.2f, 0.0f, 1.0f), 2e-3) << i;
-        EXPECT_NEAR(r.m_y[i], std::clamp(e.m_y - 0.1f, 0.0f, 1.0f), 2e-3) << i;
+        EXPECT_NEAR(r.m_x[i], e.m_x, 2e-3) << i;  // back on the shape
+        EXPECT_NEAR(r.m_y[i], e.m_y, 2e-3) << i;
     }
 }
 

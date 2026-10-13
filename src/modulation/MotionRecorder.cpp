@@ -770,13 +770,9 @@ void MotionRecorder::process(const TransportInfo& t,
         float oy = m_last_y;
         uint8_t og = 0;
         if (live) {
+            // The touch overrides playback, a shape too, as a gesture overrides automation.
             ox = lx;
             oy = ly;
-            if (pb_on && view.m_shaped) {
-                // A playing shape follows the finger: the touch is its centre.
-                ox = clamp01(static_cast<double>(px) + lx - 0.5);
-                oy = clamp01(static_cast<double>(py) + ly - 0.5);
-            }
             og = 1;
             m_glide.cancel();
         } else if (pb_on) {
