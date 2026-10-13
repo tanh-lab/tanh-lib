@@ -26,7 +26,7 @@ Rig& start(Rig& r) {
 
 }  // namespace
 
-TEST(MotionRecorderTakes, BarTakeStartsOnTheBarLineWithLeadingSilence) {
+TEST(MotionRecorderTakes, BarTakeStartsOnTheBarLineAndFillsTheLoop) {
     Rig r(256, 120.0);
     start(r);
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
@@ -42,13 +42,12 @@ TEST(MotionRecorderTakes, BarTakeStartsOnTheBarLineWithLeadingSilence) {
     EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
     EXPECT_DOUBLE_EQ(lane.m_anchor, 0.0);
     ASSERT_EQ(lane.num_points(), 400u);
-    EXPECT_EQ(lane.m_gate[0], 0);
-    EXPECT_EQ(lane.m_gate[195], 0);
-    EXPECT_EQ(lane.m_gate[205], 1);
-    EXPECT_EQ(lane.m_gate[390], 1);
-    EXPECT_EQ(lane.m_gate[399], 0);  // after the release: lifted
-    EXPECT_EQ(lane.m_x[0], 0.3f);    // the lead holds the first touched value
-    EXPECT_EQ(lane.m_x[100], 0.3f);
+    // Drawn from point 200 on; the rest glides from the release to the touch, the gate open:
+    // here the finger stood at 0.3, so the whole loop is 0.3.
+    for (size_t i = 0; i < 400; ++i) {
+        ASSERT_EQ(lane.m_gate[i], 1) << i;
+        ASSERT_EQ(lane.m_x[i], 0.3f) << i;
+    }
 }
 
 TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
@@ -66,7 +65,7 @@ TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
     const MotionLane lane = r.m_rec.lane();
     EXPECT_DOUBLE_EQ(lane.m_length, 16.0);
     EXPECT_EQ(lane.m_gate[100], 1);
-    EXPECT_EQ(lane.m_gate[1000], 0);
+    EXPECT_EQ(lane.m_gate[1000], 1);  // never drawn: filled
 
     const uint32_t kept = lane.m_take_id;
 

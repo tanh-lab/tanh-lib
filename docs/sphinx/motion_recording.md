@@ -90,13 +90,14 @@ cannot feed back as a fake touch.
   1, 2, 4, 8 or 16 bars, point 0 on the bar line nearest its first point: it
   loops as one continuous movement, without a pause.
 - **BarsN**: a loop of N bars from the loop line (the multiple of N bars at or
-  before the start, where `set_playback_length(BarsN)` plays it). It starts as
-  what plays (unsmoothed, its seam closed; nothing playing, reversed: lifted at
-  the touch position) and records until `disarm()` or `stop()`: where the finger
+  before the start, where `set_playback_length(BarsN)` plays it). It starts empty
+  (the lane that played stops when it starts; it is replaced, or deleted if the
+  take keeps nothing) and records until `disarm()` or `stop()`: where the finger
   is down it overwrites, where it is up the loop keeps what it holds. Every
-  release hands the loop over as it is (the rest of a first pass lifted at the
-  last position), so between touches it plays smoothed and transformed like any
-  lane; the whole take is one undo step. Its seam is where the newest point
+  release hands the loop over, gliding through the time the finger never drew
+  (from where it lifted to where the drawing goes on, around the loop line, gate
+  open), so the loop never stands still and between touches it plays smoothed and
+  transformed like any lane; the whole take is one undo step. Its seam is where the newest point
   meets the oldest.
 - `undo()` / `redo()` (message thread): one level. Every publication (take,
   load, clear) keeps the previous lane, except the later revisions of one take;

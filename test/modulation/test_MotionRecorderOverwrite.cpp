@@ -68,7 +68,7 @@ TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
     r.m_pad.release(1);
     r.run_until(3 * k_bar);
     // Lifted after the first loop line: what it recorded plays.
-    EXPECT_NEAR(r.m_x.back(), 0.2f, 1e-6);
+    EXPECT_NEAR(r.m_x.back(), 0.2f, 1e-2);
     ASSERT_TRUE(r.m_rec.disarm());
     r.step();
     ASSERT_TRUE(r.m_rec.service());
@@ -78,8 +78,8 @@ TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
     ASSERT_EQ(lane.num_points(), 800u);
     EXPECT_EQ(lane.m_gate[100], 1);
     EXPECT_EQ(lane.m_x[100], 0.8f);
-    EXPECT_EQ(lane.m_gate[300], 0);  // never touched: lifted, holding the first touch
-    EXPECT_EQ(lane.m_x[300], 0.2f);
+    EXPECT_EQ(lane.m_gate[300], 1);  // never touched: a glide from 0.8 (199) to 0.2 (400)
+    EXPECT_NEAR(lane.m_x[300], 0.5f, 3e-3f);  // halfway, within a point
     EXPECT_EQ(lane.m_gate[500], 1);
     EXPECT_EQ(lane.m_x[500], 0.2f);
 }
@@ -101,15 +101,15 @@ TEST(MotionRecorderOverwrite, NewTakeStartsEmpty) {
     r.m_pad.release(1);
     r.run_until(6 * k_beat);
     for (size_t i = r.m_gate.size() - 12000; i < r.m_gate.size(); ++i) {
-        ASSERT_EQ(r.m_gate[i], 0) << i;  // lifted: nothing of the old lane
+        ASSERT_NEAR(r.m_x[i], 0.9f, 1e-5f) << i;  // only what was drawn, nothing of the old lane
     }
     ASSERT_TRUE(r.m_rec.service());
     const MotionLane lane = r.m_rec.lane();
     ASSERT_EQ(lane.num_points(), 800u);
     EXPECT_EQ(lane.m_x[250], 0.9f);
     EXPECT_EQ(lane.m_gate[250], 1);
-    EXPECT_EQ(lane.m_gate[500], 0);
-    EXPECT_EQ(lane.m_x[500], 0.9f);  // held at the release
+    EXPECT_EQ(lane.m_gate[500], 1);
+    EXPECT_EQ(lane.m_x[500], 0.9f);  // a glide from the release to the start: one point
 
     // One take, one undo step: the old lane comes back.
     ASSERT_TRUE(r.m_rec.undo());

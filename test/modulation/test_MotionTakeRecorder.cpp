@@ -90,21 +90,25 @@ struct SeedLoop {
 
 // --- BarsN: a looper ---------------------------------------------------------------------------
 
-TEST(MotionTakeRecorder, BarsTakeStartsOnTheLoopLineLiftedUntilTheTouch) {
+// The loop runs from the loop line; the time the finger did not draw glides from where it lifted
+// to where the drawing starts, around the loop line.
+TEST(MotionTakeRecorder, BarsTakeGlidesThroughTheTimeNotDrawn) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Bars1, 1.0, 0.3f, 0.7f), MotionTakeRecorder::Start::Started);
-    EXPECT_EQ(r.run(k_beat, true, 0.3f, 0.7f), Event::None);  // beats 1 to 2 down
-    EXPECT_EQ(r.run(1, false), Event::Revision);              // the release completes the loop
+    ASSERT_EQ(r.start(LoopLength::Bars1, 1.0, 0.2f, 0.7f), MotionTakeRecorder::Start::Started);
+    (void)r.run(k_beat / 2, true, 0.2f, 0.7f);                    // beats 1 to 1.5 at 0.2
+    EXPECT_EQ(r.run(k_beat / 2, true, 0.6f, 0.7f), Event::None);  // 1.5 to 2 at 0.6
+    EXPECT_EQ(r.run(1, false), Event::Revision);                  // the release completes the loop
     const MotionLoopView take = r.m_rec->take();
     EXPECT_EQ(take.m_timebase, MotionTimebase::Beats);
     EXPECT_DOUBLE_EQ(take.m_length, 4.0);
     EXPECT_DOUBLE_EQ(take.m_anchor, 0.0);
     ASSERT_EQ(take.m_num_points, 400u);
-    EXPECT_EQ(take.m_gate[50], 0);  // before the touch: lifted at the start position
-    EXPECT_EQ(take.m_x[50], 0.3f);
-    EXPECT_EQ(take.m_gate[150], 1);
-    EXPECT_EQ(take.m_gate[300], 0);  // after the release: lifted at the last position
-    EXPECT_EQ(take.m_x[300], 0.3f);
+    for (size_t i = 0; i < 400; ++i) { ASSERT_EQ(take.m_gate[i], 1) << i; }
+    EXPECT_EQ(take.m_x[120], 0.2f);  // drawn
+    EXPECT_EQ(take.m_x[180], 0.6f);
+    // From 0.6 at point 199 around the loop line to 0.2 at point 100: 301 steps.
+    EXPECT_NEAR(take.m_x[349], 0.6f - (0.4f * 150.0f / 301.0f), 1e-5f);
+    EXPECT_NEAR(take.m_x[50], 0.6f - (0.4f * 251.0f / 301.0f), 1e-5f);
     EXPECT_EQ(take.m_seam, 200u);  // where the newest point meets the oldest
     EXPECT_TRUE(r.m_rec->active());
 }
@@ -124,12 +128,13 @@ TEST(MotionTakeRecorder, BarsTakeLoopsAndOverwritesOnlyWhereTheFingerIsDown) {
     const MotionLoopView take = r.m_rec->take();
     EXPECT_EQ(take.m_x[25], 0.8f);  // the second pass
     EXPECT_EQ(take.m_gate[25], 1);
-    EXPECT_EQ(take.m_x[75], 0.3f);  // lead of the first pass, never touched
-    EXPECT_EQ(take.m_gate[75], 0);
     EXPECT_EQ(take.m_x[150], 0.3f);  // the first pass
     EXPECT_EQ(take.m_gate[150], 1);
-    EXPECT_EQ(take.m_x[250], 0.3f);  // lifted after the first release
-    EXPECT_EQ(take.m_gate[250], 0);
+    // Never drawn: from 0.8 (point 49) to 0.3 (point 100), and from 0.3 (199) to 0.8 (0).
+    EXPECT_NEAR(take.m_x[75], 0.8f - (0.5f * 26.0f / 51.0f), 1e-5f);
+    EXPECT_EQ(take.m_gate[75], 1);
+    EXPECT_NEAR(take.m_x[250], 0.3f + (0.5f * 51.0f / 201.0f), 1e-5f);
+    EXPECT_EQ(take.m_gate[250], 1);
 }
 
 TEST(MotionTakeRecorder, BarsTakeHeldOverTheLoopLineRecordsIntoTheStart) {
@@ -145,7 +150,8 @@ TEST(MotionTakeRecorder, BarsTakeHeldOverTheLoopLineRecordsIntoTheStart) {
     EXPECT_DOUBLE_EQ(take.m_anchor, 0.0);
     EXPECT_EQ(take.m_x[100], 0.6f);
     EXPECT_EQ(take.m_gate[100], 1);
-    EXPECT_EQ(take.m_gate[300], 0);  // never reached: lifted
+    EXPECT_NEAR(take.m_x[300], 0.6f - (0.4f * 101.0f / 201.0f), 1e-5f);  // never drawn: a glide
+    EXPECT_EQ(take.m_gate[300], 1);
     EXPECT_EQ(take.m_x[500], 0.2f);
     EXPECT_EQ(take.m_gate[500], 1);
     EXPECT_EQ(take.m_seam, 200u);

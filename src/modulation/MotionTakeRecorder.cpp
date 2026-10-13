@@ -40,12 +40,17 @@ void MotionTakeRecorder::prepare(const MotionRecorderConfig& config) {
     m_x.assign(m_config.m_max_points, 0.0f);
     m_y.assign(m_config.m_max_points, 0.0f);
     m_gate.assign(m_config.m_max_points, 0);
+    m_out_x.assign(m_config.m_max_points, 0.0f);
+    m_out_y.assign(m_config.m_max_points, 0.0f);
+    m_out_gate.assign(m_config.m_max_points, 0);
     m_active = false;
     m_num_points = 0;
 }
 
 size_t MotionTakeRecorder::buffer_bytes() const {
-    return ((m_x.capacity() + m_y.capacity()) * sizeof(float)) + m_gate.capacity();
+    return ((m_x.capacity() + m_y.capacity() + m_out_x.capacity() + m_out_y.capacity()) *
+            sizeof(float)) +
+           m_gate.capacity() + m_out_gate.capacity();
 }
 
 float MotionTakeRecorder::progress() const {
@@ -57,9 +62,9 @@ float MotionTakeRecorder::progress() const {
 }
 
 MotionLoopView MotionTakeRecorder::take() const {
-    return {.m_x = m_x.data(),
-            .m_y = m_y.data(),
-            .m_gate = m_gate.data(),
+    return {.m_x = m_bars ? m_out_x.data() : m_x.data(),
+            .m_y = m_bars ? m_out_y.data() : m_y.data(),
+            .m_gate = m_bars ? m_out_gate.data() : m_gate.data(),
             .m_num_points = m_num_points,
             .m_timebase = MotionTimebase::Beats,
             .m_length = m_length,
@@ -205,8 +210,36 @@ MotionTakeRecorder::Event MotionTakeRecorder::complete_loop(Event event) TANH_NO
         for (size_t i = m_count; i < m_capacity; ++i) { write(i, m_last_x, m_last_y, 0); }
         m_full = true;
     }
+    fill_gaps();
     if (event == Event::Finished) { m_active = false; }
     return event;
+}
+
+// The loop to hand over: every lifted stretch glides in a straight line from the drawn point
+// before it to the drawn point after it, around the loop line. Bounded: one pass over the loop.
+void MotionTakeRecorder::fill_gaps() TANH_NONBLOCKING_FUNCTION {
+    const size_t n = m_capacity;
+    std::copy_n(m_x.begin(), n, m_out_x.begin());
+    std::copy_n(m_y.begin(), n, m_out_y.begin());
+    std::copy_n(m_gate.begin(), n, m_out_gate.begin());
+    size_t first = 0;
+    while (first < n && m_gate[first] == 0) { ++first; }
+    if (first == n) { return; }  // nothing drawn
+    size_t last = first;         // the drawn point before the stretch
+    for (size_t k = 1; k <= n; ++k) {
+        const size_t i = (first + k) % n;
+        if (m_gate[i] == 0) { continue; }
+        const size_t span = (i + n - last) % n;  // to the next drawn point (n: the only one)
+        const size_t gap = span == 0 ? n : span;
+        for (size_t j = 1; j < gap; ++j) {
+            const size_t at = (last + j) % n;
+            const float w = static_cast<float>(j) / static_cast<float>(gap);
+            m_out_x[at] = m_x[last] + ((m_x[i] - m_x[last]) * w);
+            m_out_y[at] = m_y[last] + ((m_y[i] - m_y[last]) * w);
+            m_out_gate[at] = 1;
+        }
+        last = i;
+    }
 }
 
 // A free take loops without a pause: drop the points before the finger first moves and after

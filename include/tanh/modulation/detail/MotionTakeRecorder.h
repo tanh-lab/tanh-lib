@@ -50,7 +50,10 @@ struct MotionTakeStart {
  *   It starts as the seed, or lifted (gate 0) at the start position without one, and records
  *   until end(): where the finger is down it overwrites, where it is up the loop keeps what it
  *   holds (a lifted point it never held keeps the last position, gate 0). Every release
- *   completes the loop (the rest of a first pass is lifted) and is a Revision.
+ *   completes the loop (the rest of a first pass is lifted) and is a Revision. What it hands
+ *   over (take()) glides through those lifted stretches instead, from where the finger lifted
+ *   to where the recording goes on (around the loop line), gate open, so the loop never stands
+ *   still; the take itself keeps them lifted, so a later stroke splits a stretch cleanly.
  *
  * A take never touched is Cancelled. take() is valid from a Revision or Finished until the
  * next start(). Real-time safe after prepare().
@@ -95,11 +98,16 @@ private:
     [[nodiscard]] Event complete_loop(Event event) TANH_NONBLOCKING_FUNCTION;
     void write(size_t index, float x, float y, uint8_t gate) TANH_NONBLOCKING_FUNCTION;
     void seed(const MotionLoopView& seed) TANH_NONBLOCKING_FUNCTION;
+    void fill_gaps() TANH_NONBLOCKING_FUNCTION;
 
     MotionRecorderConfig m_config;
     std::vector<float> m_x;
     std::vector<float> m_y;
     std::vector<uint8_t> m_gate;
+    // BarsN: the loop as handed over, the lifted stretches filled (fill_gaps()).
+    std::vector<float> m_out_x;
+    std::vector<float> m_out_y;
+    std::vector<uint8_t> m_out_gate;
     // The running take.
     double m_clock = 0.0;      // recording clock, beats
     double m_tick_base = 0.0;  // beat of tick 0 of this pass (Free: of the first point)

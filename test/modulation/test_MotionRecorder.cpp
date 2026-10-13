@@ -320,9 +320,10 @@ TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
 TEST(MotionRecorder, MemoryPerRecorder) {
     MotionRecorder rec;
     rec.prepare(k_sr, 512);
-    // The take and two hand-over slots of 32768 points × (2 floats + 1 gate byte), plus the
-    // slots' raw seam tails of a quarter of the points × 2 floats = 992 KiB.
-    EXPECT_EQ(rec.take_buffer_bytes(), (3u * 32768u * 9u) + (2u * 8192u * 8u));
+    // The take (as recorded and as handed over) and two hand-over slots of 32768 points × (2 floats
+    // + 1 gate byte), plus the slots' raw seam tails of a quarter of the points × 2 floats
+    // = 1.25 MiB.
+    EXPECT_EQ(rec.take_buffer_bytes(), (4u * 32768u * 9u) + (2u * 8192u * 8u));
 }
 
 class MotionRecorderFigure8 : public ::testing::TestWithParam<uint32_t> {};
@@ -443,15 +444,15 @@ TEST_P(MotionRecorderBars, BarModeAlignsToBars) {
     Rig r(block, 120.0);
     r.play_at(0);
     EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars2));
-    // 120 BPM: 24000 samples per beat. Touch at beat 9.5 (mid bar 3).
+    // 120 BPM: 24000 samples per beat. Touch at beat 9.5 (mid bar 3) at x 0.2; from the loop
+    // line (beat 16) to beat 16.5 at x 0.7.
     const uint64_t spb = 24000;
     r.run_until(static_cast<uint64_t>(9.5 * spb));
     r.m_pad.touch(1, 0.2f, 0.8f);
-    const uint64_t touch_at = r.now();
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    // Hold until beat 16.5 (index 0 = beat 16 is written while touched), then
-    // release: the gate closes for the rest of the take.
+    r.run_until(16 * spb);
+    r.m_pad.touch(1, 0.7f, 0.8f);
     r.run_until(16 * spb + spb / 2);
     r.m_pad.release(1);
     r.run_until(20 * spb);
@@ -459,7 +460,6 @@ TEST_P(MotionRecorderBars, BarModeAlignsToBars) {
     ASSERT_TRUE(r.m_rec.disarm());
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
-    (void)touch_at;
 
     r.run_until(48 * spb);
     r.m_rec.service();
@@ -469,33 +469,25 @@ TEST_P(MotionRecorderBars, BarModeAlignsToBars) {
     EXPECT_DOUBLE_EQ(lane.m_length, 8.0);
     EXPECT_DOUBLE_EQ(lane.m_anchor, 0.0);
     EXPECT_EQ(lane.num_points(), 800u);  // 100 ticks per beat at 120 BPM
-    // Index 0 = beat 16 ≡ 0 (mod 8): gate 1, released half a beat later.
-    EXPECT_EQ(lane.m_gate[0], 1);
-    EXPECT_EQ(lane.m_gate[60], 0);
-    EXPECT_EQ(lane.m_gate[160], 1);
+    // Index 0 = beat 16 ≡ 0 (mod 8): the second pass; 50 to 150 never drawn: a glide back.
+    EXPECT_EQ(lane.m_x[10], 0.7f);
+    EXPECT_GT(lane.m_x[100], 0.2f);
+    EXPECT_LT(lane.m_x[100], 0.7f);
+    EXPECT_EQ(lane.m_x[400], 0.2f);
 
-    // Index 0 plays at beats 24, 32, 40: the gate's rising edge (the take start,
-    // index ≈ 150) plays exactly first_rise / 100 beats after each (±1 sample).
-    size_t first_rise = 0;
-    for (size_t k = 1; k < lane.num_points(); ++k) {
-        if (lane.m_gate[k] == 1 && lane.m_gate[k - 1] == 0) {
-            first_rise = k;
-            break;
-        }
-    }
-    ASSERT_GT(first_rise, 0u);
+    // Index 0 plays at beats 24, 32, 40: x steps up from 0.2 to 0.7 there (between points 799
+    // and 0, half a point before the bar, within the render ramp).
     for (const uint64_t bar : {24u, 32u, 40u}) {
-        const auto expect =
-            static_cast<int64_t>((bar + (static_cast<double>(first_rise) / 100.0)) * spb);
+        const auto expect = static_cast<int64_t>(bar * spb) - 120;
         int64_t rise = -1;
-        for (int64_t s = expect - 200; s < expect + 200; ++s) {
+        for (int64_t s = expect - 600; s < expect + 600; ++s) {
             const auto i = static_cast<size_t>(s);
-            if (r.m_gate[i] == 1 && r.m_gate[i - 1] == 0) {
+            if (r.m_x[i - 1] < 0.45f && r.m_x[i] >= 0.45f) {
                 rise = s;
                 break;
             }
         }
-        EXPECT_NEAR(static_cast<double>(rise), static_cast<double>(expect), 1.0) << bar;
+        EXPECT_NEAR(static_cast<double>(rise), static_cast<double>(expect), 48.0) << bar;
     }
 }
 
