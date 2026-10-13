@@ -55,41 +55,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `LinkSession.*`, `LinkAudioCodec.*`, and with the label `link-peers` (excluded by
   the presets) `LinkPeers.*`, `LinkPeersAudio.*`. Docs: `transport.md`.
 - `thl::modulation::MotionRecorder` and `MotionLane`: record an XY gesture on the
-  audio thread into preallocated buffers and loop it back synced to the transport
-  (free or 1-16 bar takes, touch override with a glide back). The transport flags are
+  audio thread into preallocated memory and loop it back synced to the transport,
+  with touch override and a glide back. Every take is a Beats loop of whole bars:
+  `Free` records one gesture from the touch to the release, drops its still ends and
+  is stretched onto the nearest of 1, 2, 4, 8 or 16 bars; `BarsN` is a looper over N
+  bars from the loop line that records until `disarm()`, starts as what plays,
+  overwrites only where the finger is down and hands the loop over at every release,
+  so it plays smoothed and transformed between touches (one undo step per take). The
+  recorder is a facade over tested parts: `detail::MotionTakeRecorder`,
+  `detail::MotionLaneStore` (hand-over slots, RCU publication, undo),
+  `detail::MotionLanePlayer` (phase, playback length, reverse, jumps, render ramp) and
+  `detail::MotionCompositor` (touch over playback over hold). The transport flags are
   the only jump detector; a jump never aborts a running take. UI commands are
   `[[nodiscard]]` (false when the 32-entry queue is full); `service()` publishes
-  takes through RCU; lanes save as validated JSON. `set_playback_length(BarsN)` plays
-  any lane stretched onto N bars from a bar line (Free: its recorded length). A new
-  take replaces the playing lane from its first sample; if the take is dropped the
-  old lane stays deleted. `MotionRecorderConfig::m_bar_aligned_takes` makes every take a
-  Beats lane of whole bars: `BarsN` starts on a bar line, records lifts as gate 0 and
-  `disarm()` / `stop()` pad it instead of dropping it; `Free` runs from the first touch
-  to the release (16 bars at most), drops its still ends and is stretched onto the
-  nearest of 1, 2, 4, 8 or 16 bars, so it loops without a pause.
-  `MotionRecorderConfig::m_overwrite_loops` makes a bar-aligned `BarsN` take loop over
-  its N bars from the loop line until `disarm()` / `stop()`: it starts as the playing
-  lane (unsmoothed), overwrites where the finger is down and plays what it holds where
-  it is up; one undo step (`MotionRecorderOverwrite.*`). Its trail points carry the
-  loop position (`XYPathPoint::m_position`) and the finger (`m_live`), so a UI can draw
-  the loop as it is overwritten. `undo()` /
-  `redo()` keep one previous lane. The published lane stays raw, seam included
-  (`MotionLane::m_seam`, JSON `seam`); what plays (`played_lane()`, also
-  `make_played_curve()` for any lane) closes the seam over 0.3 beat (150 ms), widening
-  to the whole loop as `set_smoothing()` goes to 1, then runs x and y through a
-  zero-phase Gaussian of sigma = amount² × half a beat (250 ms for Seconds lanes).
+  takes; lanes save as validated JSON. `set_playback_length(BarsN)` plays any lane
+  stretched onto N bars from a bar line. A take that keeps nothing leaves the lane
+  that played. The published lane stays raw, seam included (`MotionLane::m_seam`,
+  JSON `seam`); what plays (`played_lane()`, also `make_played_curve()` for any lane)
+  closes the seam over 0.3 beat (150 ms), widening to the whole loop as
+  `set_smoothing()` goes to 1, then runs x and y through a zero-phase Gaussian of
+  sigma = amount² × half a beat (250 ms for Seconds lanes).
   `set_loop_end(LoopEnd::Jump)` keeps the end-to-start step as a hard edge and smooths
-  without crossing it. Tests: `MotionLane.*`, `MotionRecorder*.*`,
+  without crossing it. Trail points carry the take's loop position
+  (`XYPathPoint::m_position`) and the finger (`m_live`), so a UI can draw a looper as
+  it is overwritten. Tests: `MotionTakeRecorder.*`, `MotionLaneStore.*`,
+  `MotionLanePlayer.*`, `MotionCompositor.*`, `MotionLane.*`, `MotionRecorder*.*`,
   `MotionLaneProcessing.*`. Docs: `motion_recording.md`.
-- Motion shapes: `MotionShape` (18 stock closed paths: circle, square, Lissajous,
-  roses, spiral, heart, star, ...) and `MotionShapeMix` (slots A and B, each a shape or
-  the take, a morph between them, size and rotation, which move the take as well:
-  `place_motion_take()`). `MotionRecorder::set_shapes()`
-  plays the mix on the audio thread in place of, or blended with, the lane, over the
-  playback length (one bar while Free) or the lane's loop; a touch overrides a playing
-  shape as it does the lane, and shapes pause while a take records. `played_path()` /
-  `render_motion_path()` sample what plays for drawing, `shapes_version()` tells when
-  to redraw. Tests: `MotionShape.*`. Docs: `motion_recording.md`.
+- `thl::modulation::MotionTransform`: the application's path over playback (shapes,
+  scaling, rotation), stateless, with its setting as one 64-bit word
+  (`MotionRecorder::set_transform()`, `set_transform_settings()`,
+  `transform_version()`); it moves the lane's points, or loops alone over the playback
+  length, and can hold the gate open. `render_motion_path()` samples what plays for
+  drawing. Tests: `MotionLanePlayer.Transform*`,
+  `MotionRecorderOverwrite.LiftedLooperPlaysSmoothedAndTransformed`. Docs:
+  `motion_recording.md`.
 - `thl::modulation::XYController`: XY dots (voices), each with touch input and a
   recorder, as `<id>.x` / `.y` / `.active` matrix sources (`XYOutput`). A
   `BlockProcessor` of the matrix, it renders once per block with the matrix's
@@ -166,12 +165,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   in two blocks); `InternalTransportClock::prepare()` keeps the beat at a new sample
   rate. Tests: `HostTransportClock.DivisionsOnBlockEdgesCountOnce`,
   `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate}`.
-- `MotionRecorder`: `LoopEnd::Jump` also leaves a new take's seam open while it plays
-  from its take buffer; a take that was never touched keeps nothing, also when it
-  reaches its length, and the old lane plays on; a lane deleted by a dropped take
-  stays muted through a later cancelled take. Tests:
-  `MotionRecorderSmoothing.LoopEndJumpLeavesANewTakeUnblended`,
-  `MotionRecorderTakes.{UntouchedTakeAtItsLengthKeepsTheLane,DroppedLaneStaysMutedThroughACancelledTake}`.
 - `XYController`: the trail keeps its spacing across blocks shorter than the trail
   interval; a reset that closes a latched gate adds a change point at sample 0.
   Tests: `XYFramePublisher.TrailKeepsItsSpacingAcrossShortBlocks`,

@@ -398,8 +398,8 @@ void check_clock_lane(const MotionLane& lane, double start_beat, double tol) {
 }  // namespace
 
 // Seek, DAW-loop wrap and Link realignment in the middle of a 2-bar take: the
-// take is not aborted, writes all 8 · tpb indices once and ends after 8 beats of
-// its own clock; playback re-locks to the transport afterwards.
+// take is not aborted and writes every index on its own clock, so 9 beats held fill
+// the loop; playback re-locks to the transport afterwards.
 TEST_P(MotionRecorderClock, JumpDuringBarRecording) {
     const uint32_t block = GetParam();
     auto rp = std::make_unique<Rig>(block, 120.0);
@@ -411,9 +411,7 @@ TEST_P(MotionRecorderClock, JumpDuringBarRecording) {
     r.loop_at(t0 + (3 * k_spb), 30.0, 32.0);  // DAW loop that wraps during the take
     r.shift_at(t0 + (6 * k_spb), 0.37);       // Link realignment
     const ClockTake take = record_clock_take(r, t0 + (9 * k_spb));
-    EXPECT_NEAR(static_cast<double>(take.m_finish - take.m_start) / k_spb,
-                8.0,
-                (block + 240.0 + 1.0) / k_spb);
+    EXPECT_EQ(take.m_finish, 0u);  // a looper: it records until disarm
     r.m_rec.service();
     const MotionLane lane = r.m_rec.lane();
     EXPECT_EQ(lane.num_points(), 800u);
@@ -465,6 +463,7 @@ TEST_P(MotionRecorderClock, TempoChangeDuringRecording) {
         r.step();
     }
     r.m_pad.release(1);
+    r.step();  // the release hands the loop over
     r.m_rec.service();
     const MotionLane lane = r.m_rec.lane();
     ASSERT_FALSE(lane.empty());
@@ -491,8 +490,8 @@ TEST_P(MotionRecorderClock, TempoChangeDuringRecording) {
     EXPECT_LE(max_err, 0.005);
 }
 
-// The transport stops in mid-take: the take completes on its own clock at the
-// last tempo.
+// The transport stops in mid-take: the take goes on on its own clock at the last
+// tempo.
 TEST_P(MotionRecorderClock, StopDuringBarRecording) {
     const uint32_t block = GetParam();
     Rig r(block, 120.0);
@@ -500,10 +499,7 @@ TEST_P(MotionRecorderClock, StopDuringBarRecording) {
     r.run_until(k_spb);
     r.stop_at(r.now() + (3 * k_spb));
     const ClockTake take = record_clock_take(r, r.now() + (9 * k_spb));
-    ASSERT_GT(take.m_finish, 0u);
-    EXPECT_NEAR(static_cast<double>(take.m_finish - take.m_start) / k_spb,
-                8.0,
-                (block + 240.0 + 1.0) / k_spb);
+    EXPECT_EQ(take.m_finish, 0u);
     r.m_rec.service();
     const MotionLane lane = r.m_rec.lane();
     EXPECT_EQ(lane.num_points(), 800u);
@@ -562,8 +558,8 @@ double beat_of_circle(float x, float y) {
 
 struct BarTakeResult {
     double m_lane_offset = 1e9;  // max |lane beat - drawn beat|
-    // Distance of the finishing block from start + 1 bar. The last point is
-    // written one tick before that (ticks start at the first one after the touch).
+    // Distance of the block where the take passed its loop line from the bar line after the
+    // start (the loop is a whole bar from a bar line).
     double m_finish_error = 1e9;
     uint32_t m_jumps = 0;
 };
@@ -586,14 +582,17 @@ BarTakeResult bar_take_on_tempo_map(Rig& r) {
     EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
     touching = true;
     double start = -1.0;
+    float progress = -1.0f;
     while (r.now() < 20 * k_spb) {
         const TransportInfo t = r.step();
-        if (start < 0.0 && r.m_rec.snapshot().m_state == MotionState::Recording) {
+        const MotionSnapshot snap = r.m_rec.snapshot();
+        if (start < 0.0 && snap.m_state == MotionState::Recording) {
             start = t.m_beat_position;  // the first touch is at offset 0
         }
-        if (start >= 0.0 && r.m_rec.snapshot().m_state == MotionState::Playing) {
-            // Finished inside this block: the bar ended in [start, end] of it.
-            const double want = start + k_lane_beats;
+        if (start >= 0.0 && progress >= 0.0f && snap.m_progress < progress - 0.5f &&
+            res.m_finish_error > 1e8) {
+            // Passed the loop line inside this block: the bar line ended in [start, end] of it.
+            const double want = std::ceil(start / k_lane_beats) * k_lane_beats;
             if (want < t.m_beat_position) {
                 res.m_finish_error = t.m_beat_position - want;
             } else if (want > t.beat_end()) {
@@ -601,8 +600,8 @@ BarTakeResult bar_take_on_tempo_map(Rig& r) {
             } else {
                 res.m_finish_error = 0.0;
             }
-            break;
         }
+        if (start >= 0.0) { progress = snap.m_progress; }
     }
     touching = false;
     r.m_pad.release(1);

@@ -172,18 +172,21 @@ TEST(MotionRecorderSmoothing, PublishedTakeKeepsTheRawSeam) {
     EXPECT_LT(std::abs(played.m_x.back() - played.m_x.front()), 0.002f);
 }
 
-// A bar take started mid-loop records its seam index; JSON keeps it.
+// A bar take's seam is where its newest point meets the oldest (after the release); JSON
+// keeps it.
 TEST(MotionRecorderSmoothing, BarTakeKeepsItsSeamIndex) {
     Rig r(256);
     start(r);
     r.run_until(k_beat + (k_beat / 2));
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
     r.m_pad.touch(1, 0.4f, 0.6f);
-    r.run_until(r.now() + (5 * k_beat));
+    r.run_until(r.now() + (5 * k_beat));  // beat 1.5 to 6.5: over the loop line
+    r.m_pad.release(1);
+    r.step();
     ASSERT_TRUE(r.m_rec.service());
     const MotionLane lane = r.m_rec.lane();
     ASSERT_EQ(lane.num_points(), 400u);
-    EXPECT_NEAR(static_cast<double>(lane.m_seam), 151.0, 2.0);
+    EXPECT_NEAR(static_cast<double>(lane.m_seam), 251.0, 2.0);
     const auto loaded = MotionLane::from_json(lane.to_json());
     ASSERT_TRUE(loaded.has_value());
     EXPECT_EQ(loaded->m_seam, lane.m_seam);

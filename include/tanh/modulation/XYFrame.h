@@ -20,8 +20,8 @@ struct XYPathPoint {
     float m_x = 0.0f;
     float m_y = 0.0f;
     float m_progress = 0.0f;  ///< recording progress of the voice, 0..1
-    /// Where on the take's loop the point lies, 0..1 from the loop line (an overwriting
-    /// take, MotionRecorderConfig::m_overwrite_loops; the progress otherwise).
+    /// Where on the take's loop the point lies, 0..1 from the loop line (a BarsN take; the
+    /// progress of a free take).
     float m_position = 0.0f;
     uint8_t m_voice = 0;
     uint8_t m_active = 0;

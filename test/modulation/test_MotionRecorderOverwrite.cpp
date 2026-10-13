@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionRecorder.h>
+#include <tanh/modulation/MotionTransform.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -17,13 +19,6 @@ namespace {
 constexpr uint64_t k_beat = 24000;
 constexpr uint64_t k_bar = 4 * k_beat;
 
-MotionRecorderConfig overwrite() {
-    MotionRecorderConfig cfg;
-    cfg.m_bar_aligned_takes = true;
-    cfg.m_overwrite_loops = true;
-    return cfg;
-}
-
 // A playing rig at beat 0.
 Rig& start(Rig& r) {
     r.play_at(0);
@@ -34,7 +29,7 @@ Rig& start(Rig& r) {
 }  // namespace
 
 TEST(MotionRecorderOverwrite, TakeKeepsRecordingPastItsLoopUntilDisarm) {
-    Rig r(256, 120.0, overwrite());
+    Rig r(256, 120.0);
     start(r);
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
     r.m_pad.touch(1, 0.3f, 0.7f);
@@ -45,7 +40,7 @@ TEST(MotionRecorderOverwrite, TakeKeepsRecordingPastItsLoopUntilDisarm) {
     r.m_pad.release(1);
     r.run_until(3 * k_bar);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    EXPECT_FALSE(r.m_rec.service());
+    EXPECT_TRUE(r.m_rec.service());  // the release handed the loop over
 
     ASSERT_TRUE(r.m_rec.disarm());
     r.step();
@@ -62,7 +57,7 @@ TEST(MotionRecorderOverwrite, TakeKeepsRecordingPastItsLoopUntilDisarm) {
 }
 
 TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
-    Rig r(256, 120.0, overwrite());
+    Rig r(256, 120.0);
     start(r);
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
     r.run_until(k_bar);  // the take starts halfway into its two bars
@@ -90,7 +85,7 @@ TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
 }
 
 TEST(MotionRecorderOverwrite, LiftedPartsKeepThePlayingLane) {
-    Rig r(256, 120.0, overwrite());
+    Rig r(256, 120.0);
     start(r);
     r.m_rec.load_lane(motion_test::beats_lane(8.0, 100));
     const MotionLane loaded = r.m_rec.lane();
@@ -131,7 +126,7 @@ TEST(MotionRecorderOverwrite, LiftedPartsKeepThePlayingLane) {
 }
 
 TEST(MotionRecorderOverwrite, UntouchedTakeKeepsTheLane) {
-    Rig r(256, 120.0, overwrite());
+    Rig r(256, 120.0);
     start(r);
     const uint32_t kept = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
     r.step();
@@ -144,4 +139,61 @@ TEST(MotionRecorderOverwrite, UntouchedTakeKeepsTheLane) {
     EXPECT_EQ(r.m_rec.lane().m_take_id, kept);
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+}
+
+namespace {
+
+// Moves every point right by 0.1 (a lane transform).
+class Shift final : public thl::modulation::MotionTransform {
+public:
+    [[nodiscard]] thl::modulation::MotionTransformInfo info(uint64_t settings) const override {
+        return {.m_active = settings != 0, .m_uses_lane = true, .m_curve = 1};
+    }
+    void place(uint64_t /*settings*/, double /*u*/, float& x, float& /*y*/) const override {
+        x = std::min(1.0f, x + 0.1f);
+    }
+};
+
+}  // namespace
+
+// While a looper keeps recording, what it handed over plays between touches as any lane:
+// smoothed and transformed.
+TEST(MotionRecorderOverwrite, LiftedLooperPlaysSmoothedAndTransformed) {
+    Rig r(256, 120.0);
+    start(r);
+    const Shift shift;
+    r.m_rec.set_transform(&shift);
+    r.m_rec.set_transform_settings(1);
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    for (int i = 0; i < 300; ++i) {  // a zigzag over three beats
+        r.m_pad.touch(1, (i / 10) % 2 != 0 ? 0.2f : 0.8f, 0.5f);
+        r.run_until(r.now() + 240);
+    }
+    r.m_pad.release(1);
+    r.step();
+    ASSERT_TRUE(r.m_rec.service());
+    r.m_rec.set_smoothing(1.0f);
+    r.run_until(r.now() + (2 * k_bar));
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    const MotionLane played = r.m_rec.played_lane();
+    const MotionLane raw = r.m_rec.lane();
+    double smoothed_err = 0.0;
+    double raw_err = 0.0;
+    for (size_t i = r.m_x.size() - k_bar; i < r.m_x.size(); i += 97) {
+        const double phase = std::fmod(r.m_beat[i], 4.0);
+        smoothed_err =
+            std::max(smoothed_err,
+                     std::abs(static_cast<double>(r.m_x[i]) - (played.sample(phase).m_x + 0.1)));
+        raw_err = std::max(raw_err,
+                           std::abs(static_cast<double>(r.m_x[i]) - (raw.sample(phase).m_x + 0.1)));
+    }
+    EXPECT_LT(smoothed_err, 2e-3);
+    EXPECT_GT(raw_err, 0.1);
+
+    // Off: the lane as it is.
+    r.m_rec.set_transform_settings(0);
+    EXPECT_EQ(r.m_rec.transform_version(), 2u);
+    r.run_until(r.now() + k_bar);
+    const size_t last = r.m_x.size() - 1;
+    EXPECT_NEAR(r.m_x[last], played.sample(std::fmod(r.m_beat[last], 4.0)).m_x, 2e-3);
 }

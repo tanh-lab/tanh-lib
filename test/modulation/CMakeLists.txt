@@ -27,7 +27,6 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MotionCompositor.cpp
 	test_MotionRecorderFreeTakes.cpp
 	test_MotionRecorderSmoothing.cpp
-	test_MotionShape.cpp
 	test_MotionLaneProcessing.cpp
 	test_MotionClock.cpp
 	test_MotionHistory.cpp

@@ -142,18 +142,26 @@ Figure8Result run_figure8(uint32_t block, uint32_t seed) {
     const size_t start = find_index(0, live.size(), [&](size_t i) { return live[i] != 0; });
     const size_t finish = find_index(start, live.size(), [&](size_t i) { return live[i] == 0; });
     const MotionLane lane = r.m_rec.lane();
-    EXPECT_EQ(lane.m_timebase, MotionTimebase::Seconds);
+    // A free take is a Beats loop snapped onto bars (120 bpm: half a second per beat), point 0
+    // on the bar line nearest its start.
+    EXPECT_EQ(lane.m_timebase, MotionTimebase::Beats);
     if (lane.empty() || finish >= live.size()) { return res; }
-    const auto loop = static_cast<size_t>(std::lround(lane.m_length * k_sr));
-    res.m_loop_seconds = lane.m_length;
+    const double loop_s = lane.m_length * 0.5;
+    const double anchor_s = lane.m_anchor * 0.5;
+    const auto loop = static_cast<size_t>(std::lround(loop_s * k_sr));
+    res.m_loop_seconds = loop_s;
     const size_t glide = 1200 + 32;
     if (finish + (2 * loop) > r.m_x.size()) { return res; }
 
     auto played = [&](size_t k) { return Vec2{r.m_x[finish + k], r.m_y[finish + k]}; };
-    // Lane time τ (seconds into the loop) shows the gesture at input sample start + τ.
+    // Lane time τ (seconds into the loop, from the anchor) shows the gesture at input sample
+    // start + τ.
+    auto tau_of = [&](size_t k) {
+        const double t = static_cast<double>(finish + k) / k_sr;
+        return std::fmod(t - anchor_s + (4.0 * loop_s), loop_s);
+    };
     auto ref_at = [&](size_t k, double delta) {
-        const double tau = static_cast<double>(k % loop) / k_sr;
-        return gerono((static_cast<double>(start) / k_sr) + tau - t_start - delta);
+        return gerono((static_cast<double>(start) / k_sr) + tau_of(k) - t_start - delta);
     };
 
     // Best constant offset δ ∈ [0, block + 10 ms] by RMS.
@@ -183,7 +191,7 @@ Figure8Result run_figure8(uint32_t block, uint32_t seed) {
         acc += e * e;
         if (e > max_err) {
             max_err = e;
-            res.m_max_at = static_cast<double>(k % loop) / static_cast<double>(loop);
+            res.m_max_at = tau_of(k) / loop_s;
         }
     }
     res.m_rms = std::sqrt(acc / static_cast<double>((2 * loop) - glide));
@@ -226,8 +234,7 @@ Figure8Result run_figure8(uint32_t block, uint32_t seed) {
     // Winding: the signed area of each lobe has the reference's sign.
     std::vector<Vec2> lobe_a, lobe_b, ref_a, ref_b;
     for (size_t k = loop; k < 2 * loop; k += 8) {
-        const double u = (static_cast<double>(start) / k_sr) +
-                         (static_cast<double>(k % loop) / k_sr) - t_start - best_delta;
+        const double u = (static_cast<double>(start) / k_sr) + tau_of(k) - t_start - best_delta;
         const double w = u - (std::floor(u / k_period) * k_period);
         (w < k_period / 2.0 ? lobe_a : lobe_b).push_back(played(k));
     }
@@ -313,9 +320,9 @@ TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
 TEST(MotionRecorder, MemoryPerRecorder) {
     MotionRecorder rec;
     rec.prepare(k_sr, 512);
-    // Two take buffers of 32768 points × (2 floats + 1 gate byte) plus a raw
-    // seam tail of a quarter of the points × 2 floats = 704 KiB.
-    EXPECT_EQ(rec.take_buffer_bytes(), 2u * 32768u * 11u);
+    // The take and two hand-over slots of 32768 points × (2 floats + 1 gate byte), plus the
+    // slots' raw seam tails of a quarter of the points × 2 floats = 992 KiB.
+    EXPECT_EQ(rec.take_buffer_bytes(), (3u * 32768u * 9u) + (2u * 8192u * 8u));
 }
 
 class MotionRecorderFigure8 : public ::testing::TestWithParam<uint32_t> {};
@@ -326,14 +333,15 @@ TEST_P(MotionRecorderFigure8, Figure8Acceptance) {
     // Without event timestamps the loop comes out up to one block longer than
     // the gesture (the down lands at a block start, the last move at its spread
     // offset), which shows up as a max error at the loop seam: measured over 8
-    // seeds 0.022-0.025 at 1024 and 0.037-0.039 at 4096. Those two get headroom.
-    double max_limit = 0.02;
+    // seeds 0.022-0.025 at 1024 and 0.037-0.039 at 4096. Those two get headroom. The take is
+    // also stretched onto exactly one bar, a time warp of up to a block: 0.0203 at 256.
+    double max_limit = 0.022;
     double rms_limit = 0.008;
     if (block >= 4096) {
         max_limit = 0.045;
         rms_limit = 0.015;
     } else if (block >= 1024) {
-        max_limit = 0.03;
+        max_limit = 0.035;
     }
     const Figure8Result res = run_figure8(block, 1234 + block);
     std::printf(
@@ -354,9 +362,9 @@ TEST_P(MotionRecorderFigure8, Figure8Acceptance) {
     EXPECT_LE(res.m_cross_dist, 0.02);
     EXPECT_TRUE(res.m_winding_ok);
     EXPECT_NEAR(res.m_loop_seconds, k_period, (block / k_sr) + (1.0 / 200.0));
-    // The raw lane keeps the 4096-sample input staircase: steeper, so loop
-    // rounding shows up to 2e-5 there.
-    EXPECT_LE(res.m_loop_repeat, 5e-5);
+    // A Beats loop follows the accumulated beat, not the sample count: loops differ by phase
+    // rounding, up to 1.2e-4 at 1024.
+    EXPECT_LE(res.m_loop_repeat, 2e-4);
 }
 
 INSTANTIATE_TEST_SUITE_P(Blocks,
@@ -378,7 +386,7 @@ TEST_P(MotionRecorderSeam, SeamContinuity) {
     r.run_until(t0);
     const auto total = static_cast<uint64_t>(dur * k_sr);
     bool released = false;
-    while (r.now() < t0 + total + 6 * k_sr) {
+    while (r.now() < t0 + total + 10 * k_sr) {
         const uint64_t s = r.now();
         if (s < t0 + total) {
             const double u = static_cast<double>(s - t0) / static_cast<double>(total);
@@ -394,20 +402,20 @@ TEST_P(MotionRecorderSeam, SeamContinuity) {
     }
     const MotionLane lane = r.m_rec.lane();
     ASSERT_FALSE(lane.empty());
-    const auto loop = static_cast<size_t>(std::lround(lane.m_length * k_sr));
+    // A Beats loop at 120 bpm (half a second per beat), point 0 at the anchor.
+    const auto loop = static_cast<size_t>(std::lround(lane.m_length * 0.5 * k_sr));
+    const auto anchor = static_cast<size_t>(std::lround(lane.m_anchor * 0.5 * k_sr));
     // Analyse two loops well after the release glide.
     const size_t from = static_cast<size_t>(t0 + total) + 2 * loop;
     const size_t to = from + (2 * loop);
     ASSERT_LE(to, r.m_x.size());
-    // Largest render-tick step (Euclidean) inside the loop vs across the seam.
-    // The take finished at the release, at the first block start >= t0 + total.
-    const size_t finish = ((static_cast<size_t>(t0 + total) + block - 1) / block) * block;
+    // Largest render-tick step (Euclidean) inside the loop vs across the seam (point 0).
     double inside = 0.0;
     double seam = 0.0;
     const double seam_window = 0.2 * k_sr;
     for (size_t i = from + 32; i < to; i += 32) {
         const double d = std::hypot(r.m_x[i] - r.m_x[i - 32], r.m_y[i] - r.m_y[i - 32]);
-        const auto pos = static_cast<double>((i - finish) % loop);
+        const auto pos = static_cast<double>((i + loop - anchor) % loop);
         const bool near_seam = pos < seam_window || pos > static_cast<double>(loop) - seam_window;
         if (near_seam) {
             seam = std::max(seam, d);
@@ -428,8 +436,8 @@ INSTANTIATE_TEST_SUITE_P(Blocks,
 
 class MotionRecorderBars : public ::testing::TestWithParam<uint32_t> {};
 
-// A 2-bar take started mid-bar 3 auto-finishes after exactly 8 beats; index 0
-// (gate edge) plays at the 8-beat grid.
+// A 2-bar take started mid-bar 3 loops over the 8-beat grid until disarm: held over the loop
+// line it records into the loop's start, and index 0 plays on the 8-beat grid.
 TEST_P(MotionRecorderBars, BarModeAlignsToBars) {
     const uint32_t block = GetParam();
     Rig r(block, 120.0);
@@ -446,19 +454,12 @@ TEST_P(MotionRecorderBars, BarModeAlignsToBars) {
     // release: the gate closes for the rest of the take.
     r.run_until(16 * spb + spb / 2);
     r.m_pad.release(1);
-    uint64_t finished_at = 0;
-    while (r.now() < 20 * spb) {
-        r.step();
-        if (finished_at == 0 && r.m_rec.snapshot().m_state != MotionState::Recording) {
-            finished_at = r.now();
-        }
-    }
-    // The take started at touch_at (offset 0 of that block) and lasts 8 beats:
-    // its last point is one grid step (240 samples) before start + 8 beats.
-    const double start_beat = static_cast<double>(touch_at) / spb;
-    EXPECT_NEAR(static_cast<double>(finished_at) / spb,
-                start_beat + 8.0,
-                (block + 240.0 + 1.0) / spb);
+    r.run_until(20 * spb);
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);  // until disarm
+    ASSERT_TRUE(r.m_rec.disarm());
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+    (void)touch_at;
 
     r.run_until(48 * spb);
     r.m_rec.service();
@@ -541,6 +542,7 @@ TEST_P(MotionRecorderTempo, TempoChange) {
         r.step();
     }
     r.m_pad.release(1);
+    r.step();  // the release hands the loop over
     r.m_rec.service();
     const MotionLane lane = r.m_rec.lane();
     ASSERT_FALSE(lane.empty());
@@ -698,35 +700,30 @@ TEST(MotionRecorder, HandoffSwitchIsSilent) {
     EXPECT_FALSE(served->m_rec.snapshot().m_busy);
 }
 
-TEST(MotionRecorder, RearmWhileUnpublished) {
+// Without service() two takes fill both hand-over slots: a third records, then waits (busy)
+// with its loop until service() frees a slot, and plays from there.
+TEST(MotionRecorder, ThirdTakeWaitsForAFreeSlot) {
     Rig r(256);
     record_free_take(r, 0.6, 0.4f);
     const uint32_t first = r.m_rec.snapshot().m_take_id;
     record_free_take(r, 0.6, 0.6f);
     const uint32_t second = r.m_rec.snapshot().m_take_id;
     EXPECT_GT(second, first);
-    // A third take waits: both buffers are Finished.
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
-    r.m_pad.touch(1, 0.5f, 0.5f);
-    r.step();
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Armed);
+    record_free_take(r, 0.6, 0.5f);
     EXPECT_TRUE(r.m_rec.snapshot().m_busy);
-    r.m_pad.release(1);
-    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, second);
 
-    // service() publishes both, in order; the newest stays.
+    // service() publishes both, in order; the next block hands the third over.
     const uint32_t v0 = r.m_rec.lane_version();
     EXPECT_TRUE(r.m_rec.service());
     EXPECT_EQ(r.m_rec.lane_version(), v0 + 2);
     EXPECT_EQ(r.m_rec.lane().m_take_id, second);
-    EXPECT_FALSE(r.m_rec.service());
     r.step();
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, second);
-    // With a free buffer the armed take starts on the next touch.
-    r.m_pad.touch(1, 0.5f, 0.5f);
-    r.step();
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     EXPECT_FALSE(r.m_rec.snapshot().m_busy);
+    const uint32_t third = r.m_rec.snapshot().m_take_id;
+    EXPECT_GT(third, second);
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_EQ(r.m_rec.lane().m_take_id, third);
 }
 
 // A lane loaded after a take finished replaces it, even before service().
@@ -744,22 +741,27 @@ TEST(MotionRecorder, LoadAfterUnpublishedTakeWins) {
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, loaded);
 }
 
-TEST(MotionRecorder, DisarmFinishesFreeTakeAndDropsBarTake) {
+TEST(MotionRecorder, DisarmKeepsATouchedTake) {
     Rig r(256);
     EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
     r.m_pad.touch(1, 0.2f, 0.2f);
     r.run_until(24000);
+    for (int i = 0; i < 100; ++i) {  // move a little
+        r.m_pad.touch(1, 0.2f + (0.002f * static_cast<float>(i)), 0.2f);
+        r.step();
+    }
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     EXPECT_TRUE(r.m_rec.disarm());  // still touching: the take ends, the touch stays live
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
-    EXPECT_EQ(r.m_rec.out_x()[0], 0.2f);
+    EXPECT_NEAR(r.m_rec.out_x()[0], 0.398f, 1e-6f);
     r.m_pad.release(1);
     r.step();
     r.m_rec.service();
     const uint32_t kept = r.m_rec.lane().m_take_id;
     EXPECT_GT(kept, 0u);
 
+    // A bar take ends at disarm with the rest of its first pass lifted.
     r.play_at(r.now());
     EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
     r.m_pad.touch(1, 0.7f, 0.7f);
@@ -768,42 +770,46 @@ TEST(MotionRecorder, DisarmFinishesFreeTakeAndDropsBarTake) {
     EXPECT_TRUE(r.m_rec.disarm());
     r.step();
     EXPECT_NE(r.m_rec.snapshot().m_state, MotionState::Recording);
-    // The dropped bar take had replaced the free take: service() clears it.
     EXPECT_TRUE(r.m_rec.service());
     EXPECT_GT(r.m_rec.lane().m_take_id, kept);
-    EXPECT_TRUE(r.m_rec.lane().empty());
+    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 4.0);
 }
 
-TEST(MotionRecorder, NewTakeReplacesThePlayingLane) {
+// A looper starts as the playing lane: lifted, the lane plays on while the take records, and
+// every release hands the loop over.
+TEST(MotionRecorder, LooperKeepsThePlayingLaneAndHandsOverOnRelease) {
     Rig r(256);
-    record_free_take(r, 0.6, 0.4f);
-    r.m_rec.service();
-    r.run_until(r.now() + 4800);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
-
-    // Armed: the old lane keeps playing.
-    r.play_at(r.now());
+    r.play_at(0);
+    const uint32_t old = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
+    r.run_until(4800);
     EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Armed);
-    EXPECT_GT(r.m_rec.snapshot().m_take_id, 0u);
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, old);
 
-    // The take starts: the old lane stops, so a lifted finger leaves the gate shut.
     r.m_pad.touch(1, 0.9f, 0.9f);
-    r.step();
-    r.m_pad.release(1);
-    r.step();
-    const size_t from = r.m_gate.size();
     r.run_until(r.now() + 12000);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
-    for (size_t i = from; i < r.m_gate.size(); ++i) { ASSERT_EQ(r.m_gate[i], 0) << i; }
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, old);  // the touch plays, the lane is still the old
+    r.m_pad.release(1);
+    r.step();
+    const uint32_t revision = r.m_rec.snapshot().m_take_id;
+    EXPECT_GT(revision, old);
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
 
-    // The new take completes and plays; the old lane is gone.
-    r.run_until(r.now() + 96000);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+    // Lifted: the old lane plays where the finger was not, the gate open.
+    r.run_until(r.now() + 48000);
+    const size_t from = r.m_x.size() - 12000;
+    for (size_t i = from; i < r.m_x.size(); i += 97) {
+        const double phase = std::fmod(r.m_beat[i], 4.0);
+        EXPECT_NEAR(r.m_x[i], 0.5 + (0.4 * std::sin(2.0 * k_pi * phase / 4.0)), 2e-3) << i;
+        EXPECT_EQ(r.m_gate[i], 1) << i;
+    }
     EXPECT_TRUE(r.m_rec.service());
-    EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 4.0);
+    EXPECT_EQ(r.m_rec.lane().m_take_id, revision);
+    ASSERT_TRUE(r.m_rec.disarm());
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
 }
 
 TEST(MotionRecorder, PrepareDuringAReplacingTakeKeepsTheOldLane) {
@@ -829,17 +835,17 @@ TEST(MotionRecorder, PlaybackLengthStretchesATakeOntoBars) {
     record_free_take(r, 1.0, 0.5f);
     r.m_rec.service();
     const double recorded = r.m_rec.lane().m_length;
-    EXPECT_NEAR(recorded, 1.0, 0.02);  // seconds: recorded with the transport stopped
+    EXPECT_DOUBLE_EQ(recorded, 4.0);  // two beats of gesture: one bar
 
-    // One bar: the 1 s gesture now takes 2 s (half speed), on the beat clock.
-    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Bars1));
+    // Two bars: half speed, on the beat clock.
+    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Bars2));
     r.step();
     auto s = r.m_rec.snapshot();
     EXPECT_TRUE(s.m_beats);
-    EXPECT_DOUBLE_EQ(s.m_length, 4.0);
+    EXPECT_DOUBLE_EQ(s.m_length, 8.0);
     const double p0 = r.m_rec.playback_phase();
     r.run_until(r.now() + 24000);  // 0.5 s = 1 beat
-    EXPECT_NEAR(detail::wrap_phase(r.m_rec.playback_phase() - p0, 4.0), 1.0, 0.01);
+    EXPECT_NEAR(detail::wrap_phase(r.m_rec.playback_phase() - p0, 8.0), 1.0, 0.01);
     // The lane itself is unchanged.
     EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, recorded);
 
@@ -847,7 +853,6 @@ TEST(MotionRecorder, PlaybackLengthStretchesATakeOntoBars) {
     EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Free));
     r.step();
     s = r.m_rec.snapshot();
-    EXPECT_FALSE(s.m_beats);
     EXPECT_DOUBLE_EQ(s.m_length, recorded);
 }
 
@@ -856,7 +861,9 @@ TEST(MotionRecorder, PlaybackLengthSpeedsUpABarTake) {
     r.play_at(0);
     EXPECT_TRUE(r.m_rec.record(LoopLength::Bars2));
     r.m_pad.touch(1, 0.5f, 0.5f);
-    r.run_until(4 * 96000);  // the 2-bar take and some playback
+    r.run_until((2 * 96000) + 24000);  // the 2-bar loop and a beat more
+    r.m_pad.release(1);
+    r.step();
     r.m_rec.service();
     EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 8.0);
 
@@ -868,20 +875,19 @@ TEST(MotionRecorder, PlaybackLengthSpeedsUpABarTake) {
     EXPECT_NEAR(r.m_rec.playback_phase(), detail::wrap_phase(beat, 4.0), 1e-6);
 }
 
-// Free take while the transport plays: Beats lane rounded to whole beats.
-TEST(MotionRecorder, FreeTakeWithTransportRoundsToWholeBeats) {
+// A free take while the transport plays: stretched onto the nearest bar count, point 0 on the
+// bar line nearest its start.
+TEST(MotionRecorder, FreeTakeSnapsOntoBarsFromTheNearestBarLine) {
     Rig r(256, 120.0);
     r.play_at(0);
-    r.run_until(24000 * 2 + 3000);   // beat 2.125
-    record_free_take(r, 1.6, 0.5f);  // 3.2 beats → 3 beats
+    r.run_until(24000 * 6 + 3000);   // beat 6.125
+    record_free_take(r, 1.6, 0.5f);  // 3.2 beats: one bar
     r.m_rec.service();
     const MotionLane lane = r.m_rec.lane();
     EXPECT_EQ(lane.m_timebase, MotionTimebase::Beats);
-    EXPECT_DOUBLE_EQ(lane.m_length, 3.0);
-    EXPECT_NEAR(lane.m_rate, 100.0, 1e-9);
+    EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
     EXPECT_NEAR(static_cast<double>(lane.num_points()), 320.0, 2.0);
-    // Anchor: the start beat rounded to 1/16 (mod 3).
-    EXPECT_NEAR(lane.m_anchor, std::fmod(2.125 + (256.0 / 24000.0), 3.0), 1.0 / 32.0);
+    EXPECT_DOUBLE_EQ(lane.m_anchor, 0.0);  // bar line 8, the nearest to beat 6.1
 }
 
 // Save the published lane as JSON, load it into a second recorder: it plays
@@ -900,7 +906,9 @@ TEST(MotionRecorder, JsonSaveAndLoadPlaysTheSame) {
     b.run_until(static_cast<uint64_t>(3 * k_sr));
     const MotionLane orig = a.m_rec.played_lane();
     for (size_t s = 4800; s < b.m_x.size(); s += 101) {
-        const double phase = std::fmod(static_cast<double>(s) / k_sr, orig.m_length);
+        // Free-running at 120 bpm from beat 0: 24000 samples per beat.
+        const double phase =
+            detail::wrap_phase((static_cast<double>(s) / 24000.0) - orig.m_anchor, orig.m_length);
         const MotionPoint p = orig.sample(phase);
         ASSERT_NEAR(b.m_x[s], p.m_x, 2e-4);
         ASSERT_NEAR(b.m_y[s], p.m_y, 2e-4);

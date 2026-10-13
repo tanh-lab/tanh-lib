@@ -2,6 +2,7 @@
 
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionLaneProcessing.h>
+#include <tanh/modulation/detail/MotionTakeRecorder.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -120,6 +121,7 @@ MotionLaneSource MotionLaneStore::select(const MotionPlayedLane& published)
                                published.m_y.size()});
     source.m_id = lane_id;
     source.m_version = published.m_version;
+    source.m_smoothed = published.m_smoothed;
     source.m_view = {.m_x = published.m_x.data(),
                      .m_y = published.m_y.data(),
                      .m_gate = lane.m_gate.data(),

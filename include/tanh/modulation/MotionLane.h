@@ -13,7 +13,7 @@ namespace thl::modulation {
 
 /// Unit of a MotionLane's length, anchor and rate.
 enum class MotionTimebase : uint8_t {
-    Seconds,  ///< free take recorded without a running transport
+    Seconds,  ///< runs on its own clock (a loaded lane; takes are Beats)
     Beats     ///< quarter notes; follows the transport tempo
 };
 

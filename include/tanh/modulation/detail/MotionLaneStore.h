@@ -35,6 +35,8 @@ struct MotionLaneSource {
     MotionLoopView m_seed;   ///< the same, unsmoothed
     uint32_t m_id = 0;       ///< take id; 0: nothing
     uint32_t m_version = 0;  ///< a new curve of the same id (smoothing): glide in place
+    /// What plays differs from the take as it was handed over (smoothing, LoopEnd::Jump).
+    bool m_smoothed = false;
     [[nodiscard]] bool empty() const { return m_view.empty(); }
 };
 

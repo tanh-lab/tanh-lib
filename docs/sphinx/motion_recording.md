@@ -5,12 +5,14 @@ gate) on the audio thread and loops it back, synced to the transport. A live
 touch always overrides playback, and the output glides back to the running
 loop on release.
 
-- **Takes** are *free* (they end on release) or 1, 2, 4, 8 or 16 bars of the
-  time signature at arm time (they end after exactly one loop).
-- **Recording** runs at control rate into preallocated memory: 200 points per
-  second, or `round(200 · 60 / bpm)` ticks per beat (24 to 512) while the
-  transport plays. Points are stored raw, including the step from the end of
-  the take back to its start (the seam).
+- **Takes** are Beats loops of whole bars. *Free* records one gesture, from the
+  touch to the release, and stretches it onto the nearest of 1, 2, 4, 8 or 16
+  bars. *BarsN* is a looper over N bars that records until `disarm()`: the
+  finger overwrites where it is down, the loop plays on where it is up.
+- **Recording** runs at control rate into preallocated memory:
+  `round(200 · 60 / bpm)` points per beat (24 to 512), on the transport's beat
+  while it plays, else on the recorder's own free-running beat. Points are stored
+  raw, including the step where the newest point meets the oldest (the seam).
 - **Smoothing** (`set_smoothing(amount)`, 0 to 1) is non-destructive: the lane
   stays raw and a played copy is computed on the message thread and published
   with it. With `LoopEnd::Smooth` (default) the copy spreads the seam step
@@ -60,49 +62,49 @@ cannot feed back as a fake touch.
 | `out_live()` | 1 where the sample came from the live touch |
 | `change_points()` | render ticks, touch and gate edges, glide starts |
 
+## Components
+
+`MotionRecorder` is a thin facade over four parts, each tested on its own:
+
+| Part | Does |
+|---|---|
+| `detail::MotionTakeRecorder` | records a take into one working buffer (Free, BarsN) |
+| `detail::MotionLaneStore` | hands takes to the message thread, publishes lanes through RCU, undo |
+| `detail::MotionLanePlayer` | plays a lane on the clock: phase, playback length, reverse, jumps, render ramp, the transform |
+| `detail::MotionCompositor` | the output: touch over playback over hold, glides, change points |
+
+`detail::MotionClock` gives every block its beats (the transport, or the free run).
+
 ## Commands
 
 - `arm(len)`: the take starts on the first touch (or at once if a finger is
-  down); until then the old lane keeps playing. `record(len)` starts at the next
-  block without waiting. From its first sample the new take replaces the old
-  lane: the old lane stops, and stays deleted if the take is dropped.
-- `disarm()`: cancel arming. A running free take finishes and plays; a running
-  bar take is dropped.
-- A take that was never touched keeps nothing, also when it reaches its length:
-  the old lane plays on.
-- With `MotionRecorderConfig::m_bar_aligned_takes`, every take is a Beats lane
-  of whole bars:
-  - `BarsN` starts on the bar line at or before its first touch (the time
-    before the touch is recorded lifted, gate 0), records lifts as gate 0 and
-    lasts exactly N bars. `disarm()` / `stop()` end it at once, padded with
-    gate 0 to N bars.
-  - `Free` runs from the first touch to the release, 16 bars of the tempo at
-    its start at most (`record(Free)` also waits for the touch). The still
-    ends (the finger down but not yet or no longer moving) are dropped and
-    the take is stretched onto the nearest (by ratio) of
-    1, 2, 4, 8 or 16 bars, anchored on the bar line nearest its first point:
-    it loops as one continuous movement, without a pause. Lifting ends it, so
-    a free take holds no gaps: record gaps with a fixed `BarsN` length.
-    `disarm()` / `stop()` end it there and keep it.
-  - A take that was never touched is dropped and the old lane plays on.
-  - With `m_overwrite_loops` as well, `BarsN` records like a looper: the take
-    loops over the N bars from the loop line (a multiple of N bars, where
-    `set_playback_length(BarsN)` plays it) and runs until `disarm()` /
-    `stop()`, so a take started halfway records over the loop line into the
-    start. It starts as the playing lane (unsmoothed, its seam closed; a
-    reversed or Seconds lane, or none, starts it lifted as above). Where the
-    finger is down it overwrites, where it is up the point keeps its motion,
-    and once its whole loop holds motion (from the start, or after the first
-    loop line) it plays from its buffer while it records. It ends as one lane,
-    one undo step, its seam where the last pass meets the one before.
+  down); until then, and while it records, the lane that played plays on.
+  `record(len)` starts at the next block without waiting (a free take still
+  starts its points at the touch).
+- `disarm()`: cancel arming; a running take ends there and plays.
+- A take that keeps nothing (never touched, or a free take too short) leaves the
+  lane that played: it plays on.
+- **Free**: from the first touch to the release, 16 bars of the tempo at its
+  start at most. The still ends (the finger down but not yet or no longer
+  moving) are dropped and the take is stretched onto the nearest (by ratio) of
+  1, 2, 4, 8 or 16 bars, point 0 on the bar line nearest its first point: it
+  loops as one continuous movement, without a pause.
+- **BarsN**: a loop of N bars from the loop line (the multiple of N bars at or
+  before the start, where `set_playback_length(BarsN)` plays it). It starts as
+  what plays (unsmoothed, its seam closed; nothing playing, reversed: lifted at
+  the touch position) and records until `disarm()` or `stop()`: where the finger
+  is down it overwrites, where it is up the loop keeps what it holds. Every
+  release hands the loop over as it is (the rest of a first pass lifted at the
+  last position), so between touches it plays smoothed and transformed like any
+  lane; the whole take is one undo step. Its seam is where the newest point
+  meets the oldest.
 - `undo()` / `redo()` (message thread): one level. Every publication (take,
-  load, clear) keeps the previous lane; `undo()` republishes it under a
-  new take id and enables `redo()`; a new publication drops the redo lane.
-  `clear_history()` forgets both (preset load).
+  load, clear) keeps the previous lane, except the later revisions of one take;
+  `undo()` republishes it under a new take id and enables `redo()`; a new
+  publication drops the redo lane. `clear_history()` forgets both (preset load).
 - `set_playback_length(len)`: play every lane as `len`. `BarsN` stretches it onto
   exactly N bars of the current time signature from a bar line, faster or slower
-  than recorded (a free take or a 2-bar take as one bar); `Free` plays the
-  recorded length. The lane itself is unchanged.
+  than recorded; `Free` plays the recorded length. The lane itself is unchanged.
 - `stop()` / `play()`: playback off (gate 0, x and y hold) / on (with a glide).
   `stop()` also ends a running take like `disarm()`.
 - `set_reverse(true)`: Beats lanes play the mirrored phase (they stay
@@ -133,17 +135,17 @@ A UI reads the recorder's state from `XYFrame::m_voices[v].m_motion`
 
 ### Take handoff
 
-The RCU writer locks and allocates, so the audio thread never publishes. Each
-recorder owns two take buffers. The audio thread writes one, finalises it in
-place on finish and plays straight from it. With `LoopEnd::Smooth` the
-finalise closes the seam in the buffer over the base window and keeps the raw
-values of those points in a preallocated tail; `service()` copies the buffer
-into a `MotionLane`, restores the raw tail and publishes it; the next block switches to the published lane
-(silently, or with a glide when it plays smoothed) and frees the buffer. If
-both buffers wait for
-`service()`, arming waits and `MotionSnapshot::m_busy` is set. Take ids come
-from one counter shared with `load_lane()` and `clear()`, and the newest id
-always plays.
+The RCU writer locks and allocates, so the audio thread never publishes. The
+take records into its own working buffer; a release (BarsN) or the end of a take
+copies the loop into one of two hand-over slots, closes its seam in place for
+`LoopEnd::Smooth` (keeping the raw values of those points) and plays it from that
+sample. `service()` copies a slot into a `MotionLane`, restores the raw values and
+publishes it; the next block that reads the new lane frees the slot (silently, or
+with a glide when it plays smoothed). If both slots wait for `service()`, a
+finished take waits too (`MotionSnapshot::m_busy`) and plays once a slot is free;
+a BarsN revision is skipped (the next one carries the loop). Take ids come from
+one counter shared with `load_lane()` and `clear()`, and the newest id always
+plays.
 
 ## Clock discontinuities
 
@@ -158,37 +160,32 @@ The transport's flags are the only jump detector (see
   loop of whole lanes) changes nothing.
 
 **Jump rule for a running take.** A discontinuity never aborts and never
-shifts a running take: it keeps recording on its own clock, writes every index
-once and ends after its length; only playback re-locks. Only `prepare()`
-aborts a take (the previous lane is kept, `MotionSnapshot::m_aborted`).
+shifts a running take: it keeps recording on its own clock (the transport's
+beats per sample, or the free run), so a BarsN take writes every point of its
+loop on that clock; only playback re-locks. Only `prepare()` aborts a take (the
+lane that played is kept, `MotionSnapshot::m_aborted`).
 
-## Shapes
+## Transforms
 
-`set_shapes(MotionShapeMix)` (any thread, applied from the next block) plays stock paths
-instead of, or blended with, the lane. The mix has two slots, A and B, each a
-`MotionShape` or `MotionShape::Take` (the lane), crossfaded point by point at the same
-position in the loop by `m_morph`. `m_size` and `m_rotation` scale and turn both around
-the pad centre: a shape at size 1 reaches the pad's edges, the take at size 1 is as
-recorded (`place_motion_shape()`, `place_motion_take()`).
+`set_transform(const MotionTransform*)` plugs the application's path into
+playback (shapes, scaling, rotation: the recorder has none of its own). A
+transform is stateless; its setting is one 64-bit word the application packs and
+stores with `set_transform_settings()` (any thread), so every block and every
+drawing reads a whole, consistent setting. `MotionTransform::info(settings)` says
+what it does:
 
-- Both slots on Take, size 1 and no rotation: nothing changes, the lane plays. A
-  smaller size or a rotation moves the lane; without a lane there is nothing to move.
-- A slot on Take with a lane: the shapes follow the lane's loop (length, anchor,
-  playback length, reverse); without a lane the Take slot is the centre.
-- No Take slot (or no lane): the shapes loop over the playback length as a Beats
-  loop from the bar line, one bar while it is Free.
-- The gate stays open while a shape slot is heard (morph weight above 0), else it is
-  the lane's.
-- A slot change re-seeks and glides like a new lane; morph, size and rotation are read
-  once per block and follow at the render interval, so host automation is smooth.
-- While a shape plays, a touch overrides it as it does the lane; the release glides
-  back.
-- Shapes pause while a take records: the output, the gate and the live trail are the
-  recording, as without shapes. They resume over the new take when it plays.
+- inactive: the lane plays as it is;
+- `m_uses_lane`: `place()` moves the lane's point at each position in the loop;
+- `m_plays_alone`: without a lane it loops over the playback length (one bar
+  while Free), from the bar line;
+- `m_opens_gate`: the gate stays open while it sounds;
+- `m_curve`: a new value (another path) re-seeks and glides like a new lane;
+  amounts are read once per block and follow at the render interval, so host
+  automation is smooth.
 
-Every shape starts at the top of the pad and turns clockwise where it has a direction,
-so a morph does not collapse through the centre. `played_path(n)` returns what plays as
-`n` points over one loop for drawing; `shapes_version()` changes with the mix.
+A touch overrides it as it does the lane. `played_path(n)` (and
+`render_motion_path()`) samples what plays over one loop for drawing;
+`transform_version()` changes with the setting.
 
 ## MotionLane and JSON
 
@@ -219,13 +216,11 @@ capacity.
 - **Block size.** `process()` takes at most the prepared block size (debug
   builds assert, release builds clamp). Split larger blocks with
   `TransportInfo::sub_block()`, or let `XYController` do it.
-- **Memory.** Each recorder allocates two take buffers of
-  `MotionRecorderConfig::m_max_points` (default 32768) points at 11 bytes each
-  (x, y, gate and the raw seam tail).
-  A bar take that does not fit at 24 ticks per beat is refused
+- **Memory.** Each recorder allocates a take buffer and two hand-over slots of
+  `MotionRecorderConfig::m_max_points` (default 32768) points at 9 bytes each
+  (x, y and gate), plus a raw seam tail of a quarter of the points per slot.
+  A take that does not fit at 24 points per beat is refused
   (`MotionSnapshot::m_refused`).
-- **Release tail.** A still tail before the release of at most one block is
-  dropped from a free take: without event timestamps the release can arrive a
-  block late. With `m_bar_aligned_takes` every still end of a free take is
-  dropped.
+- **Still ends.** A free take drops the time the finger is down but not yet or
+  no longer moving: without event timestamps the release can arrive a block late.
 - **Commands.** Check the return value: a full queue drops the command.

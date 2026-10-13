@@ -1,7 +1,9 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
+#include <tanh/modulation/MotionLane.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace thl::modulation {
@@ -41,5 +43,17 @@ public:
     /// pad centre without a lane; written back into @p x and @p y, in [0, 1].
     virtual void place(uint64_t settings, double u, float& x, float& y) const = 0;
 };
+
+/**
+ * @brief What plays of @p lane over one loop with @p transform at @p settings, for drawing.
+ *
+ * Inactive (or no transform): @p lane. Otherwise @p num_points points over the loop: the
+ * transform over the lane's points, gate 1 where the transform opens it; or, without a lane,
+ * the transform alone over one bar (nothing if it needs a lane). Allocates.
+ */
+[[nodiscard]] TANH_API MotionLane render_motion_path(const MotionLane& lane,
+                                                     const MotionTransform* transform,
+                                                     uint64_t settings,
+                                                     size_t num_points);
 
 }  // namespace thl::modulation

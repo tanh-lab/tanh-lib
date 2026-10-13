@@ -18,12 +18,6 @@ namespace {
 // 120 bpm, 4/4: one bar = 96000 samples (2 s), 100 points per beat.
 constexpr uint64_t k_bar = 96000;
 
-MotionRecorderConfig aligned() {
-    MotionRecorderConfig cfg;
-    cfg.m_bar_aligned_takes = true;
-    return cfg;
-}
-
 float circle_x(double seconds) {
     return static_cast<float>(0.5 + (0.3 * std::sin(2.0 * std::numbers::pi * seconds / 0.7)));
 }
@@ -69,7 +63,7 @@ size_t longest_frozen_run(const Rig& r, size_t from, size_t to) {
 }  // namespace
 
 TEST(MotionRecorderFreeTakes, LoopsWithoutAFrozenStartOrEnd) {
-    Rig r(256, 120.0, aligned());
+    Rig r(256, 120.0);
     r.play_at(0);
     // Touch at 1.6 bars, 0.3 s still at both ends, 3.2 bars of movement.
     const MotionLane lane = free_take(r, k_bar * 8 / 5, k_bar * 16 / 5, 14400);
@@ -89,7 +83,7 @@ TEST(MotionRecorderFreeTakes, LoopsWithoutAFrozenStartOrEnd) {
 }
 
 TEST(MotionRecorderFreeTakes, LengthSnapsToTheNearestBarCount) {
-    Rig r(256, 120.0, aligned());
+    Rig r(256, 120.0);
     r.play_at(0);
     EXPECT_DOUBLE_EQ(free_take(r, k_bar / 4, k_bar * 13 / 10, 4800).m_length, 4.0);
     EXPECT_DOUBLE_EQ(free_take(r, 4 * k_bar, k_bar * 16 / 5, 4800).m_length, 16.0);
@@ -97,7 +91,7 @@ TEST(MotionRecorderFreeTakes, LengthSnapsToTheNearestBarCount) {
 }
 
 TEST(MotionRecorderFreeTakes, EndsAfterSixteenBarsWithTheFingerDown) {
-    Rig r(256, 240.0, aligned());  // one bar = 1 s
+    Rig r(256, 240.0);  // one bar = 1 s
     r.play_at(0);
     r.step();
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
@@ -113,7 +107,7 @@ TEST(MotionRecorderFreeTakes, EndsAfterSixteenBarsWithTheFingerDown) {
 }
 
 TEST(MotionRecorderFreeTakes, DisarmAndStopKeepTheTake) {
-    Rig r(256, 120.0, aligned());
+    Rig r(256, 120.0);
     r.play_at(0);
     r.step();
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
@@ -137,7 +131,7 @@ TEST(MotionRecorderFreeTakes, DisarmAndStopKeepTheTake) {
 }
 
 TEST(MotionRecorderFreeTakes, RecordWaitsForTheFirstTouch) {
-    Rig r(256, 120.0, aligned());
+    Rig r(256, 120.0);
     r.play_at(0);
     r.step();
     ASSERT_TRUE(r.m_rec.record(LoopLength::Free));

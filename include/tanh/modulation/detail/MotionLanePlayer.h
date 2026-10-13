@@ -47,6 +47,11 @@ public:
     [[nodiscard]] bool begin(const MotionBlockClock& clock,
                              const MotionLaneSource& source,
                              const MotionPlaySettings& settings) TANH_NONBLOCKING_FUNCTION;
+    /// Play @p source from offset @p offset of the block begin() started (a take handed over
+    /// mid-block): true if the output should glide to it.
+    [[nodiscard]] bool switch_to(uint32_t offset,
+                                 const MotionLaneSource& source,
+                                 const MotionPlaySettings& settings) TANH_NONBLOCKING_FUNCTION;
     /// False when nothing plays this block (gate 0, the output holds).
     [[nodiscard]] bool playing() const { return !m_view.empty(); }
     /// The played point at offset @p i (in order, every sample of the block); true at a render
@@ -84,6 +89,9 @@ private:
                                const MotionPlaySettings& settings,
                                const MotionTransformInfo& info) const TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] double clock_phase(double beat) const TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] bool start(uint32_t offset,
+                             const MotionLaneSource& source,
+                             const MotionPlaySettings& settings) TANH_NONBLOCKING_FUNCTION;
     void evaluate(double phase, float& x, float& y) const TANH_NONBLOCKING_FUNCTION;
 
     double m_sample_rate = 48000.0;
@@ -112,6 +120,7 @@ private:
     LoopLength m_play_length = LoopLength::Free;
     bool m_reverse = false;
     bool m_transformed = false;
+    bool m_smoothed = false;
     bool m_need_phase = true;
     bool m_glide_next = false;
     bool m_ramp_restart = true;

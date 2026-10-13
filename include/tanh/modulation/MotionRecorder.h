@@ -2,25 +2,23 @@
 
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
-#include <tanh/core/threading/RCU.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionLaneProcessing.h>
-#include <tanh/modulation/MotionShape.h>
+#include <tanh/modulation/MotionTransform.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/detail/MotionClock.h>
-#include <tanh/modulation/detail/MotionGlide.h>
-#include <tanh/modulation/detail/MotionHistory.h>
-#include <tanh/modulation/detail/MotionTakes.h>
+#include <tanh/modulation/detail/MotionCompositor.h>
+#include <tanh/modulation/detail/MotionLanePlayer.h>
+#include <tanh/modulation/detail/MotionLaneStore.h>
+#include <tanh/modulation/detail/MotionTakeRecorder.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
-#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <utility>
-#include <vector>
 
 namespace thl::modulation {
 
@@ -48,46 +46,41 @@ enum class StoppedTransport : uint8_t {
 /**
  * @brief Records an XY gesture and loops it back, synced to the transport.
  *
- * Arm, touch, and the gesture is recorded on the audio thread into a
- * preallocated take buffer. A take is either free (ends on release) or 1 to 16
- * bars (ends after exactly one loop). Playback starts on the next sample and
- * follows the transport tempo; a live touch always overrides it, and the output
- * glides back on release. service() publishes finished takes as MotionLane
- * through RCU on the message thread.
+ * Arm, touch, and the gesture is recorded on the audio thread into a preallocated take
+ * (detail::MotionTakeRecorder). Every take is a Beats loop of whole bars:
  *
- * A new take replaces the playing lane from its first sample: the old lane
- * stops playing, and if the take is then dropped (a cancelled bar take, a take
- * too short to keep) service() clears it. A take that was never touched keeps
- * nothing and the old lane plays on.
+ * - Free: one gesture, from the touch to the release, stretched onto the nearest of 1, 2, 4,
+ *   8 or 16 bars.
+ * - BarsN: a looper over N bars that records until disarm() or stop(). It starts as what
+ *   plays; the finger overwrites where it is down and the loop plays on where it is up. Every
+ *   release hands the loop over as it is now, so it plays smoothed and transformed between
+ *   touches; the whole take is one undo step.
  *
- * service() publishes the raw take and plays a copy whose seam is closed and
- * which is smoothed by set_smoothing(). Every publication can be undone once
- * (undo(), redo()).
+ * A take hands its loop over (detail::MotionLaneStore) and it plays from the next block;
+ * service() publishes it as a MotionLane through RCU on the message thread. Until then, and
+ * for a take that keeps nothing, the lane that played plays on. Playback
+ * (detail::MotionLanePlayer) follows the transport and plays the lane smoothed
+ * (set_smoothing()) and moved by the application's transform (set_transform()); a live touch
+ * always overrides it, and the output glides back on release (detail::MotionCompositor).
  *
- * set_shapes() plays stock shapes in place of the lane, or morphs between a
- * shape and the lane (MotionShapeMix). A shape loops over the playback length
- * (one bar while it is Free), or over the lane's loop when a slot plays the
- * take. A touch overrides a playing shape as it does the lane (glide back on
- * release); shapes pause while a take records.
- *
- * XYController owns one recorder per voice and calls process(); recorder(v)
- * gives the UI and message thread access to the rest.
+ * XYController owns one recorder per voice and calls process(); recorder(v) gives the UI and
+ * message thread access to the rest.
  *
  * Threading:
- * - ctor, prepare: message thread, audio stopped (allocates).
- * - arm, record, disarm, play, stop, set_reverse, set_playback_length:
- *   one UI thread (lock-free queue).
- * - set_stopped_transport, smoothing, loop_end, set_shapes, shapes,
- *   shapes_version: any thread.
+ * - ctor, prepare, set_transform: message thread, audio stopped (prepare allocates).
+ * - arm, record, disarm, play, stop, set_reverse, set_playback_length: one UI thread
+ *   (lock-free queue).
+ * - set_stopped_transport, smoothing, loop_end, set_transform_settings, transform_settings,
+ *   transform_version: any thread.
  * - process and the audio getters: audio thread.
- * - service, load_lane, clear, undo, redo, can_undo, can_redo, clear_history,
- *   set_smoothing, set_loop_end: one message thread (RCU publication, allocates).
+ * - service, load_lane, clear, undo, redo, can_undo, can_redo, clear_history, set_smoothing,
+ *   set_loop_end: one message thread (RCU publication, allocates).
  * - lane, played_lane, played_path, read_lane, lane_version: message or UI thread.
  */
 class TANH_API MotionRecorder {
 public:
-    MotionRecorder();
-    ~MotionRecorder();
+    MotionRecorder() = default;
+    ~MotionRecorder() = default;
 
     MotionRecorder(const MotionRecorder&) = delete;
     MotionRecorder& operator=(const MotionRecorder&) = delete;
@@ -97,29 +90,25 @@ public:
     /**
      * @brief Allocate everything for blocks of up to @p samples_per_block samples.
      *
-     * Publishes finished takes first and aborts a take that is still recording
-     * (the previous lane is kept). Playback re-locks to the next block's beat
-     * without a glide.
+     * Publishes handed-over takes first and aborts a take that is still recording (the lane
+     * that played is kept). Playback re-locks to the next block's beat without a glide.
      */
     void prepare(double sample_rate,
                  size_t samples_per_block,
                  const MotionRecorderConfig& config = MotionRecorderConfig{});
 
     [[nodiscard]] const MotionRecorderConfig& config() const { return m_config; }
-    /// Bytes allocated for the two take buffers.
+    /// Bytes allocated for the take and the two hand-over slots.
     [[nodiscard]] size_t take_buffer_bytes() const;
 
     /// Arm a take; it starts on the first touch, or at once if a touch is held.
-    /// UI-thread commands return false when the command queue
-    /// (k_motion_command_capacity) is full; the command is then dropped.
+    /// UI-thread commands return false when the command queue (k_motion_command_capacity) is
+    /// full; the command is then dropped.
     [[nodiscard]] bool arm(LoopLength length);
-    /// Start a take at the next block without waiting for a touch (a free take
-    /// with m_bar_aligned_takes still starts its points at the first touch).
+    /// Start a take at the next block without waiting for a touch (a free take still starts
+    /// its points at the first touch).
     [[nodiscard]] bool record(LoopLength length);
-    /// Cancel arming. A running free take ends there and plays; a bar-aligned
-    /// BarsN take is padded to its loop; a running bar take without
-    /// m_bar_aligned_takes is dropped. A take that was never touched keeps
-    /// nothing and the old lane plays on.
+    /// Cancel arming. A running take ends there and plays (a take never touched keeps nothing).
     [[nodiscard]] bool disarm();
     /// Enable playback (the default).
     [[nodiscard]] bool play();
@@ -127,9 +116,8 @@ public:
     [[nodiscard]] bool stop();
     /// Mirror the playback phase (Beats lanes glide to phase = length - phase).
     [[nodiscard]] bool set_reverse(bool reverse);
-    /// Play every lane as @p length: BarsN stretches the lane to exactly N bars of
-    /// the current time signature, starting on a bar line (faster or slower than
-    /// recorded); Free (the default) plays it at its recorded length.
+    /// Play every lane as @p length: BarsN stretches the lane onto exactly N bars of the
+    /// current time signature from a bar line; Free (the default) plays its recorded length.
     [[nodiscard]] bool set_playback_length(LoopLength length);
     /// Behaviour of Beats lanes while the transport is stopped.
     void set_stopped_transport(StoppedTransport mode) {
@@ -139,252 +127,158 @@ public:
     /**
      * @brief Advance one block of at most the prepared size.
      *
-     * The transport's discontinuity flags are the only jump detector: k_jumped
-     * and k_started re-seek playback (with a glide if the phase moved),
-     * k_timeline_reset re-locks without a glide, and otherwise the beat is taken
-     * as continuous. A jump never aborts or shifts a running take.
+     * The transport's discontinuity flags are the only jump detector: k_jumped and k_started
+     * re-seek playback (with a glide if the phase moved), k_timeline_reset re-locks without a
+     * glide, and otherwise the beat is taken as continuous. A jump never aborts or shifts a
+     * running take.
      */
     void process(const thl::dsp::transport::TransportInfo& transport,
                  const MotionInput& input,
                  uint32_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
     /// Composed x of the last block: live touch over playback, with glides.
-    [[nodiscard]] const float* out_x() const TANH_NONBLOCKING_FUNCTION { return m_out_x.data(); }
-    [[nodiscard]] const float* out_y() const TANH_NONBLOCKING_FUNCTION { return m_out_y.data(); }
+    [[nodiscard]] const float* out_x() const TANH_NONBLOCKING_FUNCTION { return m_output.x(); }
+    [[nodiscard]] const float* out_y() const TANH_NONBLOCKING_FUNCTION { return m_output.y(); }
     /// 1 while touched or while the playing lane's gate is open.
     [[nodiscard]] const uint8_t* out_gate() const TANH_NONBLOCKING_FUNCTION {
-        return m_out_gate.data();
+        return m_output.gate();
     }
     /// 1 where a live touch, not playback, produced the sample.
     [[nodiscard]] const uint8_t* out_live() const TANH_NONBLOCKING_FUNCTION {
-        return m_out_live.data();
+        return m_output.live();
     }
     /// Sorted, unique offsets where the output changed. Shared by x, y and gate.
     [[nodiscard]] std::span<const uint32_t> change_points() const TANH_NONBLOCKING_FUNCTION {
-        return {m_change_points.data(), m_num_change_points};
+        return m_output.change_points();
     }
     [[nodiscard]] uint32_t num_samples() const TANH_NONBLOCKING_FUNCTION { return m_num_samples; }
 
     /// State at the end of the last block (audio thread; the UI reads XYFrame).
     [[nodiscard]] MotionSnapshot snapshot() const TANH_NONBLOCKING_FUNCTION;
     /// Playback phase at the end of the last block, in seconds or beats into the loop.
-    [[nodiscard]] double playback_phase() const TANH_NONBLOCKING_FUNCTION { return m_phase; }
+    [[nodiscard]] double playback_phase() const TANH_NONBLOCKING_FUNCTION {
+        return m_player.phase();
+    }
     /// Glides started by a flagged transport jump since prepare().
     [[nodiscard]] uint64_t jump_glide_count() const TANH_NONBLOCKING_FUNCTION {
-        return m_jump_glides;
+        return m_player.jump_glides();
     }
 
-    /// Publish finished takes; call from a message-thread timer at 10 Hz or more.
+    /// Publish handed-over takes; call from a message-thread timer at 10 Hz or more.
     /// Returns true if a new lane was published.
-    bool service();
+    bool service() { return m_store.service(); }
 
-    /// Replace the lane (preset load). Clamps the points, resamples down to the
-    /// capacity and returns the new take id, or 0 if @p lane is malformed.
-    uint32_t load_lane(MotionLane lane);
-
+    /// Replace the lane (preset load). Clamps the points, resamples down to the capacity and
+    /// returns the new take id, or 0 if @p lane is malformed.
+    uint32_t load_lane(MotionLane lane) {
+        return m_store.load(std::move(lane), m_config.m_max_points);
+    }
     /// Publish an empty lane: playback stops (gate 0, x and y hold). Returns the new id.
-    uint32_t clear();
+    uint32_t clear() { return m_store.clear(); }
 
-    /// Republish the lane before the last publication (take, load, clear)
-    /// under a new take id. Publishes finished takes first. False if there is none.
-    bool undo();
+    /// Republish the lane before the last publication (a take, a load, a clear) under a new
+    /// take id. Publishes handed-over takes first. False if there is none.
+    bool undo() { return m_store.undo(); }
     /// Republish the lane the last undo() replaced. A new publication drops it.
-    bool redo();
-    [[nodiscard]] bool can_undo() const { return m_history.can_undo(); }
-    [[nodiscard]] bool can_redo() const { return m_history.can_redo(); }
+    bool redo() { return m_store.redo(); }
+    [[nodiscard]] bool can_undo() const { return m_store.can_undo(); }
+    [[nodiscard]] bool can_redo() const { return m_store.can_redo(); }
     /// Forget the undo and redo lanes (preset load).
-    void clear_history();
+    void clear_history() { m_store.clear_history(); }
 
     /**
      * @brief Playback smoothing, 0 to 1; the published lane stays raw.
      *
-     * The played copy spreads the jump at the loop seam over a window that grows
-     * from 150 ms (0.3 beat) at 0 to the whole loop at 1, then smooths x and y
-     * with a zero-phase Gaussian of sigma = amount^2 * half a beat (250 ms for
-     * Seconds lanes). The gate is not smoothed. Playback glides to the result.
+     * What plays spreads the jump at the loop seam over a window that grows from 150 ms
+     * (0.3 beat) at 0 to the whole loop at 1, then smooths x and y with a zero-phase Gaussian
+     * of sigma = amount^2 * half a beat (250 ms for Seconds lanes). The gate is not smoothed.
+     * Playback glides to the result.
      */
-    void set_smoothing(float amount);
-    [[nodiscard]] float smoothing() const { return m_smoothing.load(std::memory_order_relaxed); }
+    void set_smoothing(float amount) { m_store.set_smoothing(amount); }
+    [[nodiscard]] float smoothing() const { return m_store.smoothing(); }
 
-    /// Loop end of the played lane (LoopEnd::Smooth by default). Jump also
-    /// leaves new takes unblended while they play from the take buffer.
-    void set_loop_end(LoopEnd mode);
-    [[nodiscard]] LoopEnd loop_end() const { return m_loop_end.load(std::memory_order_relaxed); }
+    /// Loop end of the played lane (LoopEnd::Smooth by default). Jump also leaves a handed-over
+    /// take open until it is published.
+    void set_loop_end(LoopEnd mode) { m_store.set_loop_end(mode); }
+    [[nodiscard]] LoopEnd loop_end() const { return m_store.loop_end(); }
 
-    /**
-     * @brief Play shapes in place of, or blended with, the lane.
-     *
-     * Applied from the next block. A slot change glides like a new lane; morph,
-     * size and rotation follow at the render interval. With both slots on Take
-     * the lane plays as without shapes.
-     */
-    void set_shapes(const MotionShapeMix& mix);
-    [[nodiscard]] MotionShapeMix shapes() const;
-    /// Bumped by every set_shapes() that changes the mix: redraw played_path().
-    [[nodiscard]] uint32_t shapes_version() const {
-        return m_shapes_version.load(std::memory_order_acquire);
+    /// What moves playback point by point (shapes, scaling); null: the lane as it is. The
+    /// transform must outlive the recorder.
+    void set_transform(const MotionTransform* transform) { m_transform = transform; }
+    /// The transform's setting, applied from the next block; a change bumps
+    /// transform_version().
+    void set_transform_settings(uint64_t settings);
+    [[nodiscard]] uint64_t transform_settings() const {
+        return m_transform_settings.load(std::memory_order_acquire);
+    }
+    /// Bumped by every set_transform_settings() that changes the setting: redraw played_path().
+    [[nodiscard]] uint32_t transform_version() const {
+        return m_transform_version.load(std::memory_order_acquire);
     }
 
     /// Copy of the published lane (raw, with the recorded seam; allocates).
-    [[nodiscard]] MotionLane lane() const;
-    /// Copy of the published lane with the x and y that play: seam closed and
-    /// smoothed (allocates).
-    [[nodiscard]] MotionLane played_lane() const;
-
-    /// What plays over one loop: played_lane(), or with shapes (set_shapes()) the
-    /// mix sampled at @p num_points points, gate 1 where a shape sounds (allocates).
+    [[nodiscard]] MotionLane lane() const { return m_store.lane(); }
+    /// Copy of the published lane with the x and y that play: seam closed and smoothed
+    /// (allocates).
+    [[nodiscard]] MotionLane played_lane() const { return m_store.played_lane(); }
+    /// What plays over one loop: played_lane() moved by the transform, sampled at
+    /// @p num_points points (allocates).
     [[nodiscard]] MotionLane played_path(size_t num_points = 512) const;
 
     /// Call @p f with the published (raw) lane inside an RCU read section.
     template <typename F>
     void read_lane(F&& f) const {
-        m_lanes.read([&](const PlayedLane& l) { f(l.m_lane); });
+        m_store.read_lane(std::forward<F>(f));
     }
 
-    /// Bumped on every publication (take, load, clear, undo, redo,
-    /// smoothing or loop end change): redraw when it changes.
-    [[nodiscard]] uint32_t lane_version() const {
-        return m_lane_version.load(std::memory_order_acquire);
-    }
+    /// Bumped on every publication (take, load, clear, undo, redo, smoothing or loop end
+    /// change): redraw when it changes.
+    [[nodiscard]] uint32_t lane_version() const { return m_store.version(); }
 
 private:
     using CommandKind = detail::MotionCommandKind;
     using Command = detail::MotionCommand;
+    using TakeEvent = detail::MotionTakeRecorder::Event;
 
-    using TakeBuffer = detail::TakeBuffer;
-    using BufferState = detail::TakeBufferState;
-    using TakeOutcome = detail::MotionTakeWriter::Outcome;
-
-    // The RCU payload: the published lane and the x and y that play.
-    struct PlayedLane {
-        MotionLane m_lane;
-        std::vector<float> m_x;
-        std::vector<float> m_y;
-        // The lane unsmoothed with its seam closed, when m_x / m_y differ from it (smoothed):
-        // what an overwriting take starts from, so overdubs do not smooth it again.
-        std::vector<float> m_seed_x;
-        std::vector<float> m_seed_y;
-        bool m_smoothed = false;  // may differ from the finalised take buffer: glide on handoff
-        uint32_t m_version = 0;   // per publication, also for a smoothing change
-    };
-
-    // What playback reads: a take buffer or the RCU lane, valid for one block.
-    struct LaneView {
-        const float* m_x = nullptr;  // played (smoothed) x and y
-        const float* m_y = nullptr;
-        const uint8_t* m_gate = nullptr;
-        size_t m_num_points = 0;
-        MotionTimebase m_timebase = MotionTimebase::Seconds;
-        double m_length = 0.0;
-        double m_anchor = 0.0;
-        // Shapes play (m_shapes): m_x / m_y / m_gate are the take, or null without one.
-        bool m_shaped = false;
-        [[nodiscard]] bool empty() const { return m_num_points == 0 || !(m_length > 0.0); }
-    };
-
-    enum class Source : uint8_t { Buffer0, Buffer1, Lane };
-
-    void apply_commands(double bpm);
-    void select_source(const PlayedLane& lane);
-    [[nodiscard]] LaneView view_of(Source source, const PlayedLane& lane) const;
-    // view_of() the playing source, empty while a new take replaces it.
-    [[nodiscard]] LaneView playback_view(const PlayedLane& lane) const;
-    // @p lane with the block's shapes: the lane as the take slot, or a shape loop.
-    [[nodiscard]] LaneView shaped_view(LaneView lane) const;
-    // Read set_shapes() for the block; a slot change re-seeks with a glide.
-    void apply_shapes();
-    void switch_to(Source source, uint32_t id, bool silent);
-    void glide_in_place();
-    // The motion an overwriting take starts from: the playing lane, empty when none plays.
-    [[nodiscard]] detail::TakeSeed seed_of(const PlayedLane& lane) const;
-    // Opens a take at @p offset of this block (recording clock beat @p clock_beat).
-    void start_take(const thl::dsp::transport::TransportInfo& transport,
-                    const MotionInput& input,
-                    uint32_t offset,
-                    double clock_beat,
-                    const PlayedLane& lane);
-    // What a take that ended or stopped means for arming and playback.
-    void on_take(TakeOutcome outcome);
-    void start_glide() { m_glide.start(m_last_x, m_last_y); }
-    void publish(MotionLane lane, bool record_history = true);
-    void publish_played(MotionLane lane);
+    void apply_commands() TANH_NONBLOCKING_FUNCTION;
+    void start_take(const dsp::transport::TransportInfo& transport,
+                    double beat,
+                    float x,
+                    float y,
+                    const detail::MotionLaneSource& playing) TANH_NONBLOCKING_FUNCTION;
+    void on_take(TakeEvent event) TANH_NONBLOCKING_FUNCTION;
+    void submit_finished() TANH_NONBLOCKING_FUNCTION;
 
     // Ordered by alignment and size (clang-analyzer padding check), not by thread.
-    // Threads: m_commands, the atomics, m_shape_mix, m_lanes and m_takes are shared;
-    // m_history, m_published_id and m_played_version belong to the message thread;
-    // every other field to the audio thread. m_audio_reader is set from m_lanes in the
-    // constructor body.
+    // Threads: m_commands, the atomics and m_store are shared; every other field belongs to
+    // the audio thread (m_config and m_transform are set while it is stopped).
     thl::core::LockFreeQueue<Command, k_motion_command_capacity> m_commands;
+    MotionRecorderConfig m_config;
+    detail::MotionLaneStore m_store;
+    detail::MotionTakeRecorder m_takes;
+    detail::MotionLanePlayer m_player;
+    detail::MotionCompositor m_output;
+    detail::MotionClock m_clock;
+    const MotionTransform* m_transform = nullptr;
+    std::atomic<uint64_t> m_transform_settings{0};
+    std::atomic<uint32_t> m_transform_version{0};
+    std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
     double m_sample_rate = 48000.0;
     size_t m_max_block = 0;
-    RCU<PlayedLane>::Reader m_audio_reader;
-    AtomicMotionShapeMix m_shape_mix;
-    // Playback phase (seconds or beats into the loop) at the start of the current
-    // segment, and at the end of the last block.
-    double m_segment_phase = 0.0;
-    double m_phase = 0.0;
-    double m_view_length = 0.0;  // 0: no lane playing
-    // Render ramp between Catmull-Rom ticks.
-    double m_last_render_phase = 0.0;  // wrap detection
-    double m_previous_phase_step = 1.0;
-    uint64_t m_jump_glides = 0;
-    size_t m_num_change_points = 0;
-    detail::MotionClock m_clock;
-    std::vector<float> m_out_x;
-    std::vector<float> m_out_y;
-    std::vector<uint8_t> m_out_gate;
-    std::vector<uint8_t> m_out_live;
-    std::vector<uint32_t> m_change_points;
-    MotionRecorderConfig m_config;
-    RCU<PlayedLane> m_lanes;
-    detail::MotionHistory m_history;
-    // The running take and the two take buffers (audio thread; service() reads Finished ones).
-    // It only stores the reference to m_next_take_id, declared after it (padding order).
-    detail::MotionTakeWriter m_takes{m_next_take_id};
-    std::atomic<uint32_t> m_next_take_id{1};
-    std::atomic<uint32_t> m_lane_version{0};
-    // Id of a lane a dropped take replaced; service() clears it if still published.
-    std::atomic<uint32_t> m_clear_request{0};
-    std::atomic<float> m_smoothing{0.0f};
-    std::atomic<uint32_t> m_shapes_version{0};
-    uint32_t m_published_id = 0;
-    uint32_t m_played_version = 0;
-    uint32_t m_replaced_take_id = 0;  // lane muted by the running take (0 = none)
-    int m_sig_num = 4;                // time signature of the last block
-    int m_sig_denom = 4;
-    uint32_t m_playing_take_id = 0;
-    uint32_t m_playing_version = 0;  // PlayedLane::m_version of the playing lane
-    uint32_t m_segment_start = 0;
-    uint32_t m_ramp_position = 0;
-    float m_ramp_from_x = 0.0f;
-    float m_ramp_from_y = 0.0f;
-    float m_ramp_to_x = 0.0f;
-    float m_ramp_to_y = 0.0f;
-    float m_last_x = 0.0f;  // last output
-    float m_last_y = 0.0f;
     uint32_t m_num_samples = 0;
-    detail::MotionGlide m_glide;
-    MotionShapeMix m_shapes;  // set_shapes() for this block
-    std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
-    std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};
+    uint32_t m_take_serial = 0;
+    int m_sig_num = 4;
+    int m_sig_denom = 4;
+    LoopLength m_arm_length = LoopLength::Free;
+    LoopLength m_playback_length = LoopLength::Free;
     bool m_armed = false;
     bool m_force_start = false;
-    LoopLength m_arm_length = LoopLength::Free;
     bool m_play_enabled = true;
     bool m_reverse = false;
-    bool m_reverse_pending = false;
-    LoopLength m_playback_length = LoopLength::Free;
-    bool m_shape_gate = false;  // a shape slot sounds: the gate stays open
-    bool m_busy = false;
+    bool m_finish_pending = false;  // a finished take waits for a free hand-over slot
+    bool m_handed_over = false;     // a take was handed over this block: play it from here
     bool m_refused = false;
     bool m_aborted = false;
-    Source m_source = Source::Lane;
-    bool m_need_phase = true;  // the next sample re-derives the phase (new lane)
-    MotionTimebase m_view_timebase = MotionTimebase::Seconds;
-    bool m_ramp_restart = true;
-    uint8_t m_last_gate = 0;
-    bool m_last_live = false;
-    bool m_take_plays = false;  // an overwriting take plays from its buffer
 };
 
 }  // namespace thl::modulation

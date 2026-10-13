@@ -26,6 +26,8 @@ public:
 
     /// Start a block; @p glide: playback asks to glide to it from where the output is.
     void begin(bool glide) TANH_NONBLOCKING_FUNCTION;
+    /// Playback asks to glide to it from the next sample (it changed mid-block).
+    void glide() TANH_NONBLOCKING_FUNCTION { m_glide_pending = true; }
     /// Sample @p i (in order): the touch (@p live at @p lx, @p ly), playback (@p playing at
     /// @p px, @p py with gate @p pg); @p change: the caller's change point.
     void sample(uint32_t i,

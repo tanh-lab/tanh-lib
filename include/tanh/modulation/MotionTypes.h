@@ -29,31 +29,16 @@ enum class LoopLength : uint8_t { Free, Bars1, Bars2, Bars4, Bars8, Bars16 };
 }
 
 struct MotionRecorderConfig {
-    /// Points per take buffer (two buffers per recorder, 11 bytes per point).
+    /// Points of a take (the take and two hand-over slots per recorder, 11 bytes per point).
     size_t m_max_points = k_motion_default_max_points;
-    /// Grid rate of Seconds takes in points per second. Beats takes use
-    /// round(rate * 60 / bpm) ticks per beat, clamped to [m_min_tpb, m_max_tpb].
+    /// Recording rate in points per second: round(rate * 60 / bpm) points per beat, clamped to
+    /// [m_min_tpb, m_max_tpb].
     double m_rate = 200.0;
     uint32_t m_min_tpb = 24;  ///< below this a bar take is refused (capacity)
     uint32_t m_max_tpb = 512;
     /// Catmull-Rom is evaluated every this many samples; the output ramps linearly between.
     uint32_t m_render_interval = 32;
     double m_glide_ms = 25.0;  ///< raised-cosine glide after a jump, a new lane or a release
-    /// Every take becomes a Beats lane of whole bars:
-    /// - BarsN starts on the bar line at or before the first touch, records
-    ///   lifts as gate 0 and lasts exactly N bars; disarm() and stop() pad it
-    ///   with gate 0 instead of dropping it.
-    /// - Free runs from the first touch to the release (16 bars at most), drops
-    ///   the still ends and is stretched onto the nearest of 1, 2, 4, 8 or 16
-    ///   bars, so it loops without a pause. Lifting ends it: use BarsN to
-    ///   record gaps.
-    /// Off: free takes end on release and keep their length.
-    bool m_bar_aligned_takes = false;
-    /// With m_bar_aligned_takes: a BarsN take loops over the N bars from the loop line
-    /// (a multiple of N bars) and keeps recording until disarm() or stop(). Where the finger
-    /// is down it overwrites, where it is up the motion that played when the take started
-    /// (or that an earlier pass recorded) stays and plays on. One take, one undo step.
-    bool m_overwrite_loops = false;
 };
 
 /// Recorder state as a UI shows it.

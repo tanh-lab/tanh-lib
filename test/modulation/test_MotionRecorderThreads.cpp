@@ -236,7 +236,7 @@ float run_block(detail::XYPad& pad, MotionRecorder& rec, const TransportInfo& t,
 
 }  // namespace
 
-// Arm, record, auto-finish, publish, touch override, lane load, a transport
+// Arm, record, disarm, publish, touch override, lane load, a transport
 // jump, reverse and clear on one recorder. The RTSan preset checks the audio path.
 TEST(MotionRecorderThreads, FullScenario) {
     constexpr uint32_t k_bs = 256;
@@ -254,13 +254,15 @@ TEST(MotionRecorderThreads, FullScenario) {
         }
     };
     run(4);
-    ASSERT_TRUE(rec.arm(LoopLength::Bars1));  // a 1-bar take auto-finishes after 4 beats
+    ASSERT_TRUE(rec.arm(LoopLength::Bars1));  // a 1-bar looper until disarm
     for (int b = 0; b < 420; ++b) {
         pad.touch(1, 0.5f + (0.4f * std::sin(b * 0.05f)), 0.5f);
         run(1);
     }
     pad.release(1);
     run(10);
+    ASSERT_TRUE(rec.disarm());
+    run(1);
     EXPECT_EQ(rec.snapshot().m_state, MotionState::Playing);
     EXPECT_TRUE(rec.service());  // publish (message thread, not RT)
     run(10);                     // switch to the RCU lane, free the buffer

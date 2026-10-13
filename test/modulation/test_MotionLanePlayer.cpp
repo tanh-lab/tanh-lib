@@ -211,7 +211,10 @@ TEST(MotionLanePlayer, NewLaneGlidesAndNewCurveGlidesInPlace) {
     p.run(a.m_source, 10);
     EXPECT_TRUE(p.block(b.m_source));  // another id
     EXPECT_FALSE(p.block(b.m_source));
-    b.m_source.m_version = 2;  // the same lane, another curve
+    b.m_source.m_version = 2;  // the same take, published as it was handed over: silent
+    EXPECT_FALSE(p.block(b.m_source));
+    b.m_source.m_version = 3;  // smoothed: another curve, glide in place
+    b.m_source.m_smoothed = true;
     EXPECT_TRUE(p.block(b.m_source));
     EXPECT_NEAR(p.m_x.back(), b.x_at(std::fmod(p.m_beats.back(), 4.0)), 2e-3);
     p.m_player->restart();  // play() again

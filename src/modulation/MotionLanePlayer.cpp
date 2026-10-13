@@ -1,8 +1,11 @@
 #include "tanh/modulation/detail/MotionLanePlayer.h"
 
+#include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionTransform.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/detail/MotionClock.h>
+#include <tanh/modulation/detail/MotionLaneStore.h>
+#include <tanh/modulation/detail/MotionTakeRecorder.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -104,6 +107,30 @@ double MotionLanePlayer::clock_phase(double beat) const TANH_NONBLOCKING_FUNCTIO
 bool MotionLanePlayer::begin(const MotionBlockClock& clock,
                              const MotionLaneSource& source,
                              const MotionPlaySettings& settings) TANH_NONBLOCKING_FUNCTION {
+    m_clock = clock;
+    return start(0, source, settings);
+}
+
+bool MotionLanePlayer::switch_to(uint32_t offset,
+                                 const MotionLaneSource& source,
+                                 const MotionPlaySettings& settings) TANH_NONBLOCKING_FUNCTION {
+    // Where the running segment is now; the clock's flags belong to the block start.
+    if (!m_view.empty()) {
+        m_phase =
+            wrap_phase(m_segment_phase + (static_cast<double>(offset - m_segment_start) * m_step),
+                       m_view.m_length);
+        m_previous_step = m_step;
+    }
+    m_clock.m_beat = m_clock.beat_at(offset);
+    m_clock.m_jumped = false;
+    m_clock.m_timeline_reset = false;
+    return start(offset, source, settings);
+}
+
+bool MotionLanePlayer::start(uint32_t offset,
+                             const MotionLaneSource& source,
+                             const MotionPlaySettings& settings) TANH_NONBLOCKING_FUNCTION {
+    const MotionBlockClock& clock = m_clock;
     const MotionTransformInfo info = settings.m_transform != nullptr
                                          ? settings.m_transform->info(settings.m_transform_settings)
                                          : MotionTransformInfo{};
@@ -113,7 +140,7 @@ bool MotionLanePlayer::begin(const MotionBlockClock& clock,
     if (source.m_id != m_playing_id) {
         m_need_phase = true;  // another lane
         glide = true;
-    } else if (source.m_version != m_version) {
+    } else if (source.m_version != m_version && (source.m_smoothed || m_smoothed)) {
         m_ramp_restart = true;  // the same lane, another curve: keep the phase
         glide = true;
     }
@@ -128,15 +155,15 @@ bool MotionLanePlayer::begin(const MotionBlockClock& clock,
     const bool reversed = settings.m_reverse != m_reverse;
     m_playing_id = source.m_id;
     m_version = source.m_version;
+    m_smoothed = source.m_smoothed;
     m_transformed = info.m_active;
     m_curve = info.m_curve;
     m_play_length = settings.m_length;
     m_reverse = settings.m_reverse;
     m_transform = settings.m_transform;
     m_transform_settings = settings.m_transform_settings;
-    m_clock = clock;
     m_view = view_of(source, settings, info);
-    m_segment_start = 0;
+    m_segment_start = offset;
     if (m_view.empty()) { return false; }
 
     if (reversed) {
