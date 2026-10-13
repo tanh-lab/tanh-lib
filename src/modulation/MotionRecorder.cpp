@@ -100,9 +100,10 @@ bool MotionRecorder::set_playback_length(LoopLength length) {
 }
 
 uint32_t MotionRecorder::clear() {
-    // A looper records until disarm: what its take holds must not come back after the clear.
-    m_store.drop_take(m_take_serial.load(std::memory_order_acquire));
-    (void)m_commands.try_push({.m_kind = CommandKind::Abort, .m_arg = 0});
+    // A looper records until disarm: what its take holds must not come back after the clear,
+    // nor what a take starting before the audio thread sees the clear hands over.
+    m_store.drop_takes_from(m_take_serial.load(std::memory_order_acquire));
+    m_clear_takes.store(true, std::memory_order_release);
     return m_store.clear();
 }
 
@@ -165,12 +166,6 @@ void MotionRecorder::apply_commands() TANH_NONBLOCKING_FUNCTION {
                 m_playback_length = static_cast<LoopLength>(std::min<uint8_t>(c.m_arg, 5));
                 break;
             case CommandKind::Reverse: m_reverse = c.m_arg != 0; break;
-            case CommandKind::Abort:  // clear(): the take keeps nothing
-                m_takes.abort();
-                m_armed = false;
-                m_force_start = false;
-                m_finish_pending = false;
-                break;
         }
     }
 }
@@ -259,6 +254,14 @@ void MotionRecorder::process(const TransportInfo& t,
     if (t.m_sig_num > 0 && t.m_sig_denom > 0) {
         m_sig_num = t.m_sig_num;
         m_sig_denom = t.m_sig_denom;
+    }
+    if (m_clear_takes.exchange(false, std::memory_order_acq_rel)) {
+        // clear(): the take keeps nothing, arming ends, later takes play again.
+        m_takes.abort();
+        m_armed = false;
+        m_force_start = false;
+        m_finish_pending = false;
+        m_store.stop_dropping_after(m_take_serial.load(std::memory_order_relaxed));
     }
     apply_commands();
 

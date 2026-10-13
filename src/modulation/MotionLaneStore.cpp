@@ -98,12 +98,11 @@ MotionLaneSource MotionLaneStore::slot_source(const Slot& slot) const TANH_NONBL
 MotionLaneSource MotionLaneStore::select(const MotionPlayedLane& published)
     TANH_NONBLOCKING_FUNCTION {
     const uint32_t lane_id = published.m_lane.m_take_id;
-    const uint32_t dropped = m_dropped_serial.load(std::memory_order_acquire);
     const Slot* newest = nullptr;
     for (auto& s : m_slots) {
         const SlotState state = s.m_state.load(std::memory_order_acquire);
         if (state == SlotState::Free) { continue; }
-        if (s.m_id <= lane_id || (s.m_serial != 0 && s.m_serial == dropped)) {
+        if (s.m_id <= lane_id || dropped(s.m_serial)) {
             if (state == SlotState::Published) {
                 s.m_state.store(SlotState::Free, std::memory_order_relaxed);
             }
@@ -148,11 +147,10 @@ bool MotionLaneStore::service() {
     }
     if (count == 2 && ready[1]->m_id < ready[0]->m_id) { std::swap(ready[0], ready[1]); }
     bool published = false;
-    const uint32_t dropped = m_dropped_serial.load(std::memory_order_acquire);
     for (size_t k = 0; k < count; ++k) {
         Slot& s = *ready[k];
         // A lane loaded after the take is newer, and a cleared take keeps nothing: drop it.
-        if (s.m_id > m_published_id && (s.m_serial == 0 || s.m_serial != dropped)) {
+        if (s.m_id > m_published_id && !dropped(s.m_serial)) {
             const MotionLoopView& v = s.m_view;
             const size_t n = v.m_num_points;
             MotionLane lane;

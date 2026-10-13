@@ -209,3 +209,19 @@ TEST(MotionLaneStore, ClearIsAnUndoStep) {
     EXPECT_EQ(store->lane().m_x, take.m_x);
     EXPECT_GT(store->lane().m_take_id, id);
 }
+
+// A clear drops the take running at the time and any later one until the audio thread ends it.
+TEST(MotionLaneStore, DroppedTakesNeitherPlayNorPublish) {
+    auto store = make_store();
+    const Take take;
+    store->drop_takes_from(5);
+    ASSERT_TRUE(store->submit(take.view(), 5));
+    ASSERT_TRUE(store->submit(take.view(), 6));  // started before the clear was seen
+    EXPECT_TRUE(select(*store).empty());
+    EXPECT_FALSE(store->service());
+    (void)select(*store);  // frees both
+    store->stop_dropping_after(6);
+    ASSERT_TRUE(store->submit(take.view(), 7));  // after: plays
+    EXPECT_FALSE(select(*store).empty());
+    EXPECT_TRUE(store->service());
+}

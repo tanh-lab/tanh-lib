@@ -82,9 +82,18 @@ public:
     uint32_t load(MotionLane lane, size_t max_points);
     /// Publish an empty lane; its id.
     uint32_t clear();
-    /// Any thread: forget what take @p serial handed over and still hands over (a take cleared
-    /// while it runs): it neither plays nor is published.
-    void drop_take(uint32_t serial) { m_dropped_serial.store(serial, std::memory_order_release); }
+    /// Any thread: forget what take @p serial and every later take hand over until
+    /// stop_dropping_after() (takes cleared while they run): it neither plays nor is published.
+    void drop_takes_from(uint32_t serial) {
+        m_dropped.store((uint64_t{serial} << 32) | 0xFFFFFFFFu, std::memory_order_release);
+    }
+    /// Takes after @p serial play again (the audio thread ended the cleared take).
+    void stop_dropping_after(uint32_t serial) {
+        uint64_t range = m_dropped.load(std::memory_order_acquire);
+        while (!m_dropped.compare_exchange_weak(range,
+                                                ((range >> 32) << 32) | serial,
+                                                std::memory_order_acq_rel)) {}
+    }
     bool undo();
     bool redo();
     [[nodiscard]] bool can_undo() const { return m_history.can_undo(); }
@@ -131,7 +140,12 @@ private:
     std::array<Slot, 2> m_slots;
     MotionHistory m_history;
     std::atomic<uint32_t> m_next_id{1};
-    std::atomic<uint32_t> m_dropped_serial{0};
+    std::atomic<uint64_t> m_dropped{0};  // serials [from, to] as (from << 32) | to
+
+    [[nodiscard]] bool dropped(uint32_t serial) const {
+        const uint64_t range = m_dropped.load(std::memory_order_acquire);
+        return serial != 0 && serial >= (range >> 32) && serial <= (range & 0xFFFFFFFFu);
+    }
     std::atomic<uint32_t> m_version{0};
     std::atomic<float> m_smoothing{0.0f};
     std::atomic<LoopEnd> m_loop_end{LoopEnd::Smooth};

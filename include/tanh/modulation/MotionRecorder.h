@@ -24,16 +24,7 @@ namespace thl::modulation {
 
 namespace detail {
 
-enum class MotionCommandKind : uint8_t {
-    Arm,
-    Record,
-    Disarm,
-    Play,
-    Stop,
-    Reverse,
-    PlaybackLength,
-    Abort
-};
+enum class MotionCommandKind : uint8_t { Arm, Record, Disarm, Play, Stop, Reverse, PlaybackLength };
 
 /// One UI to audio recorder command.
 struct MotionCommand {
@@ -215,6 +206,7 @@ public:
     /// What moves playback point by point (shapes, scaling); null: the lane as it is. The
     /// transform must outlive the recorder.
     void set_transform(const MotionTransform* transform) { m_transform = transform; }
+    [[nodiscard]] const MotionTransform* transform() const { return m_transform; }
     /// The transform's setting, applied from the next block; a change bumps
     /// transform_version().
     void set_transform_settings(uint64_t settings);
@@ -277,6 +269,7 @@ private:
     size_t m_max_block = 0;
     uint32_t m_num_samples = 0;
     std::atomic<uint32_t> m_take_serial{0};  // written by the audio thread, read by clear()
+    std::atomic<bool> m_clear_takes{false};  // clear(): end the take at the next block
     int m_sig_num = 4;
     int m_sig_denom = 4;
     LoopLength m_arm_length = LoopLength::Free;
