@@ -711,7 +711,7 @@ TEST(MotionRecorder, ThirdTakeWaitsForAFreeSlot) {
     EXPECT_GT(second, first);
     record_free_take(r, 0.6, 0.5f);
     EXPECT_TRUE(r.m_rec.snapshot().m_busy);
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, second);
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);  // the second stopped when the third started
 
     // service() publishes both, in order; the next block hands the third over.
     const uint32_t v0 = r.m_rec.lane_version();
@@ -775,9 +775,8 @@ TEST(MotionRecorder, DisarmKeepsATouchedTake) {
     EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 4.0);
 }
 
-// A looper starts as the playing lane: lifted, the lane plays on while the take records, and
-// every release hands the loop over.
-TEST(MotionRecorder, LooperKeepsThePlayingLaneAndHandsOverOnRelease) {
+// A looper replaces the playing lane from its first touch, and every release hands the loop over.
+TEST(MotionRecorder, LooperReplacesThePlayingLaneAndHandsOverOnRelease) {
     Rig r(256);
     r.play_at(0);
     const uint32_t old = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
@@ -790,21 +789,12 @@ TEST(MotionRecorder, LooperKeepsThePlayingLaneAndHandsOverOnRelease) {
     r.m_pad.touch(1, 0.9f, 0.9f);
     r.run_until(r.now() + 12000);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, old);  // the touch plays, the lane is still the old
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
     r.m_pad.release(1);
     r.step();
     const uint32_t revision = r.m_rec.snapshot().m_take_id;
     EXPECT_GT(revision, old);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-
-    // Lifted: the old lane plays where the finger was not, the gate open.
-    r.run_until(r.now() + 48000);
-    const size_t from = r.m_x.size() - 12000;
-    for (size_t i = from; i < r.m_x.size(); i += 97) {
-        const double phase = std::fmod(r.m_beat[i], 4.0);
-        EXPECT_NEAR(r.m_x[i], 0.5 + (0.4 * std::sin(2.0 * k_pi * phase / 4.0)), 2e-3) << i;
-        EXPECT_EQ(r.m_gate[i], 1) << i;
-    }
     EXPECT_TRUE(r.m_rec.service());
     EXPECT_EQ(r.m_rec.lane().m_take_id, revision);
     ASSERT_TRUE(r.m_rec.disarm());

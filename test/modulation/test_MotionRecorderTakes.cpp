@@ -70,15 +70,15 @@ TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
 
     const uint32_t kept = lane.m_take_id;
 
-    // An untouched take is dropped and the lane plays on.
+    // An untouched take keeps nothing, and the lane it replaced stays deleted.
     ASSERT_TRUE(r.m_rec.record(LoopLength::Bars2));
     r.run_until(r.now() + k_beat);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     ASSERT_TRUE(r.m_rec.disarm());
     r.step();
-    EXPECT_FALSE(r.m_rec.service());
-    EXPECT_EQ(r.m_rec.lane().m_take_id, kept);
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept);
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_GT(r.m_rec.lane().m_take_id, kept);
+    EXPECT_TRUE(r.m_rec.lane().empty());
 }
 
 TEST(MotionRecorderTakes, UndoAndRedoATakeAndAClear) {
@@ -121,28 +121,27 @@ TEST(MotionRecorderTakes, UndoAndRedoATakeAndAClear) {
     EXPECT_EQ(r.m_rec.lane_version(), version);
 }
 
-// A take never touched keeps nothing, however long it loops: the lane plays on.
-TEST(MotionRecorderTakes, UntouchedTakeKeepsTheLane) {
+// A take started without a touch (record()) replaces the lane at once, however long it loops.
+TEST(MotionRecorderTakes, UntouchedTakeReplacesTheLane) {
     Rig r(256, 120.0);
     start(r);
-    const uint32_t kept = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
+    r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
     ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
     r.run_until(r.now() + (3 * k_bar));
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept);  // the lane plays while it loops
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
     ASSERT_TRUE(r.m_rec.disarm());
     r.step();
-    EXPECT_FALSE(r.m_rec.service());
-    EXPECT_EQ(r.m_rec.lane().m_take_id, kept);
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_TRUE(r.m_rec.lane().empty());
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Idle);
 }
 
-// A take that keeps nothing (too short) leaves the lane that played: it plays on.
-TEST(MotionRecorderTakes, DroppedTakeKeepsThePlayingLane) {
+// A take that keeps nothing (too short) still deleted the lane it replaced.
+TEST(MotionRecorderTakes, DroppedTakeDeletesTheLane) {
     Rig r(256, 120.0);
     start(r);
-    const uint32_t kept = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
+    r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
     r.run_until(r.now() + k_beat);
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
     r.m_pad.touch(1, 0.3f, 0.3f);
@@ -150,10 +149,8 @@ TEST(MotionRecorderTakes, DroppedTakeKeepsThePlayingLane) {
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     r.m_pad.release(1);
     r.step();  // too short: dropped
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
-    const size_t from = r.m_gate.size() + 2048;  // after the release glide
     r.run_until(r.now() + k_beat);
-    for (size_t i = from; i < r.m_gate.size(); ++i) { ASSERT_EQ(r.m_gate[i], 1) << i; }
-    EXPECT_FALSE(r.m_rec.service());
-    EXPECT_EQ(r.m_rec.lane().m_take_id, kept);
+    EXPECT_EQ(r.m_gate.back(), 0);
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_TRUE(r.m_rec.lane().empty());
 }

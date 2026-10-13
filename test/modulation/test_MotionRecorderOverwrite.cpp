@@ -84,61 +84,54 @@ TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
     EXPECT_EQ(lane.m_x[500], 0.2f);
 }
 
-TEST(MotionRecorderOverwrite, LiftedPartsKeepThePlayingLane) {
+// A new take starts from nothing: the lane that played stops when it starts, and what the finger
+// did not touch is lifted, not the old loop.
+TEST(MotionRecorderOverwrite, NewTakeStartsEmpty) {
     Rig r(256, 120.0);
     start(r);
-    r.m_rec.load_lane(motion_test::beats_lane(8.0, 100));
-    const MotionLane loaded = r.m_rec.lane();
+    const uint32_t old = r.m_rec.load_lane(motion_test::beats_lane(8.0, 100));
     r.step();
     ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
     r.run_until(2 * k_beat);
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, old);  // armed: the old lane still plays
     r.m_pad.touch(1, 0.9f, 0.9f);
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);  // recording: it stopped
     r.run_until(3 * k_beat);
     r.m_pad.release(1);
     r.run_until(6 * k_beat);
-    // Lifted: the lane plays on while the take records.
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    const size_t at = r.m_x.size() - 1;
-    const double phase = std::fmod(r.m_beat[at], 8.0) / 8.0;
-    EXPECT_NEAR(r.m_x[at], 0.5 + (0.4 * std::sin(2.0 * 3.14159265358979323846 * phase)), 1e-3);
-    // Next pass: the overdub plays.
-    r.run_until(8 * k_beat + 2 * k_beat + k_beat / 2);
-    EXPECT_NEAR(r.m_x.back(), 0.9f, 1e-6);
-
-    ASSERT_TRUE(r.m_rec.disarm());
-    r.step();
+    for (size_t i = r.m_gate.size() - 12000; i < r.m_gate.size(); ++i) {
+        ASSERT_EQ(r.m_gate[i], 0) << i;  // lifted: nothing of the old lane
+    }
     ASSERT_TRUE(r.m_rec.service());
     const MotionLane lane = r.m_rec.lane();
     ASSERT_EQ(lane.num_points(), 800u);
-    for (size_t i = 0; i < lane.num_points(); ++i) {
-        if (i >= 200 && i < 300) {
-            ASSERT_EQ(lane.m_x[i], 0.9f) << i;
-        } else if (i < 190 || i > 310) {
-            ASSERT_NEAR(lane.m_x[i], loaded.m_x[i], 1e-4) << i;
-            ASSERT_NEAR(lane.m_y[i], loaded.m_y[i], 1e-4) << i;
-        }
-        ASSERT_EQ(lane.m_gate[i], 1) << i;
-    }
+    EXPECT_EQ(lane.m_x[250], 0.9f);
+    EXPECT_EQ(lane.m_gate[250], 1);
+    EXPECT_EQ(lane.m_gate[500], 0);
+    EXPECT_EQ(lane.m_x[500], 0.9f);  // held at the release
 
-    // One take, one undo step.
+    // One take, one undo step: the old lane comes back.
     ASSERT_TRUE(r.m_rec.undo());
-    EXPECT_EQ(r.m_rec.lane().m_x, loaded.m_x);
+    EXPECT_EQ(r.m_rec.lane().m_x, motion_test::beats_lane(8.0, 100).m_x);
 }
 
-TEST(MotionRecorderOverwrite, UntouchedTakeKeepsTheLane) {
+// A take that keeps nothing still deleted the lane it replaced; undo brings it back.
+TEST(MotionRecorderOverwrite, UntouchedTakeDeletesTheLane) {
     Rig r(256, 120.0);
     start(r);
-    const uint32_t kept = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
+    r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
     r.step();
     ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
     r.run_until(3 * k_bar);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
     ASSERT_TRUE(r.m_rec.disarm());
     r.step();
-    EXPECT_FALSE(r.m_rec.service());
-    EXPECT_EQ(r.m_rec.lane().m_take_id, kept);
-    EXPECT_EQ(r.m_rec.snapshot().m_take_id, kept);
-    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+    EXPECT_TRUE(r.m_rec.service());
+    EXPECT_TRUE(r.m_rec.lane().empty());
+    ASSERT_TRUE(r.m_rec.undo());
+    EXPECT_FALSE(r.m_rec.lane().empty());
 }
 
 namespace {

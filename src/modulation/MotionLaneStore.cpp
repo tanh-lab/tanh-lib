@@ -90,7 +90,7 @@ bool MotionLaneStore::submit(const MotionLoopView& take,
 }
 
 MotionLaneSource MotionLaneStore::slot_source(const Slot& slot) const TANH_NONBLOCKING_FUNCTION {
-    return {.m_view = slot.m_view, .m_seed = slot.m_view, .m_id = slot.m_id, .m_version = 0};
+    return {.m_view = slot.m_view, .m_id = slot.m_id, .m_version = 0};
 }
 
 // A slot turns Published after service() made its lane, possibly after this block's read
@@ -130,12 +130,6 @@ MotionLaneSource MotionLaneStore::select(const MotionPlayedLane& published)
                      .m_length = lane.m_length,
                      .m_anchor = lane.m_anchor,
                      .m_seam = lane.m_seam < n ? lane.m_seam : 0};
-    source.m_seed = source.m_view;
-    if (published.m_seed_x.size() >= n && published.m_seed_y.size() >= n &&
-        !published.m_seed_x.empty()) {
-        source.m_seed.m_x = published.m_seed_x.data();
-        source.m_seed.m_y = published.m_seed_y.data();
-    }
     return source;
 }
 
@@ -185,14 +179,10 @@ void MotionLaneStore::publish_played(MotionLane lane) {
     const float smoothing = m_smoothing.load(std::memory_order_relaxed);
     const LoopEnd loop_end = m_loop_end.load(std::memory_order_relaxed);
     PlayedCurve curve = make_played_curve(lane, smoothing, loop_end);
-    PlayedCurve seed;
-    if (smoothing > 0.0f) { seed = make_played_curve(lane, 0.0f, loop_end); }
     const uint32_t version = ++m_played_version;
     m_lanes.replace([&](MotionPlayedLane& l) {
         l.m_x = std::move(curve.m_x);
         l.m_y = std::move(curve.m_y);
-        l.m_seed_x = std::move(seed.m_x);
-        l.m_seed_y = std::move(seed.m_y);
         l.m_smoothed = curve.m_smoothed;
         l.m_version = version;
         l.m_lane = std::move(lane);

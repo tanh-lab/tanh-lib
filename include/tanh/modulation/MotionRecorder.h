@@ -166,7 +166,7 @@ public:
 
     /// Publish handed-over takes; call from a message-thread timer at 10 Hz or more.
     /// Returns true if a new lane was published.
-    bool service() { return m_store.service(); }
+    bool service();
 
     /// Replace the lane (preset load). Clamps the points, resamples down to the capacity and
     /// returns the new take id, or 0 if @p lane is malformed.
@@ -270,6 +270,9 @@ private:
     uint32_t m_num_samples = 0;
     std::atomic<uint32_t> m_take_serial{0};  // written by the audio thread, read by clear()
     std::atomic<bool> m_clear_takes{false};  // clear(): end the take at the next block
+    // A take that kept nothing: the id of the lane it replaced, for service() to delete.
+    std::atomic<uint32_t> m_clear_request{0};
+    uint32_t m_replaced_id = 0;  // the lane a take replaced: it no longer plays
     int m_sig_num = 4;
     int m_sig_denom = 4;
     LoopLength m_arm_length = LoopLength::Free;

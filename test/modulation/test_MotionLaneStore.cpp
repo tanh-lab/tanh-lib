@@ -153,7 +153,7 @@ TEST(MotionLaneStore, RevisionsOfOneTakeAreOneUndoStep) {
     EXPECT_EQ(store->lane().m_x, second.m_x);
 }
 
-TEST(MotionLaneStore, SmoothedLaneKeepsAnUnsmoothedSeed) {
+TEST(MotionLaneStore, SmoothedLanePlaysItsSmoothedCurve) {
     auto store = make_store();
     const Take take;
     ASSERT_GT(store->load(lane_of(take), k_max_points), 0u);
@@ -162,12 +162,8 @@ TEST(MotionLaneStore, SmoothedLaneKeepsAnUnsmoothedSeed) {
     EXPECT_NE(store->version(), version);
     const MotionLane lane = lane_of(take);
     const auto smoothed = thl::modulation::make_played_curve(lane, 0.6f, LoopEnd::Smooth);
-    const auto closed = thl::modulation::make_played_curve(lane, 0.0f, LoopEnd::Smooth);
     const MotionLaneSource source = select(*store);
-    for (size_t i = 0; i < 400; i += 13) {
-        EXPECT_EQ(source.m_view.m_x[i], smoothed.m_x[i]) << i;
-        EXPECT_EQ(source.m_seed.m_x[i], closed.m_x[i]) << i;
-    }
+    for (size_t i = 0; i < 400; i += 13) { EXPECT_EQ(source.m_view.m_x[i], smoothed.m_x[i]) << i; }
     EXPECT_EQ(store->played_lane().m_x, smoothed.m_x);
     EXPECT_EQ(store->lane().m_x, take.m_x);
 }

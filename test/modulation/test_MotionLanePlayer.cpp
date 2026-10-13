@@ -52,7 +52,6 @@ struct Loop {
                            .m_timebase = timebase,
                            .m_length = length,
                            .m_anchor = anchor};
-        m_source.m_seed = m_source.m_view;
     }
     // The loop's x at @p phase (loop units).
     [[nodiscard]] double x_at(double phase) const {

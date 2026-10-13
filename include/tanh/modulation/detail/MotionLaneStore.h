@@ -21,10 +21,6 @@ struct MotionPlayedLane {
     MotionLane m_lane;       ///< raw, as published
     std::vector<float> m_x;  ///< what plays: seam closed and smoothed
     std::vector<float> m_y;
-    /// The lane with its seam closed but unsmoothed, when m_x / m_y differ from it: what an
-    /// overwriting take starts from, so overdubs are not smoothed again. Empty: m_x / m_y.
-    std::vector<float> m_seed_x;
-    std::vector<float> m_seed_y;
     bool m_smoothed = false;  ///< m_x / m_y differ from the raw lane
     uint32_t m_version = 0;   ///< per publication, also for a new curve of the same lane
 };
@@ -32,7 +28,6 @@ struct MotionPlayedLane {
 /// What the audio thread plays in one block: the published lane or a submitted take.
 struct MotionLaneSource {
     MotionLoopView m_view;   ///< what plays
-    MotionLoopView m_seed;   ///< the same, unsmoothed
     uint32_t m_id = 0;       ///< take id; 0: nothing
     uint32_t m_version = 0;  ///< a new curve of the same id (smoothing): glide in place
     /// What plays differs from the take as it was handed over (smoothing, LoopEnd::Jump).

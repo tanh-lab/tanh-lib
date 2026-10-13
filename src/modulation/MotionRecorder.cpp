@@ -39,6 +39,7 @@ void MotionRecorder::prepare(double sample_rate,
         m_takes.abort();  // the lane that played plays on
         m_aborted = true;
     }
+    m_replaced_id = 0;
     m_armed = false;
     m_force_start = false;
     m_finish_pending = false;
@@ -97,6 +98,21 @@ bool MotionRecorder::set_reverse(bool reverse) {
 bool MotionRecorder::set_playback_length(LoopLength length) {
     return m_commands.try_push(
         {.m_kind = CommandKind::PlaybackLength, .m_arg = static_cast<uint8_t>(length)});
+}
+
+bool MotionRecorder::service() {
+    bool published = m_store.service();
+    // A take that kept nothing deleted the lane it replaced, unless a newer one came since.
+    const uint32_t replaced = m_clear_request.exchange(0, std::memory_order_acq_rel);
+    if (replaced != 0) {
+        uint32_t id = 0;
+        m_store.read_lane([&](const MotionLane& lane) { id = lane.m_take_id; });
+        if (id == replaced) {
+            m_store.clear();
+            published = true;
+        }
+    }
+    return published;
 }
 
 uint32_t MotionRecorder::clear() {
@@ -175,26 +191,15 @@ void MotionRecorder::start_take(const TransportInfo& t,
                                 float x,
                                 float y,
                                 const detail::MotionLaneSource& playing) TANH_NONBLOCKING_FUNCTION {
-    // A looper starts as what plays (unsmoothed, as the playback length stretches it).
-    detail::MotionLoopView seed;
-    if (m_play_enabled && !m_reverse && !playing.empty()) {
-        seed = playing.m_seed;
-        const uint32_t bars = loop_length_bars(m_playback_length);
-        if (bars > 0) {
-            seed.m_timebase = MotionTimebase::Beats;
-            seed.m_length = static_cast<double>(bars) * static_cast<double>(m_sig_num) * 4.0 /
-                            static_cast<double>(m_sig_denom);
-            seed.m_anchor = 0.0;
-        }
-    }
+    // A new take starts empty: the lane that played stops now and is replaced by the take, or
+    // deleted if the take keeps nothing.
     const detail::MotionTakeStart start{.m_length = m_arm_length,
                                         .m_bpm = t.m_bpm,
                                         .m_sig_num = m_sig_num,
                                         .m_sig_denom = m_sig_denom,
                                         .m_beat = beat,
                                         .m_x = x,
-                                        .m_y = y,
-                                        .m_seed = seed};
+                                        .m_y = y};
     if (m_takes.start(start) == detail::MotionTakeRecorder::Start::Refused) {
         m_refused = true;  // the loop does not fit at the minimum resolution
         m_armed = false;
@@ -203,6 +208,10 @@ void MotionRecorder::start_take(const TransportInfo& t,
     }
     m_take_serial.fetch_add(1, std::memory_order_acq_rel);
     m_force_start = false;
+    if (!playing.empty()) {
+        m_replaced_id = playing.m_id;
+        m_handed_over = true;  // playback stops from this sample
+    }
 }
 
 void MotionRecorder::submit_finished() TANH_NONBLOCKING_FUNCTION {
@@ -229,9 +238,13 @@ void MotionRecorder::on_take(TakeEvent event) TANH_NONBLOCKING_FUNCTION {
             return;
         case TakeEvent::Dropped:
         case TakeEvent::Cancelled:
-            // Nothing kept: the lane that played plays on.
+            // Nothing kept: the lane it replaced stays deleted (service() publishes the empty
+            // lane; undo brings it back).
             m_armed = false;
             m_force_start = false;
+            if (m_replaced_id != 0) {
+                m_clear_request.store(m_replaced_id, std::memory_order_release);
+            }
             return;
     }
 }
@@ -282,8 +295,11 @@ void MotionRecorder::process(const TransportInfo& t,
         if (m_handed_over) { playing = m_store.select(scope.data()); }
     }
     m_handed_over = false;
-    const bool glide =
-        m_player.begin(clock, m_play_enabled ? playing : detail::MotionLaneSource{}, settings());
+    // What plays: nothing while stopped, nor the lane a take replaced.
+    auto audible = [&](const detail::MotionLaneSource& source) {
+        return m_play_enabled && source.m_id != m_replaced_id ? source : detail::MotionLaneSource{};
+    };
+    const bool glide = m_player.begin(clock, audible(playing), settings());
     m_output.begin(glide);
 
     TransportInfo info = t;
@@ -322,11 +338,7 @@ void MotionRecorder::process(const TransportInfo& t,
         if (m_handed_over) {  // plays from this sample
             m_handed_over = false;
             playing = m_store.select(scope.data());
-            if (m_player.switch_to(i,
-                                   m_play_enabled ? playing : detail::MotionLaneSource{},
-                                   settings())) {
-                m_output.glide();
-            }
+            if (m_player.switch_to(i, audible(playing), settings())) { m_output.glide(); }
         }
 
         // Playback, then the output.
