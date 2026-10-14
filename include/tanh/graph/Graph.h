@@ -111,12 +111,19 @@ public:
 
 private:
     using BufferIndex = uint32_t;
+    struct Delay;
     struct Node;
+    struct Source;
     struct ProcessingStep;
     struct CompiledGraph;
 
     struct RetiredNode {
         std::unique_ptr<Node> m_node;
+        uint64_t m_last_generation;  // newest compiled version that may still use it
+    };
+
+    struct RetiredDelay {
+        std::unique_ptr<Delay> m_delay;
         uint64_t m_last_generation;  // newest compiled version that may still use it
     };
 
@@ -139,7 +146,7 @@ private:
     bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
     void apply_fade(thl::core::BufferView buffer) TANH_NONBLOCKING_FUNCTION;
     static void mix_sources(const CompiledGraph& compiled,
-                            std::span<const BufferIndex> sources,
+                            std::span<Source> sources,
                             Node& node,
                             thl::core::BufferView destination) TANH_NONBLOCKING_FUNCTION;
     static void run_step(const ProcessingStep& step,
@@ -156,6 +163,7 @@ private:
     std::map<NodeId, std::unique_ptr<Node>> m_nodes;
     std::set<Connection> m_connections;
     std::vector<RetiredNode> m_retired_nodes;
+    std::vector<RetiredDelay> m_retired_delays;
     double m_sample_rate = 0.0;
     size_t m_max_block_size = 0;
     size_t m_num_channels = 0;
