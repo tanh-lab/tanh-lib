@@ -701,6 +701,35 @@ TEST(Graph, DryDelayFollowsALatencyChange) {
     expect_impulse_response(graph, 150);
 }
 
+TEST(Graph, CommitStaysSilentUntilTheNewLatencyHasPassed) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+    process_blocks(graph, 1.0f, k_latency / k_block + 1);  // the latent node outputs 1.0
+
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+
+    std::vector<float> output;  // channel 0 over the fade-out, the hold and the fade-in
+    for (size_t block = 0; block < k_fade_blocks + k_latency / k_block + 2; ++block) {
+        const auto buffer = process_blocks(graph, 1.0f, 1);
+        const float* samples = buffer.get_read_pointer(0);
+        output.insert(output.end(), samples, samples + k_block);
+    }
+
+    size_t longest_silence = 0;
+    size_t silence = 0;
+    for (const float sample : output) {
+        silence = sample == 0.0f ? silence + 1 : 0;
+        longest_silence = std::max(longest_silence, silence);
+    }
+    EXPECT_GE(longest_silence, k_latency);
+    EXPECT_FLOAT_EQ(output.back(), 1.0f);
+}
+
 TEST(Graph, ReportsTheLatencyOfItsSlowestPath) {
     Graph graph;
     const auto shorter = graph.add_node<LatencyProcessor>(40);
@@ -1153,8 +1182,7 @@ TEST(Graph, OuterCommitRealignsToARisingNestedMaxLatency) {
     ASSERT_TRUE(outer.commit());
     EXPECT_EQ(outer.max_latency_samples(), k_latency);
 
-    process_blocks(outer, 0.0f, k_fade_blocks + 2);  // the fades, the crossfades and one block of
-                                                     // lag
+    process_blocks(outer, 0.0f, k_fade_blocks + 2);  // fades, crossfades, one block of lag
     expect_impulse_response(outer, k_latency);
 }
 

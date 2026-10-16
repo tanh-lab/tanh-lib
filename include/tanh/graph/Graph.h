@@ -37,7 +37,8 @@ struct Connection {
 /// channel count given to prepare().
 ///
 /// Edits are made on the control thread and take effect at commit(). The audio thread then fades
-/// out the current version, switches to the committed one and fades it in.
+/// out the current version, switches to the committed one and, once its latency has passed, fades
+/// it in.
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
     /// How a node combines its sources.
@@ -190,6 +191,7 @@ private:
     thl::dsp::utils::SmoothedValue m_fade;
     size_t m_fade_samples = 0;
     bool m_fading_out = false;
+    size_t m_hold_samples = 0;  // silence after a switch, until the latency has passed
 };
 
 }  // namespace thl::graph
