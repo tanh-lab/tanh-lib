@@ -1435,7 +1435,7 @@ TEST(Graph, AddPreparedNodePreparesOnlyOnAMismatch) {
 }
 
 // Rewiring back and forth reuses the freed versions' buffers; the output stays right.
-TEST(Graph, RewiringKeepsTheOutputWithReusedBuffers) {
+TEST(Graph, RepeatedRewiringKeepsTheOutput) {
     Graph graph;
     const auto doubler = graph.add_node<GainProcessor>(2.0f);
     const auto tripler = graph.add_node<GainProcessor>(3.0f);
