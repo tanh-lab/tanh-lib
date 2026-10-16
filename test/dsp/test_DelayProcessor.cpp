@@ -84,6 +84,25 @@ TEST(DelayProcessor, ZeroDelayPassesThroughAndKeepsHistory) {
     }
 }
 
+TEST(DelayProcessor, WriteKeepsHistoryWithoutChangingTheBuffer) {
+    DelayProcessor delay(8);
+    delay.prepare(k_sample_rate, 8, 1);
+    delay.set_delay_samples(4);
+
+    BufferF buffer(1, 8, k_sample_rate);
+    for (size_t i = 0; i < 8; ++i) { buffer.get_write_pointer(0)[i] = static_cast<float>(i + 1); }
+    delay.write(BufferView(buffer));
+    for (size_t i = 0; i < 8; ++i) {
+        EXPECT_FLOAT_EQ(buffer.get_read_pointer(0)[i], static_cast<float>(i + 1));
+    }
+
+    BufferF next(1, 4, k_sample_rate);
+    delay.process(BufferView(next));
+    for (size_t i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(next.get_read_pointer(0)[i], static_cast<float>(i + 5));
+    }
+}
+
 TEST(DelayProcessor, NoMaxDelayPassesThrough) {
     DelayProcessor delay;
     delay.prepare(k_sample_rate, 8, 1);
