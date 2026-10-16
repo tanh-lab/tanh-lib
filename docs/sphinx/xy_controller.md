@@ -25,7 +25,13 @@ The constructor registers the sources; the matrix's `prepare()` prepares the
 controller. `route(axis, target, options, voice)` creates a routing the
 controller owns and returns its id. `XYRouteOptions` sets the combine mode,
 priority, hold priority, depth, normalized replace range, enabled flag and
-decimation; its defaults are those of `ModulationRouting`. The destructor
+decimation; its defaults are those of `ModulationRouting`.
+`m_share_with_host` shares the target with the host as a DAW's Touch mode does:
+the finger (or a playing take, or the latch) and the host's automation or knob
+hand the parameter over to each other with crossfades (see
+[Sharing a parameter with the host](host_parameters.md#sharing-a-parameter-with-the-host));
+it replaces `m_skip_during_gesture`, which lets a held knob win only while it
+is held. The destructor
 removes the owned routings and then the sources, waiting for the audio thread
 to let go of them. The matrix must outlive the controller.
 

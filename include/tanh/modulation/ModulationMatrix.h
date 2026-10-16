@@ -59,6 +59,10 @@ struct ProcessingConfig {
     std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>> m_routings_by_source;
     std::vector<ResolvedTarget*> m_active_targets;
 
+    // Targets shared with the host (ModulationRouting::m_share_with_host): the
+    // hand-over pass runs over these after the schedule.
+    std::vector<ResolvedTarget*> m_host_share_targets;
+
     // Every registered source — populated in rebuild_schedule_with_lock(). Used
     // by process() to run the pre_process_block() drain pass exactly once per
     // source per block, before any ScheduleStep. Contains every source added
@@ -295,6 +299,12 @@ public:
     bool set_routing_enabled(uint32_t routing_id, bool enabled);
     bool set_routing_enabled(std::string_view source_id, std::string_view target_id, bool enabled);
 
+    /// Times of the host hand-over of every target shared with the host
+    /// (ModulationRouting::m_share_with_host). Any thread; the audio thread
+    /// picks them up at the next block. Defaults: HostShareTimes.
+    void set_host_share_times(const HostShareTimes& times);
+    [[nodiscard]] HostShareTimes host_share_times() const;
+
     /// Apply several enable flags as one batch: every audio block sees either
     /// none or all of them, so switching between two sets of routings never
     /// gives a block in which neither or both write. The audio thread never
@@ -367,6 +377,10 @@ private:
 
     void apply_routing_change_points_with_scope(const ResolvedRouting& routing, size_t num_samples);
 
+    // Host hand-over pass over config.m_host_share_targets, after the schedule.
+    void apply_host_share_with_scope(const ProcessingConfig& config,
+                                     size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+
     // Tarjan SCC helper
     void build_schedule_from_graph(
         const std::vector<std::string>& source_ids,
@@ -392,6 +406,12 @@ private:
     // freshness tie-break. Survives schedule rebuilds — the user-visible
     // "samples since prepare" value is not invalidated by routing changes.
     uint64_t m_num_processed_samples = 0;
+
+    // HostShareTimes, written by set_host_share_times() (any thread), loaded
+    // once per block by the hand-over pass.
+    std::atomic<float> m_host_share_take_ms{HostShareTimes::k_take_ms};
+    std::atomic<float> m_host_share_return_ms{HostShareTimes::k_return_ms};
+    std::atomic<float> m_host_share_hold_ms{HostShareTimes::k_hold_ms};
 
     // Writer mutex — serializes all non-RT methods
     std::mutex m_writer_mutex;

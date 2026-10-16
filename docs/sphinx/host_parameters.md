@@ -24,6 +24,7 @@ struct ParameterBinding {
     ParameterDefinition m_def;                        // range, type, flags, scope
     ParameterBaseValue m_base;                        // std::atomic<float/double/int/bool>*
     const std::atomic<bool>* m_in_gesture = nullptr;  // nullptr: never in a gesture
+    const std::atomic<uint64_t>* m_host_change_stamp = nullptr;  // nullptr: no host writes
 };
 
 class ParameterBackend {
@@ -44,6 +45,8 @@ public:
   the C++ type to a `ParameterType`).
 - `m_in_gesture` lets routings with `m_skip_during_gesture` pause while the user
   drags the control.
+- `m_host_change_stamp` tells routings with `m_share_with_host` when the host
+  wrote the base value (see below).
 
 ### A JUCE adapter (sketch)
 
@@ -122,6 +125,73 @@ Keep the scope open while the processors read their `SmartHandle`s: the
 modulation buffers are RCU-protected. With [XY controllers](xy_controller.md)
 or other `BlockProcessor`s that follow the transport, pass the block's
 `TransportInfo` to `process_with_scope()`.
+
+## Sharing a parameter with the host
+
+A Replace or ReplaceHold routing with `ModulationRouting::m_share_with_host`
+(`XYRouteOptions::m_share_with_host` for an XY pad) shares its target with the
+host as a DAW's Touch automation mode does. There are two writers:
+
+- the **host**, the base value: active while it changes (automation, a gesture
+  in its UI, anything the plugin did not write itself) plus `m_hold_ms` after
+  the last change, and during a gesture (`m_in_gesture`);
+- the **modulation**, the target's Replace output: active while a routing's
+  source is driven, that is `ModulationSource::output_activity()` where the
+  source has one (an XY pad: touch, playback or latch), else its output-active
+  mask.
+
+The last writer to become active owns the parameter (the modulation when both
+start in the same sample). When the owner stops being active, the other takes
+over if it is active; otherwise the owner keeps the parameter and its value
+(ReplaceHold holds its last value). Plain Replace writes nothing once its
+source stops, so the parameter goes back to the host; so does a disabled
+routing.
+
+Every hand-over is a crossfade: a weight `w` in [0, 1] per target, heard
+`base + w * (modulation - base)`, moves linearly toward the owner per sample,
+in `m_take_ms` to the modulation and `m_return_ms` back. The base value is
+loaded once per block; at `w == 0` the target reads the live base. While `w`
+moves, the matrix flags a change point on the target where the ramp starts and
+ends and at least every `HostShareTimes::k_change_point_interval` (32) samples,
+so consumers that split blocks at change points follow the ramp.
+
+| `HostShareTimes` | default | |
+|---|---|---|
+| `m_take_ms` | 20 ms | ramp to the modulation |
+| `m_return_ms` | 50 ms | ramp back to the host |
+| `m_hold_ms` | 300 ms | the host stays active after its last change |
+
+`ModulationMatrix::set_host_share_times()` sets them for the whole matrix (any
+thread, applied at the next block).
+
+Sharing belongs to the target: one routing that opts in makes all Replace /
+ReplaceHold routings on the target one writer, composed by priority as usual,
+and `m_skip_during_gesture` is ignored there (a gesture is host activity). Only
+global targets fed by global sources are shared; a polyphonic target keeps
+plain Replace and logs a warning. The hand-over runs after all sources, so a
+source that reads a shared target mid-block sees it before the hand-over.
+
+### Host changes
+
+The backend reports host writes through `m_host_change_stamp`: any change of
+the value means "the host changed the base value". The matrix only compares it
+with the value it saw last, once per block, so a change counts from the start
+of the block that sees it. The backend side is one lock-free atomic operation,
+callable from any thread, the audio thread included:
+
+```cpp
+// one per parameter, next to m_gestures
+std::array<std::atomic<uint64_t>, k_num_parameters> m_host_changes{};
+
+binding.m_host_change_stamp = &m_host_changes[index];
+
+// wherever the backend learns of a host write (parameterValueChanged, or a
+// per-block comparison with the last value the plugin wrote itself):
+m_host_changes[index].fetch_add(1, std::memory_order_relaxed);
+```
+
+Changes the plugin makes itself must not bump the stamp, or the plugin takes
+the parameter from its own modulation.
 
 ## Threading contract
 

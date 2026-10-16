@@ -12,6 +12,7 @@
 #include "tanh/modulation/ParameterBackend.h"
 #include "tanh/parameters/ModulationScope.h"
 #include "tanh/parameters/ParameterDefinitions.h"
+#include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl::modulation {
 
@@ -203,6 +204,13 @@ struct MonoBuffers {
     std::vector<uint32_t> m_replace_priority;
     std::vector<uint64_t> m_replace_freshness;
 
+    // Host hand-over (ModulationRouting::m_share_with_host) — only allocated
+    // if m_has_host_share (which implies m_has_replace). m_replace_live[i] is
+    // 1 where a Replace routing's source was active (a live write, not a held
+    // one), whether or not it won the sample.
+    bool m_has_host_share = false;
+    std::vector<uint8_t> m_replace_live;
+
     // Change points — allocated whenever m_has_additive || m_has_replace.
     // uint8_t (not bool) so callers can write through a pointer.
     std::vector<uint8_t> m_change_point_flags;
@@ -210,16 +218,22 @@ struct MonoBuffers {
 
     MonoBuffers() = default;
 
-    MonoBuffers(size_t block_size, bool has_additive, bool has_replace, bool has_replace_priority)
+    MonoBuffers(size_t block_size,
+                bool has_additive,
+                bool has_replace,
+                bool has_replace_priority,
+                bool has_host_share = false)
         : m_block_size(block_size)
         , m_has_additive(has_additive)
         , m_has_replace(has_replace)
-        , m_has_replace_priority(has_replace_priority) {
+        , m_has_replace_priority(has_replace_priority)
+        , m_has_host_share(has_host_share && has_replace) {
         if (m_has_additive) { m_additive_buffer.assign(block_size, 0.0f); }
         if (m_has_replace) {
             m_replace_buffer.assign(block_size, 0.0f);
             m_replace_active.assign(block_size, 0);
         }
+        if (m_has_host_share) { m_replace_live.assign(block_size, 0); }
         if (m_has_replace_priority) {
             m_replace_priority.assign(block_size, 0u);
             m_replace_freshness.assign(block_size, uint64_t{0});
@@ -245,6 +259,7 @@ struct MonoBuffers {
             std::ranges::fill(m_replace_priority, uint32_t{0});
             std::ranges::fill(m_replace_freshness, uint64_t{0});
         }
+        if (m_has_host_share) { std::ranges::fill(m_replace_live, uint8_t{0}); }
     }
 
     void build_change_points() {
@@ -253,6 +268,52 @@ struct MonoBuffers {
         for (size_t i = 0; i < m_block_size; ++i) {
             if (m_change_point_flags[i]) { m_change_points.push_back(static_cast<uint32_t>(i)); }
         }
+    }
+};
+
+// Which writer owns a target shared with the host (ModulationRouting::m_share_with_host).
+enum class HostShareOwner : uint8_t { Host, Modulation };
+
+// Audio-thread state of the host hand-over of one target. Lives on the
+// ResolvedTarget, so it survives schedule rebuilds; only m_reset_pending is
+// written by another thread (the writer, when the target becomes shared and
+// in prepare()), and the audio thread clears the rest when it sees it.
+struct HostShareState {
+    // Hand-over weight: heard = host + m_weight * (modulation - host).
+    float m_weight = 0.0f;
+    HostShareOwner m_owner = HostShareOwner::Host;
+
+    // Last value the modulation wrote (live or held), the value the weight
+    // blends toward and fades out of.
+    float m_modulation_value = 0.0f;
+
+    // Edge detectors for "became active", from the previous sample.
+    bool m_host_was_active = false;
+    bool m_modulation_was_live = false;
+
+    // Last host-change stamp seen; m_has_stamp is false until the first load.
+    bool m_has_stamp = false;
+    uint64_t m_last_stamp = 0;
+
+    // Samples the host stays active: re-armed to block + hold by a stamp
+    // change or a gesture, counted down per sample.
+    uint64_t m_host_active_remaining = 0;
+
+    // Samples until the next change point while the weight moves.
+    uint32_t m_change_point_countdown = 0;
+
+    std::atomic<bool> m_reset_pending{true};
+
+    void reset() TANH_NONBLOCKING_FUNCTION {
+        m_weight = 0.0f;
+        m_owner = HostShareOwner::Host;
+        m_modulation_value = 0.0f;
+        m_host_was_active = false;
+        m_modulation_was_live = false;
+        m_has_stamp = false;
+        m_last_stamp = 0;
+        m_host_active_remaining = 0;
+        m_change_point_countdown = 0;
     }
 };
 
@@ -295,6 +356,10 @@ struct ResolvedTarget {
     // pointed-to atomics are owned by the backend and must outlive the matrix.
     ParameterBaseValue m_base;
     const std::atomic<bool>* m_in_gesture = nullptr;
+    const std::atomic<uint64_t>* m_host_change_stamp = nullptr;
+
+    // Host hand-over state (audio thread), used while the target is shared.
+    HostShareState m_host_share;
 
     // ── Cold fields (writer-only; not read on the audio hot path) ────────
     std::string m_id;
@@ -310,6 +375,10 @@ struct ResolvedTarget {
     // Unlike m_voice / m_mono, this is authoritative metadata — it does
     // not change based on which routings currently exist.
     ModulationScope m_scope = k_global_scope;
+
+    // Whether the last rebuild shared this target with the host (writer-only),
+    // so the next one that shares it again resets m_host_share.
+    bool m_host_share_published = false;
 
     // Owner of the currently-published VoiceBuffers / MonoBuffers. Touched only
     // under m_writer_mutex. Paired with the atomic pointers above.

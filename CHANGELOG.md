@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Host hand-over, as a DAW's Touch mode: a Replace / ReplaceHold routing with
+  `ModulationRouting::m_share_with_host` (`XYRouteOptions::m_share_with_host`) shares
+  its target with the host. The last of the two writers to become active owns it;
+  when the owner stops, the other takes over if active, else the value stays. Every
+  hand-over crossfades (`HostShareTimes`: take 20 ms, return 50 ms, host hold 300 ms;
+  `ModulationMatrix::set_host_share_times()`), flagging change points at least every
+  32 samples while it moves. Host activity: `ParameterBinding::m_host_change_stamp`
+  (a counter the backend bumps on every host write) and the gesture flag.
+  `ModulationSource::output_activity()` separates "driven" from "value valid" (an XY
+  pad's x / y: touch, playback or latch); `"share_with_host": true` is serialised.
+  Tests: `HostShare.*`. Docs: `host_parameters.md`.
 - `tanh::Parameters`: what a parameter is (`ParameterDefinition`, `Range`,
   `ModulationScope`, `parameter_type_of<T>()`) and the lookup errors
   (`ParameterNotFoundException`, `ParameterTypeMismatchException`), shared by State

@@ -31,6 +31,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MotionClock.cpp
 	test_MotionHistory.cpp
 	test_OversizedBlocks.cpp
+	test_HostShare.cpp
 )
 
 # The touch pad and the motion helpers are private to tanh::Modulation (src/modulation):

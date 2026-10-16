@@ -63,6 +63,7 @@ public:
 
     void prepare(double /*sample_rate*/, size_t samples_per_block, uint32_t voice_count) override {
         resize_buffers(samples_per_block, voice_count);
+        m_output_activity.assign(samples_per_block, 0);
     }
 
     void process(size_t num_samples, size_t offset) override;
@@ -111,15 +112,18 @@ void XYController::Output::process(size_t num_samples, size_t offset) {
     const size_t n = m_controller.m_num_samples;
     float* out = m_output_buffer.data();
     uint8_t* mask = get_output_active().data();
+    uint8_t* activity = m_output_activity.data();
 
     if (n == 0) {
         std::fill(out + offset, out + end, m_last_output);
         std::fill(mask + offset, mask + end, uint8_t{0});
+        std::fill(activity + offset, activity + end, uint8_t{0});
         return;
     }
 
     // x and y are live once the voice has a value, so a routing enabled later
-    // picks the dot up at once; active is the gate.
+    // picks the dot up at once; active is the gate. The writer activity of all
+    // three is the gate (touch, playback or latch), for the host hand-over.
     const float* values = nullptr;
     const uint8_t* gate = v.m_xy_mask.data();
     switch (m_axis) {
@@ -135,6 +139,7 @@ void XYController::Output::process(size_t num_samples, size_t offset) {
         const size_t source = std::min(i, n - 1);
         out[i] = value_at(source);
         mask[i] = gate[source];
+        activity[i] = v.m_active[source];
     }
     for (size_t k = 0; k < v.m_num_change_points; ++k) {
         const uint32_t cp = v.m_change_points[k];
@@ -246,6 +251,7 @@ uint32_t XYController::route(XYOutput axis,
     r.m_enabled = options.m_enabled;
     r.m_max_decimation = options.m_max_decimation;
     r.m_skip_during_gesture = options.m_skip_during_gesture;
+    r.m_share_with_host = options.m_share_with_host;
     const uint32_t id = m_matrix.add_routing(r);
     if (id == k_invalid_routing_id) { return id; }
     if (options.m_range_normalized) {

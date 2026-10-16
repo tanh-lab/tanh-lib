@@ -60,6 +60,10 @@ struct XYRouteOptions {
     uint32_t m_max_decimation = 0;
     /// Leave the target alone while it is in a host gesture (a knob held), so the knob wins.
     bool m_skip_during_gesture = false;
+    /// Share the target with the host as a DAW's Touch mode does
+    /// (ModulationRouting::m_share_with_host): the last of pad and host to
+    /// become active owns it, with crossfades. Replaces m_skip_during_gesture.
+    bool m_share_with_host = false;
 };
 
 /**

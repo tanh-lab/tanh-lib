@@ -5,6 +5,7 @@
 #include <tanh/parameters/ParameterExceptions.h>
 
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -55,9 +56,30 @@ struct ParameterBinding {
     ParameterBaseValue m_base;
 
     /// Gesture flag read on the audio thread for routings with
-    /// ModulationRouting::m_skip_during_gesture (relaxed load). nullptr means
-    /// the parameter is never in a gesture.
+    /// ModulationRouting::m_skip_during_gesture or m_share_with_host (relaxed
+    /// load). nullptr means the parameter is never in a gesture.
     const std::atomic<bool>* m_in_gesture = nullptr;
+
+    /**
+     * Host-change stamp, for routings with ModulationRouting::m_share_with_host
+     * (see "Sharing a parameter with the host" in host_parameters.md).
+     * nullptr means the host never writes the base value, so only gestures
+     * count as host activity.
+     *
+     * Contract:
+     * - The backend changes the stamp every time the host changes the base
+     *   value: automation, a gesture in its UI, a preset recall. Changes the
+     *   plugin makes itself must not change it.
+     * - Any new value counts: the matrix only compares the stamp with the one
+     *   it saw last, never its size. A counter bumped with
+     *   `stamp.fetch_add(1, std::memory_order_relaxed)` (or a plain relaxed
+     *   store of a new value from a single writer) is enough. Lock-free, so
+     *   callable from any thread, the audio thread included.
+     * - The matrix loads it once per block (relaxed), at the start of the hand-over
+     *   pass: a change counts from sample 0 of the block that sees it, so the
+     *   resolution is one block.
+     */
+    const std::atomic<uint64_t>* m_host_change_stamp = nullptr;
 };
 
 /**
