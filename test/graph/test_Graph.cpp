@@ -701,6 +701,98 @@ TEST(Graph, DryDelayFollowsALatencyChange) {
     expect_impulse_response(graph, 150);
 }
 
+TEST(Graph, ReportsTheLatencyOfItsSlowestPath) {
+    Graph graph;
+    const auto shorter = graph.add_node<LatencyProcessor>(40);
+    const auto longer = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(shorter && longer);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *shorter));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *longer));
+    ASSERT_TRUE(graph.connect(*shorter, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
+    prepare(graph);
+
+    EXPECT_EQ(graph.latency_samples(), k_latency);
+    EXPECT_EQ(graph.max_latency_samples(), k_latency);
+}
+
+TEST(Graph, ReportsTheSumOfAChain) {
+    Graph graph;
+    const auto first = graph.add_node<LatencyProcessor>(40);
+    const auto second = graph.add_node<LatencyProcessor>(60);
+    ASSERT_TRUE(first && second);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *first));
+    ASSERT_TRUE(graph.connect(*first, *second));
+    ASSERT_TRUE(graph.connect(*second, graph.graph_output()));
+    prepare(graph);
+
+    EXPECT_EQ(graph.latency_samples(), 100u);
+    EXPECT_EQ(graph.max_latency_samples(), 100u);
+}
+
+TEST(Graph, ReportsALatencyChangeAtTheNextBlock) {
+    Graph graph;
+    auto processor = std::make_unique<LatencyProcessor>(k_latency, 2 * k_latency);
+    LatencyProcessor* latent_processor = processor.get();
+    const auto latent = graph.add_node(std::move(processor));
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+    EXPECT_EQ(graph.latency_samples(), k_latency);
+    EXPECT_EQ(graph.max_latency_samples(), 2 * k_latency);
+
+    latent_processor->set_latency(150);
+    process_blocks(graph, 0.0f, 1);
+
+    EXPECT_EQ(graph.latency_samples(), 150u);
+    EXPECT_EQ(graph.max_latency_samples(), 2 * k_latency);
+}
+
+TEST(Graph, MaxLatencyOnlyRisesUntilPrepare) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+    EXPECT_EQ(graph.max_latency_samples(), k_latency);
+
+    const auto longer = graph.add_node<LatencyProcessor>(300);
+    ASSERT_TRUE(longer);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *longer));
+    ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(graph.max_latency_samples(), 300u);
+
+    ASSERT_TRUE(graph.remove_node(*longer));
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(graph.max_latency_samples(), 300u);
+
+    prepare(graph);
+    EXPECT_EQ(graph.max_latency_samples(), k_latency);
+    EXPECT_EQ(graph.latency_samples(), k_latency);
+}
+
+TEST(Graph, NestedGraphReportsItsLatencyToTheOuterGraph) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    const auto latent = inner.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *latent));
+    ASSERT_TRUE(inner.connect(*latent, inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+
+    EXPECT_EQ(outer.latency_samples(), k_latency);
+    EXPECT_EQ(outer.max_latency_samples(), k_latency);
+}
+
 TEST(Graph, HasUncommittedChangesTracksEdits) {
     Graph graph;
     EXPECT_FALSE(graph.has_uncommitted_changes());

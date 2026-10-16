@@ -58,6 +58,7 @@ struct Graph::CompiledGraph {
     std::vector<ProcessingStep> m_steps;  // in processing order
     std::vector<thl::core::Buffer<float>> m_buffers;
     std::vector<uint32_t> m_path_latencies;     // per buffer, set by apply_latencies()
+    uint32_t m_max_latency = 0;                 // of the output
     thl::core::Buffer<float> m_dry;             // scratch for steps that blend dry and processed
     std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
     std::vector<Source> m_output_sources;
@@ -228,9 +229,10 @@ void Graph::prepare(const double& sample_rate,
     m_num_channels = num_channels;
     m_buffer_pool.clear();  // sized for the previous prepare()
     for (auto& [id, node] : m_nodes) { prepare_node(*node); }
+    set_max_latency_samples(0);
     rebuild();
 
-    switch_to_pending();
+    if (switch_to_pending()) { set_latency_samples(apply_latencies(*m_active)); }
     m_fade.reset(m_sample_rate, k_fade_seconds);
     m_fade.set_current_and_target_value(1.0f);
     m_fade_samples = static_cast<size_t>(k_fade_seconds * m_sample_rate) + 1;
@@ -335,6 +337,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
         if (id == k_output_id) {
             compiled->m_output_sources = std::move(sources);
             compiled->m_output_node = &node;
+            compiled->m_max_latency = max_path_latency;
             continue;
         }
 
@@ -380,6 +383,9 @@ bool Graph::rebuild() {
     if (!compiled) { return false; }
 
     compiled->m_generation = m_next_generation++;
+    if (compiled->m_max_latency > max_latency_samples()) {
+        set_max_latency_samples(compiled->m_max_latency);
+    }
     publish(std::move(compiled));
     m_dirty = false;
     return true;
@@ -480,7 +486,7 @@ bool Graph::switch_to_pending() {
     return true;
 }
 
-void Graph::apply_latencies(CompiledGraph& compiled) {
+uint32_t Graph::apply_latencies(CompiledGraph& compiled) {
     auto& path_latencies = compiled.m_path_latencies;
 
     // Delays each source to the slowest source of its node; returns that path latency.
@@ -500,7 +506,7 @@ void Graph::apply_latencies(CompiledGraph& compiled) {
         step.m_dry_delay->set_delay_samples(latency);
         path_latencies[step.m_buffer] = align(step.m_sources) + latency;
     }
-    align(compiled.m_output_sources);
+    return align(compiled.m_output_sources);
 }
 
 void Graph::apply_fade(thl::core::BufferView buffer) {
@@ -643,7 +649,7 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
         return;
     }
 
-    apply_latencies(*compiled);
+    set_latency_samples(apply_latencies(*compiled));
 
     if (compiled->m_input_buffer) {
         auto& input = compiled->m_buffers[*compiled->m_input_buffer];
