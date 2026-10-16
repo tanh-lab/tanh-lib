@@ -2,6 +2,7 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/graph/Graph.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -32,6 +33,7 @@ constexpr double k_sample_rate = 48000.0;
 constexpr size_t k_ramp_blocks = 15;     // 20 ms at 48 kHz, in blocks of 64
 constexpr size_t k_fade_out_blocks = 8;  // 10 ms at 48 kHz, in blocks of 64, rounded up
 constexpr size_t k_fade_blocks = 2 * k_fade_out_blocks + 1;  // out, in, then one at full level
+constexpr uint32_t k_latency = 100;                          // longer than a block
 
 /// Overwrites the buffer with a constant: a generator.
 class ConstantProcessor final : public BaseProcessor {
@@ -124,6 +126,38 @@ private:
     int* m_destroyed;
 };
 
+/// Delays the buffer by `latency` samples and reports that as its latency.
+class LatencyProcessor final : public BaseProcessor {
+public:
+    explicit LatencyProcessor(uint32_t latency) : LatencyProcessor(latency, latency) {}
+    LatencyProcessor(uint32_t latency, uint32_t max_latency)
+        : m_latency(latency), m_max_latency(max_latency), m_delay(max_latency) {}
+
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override {
+        m_delay.prepare(sample_rate, samples_per_block, num_channels);
+        m_delay.set_delay_samples(m_latency);
+        set_max_latency_samples(m_max_latency);
+        set_latency_samples(m_latency);
+    }
+
+    void process(BufferView buffer, uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION override {
+        m_delay.process(buffer, modulation_offset);
+    }
+
+    void set_latency(uint32_t latency) {
+        m_latency = latency;
+        m_delay.set_delay_samples(latency);
+        set_latency_samples(latency);
+    }
+
+private:
+    uint32_t m_latency;
+    uint32_t m_max_latency;
+    thl::dsp::utils::DelayProcessor m_delay;
+};
+
 void prepare(Graph& graph) {
     graph.prepare(k_sample_rate, k_block, k_channels);
 }
@@ -144,6 +178,25 @@ Buffer<float> process_blocks(Graph& graph, float value, size_t num_blocks) {
         graph.process(buffer);
     }
     return buffer;
+}
+
+/// Feeds an impulse at frame 0 and expects a single 1.0 at `position` in the frames that follow.
+void expect_impulse_response(Graph& graph, size_t position) {
+    const size_t num_blocks = position / k_block + 1;
+    for (size_t block = 0; block < num_blocks; ++block) {
+        auto buffer = make_buffer(0.0f);
+        if (block == 0) {
+            for (size_t ch = 0; ch < k_channels; ++ch) { buffer.get_write_pointer(ch)[0] = 1.0f; }
+        }
+        graph.process(buffer);
+        for (size_t ch = 0; ch < k_channels; ++ch) {
+            for (size_t i = 0; i < k_block; ++i) {
+                const size_t frame = block * k_block + i;
+                ASSERT_FLOAT_EQ(buffer.get_read_pointer(ch)[i], frame == position ? 1.0f : 0.0f)
+                    << "channel " << ch << ", frame " << frame;
+            }
+        }
+    }
 }
 
 void expect_channel(const Buffer<float>& buffer, size_t ch, float value) {
@@ -516,6 +569,259 @@ TEST(Graph, SetWetMixClampsAndRejectsEndpointsUnknownNodesAndNaN) {
     EXPECT_FALSE(graph.wet_mix(NodeId{999}));
 }
 
+TEST(Graph, WetMixBlendIsAlignedWithTheNodesLatency) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*latent, 0.5f));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, BypassDelaysByTheNodesLatency) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*latent, 0.0f));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, FullWetKeepsTheDryHistory) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+
+    process_blocks(graph, 1.0f, k_latency / k_block + 1);  // past the latency
+    ASSERT_TRUE(graph.set_wet_mix(*latent, 0.0f));
+    for (size_t block = 0; block <= k_ramp_blocks; ++block) {
+        expect_all(process_blocks(graph, 1.0f, 1), 1.0f);
+    }
+}
+
+TEST(Graph, ParallelBranchIsAlignedWithALatentBranch) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, MergeInsideTheGraphIsAligned) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    const auto merge = graph.add_node<GainProcessor>(1.0f);
+    ASSERT_TRUE(latent && merge);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, *merge));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *merge));
+    ASSERT_TRUE(graph.connect(*merge, graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, BranchesAreAlignedToTheSlowest) {
+    Graph graph;
+    const auto shorter = graph.add_node<LatencyProcessor>(40);
+    const auto longer = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(shorter && longer);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *shorter));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *longer));
+    ASSERT_TRUE(graph.connect(*shorter, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, ChainWithTheSameLatencyAsAParallelNodeIsAligned) {
+    Graph graph;
+    const auto first = graph.add_node<LatencyProcessor>(40);
+    const auto second = graph.add_node<LatencyProcessor>(60);
+    const auto parallel = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(first && second && parallel);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *first));
+    ASSERT_TRUE(graph.connect(*first, *second));
+    ASSERT_TRUE(graph.connect(*second, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *parallel));
+    ASSERT_TRUE(graph.connect(*parallel, graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, ParallelBranchFollowsALatencyChange) {
+    Graph graph;
+    auto processor = std::make_unique<LatencyProcessor>(k_latency, 2 * k_latency);
+    LatencyProcessor* latent_processor = processor.get();
+    const auto latent = graph.add_node(std::move(processor));
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    process_blocks(graph, 0.0f, 2);
+    latent_processor->set_latency(150);
+    process_blocks(graph, 0.0f, 4);  // the crossfades finish
+
+    expect_impulse_response(graph, 150);
+}
+
+TEST(Graph, DryDelayFollowsALatencyChange) {
+    Graph graph;
+    auto processor = std::make_unique<LatencyProcessor>(k_latency, 2 * k_latency);
+    LatencyProcessor* latent_processor = processor.get();
+    const auto latent = graph.add_node(std::move(processor));
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*latent, 0.5f));
+    prepare(graph);
+
+    process_blocks(graph, 0.0f, 2);
+    latent_processor->set_latency(150);
+    process_blocks(graph, 0.0f, 4);  // the crossfades finish
+
+    expect_impulse_response(graph, 150);
+}
+
+TEST(Graph, CommitStaysSilentUntilTheNewLatencyHasPassed) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+    process_blocks(graph, 1.0f, k_latency / k_block + 1);  // the latent node outputs 1.0
+
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+
+    std::vector<float> output;  // channel 0 over the fade-out, the hold and the fade-in
+    for (size_t block = 0; block < k_fade_blocks + k_latency / k_block + 2; ++block) {
+        const auto buffer = process_blocks(graph, 1.0f, 1);
+        const float* samples = buffer.get_read_pointer(0);
+        output.insert(output.end(), samples, samples + k_block);
+    }
+
+    size_t longest_silence = 0;
+    size_t silence = 0;
+    for (const float sample : output) {
+        silence = sample == 0.0f ? silence + 1 : 0;
+        longest_silence = std::max(longest_silence, silence);
+    }
+    EXPECT_GE(longest_silence, k_latency);
+    EXPECT_FLOAT_EQ(output.back(), 1.0f);
+}
+
+TEST(Graph, ReportsTheLatencyOfItsSlowestPath) {
+    Graph graph;
+    const auto shorter = graph.add_node<LatencyProcessor>(40);
+    const auto longer = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(shorter && longer);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *shorter));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *longer));
+    ASSERT_TRUE(graph.connect(*shorter, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
+    prepare(graph);
+
+    EXPECT_EQ(graph.latency_samples(), k_latency);
+    EXPECT_EQ(graph.max_latency_samples(), k_latency);
+}
+
+TEST(Graph, ReportsTheSumOfAChain) {
+    Graph graph;
+    const auto first = graph.add_node<LatencyProcessor>(40);
+    const auto second = graph.add_node<LatencyProcessor>(60);
+    ASSERT_TRUE(first && second);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *first));
+    ASSERT_TRUE(graph.connect(*first, *second));
+    ASSERT_TRUE(graph.connect(*second, graph.graph_output()));
+    prepare(graph);
+
+    EXPECT_EQ(graph.latency_samples(), 100u);
+    EXPECT_EQ(graph.max_latency_samples(), 100u);
+}
+
+TEST(Graph, ReportsALatencyChangeAtTheNextBlock) {
+    Graph graph;
+    auto processor = std::make_unique<LatencyProcessor>(k_latency, 2 * k_latency);
+    LatencyProcessor* latent_processor = processor.get();
+    const auto latent = graph.add_node(std::move(processor));
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+    EXPECT_EQ(graph.latency_samples(), k_latency);
+    EXPECT_EQ(graph.max_latency_samples(), 2 * k_latency);
+
+    latent_processor->set_latency(150);
+    process_blocks(graph, 0.0f, 1);
+
+    EXPECT_EQ(graph.latency_samples(), 150u);
+    EXPECT_EQ(graph.max_latency_samples(), 2 * k_latency);
+}
+
+TEST(Graph, MaxLatencyOnlyRisesUntilPrepare) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+    EXPECT_EQ(graph.max_latency_samples(), k_latency);
+
+    const auto longer = graph.add_node<LatencyProcessor>(300);
+    ASSERT_TRUE(longer);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *longer));
+    ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(graph.max_latency_samples(), 300u);
+
+    ASSERT_TRUE(graph.remove_node(*longer));
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(graph.max_latency_samples(), 300u);
+
+    prepare(graph);
+    EXPECT_EQ(graph.max_latency_samples(), k_latency);
+    EXPECT_EQ(graph.latency_samples(), k_latency);
+}
+
+TEST(Graph, NestedGraphReportsItsLatencyToTheOuterGraph) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    const auto latent = inner.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *latent));
+    ASSERT_TRUE(inner.connect(*latent, inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+
+    EXPECT_EQ(outer.latency_samples(), k_latency);
+    EXPECT_EQ(outer.max_latency_samples(), k_latency);
+}
+
 TEST(Graph, HasUncommittedChangesTracksEdits) {
     Graph graph;
     EXPECT_FALSE(graph.has_uncommitted_changes());
@@ -822,6 +1128,115 @@ TEST(Graph, NestedCommitTakesEffectWithoutOuterCommit) {
     expect_all(buffer, 1.0f);
 }
 
+TEST(Graph, OuterCommitWithoutMaxChangeOnlyFadesTheNestedGraph) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    ASSERT_TRUE(outer.connect(outer.graph_input(), outer.graph_output()));
+    prepare(outer);
+
+    const auto gain = inner.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(inner.disconnect(inner.graph_input(), inner.graph_output()));
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *gain));
+    ASSERT_TRUE(inner.connect(*gain, inner.graph_output()));
+    ASSERT_TRUE(outer.commit());
+
+    // The direct branch keeps its half of the average while only the nested graph fades.
+    for (size_t block = 0; block < k_fade_blocks; ++block) {
+        const auto buffer = process_blocks(outer, 1.0f, 1);
+        for (size_t ch = 0; ch < k_channels; ++ch) {
+            for (size_t i = 0; i < k_block; ++i) {
+                ASSERT_GE(buffer.get_read_pointer(ch)[i], 0.5f);
+            }
+        }
+    }
+    expect_all(process_blocks(outer, 1.0f, 1), (1.0f + 2.0f) / 2.0f);
+}
+
+TEST(Graph, OuterCommitRealignsToARisingNestedMaxLatency) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    ASSERT_TRUE(outer.connect(outer.graph_input(), outer.graph_output()));
+    prepare(outer);
+    EXPECT_EQ(outer.max_latency_samples(), 0u);
+
+    const auto latent = inner.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(inner.disconnect(inner.graph_input(), inner.graph_output()));
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *latent));
+    ASSERT_TRUE(inner.connect(*latent, inner.graph_output()));
+    ASSERT_TRUE(outer.commit());
+    EXPECT_EQ(outer.max_latency_samples(), k_latency);
+
+    process_blocks(outer, 0.0f, k_fade_blocks + 2);  // fades, crossfades, one block of lag
+    expect_impulse_response(outer, k_latency);
+}
+
+TEST(Graph, OuterCommitReachesGraphsTwoLevelsDown) {
+    auto owned_innermost = std::make_unique<Graph>();
+    Graph& innermost = *owned_innermost;
+    ASSERT_TRUE(innermost.connect(innermost.graph_input(), innermost.graph_output()));
+
+    auto owned_middle = std::make_unique<Graph>();
+    Graph& middle = *owned_middle;
+    const auto middle_node = middle.add_node(std::move(owned_innermost));
+    ASSERT_TRUE(middle_node);
+    ASSERT_TRUE(middle.connect(middle.graph_input(), *middle_node));
+    ASSERT_TRUE(middle.connect(*middle_node, middle.graph_output()));
+
+    Graph outer;
+    const auto outer_node = outer.add_node(std::move(owned_middle));
+    ASSERT_TRUE(outer_node);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *outer_node));
+    ASSERT_TRUE(outer.connect(*outer_node, outer.graph_output()));
+    prepare(outer);
+
+    const auto gain = innermost.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(innermost.disconnect(innermost.graph_input(), innermost.graph_output()));
+    ASSERT_TRUE(innermost.connect(innermost.graph_input(), *gain));
+    ASSERT_TRUE(innermost.connect(*gain, innermost.graph_output()));
+    ASSERT_TRUE(outer.commit());
+    EXPECT_FALSE(innermost.has_uncommitted_changes());
+
+    expect_all(process_blocks(outer, 0.5f, k_fade_blocks), 1.0f);
+}
+
+TEST(Graph, OuterGraphReportsUncommittedNestedChanges) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+    EXPECT_FALSE(outer.has_uncommitted_changes());
+
+    const auto gain = inner.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    EXPECT_TRUE(outer.has_uncommitted_changes());
+
+    ASSERT_TRUE(outer.commit());
+    EXPECT_FALSE(outer.has_uncommitted_changes());
+}
+
 TEST(Graph, NestedCommitWaitsWhileTheNestedGraphIsBypassed) {
     auto owned = std::make_unique<Graph>();
     Graph& inner = *owned;
@@ -1048,7 +1463,7 @@ TEST(Graph, AddPreparedNodePreparesOnlyOnAMismatch) {
 }
 
 // Rewiring back and forth reuses the freed versions' buffers; the output stays right.
-TEST(Graph, RewiringKeepsTheOutputWithReusedBuffers) {
+TEST(Graph, RepeatedRewiringKeepsTheOutput) {
     Graph graph;
     const auto doubler = graph.add_node<GainProcessor>(2.0f);
     const auto tripler = graph.add_node<GainProcessor>(3.0f);
