@@ -477,7 +477,6 @@ bool Graph::switch_to_pending() {
     // If the control thread has not emptied m_returned yet, switch at a later block instead.
     if (m_active != nullptr && !m_returned.try_push(m_active)) { return false; }
     m_active = m_pending.exchange(nullptr, std::memory_order_acq_rel);
-    apply_latencies(*m_active);
     return true;
 }
 
@@ -643,6 +642,8 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
         }
         return;
     }
+
+    apply_latencies(*compiled);
 
     if (compiled->m_input_buffer) {
         auto& input = compiled->m_buffers[*compiled->m_input_buffer];

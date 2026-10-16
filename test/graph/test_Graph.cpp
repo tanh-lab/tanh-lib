@@ -129,14 +129,16 @@ private:
 /// Delays the buffer by `latency` samples and reports that as its latency.
 class LatencyProcessor final : public BaseProcessor {
 public:
-    explicit LatencyProcessor(uint32_t latency) : m_latency(latency), m_delay(latency) {}
+    explicit LatencyProcessor(uint32_t latency) : LatencyProcessor(latency, latency) {}
+    LatencyProcessor(uint32_t latency, uint32_t max_latency)
+        : m_latency(latency), m_max_latency(max_latency), m_delay(max_latency) {}
 
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override {
         m_delay.prepare(sample_rate, samples_per_block, num_channels);
         m_delay.set_delay_samples(m_latency);
-        set_max_latency_samples(m_latency);
+        set_max_latency_samples(m_max_latency);
         set_latency_samples(m_latency);
     }
 
@@ -144,8 +146,15 @@ public:
         m_delay.process(buffer, modulation_offset);
     }
 
+    void set_latency(uint32_t latency) {
+        m_latency = latency;
+        m_delay.set_delay_samples(latency);
+        set_latency_samples(latency);
+    }
+
 private:
     uint32_t m_latency;
+    uint32_t m_max_latency;
     thl::dsp::utils::DelayProcessor m_delay;
 };
 
@@ -654,6 +663,42 @@ TEST(Graph, ChainWithTheSameLatencyAsAParallelNodeIsAligned) {
     prepare(graph);
 
     expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, ParallelBranchFollowsALatencyChange) {
+    Graph graph;
+    auto processor = std::make_unique<LatencyProcessor>(k_latency, 2 * k_latency);
+    LatencyProcessor* latent_processor = processor.get();
+    const auto latent = graph.add_node(std::move(processor));
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    process_blocks(graph, 0.0f, 2);
+    latent_processor->set_latency(150);
+    process_blocks(graph, 0.0f, 4);  // the crossfades finish
+
+    expect_impulse_response(graph, 150);
+}
+
+TEST(Graph, DryDelayFollowsALatencyChange) {
+    Graph graph;
+    auto processor = std::make_unique<LatencyProcessor>(k_latency, 2 * k_latency);
+    LatencyProcessor* latent_processor = processor.get();
+    const auto latent = graph.add_node(std::move(processor));
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*latent, 0.5f));
+    prepare(graph);
+
+    process_blocks(graph, 0.0f, 2);
+    latent_processor->set_latency(150);
+    process_blocks(graph, 0.0f, 4);  // the crossfades finish
+
+    expect_impulse_response(graph, 150);
 }
 
 TEST(Graph, HasUncommittedChangesTracksEdits) {
