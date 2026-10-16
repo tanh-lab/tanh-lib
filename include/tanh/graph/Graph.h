@@ -147,8 +147,6 @@ private:
 
     void publish(std::unique_ptr<CompiledGraph> compiled);
     void collect_own_garbage();
-    void recycle(CompiledGraph* compiled);
-    [[nodiscard]] thl::core::Buffer<float> take_buffer();
     void free_all_compiled();
 
     bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
@@ -179,8 +177,6 @@ private:
     size_t m_num_channels = 0;
     bool m_dirty = false;
     bool m_published = false;  // a version was published since prepare()
-    // Buffers of freed versions, sized for prepare(): compile() takes them first.
-    std::vector<thl::core::Buffer<float>> m_buffer_pool;
 
     uint64_t m_next_generation = 1;
     std::set<uint64_t> m_live_generations;  // handed to the audio thread and not yet freed

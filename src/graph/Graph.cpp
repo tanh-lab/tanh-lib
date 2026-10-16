@@ -228,7 +228,6 @@ void Graph::prepare(const double& sample_rate,
     m_sample_rate = sample_rate;
     m_max_block_size = samples_per_block;
     m_num_channels = num_channels;
-    m_buffer_pool.clear();  // sized for the previous prepare()
     for (auto& [id, node] : m_nodes) { prepare_node(*node); }
     set_max_latency_samples(0);
     rebuild();
@@ -328,7 +327,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
     auto compiled = std::make_unique<CompiledGraph>();
     compiled->m_num_channels = m_num_channels;
     compiled->m_max_block_size = m_max_block_size;
-    compiled->m_dry = take_buffer();
+    compiled->m_dry = thl::core::Buffer<float>(m_num_channels, m_max_block_size);
 
     // `order` has every node after its sources, so a source's buffer always
     // exists by the time a node looks it up.
@@ -354,7 +353,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
 
         const uint32_t max = node.m_processor ? node.m_processor->max_latency_samples() : 0;
         const auto index = static_cast<BufferIndex>(compiled->m_buffers.size());
-        compiled->m_buffers.push_back(take_buffer());
+        compiled->m_buffers.emplace_back(m_num_channels, m_max_block_size);
         max_path_latencies.push_back(max_path_latency + max);
         buffer_of.emplace(id, index);
 
@@ -441,33 +440,8 @@ void Graph::publish(std::unique_ptr<CompiledGraph> compiled) {
     // The audio thread never picked this one up, so it can be freed right away.
     if (stale != nullptr) {
         m_live_generations.erase(stale->m_generation);
-        recycle(stale);
+        delete stale;
     }
-}
-
-void Graph::recycle(CompiledGraph* compiled) {
-    // Keep its buffers for the next compile() if they still fit prepare(); enough
-    // for every node, the dry scratch and the input.
-    const size_t limit = m_nodes.size() + 2;
-    const auto keep = [&](thl::core::Buffer<float>& buffer) {
-        if (m_buffer_pool.size() < limit && buffer.get_num_channels() == m_num_channels &&
-            buffer.get_num_samples() == m_max_block_size) {
-            m_buffer_pool.push_back(std::move(buffer));
-        }
-    };
-    for (auto& buffer : compiled->m_buffers) { keep(buffer); }
-    keep(compiled->m_dry);
-    delete compiled;
-}
-
-thl::core::Buffer<float> Graph::take_buffer() {
-    if (m_buffer_pool.empty()) { return {m_num_channels, m_max_block_size}; }
-    thl::core::Buffer<float> buffer = std::move(m_buffer_pool.back());
-    m_buffer_pool.pop_back();
-    for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
-        std::fill_n(buffer.get_write_pointer(ch), buffer.get_num_samples(), 0.0f);
-    }
-    return buffer;
 }
 
 void Graph::collect_garbage() {
@@ -479,7 +453,7 @@ void Graph::collect_own_garbage() {
     CompiledGraph* returned = nullptr;
     while (m_returned.try_pop(returned)) {
         m_live_generations.erase(returned->m_generation);
-        recycle(returned);
+        delete returned;
     }
 
     const uint64_t oldest_live = m_live_generations.empty() ? std::numeric_limits<uint64_t>::max()
