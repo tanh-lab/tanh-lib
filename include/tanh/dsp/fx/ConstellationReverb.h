@@ -126,7 +126,9 @@ private:
     float m_hp_coeff = 0.0f;
     float m_bw_coeff = 0.9995f;
     float m_damping_coeff = 0.9995f;
-    float m_predelay_len = 0.0f;
+    float m_predelay_len = 0.0f;     // in samples, gliding per sample to its target
+    float m_predelay_target = 0.0f;  // the block's
+    float m_predelay_smooth = 0.0f;  // one-pole coefficient, ~30 ms
 
     float m_hp_state = 0.0f;
     float m_bw_state = 0.0f;
@@ -145,9 +147,14 @@ private:
 
     // ── Cached per-block parameters (updated once per block in process()) ──
     // Avoids virtual dispatch inside the per-sample processing loop.
+    // Decay and shimmer glide per sample to the block's value (~20 ms), so a moving control does
+    // not step once per block.
     float m_p_decay = 0.85f;
+    float m_decay_target = 0.85f;
     bool m_p_freeze = false;
     float m_p_shimmer = 0.0f;
+    float m_shimmer_target = 0.0f;
+    float m_control_smooth = 0.0f;  // one-pole coefficient, ~20 ms
     float m_p_shim_mod = 0.0f;
     float m_p_fshift_hz = 132.0f;
     float m_p_fshift_det = 0.2f;
