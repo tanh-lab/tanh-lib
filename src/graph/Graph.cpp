@@ -57,6 +57,7 @@ struct Graph::CompiledGraph {
     uint64_t m_generation = 0;
     std::vector<ProcessingStep> m_steps;  // in processing order
     std::vector<thl::core::Buffer<float>> m_buffers;
+    std::vector<uint32_t> m_path_latencies;     // per buffer, set by apply_latencies()
     thl::core::Buffer<float> m_dry;             // scratch for steps that blend dry and processed
     std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
     std::vector<Source> m_output_sources;
@@ -253,6 +254,21 @@ void Graph::prepare_node(Node& node, bool prepare_processor) const {
         node.m_wet_mix.load(std::memory_order_relaxed));
 }
 
+void Graph::prepare_delays(std::span<Source> sources,
+                           std::span<const uint32_t> max_path_latencies) const {
+    for (Source& source : sources) {
+        // A source waits at most for the slowest of the other sources.
+        uint32_t max_delay = 0;
+        for (const Source& other : sources) {
+            if (&other != &source) {
+                max_delay = std::max(max_delay, max_path_latencies[other.m_buffer]);
+            }
+        }
+        source.m_delay.set_max_delay_samples(max_delay);
+        source.m_delay.prepare(m_sample_rate, m_max_block_size, m_num_channels);
+    }
+}
+
 std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {
     enum class VisitState : uint8_t { InProgress, Done };
     struct Frame {
@@ -304,12 +320,17 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
     // `order` has every node after its sources, so a source's buffer always
     // exists by the time a node looks it up.
     std::map<NodeId, BufferIndex> buffer_of;
+    std::vector<uint32_t> max_path_latencies;  // per buffer
     for (const NodeId id : *order) {
         Node& node = *m_nodes.at(id);
         std::vector<Source> sources;
+        uint32_t max_path_latency = 0;
         for (const NodeId source : sources_of(id)) {
-            sources.push_back({.m_buffer = buffer_of.at(source)});
+            const BufferIndex buffer = buffer_of.at(source);
+            sources.push_back({.m_buffer = buffer});
+            max_path_latency = std::max(max_path_latency, max_path_latencies[buffer]);
         }
+        prepare_delays(sources, max_path_latencies);
 
         if (id == k_output_id) {
             compiled->m_output_sources = std::move(sources);
@@ -317,15 +338,16 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
             continue;
         }
 
+        const uint32_t max = node.m_processor ? node.m_processor->max_latency_samples() : 0;
         const auto index = static_cast<BufferIndex>(compiled->m_buffers.size());
         compiled->m_buffers.push_back(take_buffer());
+        max_path_latencies.push_back(max_path_latency + max);
         buffer_of.emplace(id, index);
 
         if (id == k_input_id) {
             compiled->m_input_buffer = index;
             continue;
         }
-        const uint32_t max = node.m_processor->max_latency_samples();
         const bool keep_delay = node.m_dry_delay && node.m_dry_delay->max_delay_samples() == max;
         if (!keep_delay) {
             if (node.m_dry_delay) {
@@ -334,13 +356,13 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
             }
             node.m_dry_delay = std::make_unique<thl::dsp::utils::DelayProcessor>(max);
             node.m_dry_delay->prepare(m_sample_rate, m_max_block_size, m_num_channels);
-            node.m_dry_delay->set_delay_samples(node.m_processor->latency_samples());
         }
         compiled->m_steps.push_back({.m_node = &node,
                                      .m_sources = std::move(sources),
                                      .m_buffer = index,
                                      .m_dry_delay = node.m_dry_delay.get()});
     }
+    compiled->m_path_latencies.assign(compiled->m_buffers.size(), 0);
     return compiled;
 }
 
@@ -455,7 +477,31 @@ bool Graph::switch_to_pending() {
     // If the control thread has not emptied m_returned yet, switch at a later block instead.
     if (m_active != nullptr && !m_returned.try_push(m_active)) { return false; }
     m_active = m_pending.exchange(nullptr, std::memory_order_acq_rel);
+    apply_latencies(*m_active);
     return true;
+}
+
+void Graph::apply_latencies(CompiledGraph& compiled) {
+    auto& path_latencies = compiled.m_path_latencies;
+
+    // Delays each source to the slowest source of its node; returns that path latency.
+    const auto align = [&](std::span<Source> sources) {
+        uint32_t path_latency = 0;
+        for (const Source& source : sources) {
+            path_latency = std::max(path_latency, path_latencies[source.m_buffer]);
+        }
+        for (Source& source : sources) {
+            source.m_delay.set_delay_samples(path_latency - path_latencies[source.m_buffer]);
+        }
+        return path_latency;
+    };
+
+    for (ProcessingStep& step : compiled.m_steps) {
+        const uint32_t latency = step.m_node->m_processor->latency_samples();
+        step.m_dry_delay->set_delay_samples(latency);
+        path_latencies[step.m_buffer] = align(step.m_sources) + latency;
+    }
+    align(compiled.m_output_sources);
 }
 
 void Graph::apply_fade(thl::core::BufferView buffer) {
@@ -489,7 +535,8 @@ void Graph::apply_fade(thl::core::BufferView buffer) {
 void Graph::mix_sources(const CompiledGraph& compiled,
                         std::span<Source> sources,
                         Node& node,
-                        thl::core::BufferView destination) {
+                        thl::core::BufferView destination,
+                        thl::core::BufferView dry) {
     const size_t n = destination.get_num_samples();
     auto& smoother = node.m_input_mix_smoother;
     const bool average = node.m_input_mix.load(std::memory_order_relaxed) == InputMix::Average;
@@ -504,12 +551,25 @@ void Graph::mix_sources(const CompiledGraph& compiled,
         return;
     }
 
-    for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
-        float* out = destination.get_write_pointer(ch);
-        std::copy_n(compiled.m_buffers[sources[0].m_buffer].get_read_pointer(ch), n, out);
-        for (size_t s = 1; s < sources.size(); ++s) {
-            const float* in = compiled.m_buffers[sources[s].m_buffer].get_read_pointer(ch);
-            for (size_t i = 0; i < n; ++i) { out[i] += in[i]; }
+    for (size_t s = 0; s < sources.size(); ++s) {
+        Source& source = sources[s];
+        const auto& buffer = compiled.m_buffers[source.m_buffer];
+        const bool delayed = source.m_delay.max_delay_samples() > 0;
+        if (delayed) {
+            for (size_t ch = 0; ch < dry.get_num_channels(); ++ch) {
+                std::copy_n(buffer.get_read_pointer(ch), n, dry.get_write_pointer(ch));
+            }
+            source.m_delay.process(dry);
+        }
+
+        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
+            const float* in = delayed ? dry.get_read_pointer(ch) : buffer.get_read_pointer(ch);
+            float* out = destination.get_write_pointer(ch);
+            if (s == 0) {
+                std::copy_n(in, n, out);
+            } else {
+                for (size_t i = 0; i < n; ++i) { out[i] += in[i]; }
+            }
         }
     }
 
@@ -599,11 +659,11 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
         const thl::core::BufferView node_buffer(own.get_array_of_write_pointers(),
                                                 compiled->m_num_channels,
                                                 n);
-        mix_sources(*compiled, step.m_sources, *step.m_node, node_buffer);
+        mix_sources(*compiled, step.m_sources, *step.m_node, node_buffer, dry);
         run_step(step, node_buffer, dry, modulation_offset);
     }
 
-    mix_sources(*compiled, compiled->m_output_sources, *compiled->m_output_node, buffer);
+    mix_sources(*compiled, compiled->m_output_sources, *compiled->m_output_node, buffer, dry);
     apply_fade(buffer);
 }
 

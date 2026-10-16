@@ -132,6 +132,8 @@ private:
     std::optional<NodeId> insert_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
                                       bool prepare_processor);
     void prepare_node(Node& node, bool prepare_processor = true) const;
+    void prepare_delays(std::span<Source> sources,
+                        std::span<const uint32_t> max_path_latencies) const;
 
     std::optional<std::vector<NodeId>> sort_graph_dfs() const;
     std::unique_ptr<CompiledGraph> compile();
@@ -144,11 +146,13 @@ private:
     void free_all_compiled();
 
     bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
+    static void apply_latencies(CompiledGraph& compiled) TANH_NONBLOCKING_FUNCTION;
     void apply_fade(thl::core::BufferView buffer) TANH_NONBLOCKING_FUNCTION;
     static void mix_sources(const CompiledGraph& compiled,
                             std::span<Source> sources,
                             Node& node,
-                            thl::core::BufferView destination) TANH_NONBLOCKING_FUNCTION;
+                            thl::core::BufferView destination,
+                            thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
     static void run_step(const ProcessingStep& step,
                          thl::core::BufferView buffer,
                          thl::core::BufferView dry,
