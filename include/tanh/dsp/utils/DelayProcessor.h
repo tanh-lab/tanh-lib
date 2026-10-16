@@ -24,8 +24,8 @@ namespace thl::dsp::utils {
  * that has latency, so the processor reports no latency itself.
  *
  * @par Real-Time Safety
- *   process() and set_delay_samples() are real-time safe — no allocation, no
- *   locks. prepare() and set_max_delay_samples() allocate.
+ *   process(), write() and set_delay_samples() are real-time safe — no
+ *   allocation, no locks. prepare() and set_max_delay_samples() allocate.
  */
 class TANH_API DelayProcessor : public thl::dsp::BaseProcessor {
 public:
@@ -43,6 +43,9 @@ public:
                  const size_t& num_channels) override;
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
+
+    /// Writes the input into the delay lines without changing it, so their history stays current.
+    void write(const thl::core::BufferView& buffer) TANH_NONBLOCKING_FUNCTION;
 
     void reset();
 

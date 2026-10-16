@@ -42,6 +42,17 @@ void DelayProcessor::process(thl::core::BufferView buffer, uint32_t /*modulation
     }
 }
 
+void DelayProcessor::write(const thl::core::BufferView& buffer) {
+    const size_t num_channels = std::min(buffer.get_num_channels(), m_delay_lines.size());
+    const size_t num_samples = buffer.get_num_samples();
+
+    for (size_t ch = 0; ch < num_channels; ++ch) {
+        DynamicDelayLine& line = m_delay_lines[ch];
+        const float* data = buffer.get_read_pointer(ch);
+        for (size_t i = 0; i < num_samples; ++i) { line.write(data[i]); }
+    }
+}
+
 void DelayProcessor::reset() {
     for (auto& line : m_delay_lines) { line.reset(); }
 }
