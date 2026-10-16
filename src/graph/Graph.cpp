@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <utility>
 #include <vector>
@@ -271,6 +272,16 @@ void Graph::prepare_delays(std::span<Source> sources,
     }
 }
 
+bool Graph::max_latencies_changed() const {
+    for (const auto& [id, node] : m_nodes) {
+        if (node->m_dry_delay &&
+            node->m_dry_delay->max_delay_samples() != node->m_processor->max_latency_samples()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<std::vector<NodeId>> Graph::sort_graph_dfs() const {
     enum class VisitState : uint8_t { InProgress, Done };
     struct Frame {
@@ -369,12 +380,43 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
     return compiled;
 }
 
+template <typename Self>
+std::vector<Self*> Graph::graph_tree(Self& root) {
+    std::vector<Self*> graphs{&root};
+    for (size_t i = 0; i < graphs.size(); ++i) {
+        for (const auto& [id, node] : graphs[i]->m_nodes) {
+            if (auto* nested = dynamic_cast<Self*>(node->m_processor.get())) {
+                graphs.push_back(nested);
+            }
+        }
+    }
+    return graphs;
+}
+
 bool Graph::commit() {
-    if (!m_dirty && m_published) {  // nothing to hand over: no fade
-        collect_garbage();
+    const auto graphs = graph_tree(*this);
+    bool committed = true;
+    // Nested graphs first, so their new max latency is set before the graph containing them checks
+    // it.
+    for (Graph* graph : std::ranges::reverse_view(graphs)) {
+        committed = graph->commit_own() && committed;
+    }
+    return committed;
+}
+
+bool Graph::commit_own() {
+    if (!m_dirty && m_published && !max_latencies_changed()) {  // nothing to hand over: no fade
+        collect_own_garbage();
         return true;
     }
     return rebuild();
+}
+
+bool Graph::has_uncommitted_changes() const {
+    for (const Graph* graph : graph_tree(*this)) {
+        if (graph->m_dirty || graph->max_latencies_changed()) { return true; }
+    }
+    return false;
 }
 
 bool Graph::rebuild() {
@@ -430,17 +472,7 @@ thl::core::Buffer<float> Graph::take_buffer() {
 
 void Graph::collect_garbage() {
     // Nested graphs keep their own versions; one timer on the outer graph serves all.
-    std::vector<Graph*> graphs{this};
-    while (!graphs.empty()) {
-        Graph* graph = graphs.back();
-        graphs.pop_back();
-        graph->collect_own_garbage();
-        for (auto& [id, node] : graph->m_nodes) {
-            if (auto* nested = dynamic_cast<Graph*>(node->m_processor.get())) {
-                graphs.push_back(nested);
-            }
-        }
-    }
+    for (Graph* graph : graph_tree(*this)) { graph->collect_own_garbage(); }
 }
 
 void Graph::collect_own_garbage() {
