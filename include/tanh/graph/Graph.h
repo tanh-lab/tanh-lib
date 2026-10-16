@@ -78,7 +78,7 @@ public:
     /// Hands the edited graph to the audio thread (a short fade out and in). Without changes
     /// since the last commit it does nothing. False if the graph has a cycle.
     bool commit();
-    bool has_uncommitted_changes() const { return m_dirty; }
+    bool has_uncommitted_changes() const;
 
     /// Frees the versions the audio thread handed back and the removed nodes no running version
     /// uses, also in nested graphs. commit() calls it; call it from a timer (e.g. 30 Hz on the
@@ -134,10 +134,16 @@ private:
     void prepare_node(Node& node, bool prepare_processor = true) const;
     void prepare_delays(std::span<Source> sources,
                         std::span<const uint32_t> max_path_latencies) const;
+    bool max_latencies_changed() const;
 
     std::optional<std::vector<NodeId>> sort_graph_dfs() const;
     std::unique_ptr<CompiledGraph> compile();
+    bool commit_own();
     bool rebuild();
+
+    // This graph first, then every graph nested in it, at any depth.
+    template <typename Self>
+    static std::vector<Self*> graph_tree(Self& root);
 
     void publish(std::unique_ptr<CompiledGraph> compiled);
     void collect_own_garbage();

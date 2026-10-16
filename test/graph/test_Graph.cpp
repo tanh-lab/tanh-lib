@@ -1099,6 +1099,116 @@ TEST(Graph, NestedCommitTakesEffectWithoutOuterCommit) {
     expect_all(buffer, 1.0f);
 }
 
+TEST(Graph, OuterCommitWithoutMaxChangeOnlyFadesTheNestedGraph) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    ASSERT_TRUE(outer.connect(outer.graph_input(), outer.graph_output()));
+    prepare(outer);
+
+    const auto gain = inner.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(inner.disconnect(inner.graph_input(), inner.graph_output()));
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *gain));
+    ASSERT_TRUE(inner.connect(*gain, inner.graph_output()));
+    ASSERT_TRUE(outer.commit());
+
+    // The direct branch keeps its half of the average while only the nested graph fades.
+    for (size_t block = 0; block < k_fade_blocks; ++block) {
+        const auto buffer = process_blocks(outer, 1.0f, 1);
+        for (size_t ch = 0; ch < k_channels; ++ch) {
+            for (size_t i = 0; i < k_block; ++i) {
+                ASSERT_GE(buffer.get_read_pointer(ch)[i], 0.5f);
+            }
+        }
+    }
+    expect_all(process_blocks(outer, 1.0f, 1), (1.0f + 2.0f) / 2.0f);
+}
+
+TEST(Graph, OuterCommitRealignsToARisingNestedMaxLatency) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    ASSERT_TRUE(outer.connect(outer.graph_input(), outer.graph_output()));
+    prepare(outer);
+    EXPECT_EQ(outer.max_latency_samples(), 0u);
+
+    const auto latent = inner.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(inner.disconnect(inner.graph_input(), inner.graph_output()));
+    ASSERT_TRUE(inner.connect(inner.graph_input(), *latent));
+    ASSERT_TRUE(inner.connect(*latent, inner.graph_output()));
+    ASSERT_TRUE(outer.commit());
+    EXPECT_EQ(outer.max_latency_samples(), k_latency);
+
+    process_blocks(outer, 0.0f, k_fade_blocks + 2);  // the fades, the crossfades and one block of
+                                                     // lag
+    expect_impulse_response(outer, k_latency);
+}
+
+TEST(Graph, OuterCommitReachesGraphsTwoLevelsDown) {
+    auto owned_innermost = std::make_unique<Graph>();
+    Graph& innermost = *owned_innermost;
+    ASSERT_TRUE(innermost.connect(innermost.graph_input(), innermost.graph_output()));
+
+    auto owned_middle = std::make_unique<Graph>();
+    Graph& middle = *owned_middle;
+    const auto middle_node = middle.add_node(std::move(owned_innermost));
+    ASSERT_TRUE(middle_node);
+    ASSERT_TRUE(middle.connect(middle.graph_input(), *middle_node));
+    ASSERT_TRUE(middle.connect(*middle_node, middle.graph_output()));
+
+    Graph outer;
+    const auto outer_node = outer.add_node(std::move(owned_middle));
+    ASSERT_TRUE(outer_node);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *outer_node));
+    ASSERT_TRUE(outer.connect(*outer_node, outer.graph_output()));
+    prepare(outer);
+
+    const auto gain = innermost.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    ASSERT_TRUE(innermost.disconnect(innermost.graph_input(), innermost.graph_output()));
+    ASSERT_TRUE(innermost.connect(innermost.graph_input(), *gain));
+    ASSERT_TRUE(innermost.connect(*gain, innermost.graph_output()));
+    ASSERT_TRUE(outer.commit());
+    EXPECT_FALSE(innermost.has_uncommitted_changes());
+
+    expect_all(process_blocks(outer, 0.5f, k_fade_blocks), 1.0f);
+}
+
+TEST(Graph, OuterGraphReportsUncommittedNestedChanges) {
+    auto owned = std::make_unique<Graph>();
+    Graph& inner = *owned;
+    ASSERT_TRUE(inner.connect(inner.graph_input(), inner.graph_output()));
+
+    Graph outer;
+    const auto nested = outer.add_node(std::move(owned));
+    ASSERT_TRUE(nested);
+    ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
+    ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
+    prepare(outer);
+    EXPECT_FALSE(outer.has_uncommitted_changes());
+
+    const auto gain = inner.add_node<GainProcessor>(2.0f);
+    ASSERT_TRUE(gain);
+    EXPECT_TRUE(outer.has_uncommitted_changes());
+
+    ASSERT_TRUE(outer.commit());
+    EXPECT_FALSE(outer.has_uncommitted_changes());
+}
+
 TEST(Graph, NestedCommitWaitsWhileTheNestedGraphIsBypassed) {
     auto owned = std::make_unique<Graph>();
     Graph& inner = *owned;
