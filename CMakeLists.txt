@@ -267,6 +267,7 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/Limiter.cpp
         src/dsp/utils/Random.cpp
         src/dsp/utils/DynamicDelayLine.cpp
+        src/dsp/utils/DelayProcessor.cpp
         src/dsp/utils/DynamicAllpass.cpp
         src/dsp/utils/SineOscillator.cpp
         src/dsp/utils/BrownianNoise.cpp
