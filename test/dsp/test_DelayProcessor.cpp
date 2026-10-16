@@ -20,6 +20,20 @@ BufferF impulse(size_t num_samples, size_t position) {
     return buffer;
 }
 
+// One channel holding frame + 1 at each frame, starting at `first_frame`.
+BufferF ramp(size_t first_frame, size_t num_samples) {
+    BufferF buffer(1, num_samples, k_sample_rate);
+    for (size_t i = 0; i < num_samples; ++i) {
+        buffer.get_write_pointer(0)[i] = static_cast<float>(first_frame + i + 1);
+    }
+    return buffer;
+}
+
+// The ramp's value at `frame` when delayed by `delay`, or 0 before the ramp started.
+float delayed(size_t frame, size_t delay) {
+    return frame >= delay ? static_cast<float>(frame - delay + 1) : 0.0f;
+}
+
 void expect_impulse_at(const BufferF& buffer, size_t channel, size_t position) {
     const float* data = buffer.get_read_pointer(channel);
     for (size_t i = 0; i < buffer.get_num_samples(); ++i) {
@@ -68,6 +82,7 @@ TEST(DelayProcessor, MaxDelayThatIsAPowerOfTwoFits) {
 TEST(DelayProcessor, ZeroDelayPassesThroughAndKeepsHistory) {
     DelayProcessor delay(8);
     delay.prepare(k_sample_rate, 8, 1);
+    delay.set_crossfade_samples(0);
 
     BufferF buffer(1, 8, k_sample_rate);
     for (size_t i = 0; i < 8; ++i) { buffer.get_write_pointer(0)[i] = static_cast<float>(i + 1); }
@@ -166,6 +181,89 @@ TEST(DelayProcessor, SetMaxDelayAfterPrepareReallocates) {
 
     EXPECT_EQ(delay.delay_samples(), 10u);
     expect_impulse_at(buffer, 0, 10);
+}
+
+TEST(DelayProcessor, CrossfadesLinearlyToANewDelay) {
+    DelayProcessor delay(16);
+    delay.prepare(k_sample_rate, 8, 1);
+    delay.set_crossfade_samples(4);
+    delay.set_delay_samples(2);
+
+    BufferF first = ramp(0, 8);
+    delay.process(BufferView(first));
+    delay.set_delay_samples(6);
+    BufferF second = ramp(8, 8);
+    delay.process(BufferView(second));
+
+    for (size_t i = 0; i < 8; ++i) {
+        const size_t frame = 8 + i;
+        const float previous = delayed(frame, 2);
+        const float current = delayed(frame, 6);
+        const float expected =
+            i < 4 ? previous + (current - previous) * static_cast<float>(i) / 4.0f : current;
+        EXPECT_FLOAT_EQ(second.get_read_pointer(0)[i], expected) << "frame " << frame;
+    }
+}
+
+TEST(DelayProcessor, CrossfadeOfZeroSwitchesImmediately) {
+    DelayProcessor delay(16);
+    delay.prepare(k_sample_rate, 8, 1);
+    delay.set_crossfade_samples(0);
+    delay.set_delay_samples(2);
+
+    BufferF first = ramp(0, 8);
+    delay.process(BufferView(first));
+    delay.set_delay_samples(6);
+    BufferF second = ramp(8, 8);
+    delay.process(BufferView(second));
+
+    for (size_t i = 0; i < 8; ++i) {
+        EXPECT_FLOAT_EQ(second.get_read_pointer(0)[i], delayed(8 + i, 6)) << "frame " << 8 + i;
+    }
+}
+
+TEST(DelayProcessor, DelaySetDuringACrossfadeRestartsFromTheDelayBeingFadedTo) {
+    DelayProcessor delay(16);
+    delay.prepare(k_sample_rate, 8, 1);
+    delay.set_crossfade_samples(4);
+    delay.set_delay_samples(2);
+
+    BufferF first = ramp(0, 8);
+    delay.process(BufferView(first));
+    delay.set_delay_samples(6);
+    BufferF second = ramp(8, 2);  // halfway through the crossfade from 2 to 6
+    delay.process(BufferView(second));
+    delay.set_delay_samples(10);
+    BufferF third = ramp(10, 8);
+    delay.process(BufferView(third));
+
+    for (size_t i = 0; i < 8; ++i) {
+        const size_t frame = 10 + i;
+        const float previous = delayed(frame, 6);
+        const float current = delayed(frame, 10);
+        const float expected =
+            i < 4 ? previous + (current - previous) * static_cast<float>(i) / 4.0f : current;
+        EXPECT_FLOAT_EQ(third.get_read_pointer(0)[i], expected) << "frame " << frame;
+    }
+}
+
+TEST(DelayProcessor, WriteAdvancesTheCrossfade) {
+    DelayProcessor delay(16);
+    delay.prepare(k_sample_rate, 8, 1);
+    delay.set_crossfade_samples(4);
+    delay.set_delay_samples(2);
+
+    BufferF first = ramp(0, 8);
+    delay.process(BufferView(first));
+    delay.set_delay_samples(6);
+    BufferF written = ramp(8, 4);  // the whole crossfade passes while only writing
+    delay.write(BufferView(written));
+    BufferF next = ramp(12, 4);
+    delay.process(BufferView(next));
+
+    for (size_t i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(next.get_read_pointer(0)[i], delayed(12 + i, 6)) << "frame " << 12 + i;
+    }
 }
 
 TEST(DelayProcessor, ReportsNoLatency) {
