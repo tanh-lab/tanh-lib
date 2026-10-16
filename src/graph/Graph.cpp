@@ -237,6 +237,7 @@ void Graph::prepare(const double& sample_rate,
     m_fade.set_current_and_target_value(1.0f);
     m_fade_samples = static_cast<size_t>(k_fade_seconds * m_sample_rate) + 1;
     m_fading_out = false;
+    m_hold_samples = 0;
 }
 
 void Graph::prepare_node(Node& node, bool prepare_processor) const {
@@ -524,10 +525,15 @@ void Graph::apply_fade(thl::core::BufferView buffer) {
     if (pending && !m_fading_out) {
         fade_out_start = n >= m_fade_samples ? n - m_fade_samples : 0;
         m_fading_out = true;
+        m_hold_samples = 0;
     }
 
     for (size_t i = 0; i < n; ++i) {
         if (i == fade_out_start) { m_fade.set_target_value(0.0f); }
+        if (m_hold_samples > 0) {
+            --m_hold_samples;
+            if (m_hold_samples == 0) { m_fade.set_target_value(1.0f); }
+        }
         const float gain = m_fade.get_smoothed_value();
         for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
             buffer.get_write_pointer(ch)[i] *= gain;
@@ -539,7 +545,8 @@ void Graph::apply_fade(thl::core::BufferView buffer) {
     const bool switched = switch_to_pending();
     if (switched) {
         m_fading_out = false;
-        m_fade.set_target_value(1.0f);
+        m_hold_samples = apply_latencies(*m_active);
+        if (m_hold_samples == 0) { m_fade.set_target_value(1.0f); }
     }
 }
 
