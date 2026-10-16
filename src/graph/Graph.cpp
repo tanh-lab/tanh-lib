@@ -537,13 +537,18 @@ void Graph::run_step(const ProcessingStep& step,
                      thl::core::BufferView dry,
                      uint32_t modulation_offset) {
     Node& node = *step.m_node;
+    thl::dsp::utils::DelayProcessor& dry_delay = *step.m_dry_delay;
     auto& smoother = node.m_wet_mix_smoother;
     const float target = node.m_wet_mix.load(std::memory_order_relaxed);
     smoother.set_target_value(target);
 
     if (smoother.get_smoothed_value(0) == target) {
-        if (target == 0.0f) { return; }  // bypassed: `buffer` already holds the sources
+        if (target == 0.0f) {  // bypassed: the sources, delayed by the node's latency
+            dry_delay.process(buffer);
+            return;
+        }
         if (target == 1.0f) {
+            dry_delay.write(buffer);
             node.m_processor->process_modulated(buffer, modulation_offset);
             return;
         }
@@ -553,6 +558,7 @@ void Graph::run_step(const ProcessingStep& step,
     for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
         std::copy_n(buffer.get_read_pointer(ch), n, dry.get_write_pointer(ch));
     }
+    dry_delay.process(dry);
     node.m_processor->process_modulated(buffer, modulation_offset);
 
     for (size_t i = 0; i < n; ++i) {
