@@ -29,7 +29,8 @@ namespace thl::dsp::utils {
  */
 class TANH_API DelayProcessor : public thl::dsp::BaseProcessor {
 public:
-    explicit DelayProcessor(size_t max_delay_samples = 0);
+    DelayProcessor();
+    explicit DelayProcessor(size_t max_delay_samples);
     ~DelayProcessor() override;
 
     DelayProcessor(const DelayProcessor&) = delete;

@@ -9,6 +9,8 @@
 
 namespace thl::dsp::utils {
 
+DelayProcessor::DelayProcessor() = default;
+
 DelayProcessor::DelayProcessor(size_t max_delay_samples) : m_max_delay_samples(max_delay_samples) {}
 
 DelayProcessor::~DelayProcessor() = default;
