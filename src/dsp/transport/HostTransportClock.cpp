@@ -1,0 +1,122 @@
+#include "tanh/dsp/transport/HostTransportClock.h"
+
+#include <tanh/dsp/transport/TransportInfo.h>
+#include <tanh/utils/RealtimeSanitizer.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+
+namespace thl::dsp::transport {
+
+namespace {
+
+// A host that sent none of these has no transport (a plain effect host, an
+// offline render): its play flag means nothing and the fallback applies.
+constexpr uint32_t k_musical_fields = TransportInfo::k_has_tempo |
+                                      TransportInfo::k_has_beat_position |
+                                      TransportInfo::k_has_time_signature;
+constexpr double k_min_bpm = 1.0;
+
+}  // namespace
+
+void HostTransportClock::on_prepare(double sample_rate) {
+    if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
+    m_tracker.prepare(m_sample_rate);
+    m_free_valid = false;
+    m_free_advance = 0;
+    m_host.m_flags = 0;
+}
+
+void HostTransportClock::set_host_info(const TransportInfo& info) TANH_NONBLOCKING_FUNCTION {
+    m_host = info;
+    m_host.m_flags &= ~TransportInfo::k_discontinuity_mask;
+}
+
+TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
+    if (m_free_valid) { m_free_samples += m_free_advance; }
+    m_free_advance = 0;
+    const TransportInfo host = m_host;
+    m_host.m_flags = 0;  // consumed: the next block without set_host_info() has no host data
+
+    const bool host_musical = (host.m_flags & k_musical_fields) != 0;
+    const bool playing =
+        host_musical ? host.is_playing() : m_fallback_playing.load(std::memory_order_acquire);
+
+    double bpm = m_fallback_bpm.load(std::memory_order_acquire);
+    if (host.has(TransportInfo::k_has_tempo) && host.m_bpm >= k_min_bpm) { bpm = host.m_bpm; }
+
+    const auto fallback_sig = m_fallback_time_signature.load();
+    int num = fallback_sig.m_num;
+    int den = fallback_sig.m_denom;
+    if (host.has(TransportInfo::k_has_time_signature) && host.m_sig_num > 0 &&
+        host.m_sig_denom > 0) {
+        num = host.m_sig_num;
+        den = host.m_sig_denom;
+    }
+
+    const double bps = bpm / (60.0 * m_sample_rate);
+
+    double start = 0.0;
+    double end = 0.0;
+    if (host.has(TransportInfo::k_has_beat_position)) {
+        start = host.m_beat_position;
+        // Predicted with the block-start tempo (all a per-block host reports). An
+        // in-block tempo change is absorbed by the tracker at the next block.
+        end = playing ? start + static_cast<double>(frame_count) * bps : start;
+        m_free_valid = false;  // a later free-run continues from this block's end
+        // The host owns the beat: a seek made meanwhile is dropped, not applied
+        // whenever the host later stops sending the beat.
+        (void)m_pending_position.take();
+    } else {
+        if (const auto beats = m_pending_position.take()) {
+            m_free_anchor_beat = *beats;
+            m_free_samples = 0;
+            m_free_bpm = bpm;
+            m_free_valid = true;
+        } else if (!m_free_valid || bpm != m_free_bpm) {
+            m_free_anchor_beat = block_info().beat_end();
+            m_free_samples = 0;
+            m_free_bpm = bpm;
+            m_free_valid = true;
+        }
+        start = m_free_anchor_beat + static_cast<double>(m_free_samples) * bps;
+        end = playing ? m_free_anchor_beat + static_cast<double>(m_free_samples + frame_count) * bps
+                      : start;
+        if (playing) { m_free_advance = frame_count; }
+    }
+
+    TransportInfo info;
+    info.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
+                   TransportInfo::k_has_time_signature;
+    if (playing) { info.m_flags |= TransportInfo::k_is_playing; }
+    info.m_bpm = bpm;
+    info.m_sig_num = num;
+    info.m_sig_denom = den;
+    info.m_beat_position = start;
+
+    m_tracker.resolve(info, end, frame_count);
+    return info;
+}
+
+void HostTransportClock::set_bpm(double bpm) {
+    m_fallback_bpm.store(std::max(bpm, k_min_bpm), std::memory_order_release);
+}
+
+void HostTransportClock::set_time_signature(int num, int denom) {
+    m_fallback_time_signature.store(num, denom);
+}
+
+void HostTransportClock::play() {
+    m_fallback_playing.store(true, std::memory_order_release);
+}
+
+void HostTransportClock::stop() {
+    m_fallback_playing.store(false, std::memory_order_release);
+}
+
+void HostTransportClock::set_position_beats(double beats) {
+    m_pending_position.request(beats);
+}
+
+}  // namespace thl::dsp::transport

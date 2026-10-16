@@ -10,8 +10,8 @@
 #include <string_view>
 
 #include "tanh/core/Exports.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/state/Exceptions.h"
-#include "tanh/state/ParameterDefinitions.h"
 #include "tanh/state/ParameterListener.h"
 #include "tanh/state/StateGroup.h"
 
@@ -140,17 +140,7 @@ void Parameter::notify(ParameterListener* source) const {
 // ParameterHandle from Parameter
 template <typename T>
 ParameterHandle<T> Parameter::get_handle() const {
-    constexpr ParameterType k_expected_type = []() {
-        if constexpr (std::is_same_v<T, double>) {
-            return ParameterType::Double;
-        } else if constexpr (std::is_same_v<T, float>) {
-            return ParameterType::Float;
-        } else if constexpr (std::is_same_v<T, int>) {
-            return ParameterType::Int;
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return ParameterType::Bool;
-        }
-    }();
+    constexpr ParameterType k_expected_type = parameter_type_of<T>();
     if (m_record->m_def.m_type != k_expected_type) {
         throw ParameterTypeMismatchException(k_expected_type, m_record->m_def.m_type);
     }

@@ -1,0 +1,233 @@
+# Modulation with host parameters (JUCE)
+
+`ModulationMatrix` reads the parameters it modulates through a
+`thl::modulation::ParameterBackend`. `thl::State` is one backend
+(`ModulationMatrix(thl::State&)`), but a host that already owns its parameters,
+such as a JUCE plugin with an `AudioProcessorValueTreeState` (APVTS), hands
+them to the matrix with its own backend (`ModulationMatrix(ParameterBackend&)`).
+tanh-lib stays JUCE-free: the adapter lives in the plugin. Modulation builds
+without the State component for exactly this case (`TANH_BUILD_STATE=OFF`).
+
+There is one parameter store, the host's. The matrix keeps pointers to the
+host's base-value atomics and reads them with relaxed loads; it never copies
+them and never writes modulated values back. `SmartHandle::load(offset)`
+returns *base value + modulation at that sample*, while the host keeps seeing
+the unmodulated value, so automation and presets stay clean.
+
+## The backend
+
+A backend answers one question: does a parameter with this key exist, and
+where does its base value live?
+
+```cpp
+struct ParameterBinding {
+    ParameterDefinition m_def;                        // range, type, flags, scope
+    ParameterBaseValue m_base;                        // std::atomic<float/double/int/bool>*
+    const std::atomic<bool>* m_in_gesture = nullptr;  // nullptr: never in a gesture
+    const std::atomic<uint64_t>* m_host_change_stamp = nullptr;  // nullptr: no host writes
+};
+
+class ParameterBackend {
+public:
+    virtual std::optional<ParameterBinding> find(std::string_view key) const = 0;
+};
+```
+
+- `find()` is called only from non-real-time matrix methods
+  (`get_smart_handle()`, `add_routing()`, ...) under the matrix's writer mutex,
+  once per key; it may allocate and lock.
+- The atomics must keep their address for the lifetime of the matrix (APVTS
+  atomics do).
+- `m_def` needs a `Range`, the parameter type and `modulatable(true)` for every
+  parameter that may be a routing target.
+- The `m_base` alternative is the type you request a handle for:
+  `SmartHandle<T>` needs `std::atomic<T>*` (`thl::parameter_type_of<T>()` maps
+  the C++ type to a `ParameterType`).
+- `m_in_gesture` lets routings with `m_skip_during_gesture` pause while the user
+  drags the control.
+- `m_host_change_stamp` tells routings with `m_share_with_host` when the host
+  wrote the base value (see below).
+
+### A JUCE adapter (sketch)
+
+```cpp
+std::optional<thl::modulation::ParameterBinding> find(std::string_view key) const override {
+    const juce::String id(key.data(), key.size());
+    auto* parameter = m_parameters.getParameter(id);
+    if (parameter == nullptr) { return std::nullopt; }
+
+    const auto& range = m_parameters.getParameterRange(id);
+    thl::modulation::ParameterBinding binding;
+    binding.m_def = thl::ParameterDefinition::make_float(
+                        parameter->getName(64).toStdString(), to_tanh_range(range),
+                        range.convertFrom0to1(parameter->getDefaultValue()))
+                        .modulatable(true);
+    binding.m_base = m_parameters.getRawParameterValue(id);  // std::atomic<float>*
+    binding.m_in_gesture = &m_gestures[static_cast<size_t>(parameter->getParameterIndex())];
+    return binding;
+}
+```
+
+`m_gestures` is one `std::atomic<bool>` per processor parameter, set from a
+`juce::AudioProcessorParameter::Listener`'s `parameterGestureChanged()`.
+
+Ranges: JUCE maps a normalised `p` to `start + (end - start) * p^(1/skew)`,
+tanh's power law uses `p^skew`, so invert the skew:
+
+```cpp
+thl::Range to_tanh_range(const juce::NormalisableRange<float>& range) {
+    if (juce::exactlyEqual(range.skew, 1.0f)) {
+        return thl::Range::linear(range.start, range.end, range.interval);
+    }
+    return thl::Range::power_law(range.start, range.end, 1.0f / range.skew, range.interval);
+}
+```
+
+A `NormalisableRange` with custom conversion lambdas has no tanh equivalent;
+keep modulatable parameters linear or skewed. All APVTS values are float
+atomics, so bind them as `Float`, request `SmartHandle<float>` and round int
+and choice values where they are used.
+
+## Setting up the matrix
+
+Declare the parameters before the backend and the backend before the matrix,
+so the atomics outlive every handle:
+
+```cpp
+juce::AudioProcessorValueTreeState m_parameters;
+ApvtsParameterBackend m_backend{m_parameters};
+thl::modulation::ModulationMatrix m_matrix{m_backend};
+
+// once, on the message thread
+m_matrix.add_source("lfo", &m_lfo);
+auto gain = m_matrix.get_smart_handle<float>("gain");
+m_matrix.add_routing(thl::modulation::ModulationRouting(
+    "lfo", "gain", /*depth=*/6.0f, /*max_decimation=*/0, thl::modulation::DepthMode::Absolute));
+```
+
+`prepare()` the matrix together with the DSP in `prepareToPlay`.
+
+## Per block
+
+Hosts may call the render callback from different threads. Use the matrix's
+own audio reader slot, which needs no per-thread registration and never
+allocates or locks:
+
+```cpp
+void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override {
+    const auto scope = m_matrix.audio_read_scope();
+    m_matrix.process_with_scope(scope.data(), static_cast<size_t>(buffer.getNumSamples()));
+    m_processors.process(buffer);  // reads gain.load(offset) / gain.change_points()
+}                                  // scope closes here
+```
+
+Keep the scope open while the processors read their `SmartHandle`s: the
+modulation buffers are RCU-protected. With [XY controllers](xy_controller.md)
+or other `BlockProcessor`s that follow the transport, pass the block's
+`TransportInfo` to `process_with_scope()`.
+
+## Sharing a parameter with the host
+
+A Replace or ReplaceHold routing with `ModulationRouting::m_share_with_host`
+(`XYRouteOptions::m_share_with_host` for an XY pad) shares its target with the
+host as a DAW's Touch automation mode does. There are two writers:
+
+- the **host**, the base value: active while it changes (automation, a gesture
+  in its UI, anything the plugin did not write itself) plus `m_hold_ms` after
+  the last change, and during a gesture (`m_in_gesture`);
+- the **modulation**, the target's Replace output: active while a routing's
+  source is driven, that is `ModulationSource::output_activity()` where the
+  source has one (an XY pad: touch, playback or latch), else its output-active
+  mask.
+
+The last writer to become active owns the parameter (the modulation when both
+start in the same sample). When the owner stops being active, the other takes
+over if it is active; otherwise the owner keeps the parameter and its value
+(ReplaceHold holds its last value). Plain Replace writes nothing once its
+source stops, so the parameter goes back to the host; so does a disabled
+routing.
+
+Every hand-over is a crossfade: a weight `w` in [0, 1] per target, heard
+`base + w * (modulation - base)`, moves linearly toward the owner per sample,
+in `m_take_ms` to the modulation and `m_return_ms` back. The base value is
+loaded once per block; at `w == 0` the target reads the live base. While `w`
+moves, the matrix flags a change point on the target where the ramp starts and
+ends and at least every `HostShareTimes::k_change_point_interval` (32) samples,
+so consumers that split blocks at change points follow the ramp.
+
+| `HostShareTimes` | default | |
+|---|---|---|
+| `m_take_ms` | 20 ms | ramp to the modulation |
+| `m_return_ms` | 50 ms | ramp back to the host |
+| `m_hold_ms` | 300 ms | the host stays active after its last change |
+
+`ModulationMatrix::set_host_share_times()` sets them for the whole matrix (any
+thread, applied at the next block).
+
+Sharing belongs to the target: one routing that opts in makes all Replace /
+ReplaceHold routings on the target one writer, composed by priority as usual,
+and `m_skip_during_gesture` is ignored there (a gesture is host activity). Only
+global targets fed by global sources are shared; a polyphonic target keeps
+plain Replace and logs a warning. The hand-over runs after all sources, so a
+source that reads a shared target mid-block sees it before the hand-over.
+
+### Host changes
+
+The backend reports host writes through `m_host_change_stamp`: any change of
+the value means "the host changed the base value". The matrix only compares it
+with the value it saw last, once per block, so a change counts from the start
+of the block that sees it. The backend side is one lock-free atomic operation,
+callable from any thread, the audio thread included:
+
+```cpp
+// one per parameter, next to m_gestures
+std::array<std::atomic<uint64_t>, k_num_parameters> m_host_changes{};
+
+binding.m_host_change_stamp = &m_host_changes[index];
+
+// wherever the backend learns of a host write (parameterValueChanged, or a
+// per-block comparison with the last value the plugin wrote itself):
+m_host_changes[index].fetch_add(1, std::memory_order_relaxed);
+```
+
+Changes the plugin makes itself must not bump the stamp, or the plugin takes
+the parameter from its own modulation.
+
+## Threading contract
+
+- Backend `find()`, `get_smart_handle()`, `add_routing()`, `prepare()`:
+  message thread.
+- `audio_read_scope()`, `process()` / `process_with_scope()`, `SmartHandle`
+  reads: audio thread, one thread at a time (the normal plugin contract).
+- `read_scope()` and `ensure_thread_registered()` remain for other readers, for
+  example a UI timer showing modulation state.
+
+## Pitfalls
+
+- **Base values.** The matrix only reads the base atomics. Write base values
+  through the host's API (`setValueNotifyingHost` on the message thread), never
+  by storing into the atomic: that bypasses automation, undo and listeners.
+  Recorded gestures and other movement belong in modulation sources.
+- **Silencing a routing.** `update_routing_depth(id, 0)` silences an Additive
+  routing but not a Replace one (it still writes `src * 0` and wins the target).
+  Use `set_routing_enabled(id, false)`: the routing writes nothing, its held
+  value is dropped and nothing is rebuilt. `set_routings_enabled(batch)` flips
+  several so that no block sees half of the change.
+- **Block size.** `process()` takes at most the prepared `samples_per_block`;
+  split larger host blocks (see [Transport](transport.md), "Block size").
+- **Saving.** With a host backend, `to_json()` / `from_json()` contain the
+  routings only (`"enabled": false` for disabled ones). Store that JSON next to
+  the APVTS tree in `getStateInformation`.
+- **Errors.** `get_smart_handle<T>(key)` throws
+  `thl::ParameterNotFoundException` for an unknown key (through
+  `ParameterBackend::throw_not_found()`, which a backend may override with a
+  subclass: a State-backed matrix throws `StateKeyNotFoundException` or
+  `StateGroupNotFoundException`), `thl::ParameterTypeMismatchException` when `T`
+  does not match the bound atomic and `std::invalid_argument` when the parameter
+  is not modulatable. The types live in `tanh/parameters/`, so they need no
+  State.
+- **No State.** `ModulationMatrix(thl::State&)` and `state()` exist only when
+  tanh is built with State; `state()` throws `std::logic_error` on a matrix
+  built from a backend. A `SmartHandle`'s metadata accessors (`def()`,
+  `range()`, `key()`) and `load_normalized()` need a handle from
+  `get_smart_handle()`.

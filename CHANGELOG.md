@@ -7,6 +7,192 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Host hand-over, as a DAW's Touch mode: a Replace / ReplaceHold routing with
+  `ModulationRouting::m_share_with_host` (`XYRouteOptions::m_share_with_host`) shares
+  its target with the host. The last of the two writers to become active owns it;
+  when the owner stops, the other takes over if active, else the value stays. Every
+  hand-over crossfades (`HostShareTimes`: take 20 ms, return 50 ms, host hold 300 ms;
+  `ModulationMatrix::set_host_share_times()`), flagging change points at least every
+  32 samples while it moves. Host activity: `ParameterBinding::m_host_change_stamp`
+  (a counter the backend bumps on every host write) and the gesture flag.
+  `ModulationSource::output_activity()` separates "driven" from "value valid" (an XY
+  pad's x / y: touch, playback or latch); `"share_with_host": true` is serialised.
+  Tests: `HostShare.*`. Docs: `host_parameters.md`.
+- `tanh::Parameters`: what a parameter is (`ParameterDefinition`, `Range`,
+  `ModulationScope`, `parameter_type_of<T>()`) and the lookup errors
+  (`ParameterNotFoundException`, `ParameterTypeMismatchException`), shared by State
+  and Modulation in `tanh/parameters/`. AGPL-3.0; built whenever State or Modulation
+  is (no option). Install test: `test/install-modulation`.
+- `thl::modulation::ParameterBackend`: `ModulationMatrix` reads parameters through a
+  backend (`find(key)` returns definition, base atomic and gesture flag) instead of
+  `thl::State`, so a host binds its own parameter store without mirroring it; a key
+  is looked up once. An unknown key throws through `throw_not_found()`
+  (`ParameterNotFoundException`, or State's subclasses for a State-backed matrix).
+  `ModulationMatrix(thl::State&)` keeps working through `StateParameterBackend` and,
+  with `state()`, is only declared when tanh is built with State. Modulation builds
+  with `TANH_BUILD_STATE=OFF` (CI job `modulation_without_state`). Tests:
+  `ParameterBackend.*`, `StateParameterBackend.*`. Docs: `host_parameters.md`.
+- `ModulationMatrix::set_routing_enabled()` / `set_routings_enabled()`: a disabled
+  routing writes nothing, Replace included (depth 0 does not silence it), and drops
+  its hold. No rebuild: the audio thread reads the flags once per block through a
+  wait-free seqlock, so a batch lands whole. Edges and the first block after a
+  rebuild flag offset 0; a zero-sample block keeps the edge. `"enabled": false` is
+  serialised only when disabled. Tests: `RoutingEnabled.*`.
+- `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
+  before any source (`add_block_processor()`), given a `BlockContext` with the block
+  length and the transport passed to `process()` / `process_with_scope()`.
+- `thl::dsp::transport::TransportInfo`: trivially copyable per-block snapshot with
+  the flags `k_jumped`, `k_started`, `k_stopped`, `k_tempo_changed` and
+  `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
+  jitter and in-block tempo changes, so consumers react to flags and never compare
+  beats. `HostTransportClock` follows the host's playhead with fallbacks for omitted
+  fields. `HostTimeFilter` maps a callback's sample time to host time. Tests:
+  `TransportInfo.*`, `ContinuityTracker.*`, `TransportClock.*`, `HostTransportClock*.*`,
+  `HostTimeFilter.*`. Docs: `transport.md`.
+- `tanh::Link` (`TANH_BUILD_LINK`, off by default for its licence):
+  `thl::link::LinkSession` over the Link 4.1 SDK (pinned commit) on macOS, Linux and
+  Windows and LinkKit 4.1.2 (pinned SHA256, CMake 3.28+) on iOS, with
+  `capabilities()` for what each SDK lets the app control. `LinkTransportClock` sits
+  in DSP behind the `LinkBackend` seam (`timeline_backend()`), takes the callback's
+  host time through `set_host_time_us()`, compensates output latency and applies
+  requests at the output time with launches quantized to the session's quantum
+  (`set_quantum()`). Link Audio: `audio_channels()`, `set_audio_input()` and the
+  `audio_backend()` seam (received buffers in, our output out, sent with the clock's
+  capture of the same block); `LinkAudioReceiver` plays the received channel on the
+  local beat grid a latency behind. Built and tested in every desktop and iOS
+  preset. Tests: `LinkTransportClock.*` (fake session), `LinkAudioReceiver.*`,
+  `LinkSession.*`, `LinkAudioCodec.*`, and with the label `link-peers` (excluded by
+  the presets) `LinkPeers.*`, `LinkPeersAudio.*`. Docs: `transport.md`.
+- `thl::modulation::MotionRecorder` and `MotionLane`: record an XY gesture on the
+  audio thread into preallocated memory and loop it back synced to the transport,
+  with touch override and a glide back. Every take is a Beats loop of whole bars:
+  `Free` records one gesture from the touch to the release, drops its still ends and
+  is stretched onto the nearest of 1, 2, 4, 8 or 16 bars; `BarsN` is a looper over N
+  bars from the loop line that records until `disarm()`, starts as what plays,
+  overwrites only where the finger is down and hands the loop over at every release,
+  so it plays smoothed and transformed between touches (one undo step per take). The
+  recorder is a facade over tested parts: `detail::MotionTakeRecorder`,
+  `detail::MotionLaneStore` (hand-over slots, RCU publication, undo),
+  `detail::MotionLanePlayer` (phase, playback length, reverse, jumps, render ramp) and
+  `detail::MotionCompositor` (touch over playback over hold). The transport flags are
+  the only jump detector; a jump never aborts a running take. UI commands are
+  `[[nodiscard]]` (false when the 32-entry queue is full); `service()` publishes
+  takes; lanes save as validated JSON. `set_playback_length(BarsN)` plays any lane
+  stretched onto N bars from a bar line. A take that keeps nothing leaves the lane
+  that played. The published lane stays raw, seam included (`MotionLane::m_seam`,
+  JSON `seam`); what plays (`played_lane()`, also `make_played_curve()` for any lane)
+  closes the seam over 0.3 beat (150 ms), widening to the whole loop as
+  `set_smoothing()` goes to 1, then runs x and y through a zero-phase Gaussian of
+  sigma = amount² × half a beat (250 ms for Seconds lanes).
+  `set_loop_end(LoopEnd::Jump)` keeps the end-to-start step as a hard edge and smooths
+  without crossing it. Trail points carry the take's loop position
+  (`XYPathPoint::m_position`) and the finger (`m_live`), so a UI can draw a looper as
+  it is overwritten. Tests: `MotionTakeRecorder.*`, `MotionLaneStore.*`,
+  `MotionLanePlayer.*`, `MotionCompositor.*`, `MotionLane.*`, `MotionRecorder*.*`,
+  `MotionLaneProcessing.*`. Docs: `motion_recording.md`.
+- `thl::modulation::MotionTransform`: the application's path over playback (shapes,
+  scaling, rotation), stateless, with its setting as one 64-bit word
+  (`MotionRecorder::set_transform()`, `set_transform_settings()`,
+  `transform_version()`); it moves the lane's points, or loops alone over the playback
+  length, and can hold the gate open. `render_motion_path()` samples what plays for
+  drawing. Tests: `MotionLanePlayer.Transform*`,
+  `MotionRecorderOverwrite.LiftedLooperPlaysSmoothedAndTransformed`. Docs:
+  `motion_recording.md`.
+- `thl::modulation::XYController`: XY dots (voices), each with touch input and a
+  recorder, as `<id>.x` / `.y` / `.active` matrix sources (`XYOutput`). A
+  `BlockProcessor` of the matrix, it renders once per block with the matrix's
+  transport (free-running without one), owns its routings and publishes an `XYFrame`
+  per block, plus a recording trail and the recorded path. `for_each_recorder()`
+  reaches every voice's recorder. `XYRouteOptions::m_skip_during_gesture` leaves a
+  target alone while its knob is held (a host gesture). Tests: `XYController*.*`,
+  `XYPad.*`. Docs: `xy_controller.md`.
+- Timestamped touch input: `XYController::touch()` / `touch_voice()` / `release()`
+  take an optional `time_ns`, and `set_block_time(now_ns)` once per block places them
+  at their own sample, `m_input_delay_ms` late (default one prepared block + 5 ms);
+  late touches land at offset 0, later ones wait. x / y ramp linearly between timed
+  moves (change point every `m_render_interval` samples); down, up and finger
+  switches stay sharp. Untimed touches, or a block without a block time, spread as
+  before. Tests: `XYControllerInput.*`, `XYPad.Timed*`.
+- Core: `thl::core::uptime_ns()` (`Clock.h`), the uptime clock of UITouch, NSEvent
+  and host times on Apple platforms, `steady_clock` elsewhere; `thl::TripleBuffer<T>`,
+  a wait-free SPSC latest-value mailbox; `thl::SeqLock`, the sequence counter of a
+  wait-free seqlock over atomics; `RCU::add_reader()` / `read_scope(reader)`, a reader
+  slot (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host
+  rendering on changing threads no longer allocates and locks on the audio thread
+  (`ModulationMatrix::audio_read_scope()` and `process()` use one). Tests:
+  `TripleBuffer.*`, `SeqLock.*`, `RCU.OwnedReaderProtectsAcrossChangingThreads`.
+
+### Changed
+
+- `TransportClock` keeps the block itself: a subclass implements `compute_block()` and
+  `on_prepare()`, and `prepare()`, `begin_block()`, `end_block()`, `block_info()` (now a
+  reference), `beat_at_sample()`, `division_in_block()` and the tempo, signature and
+  play getters are non-virtual in the base. `begin_block()` takes only the frame
+  count; Link's host time goes to `LinkTransportClock::set_host_time_us()`.
+  `sample_position()` counts samples played since `prepare()` on every clock.
+  `Division` moved to `TransportInfo.h`. `InternalTransportClock`: a tempo change
+  keeps the beat continuous. An API and ABI change for subclasses.
+- `ParameterDefinitions.h` and `ModulationScope.h` moved from `tanh/state/` to
+  `tanh/parameters/` (the old headers forward, deprecated for one release), and
+  `ParameterTypeMismatchException` moved to `tanh/parameters/ParameterExceptions.h`.
+  `StateKeyNotFoundException` and `StateGroupNotFoundException` derive from
+  `ParameterNotFoundException`. State links `tanh::Parameters`.
+- `ModulationMatrix::process()` / `process_with_scope()` take the block's
+  `TransportInfo` (optional) for the block processors, and `process()` requires
+  `num_samples <= samples_per_block` (it wrote past its buffers): debug builds
+  assert, release builds clamp.
+- `SmartHandle<T>` reads the base value through the backend's atomic: it is built
+  from `(std::atomic<T>*, ResolvedTarget*)`, and the metadata accessors and
+  `load_normalized()` assert on a handle without a target.
+- `ModulationMatrix::prepare()` needs audio stopped, as a host's `prepareToPlay`
+  does: it re-prepares every source and block processor and resets the sample
+  counter. A same-size `prepare()` during audio was documented as safe but raced
+  that state. Sources and block processors added before the first `prepare()` are
+  prepared by it, not at once with a default rate and size.
+- `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
+  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
+
+### Removed
+
+- `SmartHandle<T>::raw_handle()`: a backend has no `ParameterHandle`. Use
+  `State::get_handle<T>(key)`; hosts write base values through their own API.
+- The `host_time_micros` parameter of `TransportClock::begin_block()` (see Changed).
+
+### Fixed
+
+- Clocks: a tempo change inside a block, or a Link peer's dated within 50 ms, is
+  `k_tempo_changed`, not `k_jumped`; a Link stop dated ahead lands in its block; the
+  first realignment within 1.5 s of a Link epoch change is the `k_timeline_reset`;
+  `HostTransportClock` drops a seek made while the host supplies the beat and
+  trusts its play flag only with tempo, beat or time signature. Tests:
+  `HostTransportClockTempoMap.*`, `LinkTransportClock.JoinRealignmentAfterTheEpochResets`,
+  `HostTransportClock.SeekWhileHostSuppliesBeatIsDropped`.
+- Clocks: a block that continues the previous one starts exactly at its end, so a
+  division boundary on a block edge counts once (it could count twice or not at
+  all with a host's sample-derived ppq); the time signature is set in one atomic,
+  never seen half updated; a seek or tempo request is taken once (it could apply
+  in two blocks); `InternalTransportClock::prepare()` keeps the beat at a new sample
+  rate. Tests: `HostTransportClock.DivisionsOnBlockEdgesCountOnce`,
+  `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate}`.
+- `XYController`: the trail keeps its spacing across blocks shorter than the trail
+  interval; a reset that closes a latched gate adds a change point at sample 0.
+  Tests: `XYFramePublisher.TrailKeepsItsSpacingAcrossShortBlocks`,
+  `XYController.LatchKeepsTheGateOpenUntilTurnedOff`.
+- Link clock: our own play or seek right after an epoch change is a plain jump,
+  not the join's `k_timeline_reset`, and ends the wait for it; the host-time filter
+  starts over after host times, so a stall while they arrived does not offset it.
+  Tests: `LinkTransportClock.{OwnSeekAfterTheEpochIsNotAReset,FilterStartsOverWhenHostTimesStop}`.
+- RCU: read scopes on one thread or reader slot nest; closing an inner one freed
+  the outer one's version (e.g. `audio_read_scope()` around `ModulationMatrix::process()`).
+  Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
+- `XYController::set_block_time()` holds for one `matrix.process()`: documented that
+  a host splitting its block sets it per chunk.
+- `XYController`: a repeated `prepare()` re-prepares the recorders; a take published
+  by `service()` during a block no longer switches that block to the older lane it
+  still reads. Tests: `MotionRecorderThreads.ConcurrentServiceKeepsTheHandoffSilent`.
+
 ## [0.4.0] - 2026-09-21
 
 ### Added

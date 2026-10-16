@@ -41,6 +41,27 @@ enum class RoutingMode : uint8_t {
     CrossScope       // rejected: two different non-global scopes
 };
 
+// Times of the host hand-over (ModulationRouting::m_share_with_host), set per
+// matrix with ModulationMatrix::set_host_share_times(). Negative values count
+// as 0; a ramp of 0 ms switches within one sample.
+struct HostShareTimes {
+    static constexpr float k_take_ms = 20.0f;
+    static constexpr float k_return_ms = 50.0f;
+    static constexpr float k_hold_ms = 300.0f;
+
+    // While the hand-over weight moves, the matrix flags a change point on the
+    // target at least every this many samples (and where the ramp starts and ends).
+    static constexpr uint32_t k_change_point_interval = 32;
+
+    // Ramp of the weight from the host to the modulation (linear).
+    float m_take_ms = k_take_ms;
+    // Ramp of the weight from the modulation back to the host (linear).
+    float m_return_ms = k_return_ms;
+    // How long the host stays active after its last base-value change (or the
+    // end of a gesture).
+    float m_hold_ms = k_hold_ms;
+};
+
 // Sentinel value returned by add_routing() when the routing is rejected.
 static constexpr uint32_t k_invalid_routing_id = 0;
 
@@ -100,6 +121,28 @@ struct ModulationRouting {
     // When true, this routing is skipped while the target parameter is in gesture
     // (i.e. the user is actively interacting with the parameter).
     bool m_skip_during_gesture = false;
+
+    // Share the target with the host, as a DAW's Touch automation mode does
+    // (Replace / ReplaceHold from a global source into a global target only).
+    // The host (its base value: automation, a gesture) and the target's Replace
+    // output are two writers; the last one to become active owns the
+    // parameter, and when the owner stops, the other takes over if it is
+    // active, else the owner keeps it. Every hand-over is a crossfade with the
+    // times of ModulationMatrix::set_host_share_times(). Host activity comes
+    // from ParameterBinding::m_host_change_stamp and m_in_gesture.
+    //
+    // Sharing is a property of the target: one routing that opts in makes
+    // every Replace / ReplaceHold routing on that target one writer (their
+    // composed output), and m_skip_during_gesture is ignored on it (a gesture
+    // is host activity). A polyphonic target is not shared (logged warning).
+    // See "Sharing a parameter with the host" in host_parameters.md.
+    bool m_share_with_host = false;
+
+    // A disabled routing writes nothing to its target and drops its held
+    // value. Unlike a depth of 0 this also silences Replace / ReplaceHold.
+    // Toggled without a rebuild by ModulationMatrix::set_routing_enabled();
+    // serialised only when false, so older presets load as enabled.
+    bool m_enabled = true;
 
     ModulationRouting() = default;
 

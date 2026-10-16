@@ -15,7 +15,9 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -27,7 +29,9 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -40,7 +44,9 @@
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
                 "CMAKE_OSX_ARCHITECTURES": "x86_64",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -53,7 +59,9 @@
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
                 "CMAKE_OSX_ARCHITECTURES": "x86_64",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -61,7 +69,9 @@
             "displayName": "Windows Debug",
             "binaryDir": "${sourceDir}/build/windows",
             "cacheVariables": {
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -69,7 +79,9 @@
             "displayName": "Windows Release",
             "binaryDir": "${sourceDir}/build/windows",
             "cacheVariables": {
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -82,7 +94,9 @@
             },
             "cacheVariables": {
                 "TANH_WITH_TESTS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -97,7 +111,8 @@
                 "ANDROID_PLATFORM": "android-24",
                 "BUILD_SHARED_LIBS": "OFF",
                 "TANH_WITH_TESTS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON"
             }
         },
         {
@@ -112,7 +127,8 @@
                 "ANDROID_PLATFORM": "android-24",
                 "BUILD_SHARED_LIBS": "OFF",
                 "TANH_WITH_TESTS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON"
             }
         },
         {
@@ -126,7 +142,8 @@
                 "ANDROID_ABI": "x86_64",
                 "ANDROID_PLATFORM": "android-24",
                 "BUILD_SHARED_LIBS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON"
             }
         },
         {
@@ -136,7 +153,9 @@
             "cacheVariables": {
                 "TANH_WITH_ASAN": "ON",
                 "TANH_WITH_USAN": "ON",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -145,7 +164,9 @@
             "inherits": "desktop-debug",
             "cacheVariables": {
                 "TANH_WITH_TSAN": "ON",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -154,7 +175,9 @@
             "inherits": "desktop-debug",
             "cacheVariables": {
                 "TANH_WITH_MSAN": "ON",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -163,7 +186,9 @@
             "inherits": "desktop-debug",
             "cacheVariables": {
                 "TANH_WITH_LSAN": "ON",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -172,7 +197,9 @@
             "inherits": "desktop-debug",
             "cacheVariables": {
                 "TANH_WITH_RTSAN": "ON",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -185,7 +212,9 @@
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "SIMULATOR",
                 "BUILD_SHARED_LIBS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -198,7 +227,9 @@
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "SIMULATOR",
                 "BUILD_SHARED_LIBS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -211,7 +242,9 @@
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "DEVICE",
                 "BUILD_SHARED_LIBS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -224,7 +257,9 @@
                 "TANH_IOS_TEST_RUNNER_DIR": "${sourceDir}/scripts",
                 "TANH_IOS_PLATFORM": "DEVICE",
                 "BUILD_SHARED_LIBS": "OFF",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             }
         },
         {
@@ -259,7 +294,9 @@
                 "CMAKE_CXX_COMPILER": "clang++",
                 "CMAKE_C_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
                 "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
-                "TANH_BUILD_NET": "ON"
+                "TANH_BUILD_NET": "ON",
+                "TANH_BUILD_GRAPH": "ON",
+                "TANH_BUILD_LINK": "ON"
             },
             "description": "Instrumented clang source-based coverage build for the CI coverage leg."
         }
@@ -386,6 +423,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -397,6 +439,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -408,6 +455,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -419,6 +471,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -430,6 +487,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -444,6 +506,11 @@
             },
             "environment": {
                 "TSAN_OPTIONS": "suppressions=${sourceDir}/sanitizers/tsan_suppressions.txt"
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -455,6 +522,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -466,6 +538,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -477,6 +554,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -488,6 +570,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -499,6 +586,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -510,6 +602,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -521,6 +618,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         },
         {
@@ -532,6 +634,11 @@
             },
             "execution": {
                 "timeout": 600
+            },
+            "filter": {
+                "exclude": {
+                    "label": "link-peers"
+                }
             }
         }
     ]
