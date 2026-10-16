@@ -5,6 +5,7 @@
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -111,7 +112,6 @@ public:
 
 private:
     using BufferIndex = uint32_t;
-    struct Delay;
     struct Node;
     struct Source;
     struct ProcessingStep;
@@ -123,7 +123,7 @@ private:
     };
 
     struct RetiredDelay {
-        std::unique_ptr<Delay> m_delay;
+        std::unique_ptr<thl::dsp::utils::DelayProcessor> m_delay;
         uint64_t m_last_generation;  // newest compiled version that may still use it
     };
 

@@ -1,7 +1,7 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
-#include <tanh/dsp/utils/DynamicDelayLine.h>
+#include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/graph/Graph.h>
 
@@ -21,23 +21,6 @@
 namespace thl::graph {
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Delay: Holds a delay line per channel and a delay amount. Used to
-// compensate bypass signals and parallel paths in the graph.
-// ─────────────────────────────────────────────────────────────────────────────
-
-struct Graph::Delay {
-    std::vector<dsp::utils::DynamicDelayLine> m_lines;
-    uint32_t m_amount = 0;
-    uint32_t m_max = 0;
-
-    void prepare(size_t num_channels, uint32_t max) {
-        m_max = max;
-        m_lines = std::vector<dsp::utils::DynamicDelayLine>(max > 0 ? num_channels : 0);
-        for (auto& line : m_lines) { line.prepare(max); }
-    }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Node: what the graph keeps per node. graph_input() and graph_output() have no
 // processor.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +33,7 @@ struct Graph::Node {
     thl::dsp::utils::SmoothedValue m_input_mix_smoother;
     std::atomic<float> m_wet_mix{1.0f};
     thl::dsp::utils::SmoothedValue m_wet_mix_smoother;
-    std::unique_ptr<Delay> m_dry_delay;
+    std::unique_ptr<thl::dsp::utils::DelayProcessor> m_dry_delay;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,14 +43,14 @@ struct Graph::Node {
 
 struct Graph::Source {
     BufferIndex m_buffer = 0;
-    Delay m_delay;
+    thl::dsp::utils::DelayProcessor m_delay;
 };
 
 struct Graph::ProcessingStep {
     Node* m_node = nullptr;
     std::vector<Source> m_sources;
     BufferIndex m_buffer = 0;
-    Delay* m_dry_delay = nullptr;
+    thl::dsp::utils::DelayProcessor* m_dry_delay = nullptr;
 };
 
 struct Graph::CompiledGraph {
@@ -257,6 +240,9 @@ void Graph::prepare_node(Node& node, bool prepare_processor) const {
     if (prepare_processor && node.m_processor) {
         node.m_processor->prepare(m_sample_rate, m_max_block_size, m_num_channels);
     }
+    if (node.m_dry_delay) {
+        node.m_dry_delay->prepare(m_sample_rate, m_max_block_size, m_num_channels);
+    }
     // Start at the current values instead of ramping to them.
     const bool average = node.m_input_mix.load(std::memory_order_relaxed) == InputMix::Average;
     node.m_input_mix_smoother.reset(m_sample_rate, Node::k_ramp_seconds);
@@ -340,16 +326,15 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
             continue;
         }
         const uint32_t max = node.m_processor->max_latency_samples();
-        const bool keep_delay = node.m_dry_delay && node.m_dry_delay->m_max == max &&
-                                (max == 0 || node.m_dry_delay->m_lines.size() == m_num_channels);
+        const bool keep_delay = node.m_dry_delay && node.m_dry_delay->max_delay_samples() == max;
         if (!keep_delay) {
             if (node.m_dry_delay) {
                 m_retired_delays.push_back({.m_delay = std::move(node.m_dry_delay),
                                             .m_last_generation = m_next_generation - 1});
             }
-            node.m_dry_delay = std::make_unique<Delay>();
-            node.m_dry_delay->prepare(m_num_channels, max);
-            node.m_dry_delay->m_amount = node.m_processor->latency_samples();
+            node.m_dry_delay = std::make_unique<thl::dsp::utils::DelayProcessor>(max);
+            node.m_dry_delay->prepare(m_sample_rate, m_max_block_size, m_num_channels);
+            node.m_dry_delay->set_delay_samples(node.m_processor->latency_samples());
         }
         compiled->m_steps.push_back({.m_node = &node,
                                      .m_sources = std::move(sources),
