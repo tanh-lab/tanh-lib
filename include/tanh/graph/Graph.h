@@ -146,7 +146,7 @@ private:
     void free_all_compiled();
 
     bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
-    static void apply_latencies(CompiledGraph& compiled) TANH_NONBLOCKING_FUNCTION;
+    static uint32_t apply_latencies(CompiledGraph& compiled) TANH_NONBLOCKING_FUNCTION;
     void apply_fade(thl::core::BufferView buffer) TANH_NONBLOCKING_FUNCTION;
     static void mix_sources(const CompiledGraph& compiled,
                             std::span<Source> sources,
