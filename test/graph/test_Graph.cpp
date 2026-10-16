@@ -599,6 +599,63 @@ TEST(Graph, FullWetKeepsTheDryHistory) {
     }
 }
 
+TEST(Graph, ParallelBranchIsAlignedWithALatentBranch) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, MergeInsideTheGraphIsAligned) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    const auto merge = graph.add_node<GainProcessor>(1.0f);
+    ASSERT_TRUE(latent && merge);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, *merge));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *merge));
+    ASSERT_TRUE(graph.connect(*merge, graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, BranchesAreAlignedToTheSlowest) {
+    Graph graph;
+    const auto shorter = graph.add_node<LatencyProcessor>(40);
+    const auto longer = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(shorter && longer);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *shorter));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *longer));
+    ASSERT_TRUE(graph.connect(*shorter, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
+TEST(Graph, ChainWithTheSameLatencyAsAParallelNodeIsAligned) {
+    Graph graph;
+    const auto first = graph.add_node<LatencyProcessor>(40);
+    const auto second = graph.add_node<LatencyProcessor>(60);
+    const auto parallel = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(first && second && parallel);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *first));
+    ASSERT_TRUE(graph.connect(*first, *second));
+    ASSERT_TRUE(graph.connect(*second, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *parallel));
+    ASSERT_TRUE(graph.connect(*parallel, graph.graph_output()));
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+}
+
 TEST(Graph, HasUncommittedChangesTracksEdits) {
     Graph graph;
     EXPECT_FALSE(graph.has_uncommitted_changes());
