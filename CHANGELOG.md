@@ -20,6 +20,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `ModulationSource::output_activity()` separates "driven" from "value valid";
   `"share_with_host": true` is serialised. Tests: `HostShare.*`. Docs:
   `host_parameters.md`.
+- `thl::modulation::MotionRecorder` and `MotionLane`: record an XY gesture on the
+  audio thread into preallocated memory and loop it back synced to the transport,
+  with touch override and a glide back. Every take is a Beats loop of whole bars:
+  `Free` records one gesture from the touch to the release, drops its still ends and
+  is stretched onto the nearest of 1, 2, 4, 8 or 16 bars; `BarsN` is a looper over N
+  bars from the loop line that records until `disarm()`, starts as what plays,
+  overwrites only where the finger is down and hands the loop over at every release,
+  so it plays smoothed and transformed between touches (one undo step per take). The
+  recorder is a facade over tested parts: `detail::MotionTakeRecorder`,
+  `detail::MotionLaneStore` (hand-over slots, RCU publication, undo),
+  `detail::MotionLanePlayer` (phase, playback length, reverse, jumps, render ramp) and
+  `detail::MotionCompositor` (touch over playback over hold). The transport flags are
+  the only jump detector; a jump never aborts a running take. UI commands are
+  `[[nodiscard]]` (false when the 32-entry queue is full); `service()` publishes
+  takes; lanes save as validated JSON. `set_playback_length(BarsN)` plays any lane
+  stretched onto N bars from a bar line. A take that keeps nothing leaves the lane
+  that played. The published lane stays raw, seam included (`MotionLane::m_seam`,
+  JSON `seam`); what plays (`played_lane()`, also `make_played_curve()` for any lane)
+  closes the seam over 0.3 beat (150 ms), widening to the whole loop as
+  `set_smoothing()` goes to 1, then runs x and y through a zero-phase Gaussian of
+  sigma = amount² × half a beat (250 ms for Seconds lanes).
+  `set_loop_end(LoopEnd::Jump)` keeps the end-to-start step as a hard edge and smooths
+  without crossing it. The private touch pad (`detail::XYPad`) that feeds it comes along.
+  Tests: `MotionTakeRecorder.*`, `MotionLaneStore.*`, `MotionLanePlayer.*`,
+  `MotionCompositor.*`, `MotionLane.*`, `MotionRecorder*.*`, `MotionLaneProcessing.*`,
+  `XYPad.*`. Docs: `motion_recording.md`.
+- `thl::modulation::MotionTransform`: the application's path over playback (shapes,
+  scaling, rotation), stateless, with its setting as one 64-bit word
+  (`MotionRecorder::set_transform()`, `set_transform_settings()`,
+  `transform_version()`); it moves the lane's points, or loops alone over the playback
+  length, and can hold the gate open. `render_motion_path()` samples what plays for
+  drawing. Tests: `MotionLanePlayer.Transform*`,
+  `MotionRecorderOverwrite.LiftedLooperPlaysSmoothedAndTransformed`. Docs:
+  `motion_recording.md`.
 - Core: `thl::core::uptime_ns()` (`Clock.h`), the uptime clock of UITouch, NSEvent
   and host times on Apple platforms, `steady_clock` elsewhere; `thl::TripleBuffer<T>`,
   a wait-free SPSC latest-value mailbox; `thl::SeqLock`, the sequence counter of a

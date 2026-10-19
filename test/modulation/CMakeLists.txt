@@ -10,9 +10,30 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_InputEventQueue.cpp
 	test_ParameterBackend.cpp
 	test_ResolvedTarget.cpp
+	test_XYPad.cpp
 	test_RoutingEnabled.cpp
+	test_MotionLane.cpp
+	test_MotionRecorder.cpp
+	test_MotionRecorderClock.cpp
+	test_MotionRecorderThreads.cpp
+	test_MotionRecorderTakes.cpp
+	test_MotionRecorderOverwrite.cpp
+	test_MotionTakeRecorder.cpp
+	test_MotionLaneStore.cpp
+	test_MotionLanePlayer.cpp
+	test_MotionCompositor.cpp
+	test_MotionRecorderFreeTakes.cpp
+	test_MotionRecorderSmoothing.cpp
+	test_MotionLaneProcessing.cpp
+	test_MotionClock.cpp
+	test_MotionHistory.cpp
 	test_HostShare.cpp
 )
+
+# The touch pad and the motion helpers are private to tanh::Modulation (src/modulation):
+# the tests include them directly and compile the pad in (it is not exported).
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../src/modulation)
+target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../src/modulation/XYPad.cpp)
 
 target_link_libraries(${PROJECT_NAME}
 	PRIVATE

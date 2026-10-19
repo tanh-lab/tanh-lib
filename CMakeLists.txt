@@ -416,6 +416,15 @@ if(TANH_BUILD_MODULATION)
         src/modulation/ModulationMatrix.cpp
         src/modulation/LFOSource.cpp
         src/modulation/InputEventQueue.cpp
+        src/modulation/XYPad.cpp
+        src/modulation/MotionLane.cpp
+        src/modulation/MotionLaneProcessing.cpp
+        src/modulation/MotionRecorder.cpp
+        src/modulation/MotionTransform.cpp
+        src/modulation/MotionTakeRecorder.cpp
+        src/modulation/MotionLaneStore.cpp
+        src/modulation/MotionLanePlayer.cpp
+        src/modulation/MotionCompositor.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES

@@ -33,6 +33,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    modulation
    host_parameters
    transport
+   motion_recording
    audio_io
    api/index
    changelog
@@ -52,7 +53,8 @@ block in pieces that start where its modulated parameters change.
 :doc:`symbol_visibility`, :doc:`modulation` and :doc:`audio_io` are the design
 notes that used to live in the README. :doc:`host_parameters` drives the
 matrix from a host's parameter store; :doc:`transport` covers musical time
-(``TransportInfo``, host/internal/Link clocks) and Ableton Link.
+(``TransportInfo``, host/internal/Link clocks) and Ableton Link;
+:doc:`motion_recording` records and loops XY gestures.
 
 The :doc:`api/index` is generated from the public headers under
 ``include/tanh/``.
