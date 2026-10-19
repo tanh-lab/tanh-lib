@@ -80,6 +80,10 @@ public:
     /// since the last commit it does nothing. False if the graph has a cycle.
     bool commit();
     bool has_uncommitted_changes() const;
+    /// Control thread: the latency of the version prepare() or commit() handed over last, from its
+    /// nodes' max_latency_samples(). latency_samples() reaches it once the audio thread runs that
+    /// version and its nodes are at their maximum, so a host can be told right after commit().
+    uint32_t committed_latency_samples() const { return m_committed_latency; }
 
     /// Frees the versions the audio thread handed back and the removed nodes no running version
     /// uses, also in nested graphs. commit() calls it; call it from a timer (e.g. 30 Hz on the
@@ -178,6 +182,7 @@ private:
     size_t m_num_channels = 0;
     bool m_dirty = false;
     bool m_published = false;  // a version was published since prepare()
+    uint32_t m_committed_latency = 0;  // of the version published last
 
     uint64_t m_next_generation = 1;
     std::set<uint64_t> m_live_generations;  // handed to the audio thread and not yet freed

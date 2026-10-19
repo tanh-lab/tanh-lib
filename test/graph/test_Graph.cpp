@@ -803,6 +803,30 @@ TEST(Graph, MaxLatencyOnlyRisesUntilPrepare) {
     EXPECT_EQ(graph.latency_samples(), k_latency);
 }
 
+TEST(Graph, CommittedLatencyIsKnownRightAfterCommit) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(k_latency);
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    prepare(graph);
+    EXPECT_EQ(graph.committed_latency_samples(), k_latency);
+
+    const auto longer = graph.add_node<LatencyProcessor>(300);
+    ASSERT_TRUE(longer);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *longer));
+    ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(graph.committed_latency_samples(), 300u);  // before the audio thread runs it
+    EXPECT_EQ(graph.latency_samples(), k_latency);
+
+    // Unlike the max latency, it falls again.
+    ASSERT_TRUE(graph.remove_node(*longer));
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(graph.committed_latency_samples(), k_latency);
+    EXPECT_EQ(graph.max_latency_samples(), 300u);
+}
+
 TEST(Graph, NestedGraphReportsItsLatencyToTheOuterGraph) {
     auto owned = std::make_unique<Graph>();
     Graph& inner = *owned;
