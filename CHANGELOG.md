@@ -48,6 +48,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   wait-free seqlock, so a batch lands whole. Edges and the first block after a
   rebuild flag offset 0; a zero-sample block keeps the edge. `"enabled": false` is
   serialised only when disabled. Tests: `RoutingEnabled.*`.
+- `tanh::Graph` (`TANH_BUILD_GRAPH`, off by default; on in every preset):
+  `thl::graph::Graph`, a `BaseProcessor` of `BaseProcessor` nodes wired by connections,
+  edited on the control thread and handed to the audio thread at `commit()` with a
+  short fade, with nested graphs, per-node input mix (sum or average) and wet mix, and
+  `collect_garbage()` for what the audio thread let go. Latency compensation: a
+  processor reports `latency_samples()` within `max_latency_samples()`
+  (`BaseProcessor`); the graph delays the faster inputs of every merge and a node's dry
+  and bypass path (`thl::dsp::utils::DelayProcessor`, crossfading on a change), stays
+  silent after a commit until the new latency has passed, reports its own latency and,
+  with `committed_latency_samples()`, the latency of the version committed last, so a
+  host can be told right after `commit()`. `BaseProcessor::process_modulated()` takes
+  the part's position in the block (`modulation_offset`), so a node of a block run in
+  parts reads its modulation at block positions. Tests: `Graph.*`, `DelayProcessor.*`,
+  the DSP fixtures and `IntegrationHosts.*` in graphs. By @jstolberg.
 - `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
   before any source (`add_block_processor()`), given a `BlockContext` with the block
   length and the transport passed to `process()` / `process_with_scope()`.
@@ -77,6 +91,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `BaseProcessor` holds its latency in two atomics: code built against the old
+  headers must be rebuilt. It gets an explicit copy constructor and assignment.
 - `TransportClock` keeps the block itself: a subclass implements `compute_block()` and
   `on_prepare()`, and `prepare()`, `begin_block()`, `end_block()`, `block_info()` (now a
   reference), `beat_at_sample()`, `division_in_block()` and the tempo, signature and

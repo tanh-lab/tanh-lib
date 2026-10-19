@@ -37,6 +37,10 @@ if(TARGET tanh::State)
 		test_DspFixture_Reverb.cpp
 	)
 	target_link_libraries(${PROJECT_NAME} PRIVATE tanh::DSP tanh::State)
+	# The DSP fixtures also run their processors inside graphs (DspFixture.h).
+	if(TARGET tanh::Graph)
+		target_link_libraries(${PROJECT_NAME} PRIVATE tanh::Graph)
+	endif()
 endif()
 
 include(GoogleTest)

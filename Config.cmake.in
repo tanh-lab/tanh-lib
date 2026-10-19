@@ -3,7 +3,7 @@
 include(CMakeFindDependencyMacro)
 
 # Components built into this installation, by public component name
-# (Core, Parameters, State, DSP, Resonator, Modulation, AudioIO, Net, Link). Each maps to an
+# (Core, Parameters, State, DSP, Resonator, Modulation, AudioIO, Net, Link, Graph). Each maps to an
 # imported target tanh::<Component>.
 #
 # Net is off by default (TANH_BUILD_NET): it is the only component that links a
@@ -14,7 +14,7 @@ set(tanh_AVAILABLE_COMPONENTS @TANH_EXPORTED_COMPONENTS@)
 
 # Every component other than Core depends on Core; State and Modulation depend on
 # Parameters; Modulation additionally depends on DSP, and on State when the
-# installation has it (Modulation then links it); Link depends on DSP. Resolve the
+# installation has it (Modulation then links it); Link and Graph depend on DSP. Resolve the
 # closure of what was requested.
 set(_tanh_required ${tanh_FIND_COMPONENTS})
 if(NOT _tanh_required)
@@ -31,6 +31,9 @@ if("Modulation" IN_LIST _tanh_required)
     if("State" IN_LIST tanh_AVAILABLE_COMPONENTS)
         list(APPEND _tanh_required State)
     endif()
+endif()
+if("Graph" IN_LIST _tanh_required)
+    list(APPEND _tanh_required DSP)
 endif()
 if(NOT "Core" IN_LIST _tanh_required)
     list(APPEND _tanh_required Core)

@@ -8,6 +8,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_LinearSmootherBank.cpp
 	test_MorphFilter.cpp
 	test_StereoFDN.cpp
+	test_DelayProcessor.cpp
 	test_InternalTransportClock.cpp
 	test_TransportInfo.cpp
 	test_TransportClock.cpp
