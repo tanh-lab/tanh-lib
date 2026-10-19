@@ -305,7 +305,9 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/ConstellationReverb.cpp
         src/dsp/fx/StereoFDN.cpp
 
+        src/dsp/transport/ContinuityTracker.cpp
         src/dsp/transport/InternalTransportClock.cpp
+        src/dsp/transport/HostTransportClock.cpp
 
         src/dsp/metronome/MetronomePlayer.cpp
     )

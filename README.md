@@ -13,7 +13,7 @@ all in namespace `thl`:
 - **tanh::State** -- hierarchical parameter storage with RCU lock-free reads and
   JSON serialization
 - **tanh::DSP** -- processors, effects, filters, granular engine, Rings resonator
-  model (also available alone as `tanh::Resonator`)
+  model (also available alone as `tanh::Resonator`), transport clocks
 - **tanh::Modulation** -- modulation matrix with change-point sub-blocking
 - **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)

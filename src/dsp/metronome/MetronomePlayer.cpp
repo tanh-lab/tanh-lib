@@ -1,6 +1,7 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/transport/TransportClock.h>
+#include <tanh/dsp/transport/TransportInfo.h>
 
 #include <array>
 #include <cmath>

@@ -21,9 +21,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (`ParameterNotFoundException`, `ParameterTypeMismatchException`), shared by State
   and Modulation in `tanh/parameters/`. AGPL-3.0; built whenever State or Modulation
   is (no option).
+- `thl::dsp::transport::TransportInfo`: trivially copyable per-block snapshot with
+  the flags `k_jumped`, `k_started`, `k_stopped`, `k_tempo_changed` and
+  `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
+  jitter and in-block tempo changes, so consumers react to flags and never compare
+  beats. `HostTransportClock` follows the host's playhead with fallbacks for omitted
+  fields. Tests: `TransportInfo.*`, `ContinuityTracker.*`, `TransportClock.*`,
+  `HostTransportClock*.*`. Docs: `transport.md`.
 
 ### Changed
 
+- `TransportClock` keeps the block itself: a subclass implements `compute_block()` and
+  `on_prepare()`, and `prepare()`, `begin_block()`, `end_block()`, `block_info()` (now a
+  reference), `beat_at_sample()`, `division_in_block()` and the tempo, signature and
+  play getters are non-virtual in the base. `begin_block()` takes only the frame
+  count. `sample_position()` counts samples played since `prepare()` on every clock.
+  `Division` moved to `TransportInfo.h`. `InternalTransportClock`: a tempo change
+  keeps the beat continuous. An API and ABI change for subclasses.
 - `ParameterDefinitions.h` and `ModulationScope.h` moved from `tanh/state/` to
   `tanh/parameters/` (the old headers forward, deprecated for one release), and
   `ParameterTypeMismatchException` moved to `tanh/parameters/ParameterExceptions.h`.
@@ -32,8 +46,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
   (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
 
+### Removed
+
+- The `host_time_micros` parameter of `TransportClock::begin_block()` (see Changed).
+
 ### Fixed
 
+- Clocks: a tempo change inside a block is `k_tempo_changed`, not `k_jumped`;
+  `HostTransportClock` drops a seek made while the host supplies the beat and
+  trusts its play flag only with tempo, beat or time signature. Tests:
+  `HostTransportClockTempoMap.*`, `HostTransportClock.SeekWhileHostSuppliesBeatIsDropped`.
+- Clocks: a block that continues the previous one starts exactly at its end, so a
+  division boundary on a block edge counts once (it could count twice or not at
+  all with a host's sample-derived ppq); the time signature is set in one atomic,
+  never seen half updated; a seek or tempo request is taken once (it could apply
+  in two blocks); `InternalTransportClock::prepare()` keeps the beat at a new sample
+  rate. Tests: `HostTransportClock.DivisionsOnBlockEdgesCountOnce`,
+  `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate}`.
 - RCU: read scopes on one thread or reader slot nest; closing an inner one freed
   the outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
 
