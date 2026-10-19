@@ -1,10 +1,11 @@
 Components
 ==========
 
-tanh-lib is six independently buildable library targets. Each is an
+tanh-lib is a set of independently buildable library targets. Each is an
 ``add_library`` of its own, exported as ``tanh::<Component>`` both in-tree and
-from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option.
-Everything lives in namespace ``thl``.
+from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option
+(Parameters has none: it is built with State or Modulation). Everything lives
+in namespace ``thl``.
 
 .. graphviz::
    :align: center
@@ -15,13 +16,15 @@ Everything lives in namespace ``thl``.
        edge [color="#5b6b82", arrowsize=0.7];
 
        core       [label="tanh::Core\nDispatcher, Logger, RCU,\nLockFreeQueue, Buffer, WavReader"];
+       parameters [label="tanh::Parameters\ndefinitions, ranges,\nscopes, lookup errors"];
        state      [label="tanh::State\nhierarchical parameters,\nRCU reads, JSON"];
        dsp        [label="tanh::DSP\nprocessors, effects,\ngranular, Rings resonator"];
        modulation [label="tanh::Modulation\nmodulation matrix,\nchange-point sub-blocking"];
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
 
-       state -> core;
+       parameters -> core;
+       state -> parameters;
        dsp -> core;
        audio_io -> core;
        net -> core;
@@ -54,6 +57,18 @@ Core links no platform system library by default; the Linux journald sink is
 opt-in through ``TANH_WITH_JOURNALD``. Allocation failure in the containers
 throws ``std::bad_alloc``; contract violations ``assert``.
 
+Parameters
+----------
+
+``tanh::Parameters`` (``include/tanh/parameters/``) describes a parameter
+independently of where its value is stored:
+:cpp:struct:`thl::ParameterDefinition` (type, ``Range``, flags, formatters),
+the modulation scope it belongs to and the lookup errors
+(:cpp:class:`thl::ParameterNotFoundException`,
+:cpp:class:`thl::ParameterTypeMismatchException`). State and Modulation both
+depend on it. It has no option of its own: it is built whenever State or
+Modulation is. Depends on Core.
+
 State
 -----
 
@@ -62,7 +77,7 @@ addressed by dot-separated paths such as ``"oscillator.frequency"``. Reads are
 RCU-protected, so the audio thread can look a value up without taking a lock;
 numeric parameter types (``double``, ``float``, ``int``, ``bool``) are fully
 real-time safe. Serialization to and from JSON goes through nlohmann_json.
-Depends on Core.
+Depends on Core and Parameters.
 
 DSP
 ---

@@ -1,11 +1,13 @@
 tanh-lib
 ========
 
-Modular, real-time-safe C++20 audio library. Six independently buildable
+Modular, real-time-safe C++20 audio library. Independently buildable
 components, all in namespace ``thl``:
 
 - **tanh::Core** — Dispatcher, Logger (with a real-time path), RCU, lock-free
   queue, generic buffers, header-only WAV decoder
+- **tanh::Parameters** — parameter definitions, ranges, modulation scopes and
+  lookup errors, shared by State and Modulation
 - **tanh::State** — hierarchical parameter storage with RCU lock-free reads and
   JSON serialization
 - **tanh::DSP** — processors, effects, filters, granular engine, Rings resonator
