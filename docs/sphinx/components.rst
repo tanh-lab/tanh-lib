@@ -22,6 +22,7 @@ in namespace ``thl``.
        modulation [label="tanh::Modulation\nmodulation matrix,\nchange-point sub-blocking"];
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
+       link       [label="tanh::Link\nLinkSession (Ableton Link)", style="rounded,dashed"];
 
        parameters -> core;
        state -> parameters;
@@ -31,6 +32,7 @@ in namespace ``thl``.
        modulation -> parameters;
        modulation -> state [style=dashed, label="optional", fontsize=9];
        modulation -> dsp;
+       link -> dsp;
    }
 
 Core
@@ -124,6 +126,17 @@ platform HTTP stack, :cpp:class:`thl::net::Sha256` for verification and
 ``<root>/<id>/<version>/``. Off by default (``TANH_BUILD_NET``) so nothing that
 embeds ``tanh::Core`` inherits a network stack. Depends on Core.
 
+Link
+----
+
+``tanh::Link`` (``include/tanh/link/``) wraps one Ableton Link session,
+:cpp:class:`thl::link::LinkSession`: the Link C++ SDK on macOS, Linux and
+Windows, LinkKit on iOS. The audio side,
+:cpp:class:`thl::dsp::transport::LinkTransportClock`, lives in DSP and talks to
+the session through the ``LinkBackend`` seam, so it is testable without the
+SDK. Off by default (``TANH_BUILD_LINK``) because Link brings its own licence
+terms (GPLv2+ or proprietary). See :doc:`transport`. Depends on DSP.
+
 Platforms
 ---------
 
@@ -135,4 +148,5 @@ which ``tanh::Core`` carries as a public compile definition.
 Licenses
 --------
 
-Core is Apache-2.0; every other component is AGPL-3.0. See :doc:`license`.
+Core is Apache-2.0; every other component is AGPL-3.0, and ``TANH_BUILD_LINK``
+adds Ableton Link's own terms. See :doc:`license`.

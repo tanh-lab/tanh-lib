@@ -14,6 +14,9 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_ContinuityTracker.cpp
 	test_InternalTransportClockInfo.cpp
 	test_HostTransportClock.cpp
+	test_LinkTransportClock.cpp
+	test_HostTimeFilter.cpp
+	test_LinkAudioReceiver.cpp
 	test_MetronomePlayer.cpp
 	test_Granular.cpp
 	test_MorphWindow.cpp
