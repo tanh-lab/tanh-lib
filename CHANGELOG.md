@@ -9,18 +9,48 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Host hand-over, as a DAW's Touch mode: a Replace / ReplaceHold routing with
+  `ModulationRouting::m_share_with_host` shares its target with the host. The last
+  of the two writers to become active owns it; when the owner stops, the other
+  takes over if active, else the value stays. Every hand-over crossfades
+  (`HostShareTimes`: take 20 ms, return 50 ms, host hold 300 ms;
+  `ModulationMatrix::set_host_share_times()`), flagging change points at least every
+  32 samples while it moves. Host activity: `ParameterBinding::m_host_change_stamp`
+  (a counter the backend bumps on every host write) and the gesture flag.
+  `ModulationSource::output_activity()` separates "driven" from "value valid";
+  `"share_with_host": true` is serialised. Tests: `HostShare.*`. Docs:
+  `host_parameters.md`.
 - Core: `thl::core::uptime_ns()` (`Clock.h`), the uptime clock of UITouch, NSEvent
   and host times on Apple platforms, `steady_clock` elsewhere; `thl::TripleBuffer<T>`,
   a wait-free SPSC latest-value mailbox; `thl::SeqLock`, the sequence counter of a
   wait-free seqlock over atomics; `RCU::add_reader()` / `read_scope(reader)`, a reader
   slot (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host
-  rendering on changing threads no longer allocates and locks on the audio thread.
+  rendering on changing threads no longer allocates and locks on the audio thread
+  (`ModulationMatrix::audio_read_scope()` and `process()` use one).
   Tests: `TripleBuffer.*`, `SeqLock.*`, `RCU.OwnedReaderProtectsAcrossChangingThreads`.
 - `tanh::Parameters`: what a parameter is (`ParameterDefinition`, `Range`,
   `ModulationScope`, `parameter_type_of<T>()`) and the lookup errors
   (`ParameterNotFoundException`, `ParameterTypeMismatchException`), shared by State
   and Modulation in `tanh/parameters/`. AGPL-3.0; built whenever State or Modulation
-  is (no option).
+  is (no option). Install test: `test/install-modulation`.
+- `thl::modulation::ParameterBackend`: `ModulationMatrix` reads parameters through a
+  backend (`find(key)` returns definition, base atomic and gesture flag) instead of
+  `thl::State`, so a host binds its own parameter store without mirroring it; a key
+  is looked up once. An unknown key throws through `throw_not_found()`
+  (`ParameterNotFoundException`, or State's subclasses for a State-backed matrix).
+  `ModulationMatrix(thl::State&)` keeps working through `StateParameterBackend` and,
+  with `state()`, is only declared when tanh is built with State. Modulation builds
+  with `TANH_BUILD_STATE=OFF` (CI job `modulation_without_state`). Tests:
+  `ParameterBackend.*`, `StateParameterBackend.*`. Docs: `host_parameters.md`.
+- `ModulationMatrix::set_routing_enabled()` / `set_routings_enabled()`: a disabled
+  routing writes nothing, Replace included (depth 0 does not silence it), and drops
+  its hold. No rebuild: the audio thread reads the flags once per block through a
+  wait-free seqlock, so a batch lands whole. Edges and the first block after a
+  rebuild flag offset 0; a zero-sample block keeps the edge. `"enabled": false` is
+  serialised only when disabled. Tests: `RoutingEnabled.*`.
+- `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
+  before any source (`add_block_processor()`), given a `BlockContext` with the block
+  length and the transport passed to `process()` / `process_with_scope()`.
 - `thl::dsp::transport::TransportInfo`: trivially copyable per-block snapshot with
   the flags `k_jumped`, `k_started`, `k_stopped`, `k_tempo_changed` and
   `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
@@ -38,6 +68,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   count. `sample_position()` counts samples played since `prepare()` on every clock.
   `Division` moved to `TransportInfo.h`. `InternalTransportClock`: a tempo change
   keeps the beat continuous. An API and ABI change for subclasses.
+- `ModulationMatrix::process()` / `process_with_scope()` take the block's
+  `TransportInfo` (optional) for the block processors, and `process()` requires
+  `num_samples <= samples_per_block` (it wrote past its buffers): debug builds
+  assert, release builds clamp.
+- `SmartHandle<T>` reads the base value through the backend's atomic: it is built
+  from `(std::atomic<T>*, ResolvedTarget*)`, and the metadata accessors and
+  `load_normalized()` assert on a handle without a target.
+- `ModulationMatrix::prepare()` needs audio stopped, as a host's `prepareToPlay`
+  does: it re-prepares every source and block processor and resets the sample
+  counter. A same-size `prepare()` during audio was documented as safe but raced
+  that state. Sources and block processors added before the first `prepare()` are
+  prepared by it, not at once with a default rate and size.
 - `ParameterDefinitions.h` and `ModulationScope.h` moved from `tanh/state/` to
   `tanh/parameters/` (the old headers forward, deprecated for one release), and
   `ParameterTypeMismatchException` moved to `tanh/parameters/ParameterExceptions.h`.
@@ -48,6 +90,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Removed
 
+- `SmartHandle<T>::raw_handle()`: a backend has no `ParameterHandle`. Use
+  `State::get_handle<T>(key)`; hosts write base values through their own API.
 - The `host_time_micros` parameter of `TransportClock::begin_block()` (see Changed).
 
 ### Fixed
@@ -64,7 +108,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   rate. Tests: `HostTransportClock.DivisionsOnBlockEdgesCountOnce`,
   `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate}`.
 - RCU: read scopes on one thread or reader slot nest; closing an inner one freed
-  the outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
+  the outer one's version (e.g. `audio_read_scope()` around
+  `ModulationMatrix::process()`). Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
 
 ## [0.4.0] - 2026-09-21
 

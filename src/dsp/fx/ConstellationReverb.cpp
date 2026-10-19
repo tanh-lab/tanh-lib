@@ -67,6 +67,10 @@ void ConstellationReverbImpl::prepare(const double& sample_rate,
     m_bw_coeff = k_bandwidth;
     m_size_smooth = 1.0f - std::exp(-pi2 * 0.3f / sr);
     m_fshift_smooth = 1.0f - std::exp(-pi2 * 0.3f / sr);
+    m_predelay_smooth = 1.0f - std::exp(-1.0f / (0.03f * sr));
+    m_control_smooth = 1.0f - std::exp(-1.0f / (0.02f * sr));
+    m_decay_target = m_p_decay = std::clamp(get_parameter<float>(Decay), 0.0f, 0.99f);
+    m_shimmer_target = m_p_shimmer = std::clamp(get_parameter<float>(Shimmer), 0.0f, 1.0f);
 
     m_size = get_parameter<float>(Size);
     m_target_size = m_size;
@@ -96,9 +100,9 @@ void ConstellationReverbImpl::process(thl::core::BufferView buffer, uint32_t mod
     // DSP processor is responsible for staying inside its safe domain). The
     // one-pole filters below are unstable for negative coefficients, so any
     // parameter that becomes a one-pole coefficient is clamped here.
-    m_p_decay = std::clamp(get_parameter<float>(Decay, modulation_offset), 0.0f, 0.99f);
+    m_decay_target = std::clamp(get_parameter<float>(Decay, modulation_offset), 0.0f, 0.99f);
     m_p_freeze = get_parameter<bool>(Freeze, modulation_offset);
-    m_p_shimmer = std::clamp(get_parameter<float>(Shimmer, modulation_offset), 0.0f, 1.0f);
+    m_shimmer_target = std::clamp(get_parameter<float>(Shimmer, modulation_offset), 0.0f, 1.0f);
     m_p_shim_mod = get_parameter<float>(ShimmerModDepth, modulation_offset);
     m_p_fshift_hz = get_parameter<float>(FreqShiftHz, modulation_offset);
     m_p_fshift_det = get_parameter<float>(FreqShiftDetune, modulation_offset);
@@ -106,8 +110,8 @@ void ConstellationReverbImpl::process(thl::core::BufferView buffer, uint32_t mod
 
     const float damping = std::clamp(get_parameter<float>(Damping, modulation_offset), 0.0f, 0.99f);
     m_damping_coeff = 1.0f - damping;
-    m_predelay_len = std::max(0.0f, get_parameter<float>(PredelayMs, modulation_offset)) *
-                     static_cast<float>(m_sample_rate) / 1000.0f;
+    m_predelay_target = std::max(0.0f, get_parameter<float>(PredelayMs, modulation_offset)) *
+                        static_cast<float>(m_sample_rate) / 1000.0f;
     const float input_hp_hz = std::clamp(get_parameter<float>(InputHpHz, modulation_offset),
                                          0.0f,
                                          static_cast<float>(m_sample_rate) * 0.45f);
@@ -180,6 +184,7 @@ void ConstellationReverbImpl::process_sample(float x, float& left, float& right)
     utils::one_pole(m_hp_state, x, m_hp_coeff);
     x -= m_hp_state;
 
+    utils::one_pole(m_predelay_len, m_predelay_target, m_predelay_smooth);
     x = m_predelay.write_read(x, m_predelay_len);
 
     utils::one_pole(m_bw_state, x, m_bw_coeff);
@@ -197,6 +202,8 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     // Smooth size and freq_shift toward their per-block targets (~0.3 Hz LP)
     utils::one_pole(m_size, m_target_size, m_size_smooth);
     utils::one_pole(m_freq_shift, m_target_fshift, m_fshift_smooth);
+    utils::one_pole(m_p_decay, m_decay_target, m_control_smooth);
+    utils::one_pole(m_p_shimmer, m_shimmer_target, m_control_smooth);
 
     // ── Excursion: LFO + Brownian (brownians ramped at control rate) ──────
     const float lfo_a = m_lfo_a.process();
@@ -295,6 +302,7 @@ void ConstellationReverbImpl::allocate_buffers(float predelay_ms) {
                                                      static_cast<float>(m_sample_rate) / 1000.0f)) +
                        1);
     m_predelay_len = predelay_ms * static_cast<float>(m_sample_rate) / 1000.0f;
+    m_predelay_target = m_predelay_len;
 
     m_ap_a1.prepare(tank_buf(k_base_ap_a1, 0, exc_headroom));
     m_delay_a1.prepare(tank_buf(k_base_delay_a1, 2974, brown_headroom));

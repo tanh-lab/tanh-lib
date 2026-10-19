@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <tanh/modulation/InputEventQueue.h>
-#include <tanh/state/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 
 #include <cstddef>
 #include <cstdint>

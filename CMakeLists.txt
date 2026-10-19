@@ -185,6 +185,27 @@ if(TANH_BUILD_CORE)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
 endif()
 
+# nlohmann_json is a PUBLIC dependency of State and Modulation: when tanh
+# installs, install its headers + CMake package too so tanhConfig.cmake's
+# find_dependency(nlohmann_json) resolves for consumers.
+if(TANH_BUILD_STATE OR TANH_BUILD_MODULATION)
+    if(TANH_WITH_INSTALL)
+        set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
+    endif()
+
+    # Fetch the release tarball instead of cloning the repo — the full git
+    # history is ~150MB while the release archive is a few MB, and the tarball
+    # is content-addressable so CMake will reuse a cached copy across build
+    # folders.
+    FetchContent_Declare(
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+        URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 # Parameters component (depends on Core): what a parameter is (definition, range,
 # modulation scope) and the lookup errors, shared by State and Modulation. Built
 # whenever one of them is; it carries no option of its own.
@@ -220,25 +241,6 @@ if(TANH_BUILD_STATE)
         message(FATAL_ERROR "State component requires Core component")
     endif()
 
-    # nlohmann_json is a PUBLIC dependency of State: when tanh installs, install
-    # its headers + CMake package too so tanhConfig.cmake's
-    # find_dependency(nlohmann_json) resolves for consumers.
-    if(TANH_WITH_INSTALL)
-        set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
-    endif()
-    
-    # Fetch the release tarball instead of cloning the repo — the full git
-    # history is ~150MB while the release archive is a few MB, and the tarball
-    # is content-addressable so CMake will reuse a cached copy across build
-    # folders.
-    FetchContent_Declare(
-        nlohmann_json
-        URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
-        URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
-        SYSTEM
-    )
-    FetchContent_MakeAvailable(nlohmann_json)
-    
     add_library(${PROJECT_NAME}_state
         src/state/Parameter.cpp
         src/state/StateGroup.cpp
@@ -378,13 +380,12 @@ if(TANH_BUILD_DSP)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_resonator)
 endif()
 
-# Modulation component (depends on DSP and State)
+# Modulation component (depends on DSP and Parameters; State is optional).
+# Parameters are read through a ParameterBackend. With State,
+# StateParameterBackend and ModulationMatrix(thl::State&) are compiled in.
 if(TANH_BUILD_MODULATION)
     if(NOT TARGET ${PROJECT_NAME}_dsp)
         message(FATAL_ERROR "Modulation component requires DSP component")
-    endif()
-    if(NOT TARGET ${PROJECT_NAME}_state)
-        message(FATAL_ERROR "Modulation component requires State component")
     endif()
 
     # moodycamel/readerwriterqueue — header-only lock-free SPSC queue used by
@@ -426,8 +427,14 @@ if(TANH_BUILD_MODULATION)
     target_link_libraries(${PROJECT_NAME}_modulation
         PUBLIC
         ${PROJECT_NAME}_dsp
-        ${PROJECT_NAME}_state
+        ${PROJECT_NAME}_parameters
+        nlohmann_json::nlohmann_json
     )
+
+    if(TARGET ${PROJECT_NAME}_state)
+        target_sources(${PROJECT_NAME}_modulation PRIVATE src/modulation/StateParameterBackend.cpp)
+        target_link_libraries(${PROJECT_NAME}_modulation PUBLIC ${PROJECT_NAME}_state)
+    endif()
 
     target_compile_definitions(${PROJECT_NAME}_modulation
         PUBLIC
@@ -737,6 +744,14 @@ if (TANH_WITH_TESTS)
     endif()
     if (TANH_BUILD_NET)
         add_subdirectory(test/net)
+    endif()
+
+    # clang-tidy checks every source under test/, also the install consumer, which is its
+    # own project: a target against the in-tree component gives it a compile-database
+    # entry (never built; test/install-modulation builds it against the installed package).
+    if(TARGET ${PROJECT_NAME}_modulation)
+        add_executable(install_modulation_consumer EXCLUDE_FROM_ALL test/install-modulation/main.cpp)
+        target_link_libraries(install_modulation_consumer PRIVATE ${PROJECT_NAME}::Modulation)
     endif()
 
     # The export-table invariant, on the desktop formats where it can be inspected.

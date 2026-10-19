@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tanh/core/Exports.h>
-#include <tanh/state/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 
 #include <cassert>
 #include <cstddef>
@@ -137,6 +137,16 @@ public:
 
     void clear_output_active() { std::memset(m_output_active.data(), 0, m_output_active.size()); }
 
+    // Writer activity of a global source, for the host hand-over
+    // (ModulationRouting::m_share_with_host): 1 where something drives the
+    // source (a finger, a playing take), as opposed to the output-active mask,
+    // which says where its value is valid. nullptr (the default: the subclass
+    // never sized m_output_activity) means the output-active mask is the
+    // activity (every sample for a fully active source).
+    [[nodiscard]] const uint8_t* output_activity() const {
+        return m_output_activity.empty() ? nullptr : m_output_activity.data();
+    }
+
     void clear_voice_output_active() {
         std::memset(m_voice_output_active_storage.data(), 0, m_voice_output_active_storage.size());
     }
@@ -184,6 +194,10 @@ protected:
         m_voice_output_active_storage[static_cast<size_t>(voice_index) * m_block_size +
                                       sample_index] = 1;
     }
+
+    // Writer activity (output_activity()): sized by a subclass that has one
+    // (block_size entries) and written with its output; left empty otherwise.
+    std::vector<uint8_t> m_output_activity;
 
     // Mono buffers
     std::vector<float> m_output_buffer;

@@ -28,8 +28,8 @@ in namespace ``thl``.
        dsp -> core;
        audio_io -> core;
        net -> core;
-       modulation -> core;
-       modulation -> state;
+       modulation -> parameters;
+       modulation -> state [style=dashed, label="optional", fontsize=9];
        modulation -> dsp;
    }
 
@@ -66,8 +66,8 @@ independently of where its value is stored:
 the modulation scope it belongs to and the lookup errors
 (:cpp:class:`thl::ParameterNotFoundException`,
 :cpp:class:`thl::ParameterTypeMismatchException`). State and Modulation both
-depend on it. It has no option of its own: it is built whenever State or
-Modulation is. Depends on Core.
+depend on it, so Modulation builds without State. It has no option of its own:
+it is built whenever State or Modulation is. Depends on Core.
 
 State
 -----
@@ -97,8 +97,12 @@ Modulation
 (LFOs, UI-driven input queues and any other
 :cpp:class:`thl::modulation::ModulationSource`) to DSP parameters through the
 :cpp:class:`thl::modulation::ModulationMatrix`. The matrix records change
-points per block and drives the processors' sub-blocking. See :doc:`modulation`
-for the input-event design. Depends on Core, State and DSP.
+points per block and drives the processors' sub-blocking. It reads parameters
+through a :cpp:class:`thl::modulation::ParameterBackend`, so a host binds its
+own parameter store (:doc:`host_parameters`); with State built, a matrix can
+also be built straight from a :cpp:class:`thl::State`. See :doc:`modulation`
+for the input-event design. Depends on Core, Parameters and DSP; on State when
+it is built.
 
 AudioIO
 -------

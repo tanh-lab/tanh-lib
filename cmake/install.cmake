@@ -79,10 +79,10 @@ endforeach()
 
 set(TARGETS_TO_EXPORT ${TANH_BUILT_COMPONENTS})
 
-# nlohmann_json is a PUBLIC dependency of State; export it with the set so the
-# installed tanh::State target resolves (its own config is also installed when
-# JSON_Install is ON, which Config.cmake.in re-finds via find_dependency).
-if(TARGET ${PROJECT_NAME}_state AND TARGET nlohmann_json)
+# nlohmann_json is a PUBLIC dependency of State and Modulation; export it with
+# the set so the installed targets resolve (its own config is also installed
+# when JSON_Install is ON, which Config.cmake.in re-finds via find_dependency).
+if((TARGET ${PROJECT_NAME}_state OR TARGET ${PROJECT_NAME}_modulation) AND TARGET nlohmann_json)
     list(APPEND TARGETS_TO_EXPORT nlohmann_json)
 endif()
 
