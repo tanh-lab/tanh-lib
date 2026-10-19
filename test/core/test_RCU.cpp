@@ -2,11 +2,14 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "tanh/core/threading/RCU.h"
@@ -340,4 +343,83 @@ TEST(RCU, NestedReadScopesKeepTheOuterVersion) {
         }
         EXPECT_EQ(table.m_destroyed[seq].load(), 0) << "thread";
     }
+}
+
+namespace {
+
+/// A thread that runs one step each time it is told to, then waits for the next.
+class StepThread {
+public:
+    explicit StepThread(std::vector<std::function<void()>> steps)
+        : m_steps(std::move(steps)), m_thread([this] { run(); }) {}
+    ~StepThread() {
+        while (m_done.load() < m_steps.size()) { step(); }
+        m_thread.join();
+    }
+    StepThread(const StepThread&) = delete;
+    StepThread& operator=(const StepThread&) = delete;
+    StepThread(StepThread&&) = delete;
+    StepThread& operator=(StepThread&&) = delete;
+
+    /// Runs the next step on the thread and waits until it finished.
+    void step() {
+        const size_t target = m_done.load() + 1;
+        m_go.store(target);
+        while (m_done.load() < target) { std::this_thread::yield(); }
+    }
+
+private:
+    void run() {
+        for (size_t i = 0; i < m_steps.size(); ++i) {
+            while (m_go.load() <= i) { std::this_thread::yield(); }
+            m_steps[i]();
+            m_done.store(i + 1);
+        }
+    }
+
+    std::vector<std::function<void()>> m_steps;
+    std::atomic<size_t> m_go{0};
+    std::atomic<size_t> m_done{0};
+    std::thread m_thread;
+};
+
+}  // namespace
+
+// An RCU destroyed while a thread that read it still runs: the thread frees its
+// node when it exits, after the RCU (under ASan a double free or a write into a
+// freed node would fail here).
+TEST(RCU, ThreadOutlivingTheRcuFreesItsNode) {
+    auto rcu = std::make_unique<RCU<int>>(7);
+    int seen = 0;
+    {
+        StepThread reader({[&] { seen = rcu->read([](const int& v) { return v; }); }, [] {}});
+        reader.step();  // registered and read
+        rcu.reset();    // destroyed while the reader thread lives
+        reader.step();
+    }  // the thread exits now
+    EXPECT_EQ(seen, 7);
+}
+
+// A thread that read an RCU destroyed since, then reads a new one at the same
+// address: it registers in the new one instead of reusing the old node, which the
+// new writer would never see.
+TEST(RCU, NewRcuAtADestroyedOnesAddressRegistersAnew) {
+    alignas(RCU<int>) std::byte storage[sizeof(RCU<int>)];
+    auto* first = new (storage) RCU<int>(1);
+    unsigned int readers = 0;
+    RCU<int>* second = nullptr;
+    {
+        StepThread reader({[&] { (void)first->read([](const int& v) { return v; }); },
+                           [&] {
+                               auto scope = second->read_scope();
+                               readers = second->get_reader_count();
+                           }});
+        reader.step();
+        first->~RCU();
+        second = new (storage) RCU<int>(2);
+        ASSERT_EQ(static_cast<void*>(second), static_cast<void*>(first));
+        reader.step();
+    }
+    EXPECT_EQ(readers, 1u);
+    second->~RCU();
 }

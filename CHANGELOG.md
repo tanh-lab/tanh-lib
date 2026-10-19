@@ -26,6 +26,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - RCU: read scopes on one thread or reader slot nest; closing an inner one freed
   the outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
+- RCU: destroying an RCU while a thread that read it still runs no longer frees
+  that thread's reader node under it (the thread wrote into the freed node on exit,
+  and a new RCU at the same address reused it unseen by its writer). Whichever of
+  thread and RCU goes second frees the node. Tests:
+  `RCU.ThreadOutlivingTheRcuFreesItsNode`, `RCU.NewRcuAtADestroyedOnesAddressRegistersAnew`.
 
 ## [0.4.0] - 2026-09-21
 

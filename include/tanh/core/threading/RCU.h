@@ -21,14 +21,33 @@ namespace thl {
 
 namespace detail {
 
-/// Per-thread, per-RCU-instance reader registration. Lock-free intrusive list
-/// node owned by the registering thread's RcuThreadState; the RCU instance
-/// only links it.
+/// Who of a thread node's two owners has gone (RcuReaderNode::m_state).
+enum class RcuNodeState : uint8_t {
+    Live,        ///< thread and RCU instance both alive
+    ThreadGone,  ///< the registering thread exited: the RCU instance frees the node
+    RcuGone,     ///< the RCU instance was destroyed: the thread frees the node
+};
+
+/// A reader of one RCU instance, linked into its lock-free reader list.
+///
+/// A thread node (per-thread registration) lives as long as both the thread
+/// and the RCU instance: whichever goes first marks it (m_state, one atomic
+/// exchange on each side), the other one frees it. A slot from add_reader()
+/// belongs to the RCU instance alone.
 struct RcuReaderNode {
     std::atomic<uint64_t> m_read_generation{0};
-    uint32_t m_depth = 0;  // open read sections; only the slot's one user touches it
+    // Open read sections. Only the slot's one user at a time touches it; atomic
+    // (relaxed) so a slot handed between threads without other ordering is no
+    // data race.
+    std::atomic<uint32_t> m_depth{0};
     std::atomic<RcuReaderNode*> m_next{nullptr};
-    std::atomic<bool> m_is_dead{false};  // Set when the owning thread exits
+    std::atomic<RcuNodeState> m_state{RcuNodeState::Live};
+    bool m_instance_owned = false;  // add_reader(): set before linking, then constant
+
+    /// The registering thread exited: not inside a read section any more.
+    [[nodiscard]] bool thread_gone() const {
+        return m_state.load(std::memory_order_acquire) == RcuNodeState::ThreadGone;
+    }
 };
 
 /// Thread-local registry mapping RCU instance -> this thread's reader node.
@@ -125,29 +144,25 @@ public:
         auto* ptr = m_data_ptr.load(std::memory_order_acquire);
         delete ptr;
 
-        // Clean up ALL reader nodes - both live and dead
-        // We must remove ourselves from the thread-local state first to prevent
-        // threads from accessing a destroyed RCU instance
+        // Free the reader nodes this instance owns. A live thread's node is
+        // still in that thread's RcuThreadState: mark it, and the thread frees it
+        // (on exit, or when it next looks this address up).
         const std::scoped_lock lock(m_writer_mutex);
 
-        const detail::RcuReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
+        auto& own_nodes = detail::rcu_thread_state().m_nodes;
+        detail::RcuReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
-            const detail::RcuReaderNode* next = current->m_next.load(std::memory_order_relaxed);
+            detail::RcuReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
-            // Remove from thread-local state if the node is still tracked there
-            // Note: For live threads, the node ownership is in the thread's
-            // RcuThreadState. We need to take ownership back before deleting
-            auto& nodes = detail::rcu_thread_state().m_nodes;
-            auto it = nodes.find(this);
-            if (it != nodes.end() && it->second.get() == current) {
-                // This is the current thread's node - transfer ownership back
-                it->second.release();
-                nodes.erase(it);
+            auto it = own_nodes.find(this);
+            if (it != own_nodes.end() && it->second.get() == current) {
+                own_nodes.erase(it);  // the destroying thread's own node
+            } else if (current->m_instance_owned ||
+                       current->m_state.exchange(detail::RcuNodeState::RcuGone,
+                                                 std::memory_order_acq_rel) ==
+                           detail::RcuNodeState::ThreadGone) {
+                delete current;  // ours alone: a slot, or a node its thread left to us
             }
-
-            // For dead nodes or nodes from other threads (which released
-            // ownership), we can safely delete
-            delete current;
 
             current = next;
         }
@@ -185,17 +200,20 @@ public:
         // Auto-register thread if not already registered (not real-time safe
         // not registered already) Make sure to register before calling first
         // read if you want full real-time safety
-        register_reader_thread();
+        detail::RcuReaderNode& reader = thread_reader();
 
         // RAII guard to ensure rcu_read_unlock() is always called, even if
         // callback throws
         struct ReadGuard {
             const RCU* m_rcu;
-            ReadGuard(const RCU* r) : m_rcu(r) { m_rcu->rcu_read_lock(); }
-            ~ReadGuard() { m_rcu->rcu_read_unlock(); }
+            detail::RcuReaderNode& m_reader;
+            ReadGuard(const RCU* r, detail::RcuReaderNode& n) : m_rcu(r), m_reader(n) {
+                m_rcu->rcu_read_lock(m_reader);
+            }
+            ~ReadGuard() { m_rcu->rcu_read_unlock(m_reader); }
         };
 
-        const ReadGuard guard(this);
+        const ReadGuard guard(this, reader);
 
         // Load current data pointer (guaranteed valid during read section).
         // seq_cst: second half of the reader's handshake, see rcu_read_lock().
@@ -354,7 +372,8 @@ public:
     /**
      * @brief A reader slot from add_reader(): a non-owning handle, cheap to copy.
      *
-     * Default-constructed it is empty and must not be passed to read_scope().
+     * Default-constructed it is empty. It belongs to the RCU instance that
+     * made it and only opens sections there.
      */
     class Reader {
     public:
@@ -363,7 +382,8 @@ public:
 
     private:
         friend class RCU;
-        explicit Reader(detail::RcuReaderNode& node) : m_node(&node) {}
+        Reader(const RCU& owner, detail::RcuReaderNode& node) : m_owner(&owner), m_node(&node) {}
+        const RCU* m_owner = nullptr;
         detail::RcuReaderNode* m_node = nullptr;
     };
 
@@ -376,16 +396,19 @@ public:
      * real-time path every time the thread changes. Pass the slot to
      * read_scope(reader) instead; that path never allocates or locks.
      *
-     * NOT real-time safe: call during setup. The slot stays valid until this
-     * RCU is destroyed. A slot must not be used by two threads at the same
-     * time (one open read section per slot).
+     * NOT real-time safe: call once per client during setup (e.g. in a
+     * constructor, not in a host's prepareToPlay): slots are not removed, they
+     * stay valid until this RCU is destroyed and every writer scans them. A
+     * slot must not be used by two threads at the same time (one open read
+     * section per slot).
      */
     [[nodiscard]] Reader add_reader() const {
         const std::scoped_lock lock(m_writer_mutex);
-        // Owned by this instance: the destructor deletes every node in the list.
+        // Owned by this instance: the destructor deletes it.
         auto* node = new detail::RcuReaderNode();
+        node->m_instance_owned = true;
         link_reader_with_lock(*node);
-        return Reader(*node);
+        return Reader(*this, *node);
     }
 
     unsigned int get_reader_count() const {
@@ -394,7 +417,7 @@ public:
         unsigned int count = 0;
         detail::RcuReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
-            if (!node->m_is_dead.load(std::memory_order_acquire)) { ++count; }
+            if (!node->thread_gone()) { ++count; }
             node = node->m_next.load(std::memory_order_acquire);
         }
         return count;
@@ -425,12 +448,6 @@ public:
     class [[nodiscard]] ReadScope {
     public:
         explicit ReadScope(const RCU* rcu) : ReadScope(rcu, rcu->thread_reader()) {}
-        // Read section on a given reader slot: no registration, no lookup.
-        ReadScope(const RCU* rcu, detail::RcuReaderNode& reader) : m_rcu(rcu), m_reader(&reader) {
-            m_rcu->rcu_read_lock(reader);
-            // seq_cst: second half of the reader's handshake, see rcu_read_lock().
-            m_data = m_rcu->m_data_ptr.load(std::memory_order_seq_cst);
-        }
         ~ReadScope() { m_rcu->rcu_read_unlock(*m_reader); }
         ReadScope(const ReadScope&) = delete;
         ReadScope& operator=(const ReadScope&) = delete;
@@ -441,6 +458,14 @@ public:
         const T* operator->() const TANH_NONBLOCKING_FUNCTION { return m_data; }
 
     private:
+        friend class RCU;
+        // Read section on a given reader node: no registration, no lookup.
+        ReadScope(const RCU* rcu, detail::RcuReaderNode& reader) : m_rcu(rcu), m_reader(&reader) {
+            m_rcu->rcu_read_lock(reader);
+            // seq_cst: second half of the reader's handshake, see rcu_read_lock().
+            m_data = m_rcu->m_data_ptr.load(std::memory_order_seq_cst);
+        }
+
         const RCU* m_rcu;
         detail::RcuReaderNode* m_reader;
         const T* m_data = nullptr;
@@ -454,9 +479,15 @@ public:
     /**
      * @brief Open a read section on a reader slot from add_reader(). Real-time
      * safe on any thread, as long as the slot is not used concurrently.
+     *
+     * @p reader must be this instance's (asserted). An empty one is a contract
+     * violation too (asserted); a release build then falls back to the calling
+     * thread's registration, which is not real-time safe on first use.
      */
     ReadScope read_scope(Reader reader) const TANH_NONBLOCKING_FUNCTION {
         assert(reader && "RCU::read_scope: empty Reader");
+        assert((!reader || reader.m_owner == this) && "RCU::read_scope: another RCU's Reader");
+        if (!reader) { return ReadScope(this); }
         return ReadScope(this, *reader.m_node);
     }
 
@@ -491,7 +522,14 @@ private:
     // allocates and locks; later calls are one hash lookup.
     detail::RcuReaderNode& thread_reader() const {
         auto& thread_state = detail::rcu_thread_state();
-        if (auto* node = thread_state.get_node(this)) { return *node; }
+        if (auto* node = thread_state.get_node(this)) {
+            if (node->m_state.load(std::memory_order_acquire) != detail::RcuNodeState::RcuGone) {
+                return *node;
+            }
+            // Left by an RCU destroyed at this address: not in our list. Free it
+            // (it is ours now) and register anew.
+            thread_state.m_nodes.erase(this);
+        }
 
         // Serialize with cleanup and count
         const std::scoped_lock lock(m_writer_mutex);
@@ -536,24 +574,17 @@ private:
     //
     // seq_cst costs the reader one locked exchange per section entry (wait-free,
     // no syscall) and nothing on the loads.
-    void rcu_read_lock() const {
-        if (auto* node = detail::rcu_thread_state().get_node(this)) { rcu_read_lock(*node); }
-    }
-
     void rcu_read_lock(detail::RcuReaderNode& node) const {
-        if (node.m_depth++ > 0) { return; }  // nested: the outer section holds
+        // Nested: the outer section holds.
+        if (node.m_depth.fetch_add(1, std::memory_order_relaxed) > 0) { return; }
         const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
         node.m_read_generation.store(current_period, std::memory_order_seq_cst);
     }
 
     // Leaving a section is not part of the handshake: a writer that misses this
     // store still sees the old generation and merely waits a little longer.
-    void rcu_read_unlock() const {
-        if (auto* node = detail::rcu_thread_state().get_node(this)) { rcu_read_unlock(*node); }
-    }
-
     void rcu_read_unlock(detail::RcuReaderNode& node) const {
-        if (--node.m_depth > 0) { return; }
+        if (node.m_depth.fetch_sub(1, std::memory_order_relaxed) > 1) { return; }
         node.m_read_generation.store(0, std::memory_order_release);
     }
 
@@ -577,7 +608,7 @@ private:
 
         const detail::RcuReaderNode* node = m_reader_head.load(std::memory_order_acquire);
         while (node != nullptr) {
-            if (!node->m_is_dead.load(std::memory_order_acquire)) {
+            if (!node->thread_gone()) {
                 // seq_cst: second half of the writer's handshake, see
                 // rcu_read_lock().
                 const uint64_t reader_period =
@@ -620,7 +651,7 @@ private:
             // re-checked on every pass: a thread that has exited cannot be
             // inside a read section any more, so its node must never pin the
             // writer — even if the generation it left behind is stale.
-            while (!current->m_is_dead.load(std::memory_order_acquire)) {
+            while (!current->thread_gone()) {
                 // seq_cst: second half of the writer's handshake, see
                 // rcu_read_lock().
                 const uint64_t reader_period =
@@ -650,10 +681,10 @@ private:
         while (current != nullptr) {
             detail::RcuReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
-            if (!current->m_is_dead.load(std::memory_order_acquire)) {
+            if (!current->thread_gone()) {
                 live_nodes.push_back(current);
             } else {
-                // Transfer ownership to unique_ptr for automatic cleanup
+                // Its thread left it to us: transfer ownership to unique_ptr
                 dead_nodes.emplace_back(current);
             }
 

@@ -54,8 +54,8 @@ public:
         m_back = static_cast<uint8_t>(old & k_index_mask);
     }
 
-    /// True if a value was published since the last read() (a hint: the
-    /// writer may publish right after).
+    /// True if a value was published that neither read() nor update() has taken
+    /// yet (a hint: the writer may publish right after).
     [[nodiscard]] bool has_new() const noexcept TANH_NONBLOCKING_FUNCTION {
         return (m_middle.load(std::memory_order_relaxed) & k_dirty) != 0;
     }
