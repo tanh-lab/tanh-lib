@@ -7,6 +7,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Core: `thl::core::uptime_ns()` (`Clock.h`), the uptime clock of UITouch, NSEvent
+  and host times on Apple platforms, `steady_clock` elsewhere; `thl::TripleBuffer<T>`,
+  a wait-free SPSC latest-value mailbox; `thl::SeqLock`, the sequence counter of a
+  wait-free seqlock over atomics; `RCU::add_reader()` / `read_scope(reader)`, a reader
+  slot (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host
+  rendering on changing threads no longer allocates and locks on the audio thread.
+  Tests: `TripleBuffer.*`, `SeqLock.*`, `RCU.OwnedReaderProtectsAcrossChangingThreads`.
+
+### Changed
+
+- `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
+  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
+
+### Fixed
+
+- RCU: read scopes on one thread or reader slot nest; closing an inner one freed
+  the outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
+- RCU: destroying an RCU while a thread that read it still runs no longer frees
+  that thread's reader node under it (the thread wrote into the freed node on exit,
+  and a new RCU at the same address reused it unseen by its writer). Whichever of
+  thread and RCU goes second frees the node; a thread's next registration frees
+  what destroyed RCUs left in its registry. Tests:
+  `RCU.ThreadOutlivingTheRcuFreesItsNode`, `RCU.NewRcuAtADestroyedOnesAddressRegistersAnew`,
+  `RCU.ThreadRegistryDropsDestroyedRcus`.
+
 ## [0.4.0] - 2026-09-21
 
 ### Added

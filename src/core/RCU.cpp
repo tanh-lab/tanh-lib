@@ -6,16 +6,18 @@
 namespace thl::detail {
 
 RcuThreadState::~RcuThreadState() {
-    // Mark all nodes as dead - they'll be cleaned up by the respective RCU
-    // instances (cleanup_dead_nodes / ~RCU).
+    // Hand every node to its RCU instance (cleanup_dead_nodes / ~RCU frees it),
+    // or free it here if the instance is already gone.
     //
     // No need to wait for m_read_generation == 0: this thread is exiting, so
     // it cannot be inside a read section. synchronize_rcu() re-checks the
-    // dead flag while waiting, so a stale generation cannot pin a writer.
+    // state while waiting, so a stale generation cannot pin a writer.
     for (auto& [_, node] : m_nodes) {
-        // Ownership passes to the RCU instance the node is linked into.
-        if (RcuReaderNode* raw = node.release()) {
-            raw->m_is_dead.store(true, std::memory_order_release);
+        RcuReaderNode* raw = node.release();
+        if (raw == nullptr) { continue; }
+        if (raw->m_state.exchange(RcuNodeState::ThreadGone, std::memory_order_acq_rel) ==
+            RcuNodeState::RcuGone) {
+            delete raw;  // its RCU instance was destroyed first
         }
     }
 }
