@@ -17,7 +17,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `ModulationMatrix::set_host_share_times()`), flagging change points at least every
   32 samples while it moves. Host activity: `ParameterBinding::m_host_change_stamp`
   (a counter the backend bumps on every host write) and the gesture flag.
-  `ModulationSource::output_activity()` separates "driven" from "value valid";
+  `XYRouteOptions::m_share_with_host` does it for an XY route.
+  `ModulationSource::output_activity()` separates "driven" from "value valid" (an XY
+  pad's x / y: touch, playback or latch);
   `"share_with_host": true` is serialised. Tests: `HostShare.*`. Docs:
   `host_parameters.md`.
 - `thl::modulation::MotionRecorder` and `MotionLane`: record an XY gesture on the
@@ -54,6 +56,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   drawing. Tests: `MotionLanePlayer.Transform*`,
   `MotionRecorderOverwrite.LiftedLooperPlaysSmoothedAndTransformed`. Docs:
   `motion_recording.md`.
+- `thl::modulation::XYController`: XY dots (voices), each with touch input and a
+  recorder, as `<id>.x` / `.y` / `.active` matrix sources (`XYOutput`). A
+  `BlockProcessor` of the matrix, it renders once per block with the matrix's
+  transport (free-running without one), owns its routings and publishes an `XYFrame`
+  per block, plus a recording trail and the recorded path. Trail points carry the
+  take's loop position (`XYPathPoint::m_position`) and the finger (`m_live`), so a UI
+  can draw a looper as it is overwritten. `for_each_recorder()` reaches every voice's
+  recorder. `XYRouteOptions::m_skip_during_gesture` leaves a target alone while its
+  knob is held (a host gesture). Tests: `XYController*.*`. Docs: `xy_controller.md`.
+- Timestamped touch input: `XYController::touch()` / `touch_voice()` / `release()`
+  take an optional `time_ns`, and `set_block_time(now_ns)` once per block places them
+  at their own sample, `m_input_delay_ms` late (default one prepared block + 5 ms);
+  late touches land at offset 0, later ones wait. x / y ramp linearly between timed
+  moves (change point every `m_render_interval` samples); down, up and finger
+  switches stay sharp. Untimed touches, or a block without a block time, spread as
+  before. Tests: `XYControllerInput.*`, `XYPad.Timed*`.
 - Core: `thl::core::uptime_ns()` (`Clock.h`), the uptime clock of UITouch, NSEvent
   and host times on Apple platforms, `steady_clock` elsewhere; `thl::TripleBuffer<T>`,
   a wait-free SPSC latest-value mailbox; `thl::SeqLock`, the sequence counter of a
@@ -163,6 +181,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `XYController`: the trail keeps its spacing across blocks shorter than the trail
+  interval; a reset that closes a latched gate adds a change point at sample 0.
+  Tests: `XYFramePublisher.TrailKeepsItsSpacingAcrossShortBlocks`,
+  `XYController.LatchKeepsTheGateOpenUntilTurnedOff`.
+- `XYController::set_block_time()` holds for one `matrix.process()`: documented that
+  a host splitting its block sets it per chunk.
+- `XYController`: a repeated `prepare()` re-prepares the recorders; a take published
+  by `service()` during a block no longer switches that block to the older lane it
+  still reads. Tests: `MotionRecorderThreads.ConcurrentServiceKeepsTheHandoffSilent`.
 - Link clock: our own play or seek right after an epoch change is a plain jump,
   not the join's `k_timeline_reset`, and ends the wait for it; the host-time filter
   starts over after host times, so a stall while they arrived does not offset it.

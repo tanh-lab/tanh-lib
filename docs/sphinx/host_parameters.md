@@ -122,13 +122,14 @@ void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override 
 ```
 
 Keep the scope open while the processors read their `SmartHandle`s: the
-modulation buffers are RCU-protected. With `BlockProcessor`s that follow the
-transport, pass the block's `TransportInfo` to `process_with_scope()`.
+modulation buffers are RCU-protected. With [XY controllers](xy_controller.md)
+or other `BlockProcessor`s that follow the transport, pass the block's
+`TransportInfo` to `process_with_scope()`.
 
 ## Sharing a parameter with the host
 
 A Replace or ReplaceHold routing with `ModulationRouting::m_share_with_host`
-shares its target with the
+(`XYRouteOptions::m_share_with_host` for an XY pad) shares its target with the
 host as a DAW's Touch automation mode does. There are two writers:
 
 - the **host**, the base value: active while it changes (automation, a gesture
@@ -136,7 +137,7 @@ host as a DAW's Touch automation mode does. There are two writers:
   the last change, and during a gesture (`m_in_gesture`);
 - the **modulation**, the target's Replace output: active while a routing's
   source is driven, that is `ModulationSource::output_activity()` where the
-  source has one (a touch source: while it is driven), else its output-active
+  source has one (an XY pad: touch, playback or latch), else its output-active
   mask.
 
 The last writer to become active owns the parameter (the modulation when both

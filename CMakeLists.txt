@@ -425,6 +425,8 @@ if(TANH_BUILD_MODULATION)
         src/modulation/MotionLaneStore.cpp
         src/modulation/MotionLanePlayer.cpp
         src/modulation/MotionCompositor.cpp
+        src/modulation/XYController.cpp
+        src/modulation/XYFramePublisher.cpp
     )
 
     set_target_properties(${PROJECT_NAME}_modulation PROPERTIES

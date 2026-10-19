@@ -102,8 +102,9 @@ Modulation
 points per block and drives the processors' sub-blocking. It reads parameters
 through a :cpp:class:`thl::modulation::ParameterBackend`, so a host binds its
 own parameter store (:doc:`host_parameters`); with State built, a matrix can
-also be built straight from a :cpp:class:`thl::State`. It also holds the
-motion recorder (:doc:`motion_recording`). See :doc:`modulation`
+also be built straight from a :cpp:class:`thl::State`. It also holds the XY
+controller and the motion recorder (:doc:`xy_controller`,
+:doc:`motion_recording`). See :doc:`modulation`
 for the input-event design. Depends on Core, Parameters and DSP; on State when
 it is built.
 

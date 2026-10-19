@@ -35,7 +35,10 @@ loop on release.
 
 ## Wiring
 
-To drive a recorder, once per block on the audio thread:
+`XYController` ([XY controller](xy_controller.md)) owns one recorder per voice,
+drives it every block and exposes the result as matrix sources; use
+`controller.recorder(v)` for commands, `service()` and lanes. To drive a
+recorder yourself, once per block on the audio thread:
 
 ```cpp
 thl::modulation::MotionInput in;
@@ -128,6 +131,9 @@ cannot feed back as a fake touch.
   `lane_version()` bumps on every publication, including a smoothing or loop
   end change.
 
+A UI reads the recorder's state from `XYFrame::m_voices[v].m_motion`
+(a `MotionSnapshot`), not from the recorder.
+
 ### Take handoff
 
 The RCU writer locks and allocates, so the audio thread never publishes. The
@@ -210,7 +216,7 @@ capacity.
 
 - **Block size.** `process()` takes at most the prepared block size (debug
   builds assert, release builds clamp). Split larger blocks with
-  `TransportInfo::sub_block()`.
+  `TransportInfo::sub_block()`, or let `XYController` do it.
 - **Memory.** Each recorder allocates a take buffer and two hand-over slots of
   `MotionRecorderConfig::m_max_points` (default 32768) points at 9 bytes each
   (x, y and gate), plus a raw seam tail of a quarter of the points per slot.

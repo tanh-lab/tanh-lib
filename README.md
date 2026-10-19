@@ -14,8 +14,8 @@ all in namespace `thl`:
   JSON serialization
 - **tanh::DSP** -- processors, effects, filters, granular engine, Rings resonator
   model (also available alone as `tanh::Resonator`), transport clocks
-- **tanh::Modulation** -- modulation matrix with change-point sub-blocking and
-  motion recording; reads any host's parameters
+- **tanh::Modulation** -- modulation matrix with change-point sub-blocking, XY
+  touch control and motion recording; reads any host's parameters
 - **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)
 - **tanh::Link** -- Ableton Link session and Link Audio (off by default)

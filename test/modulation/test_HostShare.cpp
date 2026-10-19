@@ -9,6 +9,7 @@
 #include <tanh/modulation/ParameterBackend.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/modulation/SmartHandle.h>
+#include <tanh/modulation/XYController.h>
 #include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -24,6 +25,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "XYControllerTestHelpers.h"
 
 using namespace thl::modulation;
 
@@ -488,6 +491,50 @@ TEST(HostShare, SerialisesTheOptIn) {
     plain.m_combine_mode = CombineMode::Replace;
     r.matrix->add_routing(plain);
     EXPECT_FALSE(r.matrix->to_json(false)[0].contains("share_with_host"));
+}
+
+// ── XY pad ───────────────────────────────────────────────────────────────────
+
+// An XY route sharing with the host: the finger is the modulation's activity
+// (not the sticky "has a value" mask x and y write with).
+TEST(HostShare, XYRouteHandsOverWithTheHost) {
+    HostBackend backend;
+    backend.add("p", 0.2f);
+    ModulationMatrix matrix(backend);
+    XYControllerConfig config;
+    config.m_id = "pad";
+    XYController c(matrix, config);
+    XYRouteOptions options;
+    options.m_share_with_host = true;
+    ASSERT_NE(c.route(XYOutput::X, "p", options), k_invalid_routing_id);
+    matrix.prepare(k_sr, k_bs);
+    auto p = matrix.get_smart_handle<float>("p");
+    xy_test::SimTransport transport;
+    auto block = [&] {
+        const auto t = transport.next(static_cast<uint32_t>(k_bs));
+        matrix.process(k_bs, &t);
+    };
+    auto run_ms = [&](float ms) {
+        for (size_t n = 0; n < samples(ms); n += k_bs) { block(); }
+    };
+
+    c.touch(1, 0.9f, 0.5f);
+    run_ms(40.0f);
+    EXPECT_NEAR(p.load(k_bs - 1), 0.9f, 1e-4f);  // the finger owns it
+
+    c.release(1);
+    run_ms(500.0f);
+    EXPECT_NEAR(p.load(k_bs - 1), 0.9f, 1e-4f);  // released, host idle: stays
+
+    backend.host_write("p", 0.3f);
+    run_ms(HostShareTimes::k_return_ms + 10.0f);
+    EXPECT_NEAR(p.load(k_bs - 1), 0.3f, 1e-4f);  // the host's automation
+
+    c.touch(1, 0.7f, 0.5f);
+    run_ms(40.0f);
+    EXPECT_NEAR(p.load(k_bs - 1), 0.7f, 1e-4f);  // touched again: the finger
+    c.release(1);
+    block();
 }
 
 // ── Real-time safety ─────────────────────────────────────────────────────────

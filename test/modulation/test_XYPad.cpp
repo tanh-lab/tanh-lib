@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <tanh/modulation/MotionRecorder.h>
-#include <tanh/modulation/XYTypes.h>
+#include <tanh/modulation/XYController.h>
 
 #include <atomic>
 #include <cmath>

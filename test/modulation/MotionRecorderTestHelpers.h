@@ -4,7 +4,7 @@
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionRecorder.h>
-#include <tanh/modulation/XYTypes.h>
+#include <tanh/modulation/XYController.h>
 
 #include <algorithm>
 #include <cmath>

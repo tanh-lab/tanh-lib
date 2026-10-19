@@ -12,7 +12,8 @@ components, all in namespace ``thl``:
   JSON serialization
 - **tanh::DSP** — processors, effects, filters, granular engine, Rings resonator
   model (also available alone as ``tanh::Resonator``)
-- **tanh::Modulation** — modulation matrix with change-point sub-blocking
+- **tanh::Modulation** — modulation matrix with change-point sub-blocking, XY
+  touch control and motion recording
 - **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
 - **tanh::Link** — Ableton Link session and Link Audio (``TANH_BUILD_LINK``,
@@ -34,6 +35,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    host_parameters
    transport
    motion_recording
+   xy_controller
    audio_io
    api/index
    changelog
@@ -54,7 +56,9 @@ block in pieces that start where its modulated parameters change.
 notes that used to live in the README. :doc:`host_parameters` drives the
 matrix from a host's parameter store; :doc:`transport` covers musical time
 (``TransportInfo``, host/internal/Link clocks) and Ableton Link;
-:doc:`motion_recording` records and loops XY gestures.
+:doc:`motion_recording` records and loops XY gestures, and
+:doc:`xy_controller` combines touch input, recorder and a UI snapshot into
+matrix sources.
 
 The :doc:`api/index` is generated from the public headers under
 ``include/tanh/``.
