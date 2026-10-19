@@ -428,6 +428,7 @@ bool Graph::rebuild() {
     if (compiled->m_max_latency > max_latency_samples()) {
         set_max_latency_samples(compiled->m_max_latency);
     }
+    m_committed_latency = compiled->m_max_latency;
     publish(std::move(compiled));
     m_dirty = false;
     return true;
