@@ -526,10 +526,17 @@ private:
             if (node->m_state.load(std::memory_order_acquire) != detail::RcuNodeState::RcuGone) {
                 return *node;
             }
-            // Left by an RCU destroyed at this address: not in our list. Free it
-            // (it is ours now) and register anew.
-            thread_state.m_nodes.erase(this);
+            // Left by an RCU destroyed at this address: not in our list. Register
+            // anew (the sweep below frees it).
         }
+
+        // Free what destroyed RCUs left in this thread's registry (those nodes
+        // are ours now), so the registry holds at most this thread's live RCUs
+        // plus the ones destroyed since its last registration.
+        std::erase_if(thread_state.m_nodes, [](const auto& entry) {
+            return entry.second->m_state.load(std::memory_order_acquire) ==
+                   detail::RcuNodeState::RcuGone;
+        });
 
         // Serialize with cleanup and count
         const std::scoped_lock lock(m_writer_mutex);

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -422,4 +423,31 @@ TEST(RCU, NewRcuAtADestroyedOnesAddressRegistersAnew) {
     }
     EXPECT_EQ(readers, 1u);
     second->~RCU();
+}
+
+// A thread reading one short-lived RCU after another, each destroyed on another
+// thread, keeps what a destroyed RCU left in its registry only until it registers
+// with the next one.
+TEST(RCU, ThreadRegistryDropsDestroyedRcus) {
+    constexpr int k_rcus = 100;
+    // Every RCU at its own address, so none reuses a destroyed one's entry.
+    struct alignas(RCU<int>) Storage {
+        std::byte m_bytes[sizeof(RCU<int>)];
+    };
+    std::vector<Storage> storage(k_rcus);
+    RCU<int>* rcu = nullptr;
+    size_t max_entries = 0;
+    std::vector<std::function<void()>> steps(k_rcus, [&] {
+        (void)rcu->read([](const int& v) { return v; });
+        max_entries = std::max(max_entries, detail::rcu_thread_state().m_nodes.size());
+    });
+    {
+        StepThread reader(std::move(steps));
+        for (int i = 0; i < k_rcus; ++i) {
+            rcu = new (storage[static_cast<size_t>(i)].m_bytes) RCU<int>(i);
+            reader.step();
+            rcu->~RCU();  // on this thread: the reader keeps the RCU's entry
+        }
+    }
+    EXPECT_EQ(max_entries, 1u);
 }
