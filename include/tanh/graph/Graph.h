@@ -5,6 +5,7 @@
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -36,7 +37,8 @@ struct Connection {
 /// channel count given to prepare().
 ///
 /// Edits are made on the control thread and take effect at commit(). The audio thread then fades
-/// out the current version, switches to the committed one and fades it in.
+/// out the current version, switches to the committed one and, once its latency has passed, fades
+/// it in.
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
     /// How a node combines its sources.
@@ -77,7 +79,7 @@ public:
     /// Hands the edited graph to the audio thread (a short fade out and in). Without changes
     /// since the last commit it does nothing. False if the graph has a cycle.
     bool commit();
-    bool has_uncommitted_changes() const { return m_dirty; }
+    bool has_uncommitted_changes() const;
 
     /// Frees the versions the audio thread handed back and the removed nodes no running version
     /// uses, also in nested graphs. commit() calls it; call it from a timer (e.g. 30 Hz on the
@@ -112,6 +114,7 @@ public:
 private:
     using BufferIndex = uint32_t;
     struct Node;
+    struct Source;
     struct ProcessingStep;
     struct CompiledGraph;
 
@@ -120,28 +123,41 @@ private:
         uint64_t m_last_generation;  // newest compiled version that may still use it
     };
 
+    struct RetiredDelay {
+        std::unique_ptr<thl::dsp::utils::DelayProcessor> m_delay;
+        uint64_t m_last_generation;  // newest compiled version that may still use it
+    };
+
     bool exists(NodeId id) const { return m_nodes.contains(id); }
     bool path_exists(NodeId from, NodeId to) const;
     std::optional<NodeId> insert_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
                                       bool prepare_processor);
     void prepare_node(Node& node, bool prepare_processor = true) const;
+    void prepare_delays(std::span<Source> sources,
+                        std::span<const uint32_t> max_path_latencies) const;
+    bool max_latencies_changed() const;
 
     std::optional<std::vector<NodeId>> sort_graph_dfs() const;
     std::unique_ptr<CompiledGraph> compile();
+    bool commit_own();
     bool rebuild();
+
+    // This graph first, then every graph nested in it, at any depth.
+    template <typename Self>
+    static std::vector<Self*> graph_tree(Self& root);
 
     void publish(std::unique_ptr<CompiledGraph> compiled);
     void collect_own_garbage();
-    void recycle(CompiledGraph* compiled);
-    [[nodiscard]] thl::core::Buffer<float> take_buffer();
     void free_all_compiled();
 
     bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
+    static uint32_t apply_latencies(CompiledGraph& compiled) TANH_NONBLOCKING_FUNCTION;
     void apply_fade(thl::core::BufferView buffer) TANH_NONBLOCKING_FUNCTION;
     static void mix_sources(const CompiledGraph& compiled,
-                            std::span<const BufferIndex> sources,
+                            std::span<Source> sources,
                             Node& node,
-                            thl::core::BufferView destination) TANH_NONBLOCKING_FUNCTION;
+                            thl::core::BufferView destination,
+                            thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
     static void run_step(const ProcessingStep& step,
                          thl::core::BufferView buffer,
                          thl::core::BufferView dry,
@@ -156,13 +172,12 @@ private:
     std::map<NodeId, std::unique_ptr<Node>> m_nodes;
     std::set<Connection> m_connections;
     std::vector<RetiredNode> m_retired_nodes;
+    std::vector<RetiredDelay> m_retired_delays;
     double m_sample_rate = 0.0;
     size_t m_max_block_size = 0;
     size_t m_num_channels = 0;
     bool m_dirty = false;
     bool m_published = false;  // a version was published since prepare()
-    // Buffers of freed versions, sized for prepare(): compile() takes them first.
-    std::vector<thl::core::Buffer<float>> m_buffer_pool;
 
     uint64_t m_next_generation = 1;
     std::set<uint64_t> m_live_generations;  // handed to the audio thread and not yet freed
@@ -176,6 +191,7 @@ private:
     thl::dsp::utils::SmoothedValue m_fade;
     size_t m_fade_samples = 0;
     bool m_fading_out = false;
+    size_t m_hold_samples = 0;  // silence after a switch, until the latency has passed
 };
 
 }  // namespace thl::graph
