@@ -125,6 +125,7 @@ if(TANH_BUILD_CORE)
         src/core/Logger.cpp
         src/core/Thread.cpp
         src/core/RCU.cpp
+        src/core/Clock.cpp
     )
     
     set_target_properties(${PROJECT_NAME}_core PROPERTIES

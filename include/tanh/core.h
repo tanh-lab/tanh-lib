@@ -5,6 +5,7 @@
 
 #include "core/Buffer.h"
 #include "core/BufferView.h"
+#include "core/Clock.h"
 #include "core/Dispatcher.h"
 #include "core/Exports.h"
 #include "core/Logger.h"
@@ -14,7 +15,9 @@
 #include "core/WavReader.h"
 #include "core/threading/LockFreeQueue.h"
 #include "core/threading/RCU.h"
+#include "core/threading/SeqLock.h"
 #include "core/threading/Thread.h"
+#include "core/threading/TripleBuffer.h"
 
 // Core utility functions available to all components
 namespace thl::core {
