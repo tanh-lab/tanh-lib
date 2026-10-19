@@ -185,7 +185,36 @@ if(TANH_BUILD_CORE)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
 endif()
 
-# State component (depends on Core)
+# Parameters component (depends on Core): what a parameter is (definition, range,
+# modulation scope) and the lookup errors, shared by State and Modulation. Built
+# whenever one of them is; it carries no option of its own.
+if(TANH_BUILD_STATE OR TANH_BUILD_MODULATION)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Parameters component requires Core component")
+    endif()
+
+    add_library(${PROJECT_NAME}_parameters
+        src/parameters/ParameterExceptions.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_parameters PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Parameters ALIAS ${PROJECT_NAME}_parameters)
+
+    target_include_directories(${PROJECT_NAME}_parameters
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_parameters PUBLIC ${PROJECT_NAME}_core)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_parameters)
+endif()
+
+# State component (depends on Core and Parameters)
 if(TANH_BUILD_STATE)
     if(NOT TARGET ${PROJECT_NAME}_core)
         message(FATAL_ERROR "State component requires Core component")
@@ -231,6 +260,7 @@ if(TANH_BUILD_STATE)
     target_link_libraries(${PROJECT_NAME}_state 
         PUBLIC 
             ${PROJECT_NAME}_core 
+            ${PROJECT_NAME}_parameters
             nlohmann_json::nlohmann_json
     )
 
@@ -647,6 +677,7 @@ endforeach()
 # and `add_subdirectory(tanh-lib)` consumers link identically.
 foreach(_pair
         "${PROJECT_NAME}_core=Core"
+        "${PROJECT_NAME}_parameters=Parameters"
         "${PROJECT_NAME}_state=State"
         "${PROJECT_NAME}_dsp=DSP"
         "${PROJECT_NAME}_resonator=Resonator"

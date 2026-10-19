@@ -3,11 +3,13 @@
 [![codecov](https://codecov.io/gh/tanh-lab/tanh-lib/branch/main/graph/badge.svg)](https://codecov.io/gh/tanh-lab/tanh-lib)
 [![docs](https://github.com/tanh-lab/tanh-lib/actions/workflows/build_docs_and_deploy.yml/badge.svg)](https://tanh-lab.github.io/tanh-lib/)
 
-Modular, real-time-safe C++20 audio library. Six independently buildable
-components, all in namespace `thl`:
+Modular, real-time-safe C++20 audio library. Independently buildable components,
+all in namespace `thl`:
 
 - **tanh::Core** -- Dispatcher, Logger (with a real-time path), RCU, lock-free
   queue, generic buffers, header-only WAV decoder
+- **tanh::Parameters** -- what a parameter is (definition, range, modulation
+  scope) and the lookup errors, shared by State and Modulation (built with either)
 - **tanh::State** -- hierarchical parameter storage with RCU lock-free reads and
   JSON serialization
 - **tanh::DSP** -- processors, effects, filters, granular engine, Rings resonator
@@ -69,7 +71,7 @@ set(TANH_WITH_EXAMPLES OFF)
 add_subdirectory(modules/tanh-lib)
 
 # or from an installed prefix
-find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core State DSP Resonator Modulation AudioIO Net
+find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core Parameters State DSP Resonator Modulation AudioIO Net
 
 target_link_libraries(app PRIVATE tanh::Core tanh::DSP)
 ```
@@ -107,5 +109,5 @@ tanh-lib is licensed per component:
   files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
 
-- **AGPL-3.0** — all other components (`state`, `dsp`, `resonator`,
-  `modulation`, `audio-io`) and files (see [`LICENSE`](LICENSE)).
+- **AGPL-3.0** — all other components (`parameters`, `state`, `dsp`, `resonator`,
+  `modulation`, `audio-io`, `net`) and files (see [`LICENSE`](LICENSE)).

@@ -73,7 +73,7 @@ Install and ``find_package``
 
 .. code-block:: cmake
 
-   find_package(tanh REQUIRED COMPONENTS Core)   # Core State DSP Resonator Modulation AudioIO Net
+   find_package(tanh REQUIRED COMPONENTS Core)   # Core Parameters State DSP Resonator Modulation AudioIO Net
    target_link_libraries(app PRIVATE tanh::Core)
 
 ``test/install`` is a minimal consumer of the installed package; CI builds it
