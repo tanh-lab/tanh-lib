@@ -9,6 +9,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `ConstellationReverbImpl::set_shimmer_position()`: where the shimmer pitch-shifts
+  the tank. `Feedback` (the default, unchanged) shifts each half's output, so the
+  shimmer is heard after a round of decay and builds with a long decay; `Input`
+  shifts each half's input, the fresh input and the feedback together, so it is
+  heard on the first pass, also with a short decay. Tests:
+  `ConstellationReverb.*`.
 - Host hand-over, as a DAW's Touch mode: a Replace / ReplaceHold routing with
   `ModulationRouting::m_share_with_host` (`XYRouteOptions::m_share_with_host`) shares
   its target with the host. The last of the two writers to become active owns it;
