@@ -215,8 +215,14 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
         a_fb = (1.0f - cross) * a_fb + cross * m_fshift_a.process(a_fb);
         b_fb = (1.0f - cross) * b_fb + cross * m_fshift_b.process(b_fb);
     }
-    const float a_in = input_gain * diffused + std::tanh(a_fb);
-    const float b_in = input_gain * diffused + std::tanh(b_fb);
+    float a_in = input_gain * diffused + std::tanh(a_fb);
+    float b_in = input_gain * diffused + std::tanh(b_fb);
+    const bool shimmer_in = m_shimmer_position == ShimmerPosition::Input && m_p_shimmer > 0.0f;
+    const bool shimmer_out = m_shimmer_position == ShimmerPosition::Feedback && m_p_shimmer > 0.0f;
+    if (shimmer_in) {
+        a_in = (1.0f - m_p_shimmer) * a_in + m_p_shimmer * m_pitch_a.process(a_in);
+        b_in = (1.0f - m_p_shimmer) * b_in + m_p_shimmer * m_pitch_b.process(b_in);
+    }
 
     // ── Half A ────────────────────────────────────────────────────────────
     float x_a = m_ap_a1.process(a_in, scaled(k_base_ap_a1) + lfo_a + brown_a, k_decay_dif_f1);
@@ -231,7 +237,7 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     }
     x_a = m_ap_a2.process(x_a, scaled(k_base_ap_a2) + m_ramp_ap_a2.next(), k_decay_dif_f2);
     float tank_a = m_delay_a2.write_read(x_a, scaled(k_base_delay_a2) + m_ramp_delay_a2.next());
-    if (m_p_shimmer > 0.0f) {
+    if (shimmer_out) {
         tank_a = (1.0f - m_p_shimmer) * tank_a + m_p_shimmer * m_pitch_a.process(tank_a);
     }
     m_tank_a_out = tank_a;
@@ -249,7 +255,7 @@ void ConstellationReverbImpl::process_tank(float diffused, float& left, float& r
     }
     x_b = m_ap_b2.process(x_b, scaled(k_base_ap_b2) + m_ramp_ap_b2.next(), k_decay_dif_f2);
     float tank_b = m_delay_b2.write_read(x_b, scaled(k_base_delay_b2) + m_ramp_delay_b2.next());
-    if (m_p_shimmer > 0.0f) {
+    if (shimmer_out) {
         tank_b = (1.0f - m_p_shimmer) * tank_b + m_p_shimmer * m_pitch_b.process(tank_b);
     }
     m_tank_b_out = tank_b;
