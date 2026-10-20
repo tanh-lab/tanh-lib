@@ -16,9 +16,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   slot (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host
   rendering on changing threads no longer allocates and locks on the audio thread.
   Tests: `TripleBuffer.*`, `SeqLock.*`, `RCU.OwnedReaderProtectsAcrossChangingThreads`.
+- `tanh::Parameters`: what a parameter is (`ParameterDefinition`, `Range`,
+  `ModulationScope`, `parameter_type_of<T>()`) and the lookup errors
+  (`ParameterNotFoundException`, `ParameterTypeMismatchException`), shared by State
+  and Modulation in `tanh/parameters/`. AGPL-3.0; built whenever State or Modulation
+  is (no option).
 
 ### Changed
 
+- `ParameterDefinitions.h` and `ModulationScope.h` moved from `tanh/state/` to
+  `tanh/parameters/` (the old headers forward, deprecated for one release), and
+  `ParameterTypeMismatchException` moved to `tanh/parameters/ParameterExceptions.h`.
+  `StateKeyNotFoundException` and `StateGroupNotFoundException` derive from
+  `ParameterNotFoundException`, and `key()` is the key that was looked up for both
+  (`StateGroupNotFoundException::group()` names the missing group; its constructor
+  takes the group and the key). State links `tanh::Parameters`.
 - `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
   (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
 

@@ -1,6 +1,6 @@
 #include "tanh/modulation/InputEventQueue.h"
 
-#include <tanh/state/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 
 #include <cassert>
 #include <cstddef>

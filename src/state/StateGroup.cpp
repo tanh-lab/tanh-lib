@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "tanh/core/Exports.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/state/Exceptions.h"
 #include "tanh/state/Parameter.h"
-#include "tanh/state/ParameterDefinitions.h"
 #include "tanh/state/ParameterListener.h"
 #include "tanh/state/State.h"
 #include "tanh/state/path_helpers.h"
@@ -120,21 +120,23 @@ std::string_view StateGroup::get_full_path() const TANH_NONBLOCKING_FUNCTION {
 }
 
 std::pair<StateGroup*, std::string_view> StateGroup::resolve_path(std::string_view path) const {
-    if (path.empty() || path.find('.') == std::string::npos) {
-        return {const_cast<StateGroup*>(this), path};
+    // Walk down the groups on the path, keeping the whole path for the error.
+    auto* group = const_cast<StateGroup*>(this);
+    std::string_view rest = path;
+    while (!rest.empty() && rest.find('.') != std::string::npos) {
+        auto [group_name, tail] = detail::split_path(rest);
+
+        StateGroup* found_group = nullptr;
+        group->m_groups_rcu.read([&](const GroupMap& groups) {
+            auto group_it = groups.find(std::string(group_name));
+            if (group_it != groups.end()) { found_group = group_it->second.get(); }
+        });
+        if (!found_group) { throw StateGroupNotFoundException(group_name, path); }
+
+        group = found_group;
+        rest = tail;
     }
-
-    auto [group_name, rest] = detail::split_path(path);
-
-    StateGroup* found_group = nullptr;
-    m_groups_rcu.read([&](const GroupMap& groups) {
-        auto group_it = groups.find(std::string(group_name));
-        if (group_it != groups.end()) { found_group = group_it->second.get(); }
-    });
-
-    if (found_group) { return found_group->resolve_path(rest); }
-
-    throw StateGroupNotFoundException(group_name);
+    return {group, rest};
 }
 
 std::pair<StateGroup*, std::string_view> StateGroup::resolve_path_create(std::string_view path) {

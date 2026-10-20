@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cmath>
 #include <thread>
 #include <vector>
 
@@ -171,11 +172,20 @@ TEST(StateTests, ThreadSafety) {
     // operations
     EXPECT_EQ(k_num_threads * k_num_operations, operations_completed.load());
 
-    // Make sure the parameters match our atomic tracking variables
-    EXPECT_EQ(operations_completed.load(), state.get<int>("counter"));
+    // Each writer sets the value it loaded after its increment, so the last set()
+    // can carry a slightly older value than the final count. The last set() is its
+    // writer's last, loaded after all of that writer's own increments: the final
+    // count is in [k_num_operations, total], the volume on its 0.001 grid in the
+    // same range of steps.
+    const int total = k_num_threads * k_num_operations;
+    const int counter = state.get<int>("counter");
+    EXPECT_GE(counter, k_num_operations);
+    EXPECT_LE(counter, total);
 
-    double expected_volume = 0.5 + (k_num_threads * k_num_operations * 0.001);
-    EXPECT_DOUBLE_EQ(expected_volume, state.get<double>("audio.volume"));
+    const double volume_steps = (state.get<double>("audio.volume") - 0.5) / 0.001;
+    EXPECT_NEAR(volume_steps, std::round(volume_steps), 1e-6);
+    EXPECT_GE(std::round(volume_steps), static_cast<double>(k_num_operations));
+    EXPECT_LE(std::round(volume_steps), static_cast<double>(total));
 
     // String parameter should have been updated multiple times, but we can't
     // know the final value
