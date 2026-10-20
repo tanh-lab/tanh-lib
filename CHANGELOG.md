@@ -28,7 +28,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `tanh/parameters/` (the old headers forward, deprecated for one release), and
   `ParameterTypeMismatchException` moved to `tanh/parameters/ParameterExceptions.h`.
   `StateKeyNotFoundException` and `StateGroupNotFoundException` derive from
-  `ParameterNotFoundException`. State links `tanh::Parameters`.
+  `ParameterNotFoundException`, and `key()` is the key that was looked up for both
+  (`StateGroupNotFoundException::group()` names the missing group; its constructor
+  takes the group and the key). State links `tanh::Parameters`.
 - `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
   (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
 

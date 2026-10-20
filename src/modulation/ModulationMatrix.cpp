@@ -28,9 +28,9 @@
 #include "tanh/modulation/ResolvedRouting.h"
 #include "tanh/modulation/ResolvedTarget.h"
 #include "tanh/modulation/SmartHandle.h"
-#include "tanh/state/ModulationScope.h"
+#include "tanh/parameters/ModulationScope.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/state/Parameter.h"
-#include "tanh/state/ParameterDefinitions.h"
 #include "tanh/state/State.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 

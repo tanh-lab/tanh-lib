@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "tanh/state/ModulationScope.h"
-#include "tanh/state/ParameterDefinitions.h"
+#include "tanh/parameters/ModulationScope.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 
 namespace thl {
 struct ParameterRecord;

@@ -484,3 +484,21 @@ TEST(StateTests, GetParametersEdgeCases) {
                                                // parameter
     EXPECT_TRUE(empty_parent_params.find("empty_parent.child.param") != empty_parent_params.end());
 }
+
+// A missing group on a key's path reports the key that was looked up, as every
+// ParameterNotFoundException does, and the group that is missing.
+TEST(StateTests, MissingGroupReportsTheKeyAndTheGroup) {
+    State state;
+    state.create("audio.volume", 0.5);
+    try {
+        state.set("audio.effects.reverb", 0.3);
+        FAIL() << "expected StateGroupNotFoundException";
+    } catch (const StateGroupNotFoundException& e) {
+        EXPECT_EQ(e.key(), "audio.effects.reverb");
+        EXPECT_EQ(e.group(), "effects");
+    }
+    try {
+        (void)state.get<double>("video.brightness");
+        FAIL() << "expected ParameterNotFoundException";
+    } catch (const ParameterNotFoundException& e) { EXPECT_EQ(e.key(), "video.brightness"); }
+}

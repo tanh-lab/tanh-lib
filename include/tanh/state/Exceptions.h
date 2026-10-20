@@ -22,15 +22,24 @@ public:
 
 /**
  * @class StateGroupNotFoundException
- * @brief Exception thrown when a state group is not found.
+ * @brief Exception thrown when a group on a key's path is not found.
  *
- * A ParameterNotFoundException whose key() is the missing group's name.
+ * As every ParameterNotFoundException, key() is the key that was looked up
+ * (e.g. "audio.volume"); group() names the group that is missing ("audio").
  */
 class TANH_API StateGroupNotFoundException : public ParameterNotFoundException {
 public:
-    explicit StateGroupNotFoundException(std::string_view group_name)
-        : ParameterNotFoundException(group_name,
-                                     "State group not found: " + std::string(group_name)) {}
+    StateGroupNotFoundException(std::string_view group_name, std::string_view key)
+        : ParameterNotFoundException(key,
+                                     "State group not found: " + std::string(group_name) +
+                                         " (looking up " + std::string(key) + ")")
+        , m_group(group_name) {}
+
+    /// The group on the key's path that does not exist.
+    const std::string& group() const { return m_group; }
+
+private:
+    std::string m_group;
 };
 
 /**
