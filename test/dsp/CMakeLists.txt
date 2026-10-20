@@ -8,6 +8,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_LinearSmootherBank.cpp
 	test_MorphFilter.cpp
 	test_StereoFDN.cpp
+	test_ConstellationReverb.cpp
 	test_InternalTransportClock.cpp
 	test_MetronomePlayer.cpp
 	test_Granular.cpp
