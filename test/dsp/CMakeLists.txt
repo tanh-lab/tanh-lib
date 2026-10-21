@@ -13,6 +13,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MetronomePlayer.cpp
 	test_Granular.cpp
 	test_MorphWindow.cpp
+	test_Butterworth.cpp
 )
 
 if(TARGET tanh_resonator)
