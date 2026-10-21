@@ -44,10 +44,16 @@ public:
         m_high_2.reset();
     }
 
+    float process_low(float x) { return m_low_2.process(m_low_1.process(x)); }
+
+    float process_high(float x) {
+        const float high = m_high_2.process(m_high_1.process(x));
+        return m_invert_high ? -high : high;
+    }
+
     void process(float x, float& low, float& high) {
-        low = m_low_2.process(m_low_1.process(x));
-        const float h = m_high_2.process(m_high_1.process(x));
-        high = m_invert_high ? -h : h;
+        low = process_low(x);
+        high = process_high(x);
     }
 
     LinkwitzRiley(const LinkwitzRiley&) = delete;
