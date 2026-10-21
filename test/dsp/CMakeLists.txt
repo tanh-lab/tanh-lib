@@ -14,6 +14,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_Granular.cpp
 	test_MorphWindow.cpp
 	test_Butterworth.cpp
+	test_LinkwitzRiley.cpp
 )
 
 if(TARGET tanh_resonator)
