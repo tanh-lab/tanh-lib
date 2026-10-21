@@ -26,6 +26,11 @@ public:
     void process_modulated(const thl::core::BufferView& buffer,
                            std::span<const uint32_t> change_points) TANH_NONBLOCKING_FUNCTION;
 
+    /// Gives @p buffer the phase response of process() without its effect
+    /// so that it can blend with the output of process().
+    virtual void process_dry(thl::core::BufferView buffer,
+                             uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION {}
+
 protected:
     virtual std::span<const uint32_t> get_change_points() TANH_NONBLOCKING_FUNCTION { return {}; }
 
