@@ -6,6 +6,7 @@
 #include <complex>
 #include <cstddef>
 #include <numbers>
+#include <vector>
 
 using thl::dsp::utils::Butterworth;
 using thl::dsp::utils::FilterType;
@@ -41,7 +42,60 @@ double expected_gain(size_t order, FilterType filter_type, double frequency) {
     return 1.0 / std::sqrt(1.0 + std::pow(ratio, 2.0 * static_cast<double>(order)));
 }
 
+std::vector<float> impulse_response(Butterworth& filter, size_t length) {
+    std::vector<float> response(length);
+    for (size_t n = 0; n < length; ++n) { response[n] = filter.process(n == 0 ? 1.0f : 0.0f); }
+    return response;
+}
+
 }  // namespace
+
+TEST(Butterworth, SetFrequencyMatchesPrepare) {
+    for (size_t order = 1; order <= Butterworth::k_max_order; ++order) {
+        for (const FilterType filter_type :
+             {FilterType::LowPass, FilterType::HighPass, FilterType::AllPass}) {
+            SCOPED_TRACE(order);
+            Butterworth changed;
+            Butterworth prepared;
+            changed.prepare(500.0f, k_sample_rate, order, filter_type);
+            changed.set_frequency(2000.0f);
+            prepared.prepare(2000.0f, k_sample_rate, order, filter_type);
+            EXPECT_EQ(impulse_response(changed, 4096), impulse_response(prepared, 4096));
+        }
+    }
+}
+
+TEST(Butterworth, ResetClearsTheState) {
+    for (size_t order = 1; order <= Butterworth::k_max_order; ++order) {
+        SCOPED_TRACE(order);
+        Butterworth used;
+        Butterworth fresh;
+        used.prepare(k_cutoff, k_sample_rate, order, FilterType::LowPass);
+        fresh.prepare(k_cutoff, k_sample_rate, order, FilterType::LowPass);
+        impulse_response(used, 4096);
+        used.reset();
+        EXPECT_EQ(impulse_response(used, 4096), impulse_response(fresh, 4096));
+    }
+}
+
+TEST(Butterworth, ClampsTheCutoffBelowNyquist) {
+    const float limit = Butterworth::k_max_frequency_ratio * k_sample_rate;
+    for (size_t order = 1; order <= Butterworth::k_max_order; ++order) {
+        for (const FilterType filter_type :
+             {FilterType::LowPass, FilterType::HighPass, FilterType::AllPass}) {
+            SCOPED_TRACE(order);
+            Butterworth at_nyquist;
+            Butterworth above_nyquist;
+            Butterworth at_limit;
+            at_nyquist.prepare(k_sample_rate / 2.0f, k_sample_rate, order, filter_type);
+            above_nyquist.prepare(0.6f * k_sample_rate, k_sample_rate, order, filter_type);
+            at_limit.prepare(limit, k_sample_rate, order, filter_type);
+            const std::vector<float> expected = impulse_response(at_limit, 4096);
+            EXPECT_EQ(impulse_response(at_nyquist, 4096), expected);
+            EXPECT_EQ(impulse_response(above_nyquist, 4096), expected);
+        }
+    }
+}
 
 TEST(Butterworth, PassesTheBandAndStopsTheOtherEnd) {
     const double nyquist = k_sample_rate / 2.0;

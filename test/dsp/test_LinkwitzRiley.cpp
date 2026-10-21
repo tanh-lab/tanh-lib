@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <utility>
+#include <vector>
 
 using thl::dsp::utils::Butterworth;
 using thl::dsp::utils::FilterType;
@@ -51,7 +53,42 @@ double expected_band_gain(size_t order, Output output, double frequency) {
     return 1.0 / (1.0 + std::pow(ratio, static_cast<double>(order)));
 }
 
+std::pair<std::vector<float>, std::vector<float>> impulse_responses(LinkwitzRiley& crossover,
+                                                                    size_t length) {
+    std::vector<float> low(length);
+    std::vector<float> high(length);
+    for (size_t n = 0; n < length; ++n) {
+        crossover.process(n == 0 ? 1.0f : 0.0f, low[n], high[n]);
+    }
+    return {low, high};
+}
+
 }  // namespace
+
+TEST(LinkwitzRiley, SetFrequencyMatchesPrepare) {
+    for (size_t order = 2; order <= LinkwitzRiley::k_max_order; order += 2) {
+        SCOPED_TRACE(order);
+        LinkwitzRiley changed;
+        LinkwitzRiley prepared;
+        changed.prepare(500.0f, k_sample_rate, order);
+        changed.set_frequency(2000.0f);
+        prepared.prepare(2000.0f, k_sample_rate, order);
+        EXPECT_EQ(impulse_responses(changed, 4096), impulse_responses(prepared, 4096));
+    }
+}
+
+TEST(LinkwitzRiley, ResetClearsTheState) {
+    for (size_t order = 2; order <= LinkwitzRiley::k_max_order; order += 2) {
+        SCOPED_TRACE(order);
+        LinkwitzRiley used;
+        LinkwitzRiley fresh;
+        used.prepare(k_cutoff, k_sample_rate, order);
+        fresh.prepare(k_cutoff, k_sample_rate, order);
+        impulse_responses(used, 4096);
+        used.reset();
+        EXPECT_EQ(impulse_responses(used, 4096), impulse_responses(fresh, 4096));
+    }
+}
 
 TEST(LinkwitzRiley, BandsAreSixDecibelsDownAtTheCutoff) {
     for (size_t order = 2; order <= LinkwitzRiley::k_max_order; order += 2) {
