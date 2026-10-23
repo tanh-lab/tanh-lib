@@ -51,7 +51,7 @@ public:
         return m_invert_high ? -high : high;
     }
 
-    // With g from prewarp() instead of the frequency of set_frequency(), as Butterworth::process().
+    // With g from Butterworth::prewarp() instead of the frequency of set_frequency().
     float process_low(float x, float g) { return m_low_2.process(m_low_1.process(x, g), g); }
 
     float process_high(float x, float g) {

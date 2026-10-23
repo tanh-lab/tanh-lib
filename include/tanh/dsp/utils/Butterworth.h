@@ -12,15 +12,6 @@ namespace thl::dsp::utils {
 
 enum class FilterType : uint8_t { LowPass, HighPass, AllPass };
 
-inline constexpr float k_max_frequency_ratio = 0.497f;  // of the sample rate
-
-/// The integrator gain g = tan(π·f / fs) of a TPT filter, with the cutoff @p frequency limited to
-/// k_max_frequency_ratio of @p sample_rate.
-inline float prewarp(float frequency, float sample_rate) {
-    frequency = std::min(frequency, k_max_frequency_ratio * sample_rate);
-    return std::tan(std::numbers::pi_v<float> * frequency / sample_rate);
-}
-
 /**
  * Butterworth low-, high- or all-pass of order 1 to k_max_order, as cascaded TPT sections: one
  * 1st-order section if the order is odd, then order / 2 2nd-order sections with
@@ -34,6 +25,14 @@ inline float prewarp(float frequency, float sample_rate) {
 class Butterworth {
 public:
     static constexpr size_t k_max_order = 4;
+    static constexpr float k_max_frequency_ratio = 0.497f;  // of the sample rate
+
+    /// The integrator gain g = tan(π·f / fs) of the sections, with the cutoff @p frequency limited
+    /// to k_max_frequency_ratio of @p sample_rate.
+    static float prewarp(float frequency, float sample_rate) {
+        frequency = std::min(frequency, k_max_frequency_ratio * sample_rate);
+        return std::tan(std::numbers::pi_v<float> * frequency / sample_rate);
+    }
 
     Butterworth() = default;
 
