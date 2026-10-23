@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace thl::dsp::utils {
@@ -20,6 +21,7 @@ BandSplitter::BandSplitter(size_t num_bands, size_t order)
     const size_t num_crossovers = num_bands - 1;
     m_frequencies.resize(num_crossovers);
     m_smoothed_frequencies.resize(num_crossovers);
+    m_dry_smoothed_frequencies.resize(num_crossovers);
     for (size_t c = 0; c < num_crossovers; ++c) {
         // log-spaced from 100 Hz to 10 kHz, a single crossover in the middle at 1 kHz
         const float position = num_crossovers == 1
@@ -49,6 +51,10 @@ void BandSplitter::prepare(const double& sample_rate,
             for (Butterworth& all_pass : crossover.m_band_all_passes) {
                 all_pass.prepare(m_frequencies[c], m_sample_rate, m_order / 2, FilterType::AllPass);
             }
+            crossover.m_dry_all_pass.prepare(m_frequencies[c],
+                                             m_sample_rate,
+                                             m_order / 2,
+                                             FilterType::AllPass);
         }
     }
     m_high_passed.resize(num_channels, samples_per_block);
@@ -56,6 +62,8 @@ void BandSplitter::prepare(const double& sample_rate,
     for (size_t c = 0; c < num_crossovers; ++c) {
         m_smoothed_frequencies[c].reset(sample_rate, k_smoothing_seconds);
         m_smoothed_frequencies[c].set_current_and_target_value(m_frequencies[c]);
+        m_dry_smoothed_frequencies[c].reset(sample_rate, k_smoothing_seconds);
+        m_dry_smoothed_frequencies[c].set_current_and_target_value(m_frequencies[c]);
     }
     m_next_band = 0;
 }
@@ -69,6 +77,28 @@ void BandSplitter::set_frequency(size_t crossover, float frequency) TANH_NONBLOC
                               : nyquist_limit;
     m_frequencies[crossover] = std::clamp(frequency, lowest, highest);
     m_smoothed_frequencies[crossover].set_target_value(m_frequencies[crossover]);
+    m_dry_smoothed_frequencies[crossover].set_target_value(m_frequencies[crossover]);
+}
+
+void BandSplitter::process_dry(thl::core::BufferView buffer,
+                               uint32_t /*modulation_offset*/) TANH_NONBLOCKING_FUNCTION {
+    assert(buffer.get_num_channels() == m_channels.size());
+    const size_t num_samples = buffer.get_num_samples();
+    // crossover by crossover through the whole block, which gives the same as sample by sample
+    for (size_t c = 0; c < m_dry_smoothed_frequencies.size(); ++c) {
+        SmoothedValue& smoothed_frequency = m_dry_smoothed_frequencies[c];
+        const bool gliding = smoothed_frequency.is_smoothing();
+        float g = gliding ? 0.0f : Butterworth::prewarp(m_frequencies[c], m_sample_rate);
+        for (size_t i = 0; i < num_samples; ++i) {
+            if (gliding) {
+                g = Butterworth::prewarp(smoothed_frequency.get_smoothed_value(), m_sample_rate);
+            }
+            for (size_t channel_index = 0; channel_index < m_channels.size(); ++channel_index) {
+                float* samples = buffer.get_write_pointer(channel_index);
+                samples[i] = m_channels[channel_index][c].m_dry_all_pass.process(samples[i], g);
+            }
+        }
+    }
 }
 
 float BandSplitter::get_frequency(size_t crossover) const {
@@ -95,7 +125,6 @@ void BandSplitter::process_band(thl::core::BufferView buffer,
         float* band = buffer.get_write_pointer(channel_index);
         float* high_passed = m_high_passed.get_write_pointer(channel_index);
 
-        // the top band is what the high passes of all crossovers left
         if (band_index == num_crossovers) {
             std::copy(high_passed, high_passed + num_samples, band);
             continue;
@@ -122,7 +151,6 @@ void BandSplitter::process_band(thl::core::BufferView buffer,
 }
 
 void BandSplitter::update_prewarped(size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-    // g of every crossover for this block, shared by all of its filters in every band
     for (size_t c = 0; c < m_smoothed_frequencies.size(); ++c) {
         SmoothedValue& smoothed_frequency = m_smoothed_frequencies[c];
         float* prewarped = m_prewarped.get_write_pointer(c);
