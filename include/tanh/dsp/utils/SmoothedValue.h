@@ -23,6 +23,8 @@ public:
     void set_current_and_target_value(float target_value);
     float get_smoothed_value(std::size_t num_samples = 1);
 
+    bool is_smoothing() const { return m_samples_remaining > 0; }
+
 private:
     void recalc_step();
 
