@@ -65,6 +65,26 @@ TEST(Butterworth, SetFrequencyMatchesPrepare) {
     }
 }
 
+TEST(Butterworth, ProcessWithPrewarpedGainMatchesSetFrequency) {
+    for (size_t order = 1; order <= Butterworth::k_max_order; ++order) {
+        for (const FilterType filter_type :
+             {FilterType::LowPass, FilterType::HighPass, FilterType::AllPass}) {
+            SCOPED_TRACE(order);
+            // prepared at another frequency, to show that process(x, g) ignores it
+            Butterworth given;
+            Butterworth prepared;
+            given.prepare(500.0f, k_sample_rate, order, filter_type);
+            prepared.prepare(2000.0f, k_sample_rate, order, filter_type);
+            const float g = Butterworth::prewarp(2000.0f, k_sample_rate);
+            std::vector<float> response(4096);
+            for (size_t n = 0; n < response.size(); ++n) {
+                response[n] = given.process(n == 0 ? 1.0f : 0.0f, g);
+            }
+            EXPECT_EQ(response, impulse_response(prepared, 4096));
+        }
+    }
+}
+
 TEST(Butterworth, ResetClearsTheState) {
     for (size_t order = 1; order <= Butterworth::k_max_order; ++order) {
         SCOPED_TRACE(order);
@@ -79,7 +99,7 @@ TEST(Butterworth, ResetClearsTheState) {
 }
 
 TEST(Butterworth, ClampsTheCutoffBelowNyquist) {
-    const float limit = thl::dsp::utils::k_max_frequency_ratio * k_sample_rate;
+    const float limit = Butterworth::k_max_frequency_ratio * k_sample_rate;
     for (size_t order = 1; order <= Butterworth::k_max_order; ++order) {
         for (const FilterType filter_type :
              {FilterType::LowPass, FilterType::HighPass, FilterType::AllPass}) {

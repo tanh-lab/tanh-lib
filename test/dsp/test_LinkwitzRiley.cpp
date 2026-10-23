@@ -77,6 +77,26 @@ TEST(LinkwitzRiley, SetFrequencyMatchesPrepare) {
     }
 }
 
+TEST(LinkwitzRiley, ProcessWithPrewarpedGainMatchesSetFrequency) {
+    for (size_t order = 2; order <= LinkwitzRiley::k_max_order; order += 2) {
+        SCOPED_TRACE(order);
+        // prepared at another frequency, to show that process_low/high(x, g) ignore it
+        LinkwitzRiley given;
+        LinkwitzRiley prepared;
+        given.prepare(500.0f, k_sample_rate, order);
+        prepared.prepare(2000.0f, k_sample_rate, order);
+        const float g = Butterworth::prewarp(2000.0f, k_sample_rate);
+        std::vector<float> low(4096);
+        std::vector<float> high(4096);
+        for (size_t n = 0; n < low.size(); ++n) {
+            const float x = n == 0 ? 1.0f : 0.0f;
+            low[n] = given.process_low(x, g);
+            high[n] = given.process_high(x, g);
+        }
+        EXPECT_EQ(std::make_pair(low, high), impulse_responses(prepared, 4096));
+    }
+}
+
 TEST(LinkwitzRiley, ResetClearsTheState) {
     for (size_t order = 2; order <= LinkwitzRiley::k_max_order; order += 2) {
         SCOPED_TRACE(order);
