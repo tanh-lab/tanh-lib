@@ -53,16 +53,17 @@ public:
 
     void set_frequency(float frequency) { m_g = prewarp(frequency, m_sample_rate); }
 
-    /// Sets @p g, from prewarp(), directly: filters at the same frequency can share one tan().
-    void set_prewarped(float g) { m_g = g; }
-
     void reset() { m_states.fill(0.0f); }
 
-    float process(float x) {
+    float process(float x) { return process(x, m_g); }
+
+    /// Processes with @p g, from prewarp(), instead of the frequency of set_frequency(): filters at
+    /// the same frequency can share one tan() call.
+    float process(float x, float g) {
         assert(m_order > 0);
         const size_t odd = m_order % 2;
         if (odd == 1) {
-            const float v = (x - m_states[0]) * m_g / (1.0f + m_g);
+            const float v = (x - m_states[0]) * g / (1.0f + g);
             const float low = v + m_states[0];
             m_states[0] = low + v;
             switch (m_filter_type) {
@@ -75,11 +76,11 @@ public:
             float& s1 = m_states[odd + 2 * k];
             float& s2 = m_states[odd + 2 * k + 1];
             const float high =
-                (x - (m_damping[k] + m_g) * s1 - s2) / (1.0f + m_damping[k] * m_g + m_g * m_g);
-            const float band = m_g * high + s1;
-            s1 = m_g * high + band;
-            const float low = m_g * band + s2;
-            s2 = m_g * band + low;
+                (x - (m_damping[k] + g) * s1 - s2) / (1.0f + m_damping[k] * g + g * g);
+            const float band = g * high + s1;
+            s1 = g * high + band;
+            const float low = g * band + s2;
+            s2 = g * band + low;
             switch (m_filter_type) {
                 case FilterType::LowPass: x = low; break;
                 case FilterType::HighPass: x = high; break;

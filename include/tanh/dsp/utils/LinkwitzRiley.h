@@ -37,14 +37,6 @@ public:
         m_high_2.set_frequency(frequency);
     }
 
-    /// Sets @p g, from prewarp(), directly: see Butterworth::set_prewarped().
-    void set_prewarped(float g) {
-        m_low_1.set_prewarped(g);
-        m_low_2.set_prewarped(g);
-        m_high_1.set_prewarped(g);
-        m_high_2.set_prewarped(g);
-    }
-
     void reset() {
         m_low_1.reset();
         m_low_2.reset();
@@ -56,6 +48,14 @@ public:
 
     float process_high(float x) {
         const float high = m_high_2.process(m_high_1.process(x));
+        return m_invert_high ? -high : high;
+    }
+
+    // With g from prewarp() instead of the frequency of set_frequency(), as Butterworth::process().
+    float process_low(float x, float g) { return m_low_2.process(m_low_1.process(x, g), g); }
+
+    float process_high(float x, float g) {
+        const float high = m_high_2.process(m_high_1.process(x, g), g);
         return m_invert_high ? -high : high;
     }
 
