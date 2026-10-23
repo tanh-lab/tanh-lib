@@ -1,0 +1,89 @@
+#pragma once
+
+#include <tanh/core/Buffer.h>
+#include <tanh/core/BufferView.h>
+#include <tanh/core/Exports.h>
+#include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/utils/Butterworth.h>
+#include <tanh/dsp/utils/LinkwitzRiley.h>
+#include <tanh/dsp/utils/SmoothedValue.h>
+
+#include <cstddef>
+#include <vector>
+
+namespace thl::dsp::utils {
+
+/**
+ * Splits a signal into num_bands() bands with Linkwitz-Riley crossovers in series, band 0 the
+ * lowest. Each band also goes through the all-passes of the crossovers above it, so the bands sum
+ * to the input through the all-passes of every crossover.
+ *
+ * A processor derives from it and implements process(): call process_band() for bands 0 to
+ * num_bands() - 1 in this order, with the input in the buffer of band 0. Every band must be
+ * processed in every block: each band reads what the band before it left behind, and its filters
+ * would otherwise miss that block.
+ *
+ * @par Real-Time Safety
+ *   process_band() and set_frequency() are real-time safe: no allocation, no locks. prepare()
+ *   allocates.
+ */
+class TANH_API BandSplitter : public thl::dsp::BaseProcessor {
+public:
+    static constexpr double k_smoothing_seconds = 0.005;
+
+    /// Until set_frequency() is called, the crossovers are log-spaced from 100 Hz to 10 kHz.
+    explicit BandSplitter(size_t num_bands, size_t order);
+
+    BandSplitter(const BandSplitter&) = delete;
+    BandSplitter& operator=(const BandSplitter&) = delete;
+
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override;
+
+    /// Sets the target of the crossover between bands @p crossover and @p crossover + 1, which it
+    /// glides to over k_smoothing_seconds. The target is clamped between the targets of the
+    /// neighbouring crossovers, so the bands stay in order, and to
+    /// Butterworth::k_max_frequency_ratio of the sample rate.
+    void set_frequency(size_t crossover, float frequency) TANH_NONBLOCKING_FUNCTION;
+
+    /// The target of @p crossover, as clamped by set_frequency().
+    float get_frequency(size_t crossover) const;
+
+    size_t num_bands() const { return m_num_bands; }
+
+protected:
+    /// Writes band @p band_index into @p buffer. For band 0, @p buffer holds the input on entry.
+    /// Asserts that the bands are processed in order.
+    void process_band(thl::core::BufferView buffer, size_t band_index) TANH_NONBLOCKING_FUNCTION;
+
+private:
+    struct Crossover {
+        LinkwitzRiley m_filter;
+        // [b]: this crossover's all-pass for band b, one for each band below it
+        std::vector<Butterworth> m_band_all_passes;
+    };
+    using Channel = std::vector<Crossover>;
+
+    // fills m_prewarped with g of every crossover for the next num_samples samples
+    void update_prewarped(size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+
+    std::vector<Channel> m_channels;
+    // the input of band m_next_band: the input after the high passes of crossovers 0 to
+    // m_next_band - 1
+    thl::core::Buffer<float> m_high_passed;
+    // [c]: the target of crossover c
+    std::vector<float> m_frequencies;
+    // [c]: glides crossover c to its target
+    std::vector<SmoothedValue> m_smoothed_frequencies;
+    // [c][i]: g of crossover c for sample i of this block
+    thl::core::Buffer<float> m_prewarped;
+    float m_sample_rate = 48000.0f;
+    size_t m_num_bands = 0;
+    size_t m_order = 0;
+    size_t m_next_band = 0;
+    // the length of band 0 in this block, which the other bands must match
+    size_t m_num_samples = 0;
+};
+
+}  // namespace thl::dsp::utils
