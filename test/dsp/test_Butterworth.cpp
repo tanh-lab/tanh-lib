@@ -79,7 +79,7 @@ TEST(Butterworth, ResetClearsTheState) {
 }
 
 TEST(Butterworth, ClampsTheCutoffBelowNyquist) {
-    const float limit = Butterworth::k_max_frequency_ratio * k_sample_rate;
+    const float limit = thl::dsp::utils::k_max_frequency_ratio * k_sample_rate;
     for (size_t order = 1; order <= Butterworth::k_max_order; ++order) {
         for (const FilterType filter_type :
              {FilterType::LowPass, FilterType::HighPass, FilterType::AllPass}) {

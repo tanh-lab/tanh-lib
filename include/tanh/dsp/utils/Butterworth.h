@@ -12,11 +12,20 @@ namespace thl::dsp::utils {
 
 enum class FilterType : uint8_t { LowPass, HighPass, AllPass };
 
+inline constexpr float k_max_frequency_ratio = 0.497f;  // of the sample rate
+
+/// The integrator gain g = tan(π·f / fs) of a TPT filter, with the cutoff @p frequency limited to
+/// k_max_frequency_ratio of @p sample_rate.
+inline float prewarp(float frequency, float sample_rate) {
+    frequency = std::min(frequency, k_max_frequency_ratio * sample_rate);
+    return std::tan(std::numbers::pi_v<float> * frequency / sample_rate);
+}
+
 /**
  * Butterworth low-, high- or all-pass of order 1 to k_max_order, as cascaded TPT sections: one
  * 1st-order section if the order is odd, then order / 2 2nd-order sections with
  * Q_k = 1 / (2·cos(π·(2k + 1 + order mod 2) / (2·order))).
- * The cutoff is limited to just below Nyquist and prewarped: g = tan(π·f / fs).
+ * The cutoff is prewarped with prewarp(), which limits it to just below Nyquist.
  * The all-pass has the Butterworth poles and a flat magnitude: the phase of a Linkwitz-Riley
  * crossover of twice the order (low + high).
  *
@@ -25,7 +34,6 @@ enum class FilterType : uint8_t { LowPass, HighPass, AllPass };
 class Butterworth {
 public:
     static constexpr size_t k_max_order = 4;
-    static constexpr float k_max_frequency_ratio = 0.497f;  // of the sample rate
 
     Butterworth() = default;
 
@@ -43,10 +51,10 @@ public:
         reset();
     }
 
-    void set_frequency(float frequency) {
-        frequency = std::min(frequency, k_max_frequency_ratio * m_sample_rate);
-        m_g = std::tan(std::numbers::pi_v<float> * frequency / m_sample_rate);
-    }
+    void set_frequency(float frequency) { m_g = prewarp(frequency, m_sample_rate); }
+
+    /// Sets @p g, from prewarp(), directly: filters at the same frequency can share one tan().
+    void set_prewarped(float g) { m_g = g; }
 
     void reset() { m_states.fill(0.0f); }
 
