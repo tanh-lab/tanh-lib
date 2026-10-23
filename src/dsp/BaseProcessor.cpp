@@ -20,21 +20,36 @@ void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
     split_and_process(buffer, change_points);
 }
 
-void BaseProcessor::split_and_process(const thl::core::BufferView& buffer,
-                                      std::span<const uint32_t> change_points)
+void BaseProcessor::process_dry_modulated(const thl::core::BufferView& buffer)
     TANH_NONBLOCKING_FUNCTION {
+    split_and_process(buffer, get_change_points(), Signal::Dry);
+}
+
+void BaseProcessor::process_dry_modulated(const thl::core::BufferView& buffer,
+                                          std::span<const uint32_t> change_points)
+    TANH_NONBLOCKING_FUNCTION {
+    split_and_process(buffer, change_points, Signal::Dry);
+}
+
+void BaseProcessor::split_and_process(const thl::core::BufferView& buffer,
+                                      std::span<const uint32_t> change_points,
+                                      Signal signal) TANH_NONBLOCKING_FUNCTION {
     if (change_points.empty()) {
-        process(buffer, 0);
+        signal == Signal::Dry ? process_dry(buffer, 0) : process(buffer, 0);
         return;
     }
     uint32_t pos = 0;
     const auto total = static_cast<uint32_t>(buffer.get_num_samples());
     for (uint32_t const cp : change_points) {
         if (cp <= pos || cp >= total) { continue; }
-        process(buffer.sub_block(pos, cp - pos), pos);
+        const thl::core::BufferView part = buffer.sub_block(pos, cp - pos);
+        signal == Signal::Dry ? process_dry(part, pos) : process(part, pos);
         pos = cp;
     }
-    if (pos < total) { process(buffer.sub_block(pos, total - pos), pos); }
+    if (pos < total) {
+        const thl::core::BufferView part = buffer.sub_block(pos, total - pos);
+        signal == Signal::Dry ? process_dry(part, pos) : process(part, pos);
+    }
 }
 
 }  // namespace thl::dsp

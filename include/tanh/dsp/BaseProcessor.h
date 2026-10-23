@@ -31,12 +31,22 @@ public:
     virtual void process_dry(thl::core::BufferView buffer,
                              uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION {}
 
+    // process_dry() split like process_modulated(): self-driven
+    void process_dry_modulated(const thl::core::BufferView& buffer) TANH_NONBLOCKING_FUNCTION;
+
+    // process_dry() split like process_modulated(): caller-injected
+    void process_dry_modulated(const thl::core::BufferView& buffer,
+                               std::span<const uint32_t> change_points) TANH_NONBLOCKING_FUNCTION;
+
 protected:
     virtual std::span<const uint32_t> get_change_points() TANH_NONBLOCKING_FUNCTION { return {}; }
 
 private:
+    enum class Signal : uint8_t { Wet, Dry };
+
     void split_and_process(const thl::core::BufferView& buffer,
-                           std::span<const uint32_t> change_points) TANH_NONBLOCKING_FUNCTION;
+                           std::span<const uint32_t> change_points,
+                           Signal signal = Signal::Wet) TANH_NONBLOCKING_FUNCTION;
 };
 
 }  // namespace thl::dsp
