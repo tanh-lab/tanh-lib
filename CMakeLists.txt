@@ -263,6 +263,8 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/BrownianNoise.cpp
         src/dsp/utils/FrequencyShifter.cpp
         src/dsp/utils/PitchShifter.cpp
+        src/dsp/utils/BandSplitter.cpp
+        src/dsp/utils/MultibandLimiter.cpp
 
 
         src/dsp/synth/SineProcessor.cpp
