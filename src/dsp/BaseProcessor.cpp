@@ -1,5 +1,8 @@
 #include <tanh/dsp/BaseProcessor.h>
 
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -8,9 +11,31 @@
 
 namespace thl::dsp {
 
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
+void BaseProcessor::process(thl::core::BufferView buffer,
+                            uint32_t modulation_offset,
+                            thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION {
+    const bool with_dry = dry.get_num_channels() > 0;
+    assert(!with_dry || (dry.get_num_channels() == buffer.get_num_channels() &&
+                         dry.get_num_samples() == buffer.get_num_samples()));
+    if (with_dry) {
+        for (size_t channel = 0; channel < buffer.get_num_channels(); ++channel) {
+            std::copy_n(buffer.get_read_pointer(channel),
+                        buffer.get_num_samples(),
+                        dry.get_write_pointer(channel));
+        }
+    }
+    process(buffer, modulation_offset);
+}
+
 void BaseProcessor::process_modulated(const thl::core::BufferView& buffer)
     TANH_NONBLOCKING_FUNCTION {
     split_and_process(buffer, get_change_points());
+}
+
+void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
+                                      const thl::core::BufferView& dry) TANH_NONBLOCKING_FUNCTION {
+    split_and_process(buffer, get_change_points(), dry);
 }
 
 // Caller-injected: uses externally supplied change points
@@ -20,36 +45,35 @@ void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
     split_and_process(buffer, change_points);
 }
 
-void BaseProcessor::process_dry_modulated(const thl::core::BufferView& buffer)
-    TANH_NONBLOCKING_FUNCTION {
-    split_and_process(buffer, get_change_points(), Signal::Dry);
-}
-
-void BaseProcessor::process_dry_modulated(const thl::core::BufferView& buffer,
-                                          std::span<const uint32_t> change_points)
-    TANH_NONBLOCKING_FUNCTION {
-    split_and_process(buffer, change_points, Signal::Dry);
+void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
+                                      std::span<const uint32_t> change_points,
+                                      const thl::core::BufferView& dry) TANH_NONBLOCKING_FUNCTION {
+    split_and_process(buffer, change_points, dry);
 }
 
 void BaseProcessor::split_and_process(const thl::core::BufferView& buffer,
                                       std::span<const uint32_t> change_points,
-                                      Signal signal) TANH_NONBLOCKING_FUNCTION {
+                                      const thl::core::BufferView& dry) TANH_NONBLOCKING_FUNCTION {
+    const bool with_dry = dry.get_num_channels() > 0;
+    assert(!with_dry || (dry.get_num_channels() == buffer.get_num_channels() &&
+                         dry.get_num_samples() == buffer.get_num_samples()));
+    const auto process_part = [&](uint32_t start, uint32_t length) {
+        with_dry ? process(buffer.sub_block(start, length), start, dry.sub_block(start, length))
+                 : process(buffer.sub_block(start, length), start);
+    };
+
+    const auto total = static_cast<uint32_t>(buffer.get_num_samples());
     if (change_points.empty()) {
-        signal == Signal::Dry ? process_dry(buffer, 0) : process(buffer, 0);
+        process_part(0, total);
         return;
     }
     uint32_t pos = 0;
-    const auto total = static_cast<uint32_t>(buffer.get_num_samples());
     for (uint32_t const cp : change_points) {
         if (cp <= pos || cp >= total) { continue; }
-        const thl::core::BufferView part = buffer.sub_block(pos, cp - pos);
-        signal == Signal::Dry ? process_dry(part, pos) : process(part, pos);
+        process_part(pos, cp - pos);
         pos = cp;
     }
-    if (pos < total) {
-        const thl::core::BufferView part = buffer.sub_block(pos, total - pos);
-        signal == Signal::Dry ? process_dry(part, pos) : process(part, pos);
-    }
+    if (pos < total) { process_part(pos, total - pos); }
 }
 
 }  // namespace thl::dsp

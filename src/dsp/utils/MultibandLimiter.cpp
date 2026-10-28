@@ -4,11 +4,25 @@
 #include <tanh/dsp/utils/MultibandLimiter.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 
 namespace thl::dsp::utils {
+
+namespace {
+
+void add(thl::core::BufferView destination,
+         const thl::core::BufferView& source) TANH_NONBLOCKING_FUNCTION {
+    for (size_t channel = 0; channel < destination.get_num_channels(); ++channel) {
+        float* output = destination.get_write_pointer(channel);
+        const float* samples = source.get_read_pointer(channel);
+        for (size_t i = 0; i < destination.get_num_samples(); ++i) { output[i] += samples[i]; }
+    }
+}
+
+}  // namespace
 
 MultibandLimiterImpl::MultibandLimiterImpl(size_t num_bands, size_t order)
     : BandSplitter(num_bands, order) {
@@ -29,19 +43,33 @@ void MultibandLimiterImpl::prepare(const double& sample_rate,
 
 void MultibandLimiterImpl::process(thl::core::BufferView buffer,
                                    uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+    process(buffer, modulation_offset, {});
+}
+
+void MultibandLimiterImpl::process(thl::core::BufferView buffer,
+                                   uint32_t modulation_offset,
+                                   thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION {
+    const bool with_dry = dry.get_num_channels() > 0;
+    assert(!with_dry || (dry.get_num_channels() == buffer.get_num_channels() &&
+                         dry.get_num_samples() == buffer.get_num_samples()));
     const size_t num_samples = buffer.get_num_samples();
+
     process_band(buffer, 0);
+    if (with_dry) {
+        for (size_t channel = 0; channel < buffer.get_num_channels(); ++channel) {
+            std::copy_n(buffer.get_read_pointer(channel),
+                        num_samples,
+                        dry.get_write_pointer(channel));
+        }
+    }
     m_limiters[0].process(buffer, modulation_offset);
 
     const thl::core::BufferView band = thl::core::BufferView(m_band).sub_block(0, num_samples);
     for (size_t band_index = 1; band_index < num_bands(); ++band_index) {
         process_band(band, band_index);
+        if (with_dry) { add(dry, band); }
         m_limiters[band_index].process(band, modulation_offset);
-        for (size_t channel = 0; channel < buffer.get_num_channels(); ++channel) {
-            float* output = buffer.get_write_pointer(channel);
-            const float* samples = band.get_read_pointer(channel);
-            for (size_t i = 0; i < num_samples; ++i) { output[i] += samples[i]; }
-        }
+        add(buffer, band);
     }
 }
 

@@ -215,46 +215,6 @@ TEST(BandSplitter, GlidingCrossoversStillSumToTheAllPasses) {
     EXPECT_LT(max_sum_error(bands, reference), 1e-5f);
 }
 
-TEST(BandSplitter, DryMatchesTheSumOfTheBands) {
-    const Buffer<float> signal = noise(2, 8192);
-    for (size_t num_bands = 2; num_bands <= 4; ++num_bands) {
-        for (size_t order = 2; order <= LinkwitzRiley::k_max_order; order += 2) {
-            SCOPED_TRACE(testing::Message() << num_bands << " bands, order " << order);
-            TestBandSplitter splitter(num_bands, order);
-            splitter.prepare(k_sample_rate, k_block_size, signal.get_num_channels());
-            const Bands bands = split(splitter, signal);
-
-            // in a single call, much longer than the blocks of the bands
-            Buffer<float> dry = signal;
-            splitter.process_dry(BufferView(dry));
-            EXPECT_LT(max_sum_error(bands, dry), 1e-5f);
-        }
-    }
-}
-
-TEST(BandSplitter, DryFollowsTheGlidesOfTheBands) {
-    constexpr size_t k_dry_block_size = 2 * k_block_size;
-    constexpr size_t k_glide_start = 2 * k_dry_block_size;
-    const Buffer<float> signal = noise(2, 8192);
-
-    TestBandSplitter splitter(3, 4);
-    splitter.prepare(k_sample_rate, k_block_size, signal.get_num_channels());
-    Bands bands(splitter.num_bands(), signal);
-    Buffer<float> dry = signal;
-    for (size_t start = 0; start < signal.get_num_samples(); start += k_block_size) {
-        if (start == k_glide_start) {
-            splitter.set_frequency(0, 2000.0f);
-            splitter.set_frequency(1, 5000.0f);
-        }
-        // the dry signal in blocks of twice the size, each before the bands reach it
-        if (start % k_dry_block_size == 0) {
-            splitter.process_dry(BufferView(dry).sub_block(start, k_dry_block_size));
-        }
-        process_block(splitter, bands, start, k_block_size);
-    }
-    EXPECT_LT(max_sum_error(bands, dry), 1e-5f);
-}
-
 #if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
 TEST(BandSplitterDeathTest, AssertsTheBandOrder) {
     TestBandSplitter splitter(3, 4);

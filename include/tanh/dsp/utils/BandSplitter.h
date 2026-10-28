@@ -17,16 +17,16 @@ namespace thl::dsp::utils {
 /**
  * Splits a signal into num_bands() bands with Linkwitz-Riley crossovers in series, band 0 the
  * lowest. Each band also goes through the all-passes of the crossovers above it, so the bands sum
- * to the input through the all-passes of every crossover: the dry signal of process_dry().
+ * to the input through the all-passes of every crossover: their sum before processing is the dry
+ * signal.
  *
  * A processor derives from it and implements process(): call process_band() for bands 0 to
  * num_bands() - 1 in this order, with the input in the buffer of band 0. Every band must be
  * processed in every block: each band reads what the band before it left behind, and its filters
- * would otherwise miss that block. process_dry() is independent of the bands: it can be called at
- * any point of a block and with any block size, as long as it processes every sample once.
+ * would otherwise miss that block.
  *
  * @par Real-Time Safety
- *   process_band(), process_dry() and set_frequency() are real-time safe: no allocation, no locks.
+ *   process_band() and set_frequency() are real-time safe: no allocation, no locks.
  *   prepare() allocates.
  */
 class TANH_API BandSplitter : public thl::dsp::BaseProcessor {
@@ -42,8 +42,6 @@ public:
     void prepare(const double& sample_rate,
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
-    void process_dry(thl::core::BufferView buffer,
-                     uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
 
     /// Sets the target of the crossover between bands @p crossover and @p crossover + 1.
     /// Frequencies cannot be changed within a block.
@@ -62,7 +60,6 @@ private:
     struct Crossover {
         LinkwitzRiley m_filter;
         std::vector<Butterworth> m_band_all_passes;
-        Butterworth m_dry_all_pass;
     };
     using Channel = std::vector<Crossover>;
 
@@ -72,7 +69,6 @@ private:
     thl::core::Buffer<float> m_high_passed;
     std::vector<float> m_frequencies;
     std::vector<SmoothedValue> m_smoothed_frequencies;
-    std::vector<SmoothedValue> m_dry_smoothed_frequencies;
     thl::core::Buffer<float> m_prewarped;
     float m_sample_rate = 48000.0f;
     size_t m_num_bands = 0;

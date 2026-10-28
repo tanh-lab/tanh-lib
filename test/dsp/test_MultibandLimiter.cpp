@@ -74,6 +74,16 @@ void process(TestMultibandLimiter& limiter, Buffer<float>& signal) {
     }
 }
 
+void process(TestMultibandLimiter& limiter, Buffer<float>& signal, Buffer<float>& dry) {
+    const size_t num_samples = signal.get_num_samples();
+    for (size_t start = 0; start < num_samples; start += k_block_size) {
+        const size_t length = std::min(k_block_size, num_samples - start);
+        limiter.process(BufferView(signal).sub_block(start, length),
+                        0,
+                        BufferView(dry).sub_block(start, length));
+    }
+}
+
 // The peak of the second half, after the limiters have settled.
 float settled_peak(const Buffer<float>& signal) {
     const size_t num_samples = signal.get_num_samples();
@@ -96,9 +106,8 @@ TEST(MultibandLimiter, BelowTheThresholdsTheOutputIsTheDrySignal) {
             limiter.prepare(k_sample_rate, k_block_size, signal.get_num_channels());
 
             Buffer<float> output = signal;
-            process(limiter, output);
-            Buffer<float> dry = signal;
-            limiter.process_dry(BufferView(dry));
+            Buffer<float> dry(signal.get_num_channels(), signal.get_num_samples());
+            process(limiter, output, dry);
 
             float max_error = 0.0f;
             for (size_t channel = 0; channel < signal.get_num_channels(); ++channel) {
