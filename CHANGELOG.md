@@ -15,6 +15,59 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   shifts each half's input, the fresh input and the feedback together, so it is
   heard on the first pass, also with a short decay. Tests:
   `ConstellationReverb.*`.
+- `thl::core::BufferOperations`: header-only static helpers on the samples of
+  buffer views, `copy(destination, source)` and `add(destination, source)`, in
+  every channel. `source` is a `ConstBufferView`, so writable views and
+  `Buffer`s work too. Both views must have the same channels and samples
+  (asserted) and must not overlap. `BufferView` itself stays a pure view.
+  Tests: `BufferOperations*`.
+- `dsp::utils::Butterworth`: header-only, per-sample low-, high- or all-pass of
+  order 1–4, as cascaded TPT sections. The static `prewarp(f, fs)` limits the
+  cutoff to `k_max_frequency_ratio` (0.497 · fs); `process(x, g)` takes the
+  prewarped gain, so filters at the same frequency share one `tan()`. Tests:
+  `Butterworth.*`.
+- `dsp::utils::LinkwitzRiley`: crossover of even order 2–8, two Butterworths of
+  half the order per band. `process_low()` and `process_high()` can be called
+  separately, also with `g`. LR2 and LR6 invert the high band, so low + high is
+  an all-pass at every order. Tests: `LinkwitzRiley.*`.
+- `dsp::utils::SmoothedValue::is_smoothing()`: whether a glide is in progress.
+- `dsp::utils::BandSplitter`: an abstract `BaseProcessor` that splits a signal
+  into N bands with N − 1 Linkwitz-Riley crossovers in series. A derived
+  processor calls the protected `process_band()` for bands 0 to N − 1, in order,
+  every block (asserted). The bands sum to the input through the all-passes of
+  every crossover, so their sum before processing is the dry signal.
+  `set_frequency()` clamps between the neighbouring crossovers and below
+  Nyquist, and glides per sample over 5 ms; the prewarped gain is computed once
+  per crossover and sample and shared by all its filters. Tests:
+  `BandSplitter*`.
+- `dsp::utils::MultibandLimiterImpl`: one `LimiterImpl` per `BandSplitter` band,
+  summed. Band count and order are constructor arguments; a derived class gives
+  every band its threshold, attack and release through
+  `get_band_parameter_float()`. With a dry buffer it writes the sum of the bands
+  before limiting, which matches the output below the thresholds (the limiters
+  add no latency). Tests: `MultibandLimiter.*`.
+- `BaseProcessor::process(buffer, modulation_offset, dry)`: also writes the dry
+  signal, the input with the phase response of `process()` but without its
+  effect, so that wet and dry can be blended. It is computed in the same pass,
+  so it follows the same smoothing and modulation. `dry` is output-only; an
+  empty `dry` means no dry signal. The default copies the input into `dry` and
+  calls `process(buffer, modulation_offset)`: override it if `process()` changes
+  the phase. `process_modulated(buffer, dry)` and
+  `process_modulated(buffer, change_points, dry)` split both at the same change
+  points. Tests: `BaseProcessor.*`.
+
+### Changed
+
+- `BaseProcessor` has a new virtual function, so its vtable changed: code that
+  derives from it or calls it across a shared library must be recompiled.
+- `process_modulated(x, {})` no longer compiles: `{}` matches both the
+  change-points and the new dry overload. Write
+  `process_modulated(x, std::span<const uint32_t>())`, or `process(x)`.
+  `process_modulated(x)` is not equivalent: it splits at the processor's own
+  `get_change_points()`.
+- A processor that overrides only `process(buffer, modulation_offset)` hides the
+  dry overload when called through its own type; calls through
+  `BaseProcessor&` are unaffected.
 
 ## [0.4.0] - 2026-09-21
 
