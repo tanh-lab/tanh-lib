@@ -44,7 +44,8 @@ public:
                  const size_t& num_channels) override;
 
     /// Sets the target of the crossover between bands @p crossover and @p crossover + 1.
-    /// Frequencies cannot be changed within a block.
+    /// Call it from the audio thread, before process_band() for band 0; a change takes effect
+    /// from the next block.
     void set_frequency(size_t crossover, float frequency) TANH_NONBLOCKING_FUNCTION;
 
     /// The target of @p crossover, as clamped by set_frequency().

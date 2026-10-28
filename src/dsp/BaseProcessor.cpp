@@ -1,32 +1,26 @@
 #include <tanh/dsp/BaseProcessor.h>
 
-#include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <span>
 
+#include "tanh/core/BufferOperations.h"
 #include "tanh/core/BufferView.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl::dsp {
 
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
+// NOLINTBEGIN(performance-unnecessary-value-param)
 void BaseProcessor::process(thl::core::BufferView buffer,
                             uint32_t modulation_offset,
                             thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION {
     const bool with_dry = dry.get_num_channels() > 0;
     assert(!with_dry || (dry.get_num_channels() == buffer.get_num_channels() &&
                          dry.get_num_samples() == buffer.get_num_samples()));
-    if (with_dry) {
-        for (size_t channel = 0; channel < buffer.get_num_channels(); ++channel) {
-            std::copy_n(buffer.get_read_pointer(channel),
-                        buffer.get_num_samples(),
-                        dry.get_write_pointer(channel));
-        }
-    }
+    if (with_dry) { thl::core::BufferOperations::copy(dry, buffer); }
     process(buffer, modulation_offset);
 }
+// NOLINTEND(performance-unnecessary-value-param)
 
 void BaseProcessor::process_modulated(const thl::core::BufferView& buffer)
     TANH_NONBLOCKING_FUNCTION {
