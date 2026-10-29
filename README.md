@@ -112,7 +112,8 @@ tanh-lib is licensed per component:
   (including the real-time `Logger::rt` queues and drain threads, and `rt_snprintf`),
   `Thread` (an OS thread with a requested scheduling class),
   `Dispatcher`, threading utilities (RCU, `LockFreeQueue`), and small helpers — everything under
-  `include/tanh/core/`, `include/tanh/core.h`, `src/core/`, `src/core.cpp` —
+  `include/tanh/core/`, `include/tanh/core.h`, `src/core/`, `src/core.cpp`, and
+  `include/tanh/utils/RealtimeSanitizer.h` (the RealtimeSanitizer annotations Core uses) —
   plus the binary-data CMake helpers (`cmake/tanh/binary-data.cmake`,
   `cmake/tanh/bin2cpp.cmake`, from tanh-tooling). One target, one license: linking `tanh::Core` pulls
   in Apache-2.0 code only, so permissively licensed projects (e.g.
@@ -120,7 +121,12 @@ tanh-lib is licensed per component:
   files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
 
-- **AGPL-3.0** — all other components (`parameters`, `state`, `dsp`, `resonator`,
+- **Apache-2.0** — the DSP files with an `SPDX-License-Identifier: Apache-2.0` header:
+  `BaseProcessor` and `utils/Resampler`. They include only Core and each other. Link
+  `tanh::DSP` statically to use them in a permissively licensed project: the linker takes only
+  their objects, while a shared `tanh_dsp` also carries the AGPL code.
+
+- **AGPL-3.0** — all other components and files (`parameters`, `state`, `dsp`, `resonator`,
   `modulation`, `audio-io`, `net`, `link`, `graph`, `midi`) and files (see [`LICENSE`](LICENSE)).
 
 - **Ableton Link** — `TANH_BUILD_LINK` fetches the Link SDK (GPLv2+ or a

@@ -6,6 +6,7 @@ add_executable(${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PRIVATE
 	test_AdaptivePeakPicker.cpp
 	test_Limiter.cpp
+	test_Resampler.cpp
 	test_LinearSmootherBank.cpp
 	test_MorphFilter.cpp
 	test_EqDesign.cpp
