@@ -26,27 +26,28 @@ struct MotionLoopView {
 
 /// Where and how a take starts.
 struct MotionTakeStart {
-    LoopLength m_length = LoopLength::Free;
+    LoopLength m_length = LoopLength::free();
     double m_bpm = 120.0;
     int m_sig_num = 4;
     int m_sig_denom = 4;
     double m_beat = 0.0;  ///< the recording clock's beat at the start sample
     float m_x = 0.5f;     ///< where the output is: a lifted point holds it until the touch
     float m_y = 0.5f;
-    /// BarsN: what plays; the loop starts as it (a Beats loop; anything else is ignored).
+    /// bars(): what plays; the loop starts as it (a Beats loop; anything else is ignored).
     MotionLoopView m_seed;
 };
 
 /**
  * @brief Records takes into one preallocated working buffer (audio thread).
  *
- * Every take is a Beats loop of whole bars on a grid of points per bar.
+ * Every take is a Beats loop of bars on a grid of points per bar.
  *
  * - Free: points from the first touch to the release, at most 16 bars. The still ends are
  *   dropped (one point kept), and the take is stretched onto the nearest (by ratio) of 1, 2,
  *   4, 8 or 16 bars, point 0 on the bar line nearest the first kept point. Fewer than
  *   k_motion_min_points points: Dropped.
- * - BarsN: a loop of N bars from the loop line (the multiple of N bars at or before the start).
+ * - bars(n, division): a loop of n / division bars from the loop line (the multiple of its
+ *   length at or before the start); refused below k_motion_min_points points.
  *   It starts as the seed, or lifted (gate 0) at the start position without one, and records
  *   until end(): where the finger is down it overwrites, where it is up the loop keeps what it
  *   holds (a lifted point it never held keeps the last position, gate 0). Every release

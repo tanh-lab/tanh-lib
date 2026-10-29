@@ -347,7 +347,7 @@ ClockTake record_clock_take(Rig& r,
                             uint64_t until,
                             const std::vector<std::pair<uint64_t, double>>& tempo = {}) {
     ClockTake take;
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(2)));
     double own = 0.0;
     bool started = false;
     double bpm = 120.0;
@@ -446,7 +446,7 @@ TEST_P(MotionRecorderClock, TempoChangeDuringRecording) {
             static_cast<float>(0.5 + (0.35 * std::cos(2.0 * std::numbers::pi * beat / 4.0)))};
     };
     r.run_until(k_spb);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     const uint64_t change = r.now() + (2 * k_spb);
     r.tempo_at(change, 80.0);
     const double start_beat = r.m_clock.block_info().beat_end();
@@ -512,7 +512,7 @@ TEST_P(MotionRecorderClock, PrepareAbortsTake) {
     auto rp = playing_rig(block);
     Rig& r = *rp;
     r.run_until(k_spb);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.m_pad.touch(1, 0.3f, 0.3f);
     r.run_until(2 * k_spb);
     ASSERT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -579,7 +579,7 @@ BarTakeResult bar_take_on_tempo_map(Rig& r) {
         }
     };
     r.run_until(k_spb * 2);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     touching = true;
     double start = -1.0;
     float progress = -1.0f;

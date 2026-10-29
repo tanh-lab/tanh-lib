@@ -94,7 +94,7 @@ struct SeedLoop {
 // to where the drawing starts, around the loop line.
 TEST(MotionTakeRecorder, BarsTakeGlidesThroughTheTimeNotDrawn) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Bars1, 1.0, 0.2f, 0.7f), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::bars(1), 1.0, 0.2f, 0.7f), MotionTakeRecorder::Start::Started);
     (void)r.run(k_beat / 2, true, 0.2f, 0.7f);                    // beats 1 to 1.5 at 0.2
     EXPECT_EQ(r.run(k_beat / 2, true, 0.6f, 0.7f), Event::None);  // 1.5 to 2 at 0.6
     EXPECT_EQ(r.run(1, false), Event::Revision);                  // the release completes the loop
@@ -115,7 +115,7 @@ TEST(MotionTakeRecorder, BarsTakeGlidesThroughTheTimeNotDrawn) {
 
 TEST(MotionTakeRecorder, BarsTakeLoopsAndOverwritesOnlyWhereTheFingerIsDown) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Bars1, 1.0, 0.3f, 0.3f), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::bars(1), 1.0, 0.3f, 0.3f), MotionTakeRecorder::Start::Started);
     (void)r.run(k_beat, true, 0.3f, 0.3f);      // beat 1 to 2
     (void)r.run(2 * k_beat, false);             // to the loop line
     (void)r.run(k_beat / 2, true, 0.8f, 0.8f);  // beat 4 to 4.5: the start of the loop
@@ -139,7 +139,7 @@ TEST(MotionTakeRecorder, BarsTakeLoopsAndOverwritesOnlyWhereTheFingerIsDown) {
 
 TEST(MotionTakeRecorder, BarsTakeHeldOverTheLoopLineRecordsIntoTheStart) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Bars2, 4.0, 0.2f, 0.2f), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::bars(2), 4.0, 0.2f, 0.2f), MotionTakeRecorder::Start::Started);
     (void)r.run(4 * k_beat, true, 0.2f, 0.2f);  // beat 4 to 8: the second half
     (void)r.run(2 * k_beat, true, 0.6f, 0.6f);  // over the loop line into the first half
     EXPECT_EQ(r.m_events.size(), 0u);
@@ -160,7 +160,7 @@ TEST(MotionTakeRecorder, BarsTakeHeldOverTheLoopLineRecordsIntoTheStart) {
 TEST(MotionTakeRecorder, BarsTakeStartsAsItsSeed) {
     const SeedLoop seed(8.0, 100);
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Bars2, 2.0, 0.9f, 0.9f, seed.m_view),
+    ASSERT_EQ(r.start(LoopLength::bars(2), 2.0, 0.9f, 0.9f, seed.m_view),
               MotionTakeRecorder::Start::Started);
     (void)r.run(k_beat, true, 0.9f, 0.9f);  // beat 2 to 3
     EXPECT_EQ(r.run(1, false), Event::Revision);
@@ -180,7 +180,7 @@ TEST(MotionTakeRecorder, BarsTakeStartsAsItsSeed) {
 TEST(MotionTakeRecorder, ShorterSeedRepeatsOverTheLoop) {
     const SeedLoop seed(4.0, 50);  // one bar, half the resolution
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Bars2, 0.0, 0.5f, 0.5f, seed.m_view),
+    ASSERT_EQ(r.start(LoopLength::bars(2), 0.0, 0.5f, 0.5f, seed.m_view),
               MotionTakeRecorder::Start::Started);
     (void)r.run(10, true, 0.5f, 0.5f);
     (void)r.run(1, false);
@@ -194,7 +194,7 @@ TEST(MotionTakeRecorder, ShorterSeedRepeatsOverTheLoop) {
 
 TEST(MotionTakeRecorder, UntouchedTakeIsCancelled) {
     const SeedLoop seed(4.0, 100);
-    for (const auto length : {LoopLength::Free, LoopLength::Bars1}) {
+    for (const auto length : {LoopLength::free(), LoopLength::bars(1)}) {
         Rec r;
         ASSERT_EQ(r.start(length, 0.0, 0.5f, 0.5f, seed.m_view),
                   MotionTakeRecorder::Start::Started);
@@ -207,7 +207,7 @@ TEST(MotionTakeRecorder, UntouchedTakeIsCancelled) {
 
 TEST(MotionTakeRecorder, BarsProgressIsThePositionInTheLoop) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Bars2, 2.0), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::bars(2), 2.0), MotionTakeRecorder::Start::Started);
     EXPECT_NEAR(r.m_rec->progress(), 0.25f, 0.01f);
     (void)r.run(4 * k_beat, true);
     EXPECT_NEAR(r.m_rec->progress(), 0.75f, 0.01f);
@@ -219,8 +219,53 @@ TEST(MotionTakeRecorder, LoopThatDoesNotFitIsRefused) {
     MotionRecorderConfig config;
     config.m_max_points = 16;
     Rec r(config);
-    EXPECT_EQ(r.start(LoopLength::Bars4, 0.0), MotionTakeRecorder::Start::Refused);
+    EXPECT_EQ(r.start(LoopLength::bars(4), 0.0), MotionTakeRecorder::Start::Refused);
     EXPECT_FALSE(r.m_rec->active());
+}
+
+TEST(MotionTakeRecorder, AnyLengthOfBarsLoops) {
+    // n / division bars of 4/4 at 400 points per bar, from the multiple at or before the start.
+    struct Case {
+        LoopLength m_length;
+        double m_beats;
+    };
+    for (const auto& c : {Case{LoopLength::bars(1, 4), 1.0},
+                          Case{LoopLength::bars(1, 2), 2.0},
+                          Case{LoopLength::bars(3), 12.0},
+                          Case{LoopLength::bars(3, 2), 6.0},
+                          Case{LoopLength::bars(5), 20.0},
+                          Case{LoopLength::bars(32), 128.0}}) {
+        Rec r;
+        ASSERT_EQ(r.start(c.m_length, c.m_beats + 0.5), MotionTakeRecorder::Start::Started);
+        (void)r.run(k_beat / 4, true, 0.3f, 0.6f);
+        ASSERT_EQ(r.m_rec->end(), Event::Finished);
+        const MotionLoopView take = r.m_rec->take();
+        EXPECT_DOUBLE_EQ(take.m_length, c.m_beats);
+        EXPECT_EQ(take.m_num_points, static_cast<size_t>(std::lround(c.m_beats * 100.0)));
+        EXPECT_DOUBLE_EQ(take.m_anchor, 0.0);  // the loop line is a multiple of its length
+    }
+}
+
+TEST(MotionTakeRecorder, LongerLoopsNeedMorePoints) {
+    // 64 bars at 24 points per beat (the least accepted) need 6144 points.
+    MotionRecorderConfig config;
+    config.m_max_points = 6143;
+    EXPECT_EQ(Rec(config).start(LoopLength::bars(64), 0.0), MotionTakeRecorder::Start::Refused);
+    config.m_max_points = 6144;
+    EXPECT_EQ(Rec(config).start(LoopLength::bars(64), 0.0), MotionTakeRecorder::Start::Started);
+}
+
+TEST(MotionTakeRecorder, TooShortLoopIsRefused) {
+    Rec r;  // 1/128 bar: 3 points
+    EXPECT_EQ(r.start(LoopLength::bars(1, 128), 0.0), MotionTakeRecorder::Start::Refused);
+}
+
+TEST(MotionTakeRecorder, LoopLengthsCompareByValue) {
+    static_assert(LoopLength::bars(2, 4) == LoopLength::bars(1, 2));
+    static_assert(LoopLength::bars(0, 3) == LoopLength::free());
+    static_assert(LoopLength::bars(1) != LoopLength::free());
+    static_assert(LoopLength::bars(3, 2) != LoopLength::bars(2, 3));
+    EXPECT_DOUBLE_EQ(thl::modulation::loop_length_bars(LoopLength::bars(3, 4)), 0.75);
 }
 
 // --- Free: one gesture, snapped onto bars
@@ -228,7 +273,7 @@ TEST(MotionTakeRecorder, LoopThatDoesNotFitIsRefused) {
 
 TEST(MotionTakeRecorder, FreeTakeWaitsForTheTouchAndEndsOnRelease) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Free, 0.0), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0), MotionTakeRecorder::Start::Started);
     EXPECT_EQ(r.run(k_beat, false), Event::None);  // waits
     for (int i = 0; i < 300; ++i) {                // three beats of movement from beat 1
         const float x = 0.1f + (0.7f * static_cast<float>(i) / 300.0f);
@@ -248,7 +293,7 @@ TEST(MotionTakeRecorder, FreeTakeWaitsForTheTouchAndEndsOnRelease) {
 
 TEST(MotionTakeRecorder, FreeTakeDropsItsStillEnds) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Free, 0.0), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0), MotionTakeRecorder::Start::Started);
     (void)r.run(k_beat, true, 0.2f, 0.5f);  // a beat still
     for (int i = 0; i < 400; ++i) {         // four beats moving
         (void)r.run(240, true, 0.2f + (0.6f * static_cast<float>(i) / 400.0f), 0.5f);
@@ -270,7 +315,7 @@ TEST(MotionTakeRecorder, FreeLengthSnapsToTheNearestBarCount) {
                                                        {50.0, 64.0}};
     for (const auto& [beats, snapped] : cases) {
         Rec r;
-        ASSERT_EQ(r.start(LoopLength::Free, 0.0), MotionTakeRecorder::Start::Started);
+        ASSERT_EQ(r.start(LoopLength::free(), 0.0), MotionTakeRecorder::Start::Started);
         const auto points = static_cast<int>(beats * 100.0);
         for (int i = 0; i < points; ++i) {
             (void)r.run(240, true, static_cast<float>(i % 100) / 100.0f, 0.5f);
@@ -282,7 +327,7 @@ TEST(MotionTakeRecorder, FreeLengthSnapsToTheNearestBarCount) {
 
 TEST(MotionTakeRecorder, FreeTakeEndsAfterSixteenBarsWithTheFingerDown) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Free, 0.0), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0), MotionTakeRecorder::Start::Started);
     Event e = Event::None;
     for (int i = 0; i < 6500 && e == Event::None; ++i) {
         e = r.run(240, true, static_cast<float>(i % 100) / 100.0f, 0.5f);
@@ -294,7 +339,7 @@ TEST(MotionTakeRecorder, FreeTakeEndsAfterSixteenBarsWithTheFingerDown) {
 
 TEST(MotionTakeRecorder, FreeTakeTooShortIsDropped) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Free, 0.0), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0), MotionTakeRecorder::Start::Started);
     (void)r.run(500, true, 0.3f, 0.3f);  // two or three points
     EXPECT_EQ(r.run(1, false), Event::Dropped);
     EXPECT_FALSE(r.m_rec->active());
@@ -302,7 +347,7 @@ TEST(MotionTakeRecorder, FreeTakeTooShortIsDropped) {
 
 TEST(MotionTakeRecorder, EndKeepsAFreeTakeWhereItIs) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Free, 0.0), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0), MotionTakeRecorder::Start::Started);
     for (int i = 0; i < 200; ++i) { (void)r.run(240, true, static_cast<float>(i) / 200.0f, 0.5f); }
     EXPECT_EQ(r.m_rec->end(), Event::Finished);
     EXPECT_DOUBLE_EQ(r.m_rec->take().m_length, 4.0);
@@ -310,7 +355,7 @@ TEST(MotionTakeRecorder, EndKeepsAFreeTakeWhereItIs) {
 
 TEST(MotionTakeRecorder, FreeProgressRunsToTheNextBarCount) {
     Rec r;
-    ASSERT_EQ(r.start(LoopLength::Free, 0.0), MotionTakeRecorder::Start::Started);
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0), MotionTakeRecorder::Start::Started);
     EXPECT_FLOAT_EQ(r.m_rec->progress(), 0.0f);
     (void)r.run(2 * k_beat, true, 0.1f, 0.1f);
     EXPECT_NEAR(r.m_rec->progress(), 0.5f, 0.01f);  // half of one bar

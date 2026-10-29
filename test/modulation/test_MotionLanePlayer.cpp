@@ -165,7 +165,7 @@ TEST(MotionLanePlayer, SecondsLoopRunsOnItsOwnClock) {
 TEST(MotionLanePlayer, PlaybackLengthStretchesTheLoopOntoBars) {
     const Loop loop(8.0, 512, MotionTimebase::Beats, 3.0);
     Player p;
-    const MotionPlaySettings one_bar{.m_length = LoopLength::Bars1};
+    const MotionPlaySettings one_bar{.m_length = LoopLength::bars(1)};
     p.run(loop.m_source, 200, one_bar);
     for (size_t i = 0; i < p.m_x.size(); i += 101) {
         // Twice as fast, from the bar line (the anchor no longer counts).
@@ -226,9 +226,9 @@ TEST(MotionLanePlayer, PlaybackLengthOrReverseChangeGlides) {
     const Loop loop(4.0, 256);
     Player p;
     p.run(loop.m_source, 10);
-    EXPECT_TRUE(p.block(loop.m_source, {.m_length = LoopLength::Bars2}));
-    EXPECT_FALSE(p.block(loop.m_source, {.m_length = LoopLength::Bars2}));
-    EXPECT_TRUE(p.block(loop.m_source, {.m_length = LoopLength::Bars2, .m_reverse = true}));
+    EXPECT_TRUE(p.block(loop.m_source, {.m_length = LoopLength::bars(2)}));
+    EXPECT_FALSE(p.block(loop.m_source, {.m_length = LoopLength::bars(2)}));
+    EXPECT_TRUE(p.block(loop.m_source, {.m_length = LoopLength::bars(2), .m_reverse = true}));
 }
 
 TEST(MotionLanePlayer, HeldClockHoldsABeatsLoop) {
@@ -289,7 +289,7 @@ TEST(MotionLanePlayer, TransformMovesTheLane) {
 TEST(MotionLanePlayer, TransformPlaysAloneOverThePlaybackLength) {
     const TestTransform transform;
     Player p;
-    const MotionPlaySettings alone{.m_length = LoopLength::Bars2,
+    const MotionPlaySettings alone{.m_length = LoopLength::bars(2),
                                    .m_transform = &transform,
                                    .m_transform_settings = 2};
     EXPECT_TRUE(p.block(MotionLaneSource{}, alone));
@@ -307,5 +307,5 @@ TEST(MotionLanePlayer, TransformPlaysAloneOverThePlaybackLength) {
     // Another curve glides.
     EXPECT_TRUE(p.block(
         MotionLaneSource{},
-        {.m_length = LoopLength::Bars2, .m_transform = &transform, .m_transform_settings = 3}));
+        {.m_length = LoopLength::bars(2), .m_transform = &transform, .m_transform_settings = 3}));
 }

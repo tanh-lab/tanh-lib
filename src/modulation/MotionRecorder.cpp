@@ -70,12 +70,11 @@ size_t MotionRecorder::take_buffer_bytes() const {
 }
 
 bool MotionRecorder::arm(LoopLength length) {
-    return m_commands.try_push({.m_kind = CommandKind::Arm, .m_arg = static_cast<uint8_t>(length)});
+    return m_commands.try_push({.m_kind = CommandKind::Arm, .m_length = length});
 }
 
 bool MotionRecorder::record(LoopLength length) {
-    return m_commands.try_push(
-        {.m_kind = CommandKind::Record, .m_arg = static_cast<uint8_t>(length)});
+    return m_commands.try_push({.m_kind = CommandKind::Record, .m_length = length});
 }
 
 bool MotionRecorder::disarm() {
@@ -96,8 +95,7 @@ bool MotionRecorder::set_reverse(bool reverse) {
 }
 
 bool MotionRecorder::set_playback_length(LoopLength length) {
-    return m_commands.try_push(
-        {.m_kind = CommandKind::PlaybackLength, .m_arg = static_cast<uint8_t>(length)});
+    return m_commands.try_push({.m_kind = CommandKind::PlaybackLength, .m_length = length});
 }
 
 bool MotionRecorder::service() {
@@ -166,7 +164,7 @@ void MotionRecorder::apply_commands() TANH_NONBLOCKING_FUNCTION {
                 if (m_takes.active()) { break; }
                 m_armed = true;
                 m_force_start = c.m_kind == CommandKind::Record;
-                m_arm_length = static_cast<LoopLength>(std::min<uint8_t>(c.m_arg, 5));
+                m_arm_length = c.m_length;
                 m_refused = false;
                 m_aborted = false;
                 break;
@@ -178,9 +176,7 @@ void MotionRecorder::apply_commands() TANH_NONBLOCKING_FUNCTION {
                 if (c.m_kind == CommandKind::Stop) { m_play_enabled = false; }
                 break;
             case CommandKind::Play: m_play_enabled = true; break;
-            case CommandKind::PlaybackLength:
-                m_playback_length = static_cast<LoopLength>(std::min<uint8_t>(c.m_arg, 5));
-                break;
+            case CommandKind::PlaybackLength: m_playback_length = c.m_length; break;
             case CommandKind::Reverse: m_reverse = c.m_arg != 0; break;
         }
     }

@@ -97,7 +97,7 @@ struct Figure8Result {
 Figure8Result run_figure8(uint32_t block, uint32_t seed) {
     auto rig = std::make_unique<Rig>(block);
     Rig& r = *rig;
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::free()));
 
     std::mt19937 rng(seed);
     std::normal_distribution<double> noise(0.0, 0.002);
@@ -380,7 +380,7 @@ class MotionRecorderSeam : public ::testing::TestWithParam<uint32_t> {};
 TEST_P(MotionRecorderSeam, SeamContinuity) {
     const uint32_t block = GetParam();
     Rig r(block);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::free()));
     const double dur = 1.0;
     // x rises linearly from 0.3 to 0.35 (the 0.05 seam gap), y draws one sine.
     uint64_t t0 = 4800;
@@ -443,7 +443,7 @@ TEST_P(MotionRecorderBars, BarModeAlignsToBars) {
     const uint32_t block = GetParam();
     Rig r(block, 120.0);
     r.play_at(0);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(2)));
     // 120 BPM: 24000 samples per beat. Touch at beat 9.5 (mid bar 3) at x 0.2; from the loop
     // line (beat 16) to beat 16.5 at x 0.7.
     const uint64_t spb = 24000;
@@ -501,7 +501,7 @@ TEST(MotionRecorder, BarTakeRefusedBelowMinimumResolution) {
     cfg.m_max_points = 1000;  // 16 bars = 64 beats need ≥ 24 · 64 = 1536 points
     Rig r(256, 120.0, cfg);
     r.play_at(0);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars16));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(16)));
     r.m_pad.touch(1, 0.5f, 0.5f);
     r.run_until(4800);
     EXPECT_NE(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -516,7 +516,7 @@ TEST_P(MotionRecorderTempo, TempoChange) {
     const uint32_t block = GetParam();
     Rig r(block, 120.0);
     r.play_at(0);
-    EXPECT_TRUE(r.m_rec.record(LoopLength::Bars1));  // starts at the next block, no touch needed
+    EXPECT_TRUE(r.m_rec.record(LoopLength::bars(1)));  // starts at the next block, no touch needed
     // The take records x = beat-phase ramp drawn as a sine of the beat.
     auto draw = [](double beat) {
         return std::pair<float, float>{
@@ -645,7 +645,7 @@ INSTANTIATE_TEST_SUITE_P(Blocks,
 
 // Records a short free take with a moving touch; returns the release block index.
 void record_free_take(Rig& r, double seconds, float x0) {
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::free()));
     const uint64_t end = r.now() + static_cast<uint64_t>(seconds * k_sr);
     const uint64_t begin = r.now();
     while (r.now() < end) {
@@ -735,7 +735,7 @@ TEST(MotionRecorder, LoadAfterUnpublishedTakeWins) {
 
 TEST(MotionRecorder, DisarmKeepsATouchedTake) {
     Rig r(256);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::free()));
     r.m_pad.touch(1, 0.2f, 0.2f);
     r.run_until(24000);
     for (int i = 0; i < 100; ++i) {  // move a little
@@ -755,7 +755,7 @@ TEST(MotionRecorder, DisarmKeepsATouchedTake) {
 
     // A bar take ends at disarm with the rest of its first pass lifted.
     r.play_at(r.now());
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.m_pad.touch(1, 0.7f, 0.7f);
     r.run_until(r.now() + 24000);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -773,7 +773,7 @@ TEST(MotionRecorder, LooperReplacesThePlayingLaneAndHandsOverOnRelease) {
     r.play_at(0);
     const uint32_t old = r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
     r.run_until(4800);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Armed);
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, old);
@@ -799,7 +799,7 @@ TEST(MotionRecorder, PrepareDuringAReplacingTakeKeepsTheOldLane) {
     record_free_take(r, 0.6, 0.4f);
     r.m_rec.service();
     const uint32_t kept = r.m_rec.lane().m_take_id;
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::free()));
     r.m_pad.touch(1, 0.9f, 0.9f);
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -820,7 +820,7 @@ TEST(MotionRecorder, PlaybackLengthStretchesATakeOntoBars) {
     EXPECT_DOUBLE_EQ(recorded, 4.0);  // two beats of gesture: one bar
 
     // Two bars: half speed, on the beat clock.
-    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Bars2));
+    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::bars(2)));
     r.step();
     auto s = r.m_rec.snapshot();
     EXPECT_TRUE(s.m_beats);
@@ -832,7 +832,7 @@ TEST(MotionRecorder, PlaybackLengthStretchesATakeOntoBars) {
     EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, recorded);
 
     // Free again: the recorded length.
-    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Free));
+    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::free()));
     r.step();
     s = r.m_rec.snapshot();
     EXPECT_DOUBLE_EQ(s.m_length, recorded);
@@ -841,7 +841,7 @@ TEST(MotionRecorder, PlaybackLengthStretchesATakeOntoBars) {
 TEST(MotionRecorder, PlaybackLengthSpeedsUpABarTake) {
     Rig r(256);
     r.play_at(0);
-    EXPECT_TRUE(r.m_rec.record(LoopLength::Bars2));
+    EXPECT_TRUE(r.m_rec.record(LoopLength::bars(2)));
     r.m_pad.touch(1, 0.5f, 0.5f);
     r.run_until((2 * 96000) + 24000);  // the 2-bar loop and a beat more
     r.m_pad.release(1);
@@ -849,7 +849,7 @@ TEST(MotionRecorder, PlaybackLengthSpeedsUpABarTake) {
     r.m_rec.service();
     EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 8.0);
 
-    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::Bars1));
+    EXPECT_TRUE(r.m_rec.set_playback_length(LoopLength::bars(1)));
     r.step();
     EXPECT_DOUBLE_EQ(r.m_rec.snapshot().m_length, 4.0);
     // Locked to the bar: phase = beat mod 4.

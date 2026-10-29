@@ -40,7 +40,7 @@ void move(Rig& r, uint64_t from, uint64_t to) {
 // hold still again, release. Returns the published lane.
 MotionLane free_take(Rig& r, uint64_t down, uint64_t moving, uint64_t still) {
     r.run_until(down);
-    EXPECT_TRUE(r.m_rec.arm(LoopLength::Free));
+    EXPECT_TRUE(r.m_rec.arm(LoopLength::free()));
     move(r, down + still, down + still + moving);
     r.run_until(down + (2 * still) + moving);
     r.m_pad.release(1);
@@ -94,7 +94,7 @@ TEST(MotionRecorderFreeTakes, EndsAfterSixteenBarsWithTheFingerDown) {
     Rig r(256, 240.0);  // one bar = 1 s
     r.play_at(0);
     r.step();
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::free()));
     const uint64_t down = r.now();
     move(r, down, down + static_cast<uint64_t>(15.9 * motion_test::k_sr));
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -110,7 +110,7 @@ TEST(MotionRecorderFreeTakes, DisarmAndStopKeepTheTake) {
     Rig r(256, 120.0);
     r.play_at(0);
     r.step();
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::free()));
     move(r, r.now(), r.now() + (k_bar * 3 / 2));
     ASSERT_TRUE(r.m_rec.disarm());
     r.step();
@@ -120,7 +120,7 @@ TEST(MotionRecorderFreeTakes, DisarmAndStopKeepTheTake) {
     ASSERT_TRUE(r.m_rec.service());
     EXPECT_DOUBLE_EQ(r.m_rec.lane().m_length, 8.0);  // 1.5 bars -> 2
 
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::free()));
     move(r, r.now(), r.now() + (k_bar * 7 / 10));
     ASSERT_TRUE(r.m_rec.stop());
     r.step();
@@ -134,7 +134,7 @@ TEST(MotionRecorderFreeTakes, RecordWaitsForTheFirstTouch) {
     Rig r(256, 120.0);
     r.play_at(0);
     r.step();
-    ASSERT_TRUE(r.m_rec.record(LoopLength::Free));
+    ASSERT_TRUE(r.m_rec.record(LoopLength::free()));
     r.run_until(k_bar / 4);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     const uint64_t down = r.now();

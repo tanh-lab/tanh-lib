@@ -29,7 +29,7 @@ Rig& start(Rig& r) {
 TEST(MotionRecorderTakes, BarTakeStartsOnTheBarLineAndFillsTheLoop) {
     Rig r(256, 120.0);
     start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.run_until(2 * k_beat);  // touch only in the second half of the bar
     r.m_pad.touch(1, 0.3f, 0.7f);
     r.run_until(k_bar - 512);
@@ -53,7 +53,7 @@ TEST(MotionRecorderTakes, BarTakeStartsOnTheBarLineAndFillsTheLoop) {
 TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
     Rig r(256, 120.0);
     start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars4));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(4)));
     r.m_pad.touch(1, 0.4f, 0.4f);
     r.run_until(k_bar / 2);
     r.m_pad.release(1);
@@ -70,7 +70,7 @@ TEST(MotionRecorderTakes, DisarmPadsTheTakeInsteadOfDroppingIt) {
     const uint32_t kept = lane.m_take_id;
 
     // An untouched take keeps nothing, and the lane it replaced stays deleted.
-    ASSERT_TRUE(r.m_rec.record(LoopLength::Bars2));
+    ASSERT_TRUE(r.m_rec.record(LoopLength::bars(2)));
     r.run_until(r.now() + k_beat);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     ASSERT_TRUE(r.m_rec.disarm());
@@ -88,7 +88,7 @@ TEST(MotionRecorderTakes, UndoAndRedoATakeAndAClear) {
     const MotionLane loaded = r.m_rec.lane();
 
     // A take replaces the loaded lane; undo brings it back under a new id.
-    ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.record(LoopLength::bars(1)));
     r.m_pad.touch(1, 0.2f, 0.2f);
     r.run_until(r.now() + k_bar + k_beat);
     r.m_pad.release(1);
@@ -125,7 +125,7 @@ TEST(MotionRecorderTakes, UntouchedTakeReplacesTheLane) {
     Rig r(256, 120.0);
     start(r);
     r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
-    ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.record(LoopLength::bars(1)));
     r.run_until(r.now() + (3 * k_bar));
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
@@ -142,7 +142,7 @@ TEST(MotionRecorderTakes, DroppedTakeDeletesTheLane) {
     start(r);
     r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
     r.run_until(r.now() + k_beat);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::free()));
     r.m_pad.touch(1, 0.3f, 0.3f);
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);

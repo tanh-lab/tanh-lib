@@ -151,7 +151,7 @@ TEST(MotionRecorderSmoothing, FullAmountSpreadsTheSeamOverTheLoop) {
 // The published lane keeps the recorded seam, also through JSON; playback closes it.
 TEST(MotionRecorderSmoothing, PublishedTakeKeepsTheRawSeam) {
     Rig r(256);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::free()));
     const uint64_t begin = r.now();
     const auto total = static_cast<uint64_t>(motion_test::k_sr);
     while (r.now() < begin + total) {
@@ -178,7 +178,7 @@ TEST(MotionRecorderSmoothing, BarTakeKeepsItsSeamIndex) {
     Rig r(256);
     start(r);
     r.run_until(k_beat + (k_beat / 2));
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.m_pad.touch(1, 0.4f, 0.6f);
     r.run_until(r.now() + (5 * k_beat));  // beat 1.5 to 6.5: over the loop line
     r.m_pad.release(1);
@@ -237,7 +237,7 @@ TEST(MotionRecorderSmoothing, LoopEndChangeRepublishesAndGlides) {
 TEST(MotionRecorderSmoothing, LoopEndJumpLeavesANewTakeUnblended) {
     Rig r(256);
     r.m_rec.set_loop_end(LoopEnd::Jump);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Free));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::free()));
     const uint64_t begin = r.now();
     const auto total = static_cast<uint64_t>(motion_test::k_sr);
     while (r.now() < begin + total) {

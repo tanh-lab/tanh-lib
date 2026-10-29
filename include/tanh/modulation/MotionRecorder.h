@@ -30,6 +30,7 @@ enum class MotionCommandKind : uint8_t { Arm, Record, Disarm, Play, Stop, Revers
 struct MotionCommand {
     MotionCommandKind m_kind = MotionCommandKind::Play;
     uint8_t m_arg = 0;
+    LoopLength m_length;  ///< Arm, Record, PlaybackLength
 };
 
 }  // namespace detail
@@ -47,14 +48,14 @@ enum class StoppedTransport : uint8_t {
  * @brief Records an XY gesture and loops it back, synced to the transport.
  *
  * Arm, touch, and the gesture is recorded on the audio thread into a preallocated take
- * (detail::MotionTakeRecorder). Every take is a Beats loop of whole bars:
+ * (detail::MotionTakeRecorder). Every take is a Beats loop of bars:
  *
  * - Free: one gesture, from the touch to the release, stretched onto the nearest of 1, 2, 4,
  *   8 or 16 bars.
- * - BarsN: a looper over N bars that records until disarm() or stop(). It starts as what
- *   plays; the finger overwrites where it is down and the loop plays on where it is up. Every
- *   release hands the loop over as it is now, so it plays smoothed and transformed between
- *   touches; the whole take is one undo step.
+ * - bars(n, division): a looper over n / division bars that records until disarm() or stop().
+ *   It starts as what plays; the finger overwrites where it is down and the loop plays on where
+ *   it is up. Every release hands the loop over as it is now, so it plays smoothed and
+ *   transformed between touches; the whole take is one undo step.
  *
  * A take hands its loop over (detail::MotionLaneStore) and it plays from the next block;
  * service() publishes it as a MotionLane through RCU on the message thread. Until then, and
@@ -116,8 +117,9 @@ public:
     [[nodiscard]] bool stop();
     /// Mirror the playback phase (Beats lanes glide to phase = length - phase).
     [[nodiscard]] bool set_reverse(bool reverse);
-    /// Play every lane as @p length: BarsN stretches the lane onto exactly N bars of the
-    /// current time signature from a bar line; Free (the default) plays its recorded length.
+    /// Play every lane as @p length: bars(n, division) stretches the lane onto exactly
+    /// n / division bars of the current time signature from a bar line; free() (the default)
+    /// plays its recorded length.
     [[nodiscard]] bool set_playback_length(LoopLength length);
     /// Behaviour of Beats lanes while the transport is stopped.
     void set_stopped_transport(StoppedTransport mode) {
@@ -275,8 +277,8 @@ private:
     uint32_t m_replaced_id = 0;  // the lane a take replaced: it no longer plays
     int m_sig_num = 4;
     int m_sig_denom = 4;
-    LoopLength m_arm_length = LoopLength::Free;
-    LoopLength m_playback_length = LoopLength::Free;
+    LoopLength m_arm_length = LoopLength::free();
+    LoopLength m_playback_length = LoopLength::free();
     bool m_armed = false;
     bool m_force_start = false;
     bool m_play_enabled = true;

@@ -11,21 +11,34 @@
 namespace thl::modulation {
 
 /// Loop length of a take (arm, record) or of playback (set_playback_length).
-/// Free lasts as long as the gesture; BarsN is N bars of the time signature,
-/// synced to the transport.
-enum class LoopLength : uint8_t { Free, Bars1, Bars2, Bars4, Bars8, Bars16 };
+/// free() lasts as long as the gesture; bars(n, division) is n / division bars of the time
+/// signature, synced to the transport: bars(1, 4) a quarter bar, bars(3) three bars, bars(3, 2)
+/// a bar and a half. Any length fits that MotionRecorderConfig::m_max_points holds at
+/// m_min_tpb; a longer take is refused, so a recorder for long loops is given more points.
+struct LoopLength {
+    uint16_t m_bars = 0;      ///< 0: free
+    uint16_t m_division = 1;  ///< 0: free
 
-/// Bars of @p length; 0 for LoopLength::Free.
-[[nodiscard]] constexpr uint32_t loop_length_bars(LoopLength length) {
-    switch (length) {
-        case LoopLength::Free: return 0;
-        case LoopLength::Bars1: return 1;
-        case LoopLength::Bars2: return 2;
-        case LoopLength::Bars4: return 4;
-        case LoopLength::Bars8: return 8;
-        case LoopLength::Bars16: return 16;
+    [[nodiscard]] static constexpr LoopLength free() { return {}; }
+    [[nodiscard]] static constexpr LoopLength bars(uint16_t bars, uint16_t division = 1) {
+        return {.m_bars = bars, .m_division = division};
     }
-    return 0;
+
+    [[nodiscard]] constexpr bool is_free() const { return m_bars == 0 || m_division == 0; }
+
+    /// The same length: bars(2, 4) is bars(1, 2), and every free length is free().
+    friend constexpr bool operator==(LoopLength a, LoopLength b) {
+        if (a.is_free() || b.is_free()) { return a.is_free() == b.is_free(); }
+        return static_cast<uint32_t>(a.m_bars) * b.m_division ==
+               static_cast<uint32_t>(b.m_bars) * a.m_division;
+    }
+    friend constexpr bool operator!=(LoopLength a, LoopLength b) { return !(a == b); }
+};
+
+/// Bars of @p length; 0 for LoopLength::free().
+[[nodiscard]] constexpr double loop_length_bars(LoopLength length) {
+    if (length.is_free()) { return 0.0; }
+    return static_cast<double>(length.m_bars) / static_cast<double>(length.m_division);
 }
 
 struct MotionRecorderConfig {

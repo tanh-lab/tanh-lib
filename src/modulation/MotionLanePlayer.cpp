@@ -63,7 +63,7 @@ MotionLanePlayer::View MotionLanePlayer::view_of(const MotionLaneSource& source,
     const double bar_beats =
         static_cast<double>(settings.m_sig_num > 0 ? settings.m_sig_num : 4) * 4.0 /
         static_cast<double>(settings.m_sig_denom > 0 ? settings.m_sig_denom : 4);
-    const uint32_t bars = loop_length_bars(settings.m_length);
+    const double bars = loop_length_bars(settings.m_length);
     View v;
     const MotionLoopView& lane = source.m_view;
     if (!lane.empty()) {
@@ -74,9 +74,9 @@ MotionLanePlayer::View MotionLanePlayer::view_of(const MotionLaneSource& source,
         v.m_timebase = lane.m_timebase;
         v.m_length = lane.m_length;
         v.m_anchor = lane.m_anchor;
-        if (bars > 0) {  // stretched onto N bars from a bar line
+        if (bars > 0.0) {  // stretched onto its bars from a bar line
             v.m_timebase = MotionTimebase::Beats;
-            v.m_length = static_cast<double>(bars) * bar_beats;
+            v.m_length = bars * bar_beats;
             v.m_anchor = 0.0;
         }
     }
@@ -93,7 +93,7 @@ MotionLanePlayer::View MotionLanePlayer::view_of(const MotionLaneSource& source,
         alone.m_open_gate = info.m_opens_gate;
         alone.m_num_points = k_alone_points;
         alone.m_timebase = MotionTimebase::Beats;
-        alone.m_length = static_cast<double>(std::max<uint32_t>(bars, 1)) * bar_beats;
+        alone.m_length = (bars > 0.0 ? bars : 1.0) * bar_beats;
         return alone;
     }
     return info.m_uses_lane ? View{} : v;

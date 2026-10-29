@@ -150,7 +150,7 @@ TEST(XYControllerThreads, SnapshotConsistentUnderConcurrentUiMessageAndAudio) {
             c.touch(id, 0.5f + (0.45f * std::sin(ph)), 0.5f + (0.45f * std::cos(ph)));
         }
         if (i % 5000 == 0) {
-            (void)c.recorder(static_cast<uint32_t>(i / 5000) % k_voices).arm(LoopLength::Free);
+            (void)c.recorder(static_cast<uint32_t>(i / 5000) % k_voices).arm(LoopLength::free());
         }
         if (i % 3000 == 0) { c.set_latch(((i / 3000) % 2) != 0); }
         c.flush();
@@ -251,7 +251,7 @@ TEST(XYControllerThreads, FullScenario) {
     };
 
     run(4);
-    ASSERT_TRUE(multi.recorder(1).arm(LoopLength::Bars1));
+    ASSERT_TRUE(multi.recorder(1).arm(LoopLength::bars(1)));
     for (int b = 0; b < 400; ++b) {
         multi.touch(7, 0.3f + (0.2f * std::sin(static_cast<float>(b) * 0.05f)), 0.4f);
         singles[0]->touch(1, 0.6f, 0.2f + (0.001f * static_cast<float>(b)));

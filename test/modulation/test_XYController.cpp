@@ -491,7 +491,7 @@ TEST(XYController, RepeatedPrepareAbortsTheRunningTake) {
     XYController c(*e.matrix, config("pad"));
     XYController* cs[] = {&c};
     e.matrix->prepare(k_sr, k_bs);
-    ASSERT_TRUE(c.recorder().arm(LoopLength::Bars1));
+    ASSERT_TRUE(c.recorder().arm(LoopLength::bars(1)));
     c.touch(1, 0.4f, 0.4f);
     for (int b = 0; b < 20; ++b) { e.block(cs); }
     XYFrame f;
@@ -568,7 +568,7 @@ TEST(XYController, PathVersionBumpsOnlyOnChange) {
     EXPECT_EQ(f.m_voices[0].m_motion.m_state, MotionState::Playing);
 
     // A free take: arm, gesture, release → one more version after service().
-    ASSERT_TRUE(c.recorder().arm(LoopLength::Free));
+    ASSERT_TRUE(c.recorder().arm(LoopLength::free()));
     e.block(cs);
     for (int b = 0; b < 40; ++b) {
         c.touch(1, 0.2f + (0.01f * static_cast<float>(b)), 0.5f);
@@ -598,8 +598,8 @@ TEST(XYController, TrailDropsOldestNotBlocks) {
     e.matrix->prepare(k_sr, k_bs);
     e.block(cs);
 
-    ASSERT_TRUE(c.recorder().record(LoopLength::Free));
-    ASSERT_TRUE(ref.recorder().record(LoopLength::Free));
+    ASSERT_TRUE(c.recorder().record(LoopLength::free()));
+    ASSERT_TRUE(ref.recorder().record(LoopLength::free()));
     const int blocks = static_cast<int>(10.0 * k_sr / k_bs);  // 10 s, no drain
     for (int b = 0; b < blocks; ++b) {
         const float x = 0.5f + (0.4f * std::sin(static_cast<float>(b) * 0.01f));

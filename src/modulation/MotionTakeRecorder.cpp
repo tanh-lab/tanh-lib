@@ -79,21 +79,26 @@ MotionTakeRecorder::Start MotionTakeRecorder::start(const MotionTakeStart& s)
     const int num = s.m_sig_num > 0 ? s.m_sig_num : 4;
     const int denom = s.m_sig_denom > 0 ? s.m_sig_denom : 4;
     m_bar_beats = static_cast<double>(num) * 4.0 / static_cast<double>(denom);
-    const uint32_t bars = loop_length_bars(s.m_length);
-    const size_t loop_bars = bars > 0 ? bars : k_free_bars;
+    const double bars = loop_length_bars(s.m_length);
+    const double loop_bars = bars > 0.0 ? bars : static_cast<double>(k_free_bars);
     const double tpb = std::clamp(std::round(m_config.m_rate * 60.0 / bpm),
                                   static_cast<double>(m_config.m_min_tpb),
                                   static_cast<double>(m_config.m_max_tpb));
-    // A whole number of points per bar that fits the loop (16 bars for a free take).
-    const double per_bar = std::min(
-        std::round(m_bar_beats * tpb),
-        std::floor(static_cast<double>(m_config.m_max_points) / static_cast<double>(loop_bars)));
-    if (per_bar < (m_bar_beats * m_config.m_min_tpb) - k_tick_eps) { return Start::Refused; }
+    // A whole number of points per bar that fits the loop (16 bars for a free take), and per
+    // loop: a fraction of a bar rounds to whole points.
+    const double per_bar =
+        std::min(std::round(m_bar_beats * tpb),
+                 std::floor(static_cast<double>(m_config.m_max_points) / loop_bars));
+    const double points = std::round(loop_bars * per_bar);
+    if (per_bar < (m_bar_beats * m_config.m_min_tpb) - k_tick_eps ||
+        points < static_cast<double>(k_motion_min_points)) {
+        return Start::Refused;
+    }
 
-    m_bars = bars > 0;
+    m_bars = bars > 0.0;
     m_points_per_bar = static_cast<size_t>(per_bar);
-    m_capacity = loop_bars * m_points_per_bar;
-    m_tick_step = m_bar_beats / per_bar;
+    m_capacity = static_cast<size_t>(points);
+    m_tick_step = loop_bars * m_bar_beats / points;
     m_clock = s.m_beat;
     m_count = 0;
     m_touched = false;
@@ -110,7 +115,7 @@ MotionTakeRecorder::Start MotionTakeRecorder::start(const MotionTakeStart& s)
         return Start::Started;
     }
 
-    m_length = static_cast<double>(bars) * m_bar_beats;
+    m_length = bars * m_bar_beats;
     m_line = std::floor((s.m_beat / m_length) + k_tick_eps) * m_length;
     m_anchor = wrap_phase(m_line, m_length);
     m_tick_base = m_line;

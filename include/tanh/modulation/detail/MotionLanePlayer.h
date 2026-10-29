@@ -14,7 +14,7 @@ namespace thl::modulation::detail {
 
 /// How a block plays, besides what plays.
 struct MotionPlaySettings {
-    LoopLength m_length = LoopLength::Free;  ///< BarsN: every lane stretched onto N bars
+    LoopLength m_length = LoopLength::free();  ///< bars(): every lane stretched onto it
     bool m_reverse = false;
     int m_sig_num = 4;
     int m_sig_denom = 4;
@@ -117,7 +117,7 @@ private:
     float m_ramp_to_x = 0.0f;
     float m_ramp_to_y = 0.0f;
     MotionTimebase m_timebase = MotionTimebase::Seconds;
-    LoopLength m_play_length = LoopLength::Free;
+    LoopLength m_play_length = LoopLength::free();
     bool m_reverse = false;
     bool m_transformed = false;
     bool m_smoothed = false;

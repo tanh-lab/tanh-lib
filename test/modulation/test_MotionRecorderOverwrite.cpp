@@ -31,7 +31,7 @@ Rig& start(Rig& r) {
 TEST(MotionRecorderOverwrite, TakeKeepsRecordingPastItsLoopUntilDisarm) {
     Rig r(256, 120.0);
     start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.m_pad.touch(1, 0.3f, 0.7f);
     r.run_until(k_bar + k_bar / 2);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -59,7 +59,7 @@ TEST(MotionRecorderOverwrite, TakeKeepsRecordingPastItsLoopUntilDisarm) {
 TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
     Rig r(256, 120.0);
     start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(2)));
     r.run_until(k_bar);  // the take starts halfway into its two bars
     r.m_pad.touch(1, 0.2f, 0.2f);
     r.run_until(2 * k_bar);
@@ -78,7 +78,7 @@ TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
     ASSERT_EQ(lane.num_points(), 800u);
     EXPECT_EQ(lane.m_gate[100], 1);
     EXPECT_EQ(lane.m_x[100], 0.8f);
-    EXPECT_EQ(lane.m_gate[300], 1);  // never touched: a glide from 0.8 (199) to 0.2 (400)
+    EXPECT_EQ(lane.m_gate[300], 1);           // never touched: a glide from 0.8 (199) to 0.2 (400)
     EXPECT_NEAR(lane.m_x[300], 0.5f, 3e-3f);  // halfway, within a point
     EXPECT_EQ(lane.m_gate[500], 1);
     EXPECT_EQ(lane.m_x[500], 0.2f);
@@ -91,7 +91,7 @@ TEST(MotionRecorderOverwrite, NewTakeStartsEmpty) {
     start(r);
     const uint32_t old = r.m_rec.load_lane(motion_test::beats_lane(8.0, 100));
     r.step();
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(2)));
     r.run_until(2 * k_beat);
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, old);  // armed: the old lane still plays
     r.m_pad.touch(1, 0.9f, 0.9f);
@@ -122,7 +122,7 @@ TEST(MotionRecorderOverwrite, UntouchedTakeDeletesTheLane) {
     start(r);
     r.m_rec.load_lane(motion_test::beats_lane(4.0, 100));
     r.step();
-    ASSERT_TRUE(r.m_rec.record(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.record(LoopLength::bars(1)));
     r.run_until(3 * k_bar);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, 0u);
@@ -162,7 +162,7 @@ TEST(MotionRecorderOverwrite, LiftedLooperPlaysSmoothedAndTransformed) {
     const Shift shift;
     r.m_rec.set_transform(&shift);
     r.m_rec.set_transform_settings(1);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     for (int i = 0; i < 300; ++i) {  // a zigzag over three beats
         r.m_pad.touch(1, (i / 10) % 2 != 0 ? 0.2f : 0.8f, 0.5f);
         r.run_until(r.now() + 240);
@@ -201,7 +201,7 @@ TEST(MotionRecorderOverwrite, LiftedLooperPlaysSmoothedAndTransformed) {
 TEST(MotionRecorderOverwrite, ClearEndsARunningLooper) {
     Rig r(256, 120.0);
     start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(2)));
     r.m_pad.touch(1, 0.2f, 0.2f);
     r.run_until(r.now() + (2 * k_bar));
     r.m_pad.release(1);
@@ -219,7 +219,7 @@ TEST(MotionRecorderOverwrite, ClearEndsARunningLooper) {
     EXPECT_TRUE(r.m_rec.lane().empty());
 
     // A new take records from nothing and plays.
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars2));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(2)));
     r.m_pad.touch(1, 0.8f, 0.8f);
     r.run_until(r.now() + k_beat);
     r.m_pad.release(1);
@@ -236,7 +236,7 @@ TEST(MotionRecorderOverwrite, ClearEndsARunningLooper) {
 TEST(MotionRecorderOverwrite, ClearDropsAnUnpublishedRevision) {
     Rig r(256, 120.0);
     start(r);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.m_pad.touch(1, 0.2f, 0.2f);
     r.run_until(r.now() + k_beat);
     r.m_pad.release(1);
@@ -257,7 +257,7 @@ TEST(MotionRecorderOverwrite, TakeRecordsThroughTheTransform) {
     const Shift shift;
     r.m_rec.set_transform(&shift);
     r.m_rec.set_transform_settings(2);
-    ASSERT_TRUE(r.m_rec.arm(LoopLength::Bars1));
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(1)));
     r.m_pad.touch(1, 0.6f, 0.5f);
     r.run_until(r.now() + k_bar);
     EXPECT_EQ(r.m_x.back(), 0.6f);  // the finger, live

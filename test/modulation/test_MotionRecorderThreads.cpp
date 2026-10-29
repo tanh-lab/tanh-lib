@@ -89,9 +89,11 @@ TEST(MotionRecorderThreads, Stress) {
                 pad.release(1);
                 down = false;
             } else if (w < 76) {
-                (void)rec.arm(static_cast<LoopLength>(w % 6));
+                (void)rec.arm(w % 6 == 0
+                                  ? LoopLength::free()
+                                  : LoopLength::bars(static_cast<uint16_t>(1U << ((w % 6) - 1))));
             } else if (w < 78) {
-                (void)rec.record(LoopLength::Free);
+                (void)rec.record(LoopLength::free());
             } else if (w < 81) {
                 (void)rec.disarm();
             } else if (w < 83) {
@@ -205,8 +207,8 @@ TEST(MotionRecorderThreads, ConcurrentServiceKeepsTheHandoffSilent) {
     };
 
     for (int take = 0; take < k_takes; ++take) {
-        ASSERT_TRUE(raced.record(LoopLength::Free));
-        ASSERT_TRUE(reference.record(LoopLength::Free));
+        ASSERT_TRUE(raced.record(LoopLength::free()));
+        ASSERT_TRUE(reference.record(LoopLength::free()));
         for (int b = 0; b < 12; ++b) { block(true, 0.1f + (0.05f * static_cast<float>(b))); }
         block(false, 0.0f);  // the release ends the take
         const uint32_t version = raced.lane_version();
@@ -254,7 +256,7 @@ TEST(MotionRecorderThreads, FullScenario) {
         }
     };
     run(4);
-    ASSERT_TRUE(rec.arm(LoopLength::Bars1));  // a 1-bar looper until disarm
+    ASSERT_TRUE(rec.arm(LoopLength::bars(1)));  // a 1-bar looper until disarm
     for (int b = 0; b < 420; ++b) {
         pad.touch(1, 0.5f + (0.4f * std::sin(b * 0.05f)), 0.5f);
         run(1);
@@ -272,8 +274,8 @@ TEST(MotionRecorderThreads, FullScenario) {
     run(20);
     rec.load_lane(motion_test::beats_lane(4.0, 100));
     run(20);
-    run(20, 2.5);                            // transport jump
-    ASSERT_TRUE(rec.arm(LoopLength::Free));  // a free take in Beats
+    run(20, 2.5);                              // transport jump
+    ASSERT_TRUE(rec.arm(LoopLength::free()));  // a free take in Beats
     for (int b = 0; b < 50; ++b) {
         pad.touch(1, 0.2f, 0.1f + (0.01f * static_cast<float>(b)));
         run(1);
