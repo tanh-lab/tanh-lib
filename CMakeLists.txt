@@ -11,6 +11,7 @@ option(TANH_WITH_PACKAGING "Add CPack packaging targets (top-level builds only)"
 option(TANH_WITH_TESTS "Add Build Tests" ON)
 option(TANH_WITH_EXAMPLES "Add Build Examples" ON)
 option(TANH_WITH_DOCS "Add the sphinx-docs target (needs Doxygen, Python 3)" OFF)
+option(TANH_LINK_COMPILE_COMMANDS "Link build/compile_commands.json, which clangd reads, to this tree's (top-level builds only)" OFF)
 
 option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" OFF)
 option(TANH_WITH_ASAN "Enable AddressSanitizer (asan) checks" OFF)
@@ -98,6 +99,13 @@ tanh_apple_deployment_target(MACOS 12.0 IOS 14.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# clangd reads build/compile_commands.json (.clangd). The development presets turn
+# TANH_LINK_COMPILE_COMMANDS on, so each configure of one of their trees links its
+# database there and clangd follows the tree configured last.
+if(TANH_LINK_COMPILE_COMMANDS)
+    include(cmake/tanh/compile-commands.cmake)
+    tanh_link_compile_commands()
+endif()
 
 # Non-Apple clang on macOS gets no sysroot from CMake; without it the compile
 # database lacks -isysroot and clang-tidy cannot find system headers.

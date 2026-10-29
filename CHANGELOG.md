@@ -15,6 +15,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   shifts each half's input, the fresh input and the feedback together, so it is
   heard on the first pass, also with a short decay. Tests:
   `ConstellationReverb.*`.
+- `TANH_LINK_COMPILE_COMMANDS` (default OFF; ON in the `desktop-*`, `macos-x64-*`,
+  `android-*` and `wasm-release` presets): a top-level configure links
+  `build/compile_commands.json` to its tree's database
+  (`tanh_link_compile_commands`, tanh-tooling v0.3.0), so clangd follows the tree
+  configured last, the wasm tree included.
+
+### Changed
+
+- Shared tooling pinned to tanh-tooling v0.3.0 (`.clangd`, `cmake/tanh/`,
+  `lint.yml`). `.clangd` now reads `build/compile_commands.json` instead of
+  `build/desktop/Debug/`: reconfigure a development preset once to create the link.
+  For the wasm tree, start clangd with `--query-driver=**/em++` (see
+  `docs/sphinx/contributing.rst`, "Shared tooling").
 
 ## [0.4.0] - 2026-09-21
 
