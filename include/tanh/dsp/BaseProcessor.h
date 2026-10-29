@@ -33,6 +33,12 @@ public:
     virtual void process(thl::core::BufferView buffer,
                          uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION = 0;
 
+    /// Clears what the processor holds from the audio it has processed (delay lines, filter
+    /// states, envelopes), keeping its settings, as if no audio had passed. Real-time safe: a
+    /// Graph calls it on the audio thread when a bypassed node comes back, so the node does not
+    /// resume where it froze. The default does nothing.
+    virtual void reset() TANH_NONBLOCKING_FUNCTION {}
+
     // Splits @p buffer at the change points and calls process() per part with the
     // part's position in the block. @p buffer starts at sample @p modulation_offset
     // of the block (a caller that splits the block itself, e.g. a Graph run in

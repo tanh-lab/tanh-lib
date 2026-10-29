@@ -17,6 +17,8 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
     void process(thl::core::BufferView buffer, uint32_t modulation_offset = 0) override;
+    /// Releases the gain reduction at once.
+    void reset() TANH_NONBLOCKING_FUNCTION override { m_gain = 1.0f; }
 
 protected:
     enum Parameter {

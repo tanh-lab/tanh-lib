@@ -15,7 +15,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   graphs, per-node input mix and wet mix, `collect_garbage()`. Latency compensation: the
   faster inputs of every merge and a node's dry/bypass path are delayed, the graph holds
   silence after a commit until every delay is ready, and reports the latency of the version it
-  committed last. Tests: `test_graph`, `benchmark_graph`.
+  committed last. A node whose latency rises above the maximum it had at the last commit (or a
+  nested graph that committed on its own) is compensated at that maximum until the graph
+  containing it commits. A bypassed node coming back is `reset()`. Tests: `test_graph`
+  (including edits and commits against a running audio thread), `benchmark_graph`.
 - `BaseProcessor::latency_samples()` / `max_latency_samples()` / `set_latency_samples()` /
   `set_max_latency_samples()`: a processor reports its latency (by @jstolberg).
 - `thl::dsp::utils::DelayProcessor`: an integer delay that crossfades linearly when the delay
@@ -24,6 +27,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `BaseProcessor::process_modulated()` takes the buffer's position in the block
   (`modulation_offset`, default 0), so a caller that runs a block in parts, such as a graph,
   has its nodes read modulation at the block position.
+- `BaseProcessor::reset()`: clears what a processor holds from the audio it processed, keeping
+  its settings; real-time safe, does nothing by default. `LimiterImpl`, `ParametricEqImpl`,
+  `StereoFDN` and `DelayProcessor` implement it.
 - `thl::dsp::filter::ParametricEq`: a parametric equaliser of up to 8 bands in series for any
   number of channels, each band a Peak, Notch, LowShelf, HighShelf, LowCut or HighCut
   (12 dB/octave). One trapezoidal state-variable filter (Cytomic) per band and channel. Every
@@ -64,8 +70,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- `BaseProcessor` holds its latency (two atomics) and has a copy constructor and copy
-  assignment: code that derives from it must be recompiled.
+- `BaseProcessor` holds its latency (two atomics), has a copy constructor and copy assignment
+  and the virtual `reset()`: code that derives from it must be recompiled. `StereoFDN::reset()`
+  and `DelayProcessor::reset()` now override it.
+- `process_modulated()` no longer calls `process()` for an empty buffer.
 - Shared tooling pinned to tanh-tooling v0.3.0 (`.clangd`, `cmake/tanh/`,
   `lint.yml`). `.clangd` now reads `build/compile_commands.json` instead of
   `build/desktop/Debug/`: reconfigure a development preset once to create the link.

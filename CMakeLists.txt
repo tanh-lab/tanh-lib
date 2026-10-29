@@ -550,6 +550,7 @@ if(TANH_BUILD_GRAPH)
     )
 
     target_link_libraries(${PROJECT_NAME}_graph PUBLIC ${PROJECT_NAME}_core ${PROJECT_NAME}_dsp)
+    target_compile_definitions(${PROJECT_NAME}_graph PUBLIC -DTANH_GRAPH_ENABLED)
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_graph)
 

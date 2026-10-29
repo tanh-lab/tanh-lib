@@ -50,7 +50,7 @@ public:
     /// Writes the input into the delay lines without changing it, so their history stays current.
     void write(const thl::core::BufferView& buffer) TANH_NONBLOCKING_FUNCTION;
 
-    void reset();
+    void reset() TANH_NONBLOCKING_FUNCTION override;
 
     /// Reallocates and clears the delay lines once prepared. Configure outside audio processing.
     void set_max_delay_samples(size_t max_delay_samples);

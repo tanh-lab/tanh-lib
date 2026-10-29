@@ -24,8 +24,10 @@
 
 namespace thl::graph {
 
+/// A node of a Graph; never reused within a graph.
 enum class NodeId : uint64_t {};
 
+/// An edge of a Graph: @p m_from's output feeds @p m_to.
 struct Connection {
     NodeId m_from{};
     NodeId m_to{};
@@ -38,10 +40,17 @@ struct Connection {
 ///
 /// Edits are made on the control thread and take effect at commit(). The audio thread then fades
 /// out the current version, switches to the committed one and, once its latency has passed, fades
-/// it in.
+/// it in. Every edit that changes the structure therefore goes silent for the fade and the
+/// graph's latency, also where it does not touch the latent path. Input and wet mixes are live:
+/// they ramp without a commit.
+///
+/// Latency compensation: a node's latency_samples() is followed per block; the faster sources of
+/// every node and a node's dry path are delayed to match, up to the max_latency_samples() each node
+/// had at the last commit.
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
-    /// How a node combines its sources.
+    /// How a node combines its sources: their sum, or their sum divided by their number (the
+    /// default, so adding a source keeps the level).
     enum class InputMix : uint8_t { Sum, Average };
 
     Graph();
@@ -53,32 +62,52 @@ public:
     Graph& operator=(Graph&&) = delete;
 
     // ─── Editing (control thread) ────────────
+    /// A new node running a T made from @p args; see add_node(std::unique_ptr).
     template <typename T, typename... Args>
     std::optional<NodeId> add_node(Args&&... args) {
         static_assert(std::is_base_of_v<thl::dsp::BaseProcessor, T>);
         return add_node(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
-    /// A prepared graph prepares the processor here, on the calling thread.
+    /// A new node running @p processor, unconnected, until the next commit() not processed. A
+    /// prepared graph prepares the processor here, on the calling thread. Nothing for a null
+    /// processor.
     std::optional<NodeId> add_node(std::unique_ptr<thl::dsp::BaseProcessor> processor);
 
     /// A processor the caller already prepared, e.g. a heavy one on its own background thread,
     /// for @p sample_rate, @p samples_per_block and @p num_channels. The graph prepares it again
-    /// only if they differ from its own (or prepare() runs again).
+    /// only if they differ from its own, and always in prepare(), so before the graph is prepared
+    /// this is add_node().
     std::optional<NodeId> add_prepared_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
                                             double sample_rate,
                                             size_t samples_per_block,
                                             size_t num_channels);
 
+    /// Removes the node and its connections; its processor is freed once no version that ran it
+    /// is left (collect_garbage()). False for graph_input(), graph_output() and unknown ids.
     bool remove_node(NodeId id);
+    /// Feeds @p from's output into @p to. False for unknown ids, into graph_input(), out of
+    /// graph_output(), a connection that exists or one that would close a cycle.
     bool connect(NodeId from, NodeId to);
+    /// False if there is no such connection.
     bool disconnect(NodeId from, NodeId to);
+    /// Live (no commit): how node @p id, or graph_output(), combines its sources; ramps over
+    /// 20 ms. False for graph_input() and unknown ids.
     bool set_input_mix(NodeId id, InputMix input_mix);
+    /// Live (no commit): 1 runs the node, 0 bypasses it (its sources pass, delayed by its
+    /// latency), between them a blend; ramps over 20 ms, clamped to [0, 1]. A node coming back
+    /// from 0 is reset() first. False for graph_input(), graph_output(), unknown ids and NaN.
     bool set_wet_mix(NodeId id, float wet_mix);
 
-    /// Hands the edited graph to the audio thread (a short fade out and in). Without changes
-    /// since the last commit it does nothing. False if the graph has a cycle.
+    /// Hands the edited graph and every graph nested in it to the audio thread (a short fade out
+    /// and in). Without changes since the last commit it does nothing; it also rebuilds when a
+    /// node's max_latency_samples() changed. Commit the outermost graph: a nested graph's own
+    /// commit() takes effect inside it, but if it raises its maximum latency, the graph containing
+    /// it compensates at the old maximum until that graph commits (has_uncommitted_changes()).
+    /// False if a graph has a cycle, which connect() prevents.
     bool commit();
+    /// True after an edit, or when a node's max_latency_samples() changed, here or in a nested
+    /// graph, since the last commit().
     bool has_uncommitted_changes() const;
     /// Control thread: the latency of the version prepare() or commit() handed over last, from its
     /// nodes' max_latency_samples(). latency_samples() reaches it once the audio thread runs that
@@ -91,16 +120,22 @@ public:
     /// does not run (wet 0) keeps its old version until it runs again.
     void collect_garbage();
 
+    /// The node that holds what process() is given.
     NodeId graph_input() const { return k_input_id; }
+    /// The node whose sources make what process() returns.
     NodeId graph_output() const { return k_output_id; }
 
-    /// nullptr for graph_input(), graph_output() and unknown ids.
+    /// The processor of node @p id; nullptr for graph_input(), graph_output() and unknown ids.
     thl::dsp::BaseProcessor* node(NodeId id);
     const thl::dsp::BaseProcessor* node(NodeId id) const;
+    /// The wet mix set for node @p id; nothing for graph_input(), graph_output() and unknown ids.
     std::optional<float> wet_mix(NodeId id) const;
 
+    /// Every node, graph_input() and graph_output() included, as edited (not as committed).
     std::vector<NodeId> nodes() const;
+    /// Every connection, as edited.
     std::vector<Connection> connections() const;
+    /// The nodes connected into @p id, as edited.
     std::vector<NodeId> sources_of(NodeId id) const;
 
     // ─── BaseProcessor ───────────────────────
@@ -114,6 +149,10 @@ public:
     /// block in parts; every node gets it, so it reads its modulation at the block position.
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
+
+    /// Audio thread: resets every node of the running version and clears the latency delays,
+    /// e.g. when the graph is itself a bypassed node coming back.
+    void reset() TANH_NONBLOCKING_FUNCTION override;
 
 private:
     using BufferIndex = uint32_t;
@@ -181,7 +220,7 @@ private:
     size_t m_max_block_size = 0;
     size_t m_num_channels = 0;
     bool m_dirty = false;
-    bool m_published = false;  // a version was published since prepare()
+    bool m_published = false;          // a version was published since prepare()
     uint32_t m_committed_latency = 0;  // of the version published last
 
     uint64_t m_next_generation = 1;

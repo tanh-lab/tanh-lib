@@ -124,6 +124,9 @@ public:
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
 
+    /// Clears the filters' state (ParametricEq::reset()).
+    void reset() TANH_NONBLOCKING_FUNCTION override { m_eq.reset(); }
+
     [[nodiscard]] size_t num_bands() const { return m_num_bands; }
     /// The equaliser itself (audio thread), e.g. for band() of what was read last.
     [[nodiscard]] const ParametricEq& equaliser() const { return m_eq; }

@@ -1,6 +1,7 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -71,7 +72,7 @@ void DelayProcessor::write(const thl::core::BufferView& buffer) {
     m_has_processed = true;
 }
 
-void DelayProcessor::reset() {
+void DelayProcessor::reset() TANH_NONBLOCKING_FUNCTION {
     for (auto& line : m_delay_lines) { line.reset(); }
     m_previous_delay_samples = m_delay_samples;
     m_crossfade_position = 0;

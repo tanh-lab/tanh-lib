@@ -57,7 +57,7 @@ public:
                  const size_t& num_channels) override;
     void process(thl::core::BufferView buffer, uint32_t modulation_offset = 0) override;
 
-    void reset();
+    void reset() TANH_NONBLOCKING_FUNCTION override;
 
     // Reallocates delay storage and clears state. Configure outside audio processing.
     void set_delay_lines_per_channel(size_t delay_lines_per_channel);

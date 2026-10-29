@@ -52,6 +52,8 @@ struct Graph::ProcessingStep {
     std::vector<Source> m_sources;
     BufferIndex m_buffer = 0;
     thl::dsp::utils::DelayProcessor* m_dry_delay = nullptr;
+    uint32_t m_max_latency = 0;  // the node's max_latency_samples() when compiled: what the
+                                 // delays were sized for
 };
 
 struct Graph::CompiledGraph {
@@ -374,7 +376,8 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
         compiled->m_steps.push_back({.m_node = &node,
                                      .m_sources = std::move(sources),
                                      .m_buffer = index,
-                                     .m_dry_delay = node.m_dry_delay.get()});
+                                     .m_dry_delay = node.m_dry_delay.get(),
+                                     .m_max_latency = max});
     }
     compiled->m_path_latencies.assign(compiled->m_buffers.size(), 0);
     return compiled;
@@ -437,7 +440,7 @@ bool Graph::rebuild() {
 void Graph::publish(std::unique_ptr<CompiledGraph> compiled) {
     m_live_generations.insert(compiled->m_generation);
     m_published = true;
-    CompiledGraph* stale = m_pending.exchange(compiled.release(), std::memory_order_acq_rel);
+    const CompiledGraph* stale = m_pending.exchange(compiled.release(), std::memory_order_acq_rel);
 
     // The audio thread never picked this one up, so it can be freed right away.
     if (stale != nullptr) {
@@ -510,7 +513,11 @@ uint32_t Graph::apply_latencies(CompiledGraph& compiled) {
     };
 
     for (ProcessingStep& step : compiled.m_steps) {
-        const uint32_t latency = step.m_node->m_processor->latency_samples();
+        // A node whose latency rose above the maximum this version was compiled with (it raised
+        // its max_latency_samples(), or a nested graph committed on its own) is aligned at that
+        // maximum until the next commit: the delays were sized for it.
+        const uint32_t latency =
+            std::min(step.m_node->m_processor->latency_samples(), step.m_max_latency);
         step.m_dry_delay->set_delay_samples(latency);
         path_latencies[step.m_buffer] = align(step.m_sources) + latency;
     }
@@ -547,6 +554,7 @@ void Graph::apply_fade(thl::core::BufferView buffer) {
     if (switched) {
         m_fading_out = false;
         m_hold_samples = apply_latencies(*m_active);
+        set_latency_samples(m_hold_samples);
         if (m_hold_samples == 0) { m_fade.set_target_value(1.0f); }
     }
 }
@@ -621,6 +629,9 @@ void Graph::run_step(const ProcessingStep& step,
     const float target = node.m_wet_mix.load(std::memory_order_relaxed);
     smoother.set_target_value(target);
 
+    // Back from bypass: the processor starts clean instead of where it froze.
+    if (target > 0.0f && smoother.get_smoothed_value(0) == 0.0f) { node.m_processor->reset(); }
+
     if (smoother.get_smoothed_value(0) == target) {
         if (target == 0.0f) {  // bypassed: the sources, delayed by the node's latency
             dry_delay.process(buffer);
@@ -648,6 +659,17 @@ void Graph::run_step(const ProcessingStep& step,
             out = d * (1.0f - wet) + out * wet;
         }
     }
+}
+
+void Graph::reset() {
+    CompiledGraph* compiled = m_active;
+    if (compiled == nullptr) { return; }
+    for (ProcessingStep& step : compiled->m_steps) {
+        step.m_node->m_processor->reset();
+        step.m_dry_delay->reset();
+        for (Source& source : step.m_sources) { source.m_delay.reset(); }
+    }
+    for (Source& source : compiled->m_output_sources) { source.m_delay.reset(); }
 }
 
 void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
