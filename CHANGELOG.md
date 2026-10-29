@@ -9,6 +9,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::filter::ParametricEq`: a parametric equaliser of up to 8 bands in series for any
+  number of channels, each band a Peak, Notch, LowShelf, HighShelf, LowCut or HighCut
+  (12 dB/octave). One trapezoidal state-variable filter (Cytomic) per band and channel, with the
+  RBJ cookbook's magnitude (bilinear, prewarped). Every change of a band ramps its coefficients
+  over 10 ms, so automation and a dragged band do not click; a flat or disabled band costs
+  nothing. `magnitude_db()` and `response_db()` give the settled response for drawing the
+  curve. Real-time safe after `prepare()`. Tests: `ParametricEq.*`.
 - `ConstellationReverbImpl::set_shimmer_position()`: where the shimmer pitch-shifts
   the tank. `Feedback` (the default, unchanged) shifts each half's output, so the
   shimmer is heard after a round of decay and builds with a long decay; `Input`
