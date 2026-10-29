@@ -1,129 +1,72 @@
+#include <tanh/core/BufferView.h>
+#include <tanh/dsp/filter/EqDesign.h>
 #include <tanh/dsp/filter/ParametricEq.h>
+#include <tanh/dsp/filter/SvfCoefficients.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <numbers>
 #include <span>
 
 namespace thl::dsp::filter {
 
-namespace {
-
-constexpr float k_min_frequency = 10.0f;
-constexpr float k_max_frequency_ratio = 0.49f;  // of the sample rate
-constexpr float k_min_q = 0.025f;
-constexpr float k_max_q = 40.0f;
-constexpr float k_max_gain_db = 48.0f;
-
-bool is_flat(const EqBand& band) {
-    if (!band.m_enabled) { return true; }
-    const bool has_gain = band.m_type == EqBandType::Peak || band.m_type == EqBandType::LowShelf ||
-                          band.m_type == EqBandType::HighShelf;
-    return has_gain && band.m_gain_db == 0.0f;
-}
-
-}  // namespace
-
-ParametricEq::Coefficients ParametricEq::coefficients_of(const EqBand& band, double sample_rate) {
-    const double nyquist_limit = k_max_frequency_ratio * sample_rate;
-    const double frequency = std::clamp(static_cast<double>(band.m_frequency),
-                                        static_cast<double>(k_min_frequency),
-                                        nyquist_limit);
-    const double q = std::clamp(static_cast<double>(band.m_q),
-                                static_cast<double>(k_min_q),
-                                static_cast<double>(k_max_q));
-    const double gain_db = std::clamp(static_cast<double>(band.m_gain_db),
-                                      static_cast<double>(-k_max_gain_db),
-                                      static_cast<double>(k_max_gain_db));
-    const double g = std::tan(std::numbers::pi * frequency / sample_rate);
-    const double a = std::pow(10.0, gain_db / 40.0);  // the square root of the linear gain
-    const double k = 1.0 / q;
-
-    // Cytomic, "Linear Trapezoidal Integrated State Variable Filter" (Simper 2013): each type
-    // as a mix of the input, the band and the low tap.
-    double cg = g;
-    double ck = k;
-    double m0 = 1.0;
-    double m1 = 0.0;
-    double m2 = 0.0;
-    switch (band.m_type) {
-        case EqBandType::Peak:
-            ck = 1.0 / (q * a);
-            m1 = ck * ((a * a) - 1.0);
-            break;
-        case EqBandType::Notch: m1 = -k; break;
-        case EqBandType::LowShelf:
-            cg = g / std::sqrt(a);
-            m1 = k * (a - 1.0);
-            m2 = (a * a) - 1.0;
-            break;
-        case EqBandType::HighShelf:
-            cg = g * std::sqrt(a);
-            m0 = a * a;
-            m1 = k * (1.0 - a) * a;
-            m2 = 1.0 - (a * a);
-            break;
-        case EqBandType::LowCut:
-            m1 = -k;
-            m2 = -1.0;
-            break;
-        case EqBandType::HighCut:
-            m0 = 0.0;
-            m2 = 1.0;
-            break;
-    }
-    return {.m_g = static_cast<float>(cg),
-            .m_k = static_cast<float>(ck),
-            .m_m0 = static_cast<float>(m0),
-            .m_m1 = static_cast<float>(m1),
-            .m_m2 = static_cast<float>(m2)};
-}
-
 void ParametricEq::prepare(double sample_rate, size_t num_channels) {
     m_sample_rate = sample_rate > 0.0 ? sample_rate : 48000.0;
     m_num_channels = num_channels;
-    m_ramp_samples =
+    m_state.assign(k_max_bands * num_channels, SvfState{});
+    const auto ramp =
         std::max<uint32_t>(1,
                            static_cast<uint32_t>(std::lround(k_ramp_ms * 0.001 * m_sample_rate)));
-    m_state.assign(k_max_bands * num_channels * 2, 0.0f);
-    for (auto& b : m_bands) { b = Band{.m_settings = {.m_enabled = false}}; }
+    for (auto& b : m_bands) {
+        b.m_ramp.set_ramp_samples(ramp);
+        retarget(b, false);
+    }
+}
+
+void ParametricEq::retarget(Band& band, bool ramp) TANH_NONBLOCKING_FUNCTION {
+    SvfCoefficients target = design_band(band.m_settings, m_design, m_sample_rate);
+    band.m_flat = target.is_identity();
+    const SvfCoefficients& current = band.m_ramp.current();
+    if (band.m_flat) {
+        // The identity, keeping the filter's tuning so only the mix moves.
+        target.m_g = current.m_g;
+        target.m_k = current.m_k;
+    }
+    if (!ramp) {
+        band.m_ramp.set_current(target);
+        return;
+    }
+    if (current.is_identity() && !band.m_flat) {
+        // From a silent band: tune at once, then only the mix ramps.
+        SvfCoefficients tuned = SvfCoefficients::identity();
+        tuned.m_g = target.m_g;
+        tuned.m_k = target.m_k;
+        band.m_ramp.set_current(tuned);
+    }
+    band.m_ramp.set_target(target);
 }
 
 void ParametricEq::set_band(size_t index, const EqBand& band) TANH_NONBLOCKING_FUNCTION {
     if (index >= k_max_bands) { return; }
     Band& b = m_bands[index];
-    if (b.m_settings == band) { return; }
+    // Compared as used, so a setting that is out of range (or NaN) the same way twice is no change.
+    const bool same = sanitised(b.m_settings, m_sample_rate) == sanitised(band, m_sample_rate);
     b.m_settings = band;
-    b.m_flat = is_flat(band);
-    if (b.m_flat) {
-        // The identity, keeping the filter's tuning so only the mix moves.
-        b.m_target = {.m_g = b.m_current.m_g, .m_k = b.m_current.m_k, .m_m0 = 1.0f};
-    } else {
-        b.m_target = coefficients_of(band, m_sample_rate);
-        if (b.m_current.m_g == 0.0f) {  // from flat with no tuning yet: tune at once
-            b.m_current.m_g = b.m_target.m_g;
-            b.m_current.m_k = b.m_target.m_k;
-        }
-    }
-    const auto n = static_cast<float>(m_ramp_samples);
-    b.m_step = {.m_g = (b.m_target.m_g - b.m_current.m_g) / n,
-                .m_k = (b.m_target.m_k - b.m_current.m_k) / n,
-                .m_m0 = (b.m_target.m_m0 - b.m_current.m_m0) / n,
-                .m_m1 = (b.m_target.m_m1 - b.m_current.m_m1) / n,
-                .m_m2 = (b.m_target.m_m2 - b.m_current.m_m2) / n};
-    b.m_ramp_remaining = m_ramp_samples;
+    if (!same) { retarget(b, true); }
+}
+
+void ParametricEq::set_design(EqDesign design) TANH_NONBLOCKING_FUNCTION {
+    if (design == m_design) { return; }
+    m_design = design;
+    for (auto& b : m_bands) { retarget(b, true); }
 }
 
 void ParametricEq::reset() TANH_NONBLOCKING_FUNCTION {
-    std::ranges::fill(m_state, 0.0f);
-    for (auto& b : m_bands) {
-        b.m_current = b.m_target;
-        b.m_ramp_remaining = 0;
-    }
+    for (auto& s : m_state) { s.reset(); }
+    for (auto& b : m_bands) { b.m_ramp.finish(); }
 }
 
 void ParametricEq::process(float* const* channels,
@@ -132,12 +75,12 @@ void ParametricEq::process(float* const* channels,
     const size_t n = std::min(num_channels, m_num_channels);
     for (size_t i = 0; i < k_max_bands; ++i) {
         const Band& b = m_bands[i];
-        if (b.m_flat && b.m_ramp_remaining == 0) { continue; }
+        if (b.m_flat && !b.m_ramp.ramping()) { continue; }
         process_band(i, channels, n, num_samples);
-        if (b.m_flat && b.m_ramp_remaining == 0) {  // just arrived at flat: start clean later
-            std::fill_n(m_state.begin() + static_cast<std::ptrdiff_t>(i * m_num_channels * 2),
-                        m_num_channels * 2,
-                        0.0f);
+        if (b.m_flat && !b.m_ramp.ramping()) {  // just arrived at flat: start clean later
+            for (size_t ch = 0; ch < m_num_channels; ++ch) {
+                m_state[(i * m_num_channels) + ch].reset();
+            }
         }
     }
 }
@@ -147,83 +90,120 @@ void ParametricEq::process_band(size_t index,
                                 size_t num_channels,
                                 size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     Band& b = m_bands[index];
-    float* state = m_state.data() + (index * m_num_channels * 2);
+    SvfState* state = m_state.data() + (index * m_num_channels);
     size_t s = 0;
 
     // The ramp: coefficients per sample, shared by the channels.
-    for (; s < num_samples && b.m_ramp_remaining > 0; ++s) {
-        Coefficients& c = b.m_current;
-        if (--b.m_ramp_remaining == 0) {
-            c = b.m_target;
-        } else {
-            c.m_g += b.m_step.m_g;
-            c.m_k += b.m_step.m_k;
-            c.m_m0 += b.m_step.m_m0;
-            c.m_m1 += b.m_step.m_m1;
-            c.m_m2 += b.m_step.m_m2;
-        }
-        const float a1 = 1.0f / (1.0f + (c.m_g * (c.m_g + c.m_k)));
-        const float a2 = c.m_g * a1;
-        const float a3 = c.m_g * a2;
+    for (; s < num_samples && b.m_ramp.ramping(); ++s) {
+        b.m_ramp.advance();
+        const SvfTick tick(b.m_ramp.current());
         for (size_t ch = 0; ch < num_channels; ++ch) {
-            float& ic1 = state[ch * 2];
-            float& ic2 = state[(ch * 2) + 1];
-            const float v0 = channels[ch][s];
-            const float v3 = v0 - ic2;
-            const float v1 = (a1 * ic1) + (a2 * v3);
-            const float v2 = ic2 + (a2 * ic1) + (a3 * v3);
-            ic1 = (2.0f * v1) - ic1;
-            ic2 = (2.0f * v2) - ic2;
-            channels[ch][s] = (c.m_m0 * v0) + (c.m_m1 * v1) + (c.m_m2 * v2);
+            channels[ch][s] = tick.process(state[ch], channels[ch][s]);
         }
     }
     if (s == num_samples || b.m_flat) { return; }
 
     // Settled: fixed coefficients, one channel at a time.
-    const Coefficients& c = b.m_current;
-    const float a1 = 1.0f / (1.0f + (c.m_g * (c.m_g + c.m_k)));
-    const float a2 = c.m_g * a1;
-    const float a3 = c.m_g * a2;
+    const SvfTick tick(b.m_ramp.current());
     for (size_t ch = 0; ch < num_channels; ++ch) {
-        float ic1 = state[ch * 2];
-        float ic2 = state[(ch * 2) + 1];
+        SvfState st = state[ch];
         float* x = channels[ch];
-        for (size_t i = s; i < num_samples; ++i) {
-            const float v0 = x[i];
-            const float v3 = v0 - ic2;
-            const float v1 = (a1 * ic1) + (a2 * v3);
-            const float v2 = ic2 + (a2 * ic1) + (a3 * v3);
-            ic1 = (2.0f * v1) - ic1;
-            ic2 = (2.0f * v2) - ic2;
-            x[i] = (c.m_m0 * v0) + (c.m_m1 * v1) + (c.m_m2 * v2);
-        }
-        state[ch * 2] = ic1;
-        state[(ch * 2) + 1] = ic2;
+        for (size_t i = s; i < num_samples; ++i) { x[i] = tick.process(st, x[i]); }
+        state[ch] = st;
     }
 }
 
-float ParametricEq::magnitude_db(const EqBand& band, double frequency, double sample_rate) {
-    if (is_flat(band) || !(sample_rate > 0.0)) { return 0.0f; }
-    const Coefficients c = coefficients_of(band, sample_rate);
-    // The bilinear transform maps the frequency onto the prototype's s = j tan(pi f / fs) / g;
-    // the taps are band = s / D and low = 1 / D, D = s^2 + k s + 1.
-    const double f = std::clamp(frequency, 0.0, 0.5 * sample_rate);
-    const std::complex<double> s(0.0,
-                                 std::tan(std::numbers::pi * std::min(f / sample_rate, 0.4999)) /
-                                     static_cast<double>(c.m_g));
-    const std::complex<double> d = (s * s) + (static_cast<double>(c.m_k) * s) + 1.0;
-    const std::complex<double> h = static_cast<double>(c.m_m0) +
-                                   ((static_cast<double>(c.m_m1) * s) / d) +
-                                   (static_cast<double>(c.m_m2) / d);
-    return static_cast<float>(20.0 * std::log10(std::max(std::abs(h), 1e-12)));
+float ParametricEq::magnitude_db(const EqBand& band,
+                                 EqDesign design,
+                                 double frequency,
+                                 double sample_rate) {
+    if (!(sample_rate > 0.0)) { return 0.0f; }
+    return static_cast<float>(
+        design_band(band, design, sample_rate).magnitude_db(frequency, sample_rate));
 }
 
 float ParametricEq::response_db(std::span<const EqBand> bands,
+                                EqDesign design,
                                 double frequency,
                                 double sample_rate) {
     float total = 0.0f;
-    for (const auto& band : bands) { total += magnitude_db(band, frequency, sample_rate); }
+    for (const auto& band : bands) { total += magnitude_db(band, design, frequency, sample_rate); }
     return total;
+}
+
+void ParametricEq::response_curve(std::span<const EqBand> bands,
+                                  EqDesign design,
+                                  double sample_rate,
+                                  std::span<const float> frequencies,
+                                  std::span<float> out_db) {
+    const size_t n = std::min(frequencies.size(), out_db.size());
+    std::fill_n(out_db.begin(), n, 0.0f);
+    if (!(sample_rate > 0.0)) { return; }
+    for (const auto& band : bands) {
+        const SvfCoefficients c = design_band(band, design, sample_rate);
+        if (c.is_identity()) { continue; }
+        for (size_t i = 0; i < n; ++i) {
+            out_db[i] += static_cast<float>(c.magnitude_db(frequencies[i], sample_rate));
+        }
+    }
+}
+
+void ParametricEq::log_frequencies(std::span<float> out, float lowest, float highest) {
+    if (out.empty()) { return; }
+    if (out.size() == 1) {
+        out[0] = lowest;
+        return;
+    }
+    const double lo = std::log(static_cast<double>(lowest));
+    const double step =
+        (std::log(static_cast<double>(highest)) - lo) / static_cast<double>(out.size() - 1);
+    for (size_t i = 0; i < out.size(); ++i) {
+        out[i] = static_cast<float>(std::exp(lo + (step * static_cast<double>(i))));
+    }
+    out.back() = highest;
+}
+
+// --- ParametricEqImpl ---------------------------------------------------------------------------
+
+ParametricEqImpl::ParametricEqImpl(size_t num_bands)
+    : m_num_bands(std::clamp<size_t>(num_bands, 1, ParametricEq::k_max_bands)) {}
+
+void ParametricEqImpl::prepare(const double& sample_rate,
+                               const size_t& /*samples_per_block*/,
+                               const size_t& num_channels) {
+    m_eq.prepare(sample_rate, num_channels);
+    read_parameters(0);
+    m_eq.reset();  // the first block starts at the parameters, not ramping to them
+}
+
+void ParametricEqImpl::read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+    const auto index = [](float value, int last) {
+        return std::isfinite(value) ? std::clamp(static_cast<int>(std::lround(value)), 0, last) : 0;
+    };
+    m_eq.set_design(static_cast<EqDesign>(index(get_parameter_float(Design, modulation_offset),
+                                                static_cast<int>(EqDesign::Matched))));
+    for (size_t b = 0; b < m_num_bands; ++b) {
+        const auto read = [&](BandParameter p) {
+            return get_band_parameter_float(p, b, modulation_offset);
+        };
+        m_eq.set_band(b,
+                      {.m_type = static_cast<EqBandType>(
+                           index(read(Type), static_cast<int>(EqBandType::HighCut))),
+                       .m_frequency = read(Frequency),
+                       .m_gain_db = read(Gain),
+                       .m_q = read(Q),
+                       .m_enabled = read(Enabled) > 0.5f});
+    }
+}
+
+void ParametricEqImpl::process(thl::core::BufferView buffer,
+                               uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+    constexpr size_t k_max_channels = 16;
+    const size_t num_channels = std::min(buffer.get_num_channels(), k_max_channels);
+    std::array<float*, k_max_channels> channels{};
+    for (size_t ch = 0; ch < num_channels; ++ch) { channels[ch] = buffer.get_write_pointer(ch); }
+    read_parameters(modulation_offset);
+    m_eq.process(channels.data(), num_channels, buffer.get_num_samples());
 }
 
 }  // namespace thl::dsp::filter

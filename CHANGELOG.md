@@ -11,11 +11,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - `thl::dsp::filter::ParametricEq`: a parametric equaliser of up to 8 bands in series for any
   number of channels, each band a Peak, Notch, LowShelf, HighShelf, LowCut or HighCut
-  (12 dB/octave). One trapezoidal state-variable filter (Cytomic) per band and channel, with the
-  RBJ cookbook's magnitude (bilinear, prewarped). Every change of a band ramps its coefficients
-  over 10 ms, so automation and a dragged band do not click; a flat or disabled band costs
-  nothing. `magnitude_db()` and `response_db()` give the settled response for drawing the
-  curve. Real-time safe after `prepare()`. Tests: `ParametricEq.*`.
+  (12 dB/octave). One trapezoidal state-variable filter (Cytomic) per band and channel. Every
+  change of a band or of the design ramps its coefficients over 10 ms, so automation and a
+  dragged band do not click; a flat or disabled band costs nothing. Out-of-range and non-finite
+  settings are clamped or replaced; `prepare()` keeps the bands. `response_curve()` and
+  `log_frequencies()` give the settled curve to plot, from the caller's settings, on any thread.
+  Real-time safe after `prepare()`. Tests: `ParametricEq.*`.
+- `thl::dsp::filter::ParametricEqImpl`: `ParametricEq` as a `BaseProcessor`, its parameters
+  read through `get_parameter_float()` (the design) and `get_band_parameter_float()` (type,
+  frequency, gain, Q, enabled per band), so State and Modulation drive it. Tests:
+  `ParametricEqImpl.*`.
+- `EqDesign.h`: `EqBand`, `design_band()` and `analog_response()`. `EqDesign::Matched` (the
+  default) follows the analogue prototype up to Nyquist: poles by impulse invariance, zeros
+  fitted to the prototype's magnitude (Vicanek, "Matched Second Order Digital Filters", 2016,
+  for the peak and the cuts; the shelves fitted at DC, their frequency and Nyquist, handing over
+  to bilinear from Q 1.5 to 3). `EqDesign::Bilinear` gives the RBJ cookbook's curves. Tests:
+  `EqDesign.*`.
+- `SvfCoefficients.h`: `SvfCoefficients` (Cytomic's g, k, m0 to m2, with the exact response
+  and the conversion to and from `BiquadCoefficients`), `SvfState`, `SvfTick` and `SvfRamp`
+  (click-free coefficient ramps), header-only, for any filter built on the trapezoidal SVF.
+  Tests: `SvfCoefficients.*`.
 - `ConstellationReverbImpl::set_shimmer_position()`: where the shimmer pitch-shifts
   the tank. `Feedback` (the default, unchanged) shifts each half's output, so the
   shimmer is heard after a round of decay and builds with a long decay; `Input`

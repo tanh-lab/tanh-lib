@@ -1,16 +1,19 @@
 #include <gtest/gtest.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/ParametricEq.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <numbers>
 #include <random>
 #include <vector>
 
 using thl::dsp::filter::EqBand;
 using thl::dsp::filter::EqBandType;
+using thl::dsp::filter::EqDesign;
 using thl::dsp::filter::ParametricEq;
 
 namespace {
@@ -57,9 +60,12 @@ float measure_gain_db(ParametricEq& eq, double hz, double sample_rate = k_sample
     return static_cast<float>(10.0 * std::log10(sum_out / sum_in));
 }
 
-ParametricEq make_eq(const EqBand& band, double sample_rate = k_sample_rate) {
+ParametricEq make_eq(const EqBand& band,
+                     EqDesign design = EqDesign::Matched,
+                     double sample_rate = k_sample_rate) {
     ParametricEq eq;
     eq.prepare(sample_rate, 2);
+    eq.set_design(design);
     eq.set_band(0, band);
     eq.reset();  // settled at once
     return eq;
@@ -93,40 +99,35 @@ std::vector<float> run_sine(ParametricEq& eq, size_t num_blocks, Change change) 
 // --- the response ---------------------------------------------------------------------------
 
 TEST(ParametricEq, MeasuredResponseMatchesMagnitudeDb) {
-    const std::array<EqBand, 6> bands{{
+    const std::array<EqBand, 7> bands{{
         {.m_type = EqBandType::Peak, .m_frequency = 1000.0f, .m_gain_db = 9.0f, .m_q = 1.4f},
-        {.m_type = EqBandType::Peak, .m_frequency = 3000.0f, .m_gain_db = -12.0f, .m_q = 4.0f},
+        {.m_type = EqBandType::Peak, .m_frequency = 12000.0f, .m_gain_db = -12.0f, .m_q = 4.0f},
         {.m_type = EqBandType::Notch, .m_frequency = 2000.0f, .m_q = 2.0f},
         {.m_type = EqBandType::LowShelf, .m_frequency = 200.0f, .m_gain_db = 6.0f},
-        {.m_type = EqBandType::HighShelf, .m_frequency = 5000.0f, .m_gain_db = -8.0f},
+        {.m_type = EqBandType::HighShelf, .m_frequency = 9000.0f, .m_gain_db = -8.0f},
         {.m_type = EqBandType::LowCut, .m_frequency = 300.0f, .m_q = 2.0f},
+        {.m_type = EqBandType::HighCut, .m_frequency = 15000.0f},
     }};
     const std::array<double, 9>
-        probes{40.0, 110.0, 290.0, 640.0, 1210.0, 2480.0, 4950.0, 9100.0, 15300.0};
-    for (const auto& band : bands) {
-        auto eq = make_eq(band);
-        for (const double hz : probes) {
-            eq.reset();
-            EXPECT_NEAR(measure_gain_db(eq, hz),
-                        ParametricEq::magnitude_db(band, hz, k_sample_rate),
-                        0.05f)
-                << static_cast<int>(band.m_type) << " at " << hz << " Hz";
+        probes{40.0, 110.0, 290.0, 640.0, 1210.0, 2480.0, 4950.0, 9100.0, 17300.0};
+    for (const EqDesign design : {EqDesign::Bilinear, EqDesign::Matched}) {
+        for (const auto& band : bands) {
+            auto eq = make_eq(band, design);
+            for (const double hz : probes) {
+                eq.reset();
+                EXPECT_NEAR(measure_gain_db(eq, hz),
+                            ParametricEq::magnitude_db(band, design, hz, k_sample_rate),
+                            0.05f)
+                    << static_cast<int>(design) << " " << static_cast<int>(band.m_type) << " at "
+                    << hz << " Hz";
+            }
         }
-    }
-    const EqBand high_cut{.m_type = EqBandType::HighCut, .m_frequency = 4000.0f};
-    auto eq = make_eq(high_cut);
-    for (const double hz : probes) {
-        eq.reset();
-        EXPECT_NEAR(measure_gain_db(eq, hz),
-                    ParametricEq::magnitude_db(high_cut, hz, k_sample_rate),
-                    0.05f)
-            << hz << " Hz";
     }
 }
 
-TEST(ParametricEq, MagnitudeHasTheShapeOfEachType) {
+TEST(ParametricEq, BilinearMagnitudeHasTheShapeOfEachType) {
     const auto db = [](EqBand band, double hz) {
-        return ParametricEq::magnitude_db(band, hz, k_sample_rate);
+        return ParametricEq::magnitude_db(band, EqDesign::Bilinear, hz, k_sample_rate);
     };
     const EqBand peak{.m_type = EqBandType::Peak, .m_frequency = 1000.0f, .m_gain_db = 6.0f};
     EXPECT_NEAR(db(peak, 1000.0), 6.0f, 1e-3f);
@@ -160,9 +161,10 @@ TEST(ParametricEq, ResponseIsTheSumOfTheBands) {
         {.m_type = EqBandType::HighShelf, .m_frequency = 2000.0f, .m_gain_db = -3.0f},
     }};
     for (const double hz : {50.0, 500.0, 5000.0}) {
-        EXPECT_FLOAT_EQ(ParametricEq::response_db(bands, hz, k_sample_rate),
-                        ParametricEq::magnitude_db(bands[0], hz, k_sample_rate) +
-                            ParametricEq::magnitude_db(bands[1], hz, k_sample_rate));
+        EXPECT_FLOAT_EQ(
+            ParametricEq::response_db(bands, EqDesign::Matched, hz, k_sample_rate),
+            ParametricEq::magnitude_db(bands[0], EqDesign::Matched, hz, k_sample_rate) +
+                ParametricEq::magnitude_db(bands[1], EqDesign::Matched, hz, k_sample_rate));
     }
 }
 
@@ -176,7 +178,7 @@ TEST(ParametricEq, BandsRunInSeries) {
     eq.reset();
     const std::array<EqBand, 2> both{a, b};
     EXPECT_NEAR(measure_gain_db(eq, 600.0),
-                ParametricEq::response_db(both, 600.0, k_sample_rate),
+                ParametricEq::response_db(both, EqDesign::Matched, 600.0, k_sample_rate),
                 0.05f);
 }
 
@@ -333,4 +335,147 @@ TEST(ParametricEq, BandReadsBackWhatWasSet) {
     EXPECT_EQ(eq.band(3), band);
     EXPECT_FALSE(eq.band(0).m_enabled);            // prepare() leaves every band off
     eq.set_band(ParametricEq::k_max_bands, band);  // out of range: ignored
+}
+
+TEST(ParametricEq, ResponseCurveIsTheResponseAtEachFrequency) {
+    const std::array<EqBand, 3> bands{{
+        {.m_type = EqBandType::LowCut, .m_frequency = 40.0f},
+        {.m_type = EqBandType::Peak, .m_frequency = 2500.0f, .m_gain_db = -4.0f, .m_q = 3.0f},
+        {.m_type = EqBandType::HighShelf, .m_frequency = 10000.0f, .m_gain_db = 3.0f},
+    }};
+    std::array<float, 200> frequencies{};
+    ParametricEq::log_frequencies(frequencies, 20.0f, 20000.0f);
+    EXPECT_FLOAT_EQ(frequencies.front(), 20.0f);
+    EXPECT_FLOAT_EQ(frequencies.back(), 20000.0f);
+    EXPECT_NEAR(frequencies[100] / frequencies[99], frequencies[1] / frequencies[0], 1e-4f);
+    std::array<float, 200> curve{};
+    for (const EqDesign design : {EqDesign::Bilinear, EqDesign::Matched}) {
+        ParametricEq::response_curve(bands, design, k_sample_rate, frequencies, curve);
+        for (size_t i = 0; i < curve.size(); ++i) {
+            EXPECT_NEAR(curve[i],
+                        ParametricEq::response_db(bands, design, frequencies[i], k_sample_rate),
+                        1e-4f)
+                << frequencies[i];
+        }
+    }
+}
+
+TEST(ParametricEq, ChangingTheDesignRampsWithoutClicks) {
+    const EqBand band{.m_type = EqBandType::Peak,
+                      .m_frequency = 220.0f,
+                      .m_gain_db = 12.0f,
+                      .m_q = 0.7f};
+    ParametricEq reference = make_eq(band);
+    const float slew = max_step(run_sine(reference, 200, [](size_t) {}));
+    ParametricEq eq = make_eq(band);
+    const auto out = run_sine(eq, 400, [&](size_t b) {
+        if (b % 100 == 50) {
+            eq.set_design(eq.design() == EqDesign::Matched ? EqDesign::Bilinear
+                                                           : EqDesign::Matched);
+        }
+    });
+    EXPECT_LT(max_step(out), 1.5f * slew);
+}
+
+TEST(ParametricEq, PrepareKeepsTheBands) {
+    ParametricEq eq;
+    eq.prepare(44100.0, 1);
+    const EqBand band{.m_type = EqBandType::Peak, .m_frequency = 1000.0f, .m_gain_db = 6.0f};
+    eq.set_band(0, band);
+    eq.prepare(96000.0, 2);  // a host re-preparing
+    EXPECT_EQ(eq.band(0), band);
+    EXPECT_NEAR(measure_gain_db(eq, 1000.0, 96000.0), 6.0f, 0.05f);  // redesigned, no ramp
+}
+
+TEST(ParametricEq, NonFiniteSettingsDoNotBreakIt) {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    ParametricEq eq;
+    eq.prepare(k_sample_rate, 1);
+    eq.set_band(0, {.m_type = EqBandType::Peak, .m_frequency = nan, .m_gain_db = 6.0f});
+    eq.set_band(1, {.m_type = EqBandType::LowShelf, .m_gain_db = inf, .m_q = nan});
+    eq.set_band(2, {.m_type = static_cast<EqBandType>(200), .m_gain_db = 3.0f});
+    std::vector<float> x(4096, 0.1f);
+    for (int block = 0; block < 4; ++block) {
+        eq.set_band(0, {.m_type = EqBandType::Peak, .m_frequency = nan, .m_gain_db = 6.0f});
+        float* channels[] = {x.data()};
+        eq.process(channels, 1, x.size());
+        for (const float v : x) { ASSERT_TRUE(std::isfinite(v)); }
+        std::fill(x.begin(), x.end(), 0.1f);
+    }
+}
+
+// --- ParametricEqImpl -----------------------------------------------------------------------
+
+namespace {
+
+class TestEqProcessor : public thl::dsp::filter::ParametricEqImpl {
+public:
+    explicit TestEqProcessor(size_t num_bands) : ParametricEqImpl(num_bands) {}
+
+    float m_design = 1.0f;
+    std::array<std::array<float, NumBandParameters>, ParametricEq::k_max_bands> m_bands{};
+
+    void set(size_t band, EqBandType type, float f, float gain, float q, bool on = true) {
+        m_bands[band] = {static_cast<float>(type), f, gain, q, on ? 1.0f : 0.0f};
+    }
+
+private:
+    float get_parameter_float(Parameter, uint32_t) override { return m_design; }
+    float get_band_parameter_float(BandParameter p, size_t band, uint32_t) override {
+        return m_bands[band][static_cast<size_t>(p)];
+    }
+};
+
+float processor_gain_db(TestEqProcessor& eq, double hz) {
+    SineGen gen(hz, k_sample_rate);
+    std::vector<float> left(48000);
+    std::vector<float> right(48000);
+    for (size_t n = 0; n < left.size(); ++n) { left[n] = right[n] = gen.next(); }
+    const auto in = left;
+    float* channels[] = {left.data(), right.data()};
+    eq.process(thl::core::BufferView(channels, 2, left.size()));
+    double sum_in = 0.0;
+    double sum_out = 0.0;
+    for (size_t n = 24000; n < left.size(); ++n) {
+        sum_in += static_cast<double>(in[n]) * in[n];
+        sum_out += static_cast<double>(left[n]) * left[n];
+        EXPECT_EQ(left[n], right[n]);
+    }
+    return static_cast<float>(10.0 * std::log10(sum_out / sum_in));
+}
+
+}  // namespace
+
+TEST(ParametricEqImpl, ReadsItsParametersAndFilters) {
+    TestEqProcessor eq(2);
+    eq.set(0, EqBandType::Peak, 1000.0f, 6.0f, 1.0f);
+    eq.set(1, EqBandType::HighShelf, 8000.0f, -4.0f, 0.7f);
+    eq.prepare(k_sample_rate, 512, 2);
+    EXPECT_EQ(eq.equaliser().design(), EqDesign::Matched);
+    const std::array<EqBand, 2> bands{eq.equaliser().band(0), eq.equaliser().band(1)};
+    EXPECT_NEAR(processor_gain_db(eq, 1000.0),
+                ParametricEq::response_db(bands, EqDesign::Matched, 1000.0, k_sample_rate),
+                0.05f);
+
+    eq.m_design = 0.0f;
+    eq.set(0, EqBandType::LowCut, 2000.0f, 0.0f, 0.7f);
+    (void)processor_gain_db(eq, 300.0);  // ramps to the new settings
+    const std::array<EqBand, 2> now{eq.equaliser().band(0), eq.equaliser().band(1)};
+    EXPECT_EQ(eq.equaliser().design(), EqDesign::Bilinear);
+    EXPECT_NEAR(processor_gain_db(eq, 300.0),
+                ParametricEq::response_db(now, EqDesign::Bilinear, 300.0, k_sample_rate),
+                0.05f);
+}
+
+TEST(ParametricEqImpl, RoundsAndClampsItsChoices) {
+    TestEqProcessor eq(ParametricEq::k_max_bands + 3);  // clamped to the maximum
+    EXPECT_EQ(eq.num_bands(), ParametricEq::k_max_bands);
+    eq.m_design = 7.0f;
+    eq.m_bands[0] = {4.4f, 500.0f, 0.0f, 0.7f, 0.9f};  // LowCut, on
+    eq.prepare(k_sample_rate, 256, 1);
+    EXPECT_EQ(eq.equaliser().design(), EqDesign::Matched);
+    EXPECT_EQ(eq.equaliser().band(0).m_type, EqBandType::LowCut);
+    EXPECT_TRUE(eq.equaliser().band(0).m_enabled);
+    EXPECT_FALSE(eq.equaliser().band(1).m_enabled);
 }

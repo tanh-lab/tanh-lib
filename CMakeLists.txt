@@ -272,6 +272,7 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/FrequencyShifter.cpp
         src/dsp/utils/PitchShifter.cpp
 
+        src/dsp/filter/EqDesign.cpp
         src/dsp/filter/ParametricEq.cpp
 
 
