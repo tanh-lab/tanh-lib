@@ -56,6 +56,7 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_WITH_DOCS` | OFF | Add the `sphinx-docs` target (Doxygen + Sphinx) |
 | `TANH_WITH_INSTALL` | ON | Add install targets and the `tanh` CMake package |
 | `TANH_WITH_PACKAGING` | OFF | Add CPack targets (top-level builds only) |
+| `TANH_LINK_COMPILE_COMMANDS` | OFF (ON in the development presets) | Link `build/compile_commands.json`, which clangd reads, to this tree's database (top-level builds only) |
 | `TANH_WITH_RTSAN` / `_ASAN` / `_USAN` / `_TSAN` / `_MSAN` / `_LSAN` | OFF | Enable the respective sanitizer (RTSan needs Clang 20+) |
 | `TANH_WITH_JOURNALD` | OFF | Linux: route platform logs to systemd-journald |
 | `TANH_LOG_COMPILED_MAX_LEVEL` | AUTO | Most verbose log level compiled in (1 Error .. 4 Debug) |
