@@ -37,13 +37,13 @@ double analog_db(const EqBand& band, double f) {
 
 // The largest gap between a design and the prototype from 20 Hz to 95 % of Nyquist, where the
 // prototype is above -40 dB (deep in a cut's stop band, dB differences say nothing).
-double max_error_db(const EqBand& band, EqDesign design) {
-    const SvfCoefficients c = design_band(band, design, k_fs);
+double max_error_db(const EqBand& band, EqDesign design, double fs = k_fs) {
+    const SvfCoefficients c = design_band(band, design, fs);
     double worst = 0.0;
-    for (double f = 20.0; f < 0.95 * k_fs / 2.0; f *= 1.01) {
+    for (double f = 20.0; f < 0.95 * fs / 2.0; f *= 1.01) {
         const double a = analog_db(band, f);
         if (a < -40.0) { continue; }
-        worst = std::max(worst, std::abs(c.magnitude_db(f, k_fs) - a));
+        worst = std::max(worst, std::abs(c.magnitude_db(f, fs) - a));
     }
     return worst;
 }
@@ -88,6 +88,12 @@ TEST(SvfCoefficients, IdentityPassesEverything) {
     const SvfCoefficients c = SvfCoefficients::identity();
     EXPECT_TRUE(c.is_identity());
     EXPECT_EQ(c.magnitude_db(1234.0, k_fs), 0.0);
+    EXPECT_EQ(c.response(1234.0, k_fs), std::complex<double>(1.0));
+    const BiquadCoefficients b = c.to_biquad();
+    EXPECT_TRUE(b.is_stable());
+    EXPECT_EQ(b.m_b0, 1.0);
+    EXPECT_EQ(b.m_b1, 0.0);
+    EXPECT_EQ(b.m_a1, 0.0);
 }
 
 // --- the prototypes and the bilinear designs --------------------------------------------------
@@ -183,21 +189,58 @@ TEST(EqDesign, MatchedCutsAreExactAtTheirFrequency) {
     }
 }
 
-TEST(EqDesign, ResonantShelvesHandOverToBilinear) {
-    const EqBand gentle = band_of(EqBandType::HighShelf, 9000.0f, 12.0f, 1.0f);
-    const EqBand resonant = band_of(EqBandType::HighShelf, 9000.0f, 12.0f, 3.0f);
-    EXPECT_LT(max_error_db(gentle, EqDesign::Matched),
-              0.5 * max_error_db(gentle, EqDesign::Bilinear));
-    const SvfCoefficients m = design_band(resonant, EqDesign::Matched, k_fs);
-    const SvfCoefficients b = design_band(resonant, EqDesign::Bilinear, k_fs);
-    EXPECT_FLOAT_EQ(m.m_g, b.m_g);
-    EXPECT_FLOAT_EQ(m.m_m1, b.m_m1);
-    // In between, never worse than the bilinear shelf.
-    for (const float q : {1.5f, 2.0f, 2.5f, 3.0f}) {
-        const EqBand band = band_of(EqBandType::LowShelf, 7000.0f, 12.0f, q);
-        EXPECT_LE(max_error_db(band, EqDesign::Matched),
-                  max_error_db(band, EqDesign::Bilinear) + 1e-3)
-            << q;
+TEST(EqDesign, MatchedShelvesAreNoWorseThanBilinearUpToQ2) {
+    // Checked against an independent Python reference (RBJ cookbook, scipy) on a wider grid.
+    for (const double fs : {44100.0, 48000.0, 96000.0}) {
+        for (const auto type : {EqBandType::LowShelf, EqBandType::HighShelf}) {
+            for (float f = 100.0f; f < 0.46f * static_cast<float>(fs); f *= 1.6f) {
+                for (const float gain : {-48.0f, -24.0f, -6.0f, -1.0f, 1.0f, 6.0f, 24.0f, 48.0f}) {
+                    for (const float q : {0.3f, 0.70710678f, 1.2f, 2.0f}) {
+                        const EqBand band = band_of(type, f, gain, q);
+                        EXPECT_LE(max_error_db(band, EqDesign::Matched, fs),
+                                  max_error_db(band, EqDesign::Bilinear, fs) + 0.2)
+                            << fs << " " << static_cast<int>(type) << " " << f << " " << gain << " "
+                            << q;
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(EqDesign, ResonantShelvesAreBilinear) {
+    for (const auto type : {EqBandType::LowShelf, EqBandType::HighShelf}) {
+        for (const float q : {2.01f, 3.0f, 12.0f, 40.0f}) {
+            const EqBand band = band_of(type, 5000.0f, 12.0f, q);
+            const SvfCoefficients m = design_band(band, EqDesign::Matched, k_fs);
+            const SvfCoefficients b = design_band(band, EqDesign::Bilinear, k_fs);
+            EXPECT_EQ(m.m_g, b.m_g) << q;
+            EXPECT_EQ(m.m_k, b.m_k) << q;
+            EXPECT_EQ(m.m_m1, b.m_m1) << q;
+        }
+    }
+}
+
+TEST(EqDesign, MatchedHoldsAtExtremeLowQ) {
+    // Real poles with q w beyond 700: exp(-q w) and cosh(r w) alone would underflow and overflow.
+    for (const float f : {17000.0f, 18000.0f, 20000.0f}) {
+        const EqBand band = band_of(EqBandType::Peak, f, -48.0f, 0.025f);
+        EXPECT_LT(max_error_db(band, EqDesign::Matched), max_error_db(band, EqDesign::Bilinear))
+            << f;
+        EXPECT_NE(design_band(band, EqDesign::Matched, k_fs).m_g,
+                  design_band(band, EqDesign::Bilinear, k_fs).m_g)
+            << f;  // the matched design, not the fallback
+    }
+}
+
+TEST(EqDesign, MatchedFollowsThePrototypeAtOtherSampleRates) {
+    for (const double fs : {44100.0, 96000.0, 192000.0}) {
+        for (const auto type : {EqBandType::Peak, EqBandType::LowCut, EqBandType::HighCut}) {
+            const EqBand band = band_of(type, static_cast<float>(0.35 * fs), 9.0f, 1.0f);
+            EXPECT_LT(max_error_db(band, EqDesign::Matched, fs),
+                      0.5 * max_error_db(band, EqDesign::Bilinear, fs))
+                << fs << " " << static_cast<int>(type);
+        }
     }
 }
 

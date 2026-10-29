@@ -8,6 +8,7 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -40,11 +41,15 @@ public:
     /// settings (all off at first), redesigned for @p sample_rate without a ramp.
     void prepare(double sample_rate, size_t num_channels);
 
-    /// Set band @p index (< k_max_bands; others are ignored). A change ramps; an unchanged band
+    /// Set band @p index (< k_max_bands; others are ignored). A change ramps; an unchanged band,
+    /// or a change of a field its type does not use (a cut's gain, anything of a disabled band),
     /// costs a comparison, so a caller may set every band every block.
     void set_band(size_t index, const EqBand& band) TANH_NONBLOCKING_FUNCTION;
-    /// The settings of band @p index, as set (audio thread).
-    [[nodiscard]] const EqBand& band(size_t index) const { return m_bands[index].m_settings; }
+    /// The settings of band @p index (< k_max_bands), as set (audio thread).
+    [[nodiscard]] const EqBand& band(size_t index) const {
+        assert(index < k_max_bands && "ParametricEq::band(): index out of range");
+        return m_bands[index].m_settings;
+    }
 
     /// How every band is designed; a change ramps.
     void set_design(EqDesign design) TANH_NONBLOCKING_FUNCTION;
@@ -105,7 +110,8 @@ private:
  * A derived class gives every band's type (an EqBandType as a float, rounded), frequency (Hz),
  * gain (dB), Q and enabled (> 0.5), and the design (an EqDesign as a float, rounded). They are
  * read at the start of every process() call, at @p modulation_offset, so process_modulated()
- * applies them at its change points; every change ramps (ParametricEq).
+ * applies them at its change points; every change ramps (ParametricEq). Up to 16 channels are
+ * filtered (as LimiterImpl); further channels pass unchanged.
  */
 class TANH_API ParametricEqImpl : public BaseProcessor {
 public:

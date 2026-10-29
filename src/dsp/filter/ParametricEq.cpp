@@ -13,6 +13,22 @@
 
 namespace thl::dsp::filter {
 
+namespace {
+
+// What the filter is made of: the band in range, and the fields its type does not use (the gain
+// of a cut, everything of a disabled band) at their defaults, so changing them is no change.
+EqBand used_settings(const EqBand& band, double sample_rate) TANH_NONBLOCKING_FUNCTION {
+    EqBand b = sanitised(band, sample_rate);
+    if (!b.m_enabled) { return EqBand{.m_enabled = false}; }
+    if (b.m_type != EqBandType::Peak && b.m_type != EqBandType::LowShelf &&
+        b.m_type != EqBandType::HighShelf) {
+        b.m_gain_db = 0.0f;
+    }
+    return b;
+}
+
+}  // namespace
+
 void ParametricEq::prepare(double sample_rate, size_t num_channels) {
     m_sample_rate = sample_rate > 0.0 ? sample_rate : 48000.0;
     m_num_channels = num_channels;
@@ -35,8 +51,8 @@ void ParametricEq::retarget(Band& band, bool ramp) TANH_NONBLOCKING_FUNCTION {
         target.m_g = current.m_g;
         target.m_k = current.m_k;
     }
-    if (!ramp) {
-        band.m_ramp.set_current(target);
+    if (!ramp || (band.m_flat && current.is_identity() && !band.m_ramp.ramping())) {
+        band.m_ramp.set_current(target);  // a flat band that stays flat: nothing to ramp
         return;
     }
     if (current.is_identity() && !band.m_flat) {
@@ -52,8 +68,10 @@ void ParametricEq::retarget(Band& band, bool ramp) TANH_NONBLOCKING_FUNCTION {
 void ParametricEq::set_band(size_t index, const EqBand& band) TANH_NONBLOCKING_FUNCTION {
     if (index >= k_max_bands) { return; }
     Band& b = m_bands[index];
-    // Compared as used, so a setting that is out of range (or NaN) the same way twice is no change.
-    const bool same = sanitised(b.m_settings, m_sample_rate) == sanitised(band, m_sample_rate);
+    // Compared as used: a setting out of range (or NaN) the same way twice, or a field the band
+    // does not use, is no change.
+    const bool same =
+        used_settings(b.m_settings, m_sample_rate) == used_settings(band, m_sample_rate);
     b.m_settings = band;
     if (!same) { retarget(b, true); }
 }
@@ -177,13 +195,13 @@ void ParametricEqImpl::prepare(const double& sample_rate,
 }
 
 void ParametricEqImpl::read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
-    const auto index = [](float value, int last) {
+    const auto index = [](float value, int last) TANH_NONBLOCKING_FUNCTION {
         return std::isfinite(value) ? std::clamp(static_cast<int>(std::lround(value)), 0, last) : 0;
     };
     m_eq.set_design(static_cast<EqDesign>(index(get_parameter_float(Design, modulation_offset),
                                                 static_cast<int>(EqDesign::Matched))));
     for (size_t b = 0; b < m_num_bands; ++b) {
-        const auto read = [&](BandParameter p) {
+        const auto read = [&](BandParameter p) TANH_NONBLOCKING_FUNCTION {
             return get_band_parameter_float(p, b, modulation_offset);
         };
         m_eq.set_band(b,

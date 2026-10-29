@@ -35,19 +35,21 @@ enum class EqDesign : uint8_t {
     /// the band's frequency; peaks and shelves narrow (cramp) towards Nyquist.
     Bilinear,
     /// Magnitude matched to the analogue prototype up to Nyquist: poles by impulse invariance,
-    /// zeros fitted to the prototype's magnitude (Vicanek 2016 for the cuts and the peak; the
-    /// shelves fitted at DC, the band's frequency and Nyquist, which misses a resonant shelf's
-    /// bump, so from Q 1.5 to 3 a shelf hands over to Bilinear continuously). The notch stays
-    /// bilinear, which keeps its zero exactly at its frequency. Falls back to Bilinear where a
-    /// fit does not exist.
+    /// zeros fitted to the prototype's magnitude: Vicanek 2016 for the peak and the cuts; the
+    /// shelves fitted at DC, the band's frequency and Nyquist, with the poles of the shelf whose
+    /// poles are the lower pair, up to Q 2 (within 0.2 dB of the bilinear shelf's error there,
+    /// mostly far better; above Q 2 the fit misses a resonant shelf's bump, so those shelves are
+    /// bilinear). The notch stays bilinear, which keeps its zero exactly at its frequency. Falls
+    /// back to Bilinear where a fit does not exist.
     Matched,
 };
 
 /// @p band with its values in range: non-finite values become the defaults, the rest clamped.
-[[nodiscard]] TANH_API EqBand sanitised(const EqBand& band, double sample_rate);
+[[nodiscard]] TANH_API EqBand sanitised(const EqBand& band,
+                                        double sample_rate) TANH_NONBLOCKING_FUNCTION;
 
 /// True when @p band passes its input unchanged (disabled, or a peak or shelf at 0 dB).
-[[nodiscard]] TANH_API bool is_flat(const EqBand& band);
+[[nodiscard]] TANH_API bool is_flat(const EqBand& band) TANH_NONBLOCKING_FUNCTION;
 
 /// The digital filter of @p band at @p sample_rate. Real-time safe (no allocation).
 [[nodiscard]] TANH_API SvfCoefficients design_band(const EqBand& band,

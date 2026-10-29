@@ -9,6 +9,7 @@
 #include <limits>
 #include <numbers>
 #include <random>
+#include <utility>
 #include <vector>
 
 using thl::dsp::filter::EqBand;
@@ -360,21 +361,132 @@ TEST(ParametricEq, ResponseCurveIsTheResponseAtEachFrequency) {
     }
 }
 
-TEST(ParametricEq, ChangingTheDesignRampsWithoutClicks) {
+namespace {
+
+// Two equal equalisers on a 15 kHz sine (where the designs differ most); @p change applied to
+// one of them. Returns the largest difference of their outputs in the first samples after the
+// change and once the ramp is over: a ramped change starts gently, an unramped one at once.
+template <typename Change>
+std::pair<float, float> change_onset(const EqBand& band, Change change) {
+    ParametricEq a = make_eq(band);
+    ParametricEq b = make_eq(band);
+    SineGen gen(15000.0, k_sample_rate);
+    std::vector<float> x(4800);
+    for (auto& v : x) { v = 0.5f * gen.next(); }
+    auto y = x;
+    float* ca[] = {x.data()};
+    float* cb[] = {y.data()};
+    a.process(ca, 1, 2400);
+    b.process(cb, 1, 2400);
+    change(b);
+    ca[0] = x.data() + 2400;
+    cb[0] = y.data() + 2400;
+    a.process(ca, 1, 2400);
+    b.process(cb, 1, 2400);
+    float onset = 0.0f;
+    float settled = 0.0f;
+    for (size_t n = 2400; n < 2408; ++n) { onset = std::max(onset, std::abs(x[n] - y[n])); }
+    for (size_t n = 3600; n < 4800; ++n) { settled = std::max(settled, std::abs(x[n] - y[n])); }
+    return {onset, settled};
+}
+
+}  // namespace
+
+TEST(ParametricEq, EveryChangeStartsGently) {
     const EqBand band{.m_type = EqBandType::Peak,
-                      .m_frequency = 220.0f,
+                      .m_frequency = 15000.0f,
                       .m_gain_db = 12.0f,
-                      .m_q = 0.7f};
-    ParametricEq reference = make_eq(band);
-    const float slew = max_step(run_sine(reference, 200, [](size_t) {}));
-    ParametricEq eq = make_eq(band);
-    const auto out = run_sine(eq, 400, [&](size_t b) {
-        if (b % 100 == 50) {
-            eq.set_design(eq.design() == EqDesign::Matched ? EqDesign::Bilinear
-                                                           : EqDesign::Matched);
+                      .m_q = 1.0f};
+    std::vector<std::pair<const char*, std::pair<float, float>>> runs;
+    runs.emplace_back("design", change_onset(band, [](ParametricEq& eq) {
+                          eq.set_design(EqDesign::Bilinear);
+                      }));
+    runs.emplace_back("gain", change_onset(band, [&](ParametricEq& eq) {
+                          EqBand b = band;
+                          b.m_gain_db = -12.0f;
+                          eq.set_band(0, b);
+                      }));
+    runs.emplace_back("type", change_onset(band, [&](ParametricEq& eq) {
+                          EqBand b = band;
+                          b.m_type = EqBandType::HighCut;
+                          eq.set_band(0, b);
+                      }));
+    runs.emplace_back("off", change_onset(band, [&](ParametricEq& eq) {
+                          EqBand b = band;
+                          b.m_enabled = false;
+                          eq.set_band(0, b);
+                      }));
+    for (const auto& [name, r] : runs) {
+        EXPECT_GT(r.second, 0.01f) << name;            // the change is audible once settled
+        EXPECT_LT(r.first, 0.05f * r.second) << name;  // and starts gently
+    }
+}
+
+TEST(ParametricEq, ABandBackFromFlatStartsLikeANewOne) {
+    // Off, ringing out, back on: no state left from before, and tuned at once.
+    const EqBand band{.m_type = EqBandType::Peak,
+                      .m_frequency = 300.0f,
+                      .m_gain_db = 12.0f,
+                      .m_q = 4.0f};
+    ParametricEq used;
+    used.prepare(k_sample_rate, 1);
+    used.set_band(0, band);
+    std::vector<float> noise(4800);
+    std::mt19937 rng(3);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (auto& v : noise) { v = dist(rng); }
+    float* c[] = {noise.data()};
+    used.process(c, 1, noise.size());
+    EqBand off = band;
+    off.m_enabled = false;
+    used.set_band(0, off);
+    used.process(c, 1, noise.size());  // the ramp to flat ends inside this block
+
+    ParametricEq fresh;
+    fresh.prepare(k_sample_rate, 1);
+    used.set_band(0, band);
+    fresh.set_band(0, band);
+    std::vector<float> a(2048);
+    SineGen gen(440.0, k_sample_rate);
+    for (auto& v : a) { v = gen.next(); }
+    auto b = a;
+    float* ca[] = {a.data()};
+    float* cb[] = {b.data()};
+    used.process(ca, 1, a.size());
+    fresh.process(cb, 1, b.size());
+    EXPECT_EQ(a, b);
+}
+
+TEST(ParametricEq, LowBandsAtHighRatesStayClean) {
+    // Bands at 10 Hz and 192 kHz (g ~ 1.6e-4) on low tones: what remains besides the steady-state
+    // response is the float output's own rounding (about -150 dB). With float states and gains it
+    // would be -70 to -100 dB.
+    constexpr double fs = 192000.0;
+    for (const auto type : {EqBandType::Peak, EqBandType::LowCut, EqBandType::HighCut}) {
+        for (const double tone : {10.0, 30.0}) {
+            const EqBand band{.m_type = type, .m_frequency = 10.0f, .m_gain_db = -24.0f};
+            ParametricEq eq = make_eq(band, EqDesign::Matched, fs);
+            const auto h =
+                thl::dsp::filter::design_band(band, EqDesign::Matched, fs).response(tone, fs);
+            const size_t n = static_cast<size_t>(fs) * 4;
+            std::vector<float> x(n);
+            const double w = 2.0 * std::numbers::pi * tone / fs;
+            for (size_t i = 0; i < n; ++i) {
+                x[i] = static_cast<float>(0.5 * std::sin(w * static_cast<double>(i)));
+            }
+            float* c[] = {x.data()};
+            eq.process(c, 1, n);
+            double residual = 0.0;
+            for (size_t i = n / 2; i < n; ++i) {
+                const double expected =
+                    0.5 * std::abs(h) * std::sin((w * static_cast<double>(i)) + std::arg(h));
+                residual += (x[i] - expected) * (x[i] - expected);
+            }
+            const double input_power = 0.125 * static_cast<double>(n - (n / 2));
+            EXPECT_LT(10.0 * std::log10(residual / input_power), -130.0)
+                << static_cast<int>(type) << " at " << tone << " Hz";
         }
-    });
-    EXPECT_LT(max_step(out), 1.5f * slew);
+    }
 }
 
 TEST(ParametricEq, PrepareKeepsTheBands) {

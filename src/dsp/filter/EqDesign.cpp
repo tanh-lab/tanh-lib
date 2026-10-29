@@ -19,8 +19,9 @@ constexpr double k_min_q = 0.025;
 constexpr double k_max_q = 40.0;
 constexpr double k_max_gain_db = 48.0;
 constexpr EqBand k_defaults{};
-constexpr double k_shelf_matched_q = 1.5;
-constexpr double k_shelf_bilinear_q = 3.0;
+// Above this Q the shelf fit misses a resonant shelf's bump by more than the bilinear shelf
+// cramps (measured against the prototype, 44.1 to 96 kHz, up to +-48 dB): bilinear from here.
+constexpr double k_matched_shelf_max_q = 2.0;
 
 bool has_gain(EqBandType type) {
     return type == EqBandType::Peak || type == EqBandType::LowShelf ||
@@ -70,11 +71,7 @@ SvfCoefficients design_bilinear(const EqBand& band, double sample_rate) TANH_NON
             m2 = 1.0;
             break;
     }
-    return {.m_g = static_cast<float>(cg),
-            .m_k = static_cast<float>(ck),
-            .m_m0 = static_cast<float>(m0),
-            .m_m1 = static_cast<float>(m1),
-            .m_m2 = static_cast<float>(m2)};
+    return {.m_g = cg, .m_k = ck, .m_m0 = m0, .m_m1 = m1, .m_m2 = m2};
 }
 
 // --- Matched: Vicanek, "Matched Second Order Digital Filters" (2016) ----------------------------
@@ -87,10 +84,15 @@ struct Poles {
 
 Poles impulse_invariant(double w, double pole_q) {
     const double q = 0.5 / pole_q;
-    const double e = std::exp(-q * w);
-    const double a1 = q <= 1.0 ? -2.0 * e * std::cos(std::sqrt(1.0 - (q * q)) * w)
-                               : -2.0 * e * std::cosh(std::sqrt((q * q) - 1.0) * w);
-    return {.m_a1 = a1, .m_a2 = e * e};
+    if (q <= 1.0) {
+        const double e = std::exp(-q * w);
+        return {.m_a1 = -2.0 * e * std::cos(std::sqrt(1.0 - (q * q)) * w), .m_a2 = e * e};
+    }
+    // Real poles: -2 e^(-q w) cosh(r w) as the sum of the two poles, so a large q w neither
+    // underflows the exponential nor overflows the cosh (q - r = 1 / (q + r), no cancellation).
+    const double r = std::sqrt((q * q) - 1.0);
+    return {.m_a1 = -(std::exp(-w / (q + r)) + std::exp(-w * (q + r))),
+            .m_a2 = std::exp(-2.0 * q * w)};
 }
 
 // |H(e^jw)|^2 = (B0 phi0 + B1 phi1 + B2 phi2) / (A0 phi0 + A1 phi1 + A2 phi2) (eq. 25 to 27).
@@ -216,6 +218,7 @@ std::optional<BiquadCoefficients> design_matched(const EqBand& band, double samp
         }
         case EqBandType::LowShelf:
         case EqBandType::HighShelf: {
+            if (q > k_matched_shelf_max_q) { return std::nullopt; }
             // A shelf's poles sit at w0 / sqrt(A) (low) or w0 * sqrt(A) (high), its zeros at the
             // other: fit the shelf whose poles are the lower pair, so they stay below Nyquist, and
             // invert it when that is the opposite gain (a shelf at -G is 1 / the shelf at +G).
@@ -234,15 +237,6 @@ std::optional<BiquadCoefficients> design_matched(const EqBand& band, double samp
     return std::nullopt;
 }
 
-SvfCoefficients lerp(const SvfCoefficients& a, const SvfCoefficients& b, float t) {
-    const auto mix = [t](float x, float y) { return x + (t * (y - x)); };
-    return {.m_g = mix(a.m_g, b.m_g),
-            .m_k = mix(a.m_k, b.m_k),
-            .m_m0 = mix(a.m_m0, b.m_m0),
-            .m_m1 = mix(a.m_m1, b.m_m1),
-            .m_m2 = mix(a.m_m2, b.m_m2)};
-}
-
 bool finite(const BiquadCoefficients& c) {
     return std::isfinite(c.m_b0) && std::isfinite(c.m_b1) && std::isfinite(c.m_b2) &&
            std::isfinite(c.m_a1) && std::isfinite(c.m_a2);
@@ -250,7 +244,7 @@ bool finite(const BiquadCoefficients& c) {
 
 }  // namespace
 
-EqBand sanitised(const EqBand& band, double sample_rate) {
+EqBand sanitised(const EqBand& band, double sample_rate) TANH_NONBLOCKING_FUNCTION {
     EqBand b = band;
     if (static_cast<uint8_t>(b.m_type) > static_cast<uint8_t>(EqBandType::HighCut)) {
         b.m_type = k_defaults.m_type;
@@ -268,7 +262,7 @@ EqBand sanitised(const EqBand& band, double sample_rate) {
     return b;
 }
 
-bool is_flat(const EqBand& band) {
+bool is_flat(const EqBand& band) TANH_NONBLOCKING_FUNCTION {
     return !band.m_enabled || (has_gain(band.m_type) && band.m_gain_db == 0.0f);
 }
 
@@ -277,19 +271,11 @@ SvfCoefficients design_band(const EqBand& band,
                             double sample_rate) TANH_NONBLOCKING_FUNCTION {
     const EqBand b = sanitised(band, sample_rate);
     if (is_flat(b)) { return SvfCoefficients::identity(); }
-    const SvfCoefficients bilinear = design_bilinear(b, sample_rate);
-    if (design != EqDesign::Matched) { return bilinear; }
-    const auto c = design_matched(b, sample_rate);
-    if (!c || !finite(*c) || !c->is_stable()) { return bilinear; }
-    const SvfCoefficients matched = SvfCoefficients::from_biquad(*c);
-    if (b.m_type != EqBandType::LowShelf && b.m_type != EqBandType::HighShelf) { return matched; }
-    // The shelf fit pins DC, the frequency and Nyquist, not a resonant shelf's bump: from Q 1.5
-    // to 3 it hands over to the bilinear shelf, continuously (both are stable SVFs).
-    const auto w = static_cast<float>(
-        std::clamp((b.m_q - k_shelf_matched_q) / (k_shelf_bilinear_q - k_shelf_matched_q),
-                   0.0,
-                   1.0));
-    return lerp(matched, bilinear, w);
+    if (design == EqDesign::Matched) {
+        const auto c = design_matched(b, sample_rate);
+        if (c && finite(*c) && c->is_stable()) { return SvfCoefficients::from_biquad(*c); }
+    }
+    return design_bilinear(b, sample_rate);
 }
 
 std::complex<double> analog_response(const EqBand& band, double frequency) {
