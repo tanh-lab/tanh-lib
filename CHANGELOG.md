@@ -17,7 +17,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   silence after a commit until every delay is ready. It never pads: its output has the least
   latency its nodes allow (`max_latency_samples()` only sizes the delays), and
   `committed_latency_samples()` gives the latency the committed version will have, for the
-  host right after `commit()`. A node whose latency rises above the maximum it had at the last commit (or a
+  host right after `commit()` (a node whose maximum changed since the last commit counts at it
+  until it runs). A node whose latency rises above the maximum it had at the last commit (or a
   nested graph that committed on its own) is compensated at that maximum until the graph
   containing it commits. A bypassed node coming back is `reset()`. Merges sum their sources by
   default (`InputMix::Sum`, or `Average`). Per node, `set_mix_law()` chooses how the wet mix

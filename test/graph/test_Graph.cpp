@@ -1930,3 +1930,36 @@ TEST(Graph, MixLawRejectsEndpointsAndUnknownNodes) {
     EXPECT_FALSE(graph.set_mix_law(NodeId{999}, Graph::MixLaw::Parallel));
     EXPECT_FALSE(graph.mix_law(graph.graph_output()).has_value());
 }
+
+TEST(Graph, ANodeWhoseMaximumChangedCountsAtItUntilItRuns) {
+    // A node wrapping something that already knows its new latency (e.g. a graph of its own that
+    // just committed), while its own latency_samples() still tells the old one until it runs.
+    class Wrapper final : public BaseProcessor {
+    public:
+        void prepare(const double&, const size_t&, const size_t&) override {}
+        void process(BufferView, uint32_t) TANH_NONBLOCKING_FUNCTION override {
+            set_latency_samples(m_inner);
+        }
+        void announce(uint32_t inner) {  // control thread: the new maximum, not yet the latency
+            m_inner = inner;
+            set_max_latency_samples(inner);
+        }
+
+    private:
+        uint32_t m_inner = 0;
+    };
+
+    Graph graph;
+    const auto wrapper = graph.add_node<Wrapper>();
+    ASSERT_TRUE(wrapper);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *wrapper));
+    ASSERT_TRUE(graph.connect(*wrapper, graph.graph_output()));
+    prepare(graph);
+    EXPECT_EQ(graph.committed_latency_samples(), 0u);
+
+    static_cast<Wrapper*>(graph.node(*wrapper))->announce(24);
+    ASSERT_TRUE(graph.commit());
+    EXPECT_EQ(graph.committed_latency_samples(), 24u);  // known before the audio thread runs it
+    (void)process_blocks(graph, 0.0f, k_fade_blocks + 2);
+    EXPECT_EQ(graph.latency_samples(), 24u);
+}

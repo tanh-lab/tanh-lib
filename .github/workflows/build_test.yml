@@ -24,7 +24,7 @@ concurrency:
 jobs:
   build_test:
     name: build_test
-    uses: tanh-lab/ci-actions/.github/workflows/build-test.yml@v0.3.12
+    uses: tanh-lab/ci-actions/.github/workflows/build-test.yml@v0.3.16
     with:
       tier: ${{ inputs.tier || '' }}
 
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # git-version.cmake reads the nearest tag
-      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.12
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.16
       - name: build and test
         shell: bash
         run: |
