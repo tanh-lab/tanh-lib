@@ -421,13 +421,21 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
 
         const uint32_t max = node.m_processor ? node.m_processor->max_latency_samples() : 0;
         // What the node will have when this version runs: a nested graph the version it just
-        // committed (it commits first), any other node its current latency.
+        // committed (it commits first); a node whose maximum changed since the last commit its
+        // maximum, since its current latency may still be that of what it ran before (e.g. it
+        // wraps a graph of its own) until it runs again; any other node its current latency.
         uint32_t expected = 0;
         if (node.m_processor) {
             const auto* nested = dynamic_cast<const Graph*>(node.m_processor.get());
-            expected = std::min(nested != nullptr ? nested->committed_latency_samples()
-                                                  : node.m_processor->latency_samples(),
-                                max);
+            const bool max_changed =
+                node.m_dry_delay && node.m_dry_delay->max_delay_samples() != max;
+            if (nested != nullptr) {
+                expected = std::min(nested->committed_latency_samples(), max);
+            } else if (max_changed) {
+                expected = max;
+            } else {
+                expected = std::min(node.m_processor->latency_samples(), max);
+            }
         }
         const auto index = static_cast<BufferIndex>(compiled->m_buffers.size());
         compiled->m_buffers.emplace_back(m_num_channels, m_max_block_size);
