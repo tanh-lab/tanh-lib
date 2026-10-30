@@ -14,8 +14,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   control thread take effect at `commit()`, handed to the audio thread with a fade; nested
   graphs, per-node input mix and wet mix, `collect_garbage()`. Latency compensation: the
   faster inputs of every merge and a node's dry/bypass path are delayed, the graph holds
-  silence after a commit until every delay is ready, and reports the latency of the version it
-  committed last. A node whose latency rises above the maximum it had at the last commit (or a
+  silence after a commit until every delay is ready. It never pads: its output has the least
+  latency its nodes allow (`max_latency_samples()` only sizes the delays), and
+  `committed_latency_samples()` gives the latency the committed version will have, for the
+  host right after `commit()`. A node whose latency rises above the maximum it had at the last commit (or a
   nested graph that committed on its own) is compensated at that maximum until the graph
   containing it commits. A bypassed node coming back is `reset()`. Tests: `test_graph`
   (including edits and commits against a running audio thread), `benchmark_graph`.

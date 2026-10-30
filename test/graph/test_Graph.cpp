@@ -1771,3 +1771,26 @@ TEST(Graph, EditsAndCommitsWhileTheAudioThreadRuns) {
     EXPECT_TRUE(finite.load());
     EXPECT_LE(graph.latency_samples(), graph.max_latency_samples());
 }
+
+TEST(Graph, ReportsAndHasTheLeastLatencyItsNodesAllowNotTheirMaximum) {
+    Graph graph;
+    const auto latent = graph.add_node<LatencyProcessor>(10, 100);  // e.g. lookahead 10, at most
+                                                                    // 100
+    ASSERT_TRUE(latent);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
+    ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    prepare(graph);
+    EXPECT_EQ(graph.committed_latency_samples(), 10u);  // what the host is told
+    EXPECT_EQ(graph.max_latency_samples(), 100u);       // only what the delays hold
+    expect_impulse_response(graph, 10);                 // no padding to the maximum
+    EXPECT_EQ(graph.latency_samples(), 10u);
+
+    // Within its maximum the node changes without a commit; the graph follows at the next block.
+    static_cast<LatencyProcessor*>(graph.node(*latent))->set_latency(50);
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+    (void)process_blocks(graph, 0.0f, 1);
+    EXPECT_EQ(graph.latency_samples(), 50u);
+    (void)process_blocks(graph, 0.0f, 4);
+    expect_impulse_response(graph, 50);
+}

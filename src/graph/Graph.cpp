@@ -60,9 +60,10 @@ struct Graph::CompiledGraph {
     uint64_t m_generation = 0;
     std::vector<ProcessingStep> m_steps;  // in processing order
     std::vector<thl::core::Buffer<float>> m_buffers;
-    std::vector<uint32_t> m_path_latencies;     // per buffer, set by apply_latencies()
-    uint32_t m_max_latency = 0;                 // of the output
-    thl::core::Buffer<float> m_dry;             // scratch for steps that blend dry and processed
+    std::vector<uint32_t> m_path_latencies;  // per buffer, set by apply_latencies()
+    uint32_t m_max_latency = 0;              // of the output
+    uint32_t m_expected_latency = 0;  // of the output, with the nodes' latencies when compiled
+    thl::core::Buffer<float> m_dry;   // scratch for steps that blend dry and processed
     std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
     std::vector<Source> m_output_sources;
     Node* m_output_node = nullptr;
@@ -335,15 +336,19 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
     // `order` has every node after its sources, so a source's buffer always
     // exists by the time a node looks it up.
     std::map<NodeId, BufferIndex> buffer_of;
-    std::vector<uint32_t> max_path_latencies;  // per buffer
+    std::vector<uint32_t> max_path_latencies;       // per buffer
+    std::vector<uint32_t> expected_path_latencies;  // per buffer, with the current latencies
     for (const NodeId id : *order) {
         Node& node = *m_nodes.at(id);
         std::vector<Source> sources;
         uint32_t max_path_latency = 0;
+        uint32_t expected_path_latency = 0;
         for (const NodeId source : sources_of(id)) {
             const BufferIndex buffer = buffer_of.at(source);
             sources.push_back({.m_buffer = buffer});
             max_path_latency = std::max(max_path_latency, max_path_latencies[buffer]);
+            expected_path_latency =
+                std::max(expected_path_latency, expected_path_latencies[buffer]);
         }
         prepare_delays(sources, max_path_latencies);
 
@@ -351,13 +356,24 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
             compiled->m_output_sources = std::move(sources);
             compiled->m_output_node = &node;
             compiled->m_max_latency = max_path_latency;
+            compiled->m_expected_latency = expected_path_latency;
             continue;
         }
 
         const uint32_t max = node.m_processor ? node.m_processor->max_latency_samples() : 0;
+        // What the node will have when this version runs: a nested graph the version it just
+        // committed (it commits first), any other node its current latency.
+        uint32_t expected = 0;
+        if (node.m_processor) {
+            const auto* nested = dynamic_cast<const Graph*>(node.m_processor.get());
+            expected = std::min(nested != nullptr ? nested->committed_latency_samples()
+                                                  : node.m_processor->latency_samples(),
+                                max);
+        }
         const auto index = static_cast<BufferIndex>(compiled->m_buffers.size());
         compiled->m_buffers.emplace_back(m_num_channels, m_max_block_size);
         max_path_latencies.push_back(max_path_latency + max);
+        expected_path_latencies.push_back(expected_path_latency + expected);
         buffer_of.emplace(id, index);
 
         if (id == k_input_id) {
@@ -431,7 +447,7 @@ bool Graph::rebuild() {
     if (compiled->m_max_latency > max_latency_samples()) {
         set_max_latency_samples(compiled->m_max_latency);
     }
-    m_committed_latency = compiled->m_max_latency;
+    m_committed_latency = compiled->m_expected_latency;
     publish(std::move(compiled));
     m_dirty = false;
     return true;
