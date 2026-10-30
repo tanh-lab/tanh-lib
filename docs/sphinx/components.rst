@@ -23,6 +23,7 @@ in namespace ``thl``.
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
        link       [label="tanh::Link\nLinkSession (Ableton Link)", style="rounded,dashed"];
+       graph_node [label="tanh::Graph\nprocessor graph,\nlatency compensation"];
 
        parameters -> core;
        state -> parameters;
@@ -31,6 +32,8 @@ in namespace ``thl``.
        net -> core;
        modulation -> parameters;
        modulation -> state [style=dashed, label="optional", fontsize=9];
+       graph_node -> core;
+       graph_node -> dsp;
        modulation -> dsp;
        link -> dsp;
    }
@@ -137,6 +140,18 @@ Windows, LinkKit on iOS. The audio side,
 the session through the ``LinkBackend`` seam, so it is testable without the
 SDK. Off by default (``TANH_BUILD_LINK``) because Link brings its own licence
 terms (GPLv2+ or proprietary). See :doc:`transport`. Depends on DSP.
+
+Graph
+-----
+
+``tanh::Graph`` (``include/tanh/graph/``) runs ``BaseProcessor`` nodes as one
+processor: :cpp:class:`thl::graph::Graph` is edited on the control thread and
+handed to the audio thread at ``commit()`` with a short fade, nests, mixes each
+node's sources and blends its wet signal, and compensates latency: the faster
+inputs of every node and a node's dry path are delayed to match each node's
+``latency_samples()``, and the graph reports its own. A bypassed node coming
+back is ``reset()``. Off by default (``TANH_BUILD_GRAPH``). Depends on Core and
+DSP.
 
 Platforms
 ---------

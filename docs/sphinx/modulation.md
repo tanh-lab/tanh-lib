@@ -69,6 +69,9 @@ For the tap example on voice 0 in a 512-sample block with events
 - downstream `CombineMode::Replace` on `play` fires `note_on` at sample 0
   and `note_off` at sample 341 — the transient tap is audible
 
+How these offsets become `process()` calls, together with an LFO's, is the
+interactive figure in {doc}`change_points`.
+
 ## What this does and doesn't claim
 
 - **Transition ordering is preserved per stream.** Rising and falling

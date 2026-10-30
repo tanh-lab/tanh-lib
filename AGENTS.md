@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Git Commits
 
@@ -51,6 +51,7 @@ Library targets with inter-component dependencies:
 - **tanh_audio_io** (`src/audio-io/`, `include/tanh/audio-io/`) — Cross-platform audio device I/O over miniaudio. Platform-specific code for iOS (.mm) and Android. Depends on core.
 - **tanh_net** (`src/net/`, `include/tanh/net/`) — HTTPS asset delivery over the platform HTTP stack. Off by default (`TANH_BUILD_NET`). Depends on core.
 - **tanh_link** (`src/link/`, `include/tanh/link/`) — `LinkSession` over the Ableton Link C++ SDK (desktop) or LinkKit (iOS), with Link Audio. Off by default (`TANH_BUILD_LINK`, licence). Depends on dsp.
+- **tanh_graph** (`src/graph/`, `include/tanh/graph/`) — `Graph`: `BaseProcessor` nodes run as one processor, edited on the control thread and handed over at `commit()`; latency compensation from each node's `latency_samples()`; a bypassed node coming back is `reset()`. Off by default (`TANH_BUILD_GRAPH`). Depends on core, dsp.
 
 Private headers live next to their sources in `src/<component>/`. `include/tanh/<component>/detail/` holds only what public headers need (types of by-value members); it is not API.
 

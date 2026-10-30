@@ -56,11 +56,13 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_BUILD_AUDIO_IO` | ON | Build the AudioIO component |
 | `TANH_BUILD_NET` | OFF | Build the Net component (links a platform HTTP stack) |
 | `TANH_BUILD_LINK` | OFF | Build the Link component (Ableton Link: C++ SDK on macOS/Linux/Windows, LinkKit on iOS (CMake 3.28+); other platforms are a configure error; GPLv2+/proprietary licence) |
+| `TANH_BUILD_GRAPH` | OFF | Build the Graph component (needs DSP) |
 | `TANH_WITH_TESTS` | ON | Build test targets |
 | `TANH_WITH_EXAMPLES` | ON | Build the example projects (iOS audio-io app) |
 | `TANH_WITH_DOCS` | OFF | Add the `sphinx-docs` target (Doxygen + Sphinx) |
 | `TANH_WITH_INSTALL` | ON | Add install targets and the `tanh` CMake package |
 | `TANH_WITH_PACKAGING` | OFF | Add CPack targets (top-level builds only) |
+| `TANH_LINK_COMPILE_COMMANDS` | OFF (ON in the development presets) | Link `build/compile_commands.json`, which clangd reads, to this tree's database (top-level builds only) |
 | `TANH_WITH_RTSAN` / `_ASAN` / `_USAN` / `_TSAN` / `_MSAN` / `_LSAN` | OFF | Enable the respective sanitizer (RTSan needs Clang 20+) |
 | `TANH_WITH_JOURNALD` | OFF | Linux: route platform logs to systemd-journald |
 | `TANH_LOG_COMPILED_MAX_LEVEL` | AUTO | Most verbose log level compiled in (1 Error .. 4 Debug) |
