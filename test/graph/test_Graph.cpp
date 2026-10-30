@@ -17,6 +17,7 @@
 #include <initializer_list>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <random>
 #include <span>
@@ -166,6 +167,14 @@ void prepare(Graph& graph) {
     graph.prepare(k_sample_rate, k_block, k_channels);
 }
 
+/// Every merge (the output included) averages its sources, so aligned parallel copies of a signal
+/// give it back at its level: what the alignment tests measure.
+void average_merges(Graph& graph) {
+    for (const NodeId id : graph.nodes()) {
+        (void)graph.set_input_mix(id, Graph::InputMix::Average);
+    }
+}
+
 Buffer<float> make_buffer(float value, size_t num_frames = k_block) {
     Buffer<float> buffer(k_channels, num_frames);
     for (size_t ch = 0; ch < k_channels; ++ch) {
@@ -279,10 +288,10 @@ TEST(Graph, FanOutFeedsEveryNode) {
 
     auto buffer = make_buffer(0.4f);
     graph.process(buffer);
-    expect_all(buffer, (0.4f * 2.0f + 0.4f * 0.5f) / 2.0f);
+    expect_all(buffer, 0.4f * 2.0f + 0.4f * 0.5f);  // summed
 }
 
-TEST(Graph, InputMixAveragesConnectedSourcesByDefaultOrSums) {
+TEST(Graph, InputMixSumsConnectedSourcesByDefaultOrAverages) {
     Graph graph;
     const auto a = graph.add_node<ConstantProcessor>(0.5f);
     const auto b = graph.add_node<ConstantProcessor>(0.25f);
@@ -294,11 +303,11 @@ TEST(Graph, InputMixAveragesConnectedSourcesByDefaultOrSums) {
 
     auto buffer = make_buffer(0.0f);
     graph.process(buffer);
-    expect_all(buffer, 0.375f);
-
-    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Sum));
-    for (size_t block = 0; block <= k_ramp_blocks; ++block) { graph.process(buffer); }
     expect_all(buffer, 0.75f);
+
+    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Average));
+    for (size_t block = 0; block <= k_ramp_blocks; ++block) { graph.process(buffer); }
+    expect_all(buffer, 0.375f);
 }
 
 TEST(Graph, InputMixAppliesToProcessorNodes) {
@@ -327,17 +336,17 @@ TEST(Graph, InputMixChangeRampsWithoutCommit) {
     ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
     prepare(graph);
 
-    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Sum));
+    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Average));
     EXPECT_FALSE(graph.has_uncommitted_changes());
 
     auto buffer = make_buffer(0.0f);
     graph.process(buffer);
     for (size_t ch = 0; ch < k_channels; ++ch) {
         const float* samples = buffer.get_read_pointer(ch);
-        EXPECT_GT(samples[0], 0.375f);
-        EXPECT_LT(samples[0], 0.38f);
-        for (size_t i = 1; i < k_block; ++i) { EXPECT_GE(samples[i], samples[i - 1]); }
-        EXPECT_LT(samples[k_block - 1], 0.75f);
+        EXPECT_LT(samples[0], 0.75f);  // from the sum, towards the average
+        EXPECT_GT(samples[0], 0.745f);
+        for (size_t i = 1; i < k_block; ++i) { EXPECT_LE(samples[i], samples[i - 1]); }
+        EXPECT_GT(samples[k_block - 1], 0.375f);
     }
 }
 
@@ -619,6 +628,7 @@ TEST(Graph, ParallelBranchIsAlignedWithALatentBranch) {
     ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
     ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
     ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
 
     expect_impulse_response(graph, k_latency);
@@ -633,6 +643,7 @@ TEST(Graph, MergeInsideTheGraphIsAligned) {
     ASSERT_TRUE(graph.connect(*latent, *merge));
     ASSERT_TRUE(graph.connect(graph.graph_input(), *merge));
     ASSERT_TRUE(graph.connect(*merge, graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
 
     expect_impulse_response(graph, k_latency);
@@ -648,6 +659,7 @@ TEST(Graph, BranchesAreAlignedToTheSlowest) {
     ASSERT_TRUE(graph.connect(*shorter, graph.graph_output()));
     ASSERT_TRUE(graph.connect(*longer, graph.graph_output()));
     ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
 
     expect_impulse_response(graph, k_latency);
@@ -664,6 +676,7 @@ TEST(Graph, ChainWithTheSameLatencyAsAParallelNodeIsAligned) {
     ASSERT_TRUE(graph.connect(*second, graph.graph_output()));
     ASSERT_TRUE(graph.connect(graph.graph_input(), *parallel));
     ASSERT_TRUE(graph.connect(*parallel, graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
 
     expect_impulse_response(graph, k_latency);
@@ -678,6 +691,7 @@ TEST(Graph, ParallelBranchFollowsALatencyChange) {
     ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
     ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
     ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
 
     process_blocks(graph, 0.0f, 2);
@@ -711,6 +725,7 @@ TEST(Graph, CommitStaysSilentUntilTheNewLatencyHasPassed) {
     ASSERT_TRUE(latent);
     ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
     ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
     process_blocks(graph, 1.0f, k_latency / k_block + 1);  // the latent node outputs 1.0
 
@@ -1167,6 +1182,7 @@ TEST(Graph, OuterCommitWithoutMaxChangeOnlyFadesTheNestedGraph) {
     ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
     ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
     ASSERT_TRUE(outer.connect(outer.graph_input(), outer.graph_output()));
+    average_merges(outer);
     prepare(outer);
 
     const auto gain = inner.add_node<GainProcessor>(2.0f);
@@ -1199,6 +1215,7 @@ TEST(Graph, OuterCommitRealignsToARisingNestedMaxLatency) {
     ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
     ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
     ASSERT_TRUE(outer.connect(outer.graph_input(), outer.graph_output()));
+    average_merges(outer);
     prepare(outer);
     EXPECT_EQ(outer.max_latency_samples(), 0u);
 
@@ -1499,6 +1516,7 @@ TEST(Graph, RepeatedRewiringKeepsTheOutput) {
     ASSERT_TRUE(doubler && tripler && constant);
     ASSERT_TRUE(graph.connect(graph.graph_input(), *doubler));
     ASSERT_TRUE(graph.connect(*doubler, graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
 
     for (int round = 0; round < 6; ++round) {
@@ -1594,6 +1612,7 @@ TEST(Graph, LatencyRaisedAboveTheCommittedMaximumIsAlignedAtItUntilTheNextCommit
     ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
     ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
     ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
     expect_impulse_response(graph, 10);
 
@@ -1623,6 +1642,7 @@ TEST(Graph, NestedCommitRaisingTheLatencyIsCompensatedOnceTheOuterGraphCommits) 
     ASSERT_TRUE(outer.connect(outer.graph_input(), *nested));
     ASSERT_TRUE(outer.connect(*nested, outer.graph_output()));
     ASSERT_TRUE(outer.connect(outer.graph_input(), outer.graph_output()));
+    average_merges(outer);
     prepare(outer);
     (void)process_blocks(outer, 0.0f, 4);
 
@@ -1780,6 +1800,7 @@ TEST(Graph, ReportsAndHasTheLeastLatencyItsNodesAllowNotTheirMaximum) {
     ASSERT_TRUE(graph.connect(graph.graph_input(), *latent));
     ASSERT_TRUE(graph.connect(*latent, graph.graph_output()));
     ASSERT_TRUE(graph.connect(graph.graph_input(), graph.graph_output()));
+    average_merges(graph);
     prepare(graph);
     EXPECT_EQ(graph.committed_latency_samples(), 10u);  // what the host is told
     EXPECT_EQ(graph.max_latency_samples(), 100u);       // only what the delays hold
@@ -1793,4 +1814,119 @@ TEST(Graph, ReportsAndHasTheLeastLatencyItsNodesAllowNotTheirMaximum) {
     EXPECT_EQ(graph.latency_samples(), 50u);
     (void)process_blocks(graph, 0.0f, 4);
     expect_impulse_response(graph, 50);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mix laws
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+struct Gains {
+    float m_dry;
+    float m_wet;
+};
+
+/// The gains a node with @p law at wet mix @p m applies, measured: a processor that outputs @p wet
+/// whatever its input, fed @p dry.
+float measure(Graph::MixLaw law, float m, float dry, float wet) {
+    Graph graph;
+    const auto node = graph.add_node<ConstantProcessor>(wet);
+    EXPECT_TRUE(node);
+    EXPECT_TRUE(graph.connect(graph.graph_input(), *node));
+    EXPECT_TRUE(graph.connect(*node, graph.graph_output()));
+    EXPECT_TRUE(graph.set_mix_law(*node, law));
+    EXPECT_TRUE(graph.set_wet_mix(*node, m));
+    prepare(graph);  // starts at the set mix, no ramp
+    return process_blocks(graph, dry, 1).get_read_pointer(0)[0];
+}
+
+Gains measure_gains(Graph::MixLaw law, float m) {
+    return {.m_dry = measure(law, m, 1.0f, 0.0f), .m_wet = measure(law, m, 0.0f, 1.0f)};
+}
+
+Gains expected_gains(Graph::MixLaw law, double m) {
+    const double q = 0.5 * std::numbers::pi * m;
+    switch (law) {
+        case Graph::MixLaw::Linear: return {static_cast<float>(1.0 - m), static_cast<float>(m)};
+        case Graph::MixLaw::ConstantPower:
+            return {static_cast<float>(std::cos(q)), static_cast<float>(std::sin(q))};
+        case Graph::MixLaw::Compromise:
+            return {static_cast<float>(std::sqrt((1.0 - m) * std::cos(q))),
+                    static_cast<float>(std::sqrt(m * std::sin(q)))};
+        case Graph::MixLaw::Parallel: return {1.0f, static_cast<float>(m)};
+        case Graph::MixLaw::DryHeld:
+            return {static_cast<float>(std::min(1.0, 2.0 * (1.0 - m))),
+                    static_cast<float>(std::min(1.0, 2.0 * m))};
+    }
+    return {};
+}
+
+float db(float gain) {
+    return 20.0f * std::log10(gain);
+}
+
+}  // namespace
+
+TEST(Graph, EveryMixLawSetsTheDryAndWetGainsItDescribes) {
+    for (const auto law : {Graph::MixLaw::Linear,
+                           Graph::MixLaw::ConstantPower,
+                           Graph::MixLaw::Compromise,
+                           Graph::MixLaw::Parallel,
+                           Graph::MixLaw::DryHeld}) {
+        for (const float m : {0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.9f, 1.0f}) {
+            const Gains got = measure_gains(law, m);
+            const Gains want = expected_gains(law, m);
+            EXPECT_NEAR(got.m_dry, want.m_dry, 1e-5f) << static_cast<int>(law) << " at " << m;
+            EXPECT_NEAR(got.m_wet, want.m_wet, 1e-5f) << static_cast<int>(law) << " at " << m;
+        }
+    }
+}
+
+TEST(Graph, MixLawsMeetTheirLevelsAtHalf) {
+    const Gains linear = measure_gains(Graph::MixLaw::Linear, 0.5f);
+    EXPECT_NEAR(db(linear.m_dry), -6.02f, 0.01f);  // amplitudes add up to 1
+    EXPECT_FLOAT_EQ(linear.m_dry + linear.m_wet, 1.0f);
+    const Gains power = measure_gains(Graph::MixLaw::ConstantPower, 0.5f);
+    EXPECT_NEAR(db(power.m_dry), -3.01f, 0.01f);  // powers add up to 1
+    EXPECT_NEAR((power.m_dry * power.m_dry) + (power.m_wet * power.m_wet), 1.0f, 1e-5f);
+    EXPECT_NEAR(db(measure_gains(Graph::MixLaw::Compromise, 0.5f).m_wet), -4.52f, 0.01f);
+    const Gains parallel = measure_gains(Graph::MixLaw::Parallel, 1.0f);
+    EXPECT_EQ(parallel.m_dry, 1.0f);  // fully wet still keeps the dry signal
+    EXPECT_EQ(parallel.m_wet, 1.0f);
+    const Gains held = measure_gains(Graph::MixLaw::DryHeld, 0.5f);
+    EXPECT_EQ(held.m_dry, 1.0f);
+    EXPECT_EQ(held.m_wet, 1.0f);
+}
+
+TEST(Graph, ChangingTheMixLawGlides) {
+    Graph graph;
+    const auto node = graph.add_node<ConstantProcessor>(1.0f);
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *node));
+    ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+    prepare(graph);
+    expect_all(process_blocks(graph, 1.0f, 1), 1.0f);  // fully wet, linear: the constant
+
+    ASSERT_TRUE(graph.set_mix_law(*node, Graph::MixLaw::Parallel));  // adds the dry 1 on top
+    EXPECT_FALSE(graph.has_uncommitted_changes());
+    const auto first = process_blocks(graph, 1.0f, 1);
+    const float* samples = first.get_read_pointer(0);
+    EXPECT_GT(samples[0], 1.0f);
+    EXPECT_LT(samples[0], 1.01f);  // starts gently
+    for (size_t i = 1; i < k_block; ++i) { EXPECT_GE(samples[i], samples[i - 1]); }
+    expect_all(process_blocks(graph, 1.0f, k_ramp_blocks), 2.0f);
+}
+
+TEST(Graph, MixLawRejectsEndpointsAndUnknownNodes) {
+    Graph graph;
+    const auto node = graph.add_node<GainProcessor>(1.0f);
+    ASSERT_TRUE(node);
+    EXPECT_EQ(graph.mix_law(*node), Graph::MixLaw::Linear);
+    EXPECT_TRUE(graph.set_mix_law(*node, Graph::MixLaw::ConstantPower));
+    EXPECT_EQ(graph.mix_law(*node), Graph::MixLaw::ConstantPower);
+    EXPECT_FALSE(graph.set_mix_law(graph.graph_input(), Graph::MixLaw::Parallel));
+    EXPECT_FALSE(graph.set_mix_law(graph.graph_output(), Graph::MixLaw::Parallel));
+    EXPECT_FALSE(graph.set_mix_law(NodeId{999}, Graph::MixLaw::Parallel));
+    EXPECT_FALSE(graph.mix_law(graph.graph_output()).has_value());
 }

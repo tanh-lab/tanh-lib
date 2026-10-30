@@ -49,9 +49,28 @@ struct Connection {
 /// had at the last commit.
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
-    /// How a node combines its sources: their sum, or their sum divided by their number (the
-    /// default, so adding a source keeps the level).
+    /// How a node combines its sources: their sum (the default, as a mixer), or their sum
+    /// divided by their number.
     enum class InputMix : uint8_t { Sum, Average };
+
+    /// How a node's wet mix m (0 dry, 1 wet) sets the gains of its input (dry, delayed by its
+    /// latency) and of its processor's output (wet).
+    enum class MixLaw : uint8_t {
+        /// dry 1 - m, wet m (the default): constant level when the wet signal is correlated with
+        /// the dry (EQ, compression, saturation, phaser and comb effects).
+        Linear,
+        /// dry cos(m pi/2), wet sin(m pi/2): constant power when it is not (reverb, delay,
+        /// chorus); -3 dB each at 0.5.
+        ConstantPower,
+        /// The geometric mean of Linear and ConstantPower, -4.5 dB each at 0.5: for a partly
+        /// correlated wet signal (modulated delays, short rooms, multiband processing).
+        Compromise,
+        /// dry 1, wet m: parallel processing (parallel compression, sends); the mix only adds.
+        Parallel,
+        /// dry 1 up to 0.5 then down to 0, wet up to 1 by 0.5: full level in the middle, a send
+        /// below it and an insert above.
+        DryHeld,
+    };
 
     Graph();
     ~Graph() override;
@@ -98,6 +117,9 @@ public:
     /// latency), between them a blend; ramps over 20 ms, clamped to [0, 1]. A node coming back
     /// from 0 is reset() first. False for graph_input(), graph_output(), unknown ids and NaN.
     bool set_wet_mix(NodeId id, float wet_mix);
+    /// Live (no commit): how node @p id's wet mix sets its dry and wet gains; a change crossfades
+    /// from the old law over 20 ms. False for graph_input(), graph_output() and unknown ids.
+    bool set_mix_law(NodeId id, MixLaw law);
 
     /// Hands the edited graph and every graph nested in it to the audio thread (a short fade out
     /// and in). Without changes since the last commit it does nothing; it also rebuilds when a
@@ -133,6 +155,8 @@ public:
     const thl::dsp::BaseProcessor* node(NodeId id) const;
     /// The wet mix set for node @p id; nothing for graph_input(), graph_output() and unknown ids.
     std::optional<float> wet_mix(NodeId id) const;
+    /// The mix law set for node @p id; nothing for graph_input(), graph_output() and unknown ids.
+    std::optional<MixLaw> mix_law(NodeId id) const;
 
     /// Every node, graph_input() and graph_output() included, as edited (not as committed).
     std::vector<NodeId> nodes() const;
@@ -158,6 +182,13 @@ public:
     void reset() TANH_NONBLOCKING_FUNCTION override;
 
 private:
+    struct MixGains {
+        float m_dry;
+        float m_wet;
+    };
+    /// The dry and wet gains of @p law at @p wet_mix (clamped to [0, 1]); exact at the ends.
+    static MixGains mix_gains(MixLaw law, float wet_mix) TANH_NONBLOCKING_FUNCTION;
+
     using BufferIndex = uint32_t;
     struct Node;
     struct Source;
