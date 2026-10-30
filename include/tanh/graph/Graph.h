@@ -132,11 +132,13 @@ public:
     /// graph, since the last commit().
     bool has_uncommitted_changes() const;
     /// Control thread: the latency the version prepare() or commit() handed over last will have,
-    /// from its nodes' current latency_samples() (a nested graph: its own committed latency), so
-    /// a host can be told right after commit(). The graph never pads: its output has the least
-    /// latency its nodes allow, and max_latency_samples() only sizes the delays. A node that
-    /// changes its latency between commits changes latency_samples() at the next block; tell the
-    /// host then too (e.g. JUCE's setLatencySamples() from the message thread).
+    /// from its nodes' current latency_samples() (a nested graph: its own committed latency; a
+    /// node whose max_latency_samples() changed since the last commit: that maximum, until it
+    /// runs and tells its own), so a host can be told right after commit(). The graph never pads:
+    /// its output has the least latency its nodes allow, and max_latency_samples() only sizes the
+    /// delays. A node that changes its latency between commits changes latency_samples() at the
+    /// next block; tell the host then too (e.g. JUCE's setLatencySamples() from the message
+    /// thread).
     uint32_t committed_latency_samples() const { return m_committed_latency; }
 
     /// Frees the versions the audio thread handed back and the removed nodes no running version
