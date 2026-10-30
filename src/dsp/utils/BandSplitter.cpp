@@ -1,7 +1,7 @@
 #include <tanh/core/BufferView.h>
+#include <tanh/dsp/filter/Butterworth.h>
+#include <tanh/dsp/filter/LinkwitzRiley.h>
 #include <tanh/dsp/utils/BandSplitter.h>
-#include <tanh/dsp/utils/Butterworth.h>
-#include <tanh/dsp/utils/LinkwitzRiley.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -16,7 +16,7 @@ namespace thl::dsp::utils {
 BandSplitter::BandSplitter(size_t num_bands, size_t order)
     : m_num_bands(num_bands), m_order(order) {
     assert(num_bands >= 2);
-    assert(order >= 2 && order <= LinkwitzRiley::k_max_order && order % 2 == 0);
+    assert(order >= 2 && order <= filter::LinkwitzRiley::k_max_order && order % 2 == 0);
     const size_t num_crossovers = num_bands - 1;
     m_frequencies.resize(num_crossovers);
     m_smoothed_frequencies.resize(num_crossovers);
@@ -36,7 +36,7 @@ void BandSplitter::prepare(const double& sample_rate,
     const size_t num_crossovers = m_num_bands - 1;
     // the targets may have been set for another sample rate; the same limit for all keeps the order
     for (float& frequency : m_frequencies) {
-        frequency = std::min(frequency, Butterworth::k_max_frequency_ratio * m_sample_rate);
+        frequency = std::min(frequency, filter::Butterworth::k_max_frequency_ratio * m_sample_rate);
     }
     // the filters can't be copied or moved, so the vectors are constructed with their size
     m_channels = std::vector<Channel>(num_channels);
@@ -45,9 +45,12 @@ void BandSplitter::prepare(const double& sample_rate,
         for (size_t c = 0; c < num_crossovers; ++c) {
             Crossover& crossover = channel[c];
             crossover.m_filter.prepare(m_frequencies[c], m_sample_rate, m_order);
-            crossover.m_band_all_passes = std::vector<Butterworth>(c);
-            for (Butterworth& all_pass : crossover.m_band_all_passes) {
-                all_pass.prepare(m_frequencies[c], m_sample_rate, m_order / 2, FilterType::AllPass);
+            crossover.m_band_all_passes = std::vector<filter::Butterworth>(c);
+            for (filter::Butterworth& all_pass : crossover.m_band_all_passes) {
+                all_pass.prepare(m_frequencies[c],
+                                 m_sample_rate,
+                                 m_order / 2,
+                                 filter::Butterworth::Response::AllPass);
             }
         }
     }
@@ -63,7 +66,7 @@ void BandSplitter::prepare(const double& sample_rate,
 void BandSplitter::set_frequency(size_t crossover, float frequency) TANH_NONBLOCKING_FUNCTION {
     assert(crossover < m_frequencies.size());
     const float lowest = crossover > 0 ? m_frequencies[crossover - 1] : 0.0f;
-    const float nyquist_limit = Butterworth::k_max_frequency_ratio * m_sample_rate;
+    const float nyquist_limit = filter::Butterworth::k_max_frequency_ratio * m_sample_rate;
     const float highest = crossover + 1 < m_frequencies.size()
                               ? std::min(m_frequencies[crossover + 1], nyquist_limit)
                               : nyquist_limit;
@@ -101,13 +104,13 @@ void BandSplitter::process_band(thl::core::BufferView buffer,
         }
 
         Channel& channel = m_channels[channel_index];
-        LinkwitzRiley& filter = channel[band_index].m_filter;
+        filter::LinkwitzRiley& crossover = channel[band_index].m_filter;
         const float* input = band_index == 0 ? band : high_passed;
         const float* g = m_prewarped.get_read_pointer(band_index);
         for (size_t i = 0; i < num_samples; ++i) {
             const float x = input[i];
-            float sample = filter.process_low(x, g[i]);
-            high_passed[i] = filter.process_high(x, g[i]);
+            float sample = crossover.process_low(x, g[i]);
+            high_passed[i] = crossover.process_high(x, g[i]);
             for (size_t c = band_index + 1; c < num_crossovers; ++c) {
                 sample = channel[c].m_band_all_passes[band_index].process(
                     sample,
@@ -126,13 +129,13 @@ void BandSplitter::update_prewarped(size_t num_samples) TANH_NONBLOCKING_FUNCTIO
         float* prewarped = m_prewarped.get_write_pointer(c);
         if (smoothed_frequency.is_smoothing()) {
             for (size_t i = 0; i < num_samples; ++i) {
-                prewarped[i] =
-                    Butterworth::prewarp(smoothed_frequency.get_smoothed_value(), m_sample_rate);
+                prewarped[i] = filter::Butterworth::prewarp(smoothed_frequency.get_smoothed_value(),
+                                                            m_sample_rate);
             }
         } else {
             std::fill(prewarped,
                       prewarped + num_samples,
-                      Butterworth::prewarp(m_frequencies[c], m_sample_rate));
+                      filter::Butterworth::prewarp(m_frequencies[c], m_sample_rate));
         }
     }
 }

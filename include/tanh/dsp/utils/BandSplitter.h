@@ -4,8 +4,8 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
-#include <tanh/dsp/utils/Butterworth.h>
-#include <tanh/dsp/utils/LinkwitzRiley.h>
+#include <tanh/dsp/filter/Butterworth.h>
+#include <tanh/dsp/filter/LinkwitzRiley.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 
 #include <cstddef>
@@ -59,8 +59,8 @@ protected:
 
 private:
     struct Crossover {
-        LinkwitzRiley m_filter;
-        std::vector<Butterworth> m_band_all_passes;
+        filter::LinkwitzRiley m_filter;
+        std::vector<filter::Butterworth> m_band_all_passes;
     };
     using Channel = std::vector<Crossover>;
 

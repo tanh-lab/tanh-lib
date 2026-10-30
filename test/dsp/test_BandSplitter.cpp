@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/dsp/filter/Butterworth.h>
+#include <tanh/dsp/filter/LinkwitzRiley.h>
 #include <tanh/dsp/utils/BandSplitter.h>
-#include <tanh/dsp/utils/Butterworth.h>
-#include <tanh/dsp/utils/LinkwitzRiley.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -18,10 +18,9 @@
 
 using thl::core::Buffer;
 using thl::core::BufferView;
+using thl::dsp::filter::Butterworth;
+using thl::dsp::filter::LinkwitzRiley;
 using thl::dsp::utils::BandSplitter;
-using thl::dsp::utils::Butterworth;
-using thl::dsp::utils::FilterType;
-using thl::dsp::utils::LinkwitzRiley;
 using thl::dsp::utils::SmoothedValue;
 
 namespace {
@@ -124,7 +123,7 @@ TEST(BandSplitter, BandsSumToTheAllPassesOfAllCrossovers) {
                     all_pass.prepare(splitter.get_frequency(crossover),
                                      k_sample_rate,
                                      order / 2,
-                                     FilterType::AllPass);
+                                     Butterworth::Response::AllPass);
                     for (size_t n = 0; n < reference.get_num_samples(); ++n) {
                         samples[n] = all_pass.process(samples[n]);
                     }
@@ -205,7 +204,10 @@ TEST(BandSplitter, GlidingCrossoversStillSumToTheAllPasses) {
             frequency.reset(k_sample_rate, BandSplitter::k_smoothing_seconds);
             frequency.set_current_and_target_value(starts[crossover]);
             Butterworth all_pass;
-            all_pass.prepare(starts[crossover], k_sample_rate, k_order / 2, FilterType::AllPass);
+            all_pass.prepare(starts[crossover],
+                             k_sample_rate,
+                             k_order / 2,
+                             Butterworth::Response::AllPass);
             for (size_t n = 0; n < reference.get_num_samples(); ++n) {
                 if (n == k_glide_start) { frequency.set_target_value(targets[crossover]); }
                 const float g = Butterworth::prewarp(frequency.get_smoothed_value(), k_sample_rate);

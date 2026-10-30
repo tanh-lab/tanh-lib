@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
-#include <tanh/dsp/utils/LinkwitzRiley.h>
+#include <tanh/dsp/filter/LinkwitzRiley.h>
 #include <tanh/dsp/utils/MultibandLimiter.h>
 
 #include <algorithm>
@@ -14,7 +14,7 @@
 
 using thl::core::Buffer;
 using thl::core::BufferView;
-using thl::dsp::utils::LinkwitzRiley;
+using thl::dsp::filter::LinkwitzRiley;
 using thl::dsp::utils::MultibandLimiterImpl;
 
 namespace {

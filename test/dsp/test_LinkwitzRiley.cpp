@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <tanh/dsp/utils/Butterworth.h>
-#include <tanh/dsp/utils/LinkwitzRiley.h>
+#include <tanh/dsp/filter/Butterworth.h>
+#include <tanh/dsp/filter/LinkwitzRiley.h>
 
 #include <algorithm>
 #include <cmath>
@@ -11,9 +11,8 @@
 #include <utility>
 #include <vector>
 
-using thl::dsp::utils::Butterworth;
-using thl::dsp::utils::FilterType;
-using thl::dsp::utils::LinkwitzRiley;
+using thl::dsp::filter::Butterworth;
+using thl::dsp::filter::LinkwitzRiley;
 
 namespace {
 
@@ -137,7 +136,7 @@ TEST(LinkwitzRiley, BandsSumToAnAllPass) {
         LinkwitzRiley crossover;
         Butterworth all_pass;
         crossover.prepare(k_cutoff, k_sample_rate, order);
-        all_pass.prepare(k_cutoff, k_sample_rate, order / 2, FilterType::AllPass);
+        all_pass.prepare(k_cutoff, k_sample_rate, order / 2, Butterworth::Response::AllPass);
 
         float max_difference = 0.0f;
         for (size_t n = 0; n < 4096; ++n) {
