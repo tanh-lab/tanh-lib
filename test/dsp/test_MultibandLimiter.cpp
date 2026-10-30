@@ -78,9 +78,9 @@ void process(TestMultibandLimiter& limiter, Buffer<float>& signal, Buffer<float>
     const size_t num_samples = signal.get_num_samples();
     for (size_t start = 0; start < num_samples; start += k_block_size) {
         const size_t length = std::min(k_block_size, num_samples - start);
-        limiter.process(BufferView(signal).sub_block(start, length),
-                        0,
-                        BufferView(dry).sub_block(start, length));
+        limiter.process_with_dry(BufferView(signal).sub_block(start, length),
+                                 0,
+                                 BufferView(dry).sub_block(start, length));
     }
 }
 

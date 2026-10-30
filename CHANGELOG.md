@@ -72,14 +72,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   buffer views, `copy(destination, source)` and `add(destination, source)`, in
   every channel. `source` is a `ConstBufferView`, so writable views and
   `Buffer`s work too. Both views must have the same channels and samples
-  (asserted) and must not overlap. `BufferView` itself stays a pure view.
-  Tests: `BufferOperations*`.
-- `dsp::utils::Butterworth`: header-only, per-sample low-, high- or all-pass of
-  order 1–4, as cascaded TPT sections. The static `prewarp(f, fs)` limits the
-  cutoff to `k_max_frequency_ratio` (0.497 · fs); `process(x, g)` takes the
-  prewarped gain, so filters at the same frequency share one `tan()`. Tests:
-  `Butterworth.*`.
-- `dsp::utils::LinkwitzRiley`: crossover of even order 2–8, two Butterworths of
+  (asserted) and must not overlap. Real-time safe. `BufferView` itself stays a
+  pure view. Tests: `BufferOperations*`.
+- `dsp::filter::Butterworth`: header-only, per-sample low-, high- or all-pass
+  (`Butterworth::Response`) of order 1–4: a 1st-order TPT section and
+  trapezoidal SVF sections (`SvfTick`), states in double, so a low cutoff at a
+  high sample rate stays at the float output's own noise floor. The static
+  `prewarp(f, fs)` limits the cutoff to [1 Hz, `k_max_frequency_ratio` (0.497)
+  · fs], a non-finite one to 1 Hz; `process(x, g)` takes the prewarped gain, so
+  filters at the same frequency share one `tan()`. Real-time safe after
+  `prepare()`. Tests: `Butterworth.*`.
+- `dsp::filter::LinkwitzRiley`: crossover of even order 2–8, two Butterworths of
   half the order per band. `process_low()` and `process_high()` can be called
   separately, also with `g`. LR2 and LR6 invert the high band, so low + high is
   an all-pass at every order. Tests: `LinkwitzRiley.*`.
@@ -91,23 +94,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   every crossover, so their sum before processing is the dry signal.
   `set_frequency()` clamps between the neighbouring crossovers and below
   Nyquist, and glides per sample over 5 ms; the prewarped gain is computed once
-  per crossover and sample and shared by all its filters. Tests:
+  per crossover and sample and shared by all its filters. The requested
+  frequencies are kept, so `prepare()` at another sample rate clamps from them
+  again; a non-finite one is ignored. `reset()` clears the crossovers. Tests:
   `BandSplitter*`.
 - `dsp::utils::MultibandLimiterImpl`: one `LimiterImpl` per `BandSplitter` band,
   summed. Band count and order are constructor arguments; a derived class gives
   every band its threshold, attack and release through
-  `get_band_parameter_float()`. With a dry buffer it writes the sum of the bands
+  `get_band_parameter_float()`. `process_with_dry()` writes the sum of the bands
   before limiting, which matches the output below the thresholds (the limiters
-  add no latency). Tests: `MultibandLimiter.*`.
-- `BaseProcessor::process(buffer, modulation_offset, dry)`: also writes the dry
-  signal, the input with the phase response of `process()` but without its
-  effect, so that wet and dry can be blended. It is computed in the same pass,
-  so it follows the same smoothing and modulation. `dry` is output-only; an
-  empty `dry` means no dry signal. The default copies the input into `dry` and
-  calls `process(buffer, modulation_offset)`: override it if `process()` changes
-  the phase. `process_modulated(buffer, dry)` and
-  `process_modulated(buffer, change_points, dry)` split both at the same change
-  points. Tests: `BaseProcessor.*`.
+  add no latency). `reset()` also releases the limiters. Tests:
+  `MultibandLimiter.*`.
+- `BaseProcessor::process_with_dry(buffer, modulation_offset, dry)`: also writes
+  the dry signal, the input with the phase response of `process()` but without
+  its effect, so that wet and dry can be blended. It is computed in the same
+  pass, so it follows the same smoothing and modulation. `dry` is output-only;
+  an empty `dry` means no dry signal. It is undelayed: a processor with
+  `latency_samples()` leaves aligning it to whoever mixes it (a Graph delays a
+  node's dry path by it). The default copies the input into `dry` and calls
+  `process(buffer, modulation_offset)`: override it if `process()` changes the
+  phase. `process_modulated_with_dry(buffer, dry[, offset])` and
+  `process_modulated_with_dry(buffer, change_points, dry[, offset])` split both
+  at the same change points. Tests: `BaseProcessor.*`.
 - `TANH_LINK_COMPILE_COMMANDS` (default OFF; ON in the `desktop-*`, `macos-x64-*`,
   `android-*` and `wasm-release` presets): a top-level configure links
   `build/compile_commands.json` to its tree's database
@@ -116,16 +124,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- `BaseProcessor` has a new virtual function, so its vtable changed: code that
-  derives from it or calls it across a shared library must be recompiled.
-- `process_modulated(x, {})` no longer compiles: `{}` matches both the
-  change-points and the new dry overload. Write
-  `process_modulated(x, std::span<const uint32_t>())`, or `process(x)`.
-  `process_modulated(x)` is not equivalent: it splits at the processor's own
-  `get_change_points()`.
-- A processor that overrides only `process(buffer, modulation_offset)` hides the
-  dry overload when called through its own type; calls through
-  `BaseProcessor&` are unaffected.
+- `BaseProcessor` has the new virtual `process_with_dry()`, so its vtable
+  changed: code that derives from it or calls it across a shared library must be
+  recompiled.
 - `BaseProcessor` holds its latency (two atomics), has a copy constructor and copy assignment
   and the virtual `reset()`: code that derives from it must be recompiled. `StereoFDN::reset()`
   and `DelayProcessor::reset()` now override it.

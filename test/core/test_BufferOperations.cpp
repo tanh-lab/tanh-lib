@@ -91,7 +91,18 @@ TEST(BufferOperationsDeathTest, AssertsTheDimensions) {
     Buffer<float> fewer_channels = filled(1, 8, 0.0f);
     Buffer<float> fewer_samples = filled(2, 4, 0.0f);
 
-    EXPECT_DEATH(BufferOperations::copy(fewer_channels, source), "different dimensions");
-    EXPECT_DEATH(BufferOperations::add(fewer_samples, source), "different dimensions");
+    // RTSan off for the call that asserts: its abort would be reported before the message.
+    EXPECT_DEATH(
+        {
+            TANH_NONBLOCKING_SCOPED_DISABLER
+            BufferOperations::copy(fewer_channels, source);
+        },
+        "different dimensions");
+    EXPECT_DEATH(
+        {
+            TANH_NONBLOCKING_SCOPED_DISABLER
+            BufferOperations::add(fewer_samples, source);
+        },
+        "different dimensions");
 }
 #endif

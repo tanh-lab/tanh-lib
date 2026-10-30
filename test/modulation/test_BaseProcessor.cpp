@@ -30,9 +30,9 @@ public:
         m_block_sizes.push_back(buffer.get_num_samples());
     }
 
-    void process(thl::core::BufferView /*buffer*/,
-                 uint32_t modulation_offset,
-                 thl::core::BufferView dry) override {
+    void process_with_dry(thl::core::BufferView /*buffer*/,
+                          uint32_t modulation_offset,
+                          thl::core::BufferView dry) override {
         m_dry_block_sizes.push_back(dry.get_num_samples());
         m_dry_offsets.push_back(modulation_offset);
     }
@@ -115,7 +115,7 @@ TEST(BaseProcessor, ProcessModulatedWithDrySplitsLikeWithout) {
 
     std::vector<uint32_t> cps = {100, 300};
     proc.process_modulated(view, std::span<const uint32_t>(cps));
-    proc.process_modulated(view, std::span<const uint32_t>(cps), dry);
+    proc.process_modulated_with_dry(view, std::span<const uint32_t>(cps), dry);
 
     EXPECT_EQ(proc.m_dry_block_sizes, proc.m_block_sizes);
     EXPECT_EQ(proc.m_dry_offsets, (std::vector<uint32_t>{0, 100, 300}));
@@ -131,7 +131,7 @@ TEST(BaseProcessor, ProcessModulatedWithDryUsesGetChangePoints) {
     thl::core::BufferView view(data.data(), 512);
     thl::core::BufferView dry(dry_data.data(), 512);
 
-    proc.process_modulated(view, dry);
+    proc.process_modulated_with_dry(view, dry);
 
     EXPECT_EQ(proc.m_dry_block_sizes, (std::vector<size_t>{256, 256}));
     EXPECT_EQ(proc.m_dry_offsets, (std::vector<uint32_t>{0, 256}));
@@ -150,7 +150,7 @@ TEST(BaseProcessor, DefaultProcessWithDryCopiesTheInput) {
     thl::core::BufferView dry(dry_data.data(), 512);
 
     std::vector<uint32_t> cps = {100, 300};
-    proc.process_modulated(view, std::span<const uint32_t>(cps), dry);
+    proc.process_modulated_with_dry(view, std::span<const uint32_t>(cps), dry);
 
     for (size_t n = 0; n < data.size(); ++n) {
         EXPECT_FLOAT_EQ(dry_data[n], input[n]);
@@ -190,10 +190,10 @@ TEST(BaseProcessor, ProcessModulatedWithDryAtAnOffsetSplitsBothAtBlockPositions)
     thl::core::BufferView dry(dry_audio.data(), 64);
     const std::vector<uint32_t> cps = {16, 40, 48, 100};
 
-    proc.process_modulated(view.sub_block(32, 32),
-                           std::span<const uint32_t>(cps),
-                           dry.sub_block(32, 32),
-                           32);
+    proc.process_modulated_with_dry(view.sub_block(32, 32),
+                                    std::span<const uint32_t>(cps),
+                                    dry.sub_block(32, 32),
+                                    32);
     EXPECT_EQ(proc.m_dry_offsets, (std::vector<uint32_t>{32, 40, 48}));
     EXPECT_EQ(proc.m_dry_block_sizes, (std::vector<size_t>{8, 8, 16}));
 }

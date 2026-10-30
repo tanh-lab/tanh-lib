@@ -14,7 +14,7 @@ namespace thl::dsp::utils {
 
 /**
  * Splits the signal with BandSplitter, limits every band with its own limiter and sums the bands.
- * With a dry buffer, process() also writes the sum of the bands before limiting: the limiters add
+ * process_with_dry() also writes the sum of the bands before limiting: the limiters add
  * no latency, so it is the matching dry signal.
  *
  * A derived class implements get_band_parameter_float() to give every band its own threshold,
@@ -31,9 +31,9 @@ public:
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
     /// Clears the crossovers and releases every band's limiter.
     void reset() TANH_NONBLOCKING_FUNCTION override;
-    void process(thl::core::BufferView buffer,
-                 uint32_t modulation_offset,
-                 thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION override;
+    void process_with_dry(thl::core::BufferView buffer,
+                          uint32_t modulation_offset,
+                          thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION override;
 
 protected:
     enum BandParameter {

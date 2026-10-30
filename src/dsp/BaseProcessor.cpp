@@ -11,9 +11,9 @@
 namespace thl::dsp {
 
 // NOLINTBEGIN(performance-unnecessary-value-param)
-void BaseProcessor::process(thl::core::BufferView buffer,
-                            uint32_t modulation_offset,
-                            thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION {
+void BaseProcessor::process_with_dry(thl::core::BufferView buffer,
+                                     uint32_t modulation_offset,
+                                     thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION {
     const bool with_dry = dry.get_num_channels() > 0;
     assert(!with_dry || (dry.get_num_channels() == buffer.get_num_channels() &&
                          dry.get_num_samples() == buffer.get_num_samples()));
@@ -27,9 +27,10 @@ void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
     split_and_process(buffer, get_change_points(), modulation_offset);
 }
 
-void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
-                                      const thl::core::BufferView& dry,
-                                      uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+void BaseProcessor::process_modulated_with_dry(const thl::core::BufferView& buffer,
+                                               const thl::core::BufferView& dry,
+                                               uint32_t modulation_offset)
+    TANH_NONBLOCKING_FUNCTION {
     split_and_process(buffer, get_change_points(), modulation_offset, dry);
 }
 
@@ -40,10 +41,11 @@ void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
     split_and_process(buffer, change_points, modulation_offset);
 }
 
-void BaseProcessor::process_modulated(const thl::core::BufferView& buffer,
-                                      std::span<const uint32_t> change_points,
-                                      const thl::core::BufferView& dry,
-                                      uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+void BaseProcessor::process_modulated_with_dry(const thl::core::BufferView& buffer,
+                                               std::span<const uint32_t> change_points,
+                                               const thl::core::BufferView& dry,
+                                               uint32_t modulation_offset)
+    TANH_NONBLOCKING_FUNCTION {
     split_and_process(buffer, change_points, modulation_offset, dry);
 }
 
@@ -60,7 +62,7 @@ void BaseProcessor::split_and_process(const thl::core::BufferView& buffer,
     const auto process_part = [&](uint32_t pos, uint32_t length) TANH_NONBLOCKING_FUNCTION {
         const uint32_t at = pos - begin;
         if (with_dry) {
-            process(buffer.sub_block(at, length), pos, dry.sub_block(at, length));
+            process_with_dry(buffer.sub_block(at, length), pos, dry.sub_block(at, length));
         } else {
             process(buffer.sub_block(at, length), pos);
         }

@@ -30,12 +30,12 @@ void MultibandLimiterImpl::prepare(const double& sample_rate,
 
 void MultibandLimiterImpl::process(thl::core::BufferView buffer,
                                    uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
-    process(buffer, modulation_offset, {});
+    process_with_dry(buffer, modulation_offset, {});
 }
 
-void MultibandLimiterImpl::process(thl::core::BufferView buffer,
-                                   uint32_t modulation_offset,
-                                   thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION {
+void MultibandLimiterImpl::process_with_dry(thl::core::BufferView buffer,
+                                            uint32_t modulation_offset,
+                                            thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION {
     const bool with_dry = dry.get_num_channels() > 0;
     assert(!with_dry || (dry.get_num_channels() == buffer.get_num_channels() &&
                          dry.get_num_samples() == buffer.get_num_samples()));
