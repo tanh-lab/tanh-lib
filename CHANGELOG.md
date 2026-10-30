@@ -9,15 +9,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `tanh::Graph` (`TANH_BUILD_GRAPH`, off by default, on in every preset but wasm; by
+  @jstolberg): `thl::graph::Graph`, a `BaseProcessor` of `BaseProcessor` nodes. Edits on the
+  control thread take effect at `commit()`, handed to the audio thread with a fade; nested
+  graphs, per-node input mix and wet mix, `collect_garbage()`. Latency compensation: the
+  faster inputs of every merge and a node's dry/bypass path are delayed, the graph holds
+  silence after a commit until every delay is ready. It never pads: its output has the least
+  latency its nodes allow (`max_latency_samples()` only sizes the delays), and
+  `committed_latency_samples()` gives the latency the committed version will have, for the
+  host right after `commit()`. A node whose latency rises above the maximum it had at the last commit (or a
+  nested graph that committed on its own) is compensated at that maximum until the graph
+  containing it commits. A bypassed node coming back is `reset()`. Merges sum their sources by
+  default (`InputMix::Sum`, or `Average`). Per node, `set_mix_law()` chooses how the wet mix
+  sets the dry and wet gains (`MixLaw::Linear`, the default, `ConstantPower`, `Compromise`
+  at -4.5 dB, `Parallel`, `DryHeld`), live, a change crossfading over 20 ms. Tests: `test_graph`
+  (including edits and commits against a running audio thread), `benchmark_graph`.
+- `BaseProcessor::latency_samples()` / `max_latency_samples()` / `set_latency_samples()` /
+  `set_max_latency_samples()`: a processor reports its latency (by @jstolberg).
+- `thl::dsp::utils::DelayProcessor`: an integer delay that crossfades linearly when the delay
+  changes, and can keep its history without changing its input (by @jstolberg). Tests:
+  `DelayProcessor.*`.
+- `BaseProcessor::process_modulated()` takes the buffer's position in the block
+  (`modulation_offset`, default 0), so a caller that runs a block in parts, such as a graph,
+  has its nodes read modulation at the block position.
+- `BaseProcessor::reset()`: clears what a processor holds from the audio it processed, keeping
+  its settings; real-time safe, does nothing by default. `LimiterImpl`, `ParametricEqImpl`,
+  `StereoFDN` and `DelayProcessor` implement it.
 - `thl::dsp::filter::ParametricEq`: a parametric equaliser of up to 8 bands in series for any
   number of channels, each band a Peak, Notch, LowShelf, HighShelf, LowCut or HighCut
   (12 dB/octave). One trapezoidal state-variable filter (Cytomic) per band and channel. Every
   change of a band or of the design ramps its coefficients over 10 ms, so automation and a
   dragged band do not click; a flat or disabled band costs nothing, also when a field it does not
   use changes. Out-of-range and non-finite settings are clamped or replaced; `prepare()` keeps
-  the bands. `response_curve()` and
-  `log_frequencies()` give the settled curve to plot, from the caller's settings, on any thread.
-  Real-time safe after `prepare()`. Tests: `ParametricEq.*`.
+  the bands. `response_curve()` and `log_frequencies()` give the settled curve to plot, from
+  the caller's settings, on any thread. Real-time safe after `prepare()`. Tests:
+  `ParametricEq.*`.
 - `thl::dsp::filter::ParametricEqImpl`: `ParametricEq` as a `BaseProcessor`, its parameters
   read through `get_parameter_float()` (the design) and `get_band_parameter_float()` (type,
   frequency, gain, Q, enabled per band), so State and Modulation drive it. Tests:
@@ -49,6 +75,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `BaseProcessor` holds its latency (two atomics), has a copy constructor and copy assignment
+  and the virtual `reset()`: code that derives from it must be recompiled. `StereoFDN::reset()`
+  and `DelayProcessor::reset()` now override it.
+- `process_modulated()` no longer calls `process()` for an empty buffer.
 - Shared tooling pinned to tanh-tooling v0.3.0 (`.clangd`, `cmake/tanh/`,
   `lint.yml`). `.clangd` now reads `build/compile_commands.json` instead of
   `build/desktop/Debug/`: reconfigure a development preset once to create the link.
