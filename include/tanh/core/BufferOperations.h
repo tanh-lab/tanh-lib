@@ -2,6 +2,7 @@
 #pragma once
 
 #include <tanh/core/BufferView.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cassert>
@@ -18,7 +19,8 @@ namespace thl::core {
 struct BufferOperations {
     BufferOperations() = delete;
 
-    static void copy(BufferView destination, const ConstBufferView& source) {
+    static void copy(BufferView destination,
+                     const ConstBufferView& source) TANH_NONBLOCKING_FUNCTION {
         assert(same_dimensions(destination, source) &&
                "BufferOperations: cannot copy, views have different dimensions");
         for (size_t channel = 0; channel < destination.get_num_channels(); ++channel) {
@@ -28,7 +30,8 @@ struct BufferOperations {
         }
     }
 
-    static void add(BufferView destination, const ConstBufferView& source) {
+    static void add(BufferView destination,
+                    const ConstBufferView& source) TANH_NONBLOCKING_FUNCTION {
         assert(same_dimensions(destination, source) &&
                "BufferOperations: cannot add, views have different dimensions");
         for (size_t channel = 0; channel < destination.get_num_channels(); ++channel) {
@@ -39,7 +42,8 @@ struct BufferOperations {
     }
 
 private:
-    static bool same_dimensions(const BufferView& destination, const ConstBufferView& source) {
+    static bool same_dimensions(const BufferView& destination,
+                                const ConstBufferView& source) TANH_NONBLOCKING_FUNCTION {
         return destination.get_num_channels() == source.get_num_channels() &&
                destination.get_num_samples() == source.get_num_samples();
     }

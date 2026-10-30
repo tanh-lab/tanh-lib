@@ -27,6 +27,7 @@ BandSplitter::BandSplitter(size_t num_bands, size_t order)
                                    : static_cast<float>(c) / static_cast<float>(num_crossovers - 1);
         m_frequencies[c] = 100.0f * std::pow(100.0f, position);
     }
+    m_requested = m_frequencies;
 }
 
 void BandSplitter::prepare(const double& sample_rate,
@@ -34,9 +35,12 @@ void BandSplitter::prepare(const double& sample_rate,
                            const size_t& num_channels) {
     m_sample_rate = static_cast<float>(sample_rate);
     const size_t num_crossovers = m_num_bands - 1;
-    // the targets may have been set for another sample rate; the same limit for all keeps the order
-    for (float& frequency : m_frequencies) {
-        frequency = std::min(frequency, filter::Butterworth::k_max_frequency_ratio * m_sample_rate);
+    // From the requested frequencies, for this sample rate: below Nyquist, each at least the one
+    // below it, so the order holds.
+    const float nyquist_limit = filter::Butterworth::k_max_frequency_ratio * m_sample_rate;
+    for (size_t c = 0; c < m_frequencies.size(); ++c) {
+        const float lowest = c > 0 ? m_frequencies[c - 1] : 0.0f;
+        m_frequencies[c] = std::max(std::min(m_requested[c], nyquist_limit), lowest);
     }
     // the filters can't be copied or moved, so the vectors are constructed with their size
     m_channels = std::vector<Channel>(num_channels);
@@ -65,6 +69,8 @@ void BandSplitter::prepare(const double& sample_rate,
 
 void BandSplitter::set_frequency(size_t crossover, float frequency) TANH_NONBLOCKING_FUNCTION {
     assert(crossover < m_frequencies.size());
+    if (!std::isfinite(frequency)) { return; }
+    m_requested[crossover] = frequency;
     const float lowest = crossover > 0 ? m_frequencies[crossover - 1] : 0.0f;
     const float nyquist_limit = filter::Butterworth::k_max_frequency_ratio * m_sample_rate;
     const float highest = crossover + 1 < m_frequencies.size()
@@ -77,6 +83,19 @@ void BandSplitter::set_frequency(size_t crossover, float frequency) TANH_NONBLOC
 float BandSplitter::get_frequency(size_t crossover) const {
     assert(crossover < m_frequencies.size());
     return m_frequencies[crossover];
+}
+
+void BandSplitter::reset() TANH_NONBLOCKING_FUNCTION {
+    for (Channel& channel : m_channels) {
+        for (Crossover& crossover : channel) {
+            crossover.m_filter.reset();
+            for (filter::Butterworth& all_pass : crossover.m_band_all_passes) { all_pass.reset(); }
+        }
+    }
+    for (size_t c = 0; c < m_smoothed_frequencies.size(); ++c) {
+        m_smoothed_frequencies[c].set_current_and_target_value(m_frequencies[c]);
+    }
+    m_next_band = 0;
 }
 
 void BandSplitter::process_band(thl::core::BufferView buffer,

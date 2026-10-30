@@ -54,6 +54,11 @@ void MultibandLimiterImpl::process(thl::core::BufferView buffer,
     }
 }
 
+void MultibandLimiterImpl::reset() TANH_NONBLOCKING_FUNCTION {
+    BandSplitter::reset();
+    for (BandLimiter& limiter : m_limiters) { limiter.reset(); }
+}
+
 MultibandLimiterImpl::BandLimiter::BandLimiter(MultibandLimiterImpl& owner, size_t band)
     : m_owner(owner), m_band(band) {}
 

@@ -46,12 +46,18 @@ public:
     /// Sets the target of the crossover between bands @p crossover and @p crossover + 1.
     /// Call it from the audio thread, before process_band() for band 0; a change takes effect
     /// from the next block.
+    /// A non-finite @p frequency is ignored. The requested frequency is kept: prepare() at another
+    /// sample rate clamps it again from it, so a limit of one rate does not stick.
     void set_frequency(size_t crossover, float frequency) TANH_NONBLOCKING_FUNCTION;
 
-    /// The target of @p crossover, as clamped by set_frequency().
+    /// The target of @p crossover as applied: clamped between its neighbours and below Nyquist.
     float get_frequency(size_t crossover) const;
 
     size_t num_bands() const { return m_num_bands; }
+
+    /// Clears every crossover's state and ends the glides at their targets; the next block starts
+    /// with band 0 (audio thread).
+    void reset() TANH_NONBLOCKING_FUNCTION override;
 
 protected:
     /// Writes band @p band_index into @p buffer. For band 0, @p buffer holds the input on entry.
@@ -68,7 +74,8 @@ private:
 
     std::vector<Channel> m_channels;
     thl::core::Buffer<float> m_high_passed;
-    std::vector<float> m_frequencies;
+    std::vector<float> m_requested;    // as set
+    std::vector<float> m_frequencies;  // as applied
     std::vector<SmoothedValue> m_smoothed_frequencies;
     thl::core::Buffer<float> m_prewarped;
     float m_sample_rate = 48000.0f;

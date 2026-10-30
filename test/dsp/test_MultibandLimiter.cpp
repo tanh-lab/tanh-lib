@@ -143,3 +143,21 @@ TEST(MultibandLimiter, LeavesTheOtherBandsAlone) {
     process(limiter, signal);
     EXPECT_NEAR(settled_peak(signal), 0.5f, 0.01f);
 }
+
+TEST(MultibandLimiter, ResetReleasesTheLimiters) {
+    TestMultibandLimiter limiter(2, 4);
+    std::fill(limiter.m_thresholds_db.begin(), limiter.m_thresholds_db.end(), -20.0f);
+    limiter.m_release_ms = 1000.0f;  // would take long to recover on its own
+    limiter.prepare(k_sample_rate, k_block_size, 1);
+    Buffer<float> loud = sine(1000.0f, 1.0f, 9600);
+    process(limiter, loud);
+    limiter.reset();
+
+    // Right after the reset a quiet signal passes as the dry signal (the bands' sum).
+    Buffer<float> quiet = sine(1000.0f, 0.01f, 4096);
+    Buffer<float> dry(1, quiet.get_num_samples());
+    process(limiter, quiet, dry);
+    for (size_t n = 0; n < quiet.get_num_samples(); ++n) {
+        ASSERT_NEAR(quiet.get_read_pointer(0)[n], dry.get_read_pointer(0)[n], 1e-6f) << n;
+    }
+}

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <random>
 #include <vector>
@@ -232,3 +233,41 @@ TEST(BandSplitterDeathTest, AssertsTheBandOrder) {
         "m_next_band");
 }
 #endif
+
+TEST(BandSplitter, IgnoresANonFiniteFrequency) {
+    TestBandSplitter splitter(3, 4);
+    splitter.prepare(k_sample_rate, k_block_size, 1);
+    splitter.set_frequency(0, 300.0f);
+    splitter.set_frequency(0, std::numeric_limits<float>::quiet_NaN());
+    splitter.set_frequency(1, std::numeric_limits<float>::infinity());
+    EXPECT_FLOAT_EQ(splitter.get_frequency(0), 300.0f);
+    EXPECT_FLOAT_EQ(splitter.get_frequency(1), 10000.0f);  // the default, unchanged
+    const Bands bands = split(splitter, noise(1, 4096));
+    for (const auto& band : bands) {
+        for (size_t n = 0; n < band.get_num_samples(); ++n) {
+            ASSERT_TRUE(std::isfinite(band.get_read_pointer(0)[n]));
+        }
+    }
+}
+
+TEST(BandSplitter, KeepsTheRequestedFrequencyAcrossSampleRates) {
+    TestBandSplitter splitter(2, 4);
+    splitter.prepare(44100.0, k_block_size, 1);
+    splitter.set_frequency(0, 30000.0f);  // above Nyquist here: applied just below it
+    EXPECT_FLOAT_EQ(splitter.get_frequency(0), Butterworth::k_max_frequency_ratio * 44100.0f);
+    splitter.prepare(96000.0, k_block_size, 1);  // a host re-preparing at a higher rate
+    EXPECT_FLOAT_EQ(splitter.get_frequency(0), 30000.0f);
+}
+
+TEST(BandSplitter, ResetClearsTheCrossovers) {
+    TestBandSplitter splitter(3, 4);
+    splitter.prepare(k_sample_rate, k_block_size, 1);
+    (void)split(splitter, noise(1, 4096));
+    splitter.reset();
+    const Bands bands = split(splitter, Buffer<float>(1, 512));  // silence in
+    for (const auto& band : bands) {
+        for (size_t n = 0; n < band.get_num_samples(); ++n) {
+            ASSERT_EQ(band.get_read_pointer(0)[n], 0.0f) << n;  // nothing left from before
+        }
+    }
+}

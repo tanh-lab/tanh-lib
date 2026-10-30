@@ -29,6 +29,8 @@ public:
                  const size_t& num_channels) override;
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
+    /// Clears the crossovers and releases every band's limiter.
+    void reset() TANH_NONBLOCKING_FUNCTION override;
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset,
                  thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION override;
