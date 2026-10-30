@@ -11,6 +11,7 @@ option(TANH_WITH_PACKAGING "Add CPack packaging targets (top-level builds only)"
 option(TANH_WITH_TESTS "Add Build Tests" ON)
 option(TANH_WITH_EXAMPLES "Add Build Examples" ON)
 option(TANH_WITH_DOCS "Add the sphinx-docs target (needs Doxygen, Python 3)" OFF)
+option(TANH_LINK_COMPILE_COMMANDS "Link build/compile_commands.json, which clangd reads, to this tree's (top-level builds only)" OFF)
 
 option(TANH_WITH_RTSAN "Enable RealtimeSanitizer (rtan) checks (requires clang 20)" OFF)
 option(TANH_WITH_ASAN "Enable AddressSanitizer (asan) checks" OFF)
@@ -42,6 +43,7 @@ option(TANH_BUILD_STATE "Build State component" ON)
 option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
+option(TANH_BUILD_GRAPH "Build Graph component" OFF)
 # Off by default: this is the only component that links a network stack, and
 # consumers embedding tanh::Core (anira) must not inherit it implicitly.
 option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
@@ -98,6 +100,13 @@ tanh_apple_deployment_target(MACOS 12.0 IOS 14.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# clangd reads build/compile_commands.json (.clangd). The development presets turn
+# TANH_LINK_COMPILE_COMMANDS on, so each configure of one of their trees links its
+# database there and clangd follows the tree configured last.
+if(TANH_LINK_COMPILE_COMMANDS)
+    include(cmake/tanh/compile-commands.cmake)
+    tanh_link_compile_commands()
+endif()
 
 # Non-Apple clang on macOS gets no sysroot from CMake; without it the compile
 # database lacks -isysroot and clang-tidy cannot find system headers.
@@ -258,6 +267,7 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/Limiter.cpp
         src/dsp/utils/Random.cpp
         src/dsp/utils/DynamicDelayLine.cpp
+        src/dsp/utils/DelayProcessor.cpp
         src/dsp/utils/DynamicAllpass.cpp
         src/dsp/utils/SineOscillator.cpp
         src/dsp/utils/BrownianNoise.cpp
@@ -265,6 +275,9 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/PitchShifter.cpp
         src/dsp/utils/BandSplitter.cpp
         src/dsp/utils/MultibandLimiter.cpp
+
+        src/dsp/filter/EqDesign.cpp
+        src/dsp/filter/ParametricEq.cpp
 
 
         src/dsp/synth/SineProcessor.cpp
@@ -514,6 +527,37 @@ if(TANH_BUILD_AUDIO_IO)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_audio_io)
 endif()
 
+if(TANH_BUILD_GRAPH)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Graph component requires Core Component")
+    endif()
+    if(NOT TARGET ${PROJECT_NAME}_dsp)
+        message(FATAL_ERROR "Graph component requires DSP component")
+    endif()
+
+    add_library(${PROJECT_NAME}_graph
+        src/graph/Graph.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_graph PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+    
+    add_library(${PROJECT_NAME}::Graph ALIAS ${PROJECT_NAME}_graph)
+
+    target_include_directories(${PROJECT_NAME}_graph
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_graph PUBLIC ${PROJECT_NAME}_core ${PROJECT_NAME}_dsp)
+    target_compile_definitions(${PROJECT_NAME}_graph PUBLIC -DTANH_GRAPH_ENABLED)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_graph)
+
+endif()
+
 if(TANH_BUILD_NET)
     if(NOT TARGET ${PROJECT_NAME}_core)
         message(FATAL_ERROR "Net component requires Core component")
@@ -653,6 +697,7 @@ foreach(_pair
         "${PROJECT_NAME}_resonator=Resonator"
         "${PROJECT_NAME}_modulation=Modulation"
         "${PROJECT_NAME}_audio_io=AudioIO"
+        "${PROJECT_NAME}_graph=Graph"
         "${PROJECT_NAME}_net=Net")
     string(REPLACE "=" ";" _pair "${_pair}")
     list(GET _pair 0 _target)
@@ -706,6 +751,9 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_NET)
         add_subdirectory(test/net)
     endif()
+    if (TANH_BUILD_GRAPH)
+        add_subdirectory(test/graph)
+    endif()
 
     # The export-table invariant, on the desktop formats where it can be inspected.
     if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
@@ -718,7 +766,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net benchmark_state benchmark_modulation benchmark_dsp)
+    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net test_graph benchmark_state benchmark_graph benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()

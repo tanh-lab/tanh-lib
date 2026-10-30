@@ -5,6 +5,7 @@
 #include <tanh/dsp/utils/Butterworth.h>
 #include <tanh/dsp/utils/LinkwitzRiley.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <array>
@@ -220,6 +221,12 @@ TEST(BandSplitterDeathTest, AssertsTheBandOrder) {
     TestBandSplitter splitter(3, 4);
     splitter.prepare(k_sample_rate, k_block_size, 1);
     Buffer<float> buffer(1, k_block_size);
-    EXPECT_DEATH(splitter.process_band(BufferView(buffer), 1), "m_next_band");
+    // RTSan off for the call that asserts: its abort would be reported before the message.
+    EXPECT_DEATH(
+        {
+            TANH_NONBLOCKING_SCOPED_DISABLER
+            splitter.process_band(BufferView(buffer), 1);
+        },
+        "m_next_band");
 }
 #endif

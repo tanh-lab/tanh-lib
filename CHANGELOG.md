@@ -9,6 +9,59 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `tanh::Graph` (`TANH_BUILD_GRAPH`, off by default, on in every preset but wasm; by
+  @jstolberg): `thl::graph::Graph`, a `BaseProcessor` of `BaseProcessor` nodes. Edits on the
+  control thread take effect at `commit()`, handed to the audio thread with a fade; nested
+  graphs, per-node input mix and wet mix, `collect_garbage()`. Latency compensation: the
+  faster inputs of every merge and a node's dry/bypass path are delayed, the graph holds
+  silence after a commit until every delay is ready. It never pads: its output has the least
+  latency its nodes allow (`max_latency_samples()` only sizes the delays), and
+  `committed_latency_samples()` gives the latency the committed version will have, for the
+  host right after `commit()` (a node whose maximum changed since the last commit counts at it
+  until it runs). A node whose latency rises above the maximum it had at the last commit (or a
+  nested graph that committed on its own) is compensated at that maximum until the graph
+  containing it commits. A bypassed node coming back is `reset()`. Merges sum their sources by
+  default (`InputMix::Sum`, or `Average`). Per node, `set_mix_law()` chooses how the wet mix
+  sets the dry and wet gains (`MixLaw::Linear`, the default, `ConstantPower`, `Compromise`
+  at -4.5 dB, `Parallel`, `DryHeld`), live, a change crossfading over 20 ms. Tests: `test_graph`
+  (including edits and commits against a running audio thread), `benchmark_graph`.
+- `BaseProcessor::latency_samples()` / `max_latency_samples()` / `set_latency_samples()` /
+  `set_max_latency_samples()`: a processor reports its latency (by @jstolberg).
+- `thl::dsp::utils::DelayProcessor`: an integer delay that crossfades linearly when the delay
+  changes, and can keep its history without changing its input (by @jstolberg). Tests:
+  `DelayProcessor.*`.
+- `BaseProcessor::process_modulated()` takes the buffer's position in the block
+  (`modulation_offset`, default 0), so a caller that runs a block in parts, such as a graph,
+  has its nodes read modulation at the block position.
+- `BaseProcessor::reset()`: clears what a processor holds from the audio it processed, keeping
+  its settings; real-time safe, does nothing by default. `LimiterImpl`, `ParametricEqImpl`,
+  `StereoFDN` and `DelayProcessor` implement it.
+- `thl::dsp::filter::ParametricEq`: a parametric equaliser of up to 8 bands in series for any
+  number of channels, each band a Peak, Notch, LowShelf, HighShelf, LowCut or HighCut
+  (12 dB/octave). One trapezoidal state-variable filter (Cytomic) per band and channel. Every
+  change of a band or of the design ramps its coefficients over 10 ms, so automation and a
+  dragged band do not click; a flat or disabled band costs nothing, also when a field it does not
+  use changes. Out-of-range and non-finite settings are clamped or replaced; `prepare()` keeps
+  the bands. `response_curve()` and `log_frequencies()` give the settled curve to plot, from
+  the caller's settings, on any thread. Real-time safe after `prepare()`. Tests:
+  `ParametricEq.*`.
+- `thl::dsp::filter::ParametricEqImpl`: `ParametricEq` as a `BaseProcessor`, its parameters
+  read through `get_parameter_float()` (the design) and `get_band_parameter_float()` (type,
+  frequency, gain, Q, enabled per band), so State and Modulation drive it. Tests:
+  `ParametricEqImpl.*`.
+- `EqDesign.h`: `EqBand`, `design_band()` and `analog_response()`. `EqDesign::Matched` (the
+  default) follows the analogue prototype up to Nyquist: poles by impulse invariance, zeros
+  fitted to the prototype's magnitude (Vicanek, "Matched Second Order Digital Filters", 2016,
+  for the peak and the cuts; the shelves fitted at DC, their frequency and Nyquist up to Q 2,
+  bilinear above, where the fit would miss a resonant shelf's bump). `EqDesign::Bilinear` gives
+  the RBJ cookbook's curves. Tests:
+  `EqDesign.*`.
+- `SvfCoefficients.h`: `SvfCoefficients` (Cytomic's g, k, m0 to m2, with the exact response
+  and the conversion to and from `BiquadCoefficients`), `SvfState`, `SvfTick` and `SvfRamp`
+  (click-free coefficient ramps), header-only, for any filter built on the trapezoidal SVF. The
+  coefficients, states and per-sample gains are double: low bands at high sample rates stay at
+  the float output's own noise floor.
+  Tests: `SvfCoefficients.*`.
 - `ConstellationReverbImpl::set_shimmer_position()`: where the shimmer pitch-shifts
   the tank. `Feedback` (the default, unchanged) shifts each half's output, so the
   shimmer is heard after a round of decay and builds with a long decay; `Input`
@@ -55,6 +108,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the phase. `process_modulated(buffer, dry)` and
   `process_modulated(buffer, change_points, dry)` split both at the same change
   points. Tests: `BaseProcessor.*`.
+- `TANH_LINK_COMPILE_COMMANDS` (default OFF; ON in the `desktop-*`, `macos-x64-*`,
+  `android-*` and `wasm-release` presets): a top-level configure links
+  `build/compile_commands.json` to its tree's database
+  (`tanh_link_compile_commands`, tanh-tooling v0.3.0), so clangd follows the tree
+  configured last, the wasm tree included.
 
 ### Changed
 
@@ -68,6 +126,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - A processor that overrides only `process(buffer, modulation_offset)` hides the
   dry overload when called through its own type; calls through
   `BaseProcessor&` are unaffected.
+- `BaseProcessor` holds its latency (two atomics), has a copy constructor and copy assignment
+  and the virtual `reset()`: code that derives from it must be recompiled. `StereoFDN::reset()`
+  and `DelayProcessor::reset()` now override it.
+- `process_modulated()` no longer calls `process()` for an empty buffer.
+- Shared tooling pinned to tanh-tooling v0.3.0 (`.clangd`, `cmake/tanh/`,
+  `lint.yml`). `.clangd` now reads `build/compile_commands.json` instead of
+  `build/desktop/Debug/`: reconfigure a development preset once to create the link.
+  For the wasm tree, start clangd with `--query-driver=**/em++` (see
+  `docs/sphinx/contributing.rst`, "Shared tooling").
 
 ## [0.4.0] - 2026-09-21
 

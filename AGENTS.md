@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Git Commits
 
@@ -41,13 +41,14 @@ Run a single test binary directly:
 
 ## Architecture
 
-Five library targets with inter-component dependencies:
+Library targets with inter-component dependencies:
 
 - **tanh_core** (`src/core/`, `include/tanh/core/`) — Dispatcher (event messaging), Logger (with RT-safe `Logger::rt` path), RCU (lock-free read-copy-update), `LockFreeQueue` (bounded lock-free MPMC), generic buffers, header-only WAV decoder (`WavReader.h`). Foundation for all other components.
 - **tanh_state** (`src/state/`, `include/tanh/state/`) — Hierarchical parameter storage with dot-separated paths (e.g. `"oscillator.frequency"`). RCU-protected reads for real-time safety. JSON serialization via nlohmann_json. Depends on core.
 - **tanh_dsp** (`src/dsp/`, `include/tanh/dsp/`) — DSP processors (synth, effects, granular, Rings resonator model). All processors inherit `BaseProcessor` with `prepare()`/`process()` interface. Modulation via change points for sample-accurate automation. Depends on core.
 - **tanh_modulation** (`src/modulation/`, `include/tanh/modulation/`) — Modulation matrix routing sources (LFO, etc.) to DSP parameters. Change-point-driven sub-blocking. Depends on core, state, dsp.
 - **tanh_audio_io** (`src/audio-io/`, `include/tanh/audio-io/`) — Cross-platform audio device I/O over miniaudio. Platform-specific code for iOS (.mm) and Android. Depends on core.
+- **tanh_graph** (`src/graph/`, `include/tanh/graph/`) — `Graph`: `BaseProcessor` nodes run as one processor, edited on the control thread and handed over at `commit()`; latency compensation from each node's `latency_samples()`; a bypassed node coming back is `reset()`. Off by default (`TANH_BUILD_GRAPH`). Depends on core, dsp.
 
 ## Documentation
 

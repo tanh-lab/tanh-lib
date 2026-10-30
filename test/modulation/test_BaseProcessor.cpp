@@ -3,6 +3,7 @@
 #include <tanh/dsp/BaseProcessor.h>
 
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "TestHelpers.h"
@@ -19,7 +20,10 @@ public:
     void prepare(const double& /*sample_rate*/,
                  const size_t& samples_per_block,
                  const size_t& /*num_channels*/) override {
+        // process() runs under RTSan: record without allocating.
         m_block_sizes.reserve(samples_per_block);
+        m_dry_block_sizes.reserve(samples_per_block);
+        m_dry_offsets.reserve(samples_per_block);
     }
 
     void process(thl::core::BufferView buffer, uint32_t /*modulation_offset*/ = 0) override {
@@ -152,4 +156,44 @@ TEST(BaseProcessor, DefaultProcessWithDryCopiesTheInput) {
         EXPECT_FLOAT_EQ(dry_data[n], input[n]);
         EXPECT_FLOAT_EQ(data[n], 2.0f * input[n]);
     }
+}
+
+// A buffer that starts at a block position: change points stay block positions,
+// each part gets its block position as the modulation offset.
+TEST(BaseProcessor, ProcessModulatedAtAnOffsetSplitsAtBlockPositions) {
+    class OffsetRecorder : public thl::dsp::BaseProcessor {
+    public:
+        std::vector<std::pair<uint32_t, size_t>> m_calls;  // reserved: process() runs under RTSan
+        void prepare(const double&, const size_t&, const size_t&) override {}
+        void process(thl::core::BufferView buffer, uint32_t modulation_offset) override {
+            m_calls.emplace_back(modulation_offset, buffer.get_num_samples());
+        }
+    };
+    OffsetRecorder proc;
+    proc.m_calls.reserve(8);
+    std::vector<float> audio(64, 0.0f);
+    thl::core::BufferView view(audio.data(), 64);
+    const std::vector<uint32_t> cps = {16, 40, 48, 100};  // 16 before, 100 after the part
+
+    proc.process_modulated(view.sub_block(32, 32), std::span<const uint32_t>(cps), 32);
+    using Calls = std::vector<std::pair<uint32_t, size_t>>;
+    EXPECT_EQ(proc.m_calls, (Calls{{32, 8}, {40, 8}, {48, 16}}));
+}
+
+// With a dry buffer at a block position: both are split at the same block positions.
+TEST(BaseProcessor, ProcessModulatedWithDryAtAnOffsetSplitsBothAtBlockPositions) {
+    CallCountingProcessor proc;
+    proc.prepare(k_sample_rate, k_block_size, 1);
+    std::vector<float> audio(64, 0.0f);
+    std::vector<float> dry_audio(64, 0.0f);
+    thl::core::BufferView view(audio.data(), 64);
+    thl::core::BufferView dry(dry_audio.data(), 64);
+    const std::vector<uint32_t> cps = {16, 40, 48, 100};
+
+    proc.process_modulated(view.sub_block(32, 32),
+                           std::span<const uint32_t>(cps),
+                           dry.sub_block(32, 32),
+                           32);
+    EXPECT_EQ(proc.m_dry_offsets, (std::vector<uint32_t>{32, 40, 48}));
+    EXPECT_EQ(proc.m_dry_block_sizes, (std::vector<size_t>{8, 8, 16}));
 }

@@ -1,7 +1,7 @@
 Components
 ==========
 
-tanh-lib is six independently buildable library targets. Each is an
+tanh-lib is seven independently buildable library targets. Each is an
 ``add_library`` of its own, exported as ``tanh::<Component>`` both in-tree and
 from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option.
 Everything lives in namespace ``thl``.
@@ -20,11 +20,14 @@ Everything lives in namespace ``thl``.
        modulation [label="tanh::Modulation\nmodulation matrix,\nchange-point sub-blocking"];
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
+       graph_node [label="tanh::Graph\nprocessor graph,\nlatency compensation"];
 
        state -> core;
        dsp -> core;
        audio_io -> core;
        net -> core;
+       graph_node -> core;
+       graph_node -> dsp;
        modulation -> core;
        modulation -> state;
        modulation -> dsp;
@@ -104,6 +107,18 @@ platform HTTP stack, :cpp:class:`thl::net::Sha256` for verification and
 :cpp:class:`thl::net::AssetStore` for the verified, atomic install into
 ``<root>/<id>/<version>/``. Off by default (``TANH_BUILD_NET``) so nothing that
 embeds ``tanh::Core`` inherits a network stack. Depends on Core.
+
+Graph
+-----
+
+``tanh::Graph`` (``include/tanh/graph/``) runs ``BaseProcessor`` nodes as one
+processor: :cpp:class:`thl::graph::Graph` is edited on the control thread and
+handed to the audio thread at ``commit()`` with a short fade, nests, mixes each
+node's sources and blends its wet signal, and compensates latency: the faster
+inputs of every node and a node's dry path are delayed to match each node's
+``latency_samples()``, and the graph reports its own. A bypassed node coming
+back is ``reset()``. Off by default (``TANH_BUILD_GRAPH``). Depends on Core and
+DSP.
 
 Platforms
 ---------

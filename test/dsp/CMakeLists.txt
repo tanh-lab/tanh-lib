@@ -7,8 +7,11 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_Limiter.cpp
 	test_LinearSmootherBank.cpp
 	test_MorphFilter.cpp
+	test_EqDesign.cpp
+	test_ParametricEq.cpp
 	test_StereoFDN.cpp
 	test_ConstellationReverb.cpp
+	test_DelayProcessor.cpp
 	test_InternalTransportClock.cpp
 	test_MetronomePlayer.cpp
 	test_Granular.cpp
