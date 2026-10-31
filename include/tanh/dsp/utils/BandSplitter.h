@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace thl::dsp::utils {
@@ -43,12 +44,20 @@ public:
                  const size_t& samples_per_block,
                  const size_t& num_channels) override;
 
-    /// Sets the target of the crossover between bands @p crossover and @p crossover + 1.
+    /// Sets the target of the crossover between bands @p crossover and @p crossover + 1, blocked
+    /// at its neighbours (they stay): one crossover moved, e.g. dragged. For several at once use
+    /// set_frequencies(), which does not depend on the order.
     /// Call it from the audio thread, before process_band() for band 0; a change takes effect
     /// from the next block.
     /// A non-finite @p frequency is ignored. The requested frequency is kept: prepare() at another
     /// sample rate clamps it again from it, so a limit of one rate does not stick.
     void set_frequency(size_t crossover, float frequency) TANH_NONBLOCKING_FUNCTION;
+
+    /// Sets the targets of every crossover at once (@p frequencies: one per crossover, lowest
+    /// first; a non-finite one leaves that crossover's request as it is), independent of any
+    /// order: the requests are sorted, so crossing ones become the same boundaries in order, and
+    /// one that sweeps past another hands over continuously. Audio thread, as set_frequency().
+    void set_frequencies(std::span<const float> frequencies) TANH_NONBLOCKING_FUNCTION;
 
     /// The target of @p crossover as applied: clamped between its neighbours and below Nyquist.
     float get_frequency(size_t crossover) const;
@@ -71,6 +80,9 @@ private:
     using Channel = std::vector<Crossover>;
 
     void update_prewarped(size_t num_samples) TANH_NONBLOCKING_FUNCTION;
+    /// The applied frequencies from the (ordered) requests: below Nyquist, in order; the glides
+    /// head for them.
+    void apply_requests() TANH_NONBLOCKING_FUNCTION;
 
     std::vector<Channel> m_channels;
     thl::core::Buffer<float> m_high_passed;

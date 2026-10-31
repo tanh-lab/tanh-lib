@@ -5,9 +5,11 @@
 #include <tanh/dsp/utils/MultibandLimiter.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <random>
 #include <vector>
@@ -160,4 +162,57 @@ TEST(MultibandLimiter, ResetReleasesTheLimiters) {
     for (size_t n = 0; n < quiet.get_num_samples(); ++n) {
         ASSERT_NEAR(quiet.get_read_pointer(0)[n], dry.get_read_pointer(0)[n], 1e-6f) << n;
     }
+}
+
+namespace {
+
+/// Its crossovers come from parameters, read with the block position.
+class ParameterisedMultibandLimiter : public TestMultibandLimiter {
+public:
+    ParameterisedMultibandLimiter() : TestMultibandLimiter(4, 4) { m_offsets.reserve(64); }
+
+    std::array<float, 3> m_crossovers{200.0f, 2000.0f, 9000.0f};
+    std::vector<uint32_t> m_offsets;  // reserved: process() runs under RTSan
+
+protected:
+    float get_crossover_parameter_float(size_t crossover, uint32_t modulation_offset) override {
+        if (crossover == 0) { m_offsets.push_back(modulation_offset); }
+        return m_crossovers[crossover];
+    }
+};
+
+}  // namespace
+
+TEST(MultibandLimiter, CrossoversComeFromTheirParameters) {
+    ParameterisedMultibandLimiter limiter;
+    limiter.prepare(k_sample_rate, k_block_size, 1);
+    Buffer<float> block(1, k_block_size);
+    limiter.process(BufferView(block));
+    EXPECT_FLOAT_EQ(limiter.get_frequency(0), 200.0f);
+    EXPECT_FLOAT_EQ(limiter.get_frequency(1), 2000.0f);
+    EXPECT_FLOAT_EQ(limiter.get_frequency(2), 9000.0f);
+
+    limiter.m_crossovers = {5000.0f, 300.0f, 9000.0f};  // crossing: sorted, whatever the order
+    limiter.process(BufferView(block));
+    EXPECT_FLOAT_EQ(limiter.get_frequency(0), 300.0f);
+    EXPECT_FLOAT_EQ(limiter.get_frequency(1), 5000.0f);
+    EXPECT_FLOAT_EQ(limiter.get_frequency(2), 9000.0f);
+}
+
+TEST(MultibandLimiter, CrossoverParametersAreReadAtTheBlockPosition) {
+    ParameterisedMultibandLimiter limiter;
+    limiter.prepare(k_sample_rate, k_block_size, 1);
+    Buffer<float> block(1, k_block_size);
+    const std::array<uint32_t, 2> change_points{16, 40};
+    limiter.process_modulated(BufferView(block), change_points);
+    EXPECT_EQ(limiter.m_offsets, (std::vector<uint32_t>{0, 16, 40}));
+}
+
+TEST(MultibandLimiter, WithoutCrossoverParametersSetFrequencyDecides) {
+    TestMultibandLimiter limiter(2, 4);
+    limiter.prepare(k_sample_rate, k_block_size, 1);
+    limiter.set_frequency(0, 700.0f);
+    Buffer<float> block(1, k_block_size);
+    limiter.process(BufferView(block));
+    EXPECT_FLOAT_EQ(limiter.get_frequency(0), 700.0f);
 }
