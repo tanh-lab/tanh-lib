@@ -16,6 +16,10 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MetronomePlayer.cpp
 	test_Granular.cpp
 	test_MorphWindow.cpp
+	test_Butterworth.cpp
+	test_LinkwitzRiley.cpp
+	test_BandSplitter.cpp
+	test_MultibandLimiter.cpp
 )
 
 if(TARGET tanh_resonator)

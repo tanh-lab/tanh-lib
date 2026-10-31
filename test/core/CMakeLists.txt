@@ -7,6 +7,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_RCU.cpp
 	test_Buffer.cpp
 	test_BufferView.cpp
+	test_BufferOperations.cpp
 	test_RingBuffer.cpp
 	test_LockFreeQueue.cpp
 	test_RtFormat.cpp
