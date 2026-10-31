@@ -124,6 +124,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `Graph`: a node's wet/dry blend takes its dry signal from the node
+  (`process_modulated_with_dry()`), phase-matched to its output, and delays it by
+  the node's latency as before; a node that shifts the phase (a crossover, a
+  multiband processor) no longer combs at a partial wet mix. A nested graph's dry
+  signal is still its input. Tests:
+  `Graph.ABlendOfANodeThatShiftsThePhaseUsesItsPhaseMatchedDrySignal`.
 - `BaseProcessor` has the new virtual `process_with_dry()`, so its vtable
   changed: code that derives from it or calls it across a shared library must be
   recompiled.

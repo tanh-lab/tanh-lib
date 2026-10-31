@@ -704,7 +704,7 @@ void Graph::mix_sources(const CompiledGraph& compiled,
 
 void Graph::run_step(const ProcessingStep& step,
                      thl::core::BufferView buffer,
-                     thl::core::BufferView dry,
+                     const thl::core::BufferView& dry,
                      uint32_t modulation_offset) {
     Node& node = *step.m_node;
     thl::dsp::utils::DelayProcessor& dry_delay = *step.m_dry_delay;
@@ -731,18 +731,20 @@ void Graph::run_step(const ProcessingStep& step,
         dry_delay.process(buffer);  // bypassed: the sources, delayed by the node's latency
         return;
     }
+    // Whenever the processor runs, its dry signal comes from it (process_with_dry()): the input
+    // with the processor's phase response but without its effect, so a blend of a node that
+    // shifts the phase (a crossover) does not comb. The dry delay then aligns it to the node's
+    // latency, which the dry signal never includes. Fully wet, the dry signal only keeps the
+    // delay's history current, so a blend starts from it.
     if (settled && settled_gains.m_wet == 1.0f && settled_gains.m_dry == 0.0f) {
-        dry_delay.write(buffer);
-        node.m_processor->process_modulated(buffer, modulation_offset);
+        node.m_processor->process_modulated_with_dry(buffer, dry, modulation_offset);
+        dry_delay.write(dry);
         return;
     }
 
     const size_t n = buffer.get_num_samples();
-    for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
-        std::copy_n(buffer.get_read_pointer(ch), n, dry.get_write_pointer(ch));
-    }
+    node.m_processor->process_modulated_with_dry(buffer, dry, modulation_offset);
     dry_delay.process(dry);
-    node.m_processor->process_modulated(buffer, modulation_offset);
 
     for (size_t i = 0; i < n; ++i) {
         MixGains gains = settled_gains;
