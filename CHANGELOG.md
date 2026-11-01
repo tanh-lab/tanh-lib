@@ -9,6 +9,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `tanh_add_core_library()` (`cmake/core-library.cmake`): the core component as a library
+  of the calling build, `tanh_add_core_library(<target> SOURCE_DIR <tanh-lib> ABI_NAMESPACE
+  <ns> [STATIC | SHARED] [LOG_COMPILED_MAX_LEVEL <AUTO | 1..4>] [WITH_JOURNALD] [ALIAS
+  <name>])`, with the sources, include directories, public definitions, platform libraries,
+  symbol policy and version properties of the core; tanh-lib's own `tanh_core` is defined
+  through it. An embedder that must not share a core with its host (anira) fetches tanh-lib
+  under its own FetchContent name, populate-only, includes that tree's
+  `cmake/core-library.cmake` and builds a private core in a namespace of its own, e.g.
+  `tanh_add_core_library(anira_tanh_core ... ABI_NAMESPACE anira STATIC)`: the host's
+  `tanh_core` and the private core coexist in one build and one process. The file has no
+  include guard; include the copy of the tree you build right before the call. Sanitizers and
+  install rules stay with the caller. See `docs/sphinx/symbol_visibility.md`.
+- `TANH_ABI_NAMESPACE` (default `AUTO`, which is `v<major>_<minor>` of the version from git):
+  the inline namespace of every declaration. `tanh_add_core_library()` writes it as
+  `THL_ABI_NAMESPACE` into a generated `tanh/core/AbiNamespace.h` in the library's build tree,
+  which is in the core's public include directories and is installed with the core, so every
+  consumer compiles against the value the library was built with.
+- `scripts/abi-namespace.py`: rewrites every `namespace thl...` opener and closing comment to
+  the ABI namespace and adds the include; idempotent, `--check` for CI. Re-run it after a
+  rebase that brings in new files.
+- `test/abi-namespace` (CTest, Linux, macOS, Windows): `abi_namespace_symbols_<library>`
+  checks with nm / dumpbin that every symbol a library defines in `thl` lies in its ABI
+  namespace and none lies at global scope; `test_abi_namespace` links a second core library
+  (`tanh_core_b`, namespace `test_b`) beside `tanh_core` and shows separate logger levels,
+  configurations and callbacks; `abi_namespace_sources` runs the script's `--check`. The
+  install consumer prints the installed namespace.
 - `thl::dsp::fx::StereoWidenerImpl`: a multiband stereo widener. Mid and side are
   split by Linkwitz-Riley crossovers (`BandSplitter`), each band's side scaled by
   its width (0 mono, 1 unchanged, up to 2), the mid only through the crossovers'
@@ -140,6 +166,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Breaking:** every declaration of every component lives in the inline namespace
+  `thl::<ns>`: `thl::v0_4` for this version, `thl::v0_5` once v0.5.0 is tagged (each opener
+  reads `namespace thl::inline THL_ABI_NAMESPACE::core {`). Code keeps spelling `thl::...`,
+  but every mangled name changes (`_ZN3thl4v0_4...`, `...@v0_4@thl@@`), so everything built
+  against tanh-lib must be rebuilt. Two tanh-lib copies with different namespaces — a host's
+  and a plugin's, a host's and anira's private core — no longer share code or state in one
+  link; before, static archives on macOS, iOS and Windows gave both sides whichever copy the
+  link order picked, and the header-only code merged by name on every platform. Migration:
+  code that forward-declares a tanh-lib type itself (`namespace thl { class State; }`)
+  declares a second, different type, which is ambiguous next to the header and does not link
+  without it: include the tanh-lib header instead. A consumer built outside CMake needs the
+  installed `tanh/core/AbiNamespace.h` on its include path (it sits next to the other core
+  headers).
+- **Breaking:** the Net component's Objective-C download delegate is
+  `TanhDownloadDelegate_<ns>` (was `TanhDownloadDelegate`): Objective-C class names are
+  global to the process, so two copies of Net in one process no longer clash in the runtime.
+- The API reference is generated with the ABI namespace filtered out (a Doxygen
+  `INPUT_FILTER`), so it documents `thl::core::Logger` as before.
 - `Graph`: a node's wet/dry blend takes its dry signal from the node
   (`process_modulated_with_dry()`), phase-matched to its output, and delays it by
   the node's latency as before; a node that shifts the phase (a crossover, a

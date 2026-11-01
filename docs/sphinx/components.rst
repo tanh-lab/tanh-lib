@@ -4,7 +4,11 @@ Components
 tanh-lib is seven independently buildable library targets. Each is an
 ``add_library`` of its own, exported as ``tanh::<Component>`` both in-tree and
 from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option.
-Everything lives in namespace ``thl``.
+Everything lives in namespace ``thl``, inside the inline ABI namespace
+``thl::v<major>_<minor>`` (``TANH_ABI_NAMESPACE``), so that two copies of
+tanh-lib in one process stay apart; code spells ``thl::`` (see
+:doc:`symbol_visibility`). The core is defined by ``tanh_add_core_library()``
+(``cmake/core-library.cmake``), which an embedder also uses for a private copy.
 
 .. graphviz::
    :align: center
