@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/state/Parameter.h>
 #include <tanh/state/State.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -15,7 +16,7 @@
 #include "tanh/state/ParameterListener.h"
 #include "tanh/state/StateGroup.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 // Parameter constructor
 Parameter::Parameter(const State* state, ParameterRecord* record)
@@ -169,4 +170,4 @@ template TANH_API int Parameter::to<int>(bool allow_blocking) const TANH_NONBLOC
 template TANH_API bool Parameter::to<bool>(bool allow_blocking) const TANH_NONBLOCKING_FUNCTION;
 template TANH_API std::string Parameter::to<std::string>(bool allow_blocking) const
     TANH_NONBLOCKING_FUNCTION;
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

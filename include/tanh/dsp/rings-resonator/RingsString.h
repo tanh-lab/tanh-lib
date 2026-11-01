@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/filter/DCBlocker.h>
@@ -39,7 +40,7 @@
 #include <algorithm>
 #include <array>
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 const size_t k_delay_line_size = 4096;
 
@@ -231,4 +232,4 @@ private:
     thl::dsp::filter::DCBlocker m_dc_blocker;
 };
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

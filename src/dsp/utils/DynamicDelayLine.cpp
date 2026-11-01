@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
 
@@ -5,7 +6,7 @@
 #include <bit>
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 DynamicDelayLine::DynamicDelayLine() = default;
 DynamicDelayLine::~DynamicDelayLine() = default;
@@ -84,4 +85,4 @@ float DynamicDelayLine::read_at(size_t delay) const {
     return m_buf.get_read_pointer(0)[(m_write_ptr + delay) & m_mask];
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

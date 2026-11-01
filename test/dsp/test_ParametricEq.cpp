@@ -506,6 +506,7 @@ TEST(ParametricEq, NonFiniteSettingsDoNotBreakIt) {
     eq.prepare(k_sample_rate, 1);
     eq.set_band(0, {.m_type = EqBandType::Peak, .m_frequency = nan, .m_gain_db = 6.0f});
     eq.set_band(1, {.m_type = EqBandType::LowShelf, .m_gain_db = inf, .m_q = nan});
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) an invalid type on purpose
     eq.set_band(2, {.m_type = static_cast<EqBandType>(200), .m_gain_db = 3.0f});
     std::vector<float> x(4096, 0.1f);
     for (int block = 0; block < 4; ++block) {

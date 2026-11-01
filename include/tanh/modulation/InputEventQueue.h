@@ -1,6 +1,7 @@
 #pragma once
 
 #include <readerwriterqueue.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/state/ModulationScope.h>
 
@@ -10,7 +11,7 @@
 #include <functional>
 #include <vector>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // Pure-transport helper for input-driven modulation sources (XY pad, touch
 // LFO, MIDI-CC, haptic). Bridges a UI-thread producer to an audio-thread
@@ -90,4 +91,4 @@ private:
     const thl::modulation::ModulationScope m_scope;
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

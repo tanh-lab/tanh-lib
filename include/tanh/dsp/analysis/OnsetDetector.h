@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DspMath.h>
@@ -35,7 +36,7 @@
 #include <algorithm>
 #include <array>
 
-namespace thl::dsp::analysis {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::analysis {
 
 using namespace std;
 using namespace thl::dsp::utils;
@@ -225,4 +226,4 @@ private:
     int32_t m_inhibit_counter = 0;
 };
 
-}  // namespace thl::dsp::analysis
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::analysis

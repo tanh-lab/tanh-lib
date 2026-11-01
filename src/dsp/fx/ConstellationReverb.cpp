@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/fx/ConstellationReverb.h>
 #include <tanh/dsp/utils/DspMath.h>
@@ -11,7 +12,7 @@
 
 #include "tanh/core/BufferView.h"
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 // ── Dattorro base delay values (original SR = 29761 Hz) ──────────────────────
 
@@ -389,4 +390,4 @@ std::array<utils::BrownianNoise*, 10> ConstellationReverbImpl::all_brownians() {
             &m_brown_shim_b};
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

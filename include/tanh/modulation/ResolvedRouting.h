@@ -1,12 +1,14 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <atomic>
 #include <cstdint>
 #include <vector>
 
 #include "ModulationRouting.h"
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 class ModulationSource;
 struct ResolvedTarget;
@@ -180,4 +182,4 @@ struct ResolvedRouting {
     }
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

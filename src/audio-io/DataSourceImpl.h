@@ -1,10 +1,11 @@
 #pragma once
 
 #include <tanh/audio-io/DataSource.h>
+#include <tanh/core/AbiNamespace.h>
 
 #include "miniaudio.h"
 
-namespace thl::audio_io {
+namespace thl::inline THL_ABI_NAMESPACE::audio_io {
 
 struct DataSource::Impl {
     ma_resource_manager m_resource_manager{};
@@ -35,4 +36,4 @@ struct DataSource::Impl {
     Impl& operator=(const Impl&) = delete;
 };
 
-}  // namespace thl::audio_io
+}  // namespace thl::inline THL_ABI_NAMESPACE::audio_io

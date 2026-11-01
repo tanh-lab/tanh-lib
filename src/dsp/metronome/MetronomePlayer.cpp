@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/transport/TransportClock.h>
@@ -8,7 +9,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace thl::dsp::metronome {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::metronome {
 
 // ── Voice ─────────────────────────────────────────────────────────────────────
 
@@ -133,4 +134,4 @@ MetronomePlayerImpl::Voice& MetronomePlayerImpl::pick_voice() {
     return *quietest;
 }
 
-}  // namespace thl::dsp::metronome
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::metronome

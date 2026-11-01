@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/net/AssetStore.h>
 #include <tanh/net/HttpClient.h>
 #include <tanh/net/Sha256.h>
@@ -15,7 +16,7 @@
 
 namespace fs = std::filesystem;
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 namespace {
 
 /// A path segment we are willing to turn into a directory name. Rejects
@@ -256,4 +257,4 @@ std::size_t AssetStore::prune_partial() {
     return pruned;
 }
 
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net

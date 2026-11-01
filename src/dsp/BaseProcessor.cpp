@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/BaseProcessor.h>
 
 #include <cassert>
@@ -8,7 +9,7 @@
 #include "tanh/core/BufferView.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl::dsp {
+namespace thl::inline THL_ABI_NAMESPACE::dsp {
 
 // NOLINTBEGIN(performance-unnecessary-value-param)
 void BaseProcessor::process_with_dry(thl::core::BufferView buffer,
@@ -77,4 +78,4 @@ void BaseProcessor::split_and_process(const thl::core::BufferView& buffer,
     if (pos < end) { process_part(pos, end - pos); }
 }
 
-}  // namespace thl::dsp
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp

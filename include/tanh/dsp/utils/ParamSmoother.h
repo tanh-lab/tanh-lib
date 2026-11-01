@@ -1,8 +1,10 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cmath>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 class ParamSmoother {
 public:
@@ -26,4 +28,4 @@ private:
     float m_coeff = 0.0f;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

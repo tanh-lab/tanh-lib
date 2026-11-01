@@ -1,9 +1,10 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <cstdint>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @class AudioIODeviceCallback
@@ -128,4 +129,4 @@ public:
     virtual void release_resources() {}
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

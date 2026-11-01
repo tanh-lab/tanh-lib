@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -8,7 +9,7 @@
 #include <cassert>
 #include <cstddef>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Operations on the samples of buffer views, sample by sample in every channel.
@@ -49,4 +50,4 @@ private:
     }
 };
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

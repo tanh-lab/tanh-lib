@@ -1,4 +1,5 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <atomic>
@@ -9,7 +10,7 @@
 #include <memory>
 #include <string>
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 
 /// Why a transfer stopped. `Ok` is the only success.
 enum class HttpStatus {
@@ -118,4 +119,4 @@ private:
     std::unique_ptr<Backend> m_backend;
 };
 
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net

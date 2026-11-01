@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -9,7 +10,7 @@
 #include <memory>
 #include <type_traits>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Bounded lock-free multi-producer / multi-consumer queue.
@@ -292,4 +293,4 @@ private:
     alignas(k_cache_line) std::atomic<std::size_t> m_dequeue_pos{0};
 };
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

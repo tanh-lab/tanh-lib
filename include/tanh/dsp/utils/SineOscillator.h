@@ -1,8 +1,9 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Sinusoidal oscillator using the coupled-form (magic circle) algorithm.
@@ -32,4 +33,4 @@ private:
     float m_amplitude = 1.0f;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

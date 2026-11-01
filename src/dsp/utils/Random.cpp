@@ -1,8 +1,9 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/Random.h>
 
 #include <cstdint>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 uint32_t Random::nlog2_16(uint16_t x) {
     uint32_t r = 0;
@@ -109,4 +110,4 @@ uint32_t Random::nlog2_16(uint16_t x) {
     return r;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

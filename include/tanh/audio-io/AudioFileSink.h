@@ -1,4 +1,5 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <atomic>
@@ -8,7 +9,7 @@
 
 #include "AudioIODeviceCallback.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @enum AudioEncodingFormat
@@ -205,4 +206,4 @@ private:
     std::atomic<float> m_peak_level{0.0f};
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

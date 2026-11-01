@@ -1,11 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
 
-namespace thl::detail {
+namespace thl::inline THL_ABI_NAMESPACE::detail {
 // Split a path into the first component and the rest
 // Example: "audio.effects.reverb" -> {"audio", "effects.reverb"}
 inline std::pair<std::string_view, std::string_view> split_path(std::string_view path) {
@@ -40,4 +42,4 @@ constexpr size_t join_path_size(std::string_view parent, std::string_view child)
     return parent.size() + 1 + child.size();  // +1 for dot
 }
 
-}  // namespace thl::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::detail

@@ -3,16 +3,17 @@
 #if defined(THL_PLATFORM_IOS)
 
 #include <tanh/audio-io/AudioDeviceInfo.h>
+#include <tanh/core/AbiNamespace.h>
 
 #include <string>
 #include <vector>
 
 // Forward-declare so we don't pull in the full AudioDeviceManager header.
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 enum class BluetoothProfile;
 }
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /// Describes an iOS audio route (port).
 struct AudioRouteInfo {
@@ -51,6 +52,6 @@ std::string get_ios_current_input_route_name();
 /// Returns the name of the currently active output route.
 std::string get_ios_current_output_route_name();
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE
 
 #endif  // THL_PLATFORM_IOS

@@ -1,8 +1,9 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/net/HttpClient.h>
 
 #include "HttpBackend.h"
 
-namespace thl::net::detail {
+namespace thl::inline THL_ABI_NAMESPACE::net::detail {
 
 // No native backend for this platform yet (Linux, Android). The component still
 // links so callers compile everywhere; every request reports Unsupported, which
@@ -19,4 +20,4 @@ bool backend_supported() {
     return false;
 }
 
-}  // namespace thl::net::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::net::detail

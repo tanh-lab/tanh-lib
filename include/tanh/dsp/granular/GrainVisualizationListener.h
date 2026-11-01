@@ -1,6 +1,8 @@
 #pragma once
 
-namespace thl::dsp::granular {
+#include <tanh/core/AbiNamespace.h>
+
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 /**
  * Optional listener interface for grain visualization.
@@ -48,4 +50,4 @@ public:
     virtual void on_master_envelope_updated(float value) = 0;
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

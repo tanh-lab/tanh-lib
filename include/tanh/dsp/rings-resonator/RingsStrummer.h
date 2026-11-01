@@ -28,13 +28,14 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/analysis/OnsetDetector.h>
 #include <tanh/dsp/rings-resonator/RingsPerformanceState.h>
 
 #include <cmath>
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 class RingsStrummer {
 public:
@@ -93,4 +94,4 @@ private:
     thl::dsp::analysis::OnsetDetector m_onset_detector;
 };
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

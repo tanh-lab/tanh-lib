@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/fx/IntellijelWavefolder.h>
 
 #include <algorithm>
@@ -8,7 +9,7 @@
 
 #include "tanh/core/BufferView.h"
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 namespace {
 // 5 ms linear ramp on Folds — long enough to smear control-rate step changes
@@ -154,4 +155,4 @@ float IntellijelWavefolderImpl::jfet_saturate(float x) {
     return x > 0.0f ? sym * 0.95f : sym;
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
@@ -14,7 +15,7 @@
 #include <span>
 #include <vector>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 /**
  * @brief A parametric equaliser of up to k_max_bands bands in series, for any number of channels.
@@ -160,4 +161,4 @@ private:
     size_t m_num_bands;
 };
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Touches every core header an installed consumer is expected to have and
-// links against the compiled part of tanh::Core (Logger, version).
+// links against the compiled part of tanh::Core (Logger, version). The ABI
+// namespace comes from the installed, generated tanh/core/AbiNamespace.h.
 #include <tanh/core.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/Logger.h>
 #include <tanh/core/MemoryBlock.h>
@@ -9,6 +11,9 @@
 #include <tanh/core/threading/LockFreeQueue.h>
 
 #include <cstdio>
+
+#define CONSUMER_STRINGIFY_IMPL(x) #x
+#define CONSUMER_STRINGIFY(x) CONSUMER_STRINGIFY_IMPL(x)
 
 int main() {
     thl::core::RingBuffer<int> ring;
@@ -19,8 +24,9 @@ int main() {
     buffer.set_sample(1, 3, 0.5F);
 
     thl::Logger::info("install-consumer", "tanh::Core linked from the install tree");
-    std::printf("version=%s oldest=%d available=%zu sample=%g\n",
+    std::printf("version=%s abi_namespace=thl::%s oldest=%d available=%zu sample=%g\n",
                 thl::core::get_version().c_str(),
+                CONSUMER_STRINGIFY(THL_ABI_NAMESPACE),
                 ring.pop_sample(0),
                 ring.get_available_samples(0),
                 static_cast<double>(buffer.get_sample(1, 3)));

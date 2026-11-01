@@ -28,12 +28,14 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstddef>
 
 // #define MIC_W
 #define BRYAN_CHORDS
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 static constexpr float k_default_sample_rate = 48000.0f;
 static constexpr size_t k_max_block_size = 24;
@@ -50,4 +52,4 @@ enum ResonatorModel {
     Last
 };
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

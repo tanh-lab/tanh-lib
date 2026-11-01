@@ -299,7 +299,8 @@ TEST(BandSplitter, ACrossoverSweepingPastAnotherHandsOverContinuously) {
     splitter.prepare(k_sample_rate, k_block_size, 1);
     float previous_low = 500.0f;
     float previous_high = 2000.0f;
-    for (float sweep = 500.0f; sweep <= 5000.0f; sweep += 50.0f) {  // crossover 0 rises past 2 kHz
+    for (int step = 0; step <= 90; ++step) {  // crossover 0 rises past 2 kHz
+        const float sweep = 500.0f + 50.0f * static_cast<float>(step);  // 500 Hz to 5 kHz
         const std::array<float, 2> requests{sweep, 2000.0f};
         splitter.set_frequencies(requests);
         const float low = splitter.get_frequency(0);

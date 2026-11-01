@@ -28,11 +28,12 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/rings-resonator/RingsStringSynthOscillator.h>
 
 #include <array>
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 template <size_t num_harmonics>
 class StringSynthVoice {
@@ -74,4 +75,4 @@ private:
     std::array<StringSynthOscillator, num_harmonics> m_oscillator;
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

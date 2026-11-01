@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/granular/SampleRegion.h>
 #include <tanh/dsp/granular/VoiceParams.h>
 
@@ -7,7 +8,7 @@
 #include <cstddef>
 #include <random>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // One draw in [0, 1).
 inline float unit_random(std::mt19937& rng) {
@@ -131,4 +132,4 @@ public:
     void reset() override {}
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

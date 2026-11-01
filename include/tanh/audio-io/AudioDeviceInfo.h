@@ -1,10 +1,12 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
+
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 inline const std::vector<uint32_t> k_default_sample_rates = {22050, 44100, 48000};
 
@@ -70,4 +72,4 @@ private:
     std::array<char, k_device_id_storage_size> m_device_id_storage{};
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

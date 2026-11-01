@@ -61,6 +61,7 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_WITH_RTSAN` / `_ASAN` / `_USAN` / `_TSAN` / `_MSAN` / `_LSAN` | OFF | Enable the respective sanitizer (RTSan needs Clang 20+) |
 | `TANH_WITH_JOURNALD` | OFF | Linux: route platform logs to systemd-journald |
 | `TANH_LOG_COMPILED_MAX_LEVEL` | AUTO | Most verbose log level compiled in (1 Error .. 4 Debug) |
+| `TANH_ABI_NAMESPACE` | AUTO | Inline namespace of every declaration, `thl::<ns>`; AUTO is `v<major>_<minor>` of the version |
 
 ### Consume
 

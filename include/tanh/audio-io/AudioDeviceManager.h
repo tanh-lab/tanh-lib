@@ -1,4 +1,5 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/AtomicSharedPtr.h>
 #include <tanh/core/Exports.h>
 #include <tanh/core/Logger.h>
@@ -13,7 +14,7 @@
 #include "AudioDeviceInfo.h"
 #include "AudioIODeviceCallback.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @enum DeviceNotificationType
@@ -753,4 +754,4 @@ private:
     AtomicSharedPtr<DeviceNotificationCallback> m_notification_callback;
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

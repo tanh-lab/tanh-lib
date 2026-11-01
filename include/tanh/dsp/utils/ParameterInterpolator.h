@@ -1,8 +1,10 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Lightweight linear ramp generator for block-based DSP interpolation.
@@ -108,4 +110,4 @@ private:
     LinearRamp m_ramp;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
@@ -11,7 +12,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 SamplePlayer::SamplePlayer(const SampleReader& reader, GrainVisualizer& viz)
     : m_reader(reader), m_viz(viz) {}
@@ -245,4 +246,4 @@ void SamplePlayer::start_crossfade(size_t old_sample_index, size_t old_source_ch
     m_fade_remaining = m_fade_length;
 }
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

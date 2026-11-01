@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/Butterworth.h>
 #include <tanh/dsp/filter/LinkwitzRiley.h>
@@ -13,7 +14,7 @@
 #include <span>
 #include <vector>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 BandSplitter::BandSplitter(size_t num_bands, size_t order)
     : m_num_bands(num_bands), m_order(order) {
@@ -176,4 +177,4 @@ void BandSplitter::update_prewarped(size_t num_samples) TANH_NONBLOCKING_FUNCTIO
     }
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

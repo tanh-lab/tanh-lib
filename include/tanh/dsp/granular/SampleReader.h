@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
 #include <tanh/dsp/granular/GranularTypes.h>
@@ -10,7 +11,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // Linear interpolation at `position` in a channel of `frames` samples;
 // positions past the end wrap around (a grain may be scheduled to
@@ -110,4 +111,4 @@ private:
     const audio::AudioDataStore& m_store;
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

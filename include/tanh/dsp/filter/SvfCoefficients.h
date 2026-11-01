@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -8,7 +9,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 /// A second-order section in direct form: H(z) = (b0 + b1 z^-1 + b2 z^-2) / (1 + a1 z^-1 + a2
 /// z^-2).
@@ -199,4 +200,4 @@ private:
     uint32_t m_ramp_samples = 1;
 };
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter
