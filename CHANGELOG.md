@@ -7,6 +7,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
 ### Added
 
 - `tanh_add_core_library()` (`cmake/core-library.cmake`): the core component as a library
@@ -169,9 +171,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Changed
 
 - **Breaking:** every declaration of every component lives in the inline namespace
-  `thl::<ns>`: `thl::v0_4` for this version, `thl::v0_5` once v0.5.0 is tagged (each opener
-  reads `namespace thl::inline THL_ABI_NAMESPACE::core {`). Code keeps spelling `thl::...`,
-  but every mangled name changes (`_ZN3thl4v0_4...`, `...@v0_4@thl@@`), so everything built
+  `thl::<ns>`: `thl::v0_5` in this release, `v<major>_<minor>` of the version by default (each
+  opener reads `namespace thl::inline THL_ABI_NAMESPACE::core {`). Code keeps spelling `thl::...`,
+  but every mangled name changes (`_ZN3thl4v0_5...`, `...@v0_5@thl@@`), so everything built
   against tanh-lib must be rebuilt. Two tanh-lib copies with different namespaces — a host's
   and a plugin's, a host's and anira's private core — no longer share code or state in one
   link; before, static archives on macOS, iOS and Windows gave both sides whichever copy the
@@ -426,6 +428,7 @@ First release with a changelog: earlier releases (v0.1.0, v0.2.0) are described 
   `m_dropped_before` (and in the rendered suffix), instead of
   `N real-time log message(s) dropped (queue full)` after every pass with drops.
 
-[Unreleased]: https://github.com/tanh-lab/tanh-lib/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/tanh-lab/tanh-lib/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.2.0...v0.3.0

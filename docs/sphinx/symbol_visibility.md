@@ -9,7 +9,7 @@ Plugins should embed the **static** components. Sharing one `libtanh_*.so` betwe
 
 Hidden visibility keeps a shared component's internals out of the host's export table, but it does not keep two copies of tanh-lib apart that end up in one link: a plugin's static tanh-lib and the host's own, or an embedder's private core (anira compiles one into libanira) next to the application's tanh-lib. Static archives are resolved by name, so without more the linker would pick one copy of `thl::Logger::set_level` for both sides; with different versions that is an ABI mismatch, with the same version the two sides share the logger's state.
 
-So every declaration lives in an inline namespace: each opener reads `namespace thl::inline THL_ABI_NAMESPACE::core {`, and `thl::core::Logger` is `thl::v0_4::core::Logger` to the compiler and the linker (`_ZN3thl4v0_4…` on ELF and Mach-O, `…@v0_4@thl@@` on PE). Code keeps spelling `thl::…`; only the mangled names, debugger output and log symbolication show the namespace. Templates and inline functions in the headers are mangled with it too, so header-only code of two copies never merges either.
+So every declaration lives in an inline namespace: each opener reads `namespace thl::inline THL_ABI_NAMESPACE::core {`, and `thl::core::Logger` is `thl::v0_5::core::Logger` to the compiler and the linker (`_ZN3thl4v0_5…` on ELF and Mach-O, `…@v0_5@thl@@` on PE). Code keeps spelling `thl::…`; only the mangled names, debugger output and log symbolication show the namespace. Templates and inline functions in the headers are mangled with it too, so header-only code of two copies never merges either.
 
 - **The value** is `TANH_ABI_NAMESPACE`: `AUTO` (the default) is `v<major>_<minor>` of the version from git, so every minor release changes every mangled name (normal for 0.x: consumers rebuild against a new release anyway, and two releases can now share a process). Any C++ identifier can be set instead.
 - **One source for it:** the core's `tanh_add_core_library()` writes `#define THL_ABI_NAMESPACE <value>` into a generated `tanh/core/AbiNamespace.h` in the library's build tree, which is in the core's public include directories and is installed with it. Every component compiles against the core's header, and so does every consumer, in-tree or from the installed package; a header that does not match the library fails to link instead of binding silently.
@@ -44,7 +44,7 @@ tanh_add_core_library(anira_tanh_core
     LOG_COMPILED_MAX_LEVEL 4)
 ```
 
-A parent that fetches tanh-lib itself (`FetchContent_Declare(tanh-lib …)`, namespace `v0_4`) and the embedder's `anira_tanh_core` (namespace `anira`) then coexist in one build and one process, in any link mode: they share no symbol and no state. The file has no include guard on purpose: each caller includes the copy of the tree it builds right before the call, so two tanh-lib trees in one build each use their own function. The function leaves sanitizers and install rules to the caller.
+A parent that fetches tanh-lib itself (`FetchContent_Declare(tanh-lib …)`, namespace `v0_5`) and the embedder's `anira_tanh_core` (namespace `anira`) then coexist in one build and one process, in any link mode: they share no symbol and no state. The file has no include guard on purpose: each caller includes the copy of the tree it builds right before the call, so two tanh-lib trees in one build each use their own function. The function leaves sanitizers and install rules to the caller.
 
 ## What this means when adding API
 
