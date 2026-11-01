@@ -1,10 +1,11 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/HannWindow.h>
 
 #include <algorithm>  // For std::clamp
 #include <cmath>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 HannWindow::HannWindow() {
     // Default to a reasonable duration
@@ -65,4 +66,4 @@ HannWindow::State HannWindow::get_state() const {
     return m_state;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

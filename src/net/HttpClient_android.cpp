@@ -1,6 +1,7 @@
 #if defined(THL_PLATFORM_ANDROID)
 
 #include <jni.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/net/AndroidHttp.h>
 #include <tanh/net/HttpClient.h>
 
@@ -14,7 +15,7 @@
 
 #include "HttpBackend.h"
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 namespace {
 JavaVM* g_java_vm = nullptr;
 }  // namespace
@@ -22,9 +23,9 @@ JavaVM* g_java_vm = nullptr;
 void set_android_java_vm(void* java_vm) {
     g_java_vm = static_cast<JavaVM*>(java_vm);
 }
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net
 
-namespace thl::net::detail {
+namespace thl::inline THL_ABI_NAMESPACE::net::detail {
 namespace {
 
 constexpr std::size_t k_read_chunk = std::size_t{64} * 1024;
@@ -330,6 +331,6 @@ bool backend_supported() {
     return g_java_vm != nullptr;
 }
 
-}  // namespace thl::net::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::net::detail
 
 #endif  // THL_PLATFORM_ANDROID

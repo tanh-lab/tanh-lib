@@ -1,11 +1,12 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 class TANH_API SmoothedValue {
 public:
@@ -40,4 +41,4 @@ private:
     ValueSmoothingType m_smoothing_type{Linear};
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

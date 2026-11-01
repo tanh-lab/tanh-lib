@@ -26,6 +26,7 @@
 //
 // Comb filter / KS string.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/RingsString.h>
 #include <tanh/dsp/utils/DspMath.h>
@@ -40,7 +41,7 @@
 #include "tanh/dsp/DspTypes.h"
 #include "tanh/dsp/filter/OnePole.h"
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 using namespace std;
 using namespace thl::dsp::utils;
@@ -243,4 +244,4 @@ void RingsString::process(const thl::core::ConstBufferView& in,
     }
 }
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

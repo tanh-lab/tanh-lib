@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <cstdint>
 #include <memory>
 #include <string>
 
-namespace thl::audio_io {
+namespace thl::inline THL_ABI_NAMESPACE::audio_io {
 
 /**
  * Thin wrapper around a decoded audio data source.
@@ -63,4 +64,4 @@ private:
     explicit DataSource(std::unique_ptr<Impl> impl);
 };
 
-}  // namespace thl::audio_io
+}  // namespace thl::inline THL_ABI_NAMESPACE::audio_io

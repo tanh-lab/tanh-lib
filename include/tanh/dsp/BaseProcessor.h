@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -10,7 +11,7 @@
 #include <cstdint>
 #include <span>
 
-namespace thl::dsp {
+namespace thl::inline THL_ABI_NAMESPACE::dsp {
 
 class TANH_API BaseProcessor {
 public:
@@ -100,4 +101,4 @@ private:
     std::atomic<uint32_t> m_max_latency_samples{0};
 };
 
-}  // namespace thl::dsp
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp

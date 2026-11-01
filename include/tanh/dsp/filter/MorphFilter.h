@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/DspTypes.h>
 #include <tanh/dsp/filter/OnePole.h>
@@ -10,7 +11,7 @@
 #include <array>
 #include <cstddef>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 // Click-free morphing synth filter: a one-pole plus a cascade of TPT SVF
 // stages, with per-sample smoothed coefficients and output-tap crossfades.
@@ -166,4 +167,4 @@ private:
     float m_target_slope = slope_for_tap(1);
 };
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferOperations.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/fx/StereoWidener.h>
@@ -12,7 +13,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 namespace {
 constexpr size_t k_stereo = 2;
@@ -145,4 +146,4 @@ void StereoWidenerImpl::process_with_dry(thl::core::BufferView buffer,
     }
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

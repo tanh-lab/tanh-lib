@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <vector>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Multi-channel ring buffer over an arbitrary element type.
@@ -372,4 +373,4 @@ private:
 
 using RingBufferF = RingBuffer<float>;
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

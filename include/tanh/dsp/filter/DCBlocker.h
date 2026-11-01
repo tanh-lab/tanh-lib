@@ -1,10 +1,11 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 
 #include <cstddef>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 class DCBlocker {
 public:
@@ -40,4 +41,4 @@ private:
     float m_y = 0.0f;
 };
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

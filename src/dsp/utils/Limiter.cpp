@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/Limiter.h>
 
 #include <algorithm>
@@ -8,7 +9,7 @@
 
 #include "tanh/core/BufferView.h"
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 namespace {
 // 5 ms linear ramp on threshold — long enough to mask sub-block step changes
@@ -85,4 +86,4 @@ void LimiterImpl::process(thl::core::BufferView buffer, uint32_t modulation_offs
     }
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

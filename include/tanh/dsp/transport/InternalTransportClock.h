@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/TransportClock.h>
 
 #include <atomic>
 #include <optional>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @class InternalTransportClock
@@ -75,4 +76,4 @@ private:
     std::atomic<bool> m_has_pending_position{false};
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

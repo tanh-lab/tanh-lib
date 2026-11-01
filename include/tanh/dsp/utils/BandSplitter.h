@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
@@ -13,7 +14,7 @@
 #include <span>
 #include <vector>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Splits a signal into num_bands() bands with Linkwitz-Riley crossovers in series, band 0 the
@@ -97,4 +98,4 @@ private:
     size_t m_num_samples = 0;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

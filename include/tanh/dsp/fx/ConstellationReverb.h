@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/BrownianNoise.h>
@@ -12,7 +13,7 @@
 #include <array>
 #include <cstdint>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 enum class ConstellationReverbChannelMode : int {
     MonoToStereo = 0,  // Read ch0 as mono input  → stereo out on ch0+ch1
@@ -228,4 +229,4 @@ inline int ConstellationReverbImpl::get_parameter<int>(Parameter p, uint32_t mod
     return get_parameter_int(p, modulation_offset);
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

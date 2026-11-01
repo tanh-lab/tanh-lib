@@ -1,4 +1,5 @@
 #include <tanh/audio-io/AudioDeviceManager.h>
+#include <tanh/core/AbiNamespace.h>
 
 #include <algorithm>
 #include <atomic>
@@ -28,7 +29,7 @@
 #include <tanh/audio-io/iOSAudioDevices.h>
 #endif
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 struct AudioDeviceManager::DeviceUserData {
     AudioDeviceManager* m_manager = nullptr;
@@ -1556,4 +1557,4 @@ void AudioDeviceManager::static_log_callback(void* p_user_data,
     impl->m_log_callback(normalised, p_message);
 }
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

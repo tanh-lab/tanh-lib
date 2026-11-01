@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/filter/Butterworth.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cassert>
 #include <cstddef>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 /**
  * Linkwitz-Riley crossover of even order 2 to k_max_order: each band is a Butterworth of half the
@@ -86,4 +87,4 @@ private:
     bool m_invert_high = false;
 };
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

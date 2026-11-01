@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
@@ -22,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace thl::graph {
+namespace thl::inline THL_ABI_NAMESPACE::graph {
 
 /// A node of a Graph; never reused within a graph.
 enum class NodeId : uint64_t {};
@@ -279,4 +280,4 @@ private:
     size_t m_hold_samples = 0;  // silence after a switch, until the latency has passed
 };
 
-}  // namespace thl::graph
+}  // namespace thl::inline THL_ABI_NAMESPACE::graph

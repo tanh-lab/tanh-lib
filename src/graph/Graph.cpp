@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
@@ -20,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-namespace thl::graph {
+namespace thl::inline THL_ABI_NAMESPACE::graph {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Node: what the graph keeps per node. graph_input() and graph_output() have no
@@ -815,4 +816,4 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     apply_fade(buffer);
 }
 
-}  // namespace thl::graph
+}  // namespace thl::inline THL_ABI_NAMESPACE::graph

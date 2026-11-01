@@ -3,11 +3,12 @@
 #if defined(THL_PLATFORM_ANDROID)
 
 #include <tanh/audio-io/AudioDeviceInfo.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <vector>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /// Must be called once (e.g. from JNI_OnLoad) before enumeration works.
 TANH_API void set_android_java_vm(void* java_vm);
@@ -47,6 +48,6 @@ TANH_API std::string get_android_active_output_device_name(int32_t aaudio_device
 /// the first supported connected input device.
 TANH_API std::string get_android_active_input_device_name(int32_t aaudio_device_id = 0);
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE
 
 #endif  // THL_PLATFORM_ANDROID

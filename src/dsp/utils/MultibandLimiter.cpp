@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferOperations.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/BandSplitter.h>
@@ -10,7 +11,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 MultibandLimiterImpl::MultibandLimiterImpl(size_t num_bands, size_t order)
     : BandSplitter(num_bands, order) {
@@ -95,4 +96,4 @@ float MultibandLimiterImpl::BandLimiter::get_parameter_float(Parameter parameter
     return 0.0f;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

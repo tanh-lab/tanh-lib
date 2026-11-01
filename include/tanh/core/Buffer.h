@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/MemoryBlock.h>
 
@@ -11,7 +12,7 @@
 #include <new>
 #include <vector>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Planar audio buffer backed by a contiguous MemoryBlock with cached
@@ -248,4 +249,4 @@ inline BufferF from_interleaved(const float* data,
     return buffer;
 }
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

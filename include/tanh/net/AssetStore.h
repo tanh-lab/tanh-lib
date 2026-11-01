@@ -1,4 +1,5 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/net/HttpClient.h>
 
@@ -8,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 
 /// One file inside an asset. The caller fills this in from whatever index it
 /// uses — this component has no opinion about manifests.
@@ -136,4 +137,4 @@ private:
     std::filesystem::path m_root;
 };
 
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net

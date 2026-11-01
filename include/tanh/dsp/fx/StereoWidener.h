@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
@@ -11,7 +12,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 /**
  * @brief A multiband stereo widener: the side signal's level per band, the mid signal untouched.
@@ -85,4 +86,4 @@ private:
     thl::core::Buffer<float> m_through;                    // the sum at width 1: the dry signal
 };
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

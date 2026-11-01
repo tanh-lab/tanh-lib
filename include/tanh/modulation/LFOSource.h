@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/ModulationSource.h>
 
 #include <atomic>
 #include <cstdint>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 enum class LFOWaveform {
     Sine = 0,
@@ -104,4 +105,4 @@ inline int LFOSourceImpl::get_parameter<int>(Parameter p, uint32_t modulation_of
     return get_parameter_int(p, modulation_offset);
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

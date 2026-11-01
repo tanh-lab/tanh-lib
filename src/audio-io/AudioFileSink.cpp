@@ -1,4 +1,5 @@
 #include <tanh/audio-io/AudioFileSink.h>
+#include <tanh/core/AbiNamespace.h>
 
 #include <atomic>
 #include <cmath>
@@ -8,7 +9,7 @@
 
 #include "miniaudio.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 struct AudioFileSink::Impl {
     ma_encoder m_encoder{};
@@ -96,4 +97,4 @@ void AudioFileSink::release_resources() {
     close_file();
 }
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

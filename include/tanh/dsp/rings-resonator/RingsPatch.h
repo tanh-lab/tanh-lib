@@ -28,7 +28,9 @@
 
 #pragma once
 
-namespace thl::dsp::resonator {
+#include <tanh/core/AbiNamespace.h>
+
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 struct RingsPatch {
     float m_structure;
@@ -37,4 +39,4 @@ struct RingsPatch {
     float m_position;
 };
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/audio-io/DataSource.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/Exports.h>
 
@@ -8,7 +9,7 @@
 #include <cstdint>
 #include <string>
 
-namespace thl::audio_io {
+namespace thl::inline THL_ABI_NAMESPACE::audio_io {
 
 /**
  * Loads and decodes audio files using miniaudio.
@@ -100,4 +101,4 @@ private:
     static core::BufferF read_all_frames(DataSource::Impl& impl);
 };
 
-}  // namespace thl::audio_io
+}  // namespace thl::inline THL_ABI_NAMESPACE::audio_io

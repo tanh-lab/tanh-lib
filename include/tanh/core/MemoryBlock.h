@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -9,7 +11,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Contiguous, resizable block of raw storage for `size()` elements of T.
@@ -137,4 +139,4 @@ private:
     size_t m_size = 0;
 };
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

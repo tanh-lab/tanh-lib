@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -10,7 +12,7 @@
 #include "tanh/core/Exports.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 class State;
 class StateGroup;
@@ -298,4 +300,4 @@ private:
     ParameterRecord* m_record;
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

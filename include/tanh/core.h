@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <string>
 
 #include "core/Buffer.h"
@@ -17,10 +19,10 @@
 #include "core/threading/Thread.h"
 
 // Core utility functions available to all components
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 /**
  * @brief Get the library version
  */
 TANH_API std::string get_version();
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

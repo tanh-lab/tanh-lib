@@ -1,10 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 inline float interpolate(const float* table, float index, float size) {
     index *= size;
@@ -100,4 +102,4 @@ inline IntegralFractional split_integral_fractional(float x) {
     return {.m_integral = i, .m_fractional = x - static_cast<float>(i)};
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

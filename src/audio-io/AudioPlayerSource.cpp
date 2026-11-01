@@ -1,4 +1,5 @@
 #include <tanh/audio-io/AudioPlayerSource.h>
+#include <tanh/core/AbiNamespace.h>
 
 #include <algorithm>
 #include <atomic>
@@ -12,7 +13,7 @@
 #include "tanh/audio-io/DataSource.h"
 #include "tanh/core/AtomicSharedPtr.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 AudioPlayerSource::AudioPlayerSource() = default;
 
@@ -260,4 +261,4 @@ bool AudioPlayerSource::rebuild_data_source(uint32_t decoded_channels,
     return true;
 }
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

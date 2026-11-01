@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cmath>
 #include <vector>
 
@@ -7,7 +9,7 @@
 #include "tanh/dsp/BaseProcessor.h"
 #include "tanh/dsp/utils/SmoothedValue.h"
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 class TANH_API SineProcessorImpl : public BaseProcessor {
 public:
@@ -50,4 +52,4 @@ inline float SineProcessorImpl::get_parameter<float>(Parameter p, uint32_t modul
     return get_parameter_float(p, modulation_offset);
 }
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

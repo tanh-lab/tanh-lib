@@ -1,9 +1,10 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Allpass filter with heap-allocated (BufferF-backed) delay line.
@@ -39,4 +40,4 @@ private:
     DynamicDelayLine m_line;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

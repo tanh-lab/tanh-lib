@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstddef>
 #include <span>
 #include <type_traits>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 template <typename T>
 class Buffer;
@@ -148,4 +150,4 @@ private:
 using BufferView = BasicBufferView<float>;
 using ConstBufferView = BasicBufferView<const float>;
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

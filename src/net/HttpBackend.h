@@ -1,4 +1,5 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/net/HttpClient.h>
 
 #include <atomic>
@@ -9,7 +10,7 @@
 
 /// Internal seam between HttpClient and its per-platform implementations.
 /// Not installed and not part of the public API.
-namespace thl::net::detail {
+namespace thl::inline THL_ABI_NAMESPACE::net::detail {
 
 /// One transfer. Either m_destination (stream to file) or m_body (collect in
 /// memory) is set, never both.
@@ -39,4 +40,4 @@ HttpResult perform(const Request& request);
 /// False when this build has no real backend.
 bool backend_supported();
 
-}  // namespace thl::net::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::net::detail

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 class TANH_API LimiterImpl : public BaseProcessor {
 public:
@@ -50,4 +51,4 @@ inline float LimiterImpl::get_parameter<float>(Parameter p, uint32_t modulation_
     return get_parameter_float(p, modulation_offset);
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

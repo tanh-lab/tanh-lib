@@ -28,10 +28,11 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/DspMath.h>
 #include <tanh/dsp/utils/ParameterInterpolator.h>
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
@@ -200,4 +201,4 @@ private:
     float m_gain_saw = 0.0f;
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

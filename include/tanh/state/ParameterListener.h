@@ -1,10 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <functional>
 
 #include "tanh/core/Exports.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 // Forward declarations
 class Parameter;
@@ -93,4 +95,4 @@ private:
     std::function<void(const Parameter&)> m_callback;
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

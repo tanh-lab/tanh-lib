@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 
 #include <cstdint>
 #include <memory>
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 enum class RingsPolyphonyMode { One, Two, Four };
 
@@ -50,4 +51,4 @@ private:
     std::unique_ptr<EngineState> m_engine;
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

@@ -28,13 +28,14 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
 #include <tanh/dsp/utils/DspMath.h>
 
 #include <algorithm>
 #include <array>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 #define TAIL , -1
 
@@ -276,4 +277,4 @@ private:
     std::array<thl::dsp::utils::CosineOscillator, 2> m_lfo;
 };
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/filter/SvfCoefficients.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -11,7 +12,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 /**
  * Butterworth low-, high- or all-pass of order 1 to k_max_order: one 1st-order TPT section if the
@@ -124,4 +125,4 @@ private:
     std::array<SvfState, k_max_order / 2> m_states{};
 };
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

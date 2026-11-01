@@ -1,5 +1,7 @@
 #include "tanh/state/StateGroup.h"
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -20,7 +22,7 @@
 #include "tanh/state/path_helpers.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 // NOLINTBEGIN(misc-no-recursion)
 
@@ -498,4 +500,4 @@ template TANH_API ParameterHandle<int> StateGroup::get_handle(std::string_view p
 template TANH_API ParameterHandle<bool> StateGroup::get_handle(std::string_view path) const;
 // NOLINTEND(misc-no-recursion)
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

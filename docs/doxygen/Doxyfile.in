@@ -15,6 +15,11 @@ NUM_PROC_THREADS       = 0
 INPUT                  = @CMAKE_SOURCE_DIR@/include
 FILE_PATTERNS          = *.h
 RECURSIVE              = YES
+# Every namespace opens as `namespace thl::inline THL_ABI_NAMESPACE::core {` (the ABI
+# namespace, cmake/core-library.cmake), which Doxygen cannot resolve without the generated
+# header. The reference documents the names code spells, thl::core::..., so the inline
+# namespace is filtered out of each header before Doxygen reads it.
+INPUT_FILTER           = "perl -pe 's/thl::inline THL_ABI_NAMESPACE/thl/g'"
 # Deprecated forwarding shim; the real macros are documented in Exports.h.
 EXCLUDE                = @CMAKE_SOURCE_DIR@/include/tanh/core/ExportMacros.h
 # Implementation namespaces are not API.

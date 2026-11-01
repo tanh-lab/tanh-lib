@@ -1,9 +1,10 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/ADSR.h>
 
 #include <algorithm>  // for std::max and std::min
 #include <cmath>      // for calculations
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 ADSR::ADSR() {
     // Calculate initial rates
@@ -267,4 +268,4 @@ void ADSR::update_rates() {
     }
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

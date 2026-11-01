@@ -28,13 +28,14 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/DspMath.h>
 
 #include <algorithm>
 #include <cmath>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 class SoftLimiter {
 public:
@@ -72,4 +73,4 @@ private:
     float m_peak = 0.5f;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

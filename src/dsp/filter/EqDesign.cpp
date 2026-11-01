@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/filter/EqDesign.h>
 #include <tanh/dsp/filter/SvfCoefficients.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -9,7 +10,7 @@
 #include <numbers>
 #include <optional>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 namespace {
 
@@ -299,4 +300,4 @@ std::complex<double> analog_response(const EqBand& band, double frequency) {
     return 1.0;
 }
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

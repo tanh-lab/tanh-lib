@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -8,7 +10,7 @@
 #include "tanh/core/Exports.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /// Scheduling class requested for a thread. A priority is a request, never a
 /// requirement: the platform may deny it (e.g. SCHED_FIFO without rtprio rights),
@@ -93,4 +95,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

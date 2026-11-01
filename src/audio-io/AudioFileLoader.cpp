@@ -1,4 +1,5 @@
 #include <tanh/audio-io/AudioFileLoader.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Logger.h>
 
 #include <cstddef>
@@ -12,7 +13,7 @@
 #include "tanh/audio-io/DataSource.h"
 #include "tanh/core/Buffer.h"
 
-namespace thl::audio_io {
+namespace thl::inline THL_ABI_NAMESPACE::audio_io {
 
 namespace {
 
@@ -237,4 +238,4 @@ DataSource AudioFileLoader::load_data_source_from_memory(const void* data,
     return DataSource(std::move(impl));
 }
 
-}  // namespace thl::audio_io
+}  // namespace thl::inline THL_ABI_NAMESPACE::audio_io

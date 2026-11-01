@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/Svf.h>
 #include <tanh/dsp/utils/DelayLine.h>
@@ -35,7 +36,7 @@
 
 #include <algorithm>
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 class Plucker {
 public:
@@ -90,4 +91,4 @@ private:
     float m_comb_filter_gain = 0.0f;
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth
