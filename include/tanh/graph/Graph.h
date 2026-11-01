@@ -114,8 +114,10 @@ public:
     /// 20 ms. False for graph_input() and unknown ids.
     bool set_input_mix(NodeId id, InputMix input_mix);
     /// Live (no commit): 1 runs the node, 0 bypasses it (its sources pass, delayed by its
-    /// latency), between them a blend; ramps over 20 ms, clamped to [0, 1]. A node coming back
-    /// from 0 is reset() first. False for graph_input(), graph_output(), unknown ids and NaN.
+    /// latency), between them a blend of its output with its dry signal (process_with_dry():
+    /// phase-matched, then delayed by its latency); ramps over 20 ms, clamped to [0, 1]. A node
+    /// coming back from 0 is reset() first. False for graph_input(), graph_output(), unknown ids
+    /// and NaN.
     bool set_wet_mix(NodeId id, float wet_mix);
     /// Live (no commit): how node @p id's wet mix sets its dry and wet gains; a change crossfades
     /// from the old law over 20 ms. False for graph_input(), graph_output() and unknown ids.
@@ -179,6 +181,9 @@ public:
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
 
+    /// A nested graph's dry signal (process_with_dry()) is its input, not yet built from its
+    /// nodes' dry signals: blending a nested graph whose nodes shift the phase can comb.
+    ///
     /// Audio thread: resets every node of the running version and clears the latency delays,
     /// e.g. when the graph is itself a bypassed node coming back.
     void reset() TANH_NONBLOCKING_FUNCTION override;
@@ -239,7 +244,7 @@ private:
                             thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
     static void run_step(const ProcessingStep& step,
                          thl::core::BufferView buffer,
-                         thl::core::BufferView dry,
+                         const thl::core::BufferView& dry,
                          uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 
     static constexpr NodeId k_output_id{0};

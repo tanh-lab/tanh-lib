@@ -3,6 +3,7 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
+#include <tanh/dsp/utils/MultibandLimiter.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/graph/Graph.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -1962,4 +1963,64 @@ TEST(Graph, ANodeWhoseMaximumChangedCountsAtItUntilItRuns) {
     EXPECT_EQ(graph.committed_latency_samples(), 24u);  // known before the audio thread runs it
     (void)process_blocks(graph, 0.0f, k_fade_blocks + 2);
     EXPECT_EQ(graph.latency_samples(), 24u);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase-matched dry signal
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// A multiband limiter that never limits: its output is the sum of its bands, the input through
+/// the crossovers' all-passes, and so is its dry signal (process_with_dry()).
+class TransparentMultiband final : public thl::dsp::utils::MultibandLimiterImpl {
+public:
+    TransparentMultiband() : MultibandLimiterImpl(3, 4) {}
+
+protected:
+    float get_band_parameter_float(BandParameter parameter, size_t, uint32_t) override {
+        switch (parameter) {
+            case Threshold: return 60.0f;  // far above any signal here
+            case Attack: return 1.0f;
+            case Release: return 50.0f;
+            case NumBandParameters: break;
+        }
+        return 0.0f;
+    }
+};
+
+/// One channel of @p graph's output for an impulse, over @p length samples.
+std::vector<float> impulse_response(Graph& graph, size_t length) {
+    std::vector<float> out;
+    for (size_t block = 0; out.size() < length; ++block) {
+        auto buffer = make_buffer(0.0f);
+        if (block == 0) {
+            for (size_t ch = 0; ch < k_channels; ++ch) { buffer.get_write_pointer(ch)[0] = 1.0f; }
+        }
+        graph.process(buffer);
+        out.insert(out.end(), buffer.get_read_pointer(0), buffer.get_read_pointer(0) + k_block);
+    }
+    out.resize(length);
+    return out;
+}
+
+}  // namespace
+
+TEST(Graph, ABlendOfANodeThatShiftsThePhaseUsesItsPhaseMatchedDrySignal) {
+    const auto response_at = [](float wet) {
+        Graph graph;
+        const auto node = graph.add_node<TransparentMultiband>();
+        EXPECT_TRUE(node);
+        EXPECT_TRUE(graph.connect(graph.graph_input(), *node));
+        EXPECT_TRUE(graph.connect(*node, graph.graph_output()));
+        EXPECT_TRUE(graph.set_wet_mix(*node, wet));
+        prepare(graph);  // starts at the set mix
+        return impulse_response(graph, 4096);
+    };
+    const auto wet = response_at(1.0f);  // the all-pass sum of the bands
+    const auto half = response_at(0.5f);
+    // The blend of the all-pass with its phase-matched dry signal is the all-pass itself; a dry
+    // signal that is the plain input would leave (input + all-pass) / 2, which combs.
+    for (size_t n = 0; n < wet.size(); ++n) { ASSERT_NEAR(half[n], wet[n], 1e-5f) << n; }
+    EXPECT_GT(std::abs(wet[0] - 1.0f), 0.01f);  // the all-pass really is not the input
 }
