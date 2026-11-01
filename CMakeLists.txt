@@ -288,6 +288,7 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
         src/dsp/fx/StereoFDN.cpp
+        src/dsp/fx/StereoWidener.cpp
 
         src/dsp/transport/InternalTransportClock.cpp
 
