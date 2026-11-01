@@ -96,15 +96,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Nyquist, and glides per sample over 5 ms; the prewarped gain is computed once
   per crossover and sample and shared by all its filters. The requested
   frequencies are kept, so `prepare()` at another sample rate clamps from them
-  again; a non-finite one is ignored. `reset()` clears the crossovers. Tests:
+  again; a non-finite one is ignored. `set_frequency()` blocks one crossover at
+  its neighbours; `set_frequencies()` sets them all at once, independent of any
+  order: crossing requests are sorted, so a crossover sweeping past another
+  hands over continuously. `reset()` clears the crossovers. Tests:
   `BandSplitter*`.
 - `dsp::utils::MultibandLimiterImpl`: one `LimiterImpl` per `BandSplitter` band,
   summed. Band count and order are constructor arguments; a derived class gives
   every band its threshold, attack and release through
   `get_band_parameter_float()`. `process_with_dry()` writes the sum of the bands
   before limiting, which matches the output below the thresholds (the limiters
-  add no latency). `reset()` also releases the limiters. Tests:
-  `MultibandLimiter.*`.
+  add no latency). `reset()` also releases the limiters. The crossover
+  frequencies can come from `get_crossover_parameter_float()`, read at every
+  block position and applied together with `set_frequencies()`, so State and
+  Modulation drive them like the bands' parameters (non-finite, the default:
+  `set_frequency()` decides). Tests: `MultibandLimiter.*`.
 - `BaseProcessor::process_with_dry(buffer, modulation_offset, dry)`: also writes
   the dry signal, the input with the phase response of `process()` but without
   its effect, so that wet and dry can be blended. It is computed in the same

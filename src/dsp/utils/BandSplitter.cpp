@@ -9,6 +9,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <limits>
+#include <span>
 #include <vector>
 
 namespace thl::dsp::utils {
@@ -35,13 +37,7 @@ void BandSplitter::prepare(const double& sample_rate,
                            const size_t& num_channels) {
     m_sample_rate = static_cast<float>(sample_rate);
     const size_t num_crossovers = m_num_bands - 1;
-    // From the requested frequencies, for this sample rate: below Nyquist, each at least the one
-    // below it, so the order holds.
-    const float nyquist_limit = filter::Butterworth::k_max_frequency_ratio * m_sample_rate;
-    for (size_t c = 0; c < m_frequencies.size(); ++c) {
-        const float lowest = c > 0 ? m_frequencies[c - 1] : 0.0f;
-        m_frequencies[c] = std::max(std::min(m_requested[c], nyquist_limit), lowest);
-    }
+    apply_requests();  // the requests, for this sample rate
     // the filters can't be copied or moved, so the vectors are constructed with their size
     m_channels = std::vector<Channel>(num_channels);
     for (Channel& channel : m_channels) {
@@ -68,16 +64,37 @@ void BandSplitter::prepare(const double& sample_rate,
 }
 
 void BandSplitter::set_frequency(size_t crossover, float frequency) TANH_NONBLOCKING_FUNCTION {
-    assert(crossover < m_frequencies.size());
+    assert(crossover < m_requested.size());
     if (!std::isfinite(frequency)) { return; }
-    m_requested[crossover] = frequency;
-    const float lowest = crossover > 0 ? m_frequencies[crossover - 1] : 0.0f;
+    // Blocked at the neighbours' requests; Nyquist is applied from the request in apply_requests(),
+    // so a request above it comes back at a higher sample rate.
+    const float lowest = crossover > 0 ? m_requested[crossover - 1] : 0.0f;
+    const float highest = crossover + 1 < m_requested.size()
+                              ? m_requested[crossover + 1]
+                              : std::numeric_limits<float>::infinity();
+    m_requested[crossover] = std::clamp(frequency, lowest, highest);
+    apply_requests();
+}
+
+void BandSplitter::set_frequencies(std::span<const float> frequencies) TANH_NONBLOCKING_FUNCTION {
+    assert(frequencies.size() == m_requested.size());
+    for (size_t c = 0; c < m_requested.size() && c < frequencies.size(); ++c) {
+        if (std::isfinite(frequencies[c])) { m_requested[c] = std::max(frequencies[c], 0.0f); }
+    }
+    std::ranges::sort(m_requested);  // in place, no allocation
+    apply_requests();
+}
+
+void BandSplitter::apply_requests() TANH_NONBLOCKING_FUNCTION {
     const float nyquist_limit = filter::Butterworth::k_max_frequency_ratio * m_sample_rate;
-    const float highest = crossover + 1 < m_frequencies.size()
-                              ? std::min(m_frequencies[crossover + 1], nyquist_limit)
-                              : nyquist_limit;
-    m_frequencies[crossover] = std::clamp(frequency, lowest, highest);
-    m_smoothed_frequencies[crossover].set_target_value(m_frequencies[crossover]);
+    for (size_t c = 0; c < m_frequencies.size(); ++c) {
+        const float lowest = c > 0 ? m_frequencies[c - 1] : 0.0f;
+        const float applied = std::max(std::min(m_requested[c], nyquist_limit), lowest);
+        if (applied != m_frequencies[c]) {
+            m_frequencies[c] = applied;
+            m_smoothed_frequencies[c].set_target_value(applied);
+        }
+    }
 }
 
 float BandSplitter::get_frequency(size_t crossover) const {

@@ -271,3 +271,45 @@ TEST(BandSplitter, ResetClearsTheCrossovers) {
         }
     }
 }
+
+TEST(BandSplitter, SetFrequenciesDoesNotDependOnTheOrderAndSortsCrossingRequests) {
+    for (const auto& requests : {std::array<float, 3>{5000.0f, 1000.0f, 8000.0f},
+                                 std::array<float, 3>{8000.0f, 5000.0f, 1000.0f},
+                                 std::array<float, 3>{1000.0f, 8000.0f, 5000.0f}}) {
+        TestBandSplitter splitter(4, 4);
+        splitter.prepare(k_sample_rate, k_block_size, 1);
+        splitter.set_frequencies(requests);
+        EXPECT_FLOAT_EQ(splitter.get_frequency(0), 1000.0f);
+        EXPECT_FLOAT_EQ(splitter.get_frequency(1), 5000.0f);
+        EXPECT_FLOAT_EQ(splitter.get_frequency(2), 8000.0f);
+    }
+}
+
+TEST(BandSplitter, SetFrequenciesKeepsANonFiniteOnesRequest) {
+    TestBandSplitter splitter(3, 4);  // 100 Hz and 10 kHz
+    splitter.prepare(k_sample_rate, k_block_size, 1);
+    const std::array<float, 2> requests{std::numeric_limits<float>::quiet_NaN(), 3000.0f};
+    splitter.set_frequencies(requests);
+    EXPECT_FLOAT_EQ(splitter.get_frequency(0), 100.0f);
+    EXPECT_FLOAT_EQ(splitter.get_frequency(1), 3000.0f);
+}
+
+TEST(BandSplitter, ACrossoverSweepingPastAnotherHandsOverContinuously) {
+    TestBandSplitter splitter(3, 4);
+    splitter.prepare(k_sample_rate, k_block_size, 1);
+    float previous_low = 500.0f;
+    float previous_high = 2000.0f;
+    for (float sweep = 500.0f; sweep <= 5000.0f; sweep += 50.0f) {  // crossover 0 rises past 2 kHz
+        const std::array<float, 2> requests{sweep, 2000.0f};
+        splitter.set_frequencies(requests);
+        const float low = splitter.get_frequency(0);
+        const float high = splitter.get_frequency(1);
+        EXPECT_LE(low, high);
+        EXPECT_LE(std::abs(low - previous_low), 50.0f + 1e-3f) << sweep;
+        EXPECT_LE(std::abs(high - previous_high), 50.0f + 1e-3f) << sweep;
+        previous_low = low;
+        previous_high = high;
+    }
+    EXPECT_FLOAT_EQ(splitter.get_frequency(0), 2000.0f);
+    EXPECT_FLOAT_EQ(splitter.get_frequency(1), 5000.0f);
+}
