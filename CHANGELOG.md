@@ -25,6 +25,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Parameters through `get_parameter_float()`, read at every block position; their defaults
   and ranges in `k_parameter_ranges` (a NaN reads as the default). A link change hands the
   gain over, so no channel jumps to an old gain. Tests: `Compressor.*`.
+- `thl::dsp::dynamics::LookaheadLimiterImpl`: a brickwall lookahead limiter. The gain each
+  sample needs goes through a minimum over the lookahead, a release in dB and a moving
+  average over the lookahead, the audio delayed by the lookahead minus one: no output sample
+  above the ceiling, the gain alone gets it there (a hard clip catches rounding). Ceiling,
+  input gain, lookahead up to 10 ms, release, link (linked or dual mono), true peak (4x,
+  97-tap interpolator, +12 samples of latency; holds the ceiling for content up to 0.44 fs).
+  `latency_samples()` reports it. Meters: `gain_reduction_db()`, `output_peak_db()`. Tests:
+  `LookaheadLimiter.*`.
 - `thl::dsp::dynamics` (header-only, `include/tanh/dsp/dynamics/`): the building blocks
   of a dynamics processor. `GainComputer`, the static curve in dB for the four modes
   (`DynamicsMode`: downward and upward compression, downward and upward expansion) with
