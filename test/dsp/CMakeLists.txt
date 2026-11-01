@@ -25,6 +25,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_LevelDetector.cpp
 	test_GainSmoother.cpp
 	test_DspHelpers.cpp
+	test_Compressor.cpp
 )
 
 if(TARGET tanh_resonator)

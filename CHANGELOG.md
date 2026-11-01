@@ -15,6 +15,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and `ParameterValue.h` (`ParameterRange`, `sanitised()`: NaN to a fallback, the rest
   clamped; `to_enum()`). `LimiterImpl`, `EqDesign`, `SvfCoefficients::magnitude_db()` and
   the dynamics blocks use them. Tests: `Decibels.*`, `TimeConstant.*`, `ParameterValue.*`.
+- `thl::dsp::dynamics::CompressorImpl`: a compressor and expander on the dynamics
+  building blocks. Downward and upward compression and expansion (`Mode`), threshold, ratio
+  (infinity limits or gates), knee, range; peak or RMS detector, stereo link (linked, average,
+  dual mono), sidechain high-pass; attack, hold, release, auto release; lookahead up to 20 ms,
+  reported as `latency_samples()` (the gain moves before the delayed audio); makeup, auto
+  makeup, and an internal mix for parallel compression. `process_with_sidechain()` keys it by
+  an external signal. Meters: `gain_change_db()`, `input_peak_db()`, `output_peak_db()`.
+  Parameters through `get_parameter_float()`, read at every block position. Tests:
+  `Compressor.*`.
 - `thl::dsp::dynamics` (header-only, `include/tanh/dsp/dynamics/`): the building blocks
   of a dynamics processor. `GainComputer`, the static curve in dB for the four modes
   (`DynamicsMode`: downward and upward compression, downward and upward expansion) with
