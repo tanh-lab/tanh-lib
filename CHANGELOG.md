@@ -31,10 +31,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   rebase that brings in new files.
 - `test/abi-namespace` (CTest, Linux, macOS, Windows): `abi_namespace_symbols_<library>`
   checks with nm / dumpbin that every symbol a library defines in `thl` lies in its ABI
-  namespace and none lies at global scope; `test_abi_namespace` links a second core library
-  (`tanh_core_b`, namespace `test_b`) beside `tanh_core` and shows separate logger levels,
-  configurations and callbacks; `abi_namespace_sources` runs the script's `--check`. The
-  install consumer prints the installed namespace.
+  namespace and none of tanh-lib's lies at global scope (the toolchain's own there, such as
+  libc++'s ABI-tagged `::abs` or MSVC's global `<cmath>` overloads, are exempt);
+  `test_abi_namespace` links a second core library (`tanh_core_b`, namespace `test_b`)
+  beside `tanh_core` and shows separate logger levels, configurations and callbacks;
+  `abi_namespace_sources` runs the script's `--check`. The install consumer prints the
+  installed namespace.
 - `thl::dsp::fx::StereoWidenerImpl`: a multiband stereo widener. Mid and side are
   split by Linkwitz-Riley crossovers (`BandSplitter`), each band's side scaled by
   its width (0 mono, 1 unchanged, up to 2), the mid only through the crossovers'
