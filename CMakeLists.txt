@@ -620,22 +620,15 @@ endif()
 include(cmake/tanh/symbol-policy.cmake)
 include(cmake/tanh/sanitizers.cmake)
 
-foreach(target ${TANH_BUILT_COMPONENTS})
-    # tanh_add_core_library() applies the policy to the core itself.
-    if(NOT target STREQUAL "${PROJECT_NAME}_core")
-        tanh_apply_symbol_policy(${target} EXPORT_PREFIX TANH)
-        tanh_set_export_allowlist(${target} NAMESPACE thl)
-
-        # Only apps need a signature on iOS.
-        tanh_ios_disable_code_signing(${target})
-    endif()
-
+# The TANH_WITH_* sanitizers of one library: every component, and the second core library
+# of test/abi-namespace.
+function(_tanh_apply_sanitizers target)
     if(TANH_WITH_RTSAN)
         tanh_add_sanitizer(${target} rtsan DEFINE TANH_WITH_RTSAN)
     endif()
     if(TANH_WITH_ASAN)
         tanh_add_sanitizer(${target} asan DEFINE TANH_WITH_ASAN
-            IGNORELIST "${CMAKE_CURRENT_SOURCE_DIR}/sanitizers/asan_ignorelist.txt")
+            IGNORELIST "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/sanitizers/asan_ignorelist.txt")
     endif()
     if(TANH_WITH_USAN)
         tanh_add_sanitizer(${target} ubsan DEFINE TANH_WITH_USAN)
@@ -649,6 +642,19 @@ foreach(target ${TANH_BUILT_COMPONENTS})
     if(TANH_WITH_LSAN)
         tanh_add_sanitizer(${target} lsan DEFINE TANH_WITH_LSAN)
     endif()
+endfunction()
+
+foreach(target ${TANH_BUILT_COMPONENTS})
+    # tanh_add_core_library() applies the policy to the core itself.
+    if(NOT target STREQUAL "${PROJECT_NAME}_core")
+        tanh_apply_symbol_policy(${target} EXPORT_PREFIX TANH)
+        tanh_set_export_allowlist(${target} NAMESPACE thl)
+
+        # Only apps need a signature on iOS.
+        tanh_ios_disable_code_signing(${target})
+    endif()
+
+    _tanh_apply_sanitizers(${target})
 endforeach()
 
 # ==============================================================================
@@ -723,9 +729,13 @@ if (TANH_WITH_TESTS)
         add_subdirectory(test/graph)
     endif()
 
-    # The export-table invariant, on the desktop formats where it can be inspected.
+    # The export-table invariant and the ABI namespace, on the desktop formats where the
+    # binaries can be inspected.
     if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
         add_subdirectory(test/exports)
+        if(TANH_BUILD_CORE)
+            add_subdirectory(test/abi-namespace)
+        endif()
     endif()
 
     # On iOS, test executables become .app bundles and need a bundle identifier

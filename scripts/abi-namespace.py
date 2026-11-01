@@ -9,7 +9,7 @@ In every C++ and Objective-C++ file under include/, src/, test/ and examples/:
   - a closing comment ``// namespace thl[::a::b]`` becomes
     ``// namespace thl::inline THL_ABI_NAMESPACE[::a::b]``, the spelling clang-format's
     namespace comment fixer expects;
-  - a file that names THL_ABI_NAMESPACE gets ``#include <tanh/core/AbiNamespace.h>``, the
+  - a file with such an opener gets ``#include <tanh/core/AbiNamespace.h>``, the
     generated header that defines it (cmake/core-library.cmake), unless it has it already.
 
 Namespaces nested in an opener (``namespace detail {`` inside ``thl::core``) inherit the
@@ -44,6 +44,7 @@ OPENER = re.compile(
 CLOSER = re.compile(
     r"^(?P<lead>\s*\}\s*//\s*namespace\s+)thl(?P<rest>(?:::[A-Za-z_]\w*)*)\s*$"
 )
+NAMESPACED_OPENER = re.compile(rf"^\s*namespace\s+thl::inline\s+{MACRO}\b")
 INCLUDE_LINE = re.compile(r"^\s*#\s*(?:include|import)\s*[<\"]")
 # clang-format's Google categories put angle-bracket .h includes (ours) in the first block,
 # after only the main include of a source file ("Foo.h" for Foo.cpp).
@@ -117,7 +118,7 @@ def process(path: Path) -> list[str] | None:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
     new = rewrite_namespaces(lines)
-    if any(MACRO in l for l in new) and path.name != "AbiNamespace.h":
+    if any(NAMESPACED_OPENER.match(l) for l in new):
         new = add_include(new, path.stem)
     return None if new == lines else new
 
