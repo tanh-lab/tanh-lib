@@ -17,7 +17,8 @@ namespace thl::dsp::dynamics {
  * it (more gain change: in compression, out of an upward mode), with the release time otherwise;
  * both are one-pole time constants (the step reaches 1 - 1/e, 63 %, after one).
  *
- * - Hold: a release waits this long after the last attack.
+ * - Hold: a release waits this long after the gain last moved away from 0 dB or held at its
+ *   target (a sustained compression holds from its end).
  * - Auto release: a second, slow stage (10× the attack, 10× the release) follows the same target,
  *   and the gain is whichever stage lies farther from 0 dB. A short peak hardly moves the slow
  *   stage and releases at the release time; a long compression builds it up and releases slowly,
@@ -82,7 +83,8 @@ private:
               float target_db,
               float attack,
               float release) const TANH_NONBLOCKING_FUNCTION {
-        if (std::abs(target_db) > std::abs(stage.m_gain_db)) {
+        // At its target counts as attack: the hold runs from the end of the gain change.
+        if (std::abs(target_db) >= std::abs(stage.m_gain_db)) {
             stage.m_gain_db = target_db + (attack * (stage.m_gain_db - target_db));
             stage.m_hold_remaining = m_hold_samples;
         } else if (stage.m_hold_remaining > 0) {

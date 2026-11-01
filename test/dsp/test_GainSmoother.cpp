@@ -56,6 +56,13 @@ TEST(GainSmoother, HoldDelaysTheRelease) {
     EXPECT_GT(smoother.process(0.0f), -6.0f);
 }
 
+TEST(GainSmoother, HoldRunsFromTheEndOfASustainedGainChange) {
+    GainSmoother smoother = prepared(0.0f, 10.0f, 5.0f);
+    run(smoother, -6.0f, 100 * k_samples_per_ms);
+    EXPECT_FLOAT_EQ(run(smoother, 0.0f, 5 * k_samples_per_ms), -6.0f);
+    EXPECT_GT(smoother.process(0.0f), -6.0f);
+}
+
 TEST(GainSmoother, AutoReleaseIsSlowAfterALongCompressionOnly) {
     const auto released_after = [](int compression_ms, bool automatic) {
         GainSmoother smoother = prepared(1.0f, 20.0f, 0.0f, automatic);
