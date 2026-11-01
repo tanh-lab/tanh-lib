@@ -11,9 +11,10 @@
 # third-party code a component embeds), a global-scope one must start with one of
 # ALLOW_GLOBAL_PREFIXES (third-party C code compiled as C++). Internal names (anonymous
 # namespaces, `static` where the compiler marks it) are not linked across objects and are
-# skipped, and so are the global-scope functions the toolchain itself defines in a library
-# (_tanh_toolchain_global below): reserved names, libc++'s ABI-tagged functions and the C++
-# overloads of the C library.
+# skipped, and so is what the toolchain itself defines in a library: the entities of a
+# namespace or class with a reserved name (__gnu_cxx, __cxxabiv1, the sanitizers' __rtsan,
+# __asan, __tsan, __sanitizer) and the global-scope functions of _tanh_toolchain_global
+# below (reserved names, libc++'s ABI-tagged functions, the C++ overloads of the C library).
 #
 # ELF and Mach-O: `nm` over every defined symbol, the local ones of a shared library
 # included, read as Itanium names (the scope of the entity, past the special-name prefixes
@@ -178,6 +179,11 @@ function(_tanh_itanium_scope name out)
                 set(${out} "thl:${_rest}" PARENT_SCOPE)
             elseif(_id MATCHES "^_GLOBAL__N")
                 set(${out} "internal" PARENT_SCOPE)
+            elseif(_id MATCHES "^(__|_[A-Z])")
+                # A reserved namespace or class name, the implementation's: __gnu_cxx,
+                # __cxxabiv1, and the sanitizer interfaces' inline helpers, e.g. RTSan's
+                # __rtsan::ScopedDisabler that TANH_NONBLOCKING_SCOPED_DISABLER instantiates.
+                set(${out} "toolchain" PARENT_SCOPE)
             else()
                 set(${out} "ns:${_id}" PARENT_SCOPE)
             endif()
@@ -293,8 +299,8 @@ list(LENGTH _global _n_global)
 list(LENGTH _toolchain _n_toolchain)
 list(LENGTH _foreign _n_foreign)
 message(STATUS "check-abi-namespace: ${LIBRARY}: ${_n_symbols} C++ symbols, ${_thl_count} in thl, "
-               "${_n_outside} outside thl::${NAMESPACE}, ${_n_global} at global scope "
-               "(and ${_n_toolchain} of the toolchain), ${_n_foreign} in other namespaces")
+               "${_n_outside} outside thl::${NAMESPACE}, ${_n_global} at global scope, "
+               "${_n_foreign} in other namespaces (and ${_n_toolchain} of the toolchain)")
 
 set(_failures "")
 if(_thl_count EQUAL 0)

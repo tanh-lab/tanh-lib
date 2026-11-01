@@ -63,9 +63,11 @@ A parent that fetches tanh-lib itself (`FetchContent_Declare(tanh-lib …)`, nam
   rebase that brings in new files, then clang-format what it lists).
 - `test/abi-namespace` checks it in CTest on Linux, macOS and Windows:
   `abi_namespace_symbols_<library>` reads every symbol a library defines (nm,
-  dumpbin) and fails on one of `thl` outside the namespace or on a function of
-  tanh-lib at global scope (what the toolchain defines there is exempt: reserved
-  names, libc++'s ABI-tagged functions such as Apple's `::abs` overloads, the C++
+  dumpbin) and fails on one of `thl` outside the namespace, on a function of
+  tanh-lib at global scope, or on one in a namespace that is neither tanh-lib's nor
+  a bundled library's (what the toolchain defines is exempt: reserved names and the
+  entities of reserved namespaces such as `__gnu_cxx` or RTSan's `__rtsan`,
+  libc++'s ABI-tagged functions such as Apple's `::abs` overloads, the C++
   overloads of the C library that MSVC's `<cmath>` defines globally),
   `abi_namespace_sources` runs the script's `--check`, and `test_abi_namespace`
   links a second core library (`tanh_core_b`, namespace `test_b`) beside
