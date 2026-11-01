@@ -20,6 +20,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_LinkwitzRiley.cpp
 	test_BandSplitter.cpp
 	test_MultibandLimiter.cpp
+	test_StereoWidener.cpp
 )
 
 if(TARGET tanh_resonator)

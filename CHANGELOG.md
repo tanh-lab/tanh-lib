@@ -9,6 +9,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::fx::StereoWidenerImpl`: a multiband stereo widener. Mid and side are
+  split by Linkwitz-Riley crossovers (`BandSplitter`), each band's side scaled by
+  its width (0 mono, 1 unchanged, up to 2), the mid only through the crossovers'
+  all-passes, so mid and side stay in phase. Mono compatible whatever the widths
+  (L + R is the mid signal through the all-passes); two bands with band 0 at
+  width 0 is mono bass below the crossover. No latency; widths glide over 20 ms;
+  `process_with_dry()` gives the input through the same all-passes, phase-matched.
+  Widths through `get_band_parameter_float()`, crossovers through
+  `get_crossover_parameter_float()` (or `set_frequency()`), read at every block
+  position. Anything but stereo passes unchanged. Tests: `StereoWidener.*`.
 - `tanh::Graph` (`TANH_BUILD_GRAPH`, off by default, on in every preset but wasm; by
   @jstolberg): `thl::graph::Graph`, a `BaseProcessor` of `BaseProcessor` nodes. Edits on the
   control thread take effect at `commit()`, handed to the audio thread with a fade; nested
