@@ -2,11 +2,14 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/probe/Probe.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/graph/Graph.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -18,6 +21,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -42,6 +46,14 @@ struct Graph::Node {
     MixLaw m_previous_law = MixLaw::Linear;
     thl::dsp::utils::SmoothedValue m_law_fade;  // 0: m_previous_law, 1: m_running_law
     std::unique_ptr<thl::dsp::utils::DelayProcessor> m_dry_delay;
+
+    // Probes watching the node, per ProbePoint: set on the control thread, read by the audio
+    // thread (seq_cst against Graph::m_audio_epoch, see unregister_probe()).
+    struct Probes {
+        std::array<std::atomic<thl::dsp::probe::ProbeBase*>, k_max_probes_per_point> m_slots{};
+        std::atomic<uint32_t> m_count{0};  // lets a node without probes skip the slots
+    };
+    std::array<Probes, 2> m_probes;  // ProbePoint::Input, ProbePoint::Output
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,8 +71,9 @@ struct Graph::ProcessingStep {
     std::vector<Source> m_sources;
     BufferIndex m_buffer = 0;
     thl::dsp::utils::DelayProcessor* m_dry_delay = nullptr;
-    uint32_t m_max_latency = 0;  // the node's max_latency_samples() when compiled: what the
-                                 // delays were sized for
+    uint32_t m_max_latency = 0;    // the node's max_latency_samples() when compiled: what the
+                                   // delays were sized for
+    uint32_t m_input_latency = 0;  // set by apply_latencies(): the sources' path latency
 };
 
 struct Graph::CompiledGraph {
@@ -117,8 +130,8 @@ Graph::MixGains Graph::mix_gains(MixLaw law, float wet_mix) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 Graph::Graph() {
-    m_nodes.emplace(k_output_id, std::make_unique<Node>());
-    m_nodes.emplace(k_input_id, std::make_unique<Node>());
+    m_output_node = m_nodes.emplace(k_output_id, std::make_unique<Node>()).first->second.get();
+    m_input_node = m_nodes.emplace(k_input_id, std::make_unique<Node>()).first->second.get();
 }
 
 Graph::~Graph() {
@@ -200,6 +213,13 @@ bool Graph::remove_node(NodeId id) {
     if (id == k_input_id || id == k_output_id) { return false; }
     const auto it = m_nodes.find(id);
     if (it == m_nodes.end()) { return false; }
+
+    // Its probes stop now: their owners may destroy them once the node is gone.
+    std::vector<ProbeId> probes;
+    for (const auto& [probe_id, entry] : m_probes) {
+        if (entry.m_node == id) { probes.push_back(probe_id); }
+    }
+    for (const ProbeId probe_id : probes) { unregister_probe(probe_id); }
 
     // Versions already handed to the audio thread may still run this node.
     m_retired_nodes.push_back(
@@ -288,6 +308,9 @@ void Graph::prepare(const double& sample_rate,
     m_max_block_size = samples_per_block;
     m_num_channels = num_channels;
     for (auto& [id, node] : m_nodes) { prepare_node(*node); }
+    for (auto& [id, entry] : m_probes) {
+        entry.m_probe->prepare(m_sample_rate, m_max_block_size, m_num_channels);
+    }
     set_max_latency_samples(0);
     rebuild();
 
@@ -603,7 +626,8 @@ uint32_t Graph::apply_latencies(CompiledGraph& compiled) {
         const uint32_t latency =
             std::min(step.m_node->m_processor->latency_samples(), step.m_max_latency);
         step.m_dry_delay->set_delay_samples(latency);
-        path_latencies[step.m_buffer] = align(step.m_sources) + latency;
+        step.m_input_latency = align(step.m_sources);
+        path_latencies[step.m_buffer] = step.m_input_latency + latency;
     }
     return align(compiled.m_output_sources);
 }
@@ -640,6 +664,103 @@ void Graph::apply_fade(thl::core::BufferView buffer) {
         m_hold_samples = apply_latencies(*m_active);
         set_latency_samples(m_hold_samples);
         if (m_hold_samples == 0) { m_fade.set_target_value(1.0f); }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Probes
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+constexpr size_t index_of(Graph::ProbePoint point) {
+    return point == Graph::ProbePoint::Input ? 0 : 1;
+}
+
+/// While alive, the audio thread is inside process() or reset(): m_audio_epoch is odd.
+class AudioEpoch {
+public:
+    explicit AudioEpoch(std::atomic<uint64_t>& epoch) TANH_NONBLOCKING_FUNCTION : m_epoch(epoch) {
+        m_epoch.fetch_add(1, std::memory_order_seq_cst);
+    }
+    ~AudioEpoch() TANH_NONBLOCKING_FUNCTION { m_epoch.fetch_add(1, std::memory_order_seq_cst); }
+    AudioEpoch(const AudioEpoch&) = delete;
+    AudioEpoch& operator=(const AudioEpoch&) = delete;
+
+private:
+    std::atomic<uint64_t>& m_epoch;
+};
+}  // namespace
+
+std::optional<ProbeId> Graph::register_probe(NodeId id,
+                                             ProbePoint point,
+                                             thl::dsp::probe::ProbeBase& probe) {
+    const auto it = m_nodes.find(id);
+    if (it == m_nodes.end()) { return std::nullopt; }
+    if ((id == k_input_id && point != ProbePoint::Output) ||
+        (id == k_output_id && point != ProbePoint::Input)) {
+        return std::nullopt;
+    }
+    for (const auto& [probe_id, entry] : m_probes) {
+        if (entry.m_probe == &probe) { return std::nullopt; }
+    }
+    Node::Probes& probes = it->second->m_probes[index_of(point)];
+    for (size_t slot = 0; slot < k_max_probes_per_point; ++slot) {
+        if (probes.m_slots[slot].load(std::memory_order_relaxed) != nullptr) { continue; }
+        // Ready before the audio thread can see it.
+        if (m_max_block_size > 0) {
+            probe.prepare(m_sample_rate, m_max_block_size, m_num_channels);
+        }
+        probes.m_slots[slot].store(&probe, std::memory_order_seq_cst);
+        probes.m_count.fetch_add(1, std::memory_order_seq_cst);
+        const ProbeId probe_id{m_next_probe_id++};
+        m_probes.emplace(
+            probe_id,
+            ProbeEntry{.m_node = id, .m_point = point, .m_slot = slot, .m_probe = &probe});
+        return probe_id;
+    }
+    return std::nullopt;
+}
+
+bool Graph::unregister_probe(ProbeId id) {
+    const auto it = m_probes.find(id);
+    if (it == m_probes.end()) { return false; }
+    const ProbeEntry entry = it->second;
+    m_probes.erase(it);
+    Node::Probes& probes = m_nodes.at(entry.m_node)->m_probes[index_of(entry.m_point)];
+    probes.m_slots[entry.m_slot].store(nullptr, std::memory_order_seq_cst);
+    probes.m_count.fetch_sub(1, std::memory_order_seq_cst);
+    wait_for_audio_thread();
+    return true;
+}
+
+void Graph::wait_for_audio_thread() const {
+    // seq_cst with the audio thread's epoch increment and slot loads: either the audio thread's
+    // next load of the slot sees nullptr, or this load sees it inside a block (odd), which the
+    // wait lets end. Audio stopped (even): nothing to wait for.
+    const uint64_t epoch = m_audio_epoch.load(std::memory_order_seq_cst);
+    if ((epoch & 1U) == 0) { return; }
+    while (m_audio_epoch.load(std::memory_order_seq_cst) == epoch) { std::this_thread::yield(); }
+}
+
+void Graph::run_probes(Node& node,
+                       ProbePoint point,
+                       const thl::core::BufferView& block,
+                       uint32_t latency_samples) {
+    const Node::Probes& probes = node.m_probes[index_of(point)];
+    if (probes.m_count.load(std::memory_order_relaxed) == 0) { return; }
+    for (const auto& slot : probes.m_slots) {
+        thl::dsp::probe::ProbeBase* probe = slot.load(std::memory_order_seq_cst);
+        if (probe != nullptr) { probe->process(block, latency_samples); }
+    }
+}
+
+void Graph::reset_probes(Node& node) {
+    for (const Node::Probes& probes : node.m_probes) {
+        if (probes.m_count.load(std::memory_order_relaxed) == 0) { continue; }
+        for (const auto& slot : probes.m_slots) {
+            thl::dsp::probe::ProbeBase* probe = slot.load(std::memory_order_seq_cst);
+            if (probe != nullptr) { probe->reset(); }
+        }
     }
 }
 
@@ -768,10 +889,14 @@ void Graph::run_step(const ProcessingStep& step,
 }
 
 void Graph::reset() {
+    const AudioEpoch epoch(m_audio_epoch);
+    reset_probes(*m_input_node);
+    reset_probes(*m_output_node);
     CompiledGraph* compiled = m_active;
     if (compiled == nullptr) { return; }
     for (ProcessingStep& step : compiled->m_steps) {
         step.m_node->m_processor->reset();
+        reset_probes(*step.m_node);
         step.m_dry_delay->reset();
         for (Source& source : step.m_sources) { source.m_delay.reset(); }
     }
@@ -779,6 +904,7 @@ void Graph::reset() {
 }
 
 void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
+    const AudioEpoch epoch(m_audio_epoch);
     CompiledGraph* compiled = m_active;
     const size_t n = buffer.get_num_samples();
 
@@ -792,6 +918,7 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     }
 
     set_latency_samples(apply_latencies(*compiled));
+    run_probes(*m_input_node, ProbePoint::Output, buffer, 0);
 
     if (compiled->m_input_buffer) {
         auto& input = compiled->m_buffers[*compiled->m_input_buffer];
@@ -809,11 +936,17 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
                                                 compiled->m_num_channels,
                                                 n);
         mix_sources(*compiled, step.m_sources, *step.m_node, node_buffer, dry);
+        run_probes(*step.m_node, ProbePoint::Input, node_buffer, step.m_input_latency);
         run_step(step, node_buffer, dry, modulation_offset);
+        run_probes(*step.m_node,
+                   ProbePoint::Output,
+                   node_buffer,
+                   compiled->m_path_latencies[step.m_buffer]);
     }
 
     mix_sources(*compiled, compiled->m_output_sources, *compiled->m_output_node, buffer, dry);
     apply_fade(buffer);
+    run_probes(*m_output_node, ProbePoint::Input, buffer, latency_samples());
 }
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::graph

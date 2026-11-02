@@ -2,6 +2,8 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/probe/LevelProbe.h>
+#include <tanh/dsp/probe/SampleProbe.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/MultibandLimiter.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
@@ -2023,4 +2025,170 @@ TEST(Graph, ABlendOfANodeThatShiftsThePhaseUsesItsPhaseMatchedDrySignal) {
     // signal that is the plain input would leave (input + all-pass) / 2, which combs.
     for (size_t n = 0; n < wet.size(); ++n) { ASSERT_NEAR(half[n], wet[n], 1e-5f) << n; }
     EXPECT_GT(std::abs(wet[0] - 1.0f), 0.01f);  // the all-pass really is not the input
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Probes
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+using thl::dsp::probe::LevelProbe;
+using thl::dsp::probe::SampleProbe;
+
+/// graph_input() -> gain 2 -> graph_output(), prepared.
+struct DoublingGraph {
+    Graph m_graph;
+    NodeId m_gain{};
+
+    DoublingGraph() {
+        m_gain = *m_graph.add_node(std::make_unique<GainProcessor>(2.0f));
+        m_graph.connect(m_graph.graph_input(), m_gain);
+        m_graph.connect(m_gain, m_graph.graph_output());
+        prepare(m_graph);
+    }
+};
+
+}  // namespace
+
+TEST(GraphProbes, WatchTheInputAndOutputOfNodesAndOfTheGraph) {
+    DoublingGraph g;
+    LevelProbe graph_in;
+    LevelProbe gain_in;
+    LevelProbe gain_out;
+    LevelProbe graph_out;
+    ASSERT_TRUE(
+        g.m_graph.register_probe(g.m_graph.graph_input(), Graph::ProbePoint::Output, graph_in));
+    ASSERT_TRUE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Input, gain_in));
+    ASSERT_TRUE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Output, gain_out));
+    ASSERT_TRUE(
+        g.m_graph.register_probe(g.m_graph.graph_output(), Graph::ProbePoint::Input, graph_out));
+    EXPECT_EQ(gain_out.num_channels(), k_channels);  // prepared on registration
+    process_blocks(g.m_graph, 0.25f, 4);
+    EXPECT_FLOAT_EQ(graph_in.peak(0), 0.25f);
+    EXPECT_FLOAT_EQ(gain_in.peak(1), 0.25f);
+    EXPECT_FLOAT_EQ(gain_out.peak(0), 0.5f);
+    EXPECT_FLOAT_EQ(graph_out.peak(1), 0.5f);
+}
+
+TEST(GraphProbes, RegistrationRejectsWhatCannotBeWatched) {
+    DoublingGraph g;
+    std::vector<std::unique_ptr<LevelProbe>> probes;
+    const auto add = [&](NodeId id, Graph::ProbePoint point) {
+        probes.push_back(std::make_unique<LevelProbe>());
+        return g.m_graph.register_probe(id, point, *probes.back()).has_value();
+    };
+    EXPECT_FALSE(add(g.m_graph.graph_input(), Graph::ProbePoint::Input));
+    EXPECT_FALSE(add(g.m_graph.graph_output(), Graph::ProbePoint::Output));
+    EXPECT_FALSE(add(NodeId{999}, Graph::ProbePoint::Output));
+    for (size_t i = 0; i < Graph::k_max_probes_per_point; ++i) {
+        EXPECT_TRUE(add(g.m_gain, Graph::ProbePoint::Output));
+    }
+    EXPECT_FALSE(add(g.m_gain, Graph::ProbePoint::Output));  // full
+    EXPECT_TRUE(add(g.m_gain, Graph::ProbePoint::Input));    // the other point is not
+    // The same probe twice: no.
+    EXPECT_FALSE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Input, *probes.back()));
+}
+
+TEST(GraphProbes, LatencyIsThatOfThePoint) {
+    Graph graph;
+    const NodeId latent = *graph.add_node(std::make_unique<LatencyProcessor>(k_latency));
+    graph.connect(graph.graph_input(), latent);
+    graph.connect(latent, graph.graph_output());
+    prepare(graph);
+    LevelProbe in;
+    LevelProbe out;
+    LevelProbe graph_out;
+    ASSERT_TRUE(graph.register_probe(latent, Graph::ProbePoint::Input, in));
+    ASSERT_TRUE(graph.register_probe(latent, Graph::ProbePoint::Output, out));
+    ASSERT_TRUE(graph.register_probe(graph.graph_output(), Graph::ProbePoint::Input, graph_out));
+    process_blocks(graph, 0.5f, 2);
+    EXPECT_EQ(in.latency_samples(), 0u);
+    EXPECT_EQ(out.latency_samples(), k_latency);
+    EXPECT_EQ(graph_out.latency_samples(), k_latency);
+}
+
+TEST(GraphProbes, AProbeRegisteredBeforePrepareIsPreparedWithTheGraph) {
+    Graph graph;
+    graph.connect(graph.graph_input(), graph.graph_output());
+    LevelProbe probe;
+    ASSERT_TRUE(graph.register_probe(graph.graph_input(), Graph::ProbePoint::Output, probe));
+    EXPECT_EQ(probe.num_channels(), 0u);
+    prepare(graph);
+    EXPECT_EQ(probe.num_channels(), k_channels);
+    process_blocks(graph, 0.3f, 1);
+    EXPECT_FLOAT_EQ(probe.peak(0), 0.3f);
+}
+
+TEST(GraphProbes, UnregisteredOrRemovedProbesSeeNothingMore) {
+    DoublingGraph g;
+    LevelProbe kept;
+    auto removed_with_node = std::make_unique<LevelProbe>();
+    const auto kept_id = g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Input, kept);
+    const auto node_id =
+        g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Output, *removed_with_node);
+    ASSERT_TRUE(kept_id && node_id);
+    process_blocks(g.m_graph, 0.25f, 1);
+    EXPECT_TRUE(g.m_graph.unregister_probe(*kept_id));
+    EXPECT_FALSE(g.m_graph.unregister_probe(*kept_id));
+    kept.take_peak(0);
+    // Removing the node unregisters its probes: the probe may go before the next block.
+    ASSERT_TRUE(g.m_graph.remove_node(g.m_gain));
+    removed_with_node.reset();
+    EXPECT_FALSE(g.m_graph.unregister_probe(*node_id));
+    process_blocks(g.m_graph, 0.25f, 4);
+    EXPECT_EQ(kept.peak(0), 0.0f);
+}
+
+TEST(GraphProbes, ResetStartsTheProbesOver) {
+    DoublingGraph g;
+    SampleProbe probe;
+    ASSERT_TRUE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Output, probe));
+    process_blocks(g.m_graph, 0.25f, 2);
+    g.m_graph.reset();
+    process_blocks(g.m_graph, 0.25f, 1);
+    std::array<float, 4 * k_block> a{};
+    const std::array<float*, 1> out{a.data()};
+    const SampleProbe::ReadResult result = probe.read(out, a.size());
+    EXPECT_TRUE(result.m_discontinuity);
+    EXPECT_EQ(result.m_read, k_block);  // only what came after the reset
+}
+
+TEST(GraphProbes, ProbesComeAndGoWhileTheAudioThreadRuns) {
+    // A control thread registers probes, unregisters them and destroys them right after, while
+    // an audio thread processes: unregister_probe() must not return while the audio thread can
+    // still touch the probe (ASan and TSan watch the destroyed ones).
+    DoublingGraph g;
+    std::atomic<bool> done{false};
+    std::atomic<size_t> blocks{0};
+    std::thread audio([&] {
+        auto buffer = make_buffer(0.25f);
+        while (!done.load(std::memory_order_acquire)) {
+            for (size_t ch = 0; ch < k_channels; ++ch) {  // the gain works in place: refill
+                std::fill_n(buffer.get_write_pointer(ch), k_block, 0.25f);
+            }
+            g.m_graph.process(buffer);
+            blocks.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    size_t seen = 0;
+    for (int round = 0; round < 1000; ++round) {
+        auto probe = std::make_unique<LevelProbe>();
+        const auto id =
+            g.m_graph.register_probe(round % 2 == 0 ? g.m_gain : g.m_graph.graph_output(),
+                                     Graph::ProbePoint::Input,
+                                     *probe);
+        ASSERT_TRUE(id.has_value());
+        // Let the audio thread use it: two blocks later it has processed at least one whole
+        // block with the probe, and it keeps running while the probe is unregistered.
+        const size_t start = blocks.load(std::memory_order_relaxed);
+        while (blocks.load(std::memory_order_relaxed) < start + 2) { std::this_thread::yield(); }
+        if (probe->peak(0) > 0.0f) { ++seen; }
+        EXPECT_TRUE(g.m_graph.unregister_probe(*id));
+        probe.reset();  // destroyed at once
+    }
+    done.store(true, std::memory_order_release);
+    audio.join();
+    EXPECT_GT(blocks.load(), 0u);
+    EXPECT_EQ(seen, 1000u);  // every probe really saw blocks while registered
 }
