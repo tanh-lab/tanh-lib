@@ -5,8 +5,10 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
-#include <tanh/dsp/dynamics/LevelDetector.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
+#include <tanh/dsp/utils/Decibels.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
+#include <tanh/dsp/utils/ParameterValue.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -39,10 +41,10 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
  * latency_samples() is L - 1 (+ k_true_peak_delay); max_latency_samples() its maximum.
  *
  * A derived class gives every Parameter through get_parameter_float(), read at the start of
- * every process() call at @p modulation_offset; non-finite values become the defaults, the rest
- * are clamped. A lookahead change restarts the gain's averaging (the audio delay crossfades).
- * Up to k_max_channels channels; further ones pass delayed
- * and driven by the input gain, unlimited.
+ * every process() call at @p modulation_offset; a NaN becomes the default (k_parameter_ranges),
+ * the rest is clamped. A lookahead change restarts the gain's averaging (the audio delay
+ * crossfades); a link change hands the gain over. Up to k_max_channels channels; further ones
+ * pass delayed and driven by the input gain, unlimited.
  *
  * Threads: prepare() allocates (audio stopped); process() and reset() are real-time safe.
  */
@@ -69,6 +71,10 @@ public:
     [[nodiscard]] float gain_reduction_db() const {
         return m_meter_gain_db.load(std::memory_order_relaxed);
     }
+    /// The last block's input peak in dBFS, after the input gain.
+    [[nodiscard]] float input_peak_db() const {
+        return m_meter_input_db.load(std::memory_order_relaxed);
+    }
     /// The last block's output sample peak in dBFS.
     [[nodiscard]] float output_peak_db() const {
         return m_meter_output_db.load(std::memory_order_relaxed);
@@ -76,15 +82,26 @@ public:
 
 protected:
     enum Parameter {
-        InputGain = 0,  ///< dB, [-24, 24], default 0
-        Ceiling,        ///< dBFS, [-30, 0], default -1
-        Lookahead,      ///< ms, [1 sample, k_max_lookahead_ms], default 2
-        Release,        ///< ms, [0, 2000], default 100
-        TruePeak,       ///< > 0.5 on, default off
-        Link,           ///< StereoLink, default Linked
+        InputGain = 0,  ///< dB
+        Ceiling,        ///< dBFS
+        Lookahead,      ///< ms, at least one sample
+        Release,        ///< ms
+        TruePeak,       ///< > 0.5 on
+        Link,           ///< StereoLink (Average counts as Linked)
 
         NumParameters
     };
+
+    /// Every parameter's default and range (Link: StereoLink as a float), e.g. for a host's
+    /// parameter definitions. A NaN reads as the default, the rest is clamped.
+    static constexpr std::array<utils::ParameterRange, NumParameters> k_parameter_ranges{{
+        {.m_default = 0.0f, .m_min = -24.0f, .m_max = 24.0f},             // InputGain
+        {.m_default = -1.0f, .m_min = -30.0f, .m_max = 0.0f},             // Ceiling
+        {.m_default = 2.0f, .m_min = 0.0f, .m_max = k_max_lookahead_ms},  // Lookahead
+        {.m_default = 100.0f, .m_min = 0.0f, .m_max = 2000.0f},           // Release
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 1.0f},                // TruePeak
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 2.0f},                // Link
+    }};
 
     virtual float get_parameter_float(Parameter parameter, uint32_t modulation_offset = 0) = 0;
 
@@ -100,19 +117,17 @@ private:
         double m_sum = 0.0;
         float m_released_db = 0.0f;
     };
-    /// One channel's true-peak interpolator: the last taps-per-phase samples.
+    /// One channel's true-peak interpolator: the last taps-per-phase samples, twice.
     struct Interpolator {
-        std::array<float, k_true_peak_taps_per_phase> m_history{};
+        std::array<float, 2 * k_true_peak_taps_per_phase> m_history{};
         size_t m_position = 0;
     };
 
-    [[nodiscard]] float parameter(Parameter parameter,
-                                  uint32_t modulation_offset,
-                                  float fallback,
-                                  float lowest,
-                                  float highest) TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] float value(Parameter parameter,
+                              uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
     void read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
     void restart(GainStage& stage, float gain) TANH_NONBLOCKING_FUNCTION;
+    void copy_stage(GainStage& to, const GainStage& from) TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] float advance(GainStage& stage, float required) TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] float key_peak(Interpolator& interpolator,
                                  float x) const TANH_NONBLOCKING_FUNCTION;
@@ -126,7 +141,7 @@ private:
     float m_ceiling = 1.0f;
     float m_input_gain_target = 1.0f;
     float m_release_coefficient = 0.0f;
-    float m_release_ms = -1.0f;
+    float m_release_ms = -1.0f;  // none applied yet
     uint64_t m_time = 0;
     std::array<std::array<float, k_true_peak_taps_per_phase>, k_true_peak_factor> m_phases{};
     std::vector<GainStage> m_stages;            // per channel (linked: the first)
@@ -136,7 +151,8 @@ private:
     thl::dsp::utils::DelayProcessor m_delay;
     thl::dsp::utils::SmoothedValue m_input_gain;
     std::atomic<float> m_meter_gain_db{0.0f};
-    std::atomic<float> m_meter_output_db{-120.0f};
+    std::atomic<float> m_meter_input_db{utils::k_min_db};
+    std::atomic<float> m_meter_output_db{utils::k_min_db};
 };
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

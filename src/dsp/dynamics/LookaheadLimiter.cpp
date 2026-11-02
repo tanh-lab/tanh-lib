@@ -1,7 +1,10 @@
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
-#include <tanh/dsp/dynamics/LevelDetector.h>
 #include <tanh/dsp/dynamics/LookaheadLimiter.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
+#include <tanh/dsp/utils/Decibels.h>
+#include <tanh/dsp/utils/ParameterValue.h>
+#include <tanh/dsp/utils/TimeConstant.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -16,17 +19,7 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 namespace {
 
-constexpr float k_db_to_log = 0.11512925464970229f;  // ln(10) / 20
-constexpr float k_log_to_db = 8.6858896380650366f;   // 20 / ln(10)
 constexpr double k_kaiser_beta = 5.0;
-
-[[nodiscard]] float db_to_gain(float db) TANH_NONBLOCKING_FUNCTION {
-    return std::exp(db * k_db_to_log);
-}
-
-[[nodiscard]] float gain_to_db(float gain) TANH_NONBLOCKING_FUNCTION {
-    return gain < 1.0f ? std::log(std::max(gain, 1e-6f)) * k_log_to_db : 0.0f;
-}
 
 /// The modified Bessel function I0 by its series (std::cyl_bessel_i is missing from libc++).
 [[nodiscard]] double bessel_i0(double x) {
@@ -43,14 +36,10 @@ constexpr double k_kaiser_beta = 5.0;
 
 }  // namespace
 
-float LookaheadLimiterImpl::parameter(Parameter parameter,
-                                      uint32_t modulation_offset,
-                                      float fallback,
-                                      float lowest,
-                                      float highest) TANH_NONBLOCKING_FUNCTION {
-    const float value = get_parameter_float(parameter, modulation_offset);
-    if (!std::isfinite(value)) { return fallback; }
-    return std::clamp(value, lowest, highest);
+float LookaheadLimiterImpl::value(Parameter parameter,
+                                  uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+    return utils::sanitised(get_parameter_float(parameter, modulation_offset),
+                            k_parameter_ranges[parameter]);
 }
 
 void LookaheadLimiterImpl::prepare(const double& sample_rate,
@@ -63,7 +52,8 @@ void LookaheadLimiterImpl::prepare(const double& sample_rate,
                          static_cast<size_t>(std::ceil(k_max_lookahead_ms * 0.001 * sample_rate)));
 
     // The 4x interpolator: a Kaiser-windowed sinc of 4 · 24 + 1 taps, centred on tap 48, split
-    // into its phases (phase p, tap j: h[4 j + p]). Phase 0 is the sample 12 back, exactly.
+    // into its phases (phase p, tap j: h[4 j + p]). Phase 0 is the sample k_true_peak_delay back,
+    // exactly.
     // Beta 5 against 6.5 and 8: the narrower transition holds the ceiling closer to Nyquist.
     constexpr size_t k_taps = (k_true_peak_factor * (k_true_peak_taps_per_phase - 1)) + 1;
     constexpr double k_centre = static_cast<double>(k_taps - 1) / 2.0;
@@ -107,7 +97,7 @@ void LookaheadLimiterImpl::restart(GainStage& stage, float gain) TANH_NONBLOCKIN
     std::fill_n(stage.m_average.begin(), m_lookahead, gain);
     stage.m_average_position = 0;
     stage.m_sum = static_cast<double>(gain) * static_cast<double>(m_lookahead);
-    stage.m_released_db = gain_to_db(gain);
+    stage.m_released_db = utils::gain_to_db(gain);
 }
 
 void LookaheadLimiterImpl::reset() TANH_NONBLOCKING_FUNCTION {
@@ -116,37 +106,74 @@ void LookaheadLimiterImpl::reset() TANH_NONBLOCKING_FUNCTION {
     m_delay.reset();
     m_input_gain.set_current_and_target_value(m_input_gain_target);
     m_meter_gain_db.store(0.0f, std::memory_order_relaxed);
-    m_meter_output_db.store(k_floor_db, std::memory_order_relaxed);
+    m_meter_input_db.store(utils::k_min_db, std::memory_order_relaxed);
+    m_meter_output_db.store(utils::k_min_db, std::memory_order_relaxed);
 }
 
 void LookaheadLimiterImpl::read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
-    m_ceiling = db_to_gain(parameter(Ceiling, modulation_offset, -1.0f, -30.0f, 0.0f));
-    m_input_gain_target = db_to_gain(parameter(InputGain, modulation_offset, 0.0f, -24.0f, 24.0f));
+    m_ceiling = utils::db_to_gain(value(Ceiling, modulation_offset));
+    m_input_gain_target = utils::db_to_gain(value(InputGain, modulation_offset));
     m_input_gain.set_target_value(m_input_gain_target);
-    const float release_ms = parameter(Release, modulation_offset, 100.0f, 0.0f, 2000.0f);
+    const float release_ms = value(Release, modulation_offset);
     if (release_ms != m_release_ms) {
         m_release_ms = release_ms;
-        const double samples = static_cast<double>(release_ms) * 0.001 * m_sample_rate;
-        m_release_coefficient = samples > 0.0 ? static_cast<float>(std::exp(-1.0 / samples)) : 0.0f;
+        m_release_coefficient = utils::one_pole_pole(release_ms, m_sample_rate);
     }
-    m_true_peak = parameter(TruePeak, modulation_offset, 0.0f, 0.0f, 1.0f) > 0.5f;
-    m_linked = std::lround(parameter(Link, modulation_offset, 0.0f, 0.0f, 2.0f)) !=
-               static_cast<long>(StereoLink::DualMono);
-    const float lookahead_ms =
-        parameter(Lookahead, modulation_offset, 2.0f, 0.0f, k_max_lookahead_ms);
-    const size_t lookahead =
-        std::clamp<size_t>(static_cast<size_t>(std::lround(lookahead_ms * 0.001 * m_sample_rate)),
-                           1,
-                           m_max_lookahead);
+
+    // Switched on, the interpolators start from silence, not from what they held before.
+    const bool true_peak = value(TruePeak, modulation_offset) > 0.5f;
+    if (true_peak && !m_true_peak) {
+        for (auto& interpolator : m_interpolators) { interpolator = {}; }
+    }
+    m_true_peak = true_peak;
+
+    // Linked, only the first stage runs: a link change hands the gain over. To linked: the
+    // deepest gain leads.
+    const bool linked = utils::to_enum(get_parameter_float(Link, modulation_offset),
+                                       StereoLink::DualMono,
+                                       StereoLink::Linked) != StereoLink::DualMono;
+    if (!m_stages.empty() && linked != m_linked) {
+        if (linked) {
+            copy_stage(m_stages.front(),
+                       *std::ranges::max_element(m_stages, {}, [](const GainStage& g) {
+                           return -g.m_released_db;
+                       }));
+        } else {
+            for (size_t ch = 1; ch < m_stages.size(); ++ch) {
+                copy_stage(m_stages[ch], m_stages.front());
+            }
+        }
+    }
+    m_linked = linked;
+
+    const size_t lookahead = std::clamp<size_t>(
+        static_cast<size_t>(
+            std::lround(utils::ms_to_samples(value(Lookahead, modulation_offset), m_sample_rate))),
+        1,
+        m_max_lookahead);
     if (lookahead != m_lookahead) {
         // The averages restart over the new length at the gains they had reached.
         m_lookahead = lookahead;
-        for (auto& stage : m_stages) { restart(stage, db_to_gain(stage.m_released_db)); }
+        for (auto& stage : m_stages) { restart(stage, utils::db_to_gain(stage.m_released_db)); }
     }
     const auto latency =
         static_cast<uint32_t>(m_lookahead - 1 + (m_true_peak ? k_true_peak_delay : 0));
     m_delay.set_delay_samples(latency);
     set_latency_samples(latency);
+}
+
+void LookaheadLimiterImpl::copy_stage(GainStage& to,
+                                      const GainStage& from) TANH_NONBLOCKING_FUNCTION {
+    if (&to == &from) { return; }
+    // Element-wise into the prepared rings: no allocation.
+    std::ranges::copy(from.m_min_values, to.m_min_values.begin());
+    std::ranges::copy(from.m_min_times, to.m_min_times.begin());
+    std::ranges::copy(from.m_average, to.m_average.begin());
+    to.m_min_head = from.m_min_head;
+    to.m_min_size = from.m_min_size;
+    to.m_average_position = from.m_average_position;
+    to.m_sum = from.m_sum;
+    to.m_released_db = from.m_released_db;
 }
 
 float LookaheadLimiterImpl::advance(GainStage& stage, float required) TANH_NONBLOCKING_FUNCTION {
@@ -165,7 +192,8 @@ float LookaheadLimiterImpl::advance(GainStage& stage, float required) TANH_NONBL
         stage.m_min_head = (stage.m_min_head + 1) % capacity;
         --stage.m_min_size;
     }
-    const float minimum_db = gain_to_db(stage.m_min_values[stage.m_min_head]);
+    const float minimum = stage.m_min_values[stage.m_min_head];
+    const float minimum_db = minimum < 1.0f ? utils::gain_to_db(minimum) : 0.0f;
 
     // Down at once, back with the release, in dB.
     if (minimum_db <= stage.m_released_db) {
@@ -174,7 +202,9 @@ float LookaheadLimiterImpl::advance(GainStage& stage, float required) TANH_NONBL
         stage.m_released_db =
             minimum_db + (m_release_coefficient * (stage.m_released_db - minimum_db));
     }
-    const float released = stage.m_released_db < 0.0f ? db_to_gain(stage.m_released_db) : 1.0f;
+    // Both shortcuts skip the log and the exp while nothing is limited.
+    const float released =
+        stage.m_released_db < 0.0f ? utils::db_to_gain(stage.m_released_db) : 1.0f;
 
     // The average over the last L: a linear ramp down to every minimum.
     float& oldest = stage.m_average[stage.m_average_position];
@@ -187,25 +217,25 @@ float LookaheadLimiterImpl::advance(GainStage& stage, float required) TANH_NONBL
 float LookaheadLimiterImpl::key_peak(Interpolator& interpolator,
                                      float x) const TANH_NONBLOCKING_FUNCTION {
     if (!m_true_peak) { return std::abs(x); }
-    // The newest sample at m_position; tap j is the sample j back.
+    // The newest sample at m_position, written twice (k_true_peak_taps_per_phase apart), so
+    // tap j, the sample j back, is m_history[m_position + j] without wrapping.
     interpolator.m_position =
         (interpolator.m_position + k_true_peak_taps_per_phase - 1) % k_true_peak_taps_per_phase;
     interpolator.m_history[interpolator.m_position] = x;
-    const auto sample = [&interpolator](size_t j) {
-        return interpolator.m_history[(interpolator.m_position + j) % k_true_peak_taps_per_phase];
-    };
+    interpolator.m_history[interpolator.m_position + k_true_peak_taps_per_phase] = x;
+    const float* history = interpolator.m_history.data() + interpolator.m_position;
     // Between the aligned sample (k_true_peak_delay back) and the one after it.
     float interval = 0.0f;
     for (size_t p = 1; p < k_true_peak_factor; ++p) {
         float value = 0.0f;
         for (size_t j = 0; j < k_true_peak_taps_per_phase; ++j) {
-            value += m_phases[p][j] * sample(j);
+            value += m_phases[p][j] * history[j];
         }
         interval = std::max(interval, std::abs(value));
     }
     // The aligned sample and the peak after it (the one before is its predecessor's: the gain
     // ramps over the lookahead, so neighbours' gains hardly differ).
-    return std::max(std::abs(sample(k_true_peak_delay)), interval);
+    return std::max(std::abs(history[k_true_peak_delay]), interval);
 }
 
 void LookaheadLimiterImpl::process(thl::core::BufferView buffer,
@@ -218,6 +248,7 @@ void LookaheadLimiterImpl::process(thl::core::BufferView buffer,
     // Input gain, then the gain each sample needs, from the undelayed input.
     const auto required = [this](float peak) { return peak > m_ceiling ? m_ceiling / peak : 1.0f; };
     float deepest = 1.0f;
+    float input_peak = 0.0f;
     for (size_t i = 0; i < n; ++i) {
         const float drive = m_input_gain.get_smoothed_value();
         float loudest = 0.0f;
@@ -225,6 +256,7 @@ void LookaheadLimiterImpl::process(thl::core::BufferView buffer,
             float& x = buffer.get_write_pointer(ch)[i];
             x *= drive;
             if (ch < channels) {
+                input_peak = std::max(input_peak, std::abs(x));
                 m_peaks[ch] = key_peak(m_interpolators[ch], x);
                 loudest = std::max(loudest, m_peaks[ch]);
             }
@@ -254,8 +286,9 @@ void LookaheadLimiterImpl::process(thl::core::BufferView buffer,
             output_peak = std::max(output_peak, std::abs(samples[i]));
         }
     }
-    m_meter_gain_db.store(gain_to_db(deepest), std::memory_order_relaxed);
-    m_meter_output_db.store(power_to_db(output_peak * output_peak), std::memory_order_relaxed);
+    m_meter_gain_db.store(utils::gain_to_db(deepest), std::memory_order_relaxed);
+    m_meter_input_db.store(utils::gain_to_db(input_peak), std::memory_order_relaxed);
+    m_meter_output_db.store(utils::gain_to_db(output_peak), std::memory_order_relaxed);
 }
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

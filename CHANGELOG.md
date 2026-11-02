@@ -31,8 +31,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   above the ceiling, the gain alone gets it there (a hard clip catches rounding). Ceiling,
   input gain, lookahead up to 10 ms, release, link (linked or dual mono), true peak (4x,
   97-tap interpolator, +12 samples of latency; holds the ceiling for content up to 0.44 fs).
-  `latency_samples()` reports it. Meters: `gain_reduction_db()`, `output_peak_db()`. Tests:
-  `LookaheadLimiter.*`.
+  `latency_samples()` reports it. Meters: `gain_reduction_db()`, `input_peak_db()`,
+  `output_peak_db()`. Defaults and ranges in `k_parameter_ranges` (a NaN reads as the
+  default); a link change hands the gain over. Tests: `LookaheadLimiter.*`.
 - `thl::dsp::dynamics` (header-only, `include/tanh/dsp/dynamics/`): the building blocks
   of a dynamics processor. `GainComputer`, the static curve in dB for the four modes
   (`DynamicsMode`: downward and upward compression, downward and upward expansion) with

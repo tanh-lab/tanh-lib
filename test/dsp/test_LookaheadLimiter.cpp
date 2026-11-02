@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
-#include <tanh/dsp/dynamics/LevelDetector.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
 #include <tanh/dsp/dynamics/LookaheadLimiter.h>
 
 #include <algorithm>
@@ -341,4 +341,62 @@ TEST(LookaheadLimiter, TruePeakHoldsTheCeilingOnBandLimitedNoise) {
         EXPECT_LT(output_true_peak_db(20000.0, true, seed), -0.7f) << seed;
         EXPECT_GT(output_true_peak_db(20000.0, false, seed), 0.0f) << seed;  // sample peaks miss it
     }
+}
+
+TEST(LookaheadLimiter, InputMeterReadsAfterTheInputGain) {
+    TestLimiter limiter;
+    limiter.set(P::InputGain, 6.0f);
+    limiter.prepare(k_sample_rate, k_block, 1);
+    Buffer<float> signal(1, 960);
+    std::fill_n(signal.get_write_pointer(0), 960, amplitude(-12.0f));
+    run(limiter, signal);
+    EXPECT_NEAR(limiter.input_peak_db(), -6.0f, 1e-3f);
+}
+
+TEST(LookaheadLimiter, ALinkSwitchHandsTheGainOver) {
+    // Dual mono with the right channel limited, linked while both are quiet, dual mono again:
+    // the right channel must not fall back to the gain it had at first.
+    TestLimiter limiter;
+    limiter.set(P::Ceiling, 0.0f);
+    limiter.set(P::Release, 1000.0f);
+    limiter.set(P::Link, static_cast<float>(StereoLink::DualMono));
+    limiter.prepare(k_sample_rate, k_block, 2);
+    Buffer<float> loud(2, 4800);
+    std::fill_n(loud.get_write_pointer(0), 4800, 0.1f);
+    std::fill_n(loud.get_write_pointer(1), 4800, 4.0f);
+    run(limiter, loud);
+    // Linked: the left channel takes the right's gain at once (the deepest leads).
+    limiter.set(P::Link, static_cast<float>(StereoLink::Linked));
+    Buffer<float> quiet(2, 480000);
+    for (size_t ch = 0; ch < 2; ++ch) { std::fill_n(quiet.get_write_pointer(ch), 480000, 0.1f); }
+    run(limiter, quiet);
+    EXPECT_LT(db(quiet.get_read_pointer(0)[200] / 0.1f), -11.0f);
+    EXPECT_NEAR(quiet.get_read_pointer(1)[479999], 0.1f, 1e-5f);  // released
+    limiter.set(P::Link, static_cast<float>(StereoLink::DualMono));
+    Buffer<float> after(2, k_block);
+    for (size_t ch = 0; ch < 2; ++ch) { std::fill_n(after.get_write_pointer(ch), k_block, 0.1f); }
+    run(limiter, after);
+    EXPECT_NEAR(after.get_read_pointer(1)[k_block - 1], 0.1f, 1e-5f);
+}
+
+TEST(LookaheadLimiter, TruePeakSwitchedOnStartsFromSilence) {
+    // The interpolator's history stood still while true peak was off: a loud past must not
+    // limit the quiet present.
+    TestLimiter limiter;
+    limiter.set(P::Ceiling, -1.0f);
+    limiter.set(P::Release, 0.0f);
+    limiter.set(P::TruePeak, 1.0f);
+    limiter.prepare(k_sample_rate, k_block, 1);
+    Buffer<float> loud(1, 960);
+    std::fill_n(loud.get_write_pointer(0), 960, 8.0f);
+    run(limiter, loud);
+    limiter.set(P::TruePeak, 0.0f);
+    Buffer<float> quiet(1, 960);
+    std::fill_n(quiet.get_write_pointer(0), 960, 0.1f);
+    run(limiter, quiet);
+    limiter.set(P::TruePeak, 1.0f);
+    Buffer<float> again(1, k_block);  // the first block after switching on
+    std::fill_n(again.get_write_pointer(0), k_block, 0.1f);
+    run(limiter, again);
+    EXPECT_NEAR(limiter.gain_reduction_db(), 0.0f, 1e-4f);
 }
