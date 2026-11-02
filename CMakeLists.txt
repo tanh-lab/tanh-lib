@@ -254,6 +254,8 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/StereoFDN.cpp
         src/dsp/fx/StereoWidener.cpp
 
+        src/dsp/dynamics/Compressor.cpp
+
         src/dsp/transport/InternalTransportClock.cpp
 
         src/dsp/metronome/MetronomePlayer.cpp
