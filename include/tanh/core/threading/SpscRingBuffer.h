@@ -38,6 +38,21 @@ namespace thl::inline THL_ABI_NAMESPACE::core {
  * (modulo 2^N), so full and empty are told apart without a spare slot.
  *
  * T must be trivially copyable; the capacity is rounded up to a power of two.
+ *
+ * Why not moodycamel (readerwriterqueue, concurrentqueue), already fetched for the modulation
+ * component:
+ * - ReaderWriterQueue (SPSC) moves one element per call: a call per sample per channel, or a
+ *   fixed-size block struct per entry that wastes shorter blocks and splits longer ones. It has
+ *   no bulk enqueue.
+ * - ConcurrentQueue has try_enqueue_bulk(), but it is multi-producer / multi-consumer (more than
+ *   one writer and one reader need), and only its try_ variants with preallocated capacity never
+ *   allocate.
+ * - Both queue elements, not channels: planar blocks would be interleaved on the way in, or need
+ *   a queue per channel that can drift apart.
+ * - CMakeLists.txt keeps moodycamel inside the modulation component; core would make it a public
+ *   dependency of the library.
+ * This ring moves whole multi-channel blocks with two copies per channel, drops and counts what
+ * does not fit, and needs no dependency.
  */
 template <typename T>
 class SpscRingBuffer {
