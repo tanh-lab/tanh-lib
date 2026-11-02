@@ -7,6 +7,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `thl::dsp::dynamics` (header-only, `include/tanh/dsp/dynamics/`): the building blocks
+  of a dynamics processor. `GainComputer`, the static curve in dB for the four modes
+  (`DynamicsMode`: downward and upward compression, downward and upward expansion) with
+  threshold, ratio (infinity limits or gates), quadratic soft knee and range;
+  `LevelDetector`, a peak or one-pole RMS level as a power, with `link_powers()`
+  (`StereoLink::Linked`, `Average`; `DualMono` links nothing) and `power_to_db()`;
+  `GainSmoother`, attack and release in the log domain (attack away from 0 dB, in either
+  direction), hold, and an auto release with a slow second stage. Tests: `GainComputer.*`,
+  `LevelDetector.*`, `GainSmoother.*`.
+
 ## [0.5.0] - 2026-11-01
 
 ### Added
