@@ -4,6 +4,7 @@
 #include <tanh/dsp/dynamics/Compressor.h>
 #include <tanh/dsp/dynamics/GainComputer.h>
 #include <tanh/dsp/dynamics/LevelDetector.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
 
 #include <algorithm>
 #include <array>
@@ -53,6 +54,7 @@ public:
     using CompressorImpl::SidechainHighPass;
     using CompressorImpl::Threshold;
     void set(Parameter parameter, float value) { m_values[parameter] = value; }
+    static const auto& ranges() { return k_parameter_ranges; }
 
     std::array<float, NumParameters> m_values{};
     // The threshold's reads' offsets; fixed, as process() runs under RTSan.
@@ -358,4 +360,42 @@ TEST(Compressor, ReleaseAndHoldShapeTheRecovery) {
     EXPECT_NEAR(db(quiet.get_read_pointer(0)[480 + 2400 - 1]),
                 -40.0f - (20.0f * std::exp(-1.0f)),
                 0.05f);
+}
+
+TEST(Compressor, ALinkSwitchHandsTheGainOver) {
+    // Dual mono with the right channel loud, then linked while both are quiet, then dual mono
+    // again: the right channel must not fall back to the gain it had at first.
+    TestCompressor compressor;
+    compressor.set(P::Threshold, -20.0f);
+    compressor.set(P::Ratio, std::numeric_limits<float>::infinity());
+    compressor.set(P::Release, 1000.0f);
+    compressor.set(P::Link, static_cast<float>(StereoLink::DualMono));
+    compressor.prepare(k_sample_rate, k_block, 2);
+    Buffer<float> loud(2, 4800);
+    std::fill_n(loud.get_write_pointer(0), 4800, amplitude(-40.0f));
+    std::fill_n(loud.get_write_pointer(1), 4800, 1.0f);
+    run(compressor, loud);
+    EXPECT_NEAR(db(loud.get_read_pointer(1)[4799]), -20.0f, 1e-3f);
+    // Linked: the left channel takes the right's gain at once (the farthest from 0 dB leads).
+    compressor.set(P::Link, static_cast<float>(StereoLink::Linked));
+    Buffer<float> quiet = constant(2, k_block, amplitude(-40.0f));
+    run(compressor, quiet);
+    EXPECT_LT(db(quiet.get_read_pointer(0)[0]), -59.0f);
+    // A long quiet passage releases the linked gain ...
+    Buffer<float> rest = constant(2, 480000, amplitude(-40.0f));
+    run(compressor, rest);
+    EXPECT_NEAR(db(rest.get_read_pointer(1)[479999]), -40.0f, 1e-3f);
+    // ... and dual mono again starts both channels from it.
+    compressor.set(P::Link, static_cast<float>(StereoLink::DualMono));
+    Buffer<float> after = constant(2, k_block, amplitude(-40.0f));
+    run(compressor, after);
+    EXPECT_NEAR(db(after.get_read_pointer(1)[0]), -40.0f, 1e-3f);
+}
+
+TEST(Compressor, NanParametersReadAsTheirDefaults) {
+    // TestCompressor sets the knee and the times; all else is NaN: the table's defaults.
+    TestCompressor compressor;
+    for (const auto& range : TestCompressor::ranges()) { EXPECT_LE(range.m_min, range.m_max); }
+    // -18 dB, 4:1, no knee: -6 dB in is 12 over, 3 over out.
+    EXPECT_NEAR(steady_level_db(compressor, -6.0f), -15.0f, 1e-3f);
 }

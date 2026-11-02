@@ -22,8 +22,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   reported as `latency_samples()` (the gain moves before the delayed audio); makeup, auto
   makeup, and an internal mix for parallel compression. `process_with_sidechain()` keys it by
   an external signal. Meters: `gain_change_db()`, `input_peak_db()`, `output_peak_db()`.
-  Parameters through `get_parameter_float()`, read at every block position. Tests:
-  `Compressor.*`.
+  Parameters through `get_parameter_float()`, read at every block position; their defaults
+  and ranges in `k_parameter_ranges` (a NaN reads as the default). A link change hands the
+  gain over, so no channel jumps to an old gain. Tests: `Compressor.*`.
 - `thl::dsp::dynamics` (header-only, `include/tanh/dsp/dynamics/`): the building blocks
   of a dynamics processor. `GainComputer`, the static curve in dB for the four modes
   (`DynamicsMode`: downward and upward compression, downward and upward expansion) with

@@ -8,14 +8,19 @@
 #include <tanh/dsp/dynamics/GainComputer.h>
 #include <tanh/dsp/dynamics/GainSmoother.h>
 #include <tanh/dsp/dynamics/LevelDetector.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
 #include <tanh/dsp/filter/SvfCoefficients.h>
+#include <tanh/dsp/utils/Decibels.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
+#include <tanh/dsp/utils/ParameterValue.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
@@ -37,9 +42,9 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
  *
  * A derived class gives every Parameter through get_parameter_float(); all are read at the start
  * of every process() call, at @p modulation_offset (process_modulated() applies them at its
- * change points). Non-finite values become the defaults below; the rest are clamped. Enums come
- * as floats, rounded. Makeup and mix glide over k_ramp_seconds. Up to k_max_channels channels;
- * further ones pass unchanged (delayed by the lookahead).
+ * change points). A NaN becomes the parameter's default (k_parameter_ranges), the rest is
+ * clamped. Enums come as floats, rounded. Makeup and mix glide over k_ramp_seconds. Up to
+ * k_max_channels channels; further ones pass unchanged (delayed by the lookahead).
  *
  * The meters (any thread) hold the last block's largest gain change, input and output peak.
  *
@@ -83,51 +88,78 @@ public:
 
 protected:
     enum Parameter {
-        Threshold = 0,  ///< dB, [-80, 0], default -18
-        Ratio,          ///< [1, inf], default 4; infinity limits (downward) or gates (expansion)
-        Knee,           ///< dB, [0, 24], default 6
-        Range,          ///< dB, the largest gain change, [0, 60], default 60
-        Mode,           ///< DynamicsMode, default DownwardCompression
-        Attack,         ///< ms, [0, 500], default 10
-        Hold,           ///< ms, [0, 500], default 0
-        Release,        ///< ms, [0, 5000], default 100
-        AutoRelease,    ///< > 0.5 on, default off
-        Lookahead,      ///< ms, [0, k_max_lookahead_ms], default 0
-        Detector,       ///< DetectorMode, default Peak
-        RmsWindow,      ///< ms, [0.1, 1000], default 10
-        Link,           ///< StereoLink, default Linked
-        SidechainHighPass,  ///< Hz, below 10 off (the default), else [10, 0.49 fs]
-        Makeup,             ///< dB, [-24, 24], default 0
-        AutoMakeup,         ///< > 0.5 on, default off
-        Mix,                ///< [0, 1], default 1
+        Threshold = 0,      ///< dB
+        Ratio,              ///< up to infinity: limits (downward) or gates (expansion)
+        Knee,               ///< dB
+        Range,              ///< dB, the largest gain change
+        Mode,               ///< DynamicsMode
+        Attack,             ///< ms
+        Hold,               ///< ms
+        Release,            ///< ms
+        AutoRelease,        ///< > 0.5 on
+        Lookahead,          ///< ms
+        Detector,           ///< DetectorMode
+        RmsWindow,          ///< ms
+        Link,               ///< StereoLink
+        SidechainHighPass,  ///< Hz; below 10 off, capped at 0.49 fs
+        Makeup,             ///< dB
+        AutoMakeup,         ///< > 0.5 on
+        Mix,                ///< 0 dry to 1 wet
 
         NumParameters
     };
 
+    /// Every parameter's default and range (enums: their values as floats), e.g. for a host's
+    /// parameter definitions. A NaN reads as the default, the rest is clamped.
+    static constexpr std::array<utils::ParameterRange, NumParameters> k_parameter_ranges{{
+        {.m_default = -18.0f, .m_min = -80.0f, .m_max = 0.0f},  // Threshold
+        {.m_default = 4.0f,
+         .m_min = 1.0f,
+         .m_max = std::numeric_limits<float>::infinity()},                // Ratio
+        {.m_default = 6.0f, .m_min = 0.0f, .m_max = 24.0f},               // Knee
+        {.m_default = 60.0f, .m_min = 0.0f, .m_max = 60.0f},              // Range
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 3.0f},                // Mode
+        {.m_default = 10.0f, .m_min = 0.0f, .m_max = 500.0f},             // Attack
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 500.0f},              // Hold
+        {.m_default = 100.0f, .m_min = 0.0f, .m_max = 5000.0f},           // Release
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 1.0f},                // AutoRelease
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = k_max_lookahead_ms},  // Lookahead
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 1.0f},                // Detector
+        {.m_default = 10.0f, .m_min = 0.1f, .m_max = 1000.0f},            // RmsWindow
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 2.0f},                // Link
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 20000.0f},            // SidechainHighPass
+        {.m_default = 0.0f, .m_min = -24.0f, .m_max = 24.0f},             // Makeup
+        {.m_default = 0.0f, .m_min = 0.0f, .m_max = 1.0f},                // AutoMakeup
+        {.m_default = 1.0f, .m_min = 0.0f, .m_max = 1.0f},                // Mix
+    }};
+
     virtual float get_parameter_float(Parameter parameter, uint32_t modulation_offset = 0) = 0;
 
 private:
-    struct Settings {
+    struct Settings {  // as read last (read_parameters(): k_parameter_ranges)
         GainComputer m_curve;
-        float m_attack_ms = 10.0f;
-        float m_hold_ms = 0.0f;
-        float m_release_ms = 100.0f;
-        bool m_auto_release = false;
-        float m_lookahead_ms = 0.0f;
-        DetectorMode m_detector = DetectorMode::Peak;
-        float m_rms_window_ms = 10.0f;
-        StereoLink m_link = StereoLink::Linked;
-        float m_high_pass_hz = 0.0f;
-        float m_makeup_db = 0.0f;
-        bool m_auto_makeup = false;
-        float m_mix = 1.0f;
+        float m_attack_ms{};
+        float m_hold_ms{};
+        float m_release_ms{};
+        bool m_auto_release{};
+        float m_lookahead_ms{};
+        DetectorMode m_detector{};
+        float m_rms_window_ms{};
+        StereoLink m_link{};
+        float m_high_pass_hz{};
+        float m_makeup_db{};
+        bool m_auto_makeup{};
+        float m_mix{};
     };
 
-    [[nodiscard]] float parameter(Parameter parameter,
-                                  uint32_t modulation_offset,
-                                  float fallback,
-                                  float lowest,
-                                  float highest) TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] float value(Parameter parameter,
+                              uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] bool switch_on(Parameter parameter,
+                                 uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
+    template <typename Enum>
+    [[nodiscard]] Enum choice(Parameter parameter,
+                              uint32_t modulation_offset,
+                              Enum last) TANH_NONBLOCKING_FUNCTION;
     void read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
     void apply_settings() TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] float total_makeup_db() const TANH_NONBLOCKING_FUNCTION;
@@ -138,6 +170,7 @@ private:
     double m_sample_rate = 48000.0;
     size_t m_num_channels = 0;  // prepared, at most k_max_channels
     Settings m_settings;
+    bool m_linked = true;                  // as applied last: only the first smoother runs
     float m_applied_high_pass_hz = -1.0f;  // the filter designed last
     bool m_high_pass_on = false;
     thl::dsp::filter::SvfCoefficients m_high_pass;
@@ -150,8 +183,8 @@ private:
     thl::dsp::utils::SmoothedValue m_makeup;  // dB
     thl::dsp::utils::SmoothedValue m_mix;
     std::atomic<float> m_meter_gain_db{0.0f};
-    std::atomic<float> m_meter_input_db{k_floor_db};
-    std::atomic<float> m_meter_output_db{k_floor_db};
+    std::atomic<float> m_meter_input_db{utils::k_min_db};
+    std::atomic<float> m_meter_output_db{utils::k_min_db};
 };
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

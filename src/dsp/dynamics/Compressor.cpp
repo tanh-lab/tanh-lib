@@ -2,9 +2,14 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/dynamics/Compressor.h>
 #include <tanh/dsp/dynamics/GainComputer.h>
+#include <tanh/dsp/dynamics/GainSmoother.h>
 #include <tanh/dsp/dynamics/LevelDetector.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
 #include <tanh/dsp/filter/EqDesign.h>
 #include <tanh/dsp/filter/SvfCoefficients.h>
+#include <tanh/dsp/utils/Decibels.h>
+#include <tanh/dsp/utils/ParameterValue.h>
+#include <tanh/dsp/utils/TimeConstant.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -13,68 +18,53 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <span>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 namespace {
+constexpr float k_min_high_pass_hz = 10.0f;  // below: the sidechain high-pass is off
+}  // namespace
 
-constexpr float k_min_high_pass_hz = 10.0f;
-constexpr float k_db_to_log = 0.11512925464970229f;  // ln(10) / 20
-
-[[nodiscard]] float db_to_gain(float db) TANH_NONBLOCKING_FUNCTION {
-    return std::exp(db * k_db_to_log);
+float CompressorImpl::value(Parameter parameter,
+                            uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+    return utils::sanitised(get_parameter_float(parameter, modulation_offset),
+                            k_parameter_ranges[parameter]);
 }
 
-[[nodiscard]] float amplitude_db(float amplitude) TANH_NONBLOCKING_FUNCTION {
-    return power_to_db(amplitude * amplitude);
+bool CompressorImpl::switch_on(Parameter parameter,
+                               uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+    return value(parameter, modulation_offset) > 0.5f;
 }
 
 template <typename Enum>
-[[nodiscard]] Enum to_enum(float value, Enum last) TANH_NONBLOCKING_FUNCTION {
-    const auto highest = static_cast<float>(static_cast<int>(last));
-    return static_cast<Enum>(static_cast<int>(std::lround(std::clamp(value, 0.0f, highest))));
-}
-
-}  // namespace
-
-float CompressorImpl::parameter(Parameter parameter,
-                                uint32_t modulation_offset,
-                                float fallback,
-                                float lowest,
-                                float highest) TANH_NONBLOCKING_FUNCTION {
-    const float value = get_parameter_float(parameter, modulation_offset);
-    if (std::isnan(value)) { return fallback; }
-    return std::clamp(value, lowest, highest);
+Enum CompressorImpl::choice(Parameter parameter,
+                            uint32_t modulation_offset,
+                            Enum last) TANH_NONBLOCKING_FUNCTION {
+    return utils::to_enum(get_parameter_float(parameter, modulation_offset),
+                          last,
+                          static_cast<Enum>(k_parameter_ranges[parameter].m_default));
 }
 
 void CompressorImpl::read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
-    const float infinity = std::numeric_limits<float>::infinity();
     Settings& s = m_settings;
-    s.m_curve.m_threshold_db = parameter(Threshold, modulation_offset, -18.0f, -80.0f, 0.0f);
-    s.m_curve.m_ratio = parameter(Ratio, modulation_offset, 4.0f, 1.0f, infinity);
-    s.m_curve.m_knee_db = parameter(Knee, modulation_offset, 6.0f, 0.0f, 24.0f);
-    s.m_curve.m_range_db = parameter(Range, modulation_offset, 60.0f, 0.0f, 60.0f);
-    s.m_curve.m_mode = to_enum(parameter(Mode, modulation_offset, 0.0f, 0.0f, 3.0f),
-                               DynamicsMode::UpwardExpansion);
-    s.m_attack_ms = parameter(Attack, modulation_offset, 10.0f, 0.0f, 500.0f);
-    s.m_hold_ms = parameter(Hold, modulation_offset, 0.0f, 0.0f, 500.0f);
-    s.m_release_ms = parameter(Release, modulation_offset, 100.0f, 0.0f, 5000.0f);
-    s.m_auto_release = parameter(AutoRelease, modulation_offset, 0.0f, 0.0f, 1.0f) > 0.5f;
-    s.m_lookahead_ms = parameter(Lookahead, modulation_offset, 0.0f, 0.0f, k_max_lookahead_ms);
-    s.m_detector =
-        to_enum(parameter(Detector, modulation_offset, 0.0f, 0.0f, 1.0f), DetectorMode::Rms);
-    s.m_rms_window_ms = parameter(RmsWindow, modulation_offset, 10.0f, 0.1f, 1000.0f);
-    s.m_link = to_enum(parameter(Link, modulation_offset, 0.0f, 0.0f, 2.0f), StereoLink::DualMono);
-    s.m_high_pass_hz = parameter(SidechainHighPass,
-                                 modulation_offset,
-                                 0.0f,
-                                 0.0f,
-                                 static_cast<float>(0.49 * m_sample_rate));
-    s.m_makeup_db = parameter(Makeup, modulation_offset, 0.0f, -24.0f, 24.0f);
-    s.m_auto_makeup = parameter(AutoMakeup, modulation_offset, 0.0f, 0.0f, 1.0f) > 0.5f;
-    s.m_mix = parameter(Mix, modulation_offset, 1.0f, 0.0f, 1.0f);
+    s.m_curve.m_threshold_db = value(Threshold, modulation_offset);
+    s.m_curve.m_ratio = value(Ratio, modulation_offset);
+    s.m_curve.m_knee_db = value(Knee, modulation_offset);
+    s.m_curve.m_range_db = value(Range, modulation_offset);
+    s.m_curve.m_mode = choice(Mode, modulation_offset, DynamicsMode::UpwardExpansion);
+    s.m_attack_ms = value(Attack, modulation_offset);
+    s.m_hold_ms = value(Hold, modulation_offset);
+    s.m_release_ms = value(Release, modulation_offset);
+    s.m_auto_release = switch_on(AutoRelease, modulation_offset);
+    s.m_lookahead_ms = value(Lookahead, modulation_offset);
+    s.m_detector = choice(Detector, modulation_offset, DetectorMode::Rms);
+    s.m_rms_window_ms = value(RmsWindow, modulation_offset);
+    s.m_link = choice(Link, modulation_offset, StereoLink::DualMono);
+    s.m_high_pass_hz = value(SidechainHighPass, modulation_offset);  // design_band() caps it
+    s.m_makeup_db = value(Makeup, modulation_offset);
+    s.m_auto_makeup = switch_on(AutoMakeup, modulation_offset);
+    s.m_mix = value(Mix, modulation_offset);
 }
 
 float CompressorImpl::total_makeup_db() const TANH_NONBLOCKING_FUNCTION {
@@ -96,6 +86,21 @@ void CompressorImpl::apply_settings() TANH_NONBLOCKING_FUNCTION {
     for (auto& smoother : m_smoothers) {
         smoother.set_times(s.m_attack_ms, s.m_release_ms, s.m_hold_ms, s.m_auto_release);
     }
+    // Linked, only the first smoother runs: a link change hands the gain over, so no channel
+    // jumps to a gain it had before. To linked: the gain farthest from 0 dB leads.
+    const bool linked = s.m_link != StereoLink::DualMono;
+    if (!m_smoothers.empty() && linked != m_linked) {
+        if (linked) {
+            const auto farthest =
+                std::ranges::max_element(m_smoothers, {}, [](const GainSmoother& g) {
+                    return std::abs(g.gain_db());
+                });
+            m_smoothers.front() = *farthest;
+        } else {
+            std::fill(m_smoothers.begin() + 1, m_smoothers.end(), m_smoothers.front());
+        }
+    }
+    m_linked = linked;
     if (s.m_high_pass_hz != m_applied_high_pass_hz) {
         m_applied_high_pass_hz = s.m_high_pass_hz;
         m_high_pass_on = s.m_high_pass_hz >= k_min_high_pass_hz;
@@ -108,7 +113,7 @@ void CompressorImpl::apply_settings() TANH_NONBLOCKING_FUNCTION {
         }
     }
     const auto lookahead = static_cast<uint32_t>(
-        std::lround(std::min(static_cast<double>(s.m_lookahead_ms) * 0.001 * m_sample_rate,
+        std::lround(std::min(utils::ms_to_samples(s.m_lookahead_ms, m_sample_rate),
                              static_cast<double>(max_latency_samples()))));
     m_lookahead.set_delay_samples(lookahead);
     set_latency_samples(lookahead);
@@ -129,15 +134,15 @@ void CompressorImpl::prepare(const double& sample_rate,
     m_powers.assign(m_num_channels, 0.0f);
     m_gains.resize(m_num_channels, samples_per_block);
 
-    const auto max_lookahead = static_cast<uint32_t>(
-        std::ceil(static_cast<double>(k_max_lookahead_ms) * 0.001 * sample_rate));
+    const auto max_lookahead =
+        static_cast<uint32_t>(std::ceil(utils::ms_to_samples(k_max_lookahead_ms, sample_rate)));
     set_max_latency_samples(max_lookahead);
     m_lookahead.set_max_delay_samples(max_lookahead);
     m_lookahead.prepare(sample_rate, samples_per_block, num_channels);
 
     m_makeup.reset(sample_rate, k_ramp_seconds);
     m_mix.reset(sample_rate, k_ramp_seconds);
-    m_applied_high_pass_hz = -1.0f;
+    m_applied_high_pass_hz = -1.0f;  // none designed yet
     read_parameters(0);
     apply_settings();
     reset();
@@ -151,8 +156,8 @@ void CompressorImpl::reset() TANH_NONBLOCKING_FUNCTION {
     m_makeup.set_current_and_target_value(total_makeup_db());
     m_mix.set_current_and_target_value(m_settings.m_mix);
     m_meter_gain_db.store(0.0f, std::memory_order_relaxed);
-    m_meter_input_db.store(k_floor_db, std::memory_order_relaxed);
-    m_meter_output_db.store(k_floor_db, std::memory_order_relaxed);
+    m_meter_input_db.store(utils::k_min_db, std::memory_order_relaxed);
+    m_meter_output_db.store(utils::k_min_db, std::memory_order_relaxed);
 }
 
 void CompressorImpl::process(thl::core::BufferView buffer,
@@ -182,7 +187,6 @@ void CompressorImpl::run(thl::core::BufferView buffer,
 
     // The gain per channel and sample, in dB, from the undelayed key.
     const GainComputer& curve = m_settings.m_curve;
-    const bool linked = m_settings.m_link != StereoLink::DualMono;
     const thl::dsp::filter::SvfTick high_pass(m_high_pass);
     const size_t key_channels = key.get_num_channels();
     float input_peak = 0.0f;
@@ -194,16 +198,16 @@ void CompressorImpl::run(thl::core::BufferView buffer,
             if (m_high_pass_on) { x = high_pass.process(m_high_pass_state[ch], x); }
             m_powers[ch] = m_detectors[ch].process(x);
         }
-        if (linked) {
+        if (m_linked) {
             const float power =
                 link_powers(m_settings.m_link, std::span<const float>(m_powers.data(), channels));
-            const float gain = m_smoothers[0].process(curve.gain_db(power_to_db(power)));
+            const float gain = m_smoothers[0].process(curve.gain_db(utils::power_to_db(power)));
             for (size_t ch = 0; ch < channels; ++ch) { m_gains.get_write_pointer(ch)[i] = gain; }
             if (std::abs(gain) > std::abs(gain_extreme)) { gain_extreme = gain; }
         } else {
             for (size_t ch = 0; ch < channels; ++ch) {
                 const float gain =
-                    m_smoothers[ch].process(curve.gain_db(power_to_db(m_powers[ch])));
+                    m_smoothers[ch].process(curve.gain_db(utils::power_to_db(m_powers[ch])));
                 m_gains.get_write_pointer(ch)[i] = gain;
                 if (std::abs(gain) > std::abs(gain_extreme)) { gain_extreme = gain; }
             }
@@ -218,15 +222,15 @@ void CompressorImpl::run(thl::core::BufferView buffer,
         const float mix = m_mix.get_smoothed_value();
         for (size_t ch = 0; ch < channels; ++ch) {
             float* samples = buffer.get_write_pointer(ch);
-            const float gain = db_to_gain(m_gains.get_read_pointer(ch)[i] + makeup_db);
+            const float gain = utils::db_to_gain(m_gains.get_read_pointer(ch)[i] + makeup_db);
             samples[i] *= (1.0f - mix) + (mix * gain);
             output_peak = std::max(output_peak, std::abs(samples[i]));
         }
     }
 
     m_meter_gain_db.store(gain_extreme, std::memory_order_relaxed);
-    m_meter_input_db.store(amplitude_db(input_peak), std::memory_order_relaxed);
-    m_meter_output_db.store(amplitude_db(output_peak), std::memory_order_relaxed);
+    m_meter_input_db.store(utils::gain_to_db(input_peak), std::memory_order_relaxed);
+    m_meter_output_db.store(utils::gain_to_db(output_peak), std::memory_order_relaxed);
 }
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics
