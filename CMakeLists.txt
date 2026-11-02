@@ -255,6 +255,7 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/StereoWidener.cpp
 
         src/dsp/dynamics/Compressor.cpp
+        src/dsp/dynamics/LookaheadLimiter.cpp
 
         src/dsp/transport/InternalTransportClock.cpp
 
