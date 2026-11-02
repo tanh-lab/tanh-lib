@@ -1,16 +1,19 @@
 #include <gtest/gtest.h>
 #include <tanh/dsp/dynamics/LevelDetector.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
+#include <tanh/dsp/utils/Decibels.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 using thl::dsp::dynamics::DetectorMode;
 using thl::dsp::dynamics::LevelDetector;
 using thl::dsp::dynamics::link_powers;
-using thl::dsp::dynamics::power_to_db;
 using thl::dsp::dynamics::StereoLink;
+using thl::dsp::utils::power_to_db;
 
 namespace {
 constexpr double k_sample_rate = 48000.0;
@@ -57,9 +60,32 @@ TEST(LevelDetector, RmsWindowIsATimeConstant) {
     EXPECT_FLOAT_EQ(detector.process(0.0f), 0.0f);
 }
 
-TEST(LevelDetector, PowerToDbHasAFloor) {
-    EXPECT_FLOAT_EQ(power_to_db(0.0f), thl::dsp::dynamics::k_floor_db);
-    EXPECT_FLOAT_EQ(power_to_db(1.0f), 0.0f);
+TEST(LevelDetector, NonFiniteSamplesReadAsSilence) {
+    for (const float bad :
+         {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
+        LevelDetector detector;
+        LevelDetector reference;
+        for (LevelDetector* d : {&detector, &reference}) {
+            d->prepare(k_sample_rate);
+            d->set_mode(DetectorMode::Rms);
+            for (int n = 0; n < 480; ++n) { (void)d->process(1.0f); }
+        }
+        EXPECT_EQ(detector.process(bad), reference.process(0.0f));
+        EXPECT_EQ(detector.process(1.0f), reference.process(1.0f));  // and goes on
+    }
+}
+
+TEST(LevelDetector, AModeChangeClearsTheRmsWindow) {
+    LevelDetector detector;
+    detector.prepare(k_sample_rate);
+    detector.set_mode(DetectorMode::Rms);
+    for (int n = 0; n < 4800; ++n) { (void)detector.process(1.0f); }
+    detector.set_mode(DetectorMode::Peak);
+    detector.set_mode(DetectorMode::Rms);
+    EXPECT_LT(detector.process(0.0f), 1e-6f);
+    detector.set_mode(DetectorMode::Rms);  // unchanged: nothing cleared
+    EXPECT_LT(detector.process(1.0f), 0.01f);
+    EXPECT_GT(detector.process(1.0f), 0.0f);
 }
 
 TEST(LevelDetector, LinkedTakesTheLoudestAverageTheMeanPower) {

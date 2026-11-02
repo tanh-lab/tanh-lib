@@ -9,15 +9,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::utils` helpers, real-time safe: `Decibels.h` (`db_to_gain()`, `gain_to_db()`,
+  `power_to_db()`, float or double, floored at `k_min_db` = -120 dB or a given floor),
+  `TimeConstant.h` (`ms_to_samples()`, `one_pole_pole()`: exp(-1 / samples), 0 for no time)
+  and `ParameterValue.h` (`ParameterRange`, `sanitised()`: NaN to a fallback, the rest
+  clamped; `to_enum()`). `LimiterImpl`, `EqDesign`, `SvfCoefficients::magnitude_db()` and
+  the dynamics blocks use them. Tests: `Decibels.*`, `TimeConstant.*`, `ParameterValue.*`.
 - `thl::dsp::dynamics` (header-only, `include/tanh/dsp/dynamics/`): the building blocks
   of a dynamics processor. `GainComputer`, the static curve in dB for the four modes
   (`DynamicsMode`: downward and upward compression, downward and upward expansion) with
   threshold, ratio (infinity limits or gates), quadratic soft knee and range;
-  `LevelDetector`, a peak or one-pole RMS level as a power, with `link_powers()`
-  (`StereoLink::Linked`, `Average`; `DualMono` links nothing) and `power_to_db()`;
+  `LevelDetector`, a peak or one-pole RMS level as a power (a non-finite sample reads as
+  silence; a mode change clears the window); `StereoLink.h`, `link_powers()`
+  (`StereoLink::Linked`, `Average`; `DualMono` links nothing);
   `GainSmoother`, attack and release in the log domain (attack away from 0 dB, in either
-  direction), hold, and an auto release with a slow second stage. Tests: `GainComputer.*`,
+  direction), hold, and an auto release with a slow second stage (switched on, it starts
+  from the current gain). Tests: `GainComputer.*`,
   `LevelDetector.*`, `GainSmoother.*`.
+
+### Fixed
+
+- `thl::dsp::utils::LimiterImpl`: a NaN threshold, attack or release made its gain, and so
+  its output, NaN for good (and with it `MultibandLimiterImpl`'s bands). A NaN now keeps the
+  parameter's last value; the threshold is clamped to [-120, 24] dB, the times to
+  [0.01, 60000] ms. `process()` is `TANH_NONBLOCKING_FUNCTION`. Test:
+  `Limiter.NanParametersKeepTheirLastValue`.
 
 ## [0.5.0] - 2026-11-01
 
