@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/dynamics/Compressor.h>
 #include <tanh/dsp/dynamics/GainComputer.h>
@@ -15,7 +16,7 @@
 #include <limits>
 #include <span>
 
-namespace thl::dsp::dynamics {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 namespace {
 
@@ -228,4 +229,4 @@ void CompressorImpl::run(thl::core::BufferView buffer,
     m_meter_output_db.store(amplitude_db(output_peak), std::memory_order_relaxed);
 }
 
-}  // namespace thl::dsp::dynamics
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

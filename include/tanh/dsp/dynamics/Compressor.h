@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
@@ -17,7 +18,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace thl::dsp::dynamics {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 /**
  * @brief A compressor and expander: downward and upward, with lookahead, sidechain and mix.
@@ -153,4 +154,4 @@ private:
     std::atomic<float> m_meter_output_db{k_floor_db};
 };
 
-}  // namespace thl::dsp::dynamics
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

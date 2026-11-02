@@ -2,6 +2,8 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/dynamics/Compressor.h>
+#include <tanh/dsp/dynamics/GainComputer.h>
+#include <tanh/dsp/dynamics/LevelDetector.h>
 
 #include <algorithm>
 #include <array>
