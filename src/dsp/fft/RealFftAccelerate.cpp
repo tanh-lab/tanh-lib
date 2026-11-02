@@ -21,8 +21,7 @@ struct RealFft::Impl {
         : m_log2_size(static_cast<vDSP_Length>(std::countr_zero(size)))
         , m_setup(vDSP_create_fftsetup(m_log2_size, kFFTRadix2))
         , m_real(size / 2)
-        , m_imag(size / 2)
-        , m_time(size) {}
+        , m_imag(size / 2) {}
     ~Impl() { vDSP_destroy_fftsetup(m_setup); }
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
@@ -35,7 +34,6 @@ struct RealFft::Impl {
     FFTSetup m_setup;
     std::vector<float> m_real;  // packed: DC in m_real[0], Nyquist in m_imag[0]
     std::vector<float> m_imag;
-    std::vector<float> m_time;
 };
 
 RealFft::RealFft() = default;
@@ -82,11 +80,11 @@ void RealFft::inverse(std::span<const std::complex<float>> bins,
         split.imagp[k] = bins[k].imag();
     }
     vDSP_fft_zrip(m_impl->m_setup, &split, 1, m_impl->m_log2_size, FFT_INVERSE);
-    vDSP_ztoc(&split, 1, reinterpret_cast<DSPComplex*>(m_impl->m_time.data()), 2, n / 2);
+    vDSP_ztoc(&split, 1, reinterpret_cast<DSPComplex*>(time.data()), 2, n / 2);
     // vDSP's real inverse transform is unscaled: N times the signal for the DFT's bins (its own
     // forward bins, twice as large, would give 2 · N).
     const float scale = 1.0f / static_cast<float>(n);
-    vDSP_vsmul(m_impl->m_time.data(), 1, &scale, time.data(), 1, n);
+    vDSP_vsmul(time.data(), 1, &scale, time.data(), 1, n);
 }
 
 const char* RealFft::backend_name() {

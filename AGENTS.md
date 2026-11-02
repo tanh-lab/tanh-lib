@@ -101,6 +101,7 @@ Every declaration lives in the inline namespace `thl::THL_ABI_NAMESPACE` (`TANH_
 
 - nlohmann_json 3.12.0 (State)
 - miniaudio 0.11.24 (AudioIO)
+- pffft v1.1.0, marton78/pffft (DSP, with `TANH_FFT_BACKEND=pffft`; BSD-like FFTPACK licence: binary distributions carry its notice)
 - googletest 1.14.0 (tests)
 - googlebenchmark 1.9.1 (benchmarks)
 
