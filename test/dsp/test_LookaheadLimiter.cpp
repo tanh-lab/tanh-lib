@@ -106,7 +106,7 @@ TEST(LookaheadLimiter, BelowTheCeilingItIsADelay) {
     EXPECT_EQ(limiter.latency_samples(), 95u);  // 96 - 1
     EXPECT_EQ(limiter.max_latency_samples(), 479u + LookaheadLimiterImpl::k_true_peak_delay);
     Buffer<float> signal = sine(2, 4800, 1000.0, 0.5f);
-    const Buffer<float> input = signal;
+    const Buffer<float> input = sine(2, 4800, 1000.0, 0.5f);  // the same signal
     run(limiter, signal);
     for (size_t n = 95; n < 4800; ++n) {
         ASSERT_EQ(signal.get_read_pointer(0)[n], input.get_read_pointer(0)[n - 95]) << n;
@@ -123,7 +123,7 @@ TEST(LookaheadLimiter, NoSampleAboveTheCeilingAndTheGainAloneGetsItThere) {
             limiter.set(P::Release, release);
             limiter.prepare(k_sample_rate, k_block, 2);
             Buffer<float> signal = bursts(2, 24000, 7);
-            const Buffer<float> input = signal;
+            const Buffer<float> input = bursts(2, 24000, 7);  // the same signal
             run(limiter, signal);
             const size_t delay = limiter.latency_samples();
             const float ceiling = amplitude(-1.0f);
@@ -154,7 +154,7 @@ TEST(LookaheadLimiter, ALimitedSineKeepsItsShape) {
     limiter.set(P::Release, 500.0f);
     limiter.prepare(k_sample_rate, k_block, 1);
     Buffer<float> signal = sine(1, 48000, 997.0, 1.0f);
-    const Buffer<float> input = signal;
+    const Buffer<float> input = sine(1, 48000, 997.0, 1.0f);  // the same signal
     run(limiter, signal);
     const size_t delay = limiter.latency_samples();
     float lowest = 10.0f;
@@ -283,8 +283,10 @@ TEST(LookaheadLimiter, ParametersAreReadAtTheChangePoints) {
     EXPECT_EQ(limiter.m_offsets[2], 40u);
 }
 
+namespace {
+
 /// The output's true peak in dB, measured 16x, for noise bursts low-passed at @p cutoff.
-static float output_true_peak_db(double cutoff, bool true_peak, unsigned seed) {
+float output_true_peak_db(double cutoff, bool true_peak, unsigned seed) {
     TestLimiter limiter;
     limiter.set(P::Ceiling, -1.0f);
     limiter.set(P::TruePeak, true_peak ? 1.0f : 0.0f);
@@ -330,6 +332,8 @@ static float output_true_peak_db(double cutoff, bool true_peak, unsigned seed) {
     }
     return db(peak);
 }
+
+}  // namespace
 
 TEST(LookaheadLimiter, TruePeakHoldsTheCeilingOnBandLimitedNoise) {
     // Noise bursts with content up to 20 kHz; the output's true peak measured 16x.

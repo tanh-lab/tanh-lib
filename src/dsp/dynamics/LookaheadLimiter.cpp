@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/dynamics/LevelDetector.h>
 #include <tanh/dsp/dynamics/LookaheadLimiter.h>
@@ -11,7 +12,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace thl::dsp::dynamics {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 namespace {
 
@@ -257,4 +258,4 @@ void LookaheadLimiterImpl::process(thl::core::BufferView buffer,
     m_meter_output_db.store(power_to_db(output_peak * output_peak), std::memory_order_relaxed);
 }
 
-}  // namespace thl::dsp::dynamics
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

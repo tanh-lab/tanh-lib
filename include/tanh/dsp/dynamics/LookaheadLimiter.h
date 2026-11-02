@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
@@ -15,7 +16,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace thl::dsp::dynamics {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 /**
  * @brief A brickwall lookahead limiter: no output sample above the ceiling, without clipping.
@@ -138,4 +139,4 @@ private:
     std::atomic<float> m_meter_output_db{-120.0f};
 };
 
-}  // namespace thl::dsp::dynamics
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics
