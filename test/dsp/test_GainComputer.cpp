@@ -2,6 +2,7 @@
 #include <tanh/dsp/dynamics/GainComputer.h>
 
 #include <array>
+#include <cmath>
 #include <limits>
 
 using thl::dsp::dynamics::DynamicsMode;
@@ -69,7 +70,8 @@ TEST(GainComputer, RatioOneOrLessChangesNothing) {
     for (const DynamicsMode mode : k_modes) {
         for (const float ratio : {1.0f, 0.5f, 0.0f, -3.0f}) {
             const GainComputer computer = hard(mode, ratio);
-            for (float level = -80.0f; level <= 10.0f; level += 5.0f) {
+            for (int step = 0; step <= 18; ++step) {
+                const float level = -80.0f + (5.0f * static_cast<float>(step));
                 EXPECT_FLOAT_EQ(computer.gain_db(level), 0.0f);
             }
         }
@@ -80,7 +82,8 @@ TEST(GainComputer, RangeCapsTheGainChange) {
     for (const DynamicsMode mode : k_modes) {
         GainComputer computer = hard(mode, 10.0f);
         computer.m_range_db = 6.0f;
-        for (float level = -100.0f; level <= 20.0f; level += 1.0f) {
+        for (int step = 0; step <= 120; ++step) {
+            const float level = -100.0f + static_cast<float>(step);
             EXPECT_LE(std::abs(computer.gain_db(level)), 6.0f);
         }
         EXPECT_FLOAT_EQ(std::abs(computer.gain_db(-100.0f)) + std::abs(computer.gain_db(20.0f)),
@@ -104,7 +107,8 @@ TEST(GainComputer, SoftKneeIsContinuousWithItsSlopeAndMeetsTheHardCurve) {
         EXPECT_NEAR(std::abs(soft.gain_db(-20.0f)), slope * 12.0f / 8.0f, 1e-5f);
         // Continuous and with a continuous slope: second differences stay small.
         constexpr float k_step = 0.01f;
-        for (float level = -40.0f; level < 0.0f; level += k_step) {
+        for (int step = 0; step < 4000; ++step) {
+            const float level = -40.0f + (k_step * static_cast<float>(step));
             const float a = soft.gain_db(level - k_step);
             const float b = soft.gain_db(level);
             const float c = soft.gain_db(level + k_step);
@@ -116,7 +120,8 @@ TEST(GainComputer, SoftKneeIsContinuousWithItsSlopeAndMeetsTheHardCurve) {
 TEST(GainComputer, DownwardModesLowerAndUpwardModesRaise) {
     GainComputer computer;
     computer.m_knee_db = 6.0f;
-    for (float level = -100.0f; level <= 20.0f; level += 0.5f) {
+    for (int step = 0; step <= 240; ++step) {
+        const float level = -100.0f + (0.5f * static_cast<float>(step));
         computer.m_mode = DynamicsMode::DownwardCompression;
         EXPECT_LE(computer.gain_db(level), 0.0f);
         computer.m_mode = DynamicsMode::DownwardExpansion;

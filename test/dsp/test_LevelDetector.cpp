@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tanh/dsp/dynamics/LevelDetector.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <numbers>

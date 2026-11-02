@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -8,7 +9,7 @@
 #include <cstdint>
 #include <span>
 
-namespace thl::dsp::dynamics {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 /// What a level detector measures.
 enum class DetectorMode : uint8_t {
@@ -95,4 +96,4 @@ private:
     DetectorMode m_mode = DetectorMode::Peak;
 };
 
-}  // namespace thl::dsp::dynamics
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

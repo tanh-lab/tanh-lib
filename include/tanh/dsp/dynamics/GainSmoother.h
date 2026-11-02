@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 
-namespace thl::dsp::dynamics {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 /**
  * @brief The ballistics of a dynamics processor: smooths its gain in dB.
@@ -123,4 +124,4 @@ private:
     Stage m_slow;
 };
 
-}  // namespace thl::dsp::dynamics
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics

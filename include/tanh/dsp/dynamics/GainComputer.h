@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cstdint>
 
-namespace thl::dsp::dynamics {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics {
 
 /// Which way a dynamics processor changes the level, relative to its threshold.
 enum class DynamicsMode : uint8_t {
@@ -61,4 +62,4 @@ struct GainComputer {
     }
 };
 
-}  // namespace thl::dsp::dynamics
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::dynamics
