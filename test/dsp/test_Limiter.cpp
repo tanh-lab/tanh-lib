@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 using namespace thl::dsp::utils;
@@ -203,4 +204,22 @@ TEST(Limiter, ZeroDbThresholdNoLimiting) {
     // Signal at 0.8 is below 1.0 threshold — passes through
     float output = process_sustained(limiter, 0.8f, 512);
     EXPECT_NEAR(output, 0.8f, 0.001f);
+}
+
+TEST(Limiter, NanParametersKeepTheirLastValue) {
+    TestLimiter limiter;
+    limiter.m_threshold_db = -6.0f;
+    limiter.m_attack_ms = 0.1f;
+    limiter.prepare(k_sample_rate, k_block_size, 1);
+    const float limited = process_sustained(limiter, 2.0f, 9600);
+    limiter.m_threshold_db = std::numeric_limits<float>::quiet_NaN();
+    limiter.m_attack_ms = std::numeric_limits<float>::quiet_NaN();
+    limiter.m_release_ms = std::numeric_limits<float>::quiet_NaN();
+    const float after = process_sustained(limiter, 2.0f, 9600);
+    EXPECT_TRUE(std::isfinite(after));
+    EXPECT_NEAR(after, limited, 1e-4f);
+    limiter.m_threshold_db = 0.0f;  // and it recovers once the values are good again
+    limiter.m_attack_ms = 0.1f;
+    limiter.m_release_ms = 10.0f;
+    EXPECT_NEAR(process_sustained(limiter, 0.5f, 9600), 0.5f, 1e-3f);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/core/AbiNamespace.h>
+#include <tanh/dsp/utils/Decibels.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -95,7 +96,7 @@ struct SvfCoefficients {
     /// 20 log10 |response()|, floored at -240 dB.
     [[nodiscard]] double magnitude_db(double frequency, double sample_rate) const {
         if (is_identity()) { return 0.0; }
-        return 20.0 * std::log10(std::max(std::abs(response(frequency, sample_rate)), 1e-12));
+        return utils::gain_to_db(std::abs(response(frequency, sample_rate)), -240.0);
     }
 };
 

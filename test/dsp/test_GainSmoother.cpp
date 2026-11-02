@@ -77,6 +77,16 @@ TEST(GainSmoother, AutoReleaseIsSlowAfterALongCompressionOnly) {
     EXPECT_LT(released_after(2000, true), -5.0f);
 }
 
+TEST(GainSmoother, AutoReleaseSwitchedOnStartsFromTheCurrentGain) {
+    // The slow stage stood still while auto release was off: it must not bring back -20 dB.
+    GainSmoother smoother = prepared(0.0f, 100.0f, 0.0f, true);
+    run(smoother, -20.0f, 4800);
+    smoother.set_times(0.0f, 100.0f, 0.0f, false);
+    EXPECT_NEAR(run(smoother, -1.0f, 48000), -1.0f, 1e-3f);
+    smoother.set_times(0.0f, 100.0f, 0.0f, true);
+    EXPECT_NEAR(smoother.process(-1.0f), -1.0f, 1e-3f);
+}
+
 TEST(GainSmoother, ResetJumpsAndEndsTheHold) {
     GainSmoother smoother = prepared(10.0f, 10.0f, 100.0f);
     run(smoother, -20.0f, 4800);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tanh/core/AbiNamespace.h>
+#include <tanh/dsp/utils/TimeConstant.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -42,6 +43,9 @@ public:
                    float release_ms,
                    float hold_ms = 0.0f,
                    bool auto_release = false) TANH_NONBLOCKING_FUNCTION {
+        // The slow stage only runs with auto release: switched on, it starts where the gain is,
+        // not where it stopped.
+        if (auto_release && !m_auto_release) { m_slow = m_fast; }
         m_auto_release = auto_release;
         if (attack_ms == m_attack_ms && release_ms == m_release_ms && hold_ms == m_hold_ms) {
             return;
@@ -63,8 +67,7 @@ public:
         step(m_fast, target_db, m_attack, m_release);
         if (!m_auto_release) { return m_fast.m_gain_db; }
         step(m_slow, target_db, m_slow_attack, m_slow_release);
-        return std::abs(m_slow.m_gain_db) > std::abs(m_fast.m_gain_db) ? m_slow.m_gain_db
-                                                                       : m_fast.m_gain_db;
+        return gain_db();
     }
 
     /// The gain in dB as last returned (without auto release: the fast stage).
@@ -95,10 +98,9 @@ private:
         }
     }
 
-    /// exp(-1 / (time · fs)): 0 (a jump) for no time.
+    /// The one-pole pole of @p time_ms: 0 (a jump) for no time.
     [[nodiscard]] float coefficient(float time_ms) const TANH_NONBLOCKING_FUNCTION {
-        const double samples = static_cast<double>(time_ms) * 0.001 * m_sample_rate;
-        return samples > 0.0 ? static_cast<float>(std::exp(-1.0 / samples)) : 0.0f;
+        return utils::one_pole_pole(time_ms, m_sample_rate);
     }
 
     void update_coefficients() TANH_NONBLOCKING_FUNCTION {
@@ -107,7 +109,7 @@ private:
         m_slow_attack = coefficient(k_auto_release_factor * m_attack_ms);
         m_slow_release = coefficient(k_auto_release_factor * m_release_ms);
         m_hold_samples = static_cast<uint32_t>(
-            std::lround(std::max(0.0, static_cast<double>(m_hold_ms) * 0.001 * m_sample_rate)));
+            std::lround(std::max(0.0, utils::ms_to_samples(m_hold_ms, m_sample_rate))));
     }
 
     double m_sample_rate = 48000.0;
