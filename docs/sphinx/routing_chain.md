@@ -51,5 +51,7 @@ with a logged warning. Chains are folded in normalised units, so a routing in
 `DepthMode::Absolute` is converted by the target's range first.
 
 Serialisation: `"combine_mode": "multiply"`, `"offset"` and
-`"chain_position"` (the last two only when not 0, so older readers and presets
-are unaffected).
+`"chain_position"` (the last two only when not 0, so a matrix without chains
+saves as before). An older tanh-lib reading a chain does not know them: it
+loads a Multiply routing as Additive and drops the offset and the position, so
+the modulation sounds different there and saving it again loses the chain.

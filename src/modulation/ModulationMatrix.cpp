@@ -660,7 +660,6 @@ bool ModulationMatrix::update_routing_offset_with_lock(ModulationRouting& user_r
     m_config.read([&](const ProcessingConfig& config) {
         for (const auto& r : config.m_routings) {
             if (r.m_id == id) {
-                r.m_offset.store(new_offset, std::memory_order_relaxed);
                 r.m_offset_abs_precomputed.store(precomputed, std::memory_order_relaxed);
                 r.m_chain_offset.store(normalised, std::memory_order_relaxed);
                 break;
@@ -1083,11 +1082,13 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         // Multiply folds a mono chain: on a polyphonic target it adds.
         CombineMode combine_mode = routing.m_combine_mode;
         if (combine_mode == CombineMode::Multiply && routing_mode != RoutingMode::GlobalToGlobal) {
-            thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                              "modulation",
-                              "Multiply routing '%s' -> '%s' on a polyphonic target adds instead.",
-                              routing.m_source_id.c_str(),
-                              routing.m_target_id.c_str());
+            if (m_warned_poly_multiply.insert(routing.m_id).second) {
+                thl::Logger::logf(thl::Logger::LogLevel::Warning,
+                                  "modulation",
+                                  "Multiply routing '%s' -> '%s' on a polyphonic target adds instead.",
+                                  routing.m_source_id.c_str(),
+                                  routing.m_target_id.c_str());
+            }
             combine_mode = CombineMode::Additive;
         }
 
@@ -1098,7 +1099,6 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         r.m_depth.store(routing.m_depth, std::memory_order_relaxed);
         r.m_depth_mode = routing.m_depth_mode;
         r.m_combine_mode = combine_mode;
-        r.m_offset.store(routing.m_offset, std::memory_order_relaxed);
         r.m_chain_position = routing.m_chain_position;
         r.m_chain_depth.store(to_normalised(routing.m_depth, routing.m_depth_mode, tgt_it->second),
                               std::memory_order_relaxed);

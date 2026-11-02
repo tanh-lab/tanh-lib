@@ -23,6 +23,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -465,6 +466,10 @@ private:
     // Monotonically increasing routing ID counter — protected by m_writer_mutex.
     // Starts at 1; 0 is k_invalid_routing_id.
     uint32_t m_next_routing_id = 1;
+
+    // Multiply routings already warned about acting as Additive (a polyphonic
+    // target): each warns once, not on every rebuild. Message thread, under the lock.
+    std::unordered_set<uint32_t> m_warned_poly_multiply;
 
     // RT-safe processing config — RCU-protected for lock-free RT reads
     thl::RCU<ProcessingConfig> m_config;

@@ -66,7 +66,6 @@ struct ResolvedRouting {
 
     // The offset (ModulationRouting::m_offset) in the same units as
     // m_depth_abs_precomputed. Written by update_routing_offset().
-    mutable std::atomic<float> m_offset{0.0f};
     mutable std::atomic<float> m_offset_abs_precomputed{0.0f};
 
     // Chain targets (a Multiply routing on the target, see
@@ -171,7 +170,6 @@ struct ResolvedRouting {
         , m_enabled_edge_pending(other.m_enabled_edge_pending)
         , m_loaded_enabled(other.m_loaded_enabled)
         , m_depth_abs_precomputed(other.m_depth_abs_precomputed.load(std::memory_order_relaxed))
-        , m_offset(other.m_offset.load(std::memory_order_relaxed))
         , m_offset_abs_precomputed(other.m_offset_abs_precomputed.load(std::memory_order_relaxed))
         , m_chain_position(other.m_chain_position)
         , m_chain_buffer(other.m_chain_buffer)
@@ -215,8 +213,6 @@ struct ResolvedRouting {
             m_depth_abs_precomputed.store(
                 other.m_depth_abs_precomputed.load(std::memory_order_relaxed),
                 std::memory_order_relaxed);
-            m_offset.store(other.m_offset.load(std::memory_order_relaxed),
-                           std::memory_order_relaxed);
             m_offset_abs_precomputed.store(
                 other.m_offset_abs_precomputed.load(std::memory_order_relaxed),
                 std::memory_order_relaxed);
