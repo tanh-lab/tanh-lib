@@ -286,6 +286,10 @@ if(TANH_BUILD_DSP)
         -DTANH_DSP_ENABLED
     )
 
+    # The FFT behind thl::dsp::fft::RealFft (TANH_FFT_BACKEND: pffft or accelerate).
+    include(cmake/fft-backend.cmake)
+    tanh_add_fft_backend(${PROJECT_NAME}_dsp)
+
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_dsp)
 endif()
 

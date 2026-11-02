@@ -36,6 +36,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (`read_latest()`), or skips. Capacity rounded up to a power of two; real-time safe on both
   sides (two atomic positions, no locks, no allocation after `prepare()`). Tests:
   `SpscRingBuffer.*`, including one writer and one reader side by side.
+- `thl::dsp::fft::RealFft`: the FFT of a real signal of a power-of-two size (32 to 65536),
+  unscaled forward (as `numpy.fft.rfft`: N / 2 + 1 bins, a sine of amplitude A reads
+  A · N / 2), inverse scaled by 1 / N, real-time safe after `prepare()`. The backend is a
+  build option, `TANH_FFT_BACKEND` (`cmake/fft-backend.cmake`): `pffft` (default, every
+  platform; marton78/pffft v1.1.0 compiled in, BSD-like FFTPACK licence, NEON/SSE) or
+  `accelerate` (macOS, iOS: Apple's vDSP). Both give the same bins. Tests: `RealFft.*`
+  (against the DFT by its definition, round trip, Parseval), run on either backend.
 - `thl::dsp::utils` helpers, real-time safe: `Decibels.h` (`db_to_gain()`, `gain_to_db()`,
   `power_to_db()`, float or double, floored at `k_min_db` = -120 dB or a given floor),
   `TimeConstant.h` (`ms_to_samples()`, `one_pole_pole()`: exp(-1 / samples), 0 for no time)

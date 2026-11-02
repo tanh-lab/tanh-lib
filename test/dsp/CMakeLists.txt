@@ -22,6 +22,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_MultibandLimiter.cpp
 	test_StereoWidener.cpp
 	test_Probes.cpp
+	test_RealFft.cpp
 	test_GainComputer.cpp
 	test_LevelDetector.cpp
 	test_GainSmoother.cpp
