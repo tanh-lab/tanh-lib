@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -48,7 +50,7 @@ struct Graph::Node {
     std::unique_ptr<thl::dsp::utils::DelayProcessor> m_dry_delay;
 
     // Probes watching the node, per ProbePoint: set on the control thread, read by the audio
-    // thread (seq_cst against Graph::m_audio_epoch, see unregister_probe()).
+    // thread (seq_cst against Graph::m_audio_epoch, see remove_probe()).
     struct Probes {
         std::array<std::atomic<thl::dsp::probe::ProbeBase*>, k_max_probes_per_point> m_slots{};
         std::atomic<uint32_t> m_count{0};  // lets a node without probes skip the slots
@@ -214,12 +216,16 @@ bool Graph::remove_node(NodeId id) {
     const auto it = m_nodes.find(id);
     if (it == m_nodes.end()) { return false; }
 
-    // Its probes stop now: their owners may destroy them once the node is gone.
-    std::vector<ProbeId> probes;
-    for (const auto& [probe_id, entry] : m_probes) {
-        if (entry.m_node == id) { probes.push_back(probe_id); }
+    // Its probes stop now: every slot cleared, one wait, then they go.
+    std::vector<std::unique_ptr<thl::dsp::probe::ProbeBase>> detached;
+    for (auto entry = m_probes.begin(); entry != m_probes.end();) {
+        const ProbeId probe_id = entry->first;
+        const bool on_node = entry->second.m_node == id;
+        ++entry;
+        if (on_node) { detached.push_back(detach_probe(probe_id)); }
     }
-    for (const ProbeId probe_id : probes) { unregister_probe(probe_id); }
+    if (!detached.empty()) { wait_for_audio_thread(); }
+    detached.clear();
 
     // Versions already handed to the audio thread may still run this node.
     m_retired_nodes.push_back(
@@ -601,6 +607,9 @@ bool Graph::switch_to_pending() {
     // If the control thread has not emptied m_returned yet, switch at a later block instead.
     if (m_active != nullptr && !m_returned.try_push(m_active)) { return false; }
     m_active = m_pending.exchange(nullptr, std::memory_order_acq_rel);
+    // A new version starts after a fade and a silence (or a node comes back that did not run):
+    // its probes start over instead of joining across the gap.
+    reset_all_probes();
     return true;
 }
 
@@ -691,46 +700,57 @@ private:
 };
 }  // namespace
 
-std::optional<ProbeId> Graph::register_probe(NodeId id,
-                                             ProbePoint point,
-                                             thl::dsp::probe::ProbeBase& probe) {
+std::optional<ProbeId> Graph::add_probe(NodeId id,
+                                        ProbePoint point,
+                                        std::unique_ptr<thl::dsp::probe::ProbeBase> probe) {
+    if (probe == nullptr) { return std::nullopt; }
     const auto it = m_nodes.find(id);
     if (it == m_nodes.end()) { return std::nullopt; }
     if ((id == k_input_id && point != ProbePoint::Output) ||
         (id == k_output_id && point != ProbePoint::Input)) {
         return std::nullopt;
     }
-    for (const auto& [probe_id, entry] : m_probes) {
-        if (entry.m_probe == &probe) { return std::nullopt; }
-    }
     Node::Probes& probes = it->second->m_probes[index_of(point)];
     for (size_t slot = 0; slot < k_max_probes_per_point; ++slot) {
         if (probes.m_slots[slot].load(std::memory_order_relaxed) != nullptr) { continue; }
         // Ready before the audio thread can see it.
         if (m_max_block_size > 0) {
-            probe.prepare(m_sample_rate, m_max_block_size, m_num_channels);
+            probe->prepare(m_sample_rate, m_max_block_size, m_num_channels);
         }
-        probes.m_slots[slot].store(&probe, std::memory_order_seq_cst);
+        probes.m_slots[slot].store(probe.get(), std::memory_order_seq_cst);
         probes.m_count.fetch_add(1, std::memory_order_seq_cst);
         const ProbeId probe_id{m_next_probe_id++};
-        m_probes.emplace(
-            probe_id,
-            ProbeEntry{.m_node = id, .m_point = point, .m_slot = slot, .m_probe = &probe});
+        m_probes.emplace(probe_id,
+                         ProbeEntry{.m_node = id,
+                                    .m_point = point,
+                                    .m_slot = slot,
+                                    .m_probe = std::move(probe)});
         return probe_id;
     }
     return std::nullopt;
 }
 
-bool Graph::unregister_probe(ProbeId id) {
+std::unique_ptr<thl::dsp::probe::ProbeBase> Graph::detach_probe(ProbeId id) {
     const auto it = m_probes.find(id);
-    if (it == m_probes.end()) { return false; }
-    const ProbeEntry entry = it->second;
+    if (it == m_probes.end()) { return nullptr; }
+    ProbeEntry entry = std::move(it->second);
     m_probes.erase(it);
     Node::Probes& probes = m_nodes.at(entry.m_node)->m_probes[index_of(entry.m_point)];
     probes.m_slots[entry.m_slot].store(nullptr, std::memory_order_seq_cst);
     probes.m_count.fetch_sub(1, std::memory_order_seq_cst);
+    return std::move(entry.m_probe);
+}
+
+bool Graph::remove_probe(ProbeId id) {
+    const std::unique_ptr<thl::dsp::probe::ProbeBase> probe = detach_probe(id);
+    if (probe == nullptr) { return false; }
     wait_for_audio_thread();
-    return true;
+    return true;  // deleted here, after the audio thread let go of it
+}
+
+thl::dsp::probe::ProbeBase* Graph::probe(ProbeId id) const {
+    const auto it = m_probes.find(id);
+    return it == m_probes.end() ? nullptr : it->second.m_probe.get();
 }
 
 void Graph::wait_for_audio_thread() const {
@@ -739,7 +759,14 @@ void Graph::wait_for_audio_thread() const {
     // wait lets end. Audio stopped (even): nothing to wait for.
     const uint64_t epoch = m_audio_epoch.load(std::memory_order_seq_cst);
     if ((epoch & 1U) == 0) { return; }
-    while (m_audio_epoch.load(std::memory_order_seq_cst) == epoch) { std::this_thread::yield(); }
+    [[maybe_unused]] const auto start = std::chrono::steady_clock::now();
+    while (m_audio_epoch.load(std::memory_order_seq_cst) == epoch) {
+        // One block never takes seconds: the caller is most likely the audio thread itself,
+        // inside process(), which would wait for itself forever.
+        assert(std::chrono::steady_clock::now() - start < std::chrono::seconds(2) &&
+               "Graph: remove_probe()/remove_node() called from the audio thread?");
+        std::this_thread::yield();
+    }
 }
 
 void Graph::run_probes(Node& node,
@@ -762,6 +789,13 @@ void Graph::reset_probes(Node& node) {
             if (probe != nullptr) { probe->reset(); }
         }
     }
+}
+
+void Graph::reset_all_probes() {
+    reset_probes(*m_input_node);
+    reset_probes(*m_output_node);
+    if (m_active == nullptr) { return; }
+    for (const ProcessingStep& step : m_active->m_steps) { reset_probes(*step.m_node); }
 }
 
 void Graph::mix_sources(const CompiledGraph& compiled,
@@ -890,13 +924,11 @@ void Graph::run_step(const ProcessingStep& step,
 
 void Graph::reset() {
     const AudioEpoch epoch(m_audio_epoch);
-    reset_probes(*m_input_node);
-    reset_probes(*m_output_node);
+    reset_all_probes();
     CompiledGraph* compiled = m_active;
     if (compiled == nullptr) { return; }
     for (ProcessingStep& step : compiled->m_steps) {
         step.m_node->m_processor->reset();
-        reset_probes(*step.m_node);
         step.m_dry_delay->reset();
         for (Source& source : step.m_sources) { source.m_delay.reset(); }
     }

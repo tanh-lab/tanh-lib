@@ -2047,23 +2047,21 @@ struct DoublingGraph {
         m_graph.connect(m_gain, m_graph.graph_output());
         prepare(m_graph);
     }
+
+    LevelProbe& level(NodeId id, Graph::ProbePoint point) {
+        return *m_graph.add_probe<LevelProbe>(id, point).value().second;
+    }
 };
 
 }  // namespace
 
 TEST(GraphProbes, WatchTheInputAndOutputOfNodesAndOfTheGraph) {
     DoublingGraph g;
-    LevelProbe graph_in;
-    LevelProbe gain_in;
-    LevelProbe gain_out;
-    LevelProbe graph_out;
-    ASSERT_TRUE(
-        g.m_graph.register_probe(g.m_graph.graph_input(), Graph::ProbePoint::Output, graph_in));
-    ASSERT_TRUE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Input, gain_in));
-    ASSERT_TRUE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Output, gain_out));
-    ASSERT_TRUE(
-        g.m_graph.register_probe(g.m_graph.graph_output(), Graph::ProbePoint::Input, graph_out));
-    EXPECT_EQ(gain_out.num_channels(), k_channels);  // prepared on registration
+    LevelProbe& graph_in = g.level(g.m_graph.graph_input(), Graph::ProbePoint::Output);
+    LevelProbe& gain_in = g.level(g.m_gain, Graph::ProbePoint::Input);
+    LevelProbe& gain_out = g.level(g.m_gain, Graph::ProbePoint::Output);
+    LevelProbe& graph_out = g.level(g.m_graph.graph_output(), Graph::ProbePoint::Input);
+    EXPECT_EQ(gain_out.num_channels(), k_channels);  // prepared when added
     process_blocks(g.m_graph, 0.25f, 4);
     EXPECT_FLOAT_EQ(graph_in.peak(0), 0.25f);
     EXPECT_FLOAT_EQ(gain_in.peak(1), 0.25f);
@@ -2071,48 +2069,53 @@ TEST(GraphProbes, WatchTheInputAndOutputOfNodesAndOfTheGraph) {
     EXPECT_FLOAT_EQ(graph_out.peak(1), 0.5f);
 }
 
-TEST(GraphProbes, RegistrationRejectsWhatCannotBeWatched) {
+TEST(GraphProbes, SeveralProbesAtOnePointAndAddRejectsWhatCannotBeWatched) {
     DoublingGraph g;
-    std::vector<std::unique_ptr<LevelProbe>> probes;
     const auto add = [&](NodeId id, Graph::ProbePoint point) {
-        probes.push_back(std::make_unique<LevelProbe>());
-        return g.m_graph.register_probe(id, point, *probes.back()).has_value();
+        return g.m_graph.add_probe<LevelProbe>(id, point).has_value();
     };
     EXPECT_FALSE(add(g.m_graph.graph_input(), Graph::ProbePoint::Input));
     EXPECT_FALSE(add(g.m_graph.graph_output(), Graph::ProbePoint::Output));
     EXPECT_FALSE(add(NodeId{999}, Graph::ProbePoint::Output));
+    EXPECT_FALSE(g.m_graph.add_probe(g.m_gain, Graph::ProbePoint::Output, nullptr));
     for (size_t i = 0; i < Graph::k_max_probes_per_point; ++i) {
         EXPECT_TRUE(add(g.m_gain, Graph::ProbePoint::Output));
     }
     EXPECT_FALSE(add(g.m_gain, Graph::ProbePoint::Output));  // full
     EXPECT_TRUE(add(g.m_gain, Graph::ProbePoint::Input));    // the other point is not
-    // The same probe twice: no.
-    EXPECT_FALSE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Input, *probes.back()));
 }
 
-TEST(GraphProbes, LatencyIsThatOfThePoint) {
+TEST(GraphProbes, ProbeLooksUpByIdAndTheGraphTakesOverAProbeMadeElsewhere) {
+    DoublingGraph g;
+    auto made = std::make_unique<LevelProbe>();
+    LevelProbe* const pointer = made.get();
+    const auto id = g.m_graph.add_probe(g.m_gain, Graph::ProbePoint::Output, std::move(made));
+    ASSERT_TRUE(id);
+    EXPECT_EQ(g.m_graph.probe(*id), pointer);
+    EXPECT_EQ(g.m_graph.probe(ProbeId{12345}), nullptr);
+    process_blocks(g.m_graph, 0.25f, 1);
+    EXPECT_FLOAT_EQ(pointer->peak(0), 0.5f);
+}
+
+TEST(GraphProbes, LatencyIsThatOfThePointAndAProbeAddsNone) {
     Graph graph;
     const NodeId latent = *graph.add_node(std::make_unique<LatencyProcessor>(k_latency));
     graph.connect(graph.graph_input(), latent);
     graph.connect(latent, graph.graph_output());
     prepare(graph);
-    LevelProbe in;
-    LevelProbe out;
-    LevelProbe graph_out;
-    ASSERT_TRUE(graph.register_probe(latent, Graph::ProbePoint::Input, in));
-    ASSERT_TRUE(graph.register_probe(latent, Graph::ProbePoint::Output, out));
-    ASSERT_TRUE(graph.register_probe(graph.graph_output(), Graph::ProbePoint::Input, graph_out));
+    LevelProbe& in = *graph.add_probe<LevelProbe>(latent, Graph::ProbePoint::Input)->second;
+    LevelProbe& out = *graph.add_probe<LevelProbe>(latent, Graph::ProbePoint::Output)->second;
     process_blocks(graph, 0.5f, 2);
     EXPECT_EQ(in.latency_samples(), 0u);
     EXPECT_EQ(out.latency_samples(), k_latency);
-    EXPECT_EQ(graph_out.latency_samples(), k_latency);
+    EXPECT_EQ(graph.latency_samples(), k_latency);  // unchanged by the probes
 }
 
-TEST(GraphProbes, AProbeRegisteredBeforePrepareIsPreparedWithTheGraph) {
+TEST(GraphProbes, AProbeAddedBeforePrepareIsPreparedWithTheGraph) {
     Graph graph;
     graph.connect(graph.graph_input(), graph.graph_output());
-    LevelProbe probe;
-    ASSERT_TRUE(graph.register_probe(graph.graph_input(), Graph::ProbePoint::Output, probe));
+    LevelProbe& probe =
+        *graph.add_probe<LevelProbe>(graph.graph_input(), Graph::ProbePoint::Output)->second;
     EXPECT_EQ(probe.num_channels(), 0u);
     prepare(graph);
     EXPECT_EQ(probe.num_channels(), k_channels);
@@ -2120,30 +2123,28 @@ TEST(GraphProbes, AProbeRegisteredBeforePrepareIsPreparedWithTheGraph) {
     EXPECT_FLOAT_EQ(probe.peak(0), 0.3f);
 }
 
-TEST(GraphProbes, UnregisteredOrRemovedProbesSeeNothingMore) {
+TEST(GraphProbes, RemoveProbeAndRemoveNodeDeleteTheProbes) {
     DoublingGraph g;
-    LevelProbe kept;
-    auto removed_with_node = std::make_unique<LevelProbe>();
-    const auto kept_id = g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Input, kept);
-    const auto node_id =
-        g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Output, *removed_with_node);
-    ASSERT_TRUE(kept_id && node_id);
+    const auto [kept_id, kept] =
+        *g.m_graph.add_probe<LevelProbe>(g.m_graph.graph_input(), Graph::ProbePoint::Output);
+    const auto first = g.m_graph.add_probe<LevelProbe>(g.m_gain, Graph::ProbePoint::Input);
+    const auto second = g.m_graph.add_probe<LevelProbe>(g.m_gain, Graph::ProbePoint::Output);
+    ASSERT_TRUE(first && second);
     process_blocks(g.m_graph, 0.25f, 1);
-    EXPECT_TRUE(g.m_graph.unregister_probe(*kept_id));
-    EXPECT_FALSE(g.m_graph.unregister_probe(*kept_id));
-    kept.take_peak(0);
-    // Removing the node unregisters its probes: the probe may go before the next block.
-    ASSERT_TRUE(g.m_graph.remove_node(g.m_gain));
-    removed_with_node.reset();
-    EXPECT_FALSE(g.m_graph.unregister_probe(*node_id));
+    EXPECT_TRUE(g.m_graph.remove_probe(first->first));
+    EXPECT_FALSE(g.m_graph.remove_probe(first->first));
+    EXPECT_EQ(g.m_graph.probe(first->first), nullptr);
+    ASSERT_TRUE(g.m_graph.remove_node(g.m_gain));  // its probes go with it
+    EXPECT_EQ(g.m_graph.probe(second->first), nullptr);
+    EXPECT_FALSE(g.m_graph.remove_probe(second->first));
+    EXPECT_EQ(g.m_graph.probe(kept_id), kept);  // another node's probe stays
     process_blocks(g.m_graph, 0.25f, 4);
-    EXPECT_EQ(kept.peak(0), 0.0f);
 }
 
 TEST(GraphProbes, ResetStartsTheProbesOver) {
     DoublingGraph g;
-    SampleProbe probe;
-    ASSERT_TRUE(g.m_graph.register_probe(g.m_gain, Graph::ProbePoint::Output, probe));
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_gain, Graph::ProbePoint::Output)->second;
     process_blocks(g.m_graph, 0.25f, 2);
     g.m_graph.reset();
     process_blocks(g.m_graph, 0.25f, 1);
@@ -2154,10 +2155,31 @@ TEST(GraphProbes, ResetStartsTheProbesOver) {
     EXPECT_EQ(result.m_read, k_block);  // only what came after the reset
 }
 
+TEST(GraphProbes, ANewVersionStartsTheProbesOver) {
+    // A node disconnected and connected again did not run in between: its probe must not join
+    // the samples from before across that gap.
+    DoublingGraph g;
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_gain, Graph::ProbePoint::Output)->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    std::array<float, 64 * k_block> a{};
+    const std::array<float*, 1> out{a.data()};
+    ASSERT_FALSE(probe.read(out, a.size()).m_discontinuity);
+    g.m_graph.disconnect(g.m_graph.graph_input(), g.m_gain);
+    g.m_graph.commit();
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+    g.m_graph.connect(g.m_graph.graph_input(), g.m_gain);
+    g.m_graph.commit();
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+    EXPECT_TRUE(probe.read(out, a.size()).m_discontinuity);
+}
+
 TEST(GraphProbes, ProbesComeAndGoWhileTheAudioThreadRuns) {
-    // A control thread registers probes, unregisters them and destroys them right after, while
-    // an audio thread processes: unregister_probe() must not return while the audio thread can
-    // still touch the probe (ASan and TSan watch the destroyed ones).
+    // A control thread adds probes, lets the audio thread use them and removes them (which
+    // deletes them) while the audio thread processes: remove_probe() must not delete a probe the
+    // audio thread can still touch (ASan and TSan watch). Errors are counted, not asserted, so
+    // a failure still stops and joins the audio thread; every wait has a timeout.
+    constexpr int k_rounds = 1000;
     DoublingGraph g;
     std::atomic<bool> done{false};
     std::atomic<size_t> blocks{0};
@@ -2171,24 +2193,29 @@ TEST(GraphProbes, ProbesComeAndGoWhileTheAudioThreadRuns) {
             blocks.fetch_add(1, std::memory_order_relaxed);
         }
     });
+    size_t failed = 0;
     size_t seen = 0;
-    for (int round = 0; round < 1000; ++round) {
-        auto probe = std::make_unique<LevelProbe>();
-        const auto id =
-            g.m_graph.register_probe(round % 2 == 0 ? g.m_gain : g.m_graph.graph_output(),
-                                     Graph::ProbePoint::Input,
-                                     *probe);
-        ASSERT_TRUE(id.has_value());
-        // Let the audio thread use it: two blocks later it has processed at least one whole
-        // block with the probe, and it keeps running while the probe is unregistered.
+    for (int round = 0; round < k_rounds && failed == 0; ++round) {
+        const auto added =
+            g.m_graph.add_probe<LevelProbe>(round % 2 == 0 ? g.m_gain : g.m_graph.graph_output(),
+                                            Graph::ProbePoint::Input);
+        if (!added) {
+            ++failed;
+            break;
+        }
+        // Two blocks later the audio thread has processed a whole block with the probe, and it
+        // keeps running while the probe is removed.
         const size_t start = blocks.load(std::memory_order_relaxed);
-        while (blocks.load(std::memory_order_relaxed) < start + 2) { std::this_thread::yield(); }
-        if (probe->peak(0) > 0.0f) { ++seen; }
-        EXPECT_TRUE(g.m_graph.unregister_probe(*id));
-        probe.reset();  // destroyed at once
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (blocks.load(std::memory_order_relaxed) < start + 2 &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::yield();
+        }
+        if (added->second->peak(0) > 0.0f) { ++seen; }
+        if (!g.m_graph.remove_probe(added->first)) { ++failed; }
     }
     done.store(true, std::memory_order_release);
     audio.join();
-    EXPECT_GT(blocks.load(), 0u);
-    EXPECT_EQ(seen, 1000u);  // every probe really saw blocks while registered
+    EXPECT_EQ(failed, 0u);
+    EXPECT_EQ(seen, static_cast<size_t>(k_rounds));  // every probe really saw blocks
 }
