@@ -48,14 +48,17 @@ struct Connection {
 /// Latency compensation: a node's latency_samples() is followed per block; the faster sources of
 /// every node and a node's dry path are delayed to match, up to the max_latency_samples() each node
 /// had at the last commit.
+///
+/// A Graph's own dry signal (process_with_dry(), as a nested graph) is its input, not yet built
+/// from its nodes' dry signals: blending a nested graph whose nodes shift the phase can comb.
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
     /// How a node combines its sources: their sum (the default, as a mixer), or their sum
     /// divided by their number.
     enum class InputMix : uint8_t { Sum, Average };
 
-    /// How a node's wet mix m (0 dry, 1 wet) sets the gains of its input (dry, delayed by its
-    /// latency) and of its processor's output (wet).
+    /// How a node's wet mix m (0 dry, 1 wet) sets the gains of its dry signal (its processor's
+    /// process_with_dry(), delayed by the node's latency) and of its processor's output (wet).
     enum class MixLaw : uint8_t {
         /// dry 1 - m, wet m (the default): constant level when the wet signal is correlated with
         /// the dry (EQ, compression, saturation, phaser and comb effects).
@@ -182,9 +185,6 @@ public:
     void process(thl::core::BufferView buffer,
                  uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION override;
 
-    /// A nested graph's dry signal (process_with_dry()) is its input, not yet built from its
-    /// nodes' dry signals: blending a nested graph whose nodes shift the phase can comb.
-    ///
     /// Audio thread: resets every node of the running version and clears the latency delays,
     /// e.g. when the graph is itself a bypassed node coming back.
     void reset() TANH_NONBLOCKING_FUNCTION override;

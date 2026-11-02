@@ -35,7 +35,8 @@ public:
                          uint32_t modulation_offset = 0) TANH_NONBLOCKING_FUNCTION = 0;
 
     /// process(), also writing the dry signal into @p dry: the input with the phase response
-    /// of process() but without its effect, so wet and dry can be blended. Undelayed: a processor
+    /// of process() but without its effect, so wet and dry can be blended. It matches the phase
+    /// only, never the latency. Undelayed: a processor
     /// with latency_samples() leaves aligning the dry signal to its latency to whoever mixes it
     /// (a Graph delays a node's dry path by it). The default copies @p buffer into @p dry;
     /// override it if process() changes the phase. An empty @p dry means no dry signal.

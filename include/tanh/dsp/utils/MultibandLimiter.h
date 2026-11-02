@@ -15,8 +15,9 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Splits the signal with BandSplitter, limits every band with its own limiter and sums the bands.
- * process_with_dry() also writes the sum of the bands before limiting: the limiters add
- * no latency, so it is the matching dry signal.
+ * process_with_dry() also writes the sum of the bands before limiting: the input through the
+ * crossovers' all-passes, so in phase with the output (a dry signal matches the phase only,
+ * never the latency: BaseProcessor::process_with_dry()).
  *
  * A derived class implements get_band_parameter_float() to give every band its own threshold,
  * attack and release, and may implement get_crossover_parameter_float() (BandSplitter) for the
