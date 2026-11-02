@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::core::SampleHistory<T>` (`core/threading/SampleHistory.h`): the most recent samples of
+  a multi-channel signal, written by one thread (the audio thread) and read by any number of
+  others without locks. The writer always writes (wait-free, the oldest overwritten, nothing
+  dropped); readers copy the newest N samples (`read_latest()`) or everything after their own
+  `Cursor` (`read_since()`, which reports what was overwritten before it was read). A read the
+  writer overwrites meanwhile is detected (seqlock fences) and retried; `prepare(channels,
+  max_read)` holds twice the longest read, so that practically never happens. Tests:
+  `SampleHistory.*`, including two readers beside the writer.
 - `thl::dsp::utils` helpers, real-time safe: `Decibels.h` (`db_to_gain()`, `gain_to_db()`,
   `power_to_db()`, float or double, floored at `k_min_db` = -120 dB or a given floor),
   `TimeConstant.h` (`ms_to_samples()`, `one_pole_pole()`: exp(-1 / samples), 0 for no time)
