@@ -53,8 +53,19 @@ struct RoutingEnabled {
 // atomic publication. Pointers in routings_by_source reference elements in
 // the routings vector of the same ProcessingConfig instance; they stay valid
 // for the duration of an RCU read section.
+/// A target whose routings form a chain (it has a Multiply routing): its
+/// Additive and Multiply routings in chain order, folded after the schedule.
+struct ChainTarget {
+    ResolvedTarget* m_target = nullptr;
+    std::vector<const ResolvedRouting*> m_routings;
+    // Normalised modulation -> the target's additive buffer: the range's span,
+    // or 1 for a target whose buffer is normalised.
+    float m_scale = 1.0f;
+};
+
 struct ProcessingConfig {
     std::vector<ResolvedRouting> m_routings;
+    std::vector<ChainTarget> m_chains;
     std::vector<ScheduleStep> m_schedule;
     std::unordered_map<ModulationSource*, std::vector<const ResolvedRouting*>> m_routings_by_source;
     std::vector<ResolvedTarget*> m_active_targets;
@@ -266,6 +277,13 @@ public:
                               float new_depth);
     bool update_routing_depth(uint32_t routing_id, float new_depth);
 
+    // Update a routing's offset (ModulationRouting::m_offset) without a
+    // schedule rebuild. Thread-safe. Returns false if the routing was not found.
+    bool update_routing_offset(std::string_view source_id,
+                               std::string_view target_id,
+                               float new_offset);
+    bool update_routing_offset(uint32_t routing_id, float new_offset);
+
     // Set replace range on a routing without schedule rebuild. Thread-safe.
     // Maps source [0,1] to [range_min, range_max] in plain parameter units.
     // Only meaningful for Replace/ReplaceHold combine modes.
@@ -353,9 +371,18 @@ private:
     // Compute the precomputed depth value for a routing given its target.
     static float compute_depth_precomputed(const ModulationRouting& routing,
                                            const ResolvedTarget& target);
+    // A depth-like value (depth, offset) in the routing's depth mode -> the
+    // units of the target's additive or replace buffer.
+    static float compute_precomputed(const ModulationRouting& routing,
+                                     const ResolvedTarget& target,
+                                     float value);
 
     // Routing update helpers — must be called with m_writer_mutex held.
     bool update_routing_depth_with_lock(ModulationRouting& user_routing, float new_depth);
+    bool update_routing_offset_with_lock(ModulationRouting& user_routing, float new_offset);
+    // The chain targets' fold, after the schedule (ModulationRouting::m_chain_position).
+    void fold_chains_with_scope(const ProcessingConfig& config,
+                                size_t num_samples) TANH_NONBLOCKING_FUNCTION;
     bool update_routing_replace_range_with_lock(ModulationRouting& user_routing,
                                                 float range_min,
                                                 float range_max);

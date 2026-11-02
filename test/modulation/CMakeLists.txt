@@ -12,6 +12,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_ResolvedTarget.cpp
 	test_XYPad.cpp
 	test_RoutingEnabled.cpp
+	test_RoutingChain.cpp
 	test_XYController.cpp
 	test_XYControllerThreads.cpp
 	test_XYControllerInput.cpp

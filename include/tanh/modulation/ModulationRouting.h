@@ -15,9 +15,11 @@ enum class DepthMode : uint8_t {
 
 // Combine mode: how the routing's output is applied to the target.
 enum class CombineMode : uint8_t {
-    Additive,    // buffer[i] += source[i] * depth  (default)
-    Replace,     // replaces base value, falls back to base when source inactive
-    ReplaceHold  // replaces base value, holds last active value when source inactive
+    Additive,     // buffer[i] += source[i] * depth + offset  (default)
+    Replace,      // replaces base value, falls back to base when source inactive
+    ReplaceHold,  // replaces base value, holds last active value when source inactive
+    Multiply      // multiplies the target's chain so far by source[i] * depth + offset
+                  // (see ModulationRouting::m_chain_position)
 };
 
 // Routing mode: derived from source scope + target scope at schedule build.
@@ -78,6 +80,25 @@ struct ModulationRouting {
     DepthMode m_depth_mode = DepthMode::Normalized;
 
     CombineMode m_combine_mode = CombineMode::Additive;
+
+    // Added to the routing's contribution, in the depth's units (a fraction
+    // of the target's range for DepthMode::Normalized): an Additive or
+    // Multiply routing contributes source * depth + offset. A source in
+    // -1 ... 1 with offset = depth contributes 0 ... 2 * depth (one-sided
+    // modulation). Changed without a rebuild by
+    // ModulationMatrix::update_routing_offset(). Ignored by Replace.
+    float m_offset = 0.0f;
+
+    // The routing's place in its target's chain. A target with at least one
+    // Multiply routing folds its Additive and Multiply routings in this order
+    // (ties by routing ID), sample by sample, in normalised units: the first
+    // enabled routing's contribution starts the chain, each further one adds
+    // to it (Additive) or multiplies it (Multiply); the result moves the
+    // target. A routing whose source is inactive at a sample contributes 0
+    // (adding) or 1 (multiplying). Targets without a Multiply routing just
+    // add, in any order. Multiply needs a global source and a global target
+    // (on a polyphonic target it is treated as Additive, with a warning).
+    int32_t m_chain_position = 0;
 
     // Priority for multi-Replace composition on a shared target. Higher value
     // wins when multiple active Replace routings overlap. Default 0 — single

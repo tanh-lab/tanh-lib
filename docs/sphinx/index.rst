@@ -32,6 +32,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    symbol_visibility
    change_points
    modulation
+   routing_chain
    host_parameters
    transport
    motion_recording

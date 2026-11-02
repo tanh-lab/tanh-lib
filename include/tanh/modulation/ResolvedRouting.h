@@ -64,6 +64,24 @@ struct ResolvedRouting {
     // Replace routings always use plain-unit precomputation.
     mutable std::atomic<float> m_depth_abs_precomputed{0.0f};
 
+    // The offset (ModulationRouting::m_offset) in the same units as
+    // m_depth_abs_precomputed. Written by update_routing_offset().
+    mutable std::atomic<float> m_offset{0.0f};
+    mutable std::atomic<float> m_offset_abs_precomputed{0.0f};
+
+    // Chain targets (a Multiply routing on the target, see
+    // ModulationRouting::m_chain_position): the routing writes its
+    // contribution, in normalised units, to m_chain_buffer instead of the
+    // target, and the fold pass combines the target's routings in order.
+    // m_chain_depth / m_chain_offset are depth and offset in normalised
+    // units. m_chain_written: the routing wrote this block (an inactive
+    // routing, e.g. skipped during a gesture, is left out of the fold).
+    int32_t m_chain_position = 0;
+    mutable std::vector<float> m_chain_buffer;
+    mutable std::atomic<float> m_chain_depth{0.0f};
+    mutable std::atomic<float> m_chain_offset{0.0f};
+    mutable bool m_chain_written = false;
+
     // Replace range — maps source [0,1] to [min, max] in plain parameter units.
     // Only meaningful when m_has_replace_range is true and combine mode is
     // Replace or ReplaceHold. Written by UI thread, read by RT thread.
@@ -149,6 +167,13 @@ struct ResolvedRouting {
         , m_enabled_edge_pending(other.m_enabled_edge_pending)
         , m_loaded_enabled(other.m_loaded_enabled)
         , m_depth_abs_precomputed(other.m_depth_abs_precomputed.load(std::memory_order_relaxed))
+        , m_offset(other.m_offset.load(std::memory_order_relaxed))
+        , m_offset_abs_precomputed(other.m_offset_abs_precomputed.load(std::memory_order_relaxed))
+        , m_chain_position(other.m_chain_position)
+        , m_chain_buffer(other.m_chain_buffer)
+        , m_chain_depth(other.m_chain_depth.load(std::memory_order_relaxed))
+        , m_chain_offset(other.m_chain_offset.load(std::memory_order_relaxed))
+        , m_chain_written(other.m_chain_written)
         , m_replace_range_min(other.m_replace_range_min.load(std::memory_order_relaxed))
         , m_replace_range_max(other.m_replace_range_max.load(std::memory_order_relaxed))
         , m_has_replace_range(other.m_has_replace_range.load(std::memory_order_relaxed))
@@ -185,6 +210,18 @@ struct ResolvedRouting {
             m_depth_abs_precomputed.store(
                 other.m_depth_abs_precomputed.load(std::memory_order_relaxed),
                 std::memory_order_relaxed);
+            m_offset.store(other.m_offset.load(std::memory_order_relaxed),
+                           std::memory_order_relaxed);
+            m_offset_abs_precomputed.store(
+                other.m_offset_abs_precomputed.load(std::memory_order_relaxed),
+                std::memory_order_relaxed);
+            m_chain_position = other.m_chain_position;
+            m_chain_buffer = other.m_chain_buffer;
+            m_chain_depth.store(other.m_chain_depth.load(std::memory_order_relaxed),
+                                std::memory_order_relaxed);
+            m_chain_offset.store(other.m_chain_offset.load(std::memory_order_relaxed),
+                                 std::memory_order_relaxed);
+            m_chain_written = other.m_chain_written;
             m_replace_range_min.store(other.m_replace_range_min.load(std::memory_order_relaxed),
                                       std::memory_order_relaxed);
             m_replace_range_max.store(other.m_replace_range_max.load(std::memory_order_relaxed),

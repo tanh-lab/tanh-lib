@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Modulation offsets and chains: `ModulationRouting::m_offset` adds to a routing's contribution
+  (`source * depth + offset`; with `offset = depth` a bipolar source modulates one way), changed
+  without a rebuild by `ModulationMatrix::update_routing_offset()`. `CombineMode::Multiply` makes
+  a target a chain: its Additive and Multiply routings are folded in `m_chain_position` order,
+  each adding to or multiplying what the ones before it give (mono targets; on a polyphonic
+  target Multiply adds, with a warning). Serialised as `"offset"`, `"chain_position"` and
+  `"combine_mode": "multiply"`. See `docs/sphinx/routing_chain.md`. Tests: `test_RoutingChain`.
+
 - `tanh::Graph` (`TANH_BUILD_GRAPH`, off by default, on in every preset but wasm; by
   @jstolberg): `thl::graph::Graph`, a `BaseProcessor` of `BaseProcessor` nodes. Edits on the
   control thread take effect at `commit()`, handed to the audio thread with a fade; nested
