@@ -64,6 +64,24 @@ public:
     float m_value;
 };
 
+/// A global source behind a gate: active only while open (not fully active).
+class GatedSource : public ModulationSource {
+public:
+    explicit GatedSource(float value) : ModulationSource(k_global_scope, false), m_value(value) {}
+    void prepare(double, size_t samples_per_block, uint32_t voice_count) override {
+        resize_buffers(samples_per_block, voice_count);
+    }
+    void process(size_t num_samples, size_t offset) override {
+        for (size_t i = offset; i < offset + num_samples; ++i) {
+            m_output_buffer[i] = m_open ? m_value : 0.0f;
+            get_output_active()[i] = m_open ? 1 : 0;
+        }
+        if (offset == 0) { record_change_point(0); }
+    }
+    float m_value;
+    bool m_open = true;
+};
+
 ModulationRouting chained(std::string_view src,
                           float depth,
                           CombineMode mode,
@@ -162,6 +180,45 @@ TEST(RoutingChain, ADisabledRoutingLeavesTheChain) {
     ASSERT_TRUE(rig.matrix.set_routing_enabled("b", "p", true));
     rig.matrix.process(k_bs);
     EXPECT_NEAR(p.load(0), 10.0f, 1.0e-5f);  // 0.5 starts the chain: 0.5 of the range
+}
+
+// An inactive source contributes nothing, at the head of a chain too: a Multiply there does not
+// start the chain at 1 (which moved the target by its whole range); the next active one does.
+TEST(RoutingChain, AnInactiveRoutingContributesNothingEvenAtTheHead) {
+    Rig rig;
+    GatedSource gate{1.0f};
+    rig.matrix.add_source("g", &gate);
+    rig.matrix.add_source("a", &rig.a);
+    auto p = rig.matrix.get_smart_handle<float>("p");
+    rig.matrix.add_routing(chained("g", 0.5f, CombineMode::Multiply, 0));
+    rig.matrix.add_routing(chained("a", 0.4f, CombineMode::Additive, 1));
+    rig.matrix.prepare(k_sr, k_bs);
+
+    rig.matrix.process(k_bs);
+    EXPECT_NEAR(p.load(0), 14.0f, 1.0e-5f);  // 0.5 starts the chain, + 0.2: 0.7 of the range
+
+    gate.m_open = false;
+    rig.matrix.process(k_bs);
+    EXPECT_NEAR(p.load(0), 4.0f, 1.0e-5f);  // the gate leaves the chain: 0.2 alone
+}
+
+// Further down the chain too: an inactive Multiply neither zeroes the chain nor counts.
+TEST(RoutingChain, AnInactiveFactorLeavesTheChainAlone) {
+    Rig rig;
+    GatedSource gate{1.0f};
+    rig.matrix.add_source("a", &rig.a);
+    rig.matrix.add_source("g", &gate);
+    auto p = rig.matrix.get_smart_handle<float>("p");
+    rig.matrix.add_routing(chained("a", 0.4f, CombineMode::Additive, 0));
+    rig.matrix.add_routing(chained("g", 0.5f, CombineMode::Multiply, 1));
+    rig.matrix.prepare(k_sr, k_bs);
+
+    rig.matrix.process(k_bs);
+    EXPECT_NEAR(p.load(0), 2.0f, 1.0e-5f);  // 0.2 * 0.5
+
+    gate.m_open = false;
+    rig.matrix.process(k_bs);
+    EXPECT_NEAR(p.load(0), 4.0f, 1.0e-5f);  // 0.2 alone
 }
 
 TEST(RoutingChain, MultiplyAndOffsetMakeOneFactor) {

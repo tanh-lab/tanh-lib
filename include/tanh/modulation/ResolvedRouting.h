@@ -75,9 +75,13 @@ struct ResolvedRouting {
     // target, and the fold pass combines the target's routings in order.
     // m_chain_depth / m_chain_offset are depth and offset in normalised
     // units. m_chain_written: the routing wrote this block (an inactive
-    // routing, e.g. skipped during a gesture, is left out of the fold).
+    // routing, e.g. skipped during a gesture, is left out of the fold); the
+    // fold clears it every block, folded or not.
     int32_t m_chain_position = 0;
     mutable std::vector<float> m_chain_buffer;
+    // Per sample: whether the source was active there. An inactive sample
+    // contributes nothing, so it never starts the chain.
+    mutable std::vector<uint8_t> m_chain_active;
     mutable std::atomic<float> m_chain_depth{0.0f};
     mutable std::atomic<float> m_chain_offset{0.0f};
     mutable bool m_chain_written = false;
@@ -171,6 +175,7 @@ struct ResolvedRouting {
         , m_offset_abs_precomputed(other.m_offset_abs_precomputed.load(std::memory_order_relaxed))
         , m_chain_position(other.m_chain_position)
         , m_chain_buffer(other.m_chain_buffer)
+        , m_chain_active(other.m_chain_active)
         , m_chain_depth(other.m_chain_depth.load(std::memory_order_relaxed))
         , m_chain_offset(other.m_chain_offset.load(std::memory_order_relaxed))
         , m_chain_written(other.m_chain_written)
@@ -217,6 +222,7 @@ struct ResolvedRouting {
                 std::memory_order_relaxed);
             m_chain_position = other.m_chain_position;
             m_chain_buffer = other.m_chain_buffer;
+            m_chain_active = other.m_chain_active;
             m_chain_depth.store(other.m_chain_depth.load(std::memory_order_relaxed),
                                 std::memory_order_relaxed);
             m_chain_offset.store(other.m_chain_offset.load(std::memory_order_relaxed),

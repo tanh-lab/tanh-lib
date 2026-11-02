@@ -34,9 +34,11 @@ the target moves by value (of its range)
 ```
 
 So `a + b * c` and `(a + b) * c` are different chains of the same routings.
-A routing whose source is inactive at a sample contributes the operation's
-identity there (0 when adding, 1 when multiplying); a disabled routing, or one
-skipped during a gesture, leaves the chain for that block.
+A routing whose source is inactive at a sample contributes nothing there: the
+chain goes on without it, and starts at the first routing active at that
+sample (an inactive Multiply at the head does not turn into a factor of 1, a
+full move of the target). A disabled routing, or one skipped during a gesture,
+leaves the chain for that block.
 
 How it runs: a chain target's routings write their contributions to buffers of
 their own while the schedule runs; after the schedule the fold pass combines

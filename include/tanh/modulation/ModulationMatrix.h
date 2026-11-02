@@ -49,12 +49,9 @@ struct RoutingEnabled {
     bool m_enabled = true;
 };
 
-// All state read by the RT thread — bundled into a single RCU instance for
-// atomic publication. Pointers in routings_by_source reference elements in
-// the routings vector of the same ProcessingConfig instance; they stay valid
-// for the duration of an RCU read section.
 /// A target whose routings form a chain (it has a Multiply routing): its
 /// Additive and Multiply routings in chain order, folded after the schedule.
+/// m_routings point into the m_routings of the ProcessingConfig that holds it.
 struct ChainTarget {
     ResolvedTarget* m_target = nullptr;
     std::vector<const ResolvedRouting*> m_routings;
@@ -63,6 +60,10 @@ struct ChainTarget {
     float m_scale = 1.0f;
 };
 
+// All state read by the RT thread — bundled into a single RCU instance for
+// atomic publication. Pointers in routings_by_source and in the chains
+// reference elements in the routings vector of the same ProcessingConfig
+// instance; they stay valid for the duration of an RCU read section.
 struct ProcessingConfig {
     std::vector<ResolvedRouting> m_routings;
     std::vector<ChainTarget> m_chains;

@@ -52,6 +52,19 @@ constexpr bool is_chained_mode(CombineMode mode) {
     return mode == CombineMode::Additive || mode == CombineMode::Multiply;
 }
 
+// A chain routing writes, per sample, its contribution in normalised units and
+// whether its source was active there; the fold skips inactive samples. Both
+// write paths (bulk and per sample) go through this.
+void write_chain_sample(const ResolvedRouting& routing, size_t i, float source_sample,
+                        bool active) TANH_NONBLOCKING_FUNCTION {
+    if (i >= routing.m_chain_buffer.size()) { return; }
+    routing.m_chain_buffer[i] =
+        active ? source_sample * routing.m_chain_depth.load(std::memory_order_relaxed) +
+                     routing.m_chain_offset.load(std::memory_order_relaxed)
+               : 0.0f;
+    routing.m_chain_active[i] = active ? 1 : 0;
+}
+
 // A routing's depth or offset (in its depth mode's units) as a fraction of the
 // target's range: the units a chain is folded in.
 float to_normalised(float value, DepthMode mode, const ResolvedTarget& target) {
@@ -1168,6 +1181,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
     for (auto& r : new_routings) {
         if (chain_targets.contains(r.m_target) && is_chained_mode(r.m_combine_mode)) {
             r.m_chain_buffer.assign(m_samples_per_block, 0.0f);
+            r.m_chain_active.assign(m_samples_per_block, 0);
         }
     }
 
@@ -1580,17 +1594,13 @@ void apply_routing_global_to_global(const ResolvedRouting& routing,
     const auto& src_output = source->get_output_buffer();
     if (is_chained_mode(routing.m_combine_mode)) {
         if (!mb->m_has_additive) { return; }
-        // A chain target's routing writes its normalised contribution for the
-        // fold pass; an inactive sample contributes the operation's identity.
+        // A chain target's routing writes its contribution for the fold pass.
         if (!routing.m_chain_buffer.empty()) {
-            const float depth = routing.m_chain_depth.load(std::memory_order_relaxed);
-            const float offset = routing.m_chain_offset.load(std::memory_order_relaxed);
-            const float identity = routing.m_combine_mode == CombineMode::Multiply ? 1.0f : 0.0f;
-            const size_t n = std::min(num_samples, routing.m_chain_buffer.size());
-            for (size_t i = 0; i < n; ++i) {
-                const bool active = source->is_fully_active() ||
-                                    source->get_output_active_at(static_cast<uint32_t>(i)) != 0;
-                routing.m_chain_buffer[i] = active ? src_output[i] * depth + offset : identity;
+            const bool fully_active = source->is_fully_active();
+            for (size_t i = 0; i < num_samples; ++i) {
+                write_chain_sample(routing, i, src_output[i],
+                                   fully_active ||
+                                       source->get_output_active_at(static_cast<uint32_t>(i)) != 0);
             }
             routing.m_chain_written = true;
             return;
@@ -1854,13 +1864,7 @@ void apply_modulation_sample_mono(const ResolvedRouting& routing,
     if (is_chained_mode(routing.m_combine_mode)) {
         if (!mb->m_has_additive) { return; }
         if (!routing.m_chain_buffer.empty()) {
-            if (i < routing.m_chain_buffer.size()) {
-                const float depth = routing.m_chain_depth.load(std::memory_order_relaxed);
-                const float offset = routing.m_chain_offset.load(std::memory_order_relaxed);
-                const float identity =
-                    routing.m_combine_mode == CombineMode::Multiply ? 1.0f : 0.0f;
-                routing.m_chain_buffer[i] = src_active ? src_sample * depth + offset : identity;
-            }
+            write_chain_sample(routing, i, src_sample, src_active);
             routing.m_chain_written = true;
             return;
         }
@@ -1912,12 +1916,21 @@ void ModulationMatrix::fold_chains_with_scope(const ProcessingConfig& config,
                                               size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     for (const auto& chain : config.m_chains) {
         auto* mb = chain.m_target->m_mono.load(std::memory_order_acquire);
-        if (mb == nullptr || !mb->m_has_additive) { continue; }
+        if (mb == nullptr || !mb->m_has_additive) {
+            // Skipped, the routings' flags still go: a later block must not
+            // fold what they wrote now.
+            for (const auto* r : chain.m_routings) { r->m_chain_written = false; }
+            continue;
+        }
         for (size_t i = 0; i < num_samples; ++i) {
+            // The chain starts at its first routing active at this sample; an
+            // inactive one contributes nothing.
             bool started = false;
             float value = 0.0f;
             for (const auto* r : chain.m_routings) {
-                if (!r->m_chain_written || i >= r->m_chain_buffer.size()) { continue; }
+                if (!r->m_chain_written || i >= r->m_chain_buffer.size() || r->m_chain_active[i] == 0) {
+                    continue;
+                }
                 const float c = r->m_chain_buffer[i];
                 if (!started) {
                     value = c;
