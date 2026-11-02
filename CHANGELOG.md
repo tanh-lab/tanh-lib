@@ -9,6 +9,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::probe`: probes watch a signal without changing it. `ProbeBase` gets every block
+  read-only through `process(block, latency_samples)` (skipped while inactive,
+  `set_active()`); it is not a `BaseProcessor` and never a graph node. `LevelProbe`: peak per
+  channel (the highest since the reader last took it, `take_peak()`) and RMS over a one-pole
+  window (300 ms by default), as atomics. `SampleProbe`: copies every block into an
+  `SpscRingBuffer` for one reader thread (scope, analyser), which counts what it lost if it
+  fell behind. Tests: `LevelProbe.*`, `Probe.*`, `SampleProbe.*`.
 - `thl::core::SpscRingBuffer<T>` (`core/threading/SpscRingBuffer.h`): a multi-channel
   lock-free single-producer / single-consumer ring of samples, e.g. from the audio thread to an
   analyser. The writer appends blocks and never waits: what does not fit is dropped and counted

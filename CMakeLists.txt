@@ -257,6 +257,10 @@ if(TANH_BUILD_DSP)
         src/dsp/dynamics/Compressor.cpp
         src/dsp/dynamics/LookaheadLimiter.cpp
 
+        src/dsp/probe/Probe.cpp
+        src/dsp/probe/LevelProbe.cpp
+        src/dsp/probe/SampleProbe.cpp
+
         src/dsp/transport/InternalTransportClock.cpp
 
         src/dsp/metronome/MetronomePlayer.cpp
