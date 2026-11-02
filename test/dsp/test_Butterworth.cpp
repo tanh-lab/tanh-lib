@@ -8,6 +8,8 @@
 #include <numbers>
 #include <vector>
 
+#include "TestSignals.h"
+
 using thl::dsp::filter::Butterworth;
 
 namespace {
@@ -23,26 +25,22 @@ double gain(size_t order,
             float cutoff = k_cutoff) {
     Butterworth filter;
     filter.prepare(cutoff, k_sample_rate, order, filter_type);
-    const double w = 2.0 * std::numbers::pi * frequency / k_sample_rate;
-    std::complex<double> sum = 0.0;
-    for (size_t n = 0; n < k_impulse_length; ++n) {
-        const float h = filter.process(n == 0 ? 1.0f : 0.0f);
-        sum += static_cast<double>(h) * std::polar(1.0, -w * static_cast<double>(n));
-    }
-    return std::abs(sum);
+    return dsp_test::impulse_magnitude([&filter](float x) { return filter.process(x); },
+                                       k_impulse_length,
+                                       frequency,
+                                       k_sample_rate);
 }
 
 double gain_db(size_t order,
                Butterworth::Response filter_type,
                double frequency,
                float cutoff = k_cutoff) {
-    return 20.0 * std::log10(gain(order, filter_type, frequency, cutoff));
+    return dsp_test::db(gain(order, filter_type, frequency, cutoff));
 }
 
 // The bilinear transform of the analog Butterworth, prewarped at the cutoff.
 double expected_gain(size_t order, Butterworth::Response filter_type, double frequency) {
-    double ratio = std::tan(std::numbers::pi * frequency / k_sample_rate) /
-                   std::tan(std::numbers::pi * k_cutoff / k_sample_rate);
+    double ratio = dsp_test::prewarped_ratio(frequency, k_cutoff, k_sample_rate);
     if (filter_type == Butterworth::Response::HighPass) { ratio = 1.0 / ratio; }
     return 1.0 / std::sqrt(1.0 + std::pow(ratio, 2.0 * static_cast<double>(order)));
 }
