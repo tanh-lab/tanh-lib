@@ -4,12 +4,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <numbers>
 #include <utility>
 #include <vector>
+
+#include "TestSignals.h"
 
 using thl::dsp::filter::Butterworth;
 using thl::dsp::filter::LinkwitzRiley;
@@ -26,28 +26,24 @@ enum class Output : uint8_t { Low, High, Sum };
 double output_gain(size_t order, Output output, double frequency) {
     LinkwitzRiley crossover;
     crossover.prepare(k_cutoff, k_sample_rate, order);
-    const double w = 2.0 * std::numbers::pi * frequency / k_sample_rate;
-    std::complex<double> sum = 0.0;
-    for (size_t n = 0; n < k_impulse_length; ++n) {
+    const auto tick = [&crossover, output](float x) {
         float low = 0.0f;
         float high = 0.0f;
-        crossover.process(n == 0 ? 1.0f : 0.0f, low, high);
-        float value = low + high;
-        if (output == Output::Low) { value = low; }
-        if (output == Output::High) { value = high; }
-        sum += static_cast<double>(value) * std::polar(1.0, -w * static_cast<double>(n));
-    }
-    return std::abs(sum);
+        crossover.process(x, low, high);
+        if (output == Output::Low) { return low; }
+        if (output == Output::High) { return high; }
+        return low + high;
+    };
+    return dsp_test::impulse_magnitude(tick, k_impulse_length, frequency, k_sample_rate);
 }
 
 double output_gain_db(size_t order, Output output, double frequency) {
-    return 20.0 * std::log10(output_gain(order, output, frequency));
+    return dsp_test::db(output_gain(order, output, frequency));
 }
 
 // The squared Butterworth of half the order, prewarped at the cutoff.
 double expected_band_gain(size_t order, Output output, double frequency) {
-    double ratio = std::tan(std::numbers::pi * frequency / k_sample_rate) /
-                   std::tan(std::numbers::pi * k_cutoff / k_sample_rate);
+    double ratio = dsp_test::prewarped_ratio(frequency, k_cutoff, k_sample_rate);
     if (output == Output::High) { ratio = 1.0 / ratio; }
     return 1.0 / (1.0 + std::pow(ratio, static_cast<double>(order)));
 }

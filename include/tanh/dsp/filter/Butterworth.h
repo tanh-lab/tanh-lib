@@ -23,8 +23,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
  * The all-pass has the Butterworth poles and a flat magnitude: the phase of a Linkwitz-Riley
  * crossover of twice the order (low + high).
  *
- * Call prepare() before use. prepare() is not real-time safe in spirit (it sets the order);
- * set_frequency(), reset() and process() are.
+ * Call prepare() before use; it sets the order and is meant for setup, not the audio thread.
+ * set_frequency(), reset() and process() are real-time safe.
  */
 class Butterworth {
 public:

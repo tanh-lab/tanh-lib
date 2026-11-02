@@ -46,6 +46,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   from the current gain). Tests: `GainComputer.*`,
   `LevelDetector.*`, `GainSmoother.*`.
 
+### Changed
+
+- `thl::dsp::utils::BandSplitter` reads crossover parameters itself: the virtual
+  `get_crossover_parameter_float()` (non-finite by default: the crossover keeps what
+  `set_frequency()` gave it) and `read_crossover_parameters()`, which `MultibandLimiterImpl`
+  and `StereoWidenerImpl` now call instead of each repeating it. Overrides keep working.
+
 ### Fixed
 
 - `thl::dsp::utils::LimiterImpl`: a NaN threshold, attack or release made its gain, and so

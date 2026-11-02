@@ -5,6 +5,7 @@
 #include <tanh/dsp/dynamics/GainComputer.h>
 #include <tanh/dsp/dynamics/LevelDetector.h>
 #include <tanh/dsp/dynamics/StereoLink.h>
+#include <tanh/dsp/utils/Decibels.h>
 
 #include <algorithm>
 #include <array>
@@ -13,6 +14,8 @@
 #include <cstdint>
 #include <limits>
 #include <numbers>
+
+#include "TestSignals.h"
 
 using thl::core::Buffer;
 using thl::core::BufferView;
@@ -71,21 +74,9 @@ protected:
 };
 
 using P = TestCompressor;
-
-float db(double amplitude) {
-    return static_cast<float>(20.0 * std::log10(std::abs(amplitude)));
-}
-float amplitude(float level_db) {
-    return std::pow(10.0f, level_db / 20.0f);
-}
-
-Buffer<float> constant(size_t channels, size_t num_samples, float value) {
-    Buffer<float> signal(channels, num_samples);
-    for (size_t ch = 0; ch < channels; ++ch) {
-        std::fill_n(signal.get_write_pointer(ch), num_samples, value);
-    }
-    return signal;
-}
+using dsp_test::constant;
+using dsp_test::db;
+using thl::dsp::utils::db_to_gain;
 
 void run(TestCompressor& compressor, Buffer<float>& signal, Buffer<float>* sidechain = nullptr) {
     const size_t num_samples = signal.get_num_samples();
@@ -103,9 +94,9 @@ void run(TestCompressor& compressor, Buffer<float>& signal, Buffer<float>* sidec
 /// The level of a constant input after the compressor, at its end.
 float steady_level_db(TestCompressor& compressor, float input_db) {
     compressor.prepare(k_sample_rate, k_block, 2);
-    Buffer<float> signal = constant(2, 4800, amplitude(input_db));
+    Buffer<float> signal = constant(2, 4800, db_to_gain(input_db));
     run(compressor, signal);
-    return db(signal.get_read_pointer(0)[4799]);
+    return static_cast<float>(db(signal.get_read_pointer(0)[4799]));
 }
 
 }  // namespace
@@ -206,8 +197,8 @@ TEST(Compressor, LinkedChannelsShareTheGainDualMonoDoesNot) {
         compressor.set(P::Link, static_cast<float>(link));
         compressor.prepare(k_sample_rate, k_block, 2);
         Buffer<float> signal(2, 4800);
-        std::fill_n(signal.get_write_pointer(0), 4800, 1.0f);               // 0 dBFS
-        std::fill_n(signal.get_write_pointer(1), 4800, amplitude(-30.0f));  // under the threshold
+        std::fill_n(signal.get_write_pointer(0), 4800, 1.0f);                // 0 dBFS
+        std::fill_n(signal.get_write_pointer(1), 4800, db_to_gain(-30.0f));  // under the threshold
         run(compressor, signal);
         return db(signal.get_read_pointer(1)[4799]);
     };
@@ -222,8 +213,8 @@ TEST(Compressor, AnExternalSidechainKeysTheGain) {
     compressor.set(P::Threshold, -20.0f);
     compressor.set(P::Ratio, std::numeric_limits<float>::infinity());
     compressor.prepare(k_sample_rate, k_block, 2);
-    Buffer<float> signal = constant(2, 4800, amplitude(-30.0f));
-    Buffer<float> key = constant(1, 4800, amplitude(-6.0f));  // one channel keys both
+    Buffer<float> signal = constant(2, 4800, db_to_gain(-30.0f));
+    Buffer<float> key = constant(1, 4800, db_to_gain(-6.0f));  // one channel keys both
     run(compressor, signal, &key);
     EXPECT_NEAR(db(signal.get_read_pointer(0)[4799]), -44.0f, 1e-3f);
     EXPECT_NEAR(db(signal.get_read_pointer(1)[4799]), -44.0f, 1e-3f);
@@ -261,7 +252,7 @@ TEST(Compressor, MixBlendsTheDelayedDrySignal) {
         compressor.prepare(k_sample_rate, k_block, 1);
         Buffer<float> signal = constant(1, 4800, 1.0f);
         run(compressor, signal);
-        const float wet = amplitude(-20.0f);
+        const float wet = db_to_gain(-20.0f);
         EXPECT_NEAR(signal.get_read_pointer(0)[4799], (1.0f - mix) + (mix * wet), 1e-5f) << mix;
         EXPECT_EQ(signal.get_read_pointer(0)[47], 0.0f);  // the dry part delayed too
     }
@@ -314,7 +305,7 @@ TEST(Compressor, ResetClearsTheGainAndTheLookahead) {
     run(compressor, loud);
     compressor.reset();
     EXPECT_EQ(compressor.gain_change_db(), 0.0f);
-    Buffer<float> quiet = constant(1, 480, amplitude(-30.0f));
+    Buffer<float> quiet = constant(1, 480, db_to_gain(-30.0f));
     run(compressor, quiet);
     for (size_t n = 0; n < 96; ++n) { ASSERT_EQ(quiet.get_read_pointer(0)[n], 0.0f) << n; }
     EXPECT_NEAR(db(quiet.get_read_pointer(0)[479]), -30.0f, 1e-3f);  // no gain held over
@@ -353,7 +344,7 @@ TEST(Compressor, ReleaseAndHoldShapeTheRecovery) {
     compressor.prepare(k_sample_rate, k_block, 1);
     Buffer<float> loud = constant(1, 4800, 1.0f);
     run(compressor, loud);
-    Buffer<float> quiet = constant(1, 4800, amplitude(-40.0f));
+    Buffer<float> quiet = constant(1, 4800, db_to_gain(-40.0f));
     run(compressor, quiet);
     // Held for 10 ms at -20 dB, then one release time recovers 63 % of it.
     EXPECT_NEAR(db(quiet.get_read_pointer(0)[479]), -60.0f, 1e-3f);
@@ -372,22 +363,22 @@ TEST(Compressor, ALinkSwitchHandsTheGainOver) {
     compressor.set(P::Link, static_cast<float>(StereoLink::DualMono));
     compressor.prepare(k_sample_rate, k_block, 2);
     Buffer<float> loud(2, 4800);
-    std::fill_n(loud.get_write_pointer(0), 4800, amplitude(-40.0f));
+    std::fill_n(loud.get_write_pointer(0), 4800, db_to_gain(-40.0f));
     std::fill_n(loud.get_write_pointer(1), 4800, 1.0f);
     run(compressor, loud);
     EXPECT_NEAR(db(loud.get_read_pointer(1)[4799]), -20.0f, 1e-3f);
     // Linked: the left channel takes the right's gain at once (the farthest from 0 dB leads).
     compressor.set(P::Link, static_cast<float>(StereoLink::Linked));
-    Buffer<float> quiet = constant(2, k_block, amplitude(-40.0f));
+    Buffer<float> quiet = constant(2, k_block, db_to_gain(-40.0f));
     run(compressor, quiet);
     EXPECT_LT(db(quiet.get_read_pointer(0)[0]), -59.0f);
     // A long quiet passage releases the linked gain ...
-    Buffer<float> rest = constant(2, 480000, amplitude(-40.0f));
+    Buffer<float> rest = constant(2, 480000, db_to_gain(-40.0f));
     run(compressor, rest);
     EXPECT_NEAR(db(rest.get_read_pointer(1)[479999]), -40.0f, 1e-3f);
     // ... and dual mono again starts both channels from it.
     compressor.set(P::Link, static_cast<float>(StereoLink::DualMono));
-    Buffer<float> after = constant(2, k_block, amplitude(-40.0f));
+    Buffer<float> after = constant(2, k_block, db_to_gain(-40.0f));
     run(compressor, after);
     EXPECT_NEAR(db(after.get_read_pointer(1)[0]), -40.0f, 1e-3f);
 }

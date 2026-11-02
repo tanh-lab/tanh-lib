@@ -11,7 +11,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
@@ -20,15 +19,7 @@ constexpr size_t k_stereo = 2;
 }  // namespace
 
 StereoWidenerImpl::StereoWidenerImpl(size_t num_bands, size_t order)
-    : BandSplitter(num_bands, order)
-    , m_widths(num_bands)
-    , m_width_targets(num_bands, 1.0f)
-    , m_crossover_parameters(num_bands - 1, 0.0f) {}
-
-float StereoWidenerImpl::get_crossover_parameter_float(size_t /*crossover*/,
-                                                       uint32_t /*modulation_offset*/) {
-    return std::numeric_limits<float>::quiet_NaN();
-}
+    : BandSplitter(num_bands, order), m_widths(num_bands), m_width_targets(num_bands, 1.0f) {}
 
 float StereoWidenerImpl::width_of(size_t band,
                                   uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
@@ -37,10 +28,7 @@ float StereoWidenerImpl::width_of(size_t band,
 }
 
 void StereoWidenerImpl::read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
-    for (size_t c = 0; c < m_crossover_parameters.size(); ++c) {
-        m_crossover_parameters[c] = get_crossover_parameter_float(c, modulation_offset);
-    }
-    set_frequencies(m_crossover_parameters);
+    read_crossover_parameters(modulation_offset);
     for (size_t band = 0; band < m_widths.size(); ++band) {
         m_width_targets[band] = width_of(band, modulation_offset);
         m_widths[band].set_target_value(m_width_targets[band]);

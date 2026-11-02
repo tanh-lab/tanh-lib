@@ -28,7 +28,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
  * would otherwise miss that block.
  *
  * @par Real-Time Safety
- *   process_band() and set_frequency() are real-time safe: no allocation, no locks.
+ *   process_band(), set_frequency(), set_frequencies(), read_crossover_parameters() and
+ *   reset() are real-time safe: no allocation, no locks.
  *   prepare() allocates.
  */
 class TANH_API BandSplitter : public thl::dsp::BaseProcessor {
@@ -70,6 +71,16 @@ public:
     void reset() TANH_NONBLOCKING_FUNCTION override;
 
 protected:
+    /// The frequency (Hz) of crossover @p crossover (0: between bands 0 and 1), for a processor
+    /// whose crossovers are parameters: read_crossover_parameters() reads every crossover through
+    /// it and applies them together (set_frequencies(): independent of order, crossing ones are
+    /// sorted). Non-finite (the default): that crossover keeps what set_frequency() gave it.
+    virtual float get_crossover_parameter_float(size_t crossover, uint32_t modulation_offset = 0);
+
+    /// Reads every crossover at @p modulation_offset (get_crossover_parameter_float()) and applies
+    /// them with set_frequencies(). Call it at the start of process(), before process_band().
+    void read_crossover_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
+
     /// Writes band @p band_index into @p buffer. For band 0, @p buffer holds the input on entry.
     void process_band(thl::core::BufferView buffer, size_t band_index) TANH_NONBLOCKING_FUNCTION;
 
@@ -87,8 +98,9 @@ private:
 
     std::vector<Channel> m_channels;
     thl::core::Buffer<float> m_high_passed;
-    std::vector<float> m_requested;    // as set
-    std::vector<float> m_frequencies;  // as applied
+    std::vector<float> m_requested;             // as set
+    std::vector<float> m_frequencies;           // as applied
+    std::vector<float> m_crossover_parameters;  // as read by read_crossover_parameters()
     std::vector<SmoothedValue> m_smoothed_frequencies;
     thl::core::Buffer<float> m_prewarped;
     float m_sample_rate = 48000.0f;

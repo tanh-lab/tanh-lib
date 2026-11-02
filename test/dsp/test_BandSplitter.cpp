@@ -14,8 +14,9 @@
 #include <cstdint>
 #include <limits>
 #include <numbers>
-#include <random>
 #include <vector>
+
+#include "TestSignals.h"
 
 using thl::core::Buffer;
 using thl::core::BufferView;
@@ -40,27 +41,6 @@ public:
 };
 
 using Bands = std::vector<Buffer<float>>;
-
-Buffer<float> noise(size_t num_channels, size_t num_samples) {
-    std::mt19937 generator(1);
-    std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
-    Buffer<float> signal(num_channels, num_samples);
-    for (size_t channel = 0; channel < num_channels; ++channel) {
-        float* samples = signal.get_write_pointer(channel);
-        for (size_t n = 0; n < num_samples; ++n) { samples[n] = distribution(generator); }
-    }
-    return signal;
-}
-
-Buffer<float> sine(float frequency, size_t num_samples) {
-    Buffer<float> signal(1, num_samples);
-    float* samples = signal.get_write_pointer(0);
-    for (size_t n = 0; n < num_samples; ++n) {
-        samples[n] = std::sin(2.0f * std::numbers::pi_v<float> * frequency * static_cast<float>(n) /
-                              k_sample_rate);
-    }
-    return signal;
-}
 
 // Processes samples start to start + length - 1 of every band; band 0 holds the input there.
 void process_block(TestBandSplitter& splitter, Bands& bands, size_t start, size_t length) {
@@ -92,23 +72,15 @@ float max_sum_error(const Bands& bands, const Buffer<float>& reference) {
     return max_error;
 }
 
-// RMS of the second half, after the filters have settled, relative to a full-scale sine.
+// The settled RMS relative to a full-scale sine.
 float settled_gain_db(const Buffer<float>& band) {
-    const size_t num_samples = band.get_num_samples();
-    const float* samples = band.get_read_pointer(0);
-    double sum_of_squares = 0.0;
-    for (size_t n = num_samples / 2; n < num_samples; ++n) {
-        sum_of_squares += static_cast<double>(samples[n]) * static_cast<double>(samples[n]);
-    }
-    const double rms =
-        std::sqrt(sum_of_squares / static_cast<double>(num_samples - num_samples / 2));
-    return static_cast<float>(20.0 * std::log10(rms * std::numbers::sqrt2));
+    return static_cast<float>(dsp_test::db(dsp_test::settled_rms(band) * std::numbers::sqrt2));
 }
 
 }  // namespace
 
 TEST(BandSplitter, BandsSumToTheAllPassesOfAllCrossovers) {
-    const Buffer<float> signal = noise(2, 8192);
+    const Buffer<float> signal = dsp_test::noise(2, 8192);
     for (size_t num_bands = 2; num_bands <= 4; ++num_bands) {
         for (size_t order = 2; order <= LinkwitzRiley::k_max_order; order += 2) {
             SCOPED_TRACE(testing::Message() << num_bands << " bands, order " << order);
@@ -142,7 +114,8 @@ TEST(BandSplitter, EachBandHoldsItsRange) {
         SCOPED_TRACE(testing::Message() << frequencies[sine_band] << " Hz");
         TestBandSplitter splitter(4, 4);
         splitter.prepare(k_sample_rate, k_block_size, 1);
-        const Bands bands = split(splitter, sine(frequencies[sine_band], 48000));
+        const Bands bands =
+            split(splitter, dsp_test::sine(1, 48000, frequencies[sine_band], 1.0f, k_sample_rate));
         for (size_t band = 0; band < bands.size(); ++band) {
             SCOPED_TRACE(testing::Message() << "band " << band);
             if (band == sine_band) {
@@ -182,7 +155,7 @@ TEST(BandSplitter, GlidingCrossoversStillSumToTheAllPasses) {
     constexpr size_t k_order = 4;
     constexpr size_t k_glide_start = 4 * k_block_size;
     const std::array<float, 2> targets = {2000.0f, 5000.0f};
-    const Buffer<float> signal = noise(2, 8192);
+    const Buffer<float> signal = dsp_test::noise(2, 8192);
 
     TestBandSplitter splitter(3, k_order);
     splitter.prepare(k_sample_rate, k_block_size, signal.get_num_channels());
@@ -242,7 +215,7 @@ TEST(BandSplitter, IgnoresANonFiniteFrequency) {
     splitter.set_frequency(1, std::numeric_limits<float>::infinity());
     EXPECT_FLOAT_EQ(splitter.get_frequency(0), 300.0f);
     EXPECT_FLOAT_EQ(splitter.get_frequency(1), 10000.0f);  // the default, unchanged
-    const Bands bands = split(splitter, noise(1, 4096));
+    const Bands bands = split(splitter, dsp_test::noise(1, 4096));
     for (const auto& band : bands) {
         for (size_t n = 0; n < band.get_num_samples(); ++n) {
             ASSERT_TRUE(std::isfinite(band.get_read_pointer(0)[n]));
@@ -262,7 +235,7 @@ TEST(BandSplitter, KeepsTheRequestedFrequencyAcrossSampleRates) {
 TEST(BandSplitter, ResetClearsTheCrossovers) {
     TestBandSplitter splitter(3, 4);
     splitter.prepare(k_sample_rate, k_block_size, 1);
-    (void)split(splitter, noise(1, 4096));
+    (void)split(splitter, dsp_test::noise(1, 4096));
     splitter.reset();
     const Bands bands = split(splitter, Buffer<float>(1, 512));  // silence in
     for (const auto& band : bands) {

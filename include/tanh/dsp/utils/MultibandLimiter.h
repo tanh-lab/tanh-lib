@@ -15,12 +15,14 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Splits the signal with BandSplitter, limits every band with its own limiter and sums the bands.
- * process_with_dry() also writes the sum of the bands before limiting: the limiters add
- * no latency, so it is the matching dry signal.
+ * process_with_dry() also writes the sum of the bands before limiting: the input through the
+ * crossovers' all-passes, so in phase with the output (a dry signal matches the phase only,
+ * never the latency: BaseProcessor::process_with_dry()).
  *
  * A derived class implements get_band_parameter_float() to give every band its own threshold,
- * attack and release, and may implement get_crossover_parameter_float() for the crossover
- * frequencies; otherwise they are set with set_frequency() or set_frequencies().
+ * attack and release, and may implement get_crossover_parameter_float() (BandSplitter) for the
+ * crossover frequencies, read at every process() call at @p modulation_offset; otherwise they
+ * are set with set_frequency() or set_frequencies().
  */
 class TANH_API MultibandLimiterImpl : public BandSplitter {
 public:
@@ -50,12 +52,6 @@ protected:
                                            size_t band,
                                            uint32_t modulation_offset = 0) = 0;
 
-    /// The frequency (Hz) of crossover @p crossover (0: between bands 0 and 1), read for every
-    /// crossover at the start of each process() call, at @p modulation_offset, and applied
-    /// together (set_frequencies(): independent of order; crossing ones are sorted). Non-finite
-    /// (the default): that crossover keeps what set_frequency() gave it.
-    virtual float get_crossover_parameter_float(size_t crossover, uint32_t modulation_offset = 0);
-
 private:
     class BandLimiter : public LimiterImpl {
     public:
@@ -70,7 +66,6 @@ private:
     };
 
     std::vector<BandLimiter> m_limiters;
-    std::vector<float> m_crossover_parameters;  // one per crossover, read every block
     thl::core::Buffer<float> m_band;
 };
 

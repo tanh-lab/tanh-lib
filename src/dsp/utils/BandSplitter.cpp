@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <span>
 #include <vector>
@@ -31,6 +32,19 @@ BandSplitter::BandSplitter(size_t num_bands, size_t order)
         m_frequencies[c] = 100.0f * std::pow(100.0f, position);
     }
     m_requested = m_frequencies;
+    m_crossover_parameters.assign(num_crossovers, 0.0f);
+}
+
+float BandSplitter::get_crossover_parameter_float(size_t /*crossover*/,
+                                                  uint32_t /*modulation_offset*/) {
+    return std::numeric_limits<float>::quiet_NaN();
+}
+
+void BandSplitter::read_crossover_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION {
+    for (size_t c = 0; c < m_crossover_parameters.size(); ++c) {
+        m_crossover_parameters[c] = get_crossover_parameter_float(c, modulation_offset);
+    }
+    set_frequencies(m_crossover_parameters);
 }
 
 void BandSplitter::prepare(const double& sample_rate,

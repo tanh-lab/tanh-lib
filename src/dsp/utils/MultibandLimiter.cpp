@@ -9,7 +9,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
@@ -18,12 +17,6 @@ MultibandLimiterImpl::MultibandLimiterImpl(size_t num_bands, size_t order)
     // the limiters keep a reference to this, so the vector must never reallocate
     m_limiters.reserve(num_bands);
     for (size_t band = 0; band < num_bands; ++band) { m_limiters.emplace_back(*this, band); }
-    m_crossover_parameters.assign(num_bands - 1, 0.0f);
-}
-
-float MultibandLimiterImpl::get_crossover_parameter_float(size_t /*crossover*/,
-                                                          uint32_t /*modulation_offset*/) {
-    return std::numeric_limits<float>::quiet_NaN();
 }
 
 void MultibandLimiterImpl::prepare(const double& sample_rate,
@@ -49,10 +42,7 @@ void MultibandLimiterImpl::process_with_dry(thl::core::BufferView buffer,
                          dry.get_num_samples() == buffer.get_num_samples()));
     const size_t num_samples = buffer.get_num_samples();
 
-    for (size_t c = 0; c < m_crossover_parameters.size(); ++c) {
-        m_crossover_parameters[c] = get_crossover_parameter_float(c, modulation_offset);
-    }
-    set_frequencies(m_crossover_parameters);
+    read_crossover_parameters(modulation_offset);
 
     process_band(buffer, 0);
     if (with_dry) { thl::core::BufferOperations::copy(dry, buffer); }

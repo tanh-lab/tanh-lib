@@ -9,8 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
-#include <random>
 #include <vector>
+
+#include "TestSignals.h"
 
 using thl::core::Buffer;
 using thl::core::BufferView;
@@ -46,17 +47,6 @@ protected:
     }
 };
 
-Buffer<float> stereo_noise(size_t num_samples, unsigned seed) {
-    std::mt19937 generator(seed);
-    std::uniform_real_distribution<float> distribution(-0.5f, 0.5f);
-    Buffer<float> signal(2, num_samples);
-    for (size_t ch = 0; ch < 2; ++ch) {
-        float* samples = signal.get_write_pointer(ch);
-        for (size_t n = 0; n < num_samples; ++n) { samples[n] = distribution(generator); }
-    }
-    return signal;
-}
-
 /// A sine only in the side signal (L = s, R = -s) at @p frequency.
 Buffer<float> side_sine(double frequency, size_t num_samples) {
     Buffer<float> signal(2, num_samples);
@@ -70,34 +60,14 @@ Buffer<float> side_sine(double frequency, size_t num_samples) {
 }
 
 void run(TestWidener& widener, Buffer<float>& signal, Buffer<float>* dry = nullptr) {
-    const size_t num_samples = signal.get_num_samples();
-    for (size_t start = 0; start < num_samples; start += k_block) {
-        const size_t length = std::min(k_block, num_samples - start);
-        if (dry != nullptr) {
-            widener.process_with_dry(BufferView(signal).sub_block(start, length),
-                                     0,
-                                     BufferView(*dry).sub_block(start, length));
-        } else {
-            widener.process(BufferView(signal).sub_block(start, length));
-        }
-    }
-}
-
-/// RMS of channel @p ch over the second half (settled).
-double settled_rms(const Buffer<float>& signal, size_t ch) {
-    const size_t n = signal.get_num_samples();
-    double sum = 0.0;
-    for (size_t i = n / 2; i < n; ++i) {
-        sum += static_cast<double>(signal.get_read_pointer(ch)[i]) * signal.get_read_pointer(ch)[i];
-    }
-    return std::sqrt(sum / static_cast<double>(n - (n / 2)));
+    dsp_test::process_in_blocks(widener, signal, k_block, dry);
 }
 
 }  // namespace
 
 TEST(StereoWidener, TheMonoSumDoesNotDependOnTheWidths) {
     // L + R is the mid signal through the crossovers' all-passes, whatever the widths.
-    const Buffer<float> input = stereo_noise(8192, 1);
+    const Buffer<float> input = dsp_test::noise(2, 8192, 0.5f, 1);
     TestWidener neutral(3);
     neutral.prepare(k_sample_rate, k_block, 2);
     Buffer<float> reference = input;
@@ -122,7 +92,7 @@ TEST(StereoWidener, WidthZeroIsMono) {
     TestWidener widener(2);
     widener.m_widths = {0.0f, 0.0f};
     widener.prepare(k_sample_rate, k_block, 2);
-    Buffer<float> out = stereo_noise(4096, 2);
+    Buffer<float> out = dsp_test::noise(2, 4096, 0.5f, 2);
     run(widener, out);
     for (size_t i = 0; i < out.get_num_samples(); ++i) {
         ASSERT_EQ(out.get_read_pointer(0)[i], out.get_read_pointer(1)[i]) << i;
@@ -143,7 +113,7 @@ TEST(StereoWidener, MonoBassRemovesTheSideBelowTheCrossover) {
             side.get_write_pointer(0)[i] =
                 0.5f * (out.get_read_pointer(0)[i] - out.get_read_pointer(1)[i]);
         }
-        return 20.0 * std::log10(settled_rms(side, 0) / (0.5 / std::sqrt(2.0)));
+        return 20.0 * std::log10(dsp_test::settled_rms(side, 0) / (0.5 / std::numbers::sqrt2));
     };
     EXPECT_LT(side_level(30.0), -40.0);  // 2.3 octaves below: LR4 at 24 dB/octave and more
     EXPECT_NEAR(side_level(3000.0), 0.0, 0.05);
@@ -158,7 +128,7 @@ TEST(StereoWidener, WidthScalesTheSideOfItsBand) {
         Buffer<float> out = side_sine(3000.0, 48000);
         run(widener, out);
         // Only side in: left is +side, so its level is the side's.
-        EXPECT_NEAR(20.0 * std::log10(settled_rms(out, 0) / (0.5 / std::sqrt(2.0))),
+        EXPECT_NEAR(20.0 * std::log10(dsp_test::settled_rms(out, 0) / (0.5 / std::numbers::sqrt2)),
                     20.0 * std::log10(width),
                     0.05)
             << width;
@@ -168,7 +138,7 @@ TEST(StereoWidener, WidthScalesTheSideOfItsBand) {
 TEST(StereoWidener, NeutralIsTheInputThroughFlatAllPassesAndTheDrySignal) {
     TestWidener widener(3);
     widener.prepare(k_sample_rate, k_block, 2);
-    Buffer<float> out = stereo_noise(8192, 3);
+    Buffer<float> out = dsp_test::noise(2, 8192, 0.5f, 3);
     Buffer<float> dry(2, out.get_num_samples());
     run(widener, out, &dry);
     for (size_t ch = 0; ch < 2; ++ch) {
@@ -182,7 +152,9 @@ TEST(StereoWidener, NeutralIsTheInputThroughFlatAllPassesAndTheDrySignal) {
         flat.prepare(k_sample_rate, k_block, 2);
         Buffer<float> sine = side_sine(frequency, 48000);
         run(flat, sine);
-        EXPECT_NEAR(20.0 * std::log10(settled_rms(sine, 0) / (0.5 / std::sqrt(2.0))), 0.0, 0.01)
+        EXPECT_NEAR(20.0 * std::log10(dsp_test::settled_rms(sine, 0) / (0.5 / std::numbers::sqrt2)),
+                    0.0,
+                    0.01)
             << frequency;
     }
 }
@@ -241,7 +213,7 @@ TEST(StereoWidener, CrossoversComeFromTheirParametersAtTheBlockPosition) {
 TEST(StereoWidener, ResetClearsTheCrossovers) {
     TestWidener widener(2);
     widener.prepare(k_sample_rate, k_block, 2);
-    Buffer<float> noise = stereo_noise(4096, 4);
+    Buffer<float> noise = dsp_test::noise(2, 4096, 0.5f, 4);
     run(widener, noise);
     widener.reset();
     Buffer<float> silence(2, 512);
