@@ -9,6 +9,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::core::SpscRingBuffer<T>` (`core/threading/SpscRingBuffer.h`): a multi-channel
+  lock-free single-producer / single-consumer ring of samples, e.g. from the audio thread to an
+  analyser. The writer appends blocks and never waits: what does not fit is dropped and counted
+  (`dropped()`); the reader reads what has arrived, oldest first, or only the newest
+  (`read_latest()`), or skips. Capacity rounded up to a power of two; real-time safe on both
+  sides (two atomic positions, no locks, no allocation after `prepare()`). Tests:
+  `SpscRingBuffer.*`, including one writer and one reader side by side.
 - `thl::dsp::utils` helpers, real-time safe: `Decibels.h` (`db_to_gain()`, `gain_to_db()`,
   `power_to_db()`, float or double, floored at `k_min_db` = -120 dB or a given floor),
   `TimeConstant.h` (`ms_to_samples()`, `one_pole_pole()`: exp(-1 / samples), 0 for no time)
