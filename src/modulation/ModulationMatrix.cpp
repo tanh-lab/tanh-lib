@@ -619,7 +619,7 @@ float ModulationMatrix::compute_precomputed(const ModulationRouting& routing,
     const bool is_replace = routing.m_combine_mode == CombineMode::Replace ||
                             routing.m_combine_mode == CombineMode::ReplaceHold;
     if (target.m_uses_normalized_buffer && !is_replace) {
-        return routing.m_depth_mode == DepthMode::Absolute ? value / span : value;
+        return to_normalised(value, routing.m_depth_mode, target);   // the chains' units too
     }
     return routing.m_depth_mode == DepthMode::Normalized ? value * span : value;
 }

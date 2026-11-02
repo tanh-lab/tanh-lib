@@ -45,6 +45,11 @@ their own while the schedule runs; after the schedule the fold pass combines
 them into the target's additive buffer, before the host hand-over and the
 change-point pass. Targets without a Multiply routing take the usual path.
 
+So a chain reaches what reads the target after the matrix ran (a DSP node's
+handle), not a modulation source that reads it during the schedule: a chain on
+an LFO's rate leaves the LFO at its base rate. Chain host parameters, not the
+modulators' own parameters.
+
 Limits: a chain is mono. A Multiply routing on a polyphonic target (a scoped
 source, or a global source into a target with scoped routings) adds instead,
 with a logged warning. Chains are folded in normalised units, so a routing in
