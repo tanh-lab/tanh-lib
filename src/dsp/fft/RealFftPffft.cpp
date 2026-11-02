@@ -58,7 +58,9 @@ bool RealFft::prepare(size_t size) {
     m_size = 0;
     if (size < k_min_size || size > k_max_size || !std::has_single_bit(size)) { return false; }
     m_impl = std::make_unique<Impl>(size);
-    if (m_impl->m_setup == nullptr) {
+    // pffft's setup and its aligned buffers each may fail; forward() and inverse() need all.
+    if (m_impl->m_setup == nullptr || m_impl->m_input.m_data == nullptr ||
+        m_impl->m_output.m_data == nullptr || m_impl->m_work.m_data == nullptr) {
         m_impl.reset();
         return false;
     }

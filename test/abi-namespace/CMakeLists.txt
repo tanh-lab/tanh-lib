@@ -65,12 +65,13 @@ endif()
 if(_tool)
     # Where a component may define symbols besides thl: the standard library's
     # instantiations, the bundled header-only code (nlohmann::json in State, moodycamel's
-    # readerwriterqueue in Modulation), miniaudio, whose C functions AudioIO compiles as
-    # C++ (src/audio-io/miniaudio_impl.cpp), so they are mangled at global scope, and pffft,
-    # the C FFT that DSP compiles in (TANH_FFT_BACKEND=pffft). The
+    # readerwriterqueue in Modulation) and miniaudio, whose C functions AudioIO compiles as
+    # C++ (src/audio-io/miniaudio_impl.cpp), so they are mangled at global scope. pffft, the
+    # FFT that DSP compiles in, is C: its unmangled names are not this check's (test/exports
+    # keeps them out of the export table). The
     # implementation's reserved namespaces (__gnu_cxx, __rtsan, ...) need no entry.
     set(_allow_scopes std nlohmann moodycamel)
-    set(_allow_global_prefixes ma_ pffft_)
+    set(_allow_global_prefixes ma_)
     foreach(_library IN LISTS TANH_BUILT_COMPONENTS ITEMS tanh_core_b)
         if(_library STREQUAL "tanh_core_b")
             set(_namespace test_b)
