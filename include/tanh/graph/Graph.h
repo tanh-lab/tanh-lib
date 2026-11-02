@@ -6,13 +6,13 @@
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/BaseProcessor.h>
-#include <tanh/dsp/probe/Probe.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <atomic>
 #include <compare>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -23,6 +23,10 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+namespace thl::inline THL_ABI_NAMESPACE::dsp::probe {
+class ProbeBase;
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::probe
 
 namespace thl::inline THL_ABI_NAMESPACE::graph {
 
@@ -156,20 +160,36 @@ public:
     enum class ProbePoint : uint8_t { Input, Output };
     static constexpr size_t k_max_probes_per_point = 8;
 
-    /// Control thread, live (no commit, no fade): @p probe watches node @p id at @p point from the
-    /// next block on, with the latency of that point (ProbeBase::latency_samples()).
-    /// graph_input() has only an Output (what process() is given), graph_output() only an Input
-    /// (what process() returns). The probe is prepared now if the graph is, and again whenever
-    /// the graph is. The graph does not own it: keep it alive until unregister_probe() returns.
-    /// Nothing for an unknown node, the missing point of graph_input() or graph_output(), a point
-    /// with k_max_probes_per_point probes, or a probe already registered.
-    std::optional<ProbeId> register_probe(NodeId id,
-                                          ProbePoint point,
-                                          thl::dsp::probe::ProbeBase& probe);
-    /// Control thread: stops probe @p id and returns once the audio thread no longer uses it (it
-    /// waits for the block in progress, if any), so it may be destroyed then. Never from the
-    /// audio thread. remove_node() unregisters the node's probes. False for an unknown id.
-    bool unregister_probe(ProbeId id);
+    /// Control thread, live (no commit, no fade): a new probe of type @p Probe (made from
+    /// @p args) watches node @p id at @p point from the next block on. graph_input() has only an
+    /// Output (what process() is given), graph_output() only an Input (what process() returns).
+    /// The graph owns the probe: it prepares it now if the graph is prepared and with every
+    /// prepare(), resets it with reset() and when a newly committed version starts, and deletes
+    /// it in remove_probe() or remove_node(). The pointer is for reading it (meters, a reader
+    /// thread) and is valid until then. Nothing for an unknown node, the missing point of
+    /// graph_input() or graph_output(), or a point with k_max_probes_per_point probes. A probe
+    /// never changes the signal or its latency.
+    template <typename Probe, typename... Args>
+        requires std::derived_from<Probe, thl::dsp::probe::ProbeBase>
+    std::optional<std::pair<ProbeId, Probe*>> add_probe(NodeId id,
+                                                        ProbePoint point,
+                                                        Args&&... args) {
+        auto probe = std::make_unique<Probe>(std::forward<Args>(args)...);
+        Probe* const pointer = probe.get();
+        const std::optional<ProbeId> probe_id = add_probe(id, point, std::move(probe));
+        if (!probe_id) { return std::nullopt; }
+        return std::pair{*probe_id, pointer};
+    }
+    /// add_probe() for a probe made elsewhere; the graph takes it over.
+    std::optional<ProbeId> add_probe(NodeId id,
+                                     ProbePoint point,
+                                     std::unique_ptr<thl::dsp::probe::ProbeBase> probe);
+    /// Control thread: stops probe @p id, waits until the audio thread no longer uses it (the
+    /// block in progress, if any) and deletes it. Never from the audio thread. False for an
+    /// unknown id.
+    bool remove_probe(ProbeId id);
+    /// The probe @p id, or nullptr for an unknown id.
+    thl::dsp::probe::ProbeBase* probe(ProbeId id) const;
 
     /// Frees the versions the audio thread handed back and the removed nodes no running version
     /// uses, also in nested graphs. commit() calls it; call it from a timer (e.g. 30 Hz on the
@@ -271,7 +291,12 @@ private:
                            ProbePoint point,
                            const thl::core::BufferView& block,
                            uint32_t latency_samples) TANH_NONBLOCKING_FUNCTION;
-    void reset_probes(Node& node) TANH_NONBLOCKING_FUNCTION;
+    static void reset_probes(Node& node) TANH_NONBLOCKING_FUNCTION;
+    /// Audio thread: resets the probes of graph_input(), graph_output() and every node of the
+    /// running version.
+    void reset_all_probes() TANH_NONBLOCKING_FUNCTION;
+    /// Control thread: clears probe @p id's slot (without waiting) and hands the probe back.
+    std::unique_ptr<thl::dsp::probe::ProbeBase> detach_probe(ProbeId id);
     /// Control thread: returns once a process() or reset() in progress has ended.
     void wait_for_audio_thread() const;
     static void run_step(const ProcessingStep& step,
@@ -290,7 +315,7 @@ private:
         NodeId m_node;
         ProbePoint m_point;
         size_t m_slot;
-        thl::dsp::probe::ProbeBase* m_probe;
+        std::unique_ptr<thl::dsp::probe::ProbeBase> m_probe;
     };
     std::map<ProbeId, ProbeEntry> m_probes;
     uint64_t m_next_probe_id = 1;
@@ -312,10 +337,12 @@ private:
     thl::core::LockFreeQueue<CompiledGraph*, 8> m_returned;  // audio thread -> control thread
 
     // ─── Control thread <-> audio thread ─────
-    Node* m_input_node = nullptr;   // graph_input(): never removed, so the audio thread may keep it
-    Node* m_output_node = nullptr;  // graph_output(): likewise
-    // Odd while process() or reset() runs: unregister_probe() waits for it to turn even (or move
-    // on) after clearing the probe's slot.
+    // graph_input() and graph_output(), which are never removed: the audio thread may not look
+    // them up in m_nodes, and a compiled version knows graph_input() only if it reaches the output.
+    Node* m_input_node = nullptr;
+    Node* m_output_node = nullptr;
+    // Odd while process() or reset() runs (both on the one audio thread): remove_probe() waits
+    // for it to turn even (or move on) after clearing the probe's slot.
     std::atomic<uint64_t> m_audio_epoch{0};
 
     // ─── Audio thread ────────────────────────
