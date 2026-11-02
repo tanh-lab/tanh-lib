@@ -6,6 +6,7 @@
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/probe/Probe.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -24,6 +25,9 @@
 #include <vector>
 
 namespace thl::inline THL_ABI_NAMESPACE::graph {
+
+/// A probe registered with a Graph; never reused within a graph.
+enum class ProbeId : uint64_t {};
 
 /// A node of a Graph; never reused within a graph.
 enum class NodeId : uint64_t {};
@@ -147,6 +151,26 @@ public:
     /// thread).
     uint32_t committed_latency_samples() const { return m_committed_latency; }
 
+    /// Where a probe watches a node: what reaches it (its sources mixed) or what it sends on (its
+    /// processor's output, blended with its dry signal by the wet mix).
+    enum class ProbePoint : uint8_t { Input, Output };
+    static constexpr size_t k_max_probes_per_point = 8;
+
+    /// Control thread, live (no commit, no fade): @p probe watches node @p id at @p point from the
+    /// next block on, with the latency of that point (ProbeBase::latency_samples()).
+    /// graph_input() has only an Output (what process() is given), graph_output() only an Input
+    /// (what process() returns). The probe is prepared now if the graph is, and again whenever
+    /// the graph is. The graph does not own it: keep it alive until unregister_probe() returns.
+    /// Nothing for an unknown node, the missing point of graph_input() or graph_output(), a point
+    /// with k_max_probes_per_point probes, or a probe already registered.
+    std::optional<ProbeId> register_probe(NodeId id,
+                                          ProbePoint point,
+                                          thl::dsp::probe::ProbeBase& probe);
+    /// Control thread: stops probe @p id and returns once the audio thread no longer uses it (it
+    /// waits for the block in progress, if any), so it may be destroyed then. Never from the
+    /// audio thread. remove_node() unregisters the node's probes. False for an unknown id.
+    bool unregister_probe(ProbeId id);
+
     /// Frees the versions the audio thread handed back and the removed nodes no running version
     /// uses, also in nested graphs. commit() calls it; call it from a timer (e.g. 30 Hz on the
     /// message thread) so removed processors go away without another edit. A nested graph that
@@ -243,6 +267,13 @@ private:
                             Node& node,
                             thl::core::BufferView destination,
                             thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
+    static void run_probes(Node& node,
+                           ProbePoint point,
+                           const thl::core::BufferView& block,
+                           uint32_t latency_samples) TANH_NONBLOCKING_FUNCTION;
+    void reset_probes(Node& node) TANH_NONBLOCKING_FUNCTION;
+    /// Control thread: returns once a process() or reset() in progress has ended.
+    void wait_for_audio_thread() const;
     static void run_step(const ProcessingStep& step,
                          thl::core::BufferView buffer,
                          const thl::core::BufferView& dry,
@@ -255,6 +286,14 @@ private:
 
     // ─── Control thread ──────────────────────
     std::map<NodeId, std::unique_ptr<Node>> m_nodes;
+    struct ProbeEntry {
+        NodeId m_node;
+        ProbePoint m_point;
+        size_t m_slot;
+        thl::dsp::probe::ProbeBase* m_probe;
+    };
+    std::map<ProbeId, ProbeEntry> m_probes;
+    uint64_t m_next_probe_id = 1;
     std::set<Connection> m_connections;
     std::vector<RetiredNode> m_retired_nodes;
     std::vector<RetiredDelay> m_retired_delays;
@@ -271,6 +310,13 @@ private:
     // ─── Control thread -> audio thread ──────
     std::atomic<CompiledGraph*> m_pending{nullptr};
     thl::core::LockFreeQueue<CompiledGraph*, 8> m_returned;  // audio thread -> control thread
+
+    // ─── Control thread <-> audio thread ─────
+    Node* m_input_node = nullptr;   // graph_input(): never removed, so the audio thread may keep it
+    Node* m_output_node = nullptr;  // graph_output(): likewise
+    // Odd while process() or reset() runs: unregister_probe() waits for it to turn even (or move
+    // on) after clearing the probe's slot.
+    std::atomic<uint64_t> m_audio_epoch{0};
 
     // ─── Audio thread ────────────────────────
     CompiledGraph* m_active = nullptr;

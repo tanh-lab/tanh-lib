@@ -9,6 +9,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::graph::Graph::register_probe(node, ProbePoint, ProbeBase&)` /
+  `unregister_probe(ProbeId)`: a probe watches a node's input (its sources mixed) or output
+  (after its processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with
+  the latency of that point. Live: no commit, no fade. The graph does not own the probe; it
+  prepares it on registration and with every `prepare()`, resets it with `reset()`, and
+  `unregister_probe()` returns only once the audio thread no longer uses it (at most the block in
+  progress), so the owner may destroy it then; `remove_node()` unregisters its probes. Up to
+  `k_max_probes_per_point` per point. Tests: `GraphProbes.*`, including probes registered,
+  unregistered and destroyed while the audio thread runs.
 - `thl::dsp::probe`: probes watch a signal without changing it. `ProbeBase` gets every block
   read-only through `process(block, latency_samples)` (skipped while inactive,
   `set_active()`); it is not a `BaseProcessor` and never a graph node. `LevelProbe`: peak per
