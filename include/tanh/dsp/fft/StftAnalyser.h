@@ -21,7 +21,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::fft {
  * samples, once fft_size() have arrived, each channel's newest fft_size() samples are windowed,
  * transformed (RealFft) and handed to process_spectrum(), channel by channel, the same frame for
  * every channel. The bins are scaled so a sine of amplitude A reads |X| = A at its bin: the
- * window's coherent gain and the FFT's N / 2 undone, so a full-scale sine reads 0 dB.
+ * window's coherent gain and the FFT's N / 2 undone, so a full-scale sine reads 0 dB. DC and
+ * Nyquist, which have no mirror image, read their amplitude too.
  *
  * reset() drops what has been collected: the next frame comes only after fft_size() new samples
  * (after a discontinuity, so no frame spans a gap).

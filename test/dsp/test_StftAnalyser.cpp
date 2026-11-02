@@ -164,3 +164,30 @@ TEST(StftAnalyser, PrepareRejectsWhatItCannotDo) {
     const std::array<const float*, 1> none{nullptr};
     analyser.push(none, 10);  // unprepared: nothing happens, process_spectrum() not called
 }
+
+TEST(StftAnalyser, AFailedPrepareLeavesItUnprepared) {
+    // A prepared analyser that fails a second prepare() must not keep its old FFT with no hop:
+    // push() would never get past the first frame.
+    Recorder analyser;
+    ASSERT_TRUE(analyser.start(1024, 256, 1));
+    EXPECT_FALSE(analyser.prepare(1024, 0, 1));
+    EXPECT_EQ(analyser.fft_size(), 0u);
+    EXPECT_EQ(analyser.hop_size(), 0u);
+    EXPECT_FALSE(analyser.prepare(1024, 2048, 1));
+    EXPECT_EQ(analyser.fft_size(), 0u);
+}
+
+TEST(StftAnalyser, DcAndNyquistReadTheirAmplitudeToo) {
+    // They have no mirror image: the sine's factor 2 must not apply to them.
+    constexpr size_t k_n = 256;
+    Recorder analyser;
+    ASSERT_TRUE(analyser.start(k_n, k_n, 2));
+    std::vector<float> dc(k_n, 0.5f);
+    std::vector<float> nyquist(k_n);
+    for (size_t i = 0; i < k_n; ++i) { nyquist[i] = (i % 2 == 0) ? 0.25f : -0.25f; }
+    const std::array<const float*, 2> channels{dc.data(), nyquist.data()};
+    analyser.push(channels, k_n);
+    ASSERT_EQ(analyser.frames(0).size(), 1u);
+    EXPECT_NEAR(analyser.frames(0)[0][0], 0.5f, 1e-4f);
+    EXPECT_NEAR(analyser.frames(1)[0][k_n / 2], 0.25f, 1e-4f);
+}

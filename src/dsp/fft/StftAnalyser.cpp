@@ -45,7 +45,12 @@ bool StftAnalyser::prepare(size_t fft_size, size_t hop_size, size_t num_channels
     m_channels.clear();
     m_hop_size = 0;
     m_filled = 0;
-    if (hop_size == 0 || hop_size > fft_size || !m_fft.prepare(fft_size)) { return false; }
+    // The FFT first, so a failure leaves nothing of an earlier prepare() behind.
+    const bool fft_ready = m_fft.prepare(fft_size);
+    if (!fft_ready || hop_size == 0 || hop_size > fft_size) {
+        m_fft = RealFft();
+        return false;
+    }
     m_hop_size = hop_size;
     m_channels.assign(num_channels, std::vector<float>(fft_size, 0.0f));
     m_window = make_window(window, fft_size);
@@ -61,7 +66,7 @@ void StftAnalyser::reset() TANH_NONBLOCKING_FUNCTION {
 void StftAnalyser::push(std::span<const float* const> channels,
                         size_t num_samples) TANH_NONBLOCKING_FUNCTION {
     const size_t n = fft_size();
-    if (n == 0) { return; }
+    if (n == 0 || m_hop_size == 0) { return; }
     size_t offset = 0;
     while (offset < num_samples) {
         // Up to the next frame: the buffers are full at n.
@@ -96,6 +101,9 @@ void StftAnalyser::run_frame() TANH_NONBLOCKING_FUNCTION {
         const std::vector<float>& buffer = m_channels[ch];
         for (size_t i = 0; i < m_frame.size(); ++i) { m_frame[i] = buffer[i] * m_window[i]; }
         m_fft.forward(m_frame, m_bins);
+        // DC and Nyquist have no mirror image: the window's factor 2 does not apply to them.
+        m_bins.front() *= 0.5f;
+        m_bins.back() *= 0.5f;
         process_spectrum(ch, m_bins);
     }
 }
