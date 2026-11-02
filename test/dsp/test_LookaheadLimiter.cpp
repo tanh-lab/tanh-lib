@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
-#include <tanh/dsp/dynamics/StereoLink.h>
 #include <tanh/dsp/dynamics/LookaheadLimiter.h>
+#include <tanh/dsp/dynamics/StereoLink.h>
+#include <tanh/dsp/utils/Decibels.h>
 
 #include <algorithm>
 #include <array>
@@ -55,8 +56,10 @@ using P = TestLimiter;
 float db(double amplitude) {
     return static_cast<float>(20.0 * std::log10(std::abs(amplitude)));
 }
+// As the limiter converts its ceiling (exp): std::pow can differ by an ulp (x86), and the
+// output sits exactly at the ceiling.
 float amplitude(float level_db) {
-    return std::pow(10.0f, level_db / 20.0f);
+    return thl::dsp::utils::db_to_gain(level_db);
 }
 
 void run(TestLimiter& limiter, Buffer<float>& signal, size_t block = k_block) {
@@ -126,7 +129,8 @@ TEST(LookaheadLimiter, NoSampleAboveTheCeilingAndTheGainAloneGetsItThere) {
             const Buffer<float> input = bursts(2, 24000, 7);  // the same signal
             run(limiter, signal);
             const size_t delay = limiter.latency_samples();
-            const float ceiling = amplitude(-1.0f);
+            // At the ceiling, up to rounding: one ulp of slack.
+            const float ceiling = std::nextafter(amplitude(-1.0f), 2.0f);
             for (size_t n = delay; n < 24000; ++n) {
                 std::array<float, 2> gains{1.0f, 1.0f};
                 for (size_t ch = 0; ch < 2; ++ch) {
@@ -253,7 +257,7 @@ TEST(LookaheadLimiter, ALookaheadChangeMovesTheLatency) {
     run(limiter, signal);
     EXPECT_EQ(limiter.latency_samples(), 191u);
     for (size_t n = 0; n < 4800; ++n) {
-        ASSERT_LE(std::abs(signal.get_read_pointer(0)[n]), amplitude(-1.0f));
+        ASSERT_LE(std::abs(signal.get_read_pointer(0)[n]), std::nextafter(amplitude(-1.0f), 2.0f));
     }
 }
 
