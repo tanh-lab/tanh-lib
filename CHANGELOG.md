@@ -9,6 +9,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::fft::StftAnalyser`: the analysis half of a short-time Fourier transform. `push()`
+  takes samples in chunks of any size; every hop, once an FFT size has arrived, each channel's
+  newest frame is windowed (Hann, or 4-term Blackman-Harris for -92 dB sidelobes), transformed
+  (`RealFft`) and handed to the virtual `process_spectrum(channel, bins)`, scaled so a sine of
+  amplitude A reads A at its bin (0 dB for full scale). `reset()` drops what was collected, so no
+  frame spans a discontinuity. Allocation-free after `prepare()`. Tests: `StftAnalyser.*`.
 - `thl::dsp::fft::RealFft`: the FFT of a real signal of a power-of-two size (32 to 65536),
   unscaled forward (as `numpy.fft.rfft`: N / 2 + 1 bins, a sine of amplitude A reads
   A · N / 2), inverse scaled by 1 / N, real-time safe after `prepare()`. The backend is a
