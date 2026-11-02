@@ -32,8 +32,9 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
  * - Any channel count but 2 passes unchanged (nothing to widen).
  *
  * A derived class gives every band's width through get_band_parameter_float(), and may give the
- * crossover frequencies through get_crossover_parameter_float(); otherwise set_frequency() or
- * set_frequencies() set them. Both are read at the start of every process() call, at
+ * crossover frequencies through get_crossover_parameter_float() (BandSplitter); otherwise
+ * set_frequency() or set_frequencies() set them. Both are read at the start of every process()
+ * call, at
  * @p modulation_offset.
  *
  * Threads: prepare() allocates; process(), process_with_dry() and reset() are real-time safe.
@@ -68,18 +69,12 @@ protected:
                                            size_t band,
                                            uint32_t modulation_offset = 0) = 0;
 
-    /// The frequency (Hz) of crossover @p crossover (0: between bands 0 and 1), read for every
-    /// crossover at each process() call and applied together (set_frequencies()). Non-finite
-    /// (the default): that crossover keeps what set_frequency() gave it.
-    virtual float get_crossover_parameter_float(size_t crossover, uint32_t modulation_offset = 0);
-
 private:
     void read_parameters(uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] float width_of(size_t band, uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 
     std::vector<thl::dsp::utils::SmoothedValue> m_widths;  // per band
     std::vector<float> m_width_targets;                    // per band, as read last
-    std::vector<float> m_crossover_parameters;             // one per crossover, read every block
     thl::core::Buffer<float> m_mid_side;                   // band 0 in place: mid, side
     thl::core::Buffer<float> m_band;                       // bands 1 and up
     thl::core::Buffer<float> m_wide;                       // the sum: mid, side as widened
