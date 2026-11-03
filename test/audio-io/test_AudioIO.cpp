@@ -716,7 +716,7 @@ TEST(AudioFileWriter, RejectsUnrepresentableInputsWithoutCreatingFile) {
     for (const double sample_rate : {0.0,
                                      std::numeric_limits<double>::quiet_NaN(),
                                      std::numeric_limits<double>::infinity(),
-                                     5.0e9}) {
+                                     384000.5}) {
         EXPECT_FALSE(writer.write_to_file(test_file.string(), source, sample_rate))
             << "sample_rate=" << sample_rate;
     }
@@ -731,7 +731,52 @@ TEST(AudioFileWriter, RejectsUnrepresentableInputsWithoutCreatingFile) {
     EXPECT_FALSE(std::filesystem::exists(test_file));
 }
 
+TEST(AudioFileWriter, HighestSupportedSampleRateReadsBack) {
+    const std::filesystem::path test_file =
+        std::filesystem::temp_directory_path() / "test_writer_max_rate.wav";
+    constexpr double k_max_sample_rate = 384000.0;
+
+    core::BufferF source(1, 64);
+    thl::audio_io::AudioFileWriter writer;
+    ASSERT_TRUE(writer.write_to_file(test_file.string(), source, k_max_sample_rate));
+
+    thl::audio_io::AudioFileLoader loader;
+    const auto loaded = loader.load_from_file(test_file.string());
+    std::filesystem::remove(test_file);
+    EXPECT_EQ(loaded.get_num_samples(), 64u);
+    EXPECT_DOUBLE_EQ(loaded.get_sample_rate(), k_max_sample_rate);
+}
+
 #ifndef _WIN32
+TEST(AudioFileWriter, DoesNotFollowSymlinkAtStagingPath) {
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "test_writer_staging_symlink";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directory(directory);
+    const std::filesystem::path unrelated = directory / "unrelated.txt";
+    const std::filesystem::path destination = directory / "export.wav";
+    const std::string unrelated_bytes = "unrelated";
+    { std::ofstream(unrelated, std::ios::binary) << unrelated_bytes; }
+    std::filesystem::create_symlink(unrelated, directory / "export.wav.partial");
+
+    core::BufferF source(1, 16);
+    thl::audio_io::AudioFileWriter writer;
+    EXPECT_TRUE(writer.write_to_file(destination.string(), source, 48000.0));
+
+    std::ifstream reader(unrelated, std::ios::binary);
+    const std::string remaining_bytes{std::istreambuf_iterator<char>(reader), {}};
+    reader.close();
+    const bool destination_is_regular_file =
+        std::filesystem::is_regular_file(std::filesystem::symlink_status(destination));
+    const auto entry_count = std::distance(std::filesystem::directory_iterator(directory),
+                                           std::filesystem::directory_iterator{});
+    std::filesystem::remove_all(directory);
+
+    EXPECT_EQ(remaining_bytes, unrelated_bytes);
+    EXPECT_TRUE(destination_is_regular_file);
+    EXPECT_EQ(entry_count, 3) << "a staging file was left behind";
+}
+
 TEST(AudioFileWriter, ReportsFailureWhenHeaderCannotBeWritten) {
     const std::filesystem::path test_file =
         std::filesystem::temp_directory_path() / "test_writer_size_limit.wav";

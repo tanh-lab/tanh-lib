@@ -2,12 +2,16 @@
 #include <tanh/core/AbiNamespace.h>
 
 #include <algorithm>
+#include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <limits>
+#include <optional>
+#include <random>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -21,14 +25,21 @@ namespace {
 
 constexpr size_t k_write_block_frames = 4096;
 constexpr uint64_t k_bytes_per_sample = sizeof(float);
+constexpr int k_max_staging_attempts = 16;
+
+// Highest rate the bundled WAV decoder accepts, so every written file can be read back.
+constexpr double k_max_sample_rate = ma_standard_sample_rate_max;
 
 // RIFF chunk size field = "WAVE" (4) + fmt chunk (8 + 16) + data chunk header (8) + data bytes.
 constexpr uint64_t k_riff_overhead_bytes = 36;
 constexpr uint64_t k_max_riff_chunk_bytes = std::numeric_limits<uint32_t>::max();
 
-bool is_valid_sample_rate(double sample_rate) {
-    return std::isfinite(sample_rate) && sample_rate >= 1.0 &&
-           sample_rate <= static_cast<double>(std::numeric_limits<ma_uint32>::max());
+std::optional<ma_uint32> to_supported_sample_rate(double sample_rate) {
+    if (!std::isfinite(sample_rate) || sample_rate < 1.0 ||
+        sample_rate >= k_max_sample_rate + 0.5) {
+        return std::nullopt;
+    }
+    return static_cast<ma_uint32>(std::llround(sample_rate));
 }
 
 bool fits_in_riff(size_t num_channels, size_t num_samples) {
@@ -37,27 +48,61 @@ bool fits_in_riff(size_t num_channels, size_t num_samples) {
     return static_cast<uint64_t>(num_samples) <= max_data_bytes / frame_bytes;
 }
 
-std::ofstream& stream_of(ma_encoder* encoder) {
-    return *static_cast<std::ofstream*>(encoder->pUserData);
+std::FILE* open_exclusive(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return _wfopen(path.c_str(), L"wbx");
+#else
+    return std::fopen(path.c_str(), "wbx");
+#endif
+}
+
+struct StagingFile {
+    std::filesystem::path m_path;
+    std::FILE* m_file = nullptr;
+};
+
+// Exclusive creation refuses existing paths, including symlinks, so a staging file is never
+// shared with another export or redirected elsewhere.
+std::optional<StagingFile> create_staging_file(const std::filesystem::path& destination) {
+    std::random_device entropy;
+    std::mt19937_64 generator((static_cast<uint64_t>(entropy()) << 32) | entropy());
+
+    for (int attempt = 0; attempt < k_max_staging_attempts; ++attempt) {
+        std::array<char, 32> suffix{};
+        std::snprintf(suffix.data(),
+                      suffix.size(),
+                      ".%016llx.partial",
+                      static_cast<unsigned long long>(generator()));
+        std::filesystem::path staging_path = destination;
+        staging_path += suffix.data();
+
+        errno = 0;
+        if (std::FILE* file = open_exclusive(staging_path)) {
+            return StagingFile{.m_path = std::move(staging_path), .m_file = file};
+        }
+        if (errno != EEXIST) { return std::nullopt; }
+    }
+    return std::nullopt;
+}
+
+std::FILE* file_of(ma_encoder* encoder) {
+    return static_cast<std::FILE*>(encoder->pUserData);
 }
 
 ma_result on_write(ma_encoder* encoder,
                    const void* data,
                    size_t bytes_to_write,
                    size_t* bytes_written) {
-    std::ofstream& stream = stream_of(encoder);
-    stream.write(static_cast<const char*>(data), static_cast<std::streamsize>(bytes_to_write));
-    *bytes_written = stream ? bytes_to_write : 0;
-    return stream ? MA_SUCCESS : MA_IO_ERROR;
+    *bytes_written = std::fwrite(data, 1, bytes_to_write, file_of(encoder));
+    return *bytes_written == bytes_to_write ? MA_SUCCESS : MA_IO_ERROR;
 }
 
 ma_result on_seek(ma_encoder* encoder, ma_int64 offset, ma_seek_origin origin) {
-    std::ofstream& stream = stream_of(encoder);
-    std::ios_base::seekdir direction = std::ios_base::beg;
-    if (origin == ma_seek_origin_current) { direction = std::ios_base::cur; }
-    if (origin == ma_seek_origin_end) { direction = std::ios_base::end; }
-    stream.seekp(static_cast<std::streamoff>(offset), direction);
-    return stream ? MA_SUCCESS : MA_IO_ERROR;
+    int whence = SEEK_SET;
+    if (origin == ma_seek_origin_current) { whence = SEEK_CUR; }
+    if (origin == ma_seek_origin_end) { whence = SEEK_END; }
+    return std::fseek(file_of(encoder), static_cast<long>(offset), whence) == 0 ? MA_SUCCESS
+                                                                                : MA_IO_ERROR;
 }
 
 bool write_interleaved_blocks(ma_encoder& encoder, const core::ConstBufferView& buffer) {
@@ -82,10 +127,10 @@ bool write_interleaved_blocks(ma_encoder& encoder, const core::ConstBufferView& 
     return true;
 }
 
-bool encode_to_stream(std::ofstream& stream,
-                      const core::ConstBufferView& buffer,
-                      ma_uint32 sample_rate,
-                      AudioEncodingFormat format) {
+bool encode_to_file(std::FILE* file,
+                    const core::ConstBufferView& buffer,
+                    ma_uint32 sample_rate,
+                    AudioEncodingFormat format) {
     const ma_encoder_config config =
         ma_encoder_config_init(to_miniaudio_format(format),
                                ma_format_f32,
@@ -93,14 +138,12 @@ bool encode_to_stream(std::ofstream& stream,
                                sample_rate);
 
     ma_encoder encoder{};
-    if (ma_encoder_init(on_write, on_seek, &stream, &config, &encoder) != MA_SUCCESS) {
-        return false;
-    }
+    if (ma_encoder_init(on_write, on_seek, file, &config, &encoder) != MA_SUCCESS) { return false; }
 
     const bool frames_written = write_interleaved_blocks(encoder, buffer);
-    // Finalises the header through on_write/on_seek; any failure leaves the stream failed.
+    // Finalises the header through on_write/on_seek, whose failures set the file's error flag.
     ma_encoder_uninit(&encoder);
-    return frames_written && stream.good();
+    return frames_written && std::ferror(file) == 0;
 }
 
 }  // namespace
@@ -112,24 +155,22 @@ bool AudioFileWriter::write_to_file(const std::string& file_path,
     const size_t num_channels = buffer.get_num_channels();
     if (format != AudioEncodingFormat::WAV) { return false; }
     if (num_channels == 0 || num_channels > MA_MAX_CHANNELS) { return false; }
-    if (!is_valid_sample_rate(sample_rate)) { return false; }
     if (!fits_in_riff(num_channels, buffer.get_num_samples())) { return false; }
 
-    const std::filesystem::path destination(file_path);
-    std::filesystem::path partial = destination;
-    partial += ".partial";
+    const std::optional<ma_uint32> supported_rate = to_supported_sample_rate(sample_rate);
+    if (!supported_rate) { return false; }
 
-    std::ofstream stream(partial, std::ios::binary | std::ios::trunc);
-    bool written =
-        stream.is_open() &&
-        encode_to_stream(stream, buffer, static_cast<ma_uint32>(std::llround(sample_rate)), format);
-    stream.close();
-    written = written && !stream.fail();
+    const std::filesystem::path destination(file_path);
+    std::optional<StagingFile> staging = create_staging_file(destination);
+    if (!staging) { return false; }
+
+    bool written = encode_to_file(staging->m_file, buffer, *supported_rate, format);
+    written = std::fclose(staging->m_file) == 0 && written;
 
     std::error_code error;
-    if (written) { std::filesystem::rename(partial, destination, error); }
+    if (written) { std::filesystem::rename(staging->m_path, destination, error); }
     if (!written || error) {
-        std::filesystem::remove(partial, error);
+        std::filesystem::remove(staging->m_path, error);
         return false;
     }
     return true;

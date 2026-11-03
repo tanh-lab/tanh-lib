@@ -26,13 +26,14 @@ public:
     /**
      * Write @p buffer to @p file_path as a 32-bit float RIFF WAV file.
      *
-     * The audio is first written to "<file_path>.partial" and renamed over @p file_path only once
-     * every write, seek and close has succeeded, so a failed export never alters an existing file.
+     * The audio is first written to a uniquely named, exclusively created staging file next to
+     * @p file_path and renamed over it only once every write, seek and close has succeeded, so a
+     * failed export never alters an existing file.
      *
      * Returns false without touching the file system when:
      * - @p format is not WAV (the bundled miniaudio encoder only supports WAV),
      * - the channel count is 0 or above MA_MAX_CHANNELS,
-     * - @p sample_rate is not finite or is outside [1, 2^32 - 1],
+     * - @p sample_rate does not round to [1, 384000] Hz, the range the bundled WAV decoder reads,
      * - the audio would exceed the 4 GiB RIFF size limit (about 23 minutes for 16 channels at
      *   48 kHz).
      *
