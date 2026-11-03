@@ -15,6 +15,7 @@
 #include "tanh/audio-io/AudioDeviceManager.h"
 #include "tanh/audio-io/AudioFileLoader.h"
 #include "tanh/audio-io/AudioFileSink.h"
+#include "tanh/audio-io/AudioFileWriter.h"
 #include "tanh/audio-io/AudioIODeviceCallback.h"
 #include "tanh/audio-io/AudioPlayerSource.h"
 #include "tanh/audio-io/DataSource.h"
@@ -644,6 +645,39 @@ TEST(AudioFileLoader, RoundTripRecordAndLoad) {
     }
 
     std::filesystem::remove(test_file);
+}
+
+TEST(AudioFileWriter, RoundTripTwoChannelWav) {
+    const std::filesystem::path test_file =
+        std::filesystem::temp_directory_path() / "test_writer_roundtrip.wav";
+
+    constexpr size_t k_frame_count = 5000;
+    constexpr size_t k_num_channels = 2;
+    constexpr double k_sample_rate = 48000.0;
+
+    core::BufferF source(k_num_channels, k_frame_count);
+    for (size_t ch = 0; ch < k_num_channels; ++ch) {
+        for (size_t f = 0; f < k_frame_count; ++f) {
+            source.set_sample(ch, f, std::sin(static_cast<float>(f * (ch + 1)) * 0.01f) * 0.5f);
+        }
+    }
+
+    thl::audio_io::AudioFileWriter writer;
+    ASSERT_TRUE(writer.write_to_file(test_file.string(), source, k_sample_rate));
+
+    thl::audio_io::AudioFileLoader loader;
+    auto loaded = loader.load_from_file(test_file.string());
+    std::filesystem::remove(test_file);
+
+    ASSERT_EQ(loaded.get_num_channels(), k_num_channels);
+    ASSERT_EQ(loaded.get_num_samples(), k_frame_count);
+    EXPECT_DOUBLE_EQ(loaded.get_sample_rate(), k_sample_rate);
+    for (size_t ch = 0; ch < k_num_channels; ++ch) {
+        for (size_t f = 0; f < k_frame_count; ++f) {
+            ASSERT_NEAR(loaded.get_sample(ch, f), source.get_sample(ch, f), 1e-6f)
+                << "ch=" << ch << " frame=" << f;
+        }
+    }
 }
 
 TEST(AudioFileLoader, RoundTripDataSource) {

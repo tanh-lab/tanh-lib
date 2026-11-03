@@ -439,6 +439,7 @@ if(TANH_BUILD_AUDIO_IO)
         src/audio-io/AudioDeviceManager.cpp
         src/audio-io/AudioFileLoader.cpp
         src/audio-io/AudioFileSink.cpp
+        src/audio-io/AudioFileWriter.cpp
         src/audio-io/AudioPlayerSource.cpp
         src/audio-io/DataSource.cpp
         src/audio-io/miniaudio_impl.cpp

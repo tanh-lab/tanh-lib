@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "MiniaudioFormat.h"
 #include "miniaudio.h"
 
 namespace thl::inline THL_ABI_NAMESPACE {
@@ -15,16 +16,6 @@ struct AudioFileSink::Impl {
     ma_encoder m_encoder{};
     uint32_t m_encoder_channels = 0;
 };
-
-namespace {
-ma_encoding_format to_miniaudio_format(AudioEncodingFormat format) {
-    switch (format) {
-        case AudioEncodingFormat::WAV: return ma_encoding_format_wav;
-        case AudioEncodingFormat::FLAC: return ma_encoding_format_flac;
-    }
-    return ma_encoding_format_wav;
-}
-}  // namespace
 
 AudioFileSink::AudioFileSink() : m_impl(std::make_unique<Impl>()) {}
 
