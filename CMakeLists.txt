@@ -223,6 +223,7 @@ if(TANH_BUILD_DSP)
 
     add_library(${PROJECT_NAME}_dsp
         src/dsp/BaseProcessor.cpp
+        src/dsp/analysis/AdaptivePeakPicker.cpp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/MorphWindow.cpp
@@ -439,6 +440,7 @@ if(TANH_BUILD_AUDIO_IO)
         src/audio-io/AudioDeviceManager.cpp
         src/audio-io/AudioFileLoader.cpp
         src/audio-io/AudioFileSink.cpp
+        src/audio-io/AudioFileWriter.cpp
         src/audio-io/AudioPlayerSource.cpp
         src/audio-io/DataSource.cpp
         src/audio-io/miniaudio_impl.cpp

@@ -4,6 +4,7 @@ project (${PROJECT_NAME} VERSION ${PROJECT_VERSION})
 add_executable(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
+	test_AdaptivePeakPicker.cpp
 	test_Limiter.cpp
 	test_LinearSmootherBank.cpp
 	test_MorphFilter.cpp
@@ -30,6 +31,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_DspHelpers.cpp
 	test_Compressor.cpp
 	test_LookaheadLimiter.cpp
+	test_Crossfade.cpp
 )
 
 if(TARGET tanh_resonator)
