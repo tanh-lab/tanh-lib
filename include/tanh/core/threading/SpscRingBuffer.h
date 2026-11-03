@@ -2,6 +2,7 @@
 #pragma once
 
 #include <tanh/core/AbiNamespace.h>
+#include <tanh/core/threading/CacheLine.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <bit>
 #include <cassert>
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -67,6 +69,11 @@ public:
     /// Allocates @p num_channels channels of at least @p capacity samples each and empties the
     /// ring. Not concurrent with any other call.
     void prepare(size_t num_channels, size_t capacity) {
+        assert(capacity <= (std::numeric_limits<size_t>::max() / 2) + 1 &&
+               "SpscRingBuffer::prepare(): capacity too large to round up to a power of two");
+        assert((num_channels == 0 || std::bit_ceil(std::max<size_t>(capacity, 1)) <=
+                                         std::numeric_limits<size_t>::max() / num_channels) &&
+               "SpscRingBuffer::prepare(): num_channels * capacity overflows");
         m_num_channels = num_channels;
         m_capacity = std::bit_ceil(std::max<size_t>(capacity, 1));
         m_mask = m_capacity - 1;
@@ -95,7 +102,9 @@ public:
         const size_t free = m_capacity - (write - m_read.load(std::memory_order_acquire));
         const size_t count = std::min(num_samples, free);
         if (count < num_samples) {
-            m_dropped.fetch_add(num_samples - count, std::memory_order_relaxed);
+            // The one writer is the only one to change it: no read-modify-write needed.
+            m_dropped.store(m_dropped.load(std::memory_order_relaxed) + (num_samples - count),
+                            std::memory_order_relaxed);
         }
         if (count == 0) { return 0; }
         const size_t start = write & m_mask;
@@ -128,15 +137,7 @@ public:
         const size_t read = m_read.load(std::memory_order_relaxed);
         const size_t count = std::min(num_samples, m_write.load(std::memory_order_acquire) - read);
         if (count == 0) { return 0; }
-        const size_t start = read & m_mask;
-        const size_t first = std::min(count, m_capacity - start);
-        const size_t channels_read = std::min(channels.size(), m_num_channels);
-        for (size_t ch = 0; ch < channels_read; ++ch) {
-            if (channels[ch] == nullptr) { continue; }
-            const T* ring = channel(ch);
-            std::copy_n(ring + start, first, channels[ch]);
-            std::copy_n(ring, count - first, channels[ch] + first);
-        }
+        copy_out(channels, read, count);
         m_read.store(read + count, std::memory_order_release);
         return count;
     }
@@ -154,9 +155,15 @@ public:
     /// consuming everything up to them: what an analyser that only shows the latest window
     /// wants. Returns the samples read.
     size_t read_latest(std::span<T* const> channels, size_t num_samples) TANH_NONBLOCKING_FUNCTION {
-        const size_t pending = available();
-        if (pending > num_samples) { skip(pending - num_samples); }
-        return read(channels, num_samples);
+        // One snapshot of the writer's position for the skip and the copy: samples arriving in
+        // between would otherwise make the window older than the newest at that snapshot.
+        const size_t write = m_write.load(std::memory_order_acquire);
+        const size_t read_position = m_read.load(std::memory_order_relaxed);
+        const size_t count = std::min(num_samples, write - read_position);
+        const size_t start = write - count;
+        copy_out(channels, start, count);
+        m_read.store(write, std::memory_order_release);
+        return count;
     }
 
     // ---- any thread ------------------------------------------------------------------------
@@ -167,7 +174,23 @@ public:
     }
 
 private:
-    static constexpr size_t k_cache_line = 64;
+    static constexpr size_t k_cache_line = k_cache_line_size;
+
+    /// Reader: positions [@p start, @p start + @p count) into @p channels (null ones skipped).
+    void copy_out(std::span<T* const> channels,
+                  size_t start,
+                  size_t count) const TANH_NONBLOCKING_FUNCTION {
+        if (count == 0) { return; }
+        const size_t offset = start & m_mask;
+        const size_t first = std::min(count, m_capacity - offset);
+        const size_t channels_read = std::min(channels.size(), m_num_channels);
+        for (size_t ch = 0; ch < channels_read; ++ch) {
+            if (channels[ch] == nullptr) { continue; }
+            const T* ring = channel(ch);
+            std::copy_n(ring + offset, first, channels[ch]);
+            std::copy_n(ring, count - first, channels[ch] + first);
+        }
+    }
 
     [[nodiscard]] T* channel(size_t ch) TANH_NONBLOCKING_FUNCTION {
         return m_samples.data() + (ch * m_capacity);
