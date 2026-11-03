@@ -22,7 +22,10 @@ struct RealFft::Impl {
         , m_setup(vDSP_create_fftsetup(m_log2_size, kFFTRadix2))
         , m_real(size / 2)
         , m_imag(size / 2) {}
-    ~Impl() { vDSP_destroy_fftsetup(m_setup); }
+    ~Impl() {
+        // Apple does not document destroying a null setup (create may have failed).
+        if (m_setup != nullptr) { vDSP_destroy_fftsetup(m_setup); }
+    }
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
     Impl(Impl&&) = delete;
@@ -36,22 +39,14 @@ struct RealFft::Impl {
     std::vector<float> m_imag;
 };
 
-RealFft::RealFft() = default;
-RealFft::~RealFft() = default;
-RealFft::RealFft(RealFft&&) noexcept = default;
-RealFft& RealFft::operator=(RealFft&&) noexcept = default;
+RealFft::Impl* RealFft::create_impl(size_t size) {
+    auto impl = std::make_unique<Impl>(size);
+    if (impl->m_setup == nullptr) { return nullptr; }
+    return impl.release();
+}
 
-bool RealFft::prepare(size_t size) {
-    m_impl.reset();
-    m_size = 0;
-    if (size < k_min_size || size > k_max_size || !std::has_single_bit(size)) { return false; }
-    m_impl = std::make_unique<Impl>(size);
-    if (m_impl->m_setup == nullptr) {
-        m_impl.reset();
-        return false;
-    }
-    m_size = size;
-    return true;
+void RealFft::ImplDeleter::operator()(Impl* impl) const {
+    delete impl;  // NOLINT(cppcoreguidelines-owning-memory): the unique_ptr's own deleter
 }
 
 void RealFft::forward(std::span<const float> time,

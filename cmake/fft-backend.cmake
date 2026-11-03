@@ -51,8 +51,8 @@ function(tanh_add_fft_backend target)
             POSITION_INDEPENDENT_CODE ON
             C_VISIBILITY_PRESET hidden
         )
-        # SSE comes with x86-64; NEON (and WebAssembly's SIMD128 through it) must be asked for,
-        # or pffft falls back to scalar code. PFFFT_STATIC_DEFINE: compiled in, so no
+        # SSE comes with x86-64; NEON (and WebAssembly's SIMD128 through it, given -msimd128)
+        # must be asked for, or pffft falls back to scalar code. PFFFT_STATIC_DEFINE: compiled in, so no
         # dllimport/dllexport on Windows.
         target_compile_definitions(${target}_pffft
             PRIVATE _USE_MATH_DEFINES PFFFT_ENABLE_NEON PFFFT_STATIC_DEFINE)

@@ -69,6 +69,8 @@ protected:
 
 private:
     void run_frame() TANH_NONBLOCKING_FUNCTION;
+    /// Back to unprepared, everything freed.
+    void clear();
 
     RealFft m_fft;
     size_t m_hop_size = 0;

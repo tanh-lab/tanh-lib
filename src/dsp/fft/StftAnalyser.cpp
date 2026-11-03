@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <numbers>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::fft {
@@ -41,21 +43,40 @@ std::vector<float> make_window(StftAnalyser::Window window, size_t size) {
 
 StftAnalyser::~StftAnalyser() = default;
 
-bool StftAnalyser::prepare(size_t fft_size, size_t hop_size, size_t num_channels, Window window) {
-    m_channels.clear();
+void StftAnalyser::clear() {
+    m_fft = RealFft();
     m_hop_size = 0;
     m_filled = 0;
-    // The FFT first, so a failure leaves nothing of an earlier prepare() behind.
-    const bool fft_ready = m_fft.prepare(fft_size);
-    if (!fft_ready || hop_size == 0 || hop_size > fft_size) {
-        m_fft = RealFft();
+    m_channels = {};
+    m_window = {};
+    m_frame = {};
+    m_bins = {};
+}
+
+bool StftAnalyser::prepare(size_t fft_size, size_t hop_size, size_t num_channels, Window window) {
+    // Checked before anything is allocated; a rejected prepare() leaves it unprepared.
+    if (!RealFft::is_valid_size(fft_size) || hop_size == 0 || hop_size > fft_size) {
+        clear();
         return false;
     }
+    // Built aside and taken over at the end: if an allocation throws, it stays as it was.
+    RealFft fft;
+    if (!fft.prepare(fft_size)) {
+        clear();
+        return false;
+    }
+    std::vector<std::vector<float>> channels(num_channels, std::vector<float>(fft_size, 0.0f));
+    std::vector<float> window_values = make_window(window, fft_size);
+    std::vector<float> frame(fft_size, 0.0f);
+    std::vector<std::complex<float>> bins(fft.num_bins());
+
+    m_fft = std::move(fft);
     m_hop_size = hop_size;
-    m_channels.assign(num_channels, std::vector<float>(fft_size, 0.0f));
-    m_window = make_window(window, fft_size);
-    m_frame.assign(fft_size, 0.0f);
-    m_bins.assign(m_fft.num_bins(), {});
+    m_filled = 0;
+    m_channels = std::move(channels);
+    m_window = std::move(window_values);
+    m_frame = std::move(frame);
+    m_bins = std::move(bins);
     return true;
 }
 

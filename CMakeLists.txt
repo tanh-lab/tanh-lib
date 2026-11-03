@@ -254,6 +254,7 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/StereoFDN.cpp
         src/dsp/fx/StereoWidener.cpp
 
+        src/dsp/fft/RealFft.cpp
         src/dsp/fft/StftAnalyser.cpp
 
         src/dsp/dynamics/Compressor.cpp

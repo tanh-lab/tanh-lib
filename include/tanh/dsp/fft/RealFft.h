@@ -38,8 +38,11 @@ public:
     RealFft(RealFft&&) noexcept;
     RealFft& operator=(RealFft&&) noexcept;
 
-    /// Sets up the transform of @p size samples (a power of two in [k_min_size, k_max_size]).
-    /// False, and unprepared, for any other size.
+    /// True for the sizes prepare() takes: powers of two in [k_min_size, k_max_size].
+    [[nodiscard]] static bool is_valid_size(size_t size);
+
+    /// Sets up the transform of @p size samples (is_valid_size()). False, and unprepared, for any
+    /// other size or if the backend cannot set it up.
     bool prepare(size_t size);
 
     /// The prepared size (0 before prepare()).
@@ -58,9 +61,15 @@ public:
     [[nodiscard]] static const char* backend_name();
 
 private:
-    struct Impl;  // the backend's setup and buffers
-    std::unique_ptr<Impl> m_impl;
-    size_t m_size = 0;
+    struct Impl;  // the backend's setup and buffers (src/dsp/fft/RealFft<Backend>.cpp)
+    struct ImplDeleter {
+        void operator()(Impl* impl) const;  // defined by the backend, where Impl is complete
+    };
+    /// The backend's setup for @p size (is_valid_size()), or nullptr if it cannot be made.
+    static Impl* create_impl(size_t size);
+
+    std::unique_ptr<Impl, ImplDeleter> m_impl;
+    size_t m_size = 0;  // 0 whenever m_impl is null: also after a move
 };
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fft

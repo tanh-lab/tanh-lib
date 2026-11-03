@@ -5,7 +5,6 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
-#include <bit>
 #include <cassert>
 #include <complex>
 #include <cstddef>
@@ -48,24 +47,18 @@ struct RealFft::Impl {
     AlignedFloats m_work;
 };
 
-RealFft::RealFft() = default;
-RealFft::~RealFft() = default;
-RealFft::RealFft(RealFft&&) noexcept = default;
-RealFft& RealFft::operator=(RealFft&&) noexcept = default;
-
-bool RealFft::prepare(size_t size) {
-    m_impl.reset();
-    m_size = 0;
-    if (size < k_min_size || size > k_max_size || !std::has_single_bit(size)) { return false; }
-    m_impl = std::make_unique<Impl>(size);
+RealFft::Impl* RealFft::create_impl(size_t size) {
+    auto impl = std::make_unique<Impl>(size);
     // pffft's setup and its aligned buffers each may fail; forward() and inverse() need all.
-    if (m_impl->m_setup == nullptr || m_impl->m_input.m_data == nullptr ||
-        m_impl->m_output.m_data == nullptr || m_impl->m_work.m_data == nullptr) {
-        m_impl.reset();
-        return false;
+    if (impl->m_setup == nullptr || impl->m_input.m_data == nullptr ||
+        impl->m_output.m_data == nullptr || impl->m_work.m_data == nullptr) {
+        return nullptr;
     }
-    m_size = size;
-    return true;
+    return impl.release();
+}
+
+void RealFft::ImplDeleter::operator()(Impl* impl) const {
+    delete impl;  // NOLINT(cppcoreguidelines-owning-memory): the unique_ptr's own deleter
 }
 
 void RealFft::forward(std::span<const float> time,
