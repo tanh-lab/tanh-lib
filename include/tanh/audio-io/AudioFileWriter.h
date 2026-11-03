@@ -24,9 +24,19 @@ public:
     ~AudioFileWriter() = default;
 
     /**
-     * Write @p buffer to @p file_path, replacing any existing file.
+     * Write @p buffer to @p file_path as a 32-bit float RIFF WAV file.
      *
-     * @return true on success, false if the file could not be created or written.
+     * The audio is first written to "<file_path>.partial" and renamed over @p file_path only once
+     * every write, seek and close has succeeded, so a failed export never alters an existing file.
+     *
+     * Returns false without touching the file system when:
+     * - @p format is not WAV (the bundled miniaudio encoder only supports WAV),
+     * - the channel count is 0 or above MA_MAX_CHANNELS,
+     * - @p sample_rate is not finite or is outside [1, 2^32 - 1],
+     * - the audio would exceed the 4 GiB RIFF size limit (about 23 minutes for 16 channels at
+     *   48 kHz).
+     *
+     * @return true on success, false otherwise.
      */
     bool write_to_file(const std::string& file_path,
                        core::ConstBufferView buffer,

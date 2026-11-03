@@ -5,11 +5,19 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <limits>
+#include <string>
 #include <thread>
 #include <vector>
+
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 
 #include "tanh/audio-io/AudioDeviceInfo.h"
 #include "tanh/audio-io/AudioDeviceManager.h"
@@ -679,6 +687,75 @@ TEST(AudioFileWriter, RoundTripTwoChannelWav) {
         }
     }
 }
+
+TEST(AudioFileWriter, FailedExportKeepsExistingFile) {
+    const std::filesystem::path test_file =
+        std::filesystem::temp_directory_path() / "test_writer_keeps_existing.flac";
+    const std::string original_bytes = "original";
+    { std::ofstream(test_file, std::ios::binary) << original_bytes; }
+
+    core::BufferF source(2, 16);
+    thl::audio_io::AudioFileWriter writer;
+    EXPECT_FALSE(
+        writer.write_to_file(test_file.string(), source, 48000.0, AudioEncodingFormat::FLAC));
+
+    std::ifstream reader(test_file, std::ios::binary);
+    const std::string remaining_bytes{std::istreambuf_iterator<char>(reader), {}};
+    reader.close();
+    std::filesystem::remove(test_file);
+    EXPECT_EQ(remaining_bytes, original_bytes);
+}
+
+TEST(AudioFileWriter, RejectsUnrepresentableInputsWithoutCreatingFile) {
+    const std::filesystem::path test_file =
+        std::filesystem::temp_directory_path() / "test_writer_rejects.wav";
+    std::filesystem::remove(test_file);
+
+    core::BufferF source(2, 16);
+    thl::audio_io::AudioFileWriter writer;
+    for (const double sample_rate : {0.0,
+                                     std::numeric_limits<double>::quiet_NaN(),
+                                     std::numeric_limits<double>::infinity(),
+                                     5.0e9}) {
+        EXPECT_FALSE(writer.write_to_file(test_file.string(), source, sample_rate))
+            << "sample_rate=" << sample_rate;
+    }
+
+    constexpr size_t k_num_channels = 16;
+    constexpr size_t k_frames_over_riff_limit = 48000 * 60 * 24;
+    std::array<const float*, k_num_channels> channels{};
+    channels.fill(source.get_read_pointer(0));
+    const core::ConstBufferView too_long(channels.data(), k_num_channels, k_frames_over_riff_limit);
+    EXPECT_FALSE(writer.write_to_file(test_file.string(), too_long, 48000.0));
+
+    EXPECT_FALSE(std::filesystem::exists(test_file));
+}
+
+#ifndef _WIN32
+TEST(AudioFileWriter, ReportsFailureWhenHeaderCannotBeWritten) {
+    const std::filesystem::path test_file =
+        std::filesystem::temp_directory_path() / "test_writer_size_limit.wav";
+    std::filesystem::remove(test_file);
+
+    core::BufferF source(1, 1);
+    thl::audio_io::AudioFileWriter writer;
+
+    rlimit original_limit{};
+    ASSERT_EQ(getrlimit(RLIMIT_FSIZE, &original_limit), 0);
+    rlimit tiny_limit = original_limit;
+    tiny_limit.rlim_cur = 32;
+    const auto previous_handler = std::signal(SIGXFSZ, SIG_IGN);
+    ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &tiny_limit), 0);
+
+    const bool written = writer.write_to_file(test_file.string(), source, 48000.0);
+
+    setrlimit(RLIMIT_FSIZE, &original_limit);
+    std::signal(SIGXFSZ, previous_handler);
+
+    EXPECT_FALSE(written);
+    EXPECT_FALSE(std::filesystem::exists(test_file));
+}
+#endif
 
 TEST(AudioFileLoader, RoundTripDataSource) {
     std::filesystem::path temp_dir = std::filesystem::temp_directory_path();

@@ -6,7 +6,9 @@ namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @enum AudioEncodingFormat
- * @brief Supported audio file encoding formats.
+ * @brief Audio file encoding formats.
+ *
+ * The bundled miniaudio encoder only writes WAV; requesting FLAC fails.
  */
 enum class AudioEncodingFormat { WAV, FLAC };
 
