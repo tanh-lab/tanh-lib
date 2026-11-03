@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::analysis::SpectrumAnalyser`: the curve of a spectrum analyser display, on top of
+  `StftAnalyser`, for a reader thread. Resolution (FFT 1024 to 8192, 75 % overlap), points spaced
+  on a log axis (256 from 20 Hz to 20 kHz by default), channels averaged in power; without
+  smoothing a point is its band's largest bin (a sine keeps its level), with fractional-octave
+  smoothing its band's mean power; tilt in dB per octave around 1 kHz (4.5 by default), speed
+  (rises at once, falls at most so many dB per second), freeze (holds the maximum), floor.
+  `read_from(SampleProbe&)` drains a probe and starts the frames over after a discontinuity.
+  A full-scale sine reads 0 dB at tilt 0. Tests: `SpectrumAnalyser.*`.
 - `thl::graph::Graph::add_probe<Probe>(node, ProbePoint, args...)` / `remove_probe(ProbeId)` /
   `probe(ProbeId)`: a probe watches a node's input (its sources mixed) or output (after its
   processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with the latency
