@@ -24,6 +24,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_Probes.cpp
 	test_RealFft.cpp
 	test_StftAnalyser.cpp
+	test_SpectrumAnalyser.cpp
 	test_GainComputer.cpp
 	test_LevelDetector.cpp
 	test_GainSmoother.cpp
