@@ -2,6 +2,8 @@
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
+#include <tanh/dsp/probe/LevelProbe.h>
+#include <tanh/dsp/probe/SampleProbe.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/MultibandLimiter.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
@@ -2023,4 +2025,271 @@ TEST(Graph, ABlendOfANodeThatShiftsThePhaseUsesItsPhaseMatchedDrySignal) {
     // signal that is the plain input would leave (input + all-pass) / 2, which combs.
     for (size_t n = 0; n < wet.size(); ++n) { ASSERT_NEAR(half[n], wet[n], 1e-5f) << n; }
     EXPECT_GT(std::abs(wet[0] - 1.0f), 0.01f);  // the all-pass really is not the input
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Probes
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+using thl::dsp::probe::LevelProbe;
+using thl::dsp::probe::SampleProbe;
+
+/// graph_input() -> gain 2 -> graph_output(), prepared.
+struct DoublingGraph {
+    Graph m_graph;
+    NodeId m_gain{};
+
+    DoublingGraph() {
+        m_gain = *m_graph.add_node(std::make_unique<GainProcessor>(2.0f));
+        m_graph.connect(m_graph.graph_input(), m_gain);
+        m_graph.connect(m_gain, m_graph.graph_output());
+        prepare(m_graph);
+    }
+
+    LevelProbe& level(NodeId id, Graph::ProbePoint point) {
+        return *m_graph.add_probe<LevelProbe>(id, point).value().second;
+    }
+};
+
+}  // namespace
+
+TEST(GraphProbes, WatchTheInputAndOutputOfNodesAndOfTheGraph) {
+    DoublingGraph g;
+    LevelProbe& graph_in = g.level(g.m_graph.graph_input(), Graph::ProbePoint::Output);
+    LevelProbe& gain_in = g.level(g.m_gain, Graph::ProbePoint::Input);
+    LevelProbe& gain_out = g.level(g.m_gain, Graph::ProbePoint::Output);
+    LevelProbe& graph_out = g.level(g.m_graph.graph_output(), Graph::ProbePoint::Input);
+    EXPECT_EQ(gain_out.num_channels(), k_channels);  // prepared when added
+    process_blocks(g.m_graph, 0.25f, 4);
+    EXPECT_FLOAT_EQ(graph_in.peak(0), 0.25f);
+    EXPECT_FLOAT_EQ(gain_in.peak(1), 0.25f);
+    EXPECT_FLOAT_EQ(gain_out.peak(0), 0.5f);
+    EXPECT_FLOAT_EQ(graph_out.peak(1), 0.5f);
+}
+
+TEST(GraphProbes, SeveralProbesAtOnePointAndAddRejectsWhatCannotBeWatched) {
+    DoublingGraph g;
+    const auto add = [&](NodeId id, Graph::ProbePoint point) {
+        return g.m_graph.add_probe<LevelProbe>(id, point).has_value();
+    };
+    EXPECT_FALSE(add(g.m_graph.graph_input(), Graph::ProbePoint::Input));
+    EXPECT_FALSE(add(g.m_graph.graph_output(), Graph::ProbePoint::Output));
+    EXPECT_FALSE(add(NodeId{999}, Graph::ProbePoint::Output));
+    EXPECT_FALSE(g.m_graph.add_probe(g.m_gain, Graph::ProbePoint::Output, nullptr));
+    for (size_t i = 0; i < Graph::k_max_probes_per_point; ++i) {
+        EXPECT_TRUE(add(g.m_gain, Graph::ProbePoint::Output));
+    }
+    EXPECT_FALSE(add(g.m_gain, Graph::ProbePoint::Output));  // full
+    EXPECT_TRUE(add(g.m_gain, Graph::ProbePoint::Input));    // the other point is not
+}
+
+TEST(GraphProbes, ProbeLooksUpByIdAndTheGraphTakesOverAProbeMadeElsewhere) {
+    DoublingGraph g;
+    auto made = std::make_unique<LevelProbe>();
+    LevelProbe* const pointer = made.get();
+    const auto id = g.m_graph.add_probe(g.m_gain, Graph::ProbePoint::Output, std::move(made));
+    ASSERT_TRUE(id);
+    EXPECT_EQ(g.m_graph.probe(*id), pointer);
+    EXPECT_EQ(g.m_graph.probe(ProbeId{12345}), nullptr);
+    process_blocks(g.m_graph, 0.25f, 1);
+    EXPECT_FLOAT_EQ(pointer->peak(0), 0.5f);
+}
+
+TEST(GraphProbes, LatencyIsThatOfThePointAndAProbeAddsNone) {
+    Graph graph;
+    const NodeId latent = *graph.add_node(std::make_unique<LatencyProcessor>(k_latency));
+    graph.connect(graph.graph_input(), latent);
+    graph.connect(latent, graph.graph_output());
+    prepare(graph);
+    LevelProbe& in = *graph.add_probe<LevelProbe>(latent, Graph::ProbePoint::Input)->second;
+    LevelProbe& out = *graph.add_probe<LevelProbe>(latent, Graph::ProbePoint::Output)->second;
+    process_blocks(graph, 0.5f, 2);
+    EXPECT_EQ(in.latency_samples(), 0u);
+    EXPECT_EQ(out.latency_samples(), k_latency);
+    EXPECT_EQ(graph.latency_samples(), k_latency);  // unchanged by the probes
+}
+
+TEST(GraphProbes, AProbeAddedBeforePrepareIsPreparedWithTheGraph) {
+    Graph graph;
+    graph.connect(graph.graph_input(), graph.graph_output());
+    LevelProbe& probe =
+        *graph.add_probe<LevelProbe>(graph.graph_input(), Graph::ProbePoint::Output)->second;
+    EXPECT_EQ(probe.num_channels(), 0u);
+    prepare(graph);
+    EXPECT_EQ(probe.num_channels(), k_channels);
+    process_blocks(graph, 0.3f, 1);
+    EXPECT_FLOAT_EQ(probe.peak(0), 0.3f);
+}
+
+TEST(GraphProbes, RemoveProbeAndRemoveNodeDeleteTheProbes) {
+    DoublingGraph g;
+    const auto [kept_id, kept] =
+        *g.m_graph.add_probe<LevelProbe>(g.m_graph.graph_input(), Graph::ProbePoint::Output);
+    const auto first = g.m_graph.add_probe<LevelProbe>(g.m_gain, Graph::ProbePoint::Input);
+    const auto second = g.m_graph.add_probe<LevelProbe>(g.m_gain, Graph::ProbePoint::Output);
+    ASSERT_TRUE(first && second);
+    process_blocks(g.m_graph, 0.25f, 1);
+    EXPECT_TRUE(g.m_graph.remove_probe(first->first));
+    EXPECT_FALSE(g.m_graph.remove_probe(first->first));
+    EXPECT_EQ(g.m_graph.probe(first->first), nullptr);
+    ASSERT_TRUE(g.m_graph.remove_node(g.m_gain));  // its probes go with it
+    EXPECT_EQ(g.m_graph.probe(second->first), nullptr);
+    EXPECT_FALSE(g.m_graph.remove_probe(second->first));
+    EXPECT_EQ(g.m_graph.probe(kept_id), kept);  // another node's probe stays
+    process_blocks(g.m_graph, 0.25f, 4);
+}
+
+TEST(GraphProbes, ResetStartsTheProbesOver) {
+    DoublingGraph g;
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_gain, Graph::ProbePoint::Output)->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    g.m_graph.reset();
+    process_blocks(g.m_graph, 0.25f, 1);
+    std::array<float, 4 * k_block> a{};
+    const std::array<float*, 1> out{a.data()};
+    const SampleProbe::ReadResult result = probe.read(out, a.size());
+    EXPECT_TRUE(result.m_discontinuity);
+    EXPECT_EQ(result.m_read, k_block);  // only what came after the reset
+}
+
+TEST(GraphProbes, ANewVersionStartsTheProbesOver) {
+    // A node disconnected and connected again did not run in between: its probe must not join
+    // the samples from before across that gap.
+    DoublingGraph g;
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_gain, Graph::ProbePoint::Output)->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    std::array<float, 64 * k_block> a{};
+    const std::array<float*, 1> out{a.data()};
+    ASSERT_FALSE(probe.read(out, a.size()).m_discontinuity);
+    g.m_graph.disconnect(g.m_graph.graph_input(), g.m_gain);
+    g.m_graph.commit();
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+    g.m_graph.connect(g.m_graph.graph_input(), g.m_gain);
+    g.m_graph.commit();
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+    EXPECT_TRUE(probe.read(out, a.size()).m_discontinuity);
+}
+
+TEST(GraphProbes, ProbesComeAndGoWhileTheAudioThreadRuns) {
+    // A control thread adds probes, lets the audio thread use them and removes them (which
+    // deletes them) while the audio thread processes: remove_probe() must not delete a probe the
+    // audio thread can still touch (ASan and TSan watch). Errors are counted, not asserted, so
+    // a failure still stops and joins the audio thread; every wait has a timeout.
+    constexpr int k_rounds = 1000;
+    DoublingGraph g;
+    std::atomic<bool> done{false};
+    std::atomic<size_t> blocks{0};
+    std::thread audio([&] {
+        auto buffer = make_buffer(0.25f);
+        while (!done.load(std::memory_order_acquire)) {
+            for (size_t ch = 0; ch < k_channels; ++ch) {  // the gain works in place: refill
+                std::fill_n(buffer.get_write_pointer(ch), k_block, 0.25f);
+            }
+            g.m_graph.process(buffer);
+            blocks.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    size_t failed = 0;
+    size_t seen = 0;
+    for (int round = 0; round < k_rounds && failed == 0; ++round) {
+        const auto added =
+            g.m_graph.add_probe<LevelProbe>(round % 2 == 0 ? g.m_gain : g.m_graph.graph_output(),
+                                            Graph::ProbePoint::Input);
+        if (!added) {
+            ++failed;
+            break;
+        }
+        // Two blocks later the audio thread has processed a whole block with the probe, and it
+        // keeps running while the probe is removed.
+        const size_t start = blocks.load(std::memory_order_relaxed);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (blocks.load(std::memory_order_relaxed) < start + 2 &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::yield();
+        }
+        if (added->second->peak(0) > 0.0f) { ++seen; }
+        if (!g.m_graph.remove_probe(added->first)) { ++failed; }
+    }
+    done.store(true, std::memory_order_release);
+    audio.join();
+    EXPECT_EQ(failed, 0u);
+    EXPECT_EQ(seen, static_cast<size_t>(k_rounds));  // every probe really saw blocks
+}
+
+namespace {
+
+/// Reads everything a SampleProbe holds (one channel); whether it began with a discontinuity.
+struct Drained {
+    std::vector<float> m_samples;
+    bool m_discontinuity = false;
+};
+Drained drain(SampleProbe& probe) {
+    Drained drained;
+    std::array<float, k_block> a{};
+    const std::array<float*, 1> out{a.data()};
+    for (;;) {
+        const SampleProbe::ReadResult result = probe.read(out, a.size());
+        drained.m_discontinuity = drained.m_discontinuity || result.m_discontinuity;
+        if (result.m_read == 0) { break; }
+        drained.m_samples.insert(drained.m_samples.end(), a.begin(), a.begin() + result.m_read);
+    }
+    return drained;
+}
+
+/// An edit that needs a commit (a node nobody hears) and the commit, faded through.
+void commit_an_edit(DoublingGraph& g) {
+    (void)g.m_graph.add_node(std::make_unique<GainProcessor>(1.0f));
+    ASSERT_TRUE(g.m_graph.commit());
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+}
+
+}  // namespace
+
+TEST(GraphProbes, ACommitDoesNotRestartTheInputsProbes) {
+    // What process() is given has no gap at a commit: only what the graph makes fades.
+    DoublingGraph g;
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_graph.graph_input(), Graph::ProbePoint::Output)
+             ->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    (void)drain(probe);
+    commit_an_edit(g);
+    EXPECT_FALSE(drain(probe).m_discontinuity);
+}
+
+TEST(GraphProbes, TheOutputsProbesStartOverWithTheNewVersionOnly) {
+    // The block that ends the old version's fade-out must not follow the restart: after it, the
+    // output probe sees the new version fading in, never the old one fading out.
+    DoublingGraph g;
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_graph.graph_output(), Graph::ProbePoint::Input)
+             ->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    (void)drain(probe);
+    commit_an_edit(g);
+    const Drained drained = drain(probe);
+    ASSERT_TRUE(drained.m_discontinuity);
+    ASSERT_FALSE(drained.m_samples.empty());
+    for (size_t i = 1; i < drained.m_samples.size(); ++i) {
+        ASSERT_GE(drained.m_samples[i], drained.m_samples[i - 1] - 1e-6f) << i;  // fading in only
+    }
+}
+
+TEST(GraphProbes, AProbeOnADisconnectedNodeStartsOverInsteadOfFreezing) {
+    DoublingGraph g;
+    LevelProbe& probe =
+        *g.m_graph.add_probe<LevelProbe>(g.m_gain, Graph::ProbePoint::Output)->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    ASSERT_FLOAT_EQ(probe.peak(0), 0.5f);
+    g.m_graph.disconnect(g.m_graph.graph_input(), g.m_gain);
+    g.m_graph.disconnect(g.m_gain, g.m_graph.graph_output());
+    ASSERT_TRUE(g.m_graph.commit());
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+    // The node no longer runs: its probe holds nothing of before, not its last level.
+    EXPECT_EQ(probe.peak(0), 0.0f);
+    EXPECT_EQ(probe.rms(0), 0.0f);
 }

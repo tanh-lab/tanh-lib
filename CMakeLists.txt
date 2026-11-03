@@ -254,6 +254,9 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/StereoFDN.cpp
         src/dsp/fx/StereoWidener.cpp
 
+        src/dsp/fft/RealFft.cpp
+        src/dsp/fft/StftAnalyser.cpp
+
         src/dsp/dynamics/Compressor.cpp
         src/dsp/dynamics/LookaheadLimiter.cpp
 
@@ -285,6 +288,10 @@ if(TANH_BUILD_DSP)
         # Set TANH_DSP_ENABLED to enable DSP features
         -DTANH_DSP_ENABLED
     )
+
+    # The FFT behind thl::dsp::fft::RealFft (TANH_FFT_BACKEND: pffft or accelerate).
+    include(cmake/fft-backend.cmake)
+    tanh_add_fft_backend(${PROJECT_NAME}_dsp)
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_dsp)
 endif()

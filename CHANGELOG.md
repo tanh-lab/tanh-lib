@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::graph::Graph::add_probe<Probe>(node, ProbePoint, args...)` / `remove_probe(ProbeId)` /
+  `probe(ProbeId)`: a probe watches a node's input (its sources mixed) or output (after its
+  processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with the latency
+  of that point; it never changes the signal or the graph's latency. Live: no commit, no fade.
+  The graph owns its probes (so one probe can never watch two places): it prepares them when
+  added and with every `prepare()`, resets them with `reset()`; when a newly committed version
+  starts, the probes of its nodes, of the nodes that stopped running and of `graph_output()`
+  start over (`graph_input()`'s see a continuous signal and go on), and `remove_probe()` / `remove_node()` delete them once the audio thread no longer
+  uses them (at most the block in progress). The returned pointer is for reading. Up to
+  `k_max_probes_per_point` per point. Tests: `GraphProbes.*`, including probes added, used and
+  removed while the audio thread runs.
 - `thl::dsp::probe`: probes watch a signal without changing it. `ProbeBase` gets every block
   read-only through `process(block, latency_samples)` (skipped while inactive,
   `set_active()`); it is not a `BaseProcessor` and never a graph node. `LevelProbe`: peak per
@@ -26,6 +37,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (`read_latest()`), or skips. Capacity rounded up to a power of two; real-time safe on both
   sides (two atomic positions, no locks, no allocation after `prepare()`). Tests:
   `SpscRingBuffer.*`, including one writer and one reader side by side.
+- `thl::dsp::fft::StftAnalyser`: the analysis half of a short-time Fourier transform. `push()`
+  takes samples in chunks of any size; every hop, once an FFT size has arrived, each channel's
+  newest frame is windowed (Hann, or 4-term Blackman-Harris for -92 dB sidelobes), transformed
+  (`RealFft`) and handed to the virtual `process_spectrum(channel, bins)`, scaled so a sine of
+  amplitude A reads A at its bin (0 dB for full scale). `reset()` drops what was collected, so no
+  frame spans a discontinuity. Allocation-free after `prepare()`. Tests: `StftAnalyser.*`.
+- `thl::dsp::fft::RealFft`: the FFT of a real signal of a power-of-two size (32 to 65536),
+  unscaled forward (as `numpy.fft.rfft`: N / 2 + 1 bins, a sine of amplitude A reads
+  A · N / 2), inverse scaled by 1 / N, real-time safe after `prepare()`. The backend is a
+  build option, `TANH_FFT_BACKEND` (`cmake/fft-backend.cmake`): `pffft` (default, every
+  platform; marton78/pffft v1.1.0 compiled in, BSD-like FFTPACK licence, NEON/SSE) or
+  `accelerate` (macOS, iOS: Apple's vDSP). Both give the same bins. Tests: `RealFft.*`
+  (against the DFT by its definition, round trip, Parseval), run on either backend.
 - `thl::dsp::utils` helpers, real-time safe: `Decibels.h` (`db_to_gain()`, `gain_to_db()`,
   `power_to_db()`, float or double, floored at `k_min_db` = -120 dB or a given floor),
   `TimeConstant.h` (`ms_to_samples()`, `one_pole_pole()`: exp(-1 / samples), 0 for no time)
@@ -65,6 +89,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
+  `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
+  Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`
+  grows by up to 3 · 64 bytes. `SpscRingBuffer::read_latest()` takes its window from one snapshot
+  of the writer's position.
 - `thl::dsp::utils::BandSplitter` reads crossover parameters itself: the virtual
   `get_crossover_parameter_float()` (non-finite by default: the crossover keeps what
   `set_frequency()` gave it) and `read_crossover_parameters()`, which `MultibandLimiterImpl`
