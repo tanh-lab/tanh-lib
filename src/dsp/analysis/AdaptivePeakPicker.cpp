@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/analysis/AdaptivePeakPicker.h>
 
 #include <algorithm>
@@ -6,11 +7,10 @@
 #include <limits>
 #include <stdexcept>
 
-namespace thl::dsp::analysis {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::analysis {
 namespace {
 
-std::vector<double> trailing_mean(std::span<const double> values,
-                                  std::size_t history_frames) {
+std::vector<double> trailing_mean(std::span<const double> values, std::size_t history_frames) {
     std::vector<double> cumulative_sum(values.size() + 1, 0.0);
     for (std::size_t index = 0; index < values.size(); ++index) {
         cumulative_sum[index + 1] = cumulative_sum[index] + values[index];
@@ -58,24 +58,20 @@ AdaptivePeakPickResult adaptive_peak_pick(std::span<const double> values,
 
     AdaptivePeakPickResult result;
     result.threshold = trailing_mean(values, threshold_history_frames);
-    for (auto& value : result.threshold) {
-        value += threshold_delta;
-    }
+    for (auto& value : result.threshold) { value += threshold_delta; }
 
     for (std::size_t index = 0; index < values.size(); ++index) {
         const auto history_start =
             index > local_max_history_frames ? index - local_max_history_frames : 0;
         const auto available_lookahead = values.size() - index - 1;
-        const auto included_lookahead =
-            std::min(available_lookahead, lookahead_frames);
+        const auto included_lookahead = std::min(available_lookahead, lookahead_frames);
         const auto lookahead_end = index + included_lookahead + 1;
         const auto local_maximum =
             *std::max_element(values.begin() + static_cast<std::ptrdiff_t>(history_start),
                               values.begin() + static_cast<std::ptrdiff_t>(lookahead_end));
         const bool is_eligible = eligible.empty() || eligible[index] != 0;
-        const bool has_spacing =
-            result.peak_indices.empty() ||
-            index - result.peak_indices.back() >= minimum_spacing_frames;
+        const bool has_spacing = result.peak_indices.empty() ||
+                                 index - result.peak_indices.back() >= minimum_spacing_frames;
 
         if (values[index] == local_maximum && values[index] >= result.threshold[index] &&
             is_eligible && has_spacing) {
@@ -86,4 +82,4 @@ AdaptivePeakPickResult adaptive_peak_pick(std::span<const double> values,
     return result;
 }
 
-}  // namespace thl::dsp::analysis
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::analysis

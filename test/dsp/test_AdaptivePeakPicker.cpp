@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include <tanh/dsp/analysis/AdaptivePeakPicker.h>
 
 #include <array>
@@ -67,13 +66,8 @@ TEST(AdaptivePeakPicker, FirstThresholdIsInfinite) {
 TEST(AdaptivePeakPicker, HandlesLookaheadAtMaximumSize) {
     const std::array values{0.0, 0.8};
 
-    const auto result = adaptive_peak_pick(
-        values,
-        1,
-        1,
-        0.0,
-        1,
-        std::numeric_limits<std::size_t>::max());
+    const auto result =
+        adaptive_peak_pick(values, 1, 1, 0.0, 1, std::numeric_limits<std::size_t>::max());
 
     EXPECT_EQ(result.peak_indices, (std::vector<std::size_t>{1}));
 }
