@@ -14,8 +14,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with the latency
   of that point; it never changes the signal or the graph's latency. Live: no commit, no fade.
   The graph owns its probes (so one probe can never watch two places): it prepares them when
-  added and with every `prepare()`, resets them with `reset()` and when a newly committed version
-  starts, and `remove_probe()` / `remove_node()` delete them once the audio thread no longer
+  added and with every `prepare()`, resets them with `reset()`; when a newly committed version
+  starts, the probes of its nodes, of the nodes that stopped running and of `graph_output()`
+  start over (`graph_input()`'s see a continuous signal and go on), and `remove_probe()` / `remove_node()` delete them once the audio thread no longer
   uses them (at most the block in progress). The returned pointer is for reading. Up to
   `k_max_probes_per_point` per point. Tests: `GraphProbes.*`, including probes added, used and
   removed while the audio thread runs.
@@ -88,6 +89,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
+  `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
+  Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`
+  grows by up to 3 · 64 bytes. `SpscRingBuffer::read_latest()` takes its window from one snapshot
+  of the writer's position.
 - `thl::dsp::utils::BandSplitter` reads crossover parameters itself: the virtual
   `get_crossover_parameter_float()` (non-finite by default: the crossover keeps what
   `set_frequency()` gave it) and `read_crossover_parameters()`, which `MultibandLimiterImpl`

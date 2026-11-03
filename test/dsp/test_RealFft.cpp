@@ -132,13 +132,14 @@ TEST(RealFft, AMovedFromTransformIsUnprepared) {
     ASSERT_TRUE(a.prepare(1024));
     RealFft b = std::move(a);
     EXPECT_EQ(b.size(), 1024u);
-    EXPECT_EQ(a.size(), 0u);  // NOLINT(bugprone-use-after-move): what is left behind is the test
+    EXPECT_EQ(a.size(), 0u);  // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move): what
+                              // is left behind is the test
     EXPECT_EQ(a.num_bins(), 0u);
     RealFft c;
     ASSERT_TRUE(c.prepare(64));
     c = std::move(b);
     EXPECT_EQ(c.size(), 1024u);
-    EXPECT_EQ(b.size(), 0u);  // NOLINT(bugprone-use-after-move)
+    EXPECT_EQ(b.size(), 0u);  // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
     // The one moved to still transforms.
     std::vector<float> x(1024, 0.25f);
     std::vector<std::complex<float>> bins(c.num_bins());

@@ -295,6 +295,8 @@ private:
     /// Audio thread: resets the probes of graph_input(), graph_output() and every node of the
     /// running version.
     void reset_all_probes() TANH_NONBLOCKING_FUNCTION;
+    /// Audio thread: resets the probes of every node of @p compiled.
+    static void reset_step_probes(const CompiledGraph& compiled) TANH_NONBLOCKING_FUNCTION;
     /// Control thread: clears probe @p id's slot (without waiting) and hands the probe back.
     std::unique_ptr<thl::dsp::probe::ProbeBase> detach_probe(ProbeId id);
     /// Control thread: returns once a process() or reset() in progress has ended.
@@ -347,6 +349,7 @@ private:
 
     // ─── Audio thread ────────────────────────
     CompiledGraph* m_active = nullptr;
+    bool m_restart_probes = false;  // a version switched: its probes start over next block
     thl::dsp::utils::SmoothedValue m_fade;
     size_t m_fade_samples = 0;
     bool m_fading_out = false;

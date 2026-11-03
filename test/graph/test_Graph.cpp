@@ -2219,3 +2219,77 @@ TEST(GraphProbes, ProbesComeAndGoWhileTheAudioThreadRuns) {
     EXPECT_EQ(failed, 0u);
     EXPECT_EQ(seen, static_cast<size_t>(k_rounds));  // every probe really saw blocks
 }
+
+namespace {
+
+/// Reads everything a SampleProbe holds (one channel); whether it began with a discontinuity.
+struct Drained {
+    std::vector<float> m_samples;
+    bool m_discontinuity = false;
+};
+Drained drain(SampleProbe& probe) {
+    Drained drained;
+    std::array<float, k_block> a{};
+    const std::array<float*, 1> out{a.data()};
+    for (;;) {
+        const SampleProbe::ReadResult result = probe.read(out, a.size());
+        drained.m_discontinuity = drained.m_discontinuity || result.m_discontinuity;
+        if (result.m_read == 0) { break; }
+        drained.m_samples.insert(drained.m_samples.end(), a.begin(), a.begin() + result.m_read);
+    }
+    return drained;
+}
+
+/// An edit that needs a commit (a node nobody hears) and the commit, faded through.
+void commit_an_edit(DoublingGraph& g) {
+    (void)g.m_graph.add_node(std::make_unique<GainProcessor>(1.0f));
+    ASSERT_TRUE(g.m_graph.commit());
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+}
+
+}  // namespace
+
+TEST(GraphProbes, ACommitDoesNotRestartTheInputsProbes) {
+    // What process() is given has no gap at a commit: only what the graph makes fades.
+    DoublingGraph g;
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_graph.graph_input(), Graph::ProbePoint::Output)
+             ->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    (void)drain(probe);
+    commit_an_edit(g);
+    EXPECT_FALSE(drain(probe).m_discontinuity);
+}
+
+TEST(GraphProbes, TheOutputsProbesStartOverWithTheNewVersionOnly) {
+    // The block that ends the old version's fade-out must not follow the restart: after it, the
+    // output probe sees the new version fading in, never the old one fading out.
+    DoublingGraph g;
+    SampleProbe& probe =
+        *g.m_graph.add_probe<SampleProbe>(g.m_graph.graph_output(), Graph::ProbePoint::Input)
+             ->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    (void)drain(probe);
+    commit_an_edit(g);
+    const Drained drained = drain(probe);
+    ASSERT_TRUE(drained.m_discontinuity);
+    ASSERT_FALSE(drained.m_samples.empty());
+    for (size_t i = 1; i < drained.m_samples.size(); ++i) {
+        ASSERT_GE(drained.m_samples[i], drained.m_samples[i - 1] - 1e-6f) << i;  // fading in only
+    }
+}
+
+TEST(GraphProbes, AProbeOnADisconnectedNodeStartsOverInsteadOfFreezing) {
+    DoublingGraph g;
+    LevelProbe& probe =
+        *g.m_graph.add_probe<LevelProbe>(g.m_gain, Graph::ProbePoint::Output)->second;
+    process_blocks(g.m_graph, 0.25f, 2);
+    ASSERT_FLOAT_EQ(probe.peak(0), 0.5f);
+    g.m_graph.disconnect(g.m_graph.graph_input(), g.m_gain);
+    g.m_graph.disconnect(g.m_gain, g.m_graph.graph_output());
+    ASSERT_TRUE(g.m_graph.commit());
+    process_blocks(g.m_graph, 0.25f, k_fade_blocks);
+    // The node no longer runs: its probe holds nothing of before, not its last level.
+    EXPECT_EQ(probe.peak(0), 0.0f);
+    EXPECT_EQ(probe.rms(0), 0.0f);
+}

@@ -321,6 +321,7 @@ void Graph::prepare(const double& sample_rate,
     rebuild();
 
     if (switch_to_pending()) { set_latency_samples(apply_latencies(*m_active)); }
+    m_restart_probes = false;  // nothing ran yet: the probes were just prepared, no gap to mark
     m_fade.reset(m_sample_rate, k_fade_seconds);
     m_fade.set_current_and_target_value(1.0f);
     m_fade_samples = static_cast<size_t>(k_fade_seconds * m_sample_rate) + 1;
@@ -604,12 +605,17 @@ void Graph::free_all_compiled() {
 bool Graph::switch_to_pending() {
     if (m_pending.load(std::memory_order_acquire) == nullptr) { return false; }
 
+    // The running version's probes start over now, before it is handed back (the control thread
+    // may free it then): a node that no longer runs keeps nothing of before.
+    if (m_active != nullptr) { reset_step_probes(*m_active); }
     // If the control thread has not emptied m_returned yet, switch at a later block instead.
     if (m_active != nullptr && !m_returned.try_push(m_active)) { return false; }
     m_active = m_pending.exchange(nullptr, std::memory_order_acq_rel);
-    // A new version starts after a fade and a silence (or a node comes back that did not run):
-    // its probes start over instead of joining across the gap.
-    reset_all_probes();
+    // The new version starts after a fade and a silence (or a node comes back that did not run):
+    // its probes and the output's start over at the next block, after the output's probes got
+    // this one, the old version's last. What process() is given has no gap: graph_input()'s
+    // probes go on.
+    m_restart_probes = true;
     return true;
 }
 
@@ -713,18 +719,20 @@ std::optional<ProbeId> Graph::add_probe(NodeId id,
     Node::Probes& probes = it->second->m_probes[index_of(point)];
     for (size_t slot = 0; slot < k_max_probes_per_point; ++slot) {
         if (probes.m_slots[slot].load(std::memory_order_relaxed) != nullptr) { continue; }
-        // Ready before the audio thread can see it.
+        // Ready, and owned by the graph, before the audio thread can see it: if the entry cannot
+        // be added, the probe goes without ever having been published.
         if (m_max_block_size > 0) {
             probe->prepare(m_sample_rate, m_max_block_size, m_num_channels);
         }
-        probes.m_slots[slot].store(probe.get(), std::memory_order_seq_cst);
-        probes.m_count.fetch_add(1, std::memory_order_seq_cst);
         const ProbeId probe_id{m_next_probe_id++};
+        thl::dsp::probe::ProbeBase* const published = probe.get();
         m_probes.emplace(probe_id,
                          ProbeEntry{.m_node = id,
                                     .m_point = point,
                                     .m_slot = slot,
                                     .m_probe = std::move(probe)});
+        probes.m_slots[slot].store(published, std::memory_order_seq_cst);
+        probes.m_count.fetch_add(1, std::memory_order_seq_cst);
         return probe_id;
     }
     return std::nullopt;
@@ -774,28 +782,39 @@ void Graph::run_probes(Node& node,
                        const thl::core::BufferView& block,
                        uint32_t latency_samples) {
     const Node::Probes& probes = node.m_probes[index_of(point)];
-    if (probes.m_count.load(std::memory_order_relaxed) == 0) { return; }
+    const uint32_t count = probes.m_count.load(std::memory_order_relaxed);
+    uint32_t found = 0;
     for (const auto& slot : probes.m_slots) {
+        if (found == count) { break; }  // the rest are empty
         thl::dsp::probe::ProbeBase* probe = slot.load(std::memory_order_seq_cst);
-        if (probe != nullptr) { probe->process(block, latency_samples); }
+        if (probe == nullptr) { continue; }
+        ++found;
+        probe->process(block, latency_samples);
     }
 }
 
 void Graph::reset_probes(Node& node) {
     for (const Node::Probes& probes : node.m_probes) {
-        if (probes.m_count.load(std::memory_order_relaxed) == 0) { continue; }
+        const uint32_t count = probes.m_count.load(std::memory_order_relaxed);
+        uint32_t found = 0;
         for (const auto& slot : probes.m_slots) {
+            if (found == count) { break; }
             thl::dsp::probe::ProbeBase* probe = slot.load(std::memory_order_seq_cst);
-            if (probe != nullptr) { probe->reset(); }
+            if (probe == nullptr) { continue; }
+            ++found;
+            probe->reset();
         }
     }
+}
+
+void Graph::reset_step_probes(const CompiledGraph& compiled) {
+    for (const ProcessingStep& step : compiled.m_steps) { reset_probes(*step.m_node); }
 }
 
 void Graph::reset_all_probes() {
     reset_probes(*m_input_node);
     reset_probes(*m_output_node);
-    if (m_active == nullptr) { return; }
-    for (const ProcessingStep& step : m_active->m_steps) { reset_probes(*step.m_node); }
+    if (m_active != nullptr) { reset_step_probes(*m_active); }
 }
 
 void Graph::mix_sources(const CompiledGraph& compiled,
@@ -950,6 +969,11 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     }
 
     set_latency_samples(apply_latencies(*compiled));
+    if (m_restart_probes) {  // a version switch at the end of the last block
+        m_restart_probes = false;
+        reset_probes(*m_output_node);
+        reset_step_probes(*compiled);
+    }
     run_probes(*m_input_node, ProbePoint::Output, buffer, 0);
 
     if (compiled->m_input_buffer) {
