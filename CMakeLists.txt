@@ -256,6 +256,7 @@ if(TANH_BUILD_DSP)
 
         src/dsp/fft/RealFft.cpp
         src/dsp/fft/StftAnalyser.cpp
+        src/dsp/analysis/SpectrumAnalyser.cpp
 
         src/dsp/dynamics/Compressor.cpp
         src/dsp/dynamics/LookaheadLimiter.cpp
