@@ -16,6 +16,7 @@
 #include <vector>
 
 #ifndef _WIN32
+#include <stdlib.h>
 #include <sys/resource.h>
 #endif
 
@@ -748,11 +749,30 @@ TEST(AudioFileWriter, HighestSupportedSampleRateReadsBack) {
 }
 
 #ifndef _WIN32
-TEST(AudioFileWriter, DoesNotFollowSymlinkAtStagingPath) {
-    const std::filesystem::path directory =
-        std::filesystem::temp_directory_path() / "test_writer_staging_symlink";
+std::filesystem::path make_unique_temp_directory() {
+    std::string pattern = (std::filesystem::temp_directory_path() / "tanh_writer_XXXXXX").string();
+    if (mkdtemp(pattern.data()) == nullptr) { return {}; }
+    return pattern;
+}
+
+TEST(AudioFileWriter, AcceptsDestinationNameNearFilesystemLimit) {
+    const std::filesystem::path directory = make_unique_temp_directory();
+    ASSERT_FALSE(directory.empty());
+    const std::filesystem::path destination = directory / (std::string(240, 'a') + ".wav");
+
+    core::BufferF source(1, 16);
+    thl::audio_io::AudioFileWriter writer;
+    const bool written = writer.write_to_file(destination.string(), source, 48000.0);
+    const bool exists = std::filesystem::exists(destination);
     std::filesystem::remove_all(directory);
-    std::filesystem::create_directory(directory);
+
+    EXPECT_TRUE(written);
+    EXPECT_TRUE(exists);
+}
+
+TEST(AudioFileWriter, DoesNotFollowSymlinkAtStagingPath) {
+    const std::filesystem::path directory = make_unique_temp_directory();
+    ASSERT_FALSE(directory.empty());
     const std::filesystem::path unrelated = directory / "unrelated.txt";
     const std::filesystem::path destination = directory / "export.wav";
     const std::string unrelated_bytes = "unrelated";

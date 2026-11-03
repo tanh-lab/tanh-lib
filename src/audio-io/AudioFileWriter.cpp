@@ -62,47 +62,59 @@ struct StagingFile {
 };
 
 // Exclusive creation refuses existing paths, including symlinks, so a staging file is never
-// shared with another export or redirected elsewhere.
+// shared with another export or redirected elsewhere. The basename is short and independent of
+// the destination's, so any destination name that fits the filesystem also leaves room for it.
 std::optional<StagingFile> create_staging_file(const std::filesystem::path& destination) {
     std::random_device entropy;
     std::mt19937_64 generator((static_cast<uint64_t>(entropy()) << 32) | entropy());
 
     for (int attempt = 0; attempt < k_max_staging_attempts; ++attempt) {
-        std::array<char, 32> suffix{};
-        std::snprintf(suffix.data(),
-                      suffix.size(),
-                      ".%016llx.partial",
+        std::array<char, 32> basename{};
+        std::snprintf(basename.data(),
+                      basename.size(),
+                      ".tanh-%016llx.partial",
                       static_cast<unsigned long long>(generator()));
-        std::filesystem::path staging_path = destination;
-        staging_path += suffix.data();
+        const std::filesystem::path staging_path = destination.parent_path() / basename.data();
 
         errno = 0;
         if (std::FILE* file = open_exclusive(staging_path)) {
-            return StagingFile{.m_path = std::move(staging_path), .m_file = file};
+            return StagingFile{.m_path = staging_path, .m_file = file};
         }
         if (errno != EEXIST) { return std::nullopt; }
     }
     return std::nullopt;
 }
 
-std::FILE* file_of(ma_encoder* encoder) {
-    return static_cast<std::FILE*>(encoder->pUserData);
+// miniaudio ignores the results of the header writes and seeks it makes while finalising, so
+// every I/O failure is recorded here and checked before the file is published.
+struct EncoderTarget {
+    std::FILE* m_file = nullptr;
+    bool m_io_failed = false;
+};
+
+EncoderTarget& target_of(ma_encoder* encoder) {
+    return *static_cast<EncoderTarget*>(encoder->pUserData);
 }
 
 ma_result on_write(ma_encoder* encoder,
                    const void* data,
                    size_t bytes_to_write,
                    size_t* bytes_written) {
-    *bytes_written = std::fwrite(data, 1, bytes_to_write, file_of(encoder));
-    return *bytes_written == bytes_to_write ? MA_SUCCESS : MA_IO_ERROR;
+    EncoderTarget& target = target_of(encoder);
+    *bytes_written = std::fwrite(data, 1, bytes_to_write, target.m_file);
+    if (*bytes_written == bytes_to_write) { return MA_SUCCESS; }
+    target.m_io_failed = true;
+    return MA_IO_ERROR;
 }
 
 ma_result on_seek(ma_encoder* encoder, ma_int64 offset, ma_seek_origin origin) {
+    EncoderTarget& target = target_of(encoder);
     int whence = SEEK_SET;
     if (origin == ma_seek_origin_current) { whence = SEEK_CUR; }
     if (origin == ma_seek_origin_end) { whence = SEEK_END; }
-    return std::fseek(file_of(encoder), static_cast<long>(offset), whence) == 0 ? MA_SUCCESS
-                                                                                : MA_IO_ERROR;
+    if (std::fseek(target.m_file, static_cast<long>(offset), whence) == 0) { return MA_SUCCESS; }
+    target.m_io_failed = true;
+    return MA_IO_ERROR;
 }
 
 bool write_interleaved_blocks(ma_encoder& encoder, const core::ConstBufferView& buffer) {
@@ -137,13 +149,15 @@ bool encode_to_file(std::FILE* file,
                                static_cast<ma_uint32>(buffer.get_num_channels()),
                                sample_rate);
 
+    EncoderTarget target{.m_file = file};
     ma_encoder encoder{};
-    if (ma_encoder_init(on_write, on_seek, file, &config, &encoder) != MA_SUCCESS) { return false; }
+    if (ma_encoder_init(on_write, on_seek, &target, &config, &encoder) != MA_SUCCESS) {
+        return false;
+    }
 
     const bool frames_written = write_interleaved_blocks(encoder, buffer);
-    // Finalises the header through on_write/on_seek, whose failures set the file's error flag.
     ma_encoder_uninit(&encoder);
-    return frames_written && std::ferror(file) == 0;
+    return frames_written && !target.m_io_failed && std::ferror(file) == 0;
 }
 
 }  // namespace
