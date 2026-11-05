@@ -239,6 +239,7 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/PitchShifter.cpp
         src/dsp/utils/BandSplitter.cpp
         src/dsp/utils/MultibandLimiter.cpp
+        src/dsp/utils/Mixer.cpp
 
         src/dsp/filter/EqDesign.cpp
         src/dsp/filter/ParametricEq.cpp
