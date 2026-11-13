@@ -1,9 +1,11 @@
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
+#include <tanh/core/BufferOperations.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/probe/Probe.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
+#include <tanh/dsp/utils/Mixer.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/graph/Graph.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -30,24 +32,27 @@
 namespace thl::inline THL_ABI_NAMESPACE::graph {
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Node: what the graph keeps per node. graph_input() and graph_output() have no
-// processor.
+// Node: what the graph keeps per node, across versions. graph_input() and
+// graph_output() have no processor.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Graph::Node {
     static constexpr double k_ramp_seconds = 0.02;
 
     std::unique_ptr<thl::dsp::BaseProcessor> m_processor;
+
+    // Live settings: written on the control thread, read by the audio thread every block.
     std::atomic<InputMix> m_input_mix{InputMix::Sum};
-    thl::dsp::utils::SmoothedValue m_input_mix_smoother;
     std::atomic<float> m_wet_mix{1.0f};
-    thl::dsp::utils::SmoothedValue m_wet_mix_smoother;
     std::atomic<MixLaw> m_mix_law{MixLaw::Linear};
-    // Audio thread: a change of law crossfades from the old law's gains to the new one's.
-    MixLaw m_running_law = MixLaw::Linear;
-    MixLaw m_previous_law = MixLaw::Linear;
-    thl::dsp::utils::SmoothedValue m_law_fade;  // 0: m_previous_law, 1: m_running_law
-    std::unique_ptr<thl::dsp::utils::DelayProcessor> m_dry_delay;
+
+    // Sized by compile() for the latest version. A replaced one is retired, not deleted: a version
+    // still running uses it through its own pointer (ProcessingStep, Inputs).
+    std::unique_ptr<thl::dsp::utils::Mixer> m_input_mixer;         // one input per source
+    std::unique_ptr<thl::dsp::utils::DelayProcessor> m_dry_delay;  // the processor's max latency
+
+    // Audio thread: input 0 dry, input 1 wet. Never replaced, so a glide carries over commits.
+    thl::dsp::utils::Mixer m_output_mixer;
 
     // Probes watching the node, per ProbePoint: set on the control thread, read by the audio
     // thread (seq_cst against Graph::m_audio_epoch, see remove_probe()).
@@ -65,17 +70,38 @@ struct Graph::Node {
 
 struct Graph::Source {
     BufferIndex m_buffer = 0;
-    thl::dsp::utils::DelayProcessor m_delay;
+    thl::dsp::utils::DelayProcessor m_delay;  // to the slowest source of the node
+    thl::core::Buffer<float> m_delayed;       // allocated only if m_delay can delay
 };
 
+/// A node's sources, each delayed to the slowest, mixed by the node's input Mixer.
+struct Graph::Inputs {
+    std::vector<Source> m_sources;
+    std::vector<thl::core::ConstBufferView> m_views;  // one per source, filled every block
+    thl::dsp::utils::Mixer* m_mixer = nullptr;        // the one this version was compiled with
+
+    /// Audio thread: mixes the sources (from @p buffers) into @p destination, summed or averaged.
+    void mix(std::span<thl::core::Buffer<float>> buffers,
+             InputMix input_mix,
+             const thl::core::BufferView& destination) TANH_NONBLOCKING_FUNCTION;
+};
+
+/// One node as this version runs it.
 struct Graph::ProcessingStep {
     Node* m_node = nullptr;
-    std::vector<Source> m_sources;
+    Inputs m_inputs;
     BufferIndex m_buffer = 0;
+    // The dry delay this version was compiled with.
     thl::dsp::utils::DelayProcessor* m_dry_delay = nullptr;
     uint32_t m_max_latency = 0;    // the node's max_latency_samples() when compiled: what the
                                    // delays were sized for
     uint32_t m_input_latency = 0;  // set by apply_latencies(): the sources' path latency
+
+    /// Audio thread: runs the processor on @p buffer (its mixed inputs) and blends the result with
+    /// its dry signal by the node's wet mix and mix law. @p dry is scratch.
+    void process(const thl::core::BufferView& buffer,
+                 const thl::core::BufferView& dry,
+                 uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 };
 
 struct Graph::CompiledGraph {
@@ -85,9 +111,9 @@ struct Graph::CompiledGraph {
     std::vector<uint32_t> m_path_latencies;  // per buffer, set by apply_latencies()
     uint32_t m_max_latency = 0;              // of the output
     uint32_t m_expected_latency = 0;  // of the output, with the nodes' latencies when compiled
-    thl::core::Buffer<float> m_dry;   // scratch for steps that blend dry and processed
+    thl::core::Buffer<float> m_dry;   // scratch for a step's dry signal
     std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
-    std::vector<Source> m_output_sources;
+    Inputs m_output_inputs;
     Node* m_output_node = nullptr;
     size_t m_num_channels = 0;
     size_t m_max_block_size = 0;
@@ -97,35 +123,60 @@ struct Graph::CompiledGraph {
 // Mix laws
 // ─────────────────────────────────────────────────────────────────────────────
 
-Graph::MixGains Graph::mix_gains(MixLaw law, float wet_mix) {
-    const double m = std::clamp(static_cast<double>(wet_mix), 0.0, 1.0);
-    // Exact at the ends, so a fully dry or fully wet node takes the fast paths.
-    if (m <= 0.0) { return {.m_dry = 1.0f, .m_wet = 0.0f}; }
-    if (m >= 1.0 && law != MixLaw::Parallel) { return {.m_dry = 0.0f, .m_wet = 1.0f}; }
+namespace {
+
+using thl::dsp::utils::Mixer;
+
+/// The input Mixer's mode for @p input_mix: Average normalises the weights (all 1) to 1/N.
+Mixer::Mode input_mode(Graph::InputMix input_mix) {
+    return input_mix == Graph::InputMix::Average ? Mixer::Mode::Mix : Mixer::Mode::Sum;
+}
+
+/// Sets @p mixer (input 0 dry, input 1 wet) to @p law at @p wet_mix (clamped to [0, 1]); it glides
+/// there. Every law but Parallel normalises its gains (Mix) at the p its curve keeps, so a glide
+/// stays on the curve; Parallel's curve is a straight line, so its gains glide as they are (Sum).
+void apply_mix_law(Mixer& mixer, Graph::MixLaw law, float wet_mix) TANH_NONBLOCKING_FUNCTION {
+    const float m = std::clamp(wet_mix, 0.0f, 1.0f);
     const double quarter = 0.5 * std::numbers::pi * m;
-    double dry = 1.0;
-    double wet = 0.0;
+    Mixer::Mode mode = Mixer::Mode::Mix;
+    float dry = 1.0f - m;
+    float wet = m;
     switch (law) {
-        case MixLaw::Linear: {  // in float, so the gains add up to exactly 1
-            const auto w = static_cast<float>(m);
-            return {.m_dry = 1.0f - w, .m_wet = w};
-        }
-        case MixLaw::ConstantPower:
-            dry = std::cos(quarter);
-            wet = std::sin(quarter);
+        case Graph::MixLaw::Linear: mixer.set_p(Mixer::k_amplitude); break;
+        case Graph::MixLaw::ConstantPower:
+            mixer.set_p(Mixer::k_power);
+            dry = static_cast<float>(std::cos(quarter));
+            wet = static_cast<float>(std::sin(quarter));
             break;
-        case MixLaw::Compromise:  // the geometric mean of the two above: -4.5 dB at 0.5
-            dry = std::sqrt((1.0 - m) * std::cos(quarter));
-            wet = std::sqrt(m * std::sin(quarter));
+        case Graph::MixLaw::Compromise:  // the geometric mean of the two above: -4.5 dB at 0.5
+            mixer.set_p(Mixer::k_compromise);
+            dry = static_cast<float>(std::sqrt((1.0 - m) * std::cos(quarter)));
+            wet = static_cast<float>(std::sqrt(m * std::sin(quarter)));
             break;
-        case MixLaw::Parallel: wet = m; break;
-        case MixLaw::DryHeld:
-            dry = std::min(1.0, 2.0 * (1.0 - m));
-            wet = std::min(1.0, 2.0 * m);
+        case Graph::MixLaw::Parallel:
+            mode = Mixer::Mode::Sum;
+            dry = 1.0f;
+            break;
+        case Graph::MixLaw::DryHeld:  // one of the two is always 1: the peak norm keeps them
+            mixer.set_p(Mixer::k_peak);
+            dry = std::min(1.0f, 2.0f * (1.0f - m));
+            wet = std::min(1.0f, 2.0f * m);
             break;
     }
-    return {.m_dry = static_cast<float>(dry), .m_wet = static_cast<float>(wet)};
+    // Exact at the ends (cos(pi/2) is not exactly 0), so a fully dry or fully wet node takes the
+    // fast paths.
+    if (m == 0.0f) {
+        dry = 1.0f;
+        wet = 0.0f;
+    } else if (m == 1.0f && law != Graph::MixLaw::Parallel) {
+        dry = 0.0f;
+        wet = 1.0f;
+    }
+    mixer.set_mode(mode);
+    mixer.set_weights(std::array{dry, wet});
 }
+
+}  // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Construction
@@ -336,18 +387,18 @@ void Graph::prepare_node(Node& node, bool prepare_processor) const {
     if (node.m_dry_delay) {
         node.m_dry_delay->prepare(m_sample_rate, m_max_block_size, m_num_channels);
     }
-    // Start at the current values instead of ramping to them.
-    const bool average = node.m_input_mix.load(std::memory_order_relaxed) == InputMix::Average;
-    node.m_input_mix_smoother.reset(m_sample_rate, Node::k_ramp_seconds);
-    node.m_input_mix_smoother.set_current_and_target_value(average ? 1.0f : 0.0f);
-
-    node.m_wet_mix_smoother.reset(m_sample_rate, Node::k_ramp_seconds);
-    node.m_wet_mix_smoother.set_current_and_target_value(
-        node.m_wet_mix.load(std::memory_order_relaxed));
-    node.m_running_law = node.m_mix_law.load(std::memory_order_relaxed);
-    node.m_previous_law = node.m_running_law;
-    node.m_law_fade.reset(m_sample_rate, Node::k_ramp_seconds);
-    node.m_law_fade.set_current_and_target_value(1.0f);
+    // Start at the current settings instead of gliding to them.
+    if (node.m_input_mixer) {
+        Mixer& input_mixer = *node.m_input_mixer;
+        input_mixer.prepare(m_sample_rate, input_mixer.num_inputs(), Node::k_ramp_seconds);
+        input_mixer.set_mode(input_mode(node.m_input_mix.load(std::memory_order_relaxed)));
+        input_mixer.reset();
+    }
+    node.m_output_mixer.prepare(m_sample_rate, 2, Node::k_ramp_seconds);
+    apply_mix_law(node.m_output_mixer,
+                  node.m_mix_law.load(std::memory_order_relaxed),
+                  node.m_wet_mix.load(std::memory_order_relaxed));
+    node.m_output_mixer.reset();
 }
 
 void Graph::prepare_delays(std::span<Source> sources,
@@ -362,7 +413,31 @@ void Graph::prepare_delays(std::span<Source> sources,
         }
         source.m_delay.set_max_delay_samples(max_delay);
         source.m_delay.prepare(m_sample_rate, m_max_block_size, m_num_channels);
+        if (max_delay > 0) {
+            source.m_delayed = thl::core::Buffer<float>(m_num_channels, m_max_block_size);
+        }
     }
+}
+
+Graph::Inputs Graph::make_inputs(Node& node, std::vector<Source> sources) {
+    const size_t num_sources = sources.size();
+    const bool keep_mixer = node.m_input_mixer && node.m_input_mixer->num_inputs() == num_sources;
+    if (!keep_mixer) {
+        if (node.m_input_mixer) {
+            m_retired_mixers.push_back({.m_mixer = std::move(node.m_input_mixer),
+                                        .m_last_generation = m_next_generation - 1});
+        }
+        node.m_input_mixer = std::make_unique<Mixer>();
+        // Before prepare() there is no sample rate; prepare() compiles again.
+        if (m_max_block_size > 0) {
+            node.m_input_mixer->prepare(m_sample_rate, num_sources, Node::k_ramp_seconds);
+        }
+        node.m_input_mixer->set_mode(input_mode(node.m_input_mix.load(std::memory_order_relaxed)));
+        node.m_input_mixer->reset();
+    }
+    return {.m_sources = std::move(sources),
+            .m_views = std::vector<thl::core::ConstBufferView>(num_sources),
+            .m_mixer = node.m_input_mixer.get()};
 }
 
 bool Graph::max_latencies_changed() const {
@@ -443,7 +518,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
         prepare_delays(sources, max_path_latencies);
 
         if (id == k_output_id) {
-            compiled->m_output_sources = std::move(sources);
+            compiled->m_output_inputs = make_inputs(node, std::move(sources));
             compiled->m_output_node = &node;
             compiled->m_max_latency = max_path_latency;
             compiled->m_expected_latency = expected_path_latency;
@@ -488,7 +563,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
             node.m_dry_delay->prepare(m_sample_rate, m_max_block_size, m_num_channels);
         }
         compiled->m_steps.push_back({.m_node = &node,
-                                     .m_sources = std::move(sources),
+                                     .m_inputs = make_inputs(node, std::move(sources)),
                                      .m_buffer = index,
                                      .m_dry_delay = node.m_dry_delay.get(),
                                      .m_max_latency = max});
@@ -583,6 +658,9 @@ void Graph::collect_own_garbage() {
     std::erase_if(m_retired_delays, [oldest_live](const RetiredDelay& retired) {
         return retired.m_last_generation < oldest_live;
     });
+    std::erase_if(m_retired_mixers, [oldest_live](const RetiredMixer& retired) {
+        return retired.m_last_generation < oldest_live;
+    });
 }
 
 void Graph::free_all_compiled() {
@@ -596,6 +674,7 @@ void Graph::free_all_compiled() {
     m_live_generations.clear();
     m_retired_nodes.clear();
     m_retired_delays.clear();
+    m_retired_mixers.clear();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -641,10 +720,10 @@ uint32_t Graph::apply_latencies(CompiledGraph& compiled) {
         const uint32_t latency =
             std::min(step.m_node->m_processor->latency_samples(), step.m_max_latency);
         step.m_dry_delay->set_delay_samples(latency);
-        step.m_input_latency = align(step.m_sources);
+        step.m_input_latency = align(step.m_inputs.m_sources);
         path_latencies[step.m_buffer] = step.m_input_latency + latency;
     }
-    return align(compiled.m_output_sources);
+    return align(compiled.m_output_inputs.m_sources);
 }
 
 void Graph::apply_fade(thl::core::BufferView buffer) {
@@ -817,128 +896,61 @@ void Graph::reset_all_probes() {
     if (m_active != nullptr) { reset_step_probes(*m_active); }
 }
 
-void Graph::mix_sources(const CompiledGraph& compiled,
-                        std::span<Source> sources,
-                        Node& node,
-                        thl::core::BufferView destination,
-                        thl::core::BufferView dry) {
-    const size_t n = destination.get_num_samples();
-    auto& smoother = node.m_input_mix_smoother;
-    const bool average = node.m_input_mix.load(std::memory_order_relaxed) == InputMix::Average;
-    const float target = average ? 1.0f : 0.0f;
-    smoother.set_target_value(target);
-
-    if (sources.empty()) {
-        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
-            std::fill_n(destination.get_write_pointer(ch), n, 0.0f);
+void Graph::Inputs::mix(std::span<thl::core::Buffer<float>> buffers,
+                        InputMix input_mix,
+                        const thl::core::BufferView& destination) {
+    const size_t num_channels = destination.get_num_channels();
+    const size_t num_samples = destination.get_num_samples();
+    for (size_t s = 0; s < m_sources.size(); ++s) {
+        Source& source = m_sources[s];
+        const thl::core::ConstBufferView buffer(
+            buffers[source.m_buffer].get_array_of_read_pointers(),
+            num_channels,
+            num_samples);
+        if (source.m_delay.max_delay_samples() == 0) {
+            m_views[s] = buffer;
+            continue;
         }
-        smoother.get_smoothed_value(n);
-        return;
+        const thl::core::BufferView delayed(source.m_delayed.get_array_of_write_pointers(),
+                                            num_channels,
+                                            num_samples);
+        thl::core::BufferOperations::copy(delayed, buffer);
+        source.m_delay.process(delayed);
+        m_views[s] = delayed;
     }
-
-    for (size_t s = 0; s < sources.size(); ++s) {
-        Source& source = sources[s];
-        const auto& buffer = compiled.m_buffers[source.m_buffer];
-        const bool delayed = source.m_delay.max_delay_samples() > 0;
-        if (delayed) {
-            for (size_t ch = 0; ch < dry.get_num_channels(); ++ch) {
-                std::copy_n(buffer.get_read_pointer(ch), n, dry.get_write_pointer(ch));
-            }
-            source.m_delay.process(dry);
-        }
-
-        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
-            const float* in = delayed ? dry.get_read_pointer(ch) : buffer.get_read_pointer(ch);
-            float* out = destination.get_write_pointer(ch);
-            if (s == 0) {
-                std::copy_n(in, n, out);
-            } else {
-                for (size_t i = 0; i < n; ++i) { out[i] += in[i]; }
-            }
-        }
-    }
-
-    const float average_scale = 1.0f / static_cast<float>(sources.size());
-    if (smoother.get_smoothed_value(0) == target) {
-        if (!average) { return; }
-        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
-            float* out = destination.get_write_pointer(ch);
-            for (size_t i = 0; i < n; ++i) { out[i] *= average_scale; }
-        }
-        return;
-    }
-
-    for (size_t i = 0; i < n; ++i) {
-        const float amount = smoother.get_smoothed_value();
-        const float scale = (1.0f - amount) + average_scale * amount;
-        for (size_t ch = 0; ch < destination.get_num_channels(); ++ch) {
-            destination.get_write_pointer(ch)[i] *= scale;
-        }
-    }
+    m_mixer->set_mode(input_mode(input_mix));
+    m_mixer->process(m_views, destination);
 }
 
-void Graph::run_step(const ProcessingStep& step,
-                     thl::core::BufferView buffer,
-                     const thl::core::BufferView& dry,
-                     uint32_t modulation_offset) {
-    Node& node = *step.m_node;
-    thl::dsp::utils::DelayProcessor& dry_delay = *step.m_dry_delay;
-    auto& mix = node.m_wet_mix_smoother;
-    auto& law_fade = node.m_law_fade;
-    const float target = node.m_wet_mix.load(std::memory_order_relaxed);
-    mix.set_target_value(target);
+void Graph::ProcessingStep::process(const thl::core::BufferView& buffer,
+                                    const thl::core::BufferView& dry,
+                                    uint32_t modulation_offset) {
+    Node& node = *m_node;
+    Mixer& mixer = node.m_output_mixer;
+    const bool was_bypassed = mixer.passes_only(0);
+    apply_mix_law(mixer,
+                  node.m_mix_law.load(std::memory_order_relaxed),
+                  node.m_wet_mix.load(std::memory_order_relaxed));
 
-    const MixLaw law = node.m_mix_law.load(std::memory_order_relaxed);
-    if (law != node.m_running_law) {
-        node.m_previous_law = node.m_running_law;
-        node.m_running_law = law;
-        law_fade.set_current_and_target_value(0.0f);
-        law_fade.set_target_value(1.0f);
-    }
-
-    // Back from bypass: the processor starts clean instead of where it froze.
-    if (target > 0.0f && mix.get_smoothed_value(0) == 0.0f) { node.m_processor->reset(); }
-
-    const bool settled =
-        mix.get_smoothed_value(0) == target && law_fade.get_smoothed_value(0) == 1.0f;
-    const MixGains settled_gains = mix_gains(law, target);
-    if (settled && settled_gains.m_wet == 0.0f && settled_gains.m_dry == 1.0f) {
-        dry_delay.process(buffer);  // bypassed: the sources, delayed by the node's latency
+    if (mixer.passes_only(0)) {
+        m_dry_delay->process(buffer);  // bypassed: the sources, delayed by the node's latency
         return;
     }
+    // Back from bypass: the processor starts clean instead of where it froze.
+    if (was_bypassed) { node.m_processor->reset(); }
+
     // Whenever the processor runs, its dry signal comes from it (process_with_dry()): the input
     // with the processor's phase response but without its effect, so a blend of a node that
     // shifts the phase (a crossover) does not comb. The dry delay then aligns it to the node's
     // latency, which the dry signal never includes. Fully wet, the dry signal only keeps the
     // delay's history current, so a blend starts from it.
-    if (settled && settled_gains.m_wet == 1.0f && settled_gains.m_dry == 0.0f) {
-        node.m_processor->process_modulated_with_dry(buffer, dry, modulation_offset);
-        dry_delay.write(dry);
+    node.m_processor->process_modulated_with_dry(buffer, dry, modulation_offset);
+    if (mixer.passes_only(1)) {
+        m_dry_delay->write(dry);
         return;
     }
-
-    const size_t n = buffer.get_num_samples();
-    node.m_processor->process_modulated_with_dry(buffer, dry, modulation_offset);
-    dry_delay.process(dry);
-
-    for (size_t i = 0; i < n; ++i) {
-        MixGains gains = settled_gains;
-        if (!settled) {  // per sample only while the mix or the law glides
-            const float m = mix.get_smoothed_value();
-            const float t = law_fade.get_smoothed_value();
-            gains = mix_gains(node.m_running_law, m);
-            if (t < 1.0f) {
-                const MixGains from = mix_gains(node.m_previous_law, m);
-                gains = {.m_dry = from.m_dry + (t * (gains.m_dry - from.m_dry)),
-                         .m_wet = from.m_wet + (t * (gains.m_wet - from.m_wet))};
-            }
-        }
-        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
-            const float d = dry.get_read_pointer(ch)[i];
-            float& out = buffer.get_write_pointer(ch)[i];
-            out = (d * gains.m_dry) + (out * gains.m_wet);
-        }
-    }
+    m_dry_delay->process(dry);
+    mixer.process(std::array<thl::core::ConstBufferView, 2>{dry, buffer}, buffer);
 }
 
 void Graph::reset() {
@@ -949,9 +961,9 @@ void Graph::reset() {
     for (ProcessingStep& step : compiled->m_steps) {
         step.m_node->m_processor->reset();
         step.m_dry_delay->reset();
-        for (Source& source : step.m_sources) { source.m_delay.reset(); }
+        for (Source& source : step.m_inputs.m_sources) { source.m_delay.reset(); }
     }
-    for (Source& source : compiled->m_output_sources) { source.m_delay.reset(); }
+    for (Source& source : compiled->m_output_inputs.m_sources) { source.m_delay.reset(); }
 }
 
 void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
@@ -991,16 +1003,21 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
         const thl::core::BufferView node_buffer(own.get_array_of_write_pointers(),
                                                 compiled->m_num_channels,
                                                 n);
-        mix_sources(*compiled, step.m_sources, *step.m_node, node_buffer, dry);
+        step.m_inputs.mix(compiled->m_buffers,
+                          step.m_node->m_input_mix.load(std::memory_order_relaxed),
+                          node_buffer);
         run_probes(*step.m_node, ProbePoint::Input, node_buffer, step.m_input_latency);
-        run_step(step, node_buffer, dry, modulation_offset);
+        step.process(node_buffer, dry, modulation_offset);
         run_probes(*step.m_node,
                    ProbePoint::Output,
                    node_buffer,
                    compiled->m_path_latencies[step.m_buffer]);
     }
 
-    mix_sources(*compiled, compiled->m_output_sources, *compiled->m_output_node, buffer, dry);
+    compiled->m_output_inputs.mix(
+        compiled->m_buffers,
+        compiled->m_output_node->m_input_mix.load(std::memory_order_relaxed),
+        buffer);
     apply_fade(buffer);
     run_probes(*m_output_node, ProbePoint::Input, buffer, latency_samples());
 }

@@ -1854,9 +1854,13 @@ Gains expected_gains(Graph::MixLaw law, double m) {
         case Graph::MixLaw::Linear: return {static_cast<float>(1.0 - m), static_cast<float>(m)};
         case Graph::MixLaw::ConstantPower:
             return {static_cast<float>(std::cos(q)), static_cast<float>(std::sin(q))};
-        case Graph::MixLaw::Compromise:
-            return {static_cast<float>(std::sqrt((1.0 - m) * std::cos(q))),
-                    static_cast<float>(std::sqrt(m * std::sin(q)))};
+        case Graph::MixLaw::Compromise: {  // the geometric mean of the two above, 4/3-norm 1
+            const double dry = std::sqrt((1.0 - m) * std::cos(q));
+            const double wet = std::sqrt(m * std::sin(q));
+            const double norm =
+                std::pow(std::pow(dry, 4.0 / 3.0) + std::pow(wet, 4.0 / 3.0), 3.0 / 4.0);
+            return {static_cast<float>(dry / norm), static_cast<float>(wet / norm)};
+        }
         case Graph::MixLaw::Parallel: return {1.0f, static_cast<float>(m)};
         case Graph::MixLaw::DryHeld:
             return {static_cast<float>(std::min(1.0, 2.0 * (1.0 - m))),
@@ -1867,6 +1871,50 @@ Gains expected_gains(Graph::MixLaw law, double m) {
 
 float db(float gain) {
     return 20.0f * std::log10(gain);
+}
+
+/// The gains of a node with @p law, sample by sample, while its wet mix glides from 0 to 1: one
+/// graph measures the dry gain, a second the wet gain, as measure().
+std::vector<Gains> measure_glide(Graph::MixLaw law) {
+    const auto run = [law](float dry, float wet) {
+        Graph graph;
+        const auto node = graph.add_node<ConstantProcessor>(wet);
+        EXPECT_TRUE(node);
+        EXPECT_TRUE(graph.connect(graph.graph_input(), *node));
+        EXPECT_TRUE(graph.connect(*node, graph.graph_output()));
+        EXPECT_TRUE(graph.set_mix_law(*node, law));
+        EXPECT_TRUE(graph.set_wet_mix(*node, 0.0f));
+        prepare(graph);
+        EXPECT_TRUE(graph.set_wet_mix(*node, 1.0f));
+        std::vector<float> gains;
+        for (size_t block = 0; block <= k_ramp_blocks; ++block) {
+            const Buffer<float> buffer = process_blocks(graph, dry, 1);
+            gains.insert(gains.end(),
+                         buffer.get_read_pointer(0),
+                         buffer.get_read_pointer(0) + k_block);
+        }
+        return gains;
+    };
+    const std::vector<float> dry = run(1.0f, 0.0f);
+    const std::vector<float> wet = run(0.0f, 1.0f);
+    std::vector<Gains> gains;
+    for (size_t i = 0; i < dry.size(); ++i) { gains.push_back({.m_dry = dry[i], .m_wet = wet[i]}); }
+    return gains;
+}
+
+/// What @p law keeps constant along its curve, 1 on it: the amplitude, the power, the 4/3-norm,
+/// the dry gain, the larger gain.
+double curve_level(Graph::MixLaw law, Gains gains) {
+    const double dry = gains.m_dry;
+    const double wet = gains.m_wet;
+    switch (law) {
+        case Graph::MixLaw::Linear: return dry + wet;
+        case Graph::MixLaw::ConstantPower: return (dry * dry) + (wet * wet);
+        case Graph::MixLaw::Compromise: return std::pow(dry, 4.0 / 3.0) + std::pow(wet, 4.0 / 3.0);
+        case Graph::MixLaw::Parallel: return dry;
+        case Graph::MixLaw::DryHeld: return std::max(dry, wet);
+    }
+    return 0.0;
 }
 
 }  // namespace
@@ -1900,6 +1948,28 @@ TEST(Graph, MixLawsMeetTheirLevelsAtHalf) {
     const Gains held = measure_gains(Graph::MixLaw::DryHeld, 0.5f);
     EXPECT_EQ(held.m_dry, 1.0f);
     EXPECT_EQ(held.m_wet, 1.0f);
+}
+
+TEST(Graph, AWetMixGlideStaysOnTheMixLawsCurve) {
+    for (const auto law : {Graph::MixLaw::Linear,
+                           Graph::MixLaw::ConstantPower,
+                           Graph::MixLaw::Compromise,
+                           Graph::MixLaw::Parallel,
+                           Graph::MixLaw::DryHeld}) {
+        SCOPED_TRACE(testing::Message() << "law " << static_cast<int>(law));
+        const std::vector<Gains> glide = measure_glide(law);  // a jump from 0 to 1, e.g. unbypass
+        EXPECT_GT(glide.front().m_wet, 0.0f);                 // glides, does not jump
+        EXPECT_LT(glide.front().m_wet, 0.01f);
+        for (size_t i = 0; i < glide.size(); ++i) {
+            EXPECT_NEAR(curve_level(law, glide[i]), 1.0, 1e-5) << "at " << i;
+            if (i > 0) {
+                EXPECT_GE(glide[i].m_wet, glide[i - 1].m_wet - 1e-6f) << "at " << i;
+                EXPECT_LE(glide[i].m_dry, glide[i - 1].m_dry + 1e-6f) << "at " << i;
+            }
+        }
+        EXPECT_EQ(glide.back().m_dry, law == Graph::MixLaw::Parallel ? 1.0f : 0.0f);
+        EXPECT_EQ(glide.back().m_wet, 1.0f);
+    }
 }
 
 TEST(Graph, ChangingTheMixLawGlides) {

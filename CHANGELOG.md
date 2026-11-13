@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a
+  gain from its weight. `Mode::Sum` takes the weights as the gains; `Mode::Mix` normalises them
+  to their p-norm (`set_p()`: `k_amplitude` 1 for correlated inputs, `k_compromise` 4/3,
+  `k_power` 2 for uncorrelated ones, `k_peak` infinity), so only their ratios matter and a mix
+  keeps its level while it glides. Weights (one at a time or `set_weights()`), p and the mode
+  glide over a ramp time (20 ms by default); `passes_only()` tells when a settled mix is one input
+  unchanged, so a caller can skip work. The output may be one of the inputs. Real-time safe
+  after `prepare()` (by @jstolberg). Tests: `Mixer.*`.
 - `thl::graph::Graph::add_probe<Probe>(node, ProbePoint, args...)` / `remove_probe(ProbeId)` /
   `probe(ProbeId)`: a probe watches a node's input (its sources mixed) or output (after its
   processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with the latency
@@ -89,6 +97,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `thl::graph::Graph` mixes with `dsp::utils::Mixer`: a node's sources (`InputMix`) and its dry
+  and wet signals (`MixLaw`); a wet mix glide stays on its law's curve, as before (by
+  @jstolberg). What changes: `MixLaw::Compromise` is normalised to a 4/3-norm of 1, within
+  0.09 dB of before (still -4.5 dB at 0.5); a change of mix law glides from the old law to the
+  new one along the Mixer's normalisation instead of crossfading the two laws' gains; a node
+  whose mix law changes while it is bypassed is `reset()` before it runs, as when its wet mix
+  leaves 0. A delayed source now has a scratch buffer of its own (channels × block size),
+  allocated at `commit()`. Tests: `Graph.AWetMixGlideStaysOnTheMixLawsCurve`.
 - `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
   `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
   Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`

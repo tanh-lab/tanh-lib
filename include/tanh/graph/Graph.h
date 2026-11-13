@@ -7,6 +7,7 @@
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
+#include <tanh/dsp/utils/Mixer.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -234,16 +235,10 @@ public:
     void reset() TANH_NONBLOCKING_FUNCTION override;
 
 private:
-    struct MixGains {
-        float m_dry;
-        float m_wet;
-    };
-    /// The dry and wet gains of @p law at @p wet_mix (clamped to [0, 1]); exact at the ends.
-    static MixGains mix_gains(MixLaw law, float wet_mix) TANH_NONBLOCKING_FUNCTION;
-
     using BufferIndex = uint32_t;
     struct Node;
     struct Source;
+    struct Inputs;
     struct ProcessingStep;
     struct CompiledGraph;
 
@@ -257,6 +252,11 @@ private:
         uint64_t m_last_generation;  // newest compiled version that may still use it
     };
 
+    struct RetiredMixer {
+        std::unique_ptr<thl::dsp::utils::Mixer> m_mixer;
+        uint64_t m_last_generation;  // newest compiled version that may still use it
+    };
+
     bool exists(NodeId id) const { return m_nodes.contains(id); }
     bool path_exists(NodeId from, NodeId to) const;
     std::optional<NodeId> insert_node(std::unique_ptr<thl::dsp::BaseProcessor> processor,
@@ -264,6 +264,7 @@ private:
     void prepare_node(Node& node, bool prepare_processor = true) const;
     void prepare_delays(std::span<Source> sources,
                         std::span<const uint32_t> max_path_latencies) const;
+    Inputs make_inputs(Node& node, std::vector<Source> sources);
     bool max_latencies_changed() const;
 
     std::optional<std::vector<NodeId>> sort_graph_dfs() const;
@@ -282,11 +283,6 @@ private:
     bool switch_to_pending() TANH_NONBLOCKING_FUNCTION;
     static uint32_t apply_latencies(CompiledGraph& compiled) TANH_NONBLOCKING_FUNCTION;
     void apply_fade(thl::core::BufferView buffer) TANH_NONBLOCKING_FUNCTION;
-    static void mix_sources(const CompiledGraph& compiled,
-                            std::span<Source> sources,
-                            Node& node,
-                            thl::core::BufferView destination,
-                            thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
     static void run_probes(Node& node,
                            ProbePoint point,
                            const thl::core::BufferView& block,
@@ -301,10 +297,6 @@ private:
     std::unique_ptr<thl::dsp::probe::ProbeBase> detach_probe(ProbeId id);
     /// Control thread: returns once a process() or reset() in progress has ended.
     void wait_for_audio_thread() const;
-    static void run_step(const ProcessingStep& step,
-                         thl::core::BufferView buffer,
-                         const thl::core::BufferView& dry,
-                         uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 
     static constexpr NodeId k_output_id{0};
     static constexpr NodeId k_input_id{1};
@@ -324,6 +316,7 @@ private:
     std::set<Connection> m_connections;
     std::vector<RetiredNode> m_retired_nodes;
     std::vector<RetiredDelay> m_retired_delays;
+    std::vector<RetiredMixer> m_retired_mixers;
     double m_sample_rate = 0.0;
     size_t m_max_block_size = 0;
     size_t m_num_channels = 0;
