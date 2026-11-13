@@ -20,7 +20,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
  * In Mode::Sum the gains are the weights: g = w. In Mode::Mix the weights are normalised to their
  * p-norm, g = w / (sum of w^p)^(1/p), so the gains always have a p-norm of 1: only the ratios of
  * the weights matter, and p sets what the mix keeps constant. k_amplitude suits correlated inputs,
- * k_power uncorrelated ones, k_peak keeps the loudest input at full. All weights 0 give silence.
+ * k_power uncorrelated ones, and k_peak keeps the largest weight's gain at 1. All weights 0 give
+ * silence.
  *
  * Weights, p and the mode glide over the ramp time given to prepare(). In Mode::Mix the gains are
  * normalised after the glide, so the mix keeps its level while it glides. A change of mode
