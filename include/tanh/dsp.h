@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dsp/BaseProcessor.h"
+#include "dsp/analysis/AdaptivePeakPicker.h"
 #include "dsp/audio/AudioDataStore.h"
 #include "dsp/granular/GrainProcessor.h"
 #include "dsp/metronome/MetronomePlayer.h"

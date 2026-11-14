@@ -110,6 +110,8 @@ tanh-lib is licensed per component:
   [anira](https://github.com/anira-project/anira)) can depend on it. These
   files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
+  The adaptive peak picker (`include/tanh/dsp/analysis/AdaptivePeakPicker.h`,
+  `src/dsp/analysis/AdaptivePeakPicker.cpp`) is also Apache-2.0.
 
 - **AGPL-3.0** — all other components (`state`, `dsp`, `resonator`,
   `modulation`, `audio-io`) and files (see [`LICENSE`](LICENSE)).

@@ -1,4 +1,5 @@
 #pragma once
+#include <tanh/audio-io/AudioEncodingFormat.h>
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
@@ -10,12 +11,6 @@
 #include "AudioIODeviceCallback.h"
 
 namespace thl::inline THL_ABI_NAMESPACE {
-
-/**
- * @enum AudioEncodingFormat
- * @brief Supported audio file encoding formats.
- */
-enum class AudioEncodingFormat { WAV, FLAC };
 
 /**
  * @class AudioFileSink
