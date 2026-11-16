@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/PitchShifter.h>
 
@@ -5,7 +6,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 PitchShifter::PitchShifter() = default;
 
@@ -75,4 +76,4 @@ float PitchShifter::read_interp(const float* buf, float delay) const {
     return buf[i0] + frac * (buf[i1] - buf[i0]);
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

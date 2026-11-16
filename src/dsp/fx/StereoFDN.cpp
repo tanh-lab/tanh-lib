@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/fx/StereoFDN.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -12,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 namespace {
 
@@ -728,4 +729,4 @@ int StereoFDN::get_parameter_int(Parameter p, uint32_t /*modulation_offset*/) {
     return 0;
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

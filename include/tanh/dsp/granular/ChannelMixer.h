@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 #include <tanh/dsp/granular/SampleReader.h>
 
@@ -10,7 +11,7 @@
 // The ChannelMode switch in its two deliberately different forms: a grain
 // carries its own pan and Spread redistributes its energy across L/R; the
 // single Sample head has nothing to pan, so Spread acts as mid/side width.
-namespace thl::dsp::granular::channel_mixer {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular::channel_mixer {
 
 using Frame = std::array<float, k_max_channel_support>;
 
@@ -128,4 +129,4 @@ inline void read_head_frame(const SampleReader& reader,
     }
 }
 
-}  // namespace thl::dsp::granular::channel_mixer
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular::channel_mixer

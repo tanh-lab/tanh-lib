@@ -9,6 +9,7 @@
 #import <ABLLink.h>
 #import <ABLLinkSettingsViewController.h>
 #include <mach/mach_time.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/LinkAudio.h>
 #include <tanh/dsp/transport/LinkBackend.h>
 
@@ -24,7 +25,7 @@
 
 #include "LinkSharing.h"
 
-namespace thl::link {
+namespace thl::inline THL_ABI_NAMESPACE::link {
 
 namespace {
 
@@ -326,4 +327,4 @@ dsp::transport::LinkAudioBackend& LinkSession::audio_backend() {
     return *m_impl->m_sharing;
 }
 
-}  // namespace thl::link
+}  // namespace thl::inline THL_ABI_NAMESPACE::link

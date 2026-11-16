@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/ContinuityTracker.h>
 #include <tanh/dsp/transport/HostTimeFilter.h>
 #include <tanh/dsp/transport/LinkBackend.h>
@@ -11,7 +12,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @brief TransportClock that follows an Ableton Link session.
@@ -105,4 +106,4 @@ private:
     detail::AtomicTimeSignature m_time_signature;
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

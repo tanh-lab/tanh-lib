@@ -8,13 +8,14 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 constexpr float k_pi = std::numbers::pi_v<float>;
 constexpr float k_one_over_pi = std::numbers::inv_pi_v<float>;
@@ -161,4 +162,4 @@ inline const float* fm_frequency_quantizer_table() {
     return fm_frequency_quantizer_table_storage().data();
 }
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

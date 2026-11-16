@@ -3,13 +3,14 @@
 #import <AVFoundation/AVAudioSession.h>
 #include <tanh/audio-io/AudioDeviceManager.h>
 #include <tanh/audio-io/iOSAudioDevices.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Logger.h>
 
 static constexpr AVAudioSessionCategoryOptions k_base_session_options =
     AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowAirPlay |
     AVAudioSessionCategoryOptionMixWithOthers;
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 void configure_ios_audio_session() {
     AVAudioSession* session = [AVAudioSession sharedInstance];
@@ -195,6 +196,6 @@ std::string get_ios_current_output_route_name() {
     return {};
 }
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE
 
 #endif  // THL_PLATFORM_IOS

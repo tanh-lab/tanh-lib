@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstddef>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /// What ModulationMatrix knows about the block it processes.
 struct BlockContext {
@@ -43,4 +44,4 @@ public:
     virtual void process_block(const BlockContext& context) TANH_NONBLOCKING_FUNCTION = 0;
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

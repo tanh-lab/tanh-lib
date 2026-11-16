@@ -1,5 +1,6 @@
 #include "tanh/modulation/detail/MotionLanePlayer.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionTransform.h>
 #include <tanh/modulation/MotionTypes.h>
@@ -15,7 +16,7 @@
 
 #include "MotionInterpolation.h"
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 namespace {
 
@@ -271,4 +272,4 @@ void MotionLanePlayer::end(uint32_t num_samples) TANH_NONBLOCKING_FUNCTION {
     m_previous_step = m_step;
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

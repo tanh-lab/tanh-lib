@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
@@ -16,7 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // One granular voice: the BaseProcessor facade the host subclasses to bind
 // parameters. It owns what is common to every engine mode — the parameter
@@ -155,4 +156,4 @@ inline int GrainProcessorImpl::get_parameter<int>(Parameter p, uint32_t modulati
     return get_parameter_int(p, modulation_offset);
 }
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

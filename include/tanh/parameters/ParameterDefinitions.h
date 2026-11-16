@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/parameters/ModulationScope.h>
 
 #include <algorithm>
@@ -13,7 +14,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 // ── Parameter type enumeration ─────────────────────────────────────────────
 
@@ -456,4 +457,4 @@ struct ParameterDefinition {
     }
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

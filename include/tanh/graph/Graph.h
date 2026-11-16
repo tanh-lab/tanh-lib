@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
@@ -11,6 +12,7 @@
 
 #include <atomic>
 #include <compare>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -22,7 +24,14 @@
 #include <utility>
 #include <vector>
 
-namespace thl::graph {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::probe {
+class ProbeBase;
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::probe
+
+namespace thl::inline THL_ABI_NAMESPACE::graph {
+
+/// A probe registered with a Graph; never reused within a graph.
+enum class ProbeId : uint64_t {};
 
 /// A node of a Graph; never reused within a graph.
 enum class NodeId : uint64_t {};
@@ -47,14 +56,17 @@ struct Connection {
 /// Latency compensation: a node's latency_samples() is followed per block; the faster sources of
 /// every node and a node's dry path are delayed to match, up to the max_latency_samples() each node
 /// had at the last commit.
+///
+/// A Graph's own dry signal (process_with_dry(), as a nested graph) is its input, not yet built
+/// from its nodes' dry signals: blending a nested graph whose nodes shift the phase can comb.
 class TANH_API Graph final : public thl::dsp::BaseProcessor {
 public:
     /// How a node combines its sources: their sum (the default, as a mixer), or their sum
     /// divided by their number.
     enum class InputMix : uint8_t { Sum, Average };
 
-    /// How a node's wet mix m (0 dry, 1 wet) sets the gains of its input (dry, delayed by its
-    /// latency) and of its processor's output (wet).
+    /// How a node's wet mix m (0 dry, 1 wet) sets the gains of its dry signal (its processor's
+    /// process_with_dry(), delayed by the node's latency) and of its processor's output (wet).
     enum class MixLaw : uint8_t {
         /// dry 1 - m, wet m (the default): constant level when the wet signal is correlated with
         /// the dry (EQ, compression, saturation, phaser and comb effects).
@@ -114,8 +126,10 @@ public:
     /// 20 ms. False for graph_input() and unknown ids.
     bool set_input_mix(NodeId id, InputMix input_mix);
     /// Live (no commit): 1 runs the node, 0 bypasses it (its sources pass, delayed by its
-    /// latency), between them a blend; ramps over 20 ms, clamped to [0, 1]. A node coming back
-    /// from 0 is reset() first. False for graph_input(), graph_output(), unknown ids and NaN.
+    /// latency), between them a blend of its output with its dry signal (process_with_dry():
+    /// phase-matched, then delayed by its latency); ramps over 20 ms, clamped to [0, 1]. A node
+    /// coming back from 0 is reset() first. False for graph_input(), graph_output(), unknown ids
+    /// and NaN.
     bool set_wet_mix(NodeId id, float wet_mix);
     /// Live (no commit): how node @p id's wet mix sets its dry and wet gains; a change crossfades
     /// from the old law over 20 ms. False for graph_input(), graph_output() and unknown ids.
@@ -140,6 +154,42 @@ public:
     /// next block; tell the host then too (e.g. JUCE's setLatencySamples() from the message
     /// thread).
     uint32_t committed_latency_samples() const { return m_committed_latency; }
+
+    /// Where a probe watches a node: what reaches it (its sources mixed) or what it sends on (its
+    /// processor's output, blended with its dry signal by the wet mix).
+    enum class ProbePoint : uint8_t { Input, Output };
+    static constexpr size_t k_max_probes_per_point = 8;
+
+    /// Control thread, live (no commit, no fade): a new probe of type @p Probe (made from
+    /// @p args) watches node @p id at @p point from the next block on. graph_input() has only an
+    /// Output (what process() is given), graph_output() only an Input (what process() returns).
+    /// The graph owns the probe: it prepares it now if the graph is prepared and with every
+    /// prepare(), resets it with reset() and when a newly committed version starts, and deletes
+    /// it in remove_probe() or remove_node(). The pointer is for reading it (meters, a reader
+    /// thread) and is valid until then. Nothing for an unknown node, the missing point of
+    /// graph_input() or graph_output(), or a point with k_max_probes_per_point probes. A probe
+    /// never changes the signal or its latency.
+    template <typename Probe, typename... Args>
+        requires std::derived_from<Probe, thl::dsp::probe::ProbeBase>
+    std::optional<std::pair<ProbeId, Probe*>> add_probe(NodeId id,
+                                                        ProbePoint point,
+                                                        Args&&... args) {
+        auto probe = std::make_unique<Probe>(std::forward<Args>(args)...);
+        Probe* const pointer = probe.get();
+        const std::optional<ProbeId> probe_id = add_probe(id, point, std::move(probe));
+        if (!probe_id) { return std::nullopt; }
+        return std::pair{*probe_id, pointer};
+    }
+    /// add_probe() for a probe made elsewhere; the graph takes it over.
+    std::optional<ProbeId> add_probe(NodeId id,
+                                     ProbePoint point,
+                                     std::unique_ptr<thl::dsp::probe::ProbeBase> probe);
+    /// Control thread: stops probe @p id, waits until the audio thread no longer uses it (the
+    /// block in progress, if any) and deletes it. Never from the audio thread. False for an
+    /// unknown id.
+    bool remove_probe(ProbeId id);
+    /// The probe @p id, or nullptr for an unknown id.
+    thl::dsp::probe::ProbeBase* probe(ProbeId id) const;
 
     /// Frees the versions the audio thread handed back and the removed nodes no running version
     /// uses, also in nested graphs. commit() calls it; call it from a timer (e.g. 30 Hz on the
@@ -237,9 +287,23 @@ private:
                             Node& node,
                             thl::core::BufferView destination,
                             thl::core::BufferView dry) TANH_NONBLOCKING_FUNCTION;
+    static void run_probes(Node& node,
+                           ProbePoint point,
+                           const thl::core::BufferView& block,
+                           uint32_t latency_samples) TANH_NONBLOCKING_FUNCTION;
+    static void reset_probes(Node& node) TANH_NONBLOCKING_FUNCTION;
+    /// Audio thread: resets the probes of graph_input(), graph_output() and every node of the
+    /// running version.
+    void reset_all_probes() TANH_NONBLOCKING_FUNCTION;
+    /// Audio thread: resets the probes of every node of @p compiled.
+    static void reset_step_probes(const CompiledGraph& compiled) TANH_NONBLOCKING_FUNCTION;
+    /// Control thread: clears probe @p id's slot (without waiting) and hands the probe back.
+    std::unique_ptr<thl::dsp::probe::ProbeBase> detach_probe(ProbeId id);
+    /// Control thread: returns once a process() or reset() in progress has ended.
+    void wait_for_audio_thread() const;
     static void run_step(const ProcessingStep& step,
                          thl::core::BufferView buffer,
-                         thl::core::BufferView dry,
+                         const thl::core::BufferView& dry,
                          uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 
     static constexpr NodeId k_output_id{0};
@@ -249,6 +313,14 @@ private:
 
     // ─── Control thread ──────────────────────
     std::map<NodeId, std::unique_ptr<Node>> m_nodes;
+    struct ProbeEntry {
+        NodeId m_node;
+        ProbePoint m_point;
+        size_t m_slot;
+        std::unique_ptr<thl::dsp::probe::ProbeBase> m_probe;
+    };
+    std::map<ProbeId, ProbeEntry> m_probes;
+    uint64_t m_next_probe_id = 1;
     std::set<Connection> m_connections;
     std::vector<RetiredNode> m_retired_nodes;
     std::vector<RetiredDelay> m_retired_delays;
@@ -266,12 +338,22 @@ private:
     std::atomic<CompiledGraph*> m_pending{nullptr};
     thl::core::LockFreeQueue<CompiledGraph*, 8> m_returned;  // audio thread -> control thread
 
+    // ─── Control thread <-> audio thread ─────
+    // graph_input() and graph_output(), which are never removed: the audio thread may not look
+    // them up in m_nodes, and a compiled version knows graph_input() only if it reaches the output.
+    Node* m_input_node = nullptr;
+    Node* m_output_node = nullptr;
+    // Odd while process() or reset() runs (both on the one audio thread): remove_probe() waits
+    // for it to turn even (or move on) after clearing the probe's slot.
+    std::atomic<uint64_t> m_audio_epoch{0};
+
     // ─── Audio thread ────────────────────────
     CompiledGraph* m_active = nullptr;
+    bool m_restart_probes = false;  // a version switched: its probes start over next block
     thl::dsp::utils::SmoothedValue m_fade;
     size_t m_fade_samples = 0;
     bool m_fading_out = false;
     size_t m_hold_samples = 0;  // silence after a switch, until the latency has passed
 };
 
-}  // namespace thl::graph
+}  // namespace thl::inline THL_ABI_NAMESPACE::graph

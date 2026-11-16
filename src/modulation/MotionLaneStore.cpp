@@ -1,5 +1,6 @@
 #include "tanh/modulation/detail/MotionLaneStore.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionLaneProcessing.h>
 #include <tanh/modulation/detail/MotionTakeRecorder.h>
@@ -18,7 +19,7 @@
 #include "MotionInterpolation.h"
 #include "MotionSeam.h"
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 MotionLaneStore::MotionLaneStore() {
     m_audio_reader = m_lanes.add_reader();
@@ -277,4 +278,4 @@ MotionLane MotionLaneStore::played_lane() const {
     return copy;
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @brief Turns a clock's raw per-block beats into continuous, flagged blocks.
@@ -62,4 +63,4 @@ private:
     bool m_reset_pending = true;
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

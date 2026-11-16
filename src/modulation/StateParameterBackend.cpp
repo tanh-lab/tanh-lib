@@ -1,5 +1,7 @@
 #include "tanh/modulation/StateParameterBackend.h"
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <optional>
 #include <string_view>
 #include <variant>
@@ -10,7 +12,7 @@
 #include "tanh/state/Parameter.h"
 #include "tanh/state/State.h"
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 std::optional<ParameterBinding> StateParameterBackend::find(std::string_view key) const {
     ParameterRecord* record = m_state.find_record(key);
@@ -36,4 +38,4 @@ void StateParameterBackend::throw_not_found(std::string_view key) const {
     throw thl::StateKeyNotFoundException(key);
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

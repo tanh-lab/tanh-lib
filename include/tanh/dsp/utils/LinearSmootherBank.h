@@ -1,10 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cassert>
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Persistent linear smoothing for many independent floating-point lanes.
@@ -127,4 +129,4 @@ private:
     size_t m_ramp_samples = 64;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

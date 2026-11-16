@@ -2,10 +2,12 @@
 
 // Phase wrapping and looped Catmull-Rom of motion lanes (private to tanh::Modulation).
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cmath>
 #include <cstddef>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// Wrap @p value into [0, length). Returns 0 for length <= 0 or a non-finite value.
 [[nodiscard]] inline double wrap_phase(double value, double length) {
@@ -19,4 +21,4 @@ namespace thl::modulation::detail {
 /// clamped to [0, 1]. Returns 0 for n == 0.
 [[nodiscard]] float catmull_rom_wrap(const float* points, size_t n, double index);
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

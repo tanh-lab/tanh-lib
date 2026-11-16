@@ -1,5 +1,6 @@
 #include "tanh/modulation/detail/MotionTakeRecorder.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -12,7 +13,7 @@
 #include "MotionInterpolation.h"
 #include "MotionSeam.h"
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 namespace {
 
@@ -293,4 +294,4 @@ MotionTakeRecorder::Event MotionTakeRecorder::end() TANH_NONBLOCKING_FUNCTION {
     return complete_loop(Event::Finished);
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

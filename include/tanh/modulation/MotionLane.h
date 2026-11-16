@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <cmath>
@@ -9,7 +10,7 @@
 #include <optional>
 #include <vector>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /// Unit of a MotionLane's length, anchor and rate.
 enum class MotionTimebase : uint8_t {
@@ -79,4 +80,4 @@ struct TANH_API MotionLane {
     void resample(size_t num_points);
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

@@ -4,6 +4,7 @@
 // LinkAudioPacket seam type. Private to tanh::Link (header-only: nothing exported);
 // both SDK backends use it.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/LinkAudio.h>
 
 #include <algorithm>
@@ -11,7 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::link::detail {
+namespace thl::inline THL_ABI_NAMESPACE::link::detail {
 
 /// A Link Audio sample from a float sample (clipped to -1..1).
 [[nodiscard]] inline int16_t to_link_audio_sample(float sample) {
@@ -50,4 +51,4 @@ inline bool make_link_audio_packet(const int16_t* samples,
     return true;
 }
 
-}  // namespace thl::link::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::link::detail

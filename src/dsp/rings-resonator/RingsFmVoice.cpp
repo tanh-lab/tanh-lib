@@ -26,6 +26,7 @@
 //
 // FM Voice.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/RingsFmVoice.h>
 #include <tanh/dsp/utils/DspMath.h>
@@ -37,7 +38,7 @@
 
 #include "tanh/core/BufferView.h"
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 using namespace thl::dsp::utils;
 using ::thl::dsp::utils::ParameterInterpolator;
@@ -167,4 +168,4 @@ void RingsFmVoice::process(const thl::core::ConstBufferView& in,
     m_previous_sample = previous_sample;
 }
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

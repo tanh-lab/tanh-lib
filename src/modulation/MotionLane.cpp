@@ -1,5 +1,7 @@
 #include "tanh/modulation/MotionLane.h"
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -13,7 +15,7 @@
 
 #include "MotionInterpolation.h"
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 namespace {
 
@@ -224,4 +226,4 @@ void MotionLane::resample(size_t num_points) {
     m_gate = std::move(gate);
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

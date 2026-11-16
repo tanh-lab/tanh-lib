@@ -1,11 +1,12 @@
 #include "tanh/modulation/MotionTransform.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionLane.h>
 
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 MotionLane render_motion_path(const MotionLane& lane,
                               const MotionTransform* transform,
@@ -44,4 +45,4 @@ MotionLane render_motion_path(const MotionLane& lane,
     return path;
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

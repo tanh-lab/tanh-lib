@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -14,7 +16,7 @@
 #include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // Per-voice modulation buffers. Owns flat contiguous storage for additive
 // and/or replace buffers across all voices, plus per-voice change-point state.
@@ -442,4 +444,4 @@ struct ResolvedTarget {
     }
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

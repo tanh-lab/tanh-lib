@@ -33,6 +33,12 @@ option(TANH_WITH_JOURNALD "Linux: send platform logs to systemd-journald (links 
 set(TANH_LOG_COMPILED_MAX_LEVEL "AUTO" CACHE STRING
     "Most verbose log level compiled in (1 Error .. 4 Debug), or AUTO (1 in Release, 4 otherwise)")
 set_property(CACHE TANH_LOG_COMPILED_MAX_LEVEL PROPERTY STRINGS AUTO 1 2 3 4)
+# The inline namespace every declaration lives in, thl::<ns> (THL_ABI_NAMESPACE in the
+# generated tanh/core/AbiNamespace.h). "AUTO" is v<major>_<minor> of the version below, so two
+# releases with different ABIs mangle differently and can live in one process; an embedder
+# that builds a private core of its own gives it its own namespace (cmake/core-library.cmake).
+set(TANH_ABI_NAMESPACE "AUTO" CACHE STRING
+    "Inline namespace of every declaration (thl::<ns>), or AUTO (v<major>_<minor> of the version)")
 
 # Define available components
 set(TANH_COMPONENTS Core State DSP AudioIO)
@@ -134,70 +140,27 @@ include(FetchContent)
 # Track which components are being built
 set(TANH_BUILT_COMPONENTS "")
 
-# Core component (always needed by others)
+# Core component (always needed by others), defined by cmake/core-library.cmake: the one
+# definition of the core, which an embedder also uses for a private copy of its own.
 if(TANH_BUILD_CORE)
-    add_library(${PROJECT_NAME}_core
-        src/core.cpp
-        src/core/Dispatcher.cpp
-        src/core/Logger.cpp
-        src/core/Thread.cpp
-        src/core/RCU.cpp
-        src/core/Clock.cpp
-    )
-    
-    set_target_properties(${PROJECT_NAME}_core PROPERTIES
-        VERSION ${PROJECT_VERSION} 
-        SOVERSION ${PROJECT_VERSION_MAJOR})
-
-    # add an alias so that the project can be used with add_subdirectory
-    add_library(${PROJECT_NAME}::Core ALIAS ${PROJECT_NAME}_core)
-
-    target_include_directories(${PROJECT_NAME}_core
-        PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-
-    target_compile_definitions(${PROJECT_NAME}_core
-        PUBLIC
-        # Version number
-        -DTANH_VERSION="${PROJECT_VERSION_FULL}"
-    )
-    if(TANH_LOG_COMPILED_MAX_LEVEL STREQUAL "AUTO")
-        target_compile_definitions(${PROJECT_NAME}_core
-            PUBLIC
-            $<$<CONFIG:Release>:THL_LOG_COMPILED_MAX_LEVEL=1>
-            $<$<NOT:$<CONFIG:Release>>:THL_LOG_COMPILED_MAX_LEVEL=4>
-        )
-    elseif(TANH_LOG_COMPILED_MAX_LEVEL MATCHES "^[1-4]$")
-        target_compile_definitions(${PROJECT_NAME}_core
-            PUBLIC THL_LOG_COMPILED_MAX_LEVEL=${TANH_LOG_COMPILED_MAX_LEVEL}
-        )
+    if(TANH_ABI_NAMESPACE STREQUAL "AUTO")
+        set(_tanh_abi_namespace "v${PROJECT_VERSION_MAJOR}_${PROJECT_VERSION_MINOR}")
     else()
-        message(FATAL_ERROR
-            "TANH_LOG_COMPILED_MAX_LEVEL must be AUTO or 1..4, got '${TANH_LOG_COMPILED_MAX_LEVEL}'")
+        set(_tanh_abi_namespace "${TANH_ABI_NAMESPACE}")
+    endif()
+    set(_tanh_with_journald "")
+    if(TANH_WITH_JOURNALD)
+        set(_tanh_with_journald WITH_JOURNALD)
     endif()
 
-    # Platform compile definitions (THL_PLATFORM_<OS>=1, THL_PLATFORM_IOS_<DEVICE|SIMULATOR>=1)
-    target_compile_definitions(${PROJECT_NAME}_core PUBLIC ${TANH_PLATFORM_COMPILE_DEFINITIONS})
-
-    # Build type definitions
-    target_compile_definitions(${PROJECT_NAME}_core
-        PUBLIC
-        $<$<CONFIG:Debug>:THL_DEBUG=1>
-        $<$<CONFIG:Release>:THL_RELEASE=1>
-        $<$<CONFIG:RelWithDebInfo>:THL_RELWITHDEBINFO=1>
-        $<$<CONFIG:MinSizeRel>:THL_MINSIZEREL=1>
-    )
-
-    if(TANH_OPERATING_SYSTEM STREQUAL "Android")
-        target_link_libraries(${PROJECT_NAME}_core PRIVATE log)
-    elseif(TANH_OPERATING_SYSTEM STREQUAL "Linux" AND TANH_WITH_JOURNALD)
-        find_package(PkgConfig REQUIRED)
-        pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
-        target_link_libraries(${PROJECT_NAME}_core PRIVATE PkgConfig::SYSTEMD)
-        target_compile_definitions(${PROJECT_NAME}_core PRIVATE THL_WITH_JOURNALD=1)
-    endif()
+    include(cmake/core-library.cmake)
+    tanh_add_core_library(${PROJECT_NAME}_core
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}
+        ABI_NAMESPACE ${_tanh_abi_namespace}
+        LOG_COMPILED_MAX_LEVEL ${TANH_LOG_COMPILED_MAX_LEVEL}
+        ${_tanh_with_journald}
+        # add an alias so that the project can be used with add_subdirectory
+        ALIAS ${PROJECT_NAME}::Core)
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_core)
 endif()
@@ -300,6 +263,7 @@ if(TANH_BUILD_DSP)
 
     add_library(${PROJECT_NAME}_dsp
         src/dsp/BaseProcessor.cpp
+        src/dsp/analysis/AdaptivePeakPicker.cpp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/MorphWindow.cpp
@@ -314,6 +278,8 @@ if(TANH_BUILD_DSP)
         src/dsp/utils/BrownianNoise.cpp
         src/dsp/utils/FrequencyShifter.cpp
         src/dsp/utils/PitchShifter.cpp
+        src/dsp/utils/BandSplitter.cpp
+        src/dsp/utils/MultibandLimiter.cpp
 
         src/dsp/filter/EqDesign.cpp
         src/dsp/filter/ParametricEq.cpp
@@ -327,6 +293,18 @@ if(TANH_BUILD_DSP)
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
         src/dsp/fx/StereoFDN.cpp
+        src/dsp/fx/StereoWidener.cpp
+
+        src/dsp/fft/RealFft.cpp
+        src/dsp/fft/StftAnalyser.cpp
+        src/dsp/analysis/SpectrumAnalyser.cpp
+
+        src/dsp/dynamics/Compressor.cpp
+        src/dsp/dynamics/LookaheadLimiter.cpp
+
+        src/dsp/probe/Probe.cpp
+        src/dsp/probe/LevelProbe.cpp
+        src/dsp/probe/SampleProbe.cpp
 
         src/dsp/transport/ContinuityTracker.cpp
         src/dsp/transport/HostTimeFilter.cpp
@@ -357,6 +335,10 @@ if(TANH_BUILD_DSP)
         # Set TANH_DSP_ENABLED to enable DSP features
         -DTANH_DSP_ENABLED
     )
+
+    # The FFT behind thl::dsp::fft::RealFft (TANH_FFT_BACKEND: pffft or accelerate).
+    include(cmake/fft-backend.cmake)
+    tanh_add_fft_backend(${PROJECT_NAME}_dsp)
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_dsp)
 endif()
@@ -520,6 +502,7 @@ if(TANH_BUILD_AUDIO_IO)
         src/audio-io/AudioDeviceManager.cpp
         src/audio-io/AudioFileLoader.cpp
         src/audio-io/AudioFileSink.cpp
+        src/audio-io/AudioFileWriter.cpp
         src/audio-io/AudioPlayerSource.cpp
         src/audio-io/DataSource.cpp
         src/audio-io/miniaudio_impl.cpp
@@ -828,19 +811,15 @@ endif()
 include(cmake/tanh/symbol-policy.cmake)
 include(cmake/tanh/sanitizers.cmake)
 
-foreach(target ${TANH_BUILT_COMPONENTS})
-    tanh_apply_symbol_policy(${target} EXPORT_PREFIX TANH)
-    tanh_set_export_allowlist(${target} NAMESPACE thl)
-
-    # Only apps need a signature on iOS.
-    tanh_ios_disable_code_signing(${target})
-
+# The TANH_WITH_* sanitizers of one library: every component, and the second core library
+# of test/abi-namespace.
+function(_tanh_apply_sanitizers target)
     if(TANH_WITH_RTSAN)
         tanh_add_sanitizer(${target} rtsan DEFINE TANH_WITH_RTSAN)
     endif()
     if(TANH_WITH_ASAN)
         tanh_add_sanitizer(${target} asan DEFINE TANH_WITH_ASAN
-            IGNORELIST "${CMAKE_CURRENT_SOURCE_DIR}/sanitizers/asan_ignorelist.txt")
+            IGNORELIST "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/sanitizers/asan_ignorelist.txt")
     endif()
     if(TANH_WITH_USAN)
         tanh_add_sanitizer(${target} ubsan DEFINE TANH_WITH_USAN)
@@ -854,6 +833,19 @@ foreach(target ${TANH_BUILT_COMPONENTS})
     if(TANH_WITH_LSAN)
         tanh_add_sanitizer(${target} lsan DEFINE TANH_WITH_LSAN)
     endif()
+endfunction()
+
+foreach(target ${TANH_BUILT_COMPONENTS})
+    # tanh_add_core_library() applies the policy to the core itself.
+    if(NOT target STREQUAL "${PROJECT_NAME}_core")
+        tanh_apply_symbol_policy(${target} EXPORT_PREFIX TANH)
+        tanh_set_export_allowlist(${target} NAMESPACE thl)
+
+        # Only apps need a signature on iOS.
+        tanh_ios_disable_code_signing(${target})
+    endif()
+
+    _tanh_apply_sanitizers(${target})
 endforeach()
 
 # ==============================================================================
@@ -944,9 +936,13 @@ if (TANH_WITH_TESTS)
         target_link_libraries(install_modulation_consumer PRIVATE ${PROJECT_NAME}::Modulation)
     endif()
 
-    # The export-table invariant, on the desktop formats where it can be inspected.
+    # The export-table invariant and the ABI namespace, on the desktop formats where the
+    # binaries can be inspected.
     if(NOT CMAKE_CROSSCOMPILING AND TANH_BINARY_FORMAT MATCHES "^(ELF|Mach-O|PE)$")
         add_subdirectory(test/exports)
+        if(TANH_BUILD_CORE)
+            add_subdirectory(test/abi-namespace)
+        endif()
     endif()
 
     # On iOS, test executables become .app bundles and need a bundle identifier

@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainEngine.h>
@@ -12,7 +13,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 GrainEngine::GrainEngine(const SampleReader& reader, GrainVisualizer& viz)
     : m_reader(reader)
@@ -343,4 +344,4 @@ float GrainEngine::apply_temperature_ramp(float temperature,
     return ramped + (temperature - ramped) * temperature;
 }
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

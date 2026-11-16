@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -8,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @brief One buffer of audio received from a Link Audio channel, on the local beat grid.
@@ -144,4 +145,4 @@ private:
     uint64_t m_received = 0;
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

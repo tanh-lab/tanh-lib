@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/filter/SvfCoefficients.h>
 
 #include <complex>
 #include <cstdint>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 /// What an EqBand does to the spectrum around its frequency.
 enum class EqBandType : uint8_t {
@@ -59,4 +60,4 @@ enum class EqDesign : uint8_t {
 /// The analogue prototype's response at @p frequency: what a design aims for.
 [[nodiscard]] TANH_API std::complex<double> analog_response(const EqBand& band, double frequency);
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

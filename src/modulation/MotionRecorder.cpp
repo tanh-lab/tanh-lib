@@ -1,5 +1,6 @@
 #include "tanh/modulation/MotionRecorder.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionTransform.h>
@@ -16,7 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 using thl::dsp::transport::TransportInfo;
 
@@ -349,4 +350,4 @@ void MotionRecorder::process(const TransportInfo& t,
     m_clock.end(clock, n);
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

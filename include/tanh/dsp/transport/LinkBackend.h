@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /// Link session state captured for one audio block.
 struct LinkState {
@@ -67,4 +68,4 @@ public:
     [[nodiscard]] virtual double quantum() const TANH_NONBLOCKING_FUNCTION { return 4.0; }
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

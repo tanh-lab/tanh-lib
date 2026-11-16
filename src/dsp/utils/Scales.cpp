@@ -1,10 +1,11 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/Scales.h>
 
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 std::string note_number_to_note_name(int note_number) {
     std::string note_name;
@@ -50,4 +51,4 @@ int get_note_offset(int scale_note_index, ScaleMode mode) {
     return note_offset;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -7,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @brief Maps an audio callback's sample time to a host time without the
@@ -45,4 +46,4 @@ private:
     double m_default_slope = 1e6 / 48000.0;  // microseconds per sample
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

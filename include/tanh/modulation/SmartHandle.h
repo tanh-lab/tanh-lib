@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -18,7 +19,7 @@
 #include <variant>
 #include <vector>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // SmartHandle<T> reads a parameter's base value through the atomic its
 // ParameterBackend bound (ParameterBinding::m_base) and adds per-sample
@@ -525,4 +526,4 @@ inline void collect_change_points(
     target_buffer.resize(write);
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

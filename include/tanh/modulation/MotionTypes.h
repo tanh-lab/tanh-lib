@@ -2,13 +2,14 @@
 
 // Types shared by MotionRecorder and its parts (take recording, playback).
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionLane.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /// Loop length of a take (arm, record) or of playback (set_playback_length).
 /// free() lasts as long as the gesture; bars(n, division) is n / division bars of the time
@@ -86,4 +87,4 @@ struct MotionSnapshot {
     double m_length = 0.0;    ///< loop length of that lane (seconds or beats)
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

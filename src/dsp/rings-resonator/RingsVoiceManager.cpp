@@ -26,6 +26,7 @@
 //
 // Group of voices.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/RingsFmVoice.h>
 #include <tanh/dsp/rings-resonator/RingsModalResonator.h>
@@ -47,7 +48,7 @@
 #include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
 #include "tanh/dsp/utils/CosineOscillator.h"
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 using namespace std;
 using namespace thl::dsp::utils;
@@ -595,4 +596,4 @@ std::array<float, Last> RingsVoiceManager::m_model_gains = {
     1.4f,  // StringAndReverb
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

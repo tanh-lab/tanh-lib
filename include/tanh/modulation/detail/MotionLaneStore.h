@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/modulation/MotionLane.h>
@@ -14,7 +15,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// The RCU payload: the published lane and what plays of it.
 struct MotionPlayedLane {
@@ -149,4 +150,4 @@ private:
     uint32_t m_history_serial = 0;  // message thread: the take whose first revision was kept
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

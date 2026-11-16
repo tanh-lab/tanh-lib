@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/MotionTransform.h>
 #include <tanh/modulation/MotionTypes.h>
@@ -10,7 +11,7 @@
 
 #include <cstdint>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// How a block plays, besides what plays.
 struct MotionPlaySettings {
@@ -126,4 +127,4 @@ private:
     bool m_ramp_restart = true;
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

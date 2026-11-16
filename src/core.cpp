@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "tanh/core.h"
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <string>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 std::string get_version() {
 #ifdef TANH_VERSION
@@ -13,4 +15,4 @@ std::string get_version() {
 #endif
 }
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

@@ -1,5 +1,6 @@
 #include "XYPad.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYTypes.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -13,7 +14,7 @@
 
 #include "EventSpread.h"
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 XYPad::XYPad(uint32_t max_touches, MonoPriority priority)
     : m_max_touches(std::clamp<uint32_t>(max_touches, 1, k_xy_controller_max_touches))
@@ -299,4 +300,4 @@ MotionInput XYPad::output() const TANH_NONBLOCKING_FUNCTION {
     };
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/core/threading/TripleBuffer.h>
@@ -10,7 +11,7 @@
 #include <cstdint>
 #include <span>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /**
  * @brief The UI side of an XYController: per-block frames and the live trail.
@@ -73,4 +74,4 @@ private:
     uint64_t m_last_signature = 0;  // discrete state of the last published frame
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

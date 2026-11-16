@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <map>
 #include <memory>
 #include <string>
@@ -13,7 +15,7 @@
 #include "tanh/core/threading/RCU.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 // Forward declarations
 class State;
@@ -310,4 +312,4 @@ private:
     }
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

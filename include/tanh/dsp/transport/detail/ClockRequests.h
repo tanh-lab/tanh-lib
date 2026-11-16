@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <atomic>
@@ -8,7 +9,7 @@
 #include <limits>
 #include <optional>
 
-namespace thl::dsp::transport::detail {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport::detail {
 
 /// A time signature set from any thread and read whole on the audio thread.
 class AtomicTimeSignature {
@@ -63,4 +64,4 @@ private:
     static_assert(std::atomic<double>::is_always_lock_free);
 };
 
-}  // namespace thl::dsp::transport::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport::detail

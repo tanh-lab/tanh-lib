@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/analysis/NoteFilter.h>
@@ -47,7 +48,7 @@
 #include <algorithm>
 #include <array>
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 using thl::dsp::resonator::FmVoice;
 using thl::dsp::resonator::Last;
@@ -192,4 +193,4 @@ private:
     static std::array<float, Last> m_model_gains;
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

@@ -1,16 +1,17 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/ParameterBackend.h>
 
 #include <optional>
 #include <string_view>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 class State;
 }
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /**
  * @brief ParameterBackend over a thl::State.
@@ -35,4 +36,4 @@ private:
     thl::State& m_state;
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

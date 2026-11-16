@@ -1,5 +1,6 @@
 #include "tanh/dsp/transport/ContinuityTracker.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -7,7 +8,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 namespace {
 
@@ -104,4 +105,4 @@ void ContinuityTracker::resolve(TransportInfo& io,
     m_prev_playing = playing;
 }
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

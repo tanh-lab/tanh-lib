@@ -26,6 +26,7 @@
 //
 // String synth part.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsStringSynthPart.h>
 
@@ -42,7 +43,7 @@
 #include "tanh/dsp/utils/DspMath.h"
 #include "tanh/dsp/utils/StringSynthEnvelope.h"
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 using namespace std;
 using namespace thl::dsp::utils;
@@ -450,4 +451,4 @@ void RingsStringSynthPart::process(
     m_limiter.process(stereo_view, 1.0f);
 }
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

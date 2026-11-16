@@ -1,11 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // Depth interpretation mode for modulation routings.
 enum class DepthMode : uint8_t {
@@ -161,4 +163,4 @@ struct ModulationRouting {
     }
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

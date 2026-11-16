@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/ContinuityTracker.h>
 #include <tanh/dsp/transport/TransportClock.h>
 #include <tanh/dsp/transport/detail/ClockRequests.h>
@@ -7,7 +8,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @class InternalTransportClock
@@ -74,4 +75,4 @@ private:
     detail::PendingValue m_pending_position;
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

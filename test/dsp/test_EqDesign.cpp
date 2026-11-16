@@ -8,6 +8,7 @@
 #include <complex>
 #include <limits>
 #include <numbers>
+#include <vector>
 
 using thl::dsp::filter::analog_response;
 using thl::dsp::filter::BiquadCoefficients;
@@ -27,6 +28,20 @@ constexpr std::array k_types{EqBandType::Peak,
                              EqBandType::LowCut,
                              EqBandType::HighCut};
 
+// The frequency grid start, start * ratio, start * ratio^2, ... below `end`. Each point is
+// derived from an integer step: a floating-point loop counter accumulates rounding into the
+// number of steps (CERT FLP30-C).
+template <typename T>
+std::vector<T> log_grid(T start, T end, T ratio) {
+    std::vector<T> grid;
+    for (int step = 0;; ++step) {
+        const T f = start * std::pow(ratio, static_cast<T>(step));
+        if (f >= end) { break; }
+        grid.push_back(f);
+    }
+    return grid;
+}
+
 double db(std::complex<double> h) {
     return 20.0 * std::log10(std::max(std::abs(h), 1e-12));
 }
@@ -40,7 +55,7 @@ double analog_db(const EqBand& band, double f) {
 double max_error_db(const EqBand& band, EqDesign design, double fs = k_fs) {
     const SvfCoefficients c = design_band(band, design, fs);
     double worst = 0.0;
-    for (double f = 20.0; f < 0.95 * fs / 2.0; f *= 1.01) {
+    for (const double f : log_grid(20.0, 0.95 * fs / 2.0, 1.01)) {
         const double a = analog_db(band, f);
         if (a < -40.0) { continue; }
         worst = std::max(worst, std::abs(c.magnitude_db(f, fs) - a));
@@ -104,7 +119,7 @@ TEST(EqDesign, BilinearFollowsThePrototypeWellBelowNyquist) {
         for (const float q : {0.5f, 0.70710678f, 2.0f}) {
             const EqBand band = band_of(type, 100.0f, 9.0f, q);
             const SvfCoefficients c = design_band(band, EqDesign::Bilinear, k_fs);
-            for (double f = 10.0; f < 1000.0; f *= 1.1) {
+            for (const double f : log_grid(10.0, 1000.0, 1.1)) {
                 // The notch's zero and a cut's stop band: dB differences say nothing there.
                 if (analog_db(band, f) < -30.0) { continue; }
                 EXPECT_NEAR(c.magnitude_db(f, k_fs), analog_db(band, f), 0.02)
@@ -193,7 +208,7 @@ TEST(EqDesign, MatchedShelvesAreNoWorseThanBilinearUpToQ2) {
     // Checked against an independent Python reference (RBJ cookbook, scipy) on a wider grid.
     for (const double fs : {44100.0, 48000.0, 96000.0}) {
         for (const auto type : {EqBandType::LowShelf, EqBandType::HighShelf}) {
-            for (float f = 100.0f; f < 0.46f * static_cast<float>(fs); f *= 1.6f) {
+            for (const float f : log_grid(100.0f, 0.46f * static_cast<float>(fs), 1.6f)) {
                 for (const float gain : {-48.0f, -24.0f, -6.0f, -1.0f, 1.0f, 6.0f, 24.0f, 48.0f}) {
                     for (const float q : {0.3f, 0.70710678f, 1.2f, 2.0f}) {
                         const EqBand band = band_of(type, f, gain, q);
@@ -252,7 +267,7 @@ TEST(EqDesign, NotchStaysBilinear) {
 
 TEST(EqDesign, EveryDesignIsStableAcrossTheRange) {
     for (const auto type : k_types) {
-        for (float f = 10.0f; f < 0.5f * static_cast<float>(k_fs); f *= 1.5f) {
+        for (const float f : log_grid(10.0f, 0.5f * static_cast<float>(k_fs), 1.5f)) {
             for (const float gain : {-48.0f, -12.0f, -1.0f, 1.0f, 12.0f, 48.0f}) {
                 for (const float q : {0.025f, 0.3f, 1.0f, 5.0f, 40.0f}) {
                     for (const EqDesign design : {EqDesign::Bilinear, EqDesign::Matched}) {
@@ -270,6 +285,7 @@ TEST(EqDesign, EveryDesignIsStableAcrossTheRange) {
 
 TEST(EqDesign, SanitisedReplacesWhatIsOutOfRange) {
     const float nan = std::numeric_limits<float>::quiet_NaN();
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) an invalid type on purpose
     const EqBand b = thl::dsp::filter::sanitised({.m_type = static_cast<EqBandType>(99),
                                                   .m_frequency = nan,
                                                   .m_gain_db = 100.0f,

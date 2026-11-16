@@ -1,5 +1,6 @@
 #include "tanh/modulation/detail/MotionCompositor.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -7,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 void MotionCompositor::prepare(double sample_rate, double glide_ms, size_t max_block) {
     const double ms = glide_ms >= 0.0 ? glide_ms : 25.0;
@@ -76,4 +77,4 @@ void MotionCompositor::sample(uint32_t i,
     m_last_live = live;
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

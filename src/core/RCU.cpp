@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/threading/RCU.h>
 
 #include <atomic>
 
-namespace thl::detail {
+namespace thl::inline THL_ABI_NAMESPACE::detail {
 
 RcuThreadState::~RcuThreadState() {
     // Mark all nodes as dead - they'll be cleaned up by the respective RCU
@@ -28,4 +29,4 @@ RcuThreadState& rcu_thread_state() {
     return instance;
 }
 
-}  // namespace thl::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::detail

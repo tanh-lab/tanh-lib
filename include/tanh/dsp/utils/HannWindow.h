@@ -1,10 +1,11 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <cmath>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * HannWindow envelope generator class.
@@ -88,4 +89,4 @@ private:
     float m_current_sample{0.0f};
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

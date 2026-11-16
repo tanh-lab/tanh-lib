@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Dispatcher.h>
 
 #include <mutex>
 #include <string>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 void Dispatcher::add_listener(const std::string& event, DispatcherListener* listener) {
     std::scoped_lock const lock(m_mutex);
@@ -26,4 +27,4 @@ void Dispatcher::dispatch(const std::string& event, const std::string& data) {
     }
 }
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

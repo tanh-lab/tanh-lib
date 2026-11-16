@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -8,7 +10,7 @@
 #include "tanh/core/Exports.h"
 #include "tanh/parameters/ParameterExceptions.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @class StateKeyNotFoundException
@@ -86,4 +88,4 @@ private:
     std::string m_key;
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/filter/EqDesign.h>
 #include <tanh/dsp/filter/ParametricEq.h>
@@ -11,7 +12,7 @@
 #include <cstdint>
 #include <span>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 namespace {
 
@@ -224,4 +225,4 @@ void ParametricEqImpl::process(thl::core::BufferView buffer,
     m_eq.process(channels.data(), num_channels, buffer.get_num_samples());
 }
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

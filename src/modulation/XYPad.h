@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYTypes.h>
@@ -12,7 +13,7 @@
 #include <optional>
 #include <vector>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// Capacity of the UI to audio event queue of one pad.
 inline constexpr size_t k_xy_pad_queue_capacity = 256;
@@ -160,4 +161,4 @@ private:
     bool m_ramping = false;  // x / y ramp towards the oldest waiting event
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

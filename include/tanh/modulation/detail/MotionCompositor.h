@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/detail/MotionGlide.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -9,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /**
  * @brief A recorder's output: the live touch over playback over the last value.
@@ -67,4 +68,4 @@ private:
     bool m_glide_pending = false;
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

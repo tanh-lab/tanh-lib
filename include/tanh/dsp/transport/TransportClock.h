@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @class TransportClock
@@ -128,4 +129,4 @@ private:
     uint64_t m_sample_position = 0;
 };
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

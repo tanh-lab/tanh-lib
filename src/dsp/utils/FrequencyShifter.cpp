@@ -1,10 +1,11 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/FrequencyShifter.h>
 
 #include <array>
 #include <cmath>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 const std::array<float, 4> FrequencyShifter::k_coeffs_a = {std::numbers::ln2_v<float>,
                                                            // — Hilbert allpass
@@ -62,4 +63,4 @@ float FrequencyShifter::process_chain(float x, const float* coeffs, State* state
     return out;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

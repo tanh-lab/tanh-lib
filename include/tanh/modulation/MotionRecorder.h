@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/transport/TransportInfo.h>
@@ -20,7 +21,7 @@
 #include <span>
 #include <utility>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 namespace detail {
 
@@ -289,4 +290,4 @@ private:
     bool m_aborted = false;
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

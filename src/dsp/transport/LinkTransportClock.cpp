@@ -1,5 +1,6 @@
 #include "tanh/dsp/transport/LinkTransportClock.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/LinkBackend.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -10,7 +11,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 namespace {
 constexpr double k_min_bpm = 1.0;
@@ -180,4 +181,4 @@ void LinkTransportClock::set_position_beats(double beats) {
     m_pending_position.request(beats);
 }
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

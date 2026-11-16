@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cmath>
 #include <cstdint>
 #include <type_traits>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 /**
  * @brief Musical time divisions for division_in_block() and division_boundary_in().
@@ -176,4 +177,4 @@ struct TransportInfo {
 
 static_assert(std::is_trivially_copyable_v<TransportInfo>);
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

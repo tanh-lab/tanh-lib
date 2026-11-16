@@ -1,12 +1,13 @@
 #include "tanh/dsp/transport/InternalTransportClock.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 // ── Main thread ───────────────────────────────────────────────────────────────
 
@@ -92,4 +93,4 @@ void InternalTransportClock::set_position_beats(double beats) {
     m_pending_position.request(beats);
 }
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

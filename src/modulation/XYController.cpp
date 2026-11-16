@@ -1,5 +1,6 @@
 #include "tanh/modulation/XYController.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
@@ -29,7 +30,7 @@
 
 #include "XYPad.h"
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 using thl::dsp::transport::TransportInfo;
 
@@ -547,4 +548,4 @@ void XYController::run_voice(Voice& v,
     f.m_motion = motion;
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

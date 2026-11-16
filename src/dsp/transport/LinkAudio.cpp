@@ -1,5 +1,6 @@
 #include "tanh/dsp/transport/LinkAudio.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -9,7 +10,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 namespace {
 
@@ -182,4 +183,4 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
     return true;
 }
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

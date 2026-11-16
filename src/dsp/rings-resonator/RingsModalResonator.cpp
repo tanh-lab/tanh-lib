@@ -26,6 +26,7 @@
 //
 // Resonator.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/RingsModalResonator.h>
 #include <tanh/dsp/utils/CosineOscillator.h>
@@ -39,7 +40,7 @@
 #include "tanh/dsp/DspTypes.h"
 #include "tanh/dsp/filter/OnePole.h"
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 using namespace std;
 using namespace thl::dsp::utils;
@@ -134,4 +135,4 @@ void RingsModalResonator::process(const thl::core::ConstBufferView& in,
     }
 }
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

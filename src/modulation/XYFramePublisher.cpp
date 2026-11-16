@@ -1,5 +1,6 @@
 #include "tanh/modulation/detail/XYFramePublisher.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/XYFrame.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -9,7 +10,7 @@
 #include <cstdint>
 #include <span>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 namespace {
 uint64_t hash_combine(uint64_t hash, uint64_t value) {
@@ -95,4 +96,4 @@ size_t XYFramePublisher::drain(std::span<XYPathPoint> out) {
     return n;
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

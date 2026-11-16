@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -7,7 +8,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// A raised-cosine glide of x and y from where the output was towards a moving target.
 class MotionGlide {
@@ -40,4 +41,4 @@ private:
     float m_from_y = 0.0f;
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

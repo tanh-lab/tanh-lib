@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -17,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 namespace detail {
 
@@ -677,4 +678,4 @@ private:
     }
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/utils/DelayProcessor.h>
 #include <tanh/dsp/utils/DynamicDelayLine.h>
@@ -8,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 DelayProcessor::DelayProcessor() = default;
 
@@ -121,4 +122,4 @@ void DelayProcessor::advance_crossfade(size_t num_samples) {
     }
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

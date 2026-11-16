@@ -1,8 +1,9 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // One block's worth of voice parameters, read from the host's parameter
 // system exactly once per process() call and clamped here — the modulation
@@ -53,4 +54,4 @@ struct VoiceParams {
     float m_env_release_curve{0.0f};
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

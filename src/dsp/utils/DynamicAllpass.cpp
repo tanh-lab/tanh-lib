@@ -1,8 +1,9 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/DynamicAllpass.h>
 
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 DynamicAllpass::DynamicAllpass() = default;
 DynamicAllpass::~DynamicAllpass() = default;
@@ -38,4 +39,4 @@ const DynamicDelayLine& DynamicAllpass::line() const {
     return m_line;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

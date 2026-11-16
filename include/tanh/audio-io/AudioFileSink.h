@@ -1,4 +1,6 @@
 #pragma once
+#include <tanh/audio-io/AudioEncodingFormat.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <atomic>
@@ -8,13 +10,7 @@
 
 #include "AudioIODeviceCallback.h"
 
-namespace thl {
-
-/**
- * @enum AudioEncodingFormat
- * @brief Supported audio file encoding formats.
- */
-enum class AudioEncodingFormat { WAV, FLAC };
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @class AudioFileSink
@@ -205,4 +201,4 @@ private:
     std::atomic<float> m_peak_level{0.0f};
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

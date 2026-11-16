@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/parameters/ParameterDefinitions.h>
 
@@ -7,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @class ParameterNotFoundException
@@ -59,4 +60,4 @@ private:
     ParameterType m_actual;
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

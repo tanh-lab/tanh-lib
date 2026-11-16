@@ -3,6 +3,7 @@
 // What the two Link Audio backends (C++ SDK, LinkKit) share: the received-buffer
 // queue and the checks and conversion of a send. Private to tanh::Link.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/threading/LockFreeQueue.h>
 #include <tanh/dsp/transport/LinkAudio.h>
 
@@ -14,7 +15,7 @@
 
 #include "LinkAudioCodec.h"
 
-namespace thl::link::detail {
+namespace thl::inline THL_ABI_NAMESPACE::link::detail {
 
 /// Received buffers waiting for the audio thread (about 1.5 s of stereo at 48 kHz).
 using ReceivedQueue = core::LockFreeQueue<dsp::transport::LinkAudioPacket, 256>;
@@ -95,4 +96,4 @@ private:
     uint64_t m_taken = 0;
 };
 
-}  // namespace thl::link::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::link::detail

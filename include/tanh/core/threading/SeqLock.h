@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <atomic>
 #include <cstdint>
 #include <optional>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @brief Sequence counter of a seqlock over data the caller keeps in atomics.
@@ -72,4 +73,4 @@ private:
     std::atomic<uint32_t> m_sequence{0};
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

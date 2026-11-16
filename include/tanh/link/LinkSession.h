@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/transport/LinkAudio.h>
 #include <tanh/dsp/transport/LinkBackend.h>
@@ -11,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace thl::link {
+namespace thl::inline THL_ABI_NAMESPACE::link {
 
 /**
  * @brief Owns one Ableton Link instance (tanh::Link, built with TANH_BUILD_LINK).
@@ -147,4 +148,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-}  // namespace thl::link
+}  // namespace thl::inline THL_ABI_NAMESPACE::link

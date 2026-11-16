@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <unordered_map>
@@ -7,7 +9,7 @@
 #include "StateGroup.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @class State
@@ -387,4 +389,4 @@ private:
     void reserve_temporary_string_buffers();
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

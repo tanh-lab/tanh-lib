@@ -1,5 +1,6 @@
 #include "tanh/modulation/InputEventQueue.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/parameters/ModulationScope.h>
 
 #include <cassert>
@@ -9,7 +10,7 @@
 
 #include "EventSpread.h"
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 InputEventQueue::InputEventQueue(thl::modulation::ModulationScope scope, size_t queue_capacity)
     : m_event_queue(queue_capacity), m_queue_capacity(queue_capacity), m_scope(scope) {}
@@ -122,4 +123,4 @@ size_t InputEventQueue::drain_spread(uint32_t block_size, const OnEvent& cb) {
     return m_drain_buffer.size();
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

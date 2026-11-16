@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "tanh/core/Clock.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
@@ -11,7 +12,7 @@
 #include <chrono>
 #endif
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 int64_t uptime_ns() TANH_NONBLOCKING_FUNCTION {
 #if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
@@ -26,4 +27,4 @@ int64_t uptime_ns() TANH_NONBLOCKING_FUNCTION {
 #endif
 }
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

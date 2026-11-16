@@ -1,10 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /**
  * @brief In-block offset of the i-th of n untimestamped events of one stream.
@@ -35,4 +37,4 @@ namespace thl::modulation::detail {
     return static_cast<int64_t>(std::llround(ns * sample_rate * 1e-9));
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/DspMath.h>
 
 #include <algorithm>
@@ -7,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 template <typename T, size_t max_delay>
 class DelayLine {
@@ -69,4 +70,4 @@ private:
     std::array<T, max_delay> m_line{};
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

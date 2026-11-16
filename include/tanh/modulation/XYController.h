@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/modulation/BlockProcessor.h>
@@ -24,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 struct XYControllerConfig {
     /// Source prefix. One voice: "<id>.x", "<id>.y", "<id>.active". Several
@@ -265,4 +266,4 @@ private:
     bool m_last_latch = false;
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionLane.h>
 
 #include <optional>
 #include <utility>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /**
  * @brief One level of undo and redo over published lanes (message thread).
@@ -54,4 +55,4 @@ private:
     std::optional<MotionLane> m_redo;
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

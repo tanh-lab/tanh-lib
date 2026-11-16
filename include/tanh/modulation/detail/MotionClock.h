@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// The beats a MotionRecorder block runs on.
 struct MotionBlockClock {
@@ -72,4 +73,4 @@ private:
     double m_end = 0.0;  // beat at the end of the previous block
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

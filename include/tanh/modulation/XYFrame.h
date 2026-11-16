@@ -2,6 +2,7 @@
 
 // What an XYController publishes for a UI: per-block frames and the live trail.
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/modulation/XYTypes.h>
 
@@ -10,7 +11,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /// Capacity of the live recording trail (audio to UI, drop-oldest).
 inline constexpr size_t k_xy_trail_capacity = 2048;
@@ -53,4 +54,4 @@ struct XYFrame {
 };
 static_assert(std::is_trivially_copyable_v<XYFrame>);
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

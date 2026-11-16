@@ -1,5 +1,7 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/filter/EqDesign.h>
 #include <tanh/dsp/filter/SvfCoefficients.h>
+#include <tanh/dsp/utils/Decibels.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -9,7 +11,7 @@
 #include <numbers>
 #include <optional>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 namespace {
 
@@ -30,7 +32,7 @@ bool has_gain(EqBandType type) {
 
 // The square root of the linear gain (RBJ's A).
 double root_gain(const EqBand& band) {
-    return std::pow(10.0, static_cast<double>(band.m_gain_db) / 40.0);
+    return utils::db_to_gain(static_cast<double>(band.m_gain_db) / 2.0);
 }
 
 // --- Bilinear: Cytomic's SVF mixes (Simper 2013), the RBJ cookbook's curves ---------------------
@@ -299,4 +301,4 @@ std::complex<double> analog_response(const EqBand& band, double frequency) {
     return 1.0;
 }
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

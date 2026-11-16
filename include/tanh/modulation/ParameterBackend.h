@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/parameters/ParameterDefinitions.h>
 #include <tanh/parameters/ParameterExceptions.h>
@@ -11,7 +12,7 @@
 #include <string_view>
 #include <variant>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /**
  * @brief Pointer to the atomic that holds a parameter's base (unmodulated) value.
@@ -115,4 +116,4 @@ public:
     }
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

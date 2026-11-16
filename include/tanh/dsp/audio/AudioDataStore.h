@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 
 #include <atomic>
@@ -7,7 +8,7 @@
 #include <thread>
 #include <vector>
 
-namespace thl::dsp::audio {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::audio {
 
 using core::BufferF;
 
@@ -83,4 +84,4 @@ private:
     std::atomic<uint32_t> m_load_generation{0};
 };
 
-}  // namespace thl::dsp::audio
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::audio

@@ -1,5 +1,6 @@
 #include "tanh/modulation/MotionLaneProcessing.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/MotionLane.h>
 
 #include <algorithm>
@@ -9,7 +10,7 @@
 
 #include "MotionSeam.h"
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 namespace {
 
@@ -99,4 +100,4 @@ PlayedCurve make_played_curve(const MotionLane& lane, float smoothing, LoopEnd l
     return curve;
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

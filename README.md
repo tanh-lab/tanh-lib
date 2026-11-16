@@ -66,6 +66,8 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_WITH_RTSAN` / `_ASAN` / `_USAN` / `_TSAN` / `_MSAN` / `_LSAN` | OFF | Enable the respective sanitizer (RTSan needs Clang 20+) |
 | `TANH_WITH_JOURNALD` | OFF | Linux: route platform logs to systemd-journald |
 | `TANH_LOG_COMPILED_MAX_LEVEL` | AUTO | Most verbose log level compiled in (1 Error .. 4 Debug) |
+| `TANH_ABI_NAMESPACE` | AUTO | Inline namespace of every declaration, `thl::<ns>`; AUTO is `v<major>_<minor>` of the version |
+| `TANH_FFT_BACKEND` | pffft | FFT behind `thl::dsp::fft::RealFft`: `pffft` (every platform, fetched at configure time) or `accelerate` (macOS, iOS) |
 
 ### Consume
 
@@ -113,6 +115,8 @@ tanh-lib is licensed per component:
   [anira](https://github.com/anira-project/anira)) can depend on it. These
   files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
+  The adaptive peak picker (`include/tanh/dsp/analysis/AdaptivePeakPicker.h`,
+  `src/dsp/analysis/AdaptivePeakPicker.cpp`) is also Apache-2.0.
 
 - **AGPL-3.0** — all other components (`parameters`, `state`, `dsp`, `resonator`,
   `modulation`, `audio-io`, `net`, `link`) and files (see [`LICENSE`](LICENSE)).

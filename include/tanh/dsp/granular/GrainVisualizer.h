@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/granular/GrainVisualizationListener.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // The voice's one outlet to the visualisation: owns the listener list and
 // both reporting cadences. Grains report rate-limited (48 per voice earn a
@@ -85,4 +86,4 @@ private:
     float m_master_level{0.0f};
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

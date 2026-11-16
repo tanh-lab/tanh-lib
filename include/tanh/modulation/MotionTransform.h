@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/MotionLane.h>
 
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /// What a MotionTransform does with one setting.
 struct MotionTransformInfo {
@@ -64,4 +65,4 @@ public:
                                                      uint64_t settings,
                                                      size_t num_points);
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

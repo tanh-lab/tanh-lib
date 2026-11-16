@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
@@ -13,7 +14,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // Sample mode: one continuous interpolating head at Velocity (varispeed),
 // no grains. Every discontinuity — loop wrap, pitch-bank switch, retrigger
@@ -112,4 +113,4 @@ private:
     bool m_restart{false};
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/MotionLane.h>
 
 #include <cstdint>
 #include <vector>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /// How a played lane treats the step from the end of the loop to its start.
 enum class LoopEnd : uint8_t {
@@ -35,4 +36,4 @@ struct PlayedCurve {
                                                      float smoothing,
                                                      LoopEnd loop_end);
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

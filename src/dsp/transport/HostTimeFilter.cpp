@@ -1,5 +1,6 @@
 #include "tanh/dsp/transport/HostTimeFilter.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
@@ -7,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 void HostTimeFilter::prepare(double sample_rate) TANH_NONBLOCKING_FUNCTION {
     if (sample_rate > 0.0) { m_default_slope = 1e6 / sample_rate; }
@@ -46,4 +47,4 @@ int64_t HostTimeFilter::add(double sample_time, int64_t now_us) TANH_NONBLOCKING
     return std::llround(m_y0 + intercept + (slope * (sample_time - m_x0)));
 }
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

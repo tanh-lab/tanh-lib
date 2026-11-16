@@ -6,10 +6,12 @@
 // three matrix sources (x, y, active), all in the global modulation scope. It is
 // not a polyphonic voice of a ModulationScope (ModulationSource::num_voices()).
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 /// Identifies one finger for its lifetime (a JUCE mouse source index, a UITouch
 /// pointer, a React Native touch identifier).
@@ -38,4 +40,4 @@ enum class XYLayer : uint8_t {
     Motion,  ///< motion playback
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

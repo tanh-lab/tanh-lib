@@ -1,6 +1,7 @@
 #pragma once
 #include <tanh/audio-io/AudioFileLoader.h>
 #include <tanh/audio-io/DataSource.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/AtomicSharedPtr.h>
 #include <tanh/core/Exports.h>
 
@@ -13,7 +14,7 @@
 
 #include "AudioIODeviceCallback.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @class AudioPlayerSource
@@ -316,4 +317,4 @@ private:
     bool m_fade_enabled{true};
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/XYTypes.h>
 
 #include <array>
 #include <cstdint>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// The fingers an XYController tracks and the voice each one drives (UI thread).
 class XYTouchTable {
@@ -55,4 +56,4 @@ private:
     std::array<Touch, k_xy_controller_max_touches> m_touches{};
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

@@ -31,6 +31,22 @@ Code style
 ``.clang-format`` (Google-based: 100-character lines, 4-space indent, K&R
 braces) and ``.clang-tidy`` are enforced in the merge queue.
 
+Namespaces open with the ABI namespace (:doc:`symbol_visibility`), forward
+declarations included, and the file includes the header that defines it:
+
+.. code-block:: cpp
+
+   #include <tanh/core/AbiNamespace.h>
+
+   namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
+   ...
+   }  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils
+
+``scripts/abi-namespace.py`` rewrites plain ``namespace thl…`` openers and
+their closing comments and adds the include; it is idempotent, so re-run it
+after a rebase that brings in new files and clang-format the files it lists.
+CTest runs its ``--check`` (``abi_namespace_sources``).
+
 Shared tooling
 ~~~~~~~~~~~~~~
 
@@ -74,8 +90,8 @@ Tests
 
 ``test/`` mirrors the components: ``test/core``, ``test/state``, ``test/dsp``,
 ``test/modulation`` and ``test/audio-io`` each build one ``test_*`` binary, and
-``test/exports`` and ``test/install`` check the packaging contracts. Run one
-suite directly:
+``test/exports``, ``test/abi-namespace`` and ``test/install`` check the
+packaging contracts. Run one suite directly:
 
 .. code-block:: bash
 

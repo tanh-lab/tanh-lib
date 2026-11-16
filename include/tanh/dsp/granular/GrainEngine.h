@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
@@ -16,7 +17,7 @@
 #include <cstdint>
 #include <random>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // The grain scheduler and renderer shared by the granular modes: a
 // pre-allocated pool of Hann-windowed grains triggered at the Density rate,
@@ -125,4 +126,4 @@ private:
     std::uniform_real_distribution<float> m_uni_dist;
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

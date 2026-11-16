@@ -1,5 +1,6 @@
 #include "tanh/dsp/transport/HostTransportClock.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/TransportInfo.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
@@ -7,7 +8,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace thl::dsp::transport {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 
 namespace {
 
@@ -119,4 +120,4 @@ void HostTransportClock::set_position_beats(double beats) {
     m_pending_position.request(beats);
 }
 
-}  // namespace thl::dsp::transport
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::transport

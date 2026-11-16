@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 
 #include <algorithm>
 #include <cstddef>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // The part of a bank a head may play, in source frames, plus its
 // direction. Start is the entry, End the exit, Loop the re-entry — so End
@@ -60,4 +61,4 @@ struct SampleRegion {
     }
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

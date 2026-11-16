@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/modulation/MotionLane.h>
 #include <tanh/modulation/MotionTypes.h>
@@ -9,7 +10,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// A loop of points as it plays: what a take holds, or what a take starts from.
 struct MotionLoopView {
@@ -133,4 +134,4 @@ private:
     bool m_last_live = false;
 };
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

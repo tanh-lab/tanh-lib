@@ -3,6 +3,7 @@
 // Closing the step at a loop's seam, shared by MotionRecorder (in place on a
 // take buffer, real-time) and make_played_curve() (on a published lane).
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/modulation/MotionLane.h>
 
@@ -10,7 +11,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace thl::modulation::detail {
+namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// Fewer points than this are not a loop (no seam closing, no smoothing; a shorter take is
 /// dropped).
@@ -53,4 +54,4 @@ void motion_spread_seam(At at, size_t n, size_t window, double error) {
     }
 }
 
-}  // namespace thl::modulation::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail

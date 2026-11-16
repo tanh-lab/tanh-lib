@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 
 #include <algorithm>
@@ -11,7 +12,7 @@
 // Shared constants and enums of the granular voice. Every component of the
 // voice (GrainEngine, SamplePlayer, HeadPolicy, ChannelMixer) speaks these;
 // GrainProcessor.h re-exports them for the public facade.
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // Signed frame position / offset in a bank. 64-bit everywhere (`long` is
 // 32-bit on Windows); unsigned bank lengths are size_t.
@@ -119,4 +120,4 @@ struct Grain {
     }
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

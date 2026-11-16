@@ -1,9 +1,10 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/SineOscillator.h>
 
 #include <cmath>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 SineOscillator::SineOscillator() = default;
 
@@ -29,4 +30,4 @@ float SineOscillator::process() {
     return m_s1;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils
