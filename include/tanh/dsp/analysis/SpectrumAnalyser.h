@@ -3,6 +3,7 @@
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/fft/StftAnalyser.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <complex>
 #include <cstddef>
@@ -34,9 +35,10 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::analysis {
  * - Below floor_db everything reads floor_db (the display's range).
  * Scaled as StftAnalyser: a full-scale sine at a bin's frequency reads 0 dB, tilt 0.
  *
- * Threads: one reader thread (a UI timer, an analysis thread), not the audio thread.
- * prepare() and set_resolution() allocate; push(), read_from(), the other setters and curve_db()
- * do not.
+ * Threads: everything on one thread, not the audio thread: curve_db() and frequencies() are
+ * views of what push(), read_from() and the setters rewrite (set_resolution() reallocates them).
+ * A UI on another thread copies the curve on this one. prepare() and set_resolution() allocate;
+ * push(), read_from(), the other setters and curve_db() do not.
  */
 class TANH_API SpectrumAnalyser : public thl::dsp::fft::StftAnalyser {
 public:
@@ -57,7 +59,8 @@ public:
         bool m_freeze = false;
     };
 
-    /// Frames of the resolution's size, four a frame (75 % overlap), for @p num_channels channels
+    /// Frames of the resolution's size, four a frame (75 % overlap), for @p num_channels channels.
+    /// A maximum frequency above Nyquist is clamped to it.
     /// at @p sample_rate. False, and unprepared, for settings it cannot use.
     bool prepare(double sample_rate, size_t num_channels, const Settings& settings);
     /// prepare() with the default Settings.
@@ -67,7 +70,9 @@ public:
 
     /// Re-prepares at another FFT size (allocates); the curve starts over.
     bool set_resolution(Resolution resolution);
+    /// Applies to the curve at once, frozen or not.
     void set_tilt(float db_per_octave);
+    /// The curve starts over (a band's maximum and its mean do not convert).
     void set_smoothing(float octaves);
     void set_release(float db_per_second);
     /// Frozen, the curve only rises; unfrozen it falls again from the maximum it held.
@@ -75,7 +80,8 @@ public:
     void set_floor(float floor_db);
 
     /// Drains @p probe (its one reader) and feeds what it held. After a discontinuity the frames
-    /// start over (no frame spans the gap); the curve goes on falling from where it was.
+    /// start over (no frame spans the gap); the curve goes on falling from where it was. The probe
+    /// must have num_channels() channels: otherwise nothing is read (an assert in debug builds).
     void read_from(thl::dsp::probe::SampleProbe& probe);
 
     /// The frequency (Hz) of every point.
@@ -86,7 +92,8 @@ public:
     [[nodiscard]] size_t num_frames() const { return m_num_frames; }
 
 protected:
-    void process_spectrum(size_t channel, std::span<const std::complex<float>> bins) override;
+    void process_spectrum(size_t channel, std::span<const std::complex<float>> bins)
+        TANH_NONBLOCKING_FUNCTION override;
 
 private:
     struct Point {
@@ -101,10 +108,11 @@ private:
 
     [[nodiscard]] static size_t fft_size_of(Resolution resolution);
     void update_points();
-    void make_curve();
+    void make_curve() TANH_NONBLOCKING_FUNCTION;
+    /// Unprepared: the base, the points and the curve.
+    void clear_all();
 
     double m_sample_rate = 48000.0;
-    size_t m_num_channels = 0;
     Settings m_settings;
     std::vector<float> m_frequencies;
     std::vector<Point> m_points;

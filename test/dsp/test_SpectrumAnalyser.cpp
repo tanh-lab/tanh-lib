@@ -193,3 +193,84 @@ TEST(SpectrumAnalyser, PrepareRejectsSettingsItCannotUse) {
     EXPECT_FALSE(analyser.prepare(k_sample_rate, 0, flat()));
     EXPECT_TRUE(analyser.curve_db().empty());
 }
+
+TEST(SpectrumAnalyser, ARejectedPrepareLeavesItUnprepared) {
+    SpectrumAnalyser analyser;
+    ASSERT_TRUE(analyser.prepare(k_sample_rate, 2));
+    SpectrumAnalyser::Settings bad = flat();
+    bad.m_num_points = 1;
+    EXPECT_FALSE(analyser.prepare(k_sample_rate, 2, bad));
+    EXPECT_EQ(analyser.fft_size(), 0u);  // the frames stop too
+    feed(analyser, dsp_test::sine(2, 16384, 1000.0, 1.0f, k_sample_rate));
+    EXPECT_EQ(analyser.num_frames(), 0u);
+    EXPECT_FALSE(analyser.set_resolution(SpectrumAnalyser::Resolution::Low));
+}
+
+TEST(SpectrumAnalyser, ATiltChangeAppliesToTheHeldCurveAtOnce) {
+    // Frozen, the curve never falls: a tilt change must still move it, by exactly the change.
+    const SpectrumAnalyser::Settings settings;  // tilt 4.5
+    SpectrumAnalyser analyser;
+    ASSERT_TRUE(analyser.prepare(k_sample_rate, 1, settings));
+    analyser.set_freeze(true);
+    feed(analyser, dsp_test::noise(1, 8192, 0.5f, 3));
+    const std::vector<float> before(analyser.curve_db().begin(), analyser.curve_db().end());
+    analyser.set_tilt(0.0f);
+    const auto f = analyser.frequencies();
+    for (size_t i = 0; i < f.size(); ++i) {
+        const float expected = before[i] - (4.5f * std::log2(f[i] / 1000.0f));
+        ASSERT_NEAR(analyser.curve_db()[i], std::max(expected, settings.m_floor_db), 1e-3f) << i;
+    }
+}
+
+TEST(SpectrumAnalyser, ASmoothingChangeStartsTheCurveOver) {
+    // Max and mean are not convertible: what was held under the old smoothing goes.
+    SpectrumAnalyser analyser;
+    ASSERT_TRUE(analyser.prepare(k_sample_rate, 1, flat()));
+    analyser.set_freeze(true);
+    feed(analyser, dsp_test::sine(1, 16384, bin_frequency(4000.0), 1.0f, k_sample_rate));
+    ASSERT_NEAR(*std::ranges::max_element(analyser.curve_db()), 0.0f, 0.1f);
+    analyser.set_smoothing(1.0f);
+    EXPECT_EQ(*std::ranges::max_element(analyser.curve_db()), flat().m_floor_db);
+}
+
+TEST(SpectrumAnalyser, ReadFromAProbeOfAnotherChannelCountReadsNothing) {
+    // A mono probe into a stereo analyser would read 3 dB low, a stereo one into mono only the
+    // left: a mismatch reads nothing (and asserts in debug builds).
+    SampleProbe probe;
+    probe.prepare(k_sample_rate, 512, 1);
+    SpectrumAnalyser analyser;
+    ASSERT_TRUE(analyser.prepare(k_sample_rate, 2, flat()));
+    Buffer<float> block = dsp_test::sine(1, 512, 1000.0, 1.0f, k_sample_rate);
+    for (int i = 0; i < 16; ++i) { probe.process(BufferView(block), 0); }
+#ifdef NDEBUG
+    analyser.read_from(probe);
+    EXPECT_EQ(analyser.num_frames(), 0u);
+    EXPECT_EQ(probe.available(), 16u * 512u);  // left for a reader that fits
+#else
+    EXPECT_DEATH(analyser.read_from(probe), "channel");
+#endif
+}
+
+TEST(SpectrumAnalyser, NarrowSmoothingStillSeesASineBetweenPoints) {
+    // 128 points over 20 Hz to 20 kHz are 0.079 octave apart; 1/24-octave bands around them leave
+    // gaps. A sine halfway between two points must still show at about its smoothed level.
+    SpectrumAnalyser::Settings settings = flat();
+    settings.m_num_points = 128;
+    settings.m_smoothing_octaves = 1.0f / 24.0f;
+    SpectrumAnalyser analyser;
+    ASSERT_TRUE(analyser.prepare(k_sample_rate, 1, settings));
+    const auto f = analyser.frequencies();
+    const double between = std::sqrt(static_cast<double>(f[100]) * f[101]);  // ~5 kHz
+    feed(analyser, dsp_test::sine(1, 16384, bin_frequency(between), 1.0f, k_sample_rate));
+    const float shown = std::max(analyser.curve_db()[100], analyser.curve_db()[101]);
+    EXPECT_GT(shown, -20.0f);  // the sine's power over a band of ~30 bins: about -15 dB
+}
+
+TEST(SpectrumAnalyser, AMaximumAboveNyquistIsClampedToIt) {
+    // At 32 kHz, 20 kHz is above Nyquist: the points must not be copies of the last bin.
+    SpectrumAnalyser analyser;
+    ASSERT_TRUE(analyser.prepare(32000.0, 1, flat()));
+    EXPECT_LE(analyser.frequencies().back(), 16000.0f);
+    const auto f = analyser.frequencies();
+    EXPECT_LT(f[f.size() - 2], f.back());
+}

@@ -15,8 +15,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   smoothing a point is its band's largest bin (a sine keeps its level), with fractional-octave
   smoothing its band's mean power; tilt in dB per octave around 1 kHz (4.5 by default), speed
   (rises at once, falls at most so many dB per second), freeze (holds the maximum), floor.
-  `read_from(SampleProbe&)` drains a probe and starts the frames over after a discontinuity.
-  A full-scale sine reads 0 dB at tilt 0. Tests: `SpectrumAnalyser.*`.
+  `read_from(SampleProbe&)` drains a probe of the same channel count and starts the frames
+  over after a discontinuity. A tilt change moves the held curve at once, a smoothing change
+  starts it over; a maximum above Nyquist is clamped to it; a rejected `prepare()` leaves it
+  unprepared. One thread for everything (the curve is a view). A full-scale sine reads 0 dB at
+  tilt 0. Tests: `SpectrumAnalyser.*`.
 - `thl::graph::Graph::add_probe<Probe>(node, ProbePoint, args...)` / `remove_probe(ProbeId)` /
   `probe(ProbeId)`: a probe watches a node's input (its sources mixed) or output (after its
   processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with the latency
