@@ -99,6 +99,8 @@ Every declaration lives in the inline namespace `thl::THL_ABI_NAMESPACE` (`TANH_
 
 ## Dependencies (via CMake FetchContent)
 
+What the components embed, with each licence, is in `THIRD_PARTY_NOTICES.md` (installed to `share/doc/tanh`): adding a dependency or changing its version updates it in the same commit.
+
 - nlohmann_json 3.12.0 (State)
 - miniaudio 0.11.24 (AudioIO)
 - pffft v1.1.0, marton78/pffft (DSP, with `TANH_FFT_BACKEND=pffft`; BSD-like FFTPACK licence: binary distributions carry its notice)

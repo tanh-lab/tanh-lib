@@ -20,6 +20,15 @@ if(NOT TANH_BUILT_COMPONENTS)
     return()
 endif()
 
+# --- Third-party notices -------------------------------------------------------
+
+# What the components embed and the notices a product that ships them must carry.
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+    COMPONENT runtime
+)
+
 # --- Public headers ------------------------------------------------------------
 
 # Shared by every component (Logger.h pulls in the sanitizer macros).

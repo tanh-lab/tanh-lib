@@ -9,6 +9,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `THIRD_PARTY_NOTICES.md`: the third-party code the components embed (pffft, miniaudio,
+  nlohmann/json, readerwriterqueue and the zlib-licensed semaphore in it), with version, source,
+  component and licence text, installed to `share/doc/tanh`. A product that ships tanh-lib
+  carries these notices.
 - `thl::dsp::analysis::SpectrumAnalyser`: the curve of a spectrum analyser display, on top of
   `StftAnalyser`, for a reader thread. Resolution (FFT 1024 to 8192, 75 % overlap), points spaced
   on a log axis (256 from 20 Hz to 20 kHz by default), channels averaged in power; without
