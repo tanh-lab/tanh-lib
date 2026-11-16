@@ -246,8 +246,10 @@ TEST(SpectrumAnalyser, ReadFromAProbeOfAnotherChannelCountReadsNothing) {
     analyser.read_from(probe);
     EXPECT_EQ(analyser.num_frames(), 0u);
     EXPECT_EQ(probe.available(), 16u * 512u);  // left for a reader that fits
-#else
+#elif GTEST_HAS_DEATH_TEST
     EXPECT_DEATH(analyser.read_from(probe), "channel");
+#else
+    GTEST_SKIP() << "a debug build asserts here, and this platform has no death tests (iOS)";
 #endif
 }
 
