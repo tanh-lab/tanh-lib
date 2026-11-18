@@ -165,6 +165,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   like those of every other struct, which `.clang-tidy` asks for and the merge queue now
   enforces. Migration: rename the two members where the result of `adaptive_peak_pick()` is
   read.
+- Licence: the adaptive peak picker (`include/tanh/dsp/analysis/AdaptivePeakPicker.h`,
+  `src/dsp/analysis/AdaptivePeakPicker.cpp`) is under the dsp component's licence, AGPL-3.0
+  (`LICENSE`), not Apache-2.0. The two files were added to the dsp component with an
+  `SPDX-License-Identifier: Apache-2.0` header and a README sentence to match, but the library
+  is licensed per component and the dsp component never was Apache-2.0: only the core component
+  is. The header and the README sentence are removed; like every other dsp file, the two carry
+  no SPDX line.
 - `thl::audio_io::AudioFileWriter::write_to_file()` takes its buffer view by `const` reference
   (was by value), like the other functions that only read a view. Calls compile unchanged; the
   exported symbol changes, so code linked against a shared `tanh_audio_io` has to be rebuilt.

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/analysis/AdaptivePeakPicker.h>
 
