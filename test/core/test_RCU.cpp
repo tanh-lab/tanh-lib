@@ -532,6 +532,8 @@ TEST(RCU, ExitedReaderThreadsAreReclaimedByWriters) {
         int next = 0;
         while (!stop.load()) {
             rcu.update([&next](int& v) { v = ++next; });
+            // Let a registering reader have the writer mutex, also on a busy runner.
+            std::this_thread::yield();
         }
     });
 
