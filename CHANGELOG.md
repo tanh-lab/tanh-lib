@@ -160,6 +160,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `get_crossover_parameter_float()` (non-finite by default: the crossover keeps what
   `set_frequency()` gave it) and `read_crossover_parameters()`, which `MultibandLimiterImpl`
   and `StereoWidenerImpl` now call instead of each repeating it. Overrides keep working.
+- **Breaking:** `thl::dsp::analysis::AdaptivePeakPickResult`'s members are `m_peak_indices` and
+  `m_threshold` (were `peak_indices` and `threshold`): public data members carry the `m_` prefix
+  like those of every other struct, which `.clang-tidy` asks for and the merge queue now
+  enforces. Migration: rename the two members where the result of `adaptive_peak_pick()` is
+  read.
 
 ### Fixed
 

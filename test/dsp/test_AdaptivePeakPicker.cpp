@@ -16,9 +16,9 @@ TEST(AdaptivePeakPicker, SelectsLocalMaximaAboveAdaptiveThreshold) {
 
     const auto result = adaptive_peak_pick(values, 2, 3, 0.1, 3, 1);
 
-    EXPECT_EQ(result.peak_indices, (std::vector<std::size_t>{2, 6}));
-    EXPECT_DOUBLE_EQ(result.threshold[2], 0.15);
-    EXPECT_DOUBLE_EQ(result.threshold[6], 0.3);
+    EXPECT_EQ(result.m_peak_indices, (std::vector<std::size_t>{2, 6}));
+    EXPECT_DOUBLE_EQ(result.m_threshold[2], 0.15);
+    EXPECT_DOUBLE_EQ(result.m_threshold[6], 0.3);
 }
 
 TEST(AdaptivePeakPicker, RejectsNearbySecondaryPeak) {
@@ -26,7 +26,7 @@ TEST(AdaptivePeakPicker, RejectsNearbySecondaryPeak) {
 
     const auto result = adaptive_peak_pick(values, 1, 1, 0.1, 3, 1);
 
-    EXPECT_EQ(result.peak_indices, (std::vector<std::size_t>{1}));
+    EXPECT_EQ(result.m_peak_indices, (std::vector<std::size_t>{1}));
 }
 
 TEST(AdaptivePeakPicker, AppliesEligibilityMask) {
@@ -35,7 +35,7 @@ TEST(AdaptivePeakPicker, AppliesEligibilityMask) {
 
     const auto result = adaptive_peak_pick(values, 1, 1, 0.1, 1, 1, eligible);
 
-    EXPECT_TRUE(result.peak_indices.empty());
+    EXPECT_TRUE(result.m_peak_indices.empty());
 }
 
 TEST(AdaptivePeakPicker, SelectsFirstEligiblePointOnPlateau) {
@@ -43,7 +43,7 @@ TEST(AdaptivePeakPicker, SelectsFirstEligiblePointOnPlateau) {
 
     const auto result = adaptive_peak_pick(values, 1, 2, 0.0, 2, 1);
 
-    EXPECT_EQ(result.peak_indices, (std::vector<std::size_t>{1}));
+    EXPECT_EQ(result.m_peak_indices, (std::vector<std::size_t>{1}));
 }
 
 TEST(AdaptivePeakPicker, EmptyInputReturnsEmptyPeaksAndThreshold) {
@@ -51,8 +51,8 @@ TEST(AdaptivePeakPicker, EmptyInputReturnsEmptyPeaksAndThreshold) {
 
     const auto result = adaptive_peak_pick(values, 1, 1, 0.0, 1);
 
-    EXPECT_TRUE(result.peak_indices.empty());
-    EXPECT_TRUE(result.threshold.empty());
+    EXPECT_TRUE(result.m_peak_indices.empty());
+    EXPECT_TRUE(result.m_threshold.empty());
 }
 
 TEST(AdaptivePeakPicker, FirstThresholdIsInfinite) {
@@ -60,7 +60,7 @@ TEST(AdaptivePeakPicker, FirstThresholdIsInfinite) {
 
     const auto result = adaptive_peak_pick(values, 1, 1, 0.0, 1);
 
-    EXPECT_TRUE(std::isinf(result.threshold.front()));
+    EXPECT_TRUE(std::isinf(result.m_threshold.front()));
 }
 
 TEST(AdaptivePeakPicker, HandlesLookaheadAtMaximumSize) {
@@ -69,7 +69,7 @@ TEST(AdaptivePeakPicker, HandlesLookaheadAtMaximumSize) {
     const auto result =
         adaptive_peak_pick(values, 1, 1, 0.0, 1, std::numeric_limits<std::size_t>::max());
 
-    EXPECT_EQ(result.peak_indices, (std::vector<std::size_t>{1}));
+    EXPECT_EQ(result.m_peak_indices, (std::vector<std::size_t>{1}));
 }
 
 TEST(AdaptivePeakPicker, RejectsNonFiniteValues) {

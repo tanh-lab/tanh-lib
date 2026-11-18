@@ -12,8 +12,8 @@
 namespace thl::inline THL_ABI_NAMESPACE::dsp::analysis {
 
 struct TANH_API AdaptivePeakPickResult {
-    std::vector<std::size_t> peak_indices;
-    std::vector<double> threshold;
+    std::vector<std::size_t> m_peak_indices;
+    std::vector<double> m_threshold;
 };
 
 TANH_API AdaptivePeakPickResult adaptive_peak_pick(std::span<const double> values,
