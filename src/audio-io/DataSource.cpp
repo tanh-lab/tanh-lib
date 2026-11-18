@@ -1,4 +1,5 @@
 #include <tanh/audio-io/DataSource.h>
+#include <tanh/core/AbiNamespace.h>
 
 #include <cstdint>
 #include <memory>
@@ -6,7 +7,7 @@
 
 #include "DataSourceImpl.h"
 
-namespace thl::audio_io {
+namespace thl::inline THL_ABI_NAMESPACE::audio_io {
 
 DataSource::DataSource(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
 
@@ -58,4 +59,4 @@ bool DataSource::is_valid() const {
     return m_impl && m_impl->is_valid();
 }
 
-}  // namespace thl::audio_io
+}  // namespace thl::inline THL_ABI_NAMESPACE::audio_io

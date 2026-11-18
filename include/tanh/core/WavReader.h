@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 
 #include <cstddef>
@@ -11,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Minimal, dependency-free RIFF/WAVE decoder.
@@ -211,4 +212,4 @@ inline BufferF read_wav(const std::string& path, std::string* error = nullptr) {
     return read_wav_from_memory(image.data(), image.size(), error);
 }
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

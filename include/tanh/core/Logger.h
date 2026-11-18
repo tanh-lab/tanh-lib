@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +24,7 @@
 /// the audio thread. Real-time code uses the lock-free path in
 /// thl::Logger::rt instead (see below); its messages are delivered through
 /// the same sinks by a background drain thread.
-namespace thl::Logger {
+namespace thl::inline THL_ABI_NAMESPACE::Logger {
 
 /// Severity levels, ordered from most to least severe.
 enum class LogLevel : std::uint32_t {
@@ -463,7 +465,7 @@ TANH_API std::uint64_t dropped_count() noexcept TANH_NONBLOCKING_FUNCTION;
 
 }  // namespace rt
 
-}  // namespace thl::Logger
+}  // namespace thl::inline THL_ABI_NAMESPACE::Logger
 
 /// @name Convenience macros
 /// @brief printf-style shorthands over thl::Logger::logf (synchronous) and

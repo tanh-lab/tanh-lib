@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/analysis/Follower.h>
@@ -37,7 +38,7 @@
 
 #include <algorithm>
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 using namespace thl::dsp::utils;
 
@@ -116,4 +117,4 @@ private:
     thl::dsp::analysis::Follower m_follower;
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

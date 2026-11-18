@@ -1,10 +1,14 @@
 Components
 ==========
 
-tanh-lib is six independently buildable library targets. Each is an
+tanh-lib is seven independently buildable library targets. Each is an
 ``add_library`` of its own, exported as ``tanh::<Component>`` both in-tree and
 from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option.
-Everything lives in namespace ``thl``.
+Everything lives in namespace ``thl``, inside the inline ABI namespace
+``thl::v<major>_<minor>`` (``TANH_ABI_NAMESPACE``), so that two copies of
+tanh-lib in one process stay apart; code spells ``thl::`` (see
+:doc:`symbol_visibility`). The core is defined by ``tanh_add_core_library()``
+(``cmake/core-library.cmake``), which an embedder also uses for a private copy.
 
 .. graphviz::
    :align: center
@@ -16,15 +20,18 @@ Everything lives in namespace ``thl``.
 
        core       [label="tanh::Core\nDispatcher, Logger, RCU,\nLockFreeQueue, Buffer, WavReader"];
        state      [label="tanh::State\nhierarchical parameters,\nRCU reads, JSON"];
-       dsp        [label="tanh::DSP\nprocessors, effects,\ngranular, Rings resonator"];
+       dsp        [label="tanh::DSP\nprocessors, effects, sampler,\nslicing, granular, Rings resonator"];
        modulation [label="tanh::Modulation\nmodulation matrix,\nchange-point sub-blocking"];
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
+       graph_node [label="tanh::Graph\nprocessor graph,\nlatency compensation"];
 
        state -> core;
        dsp -> core;
        audio_io -> core;
        net -> core;
+       graph_node -> core;
+       graph_node -> dsp;
        modulation -> core;
        modulation -> state;
        modulation -> dsp;
@@ -68,12 +75,27 @@ DSP
 ---
 
 ``tanh::DSP`` (``include/tanh/dsp/``) holds the processors: synth voices,
-effects, filters, the granular engine, analysis helpers and the Rings resonator
-model, which is also available as the separate ``tanh::Resonator`` target for
-consumers that only need it. Every processor inherits
-:cpp:class:`thl::dsp::BaseProcessor` and follows the ``prepare()`` /
-``process()`` contract; ``process_modulated()`` splits a block at change points
-for sample-accurate automation. Depends on Core.
+effects, filters, analysis helpers and the Rings resonator model, which is also
+available as the separate ``tanh::Resonator`` target for consumers that only
+need it. Processors inherit :cpp:class:`thl::dsp::BaseProcessor` and follow the
+``prepare()`` / ``process()`` contract; ``process_modulated()`` splits a block
+at change points for sample-accurate automation.
+
+Sample playback is split into components usable on their own:
+
+- ``thl::dsp::sampler`` — :cpp:class:`thl::dsp::sampler::SamplePlayer`, a
+  varispeed player / looper with click-free loop crossfades, zero-crossing
+  snap and reverse playback, plus its building blocks (see :doc:`sampler`)
+- ``thl::dsp::slicing`` — :cpp:struct:`thl::dsp::slicing::SliceMap` and the
+  offline :cpp:class:`thl::dsp::slicing::TransientSlicer` (see :doc:`slicing`)
+- ``thl::dsp::pitch`` — :cpp:class:`thl::dsp::pitch::PitchBank`, pitch-shifted
+  copies of a sample (see :doc:`pitch`)
+- ``thl::dsp::granular`` — :cpp:class:`thl::dsp::granular::GrainEngine`, a
+  standalone granulator, and ``GrainProcessorImpl``, a voice that composes the
+  engine and the player behind a parameter enum
+
+Depends on Core; Signalsmith Stretch is fetched and linked privately for the
+pitch banks.
 
 Modulation
 ----------
@@ -104,6 +126,18 @@ platform HTTP stack, :cpp:class:`thl::net::Sha256` for verification and
 :cpp:class:`thl::net::AssetStore` for the verified, atomic install into
 ``<root>/<id>/<version>/``. Off by default (``TANH_BUILD_NET``) so nothing that
 embeds ``tanh::Core`` inherits a network stack. Depends on Core.
+
+Graph
+-----
+
+``tanh::Graph`` (``include/tanh/graph/``) runs ``BaseProcessor`` nodes as one
+processor: :cpp:class:`thl::graph::Graph` is edited on the control thread and
+handed to the audio thread at ``commit()`` with a short fade, nests, mixes each
+node's sources and blends its wet signal, and compensates latency: the faster
+inputs of every node and a node's dry path are delayed to match each node's
+``latency_samples()``, and the graph reports its own. A bypassed node coming
+back is ``reset()``. Off by default (``TANH_BUILD_GRAPH``). Depends on Core and
+DSP.
 
 Platforms
 ---------

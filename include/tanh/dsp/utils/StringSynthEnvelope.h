@@ -28,11 +28,13 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <array>
 #include <cstdint>
 #include <utility>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 enum EnvelopeShape { Linear, Quartic };
 
@@ -132,4 +134,4 @@ private:
     uint16_t m_sustain_point = 0;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

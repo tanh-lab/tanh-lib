@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Logger.h>
 #include <tanh/core/RtFormat.h>
 #include <tanh/core/threading/LockFreeQueue.h>
@@ -39,7 +40,7 @@
 #include <systemd/sd-journal.h>
 #endif
 
-namespace thl::Logger {
+namespace thl::inline THL_ABI_NAMESPACE::Logger {
 
 namespace {
 
@@ -1225,4 +1226,4 @@ void debug(const char* group, const char* message) {
     log(LogLevel::Debug, group, message);
 }
 
-}  // namespace thl::Logger
+}  // namespace thl::inline THL_ABI_NAMESPACE::Logger

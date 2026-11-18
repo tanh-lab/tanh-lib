@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+#include <tanh/core/threading/CacheLine.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -9,7 +11,7 @@
 #include <memory>
 #include <type_traits>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Bounded lock-free multi-producer / multi-consumer queue.
@@ -30,7 +32,7 @@ namespace thl::core {
  *
  * T must be trivially copyable and default constructible; the queue copies
  * elements by value into pre-allocated slots. Capacity must be a power of
- * two. sizeof(LockFreeQueue) ~= Capacity * (sizeof(T) + 8) + 128, so large
+ * two. sizeof(LockFreeQueue) ~= Capacity * (sizeof(T) + 8) + 3 * k_cache_line_size, so large
  * queues belong at namespace scope or on the heap, not on the stack.
  *
  * Objects of this type have trivial destructors; a namespace-scope instance
@@ -162,7 +164,7 @@ public:
 
 private:
     static constexpr std::size_t k_mask = Capacity - 1;
-    static constexpr std::size_t k_cache_line = 64;
+    static constexpr std::size_t k_cache_line = k_cache_line_size;
 
     // Each cell stores its sequence number *relative to its own index*, so
     // the all-zero initial state is the correct one and the constructor can
@@ -279,7 +281,7 @@ public:
     bool empty_approx() const noexcept TANH_NONBLOCKING_FUNCTION { return size_approx() == 0; }
 
 private:
-    static constexpr std::size_t k_cache_line = 64;
+    static constexpr std::size_t k_cache_line = k_cache_line_size;
 
     struct Cell {
         std::atomic<std::size_t> m_seq{0};
@@ -292,4 +294,4 @@ private:
     alignas(k_cache_line) std::atomic<std::size_t> m_dequeue_pos{0};
 };
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/analysis/NoteFilter.h>
@@ -44,7 +45,7 @@
 
 #include <array>
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 const int32_t k_max_string_synth_polyphony = 4;
 const int32_t k_string_synth_voices = 12;
@@ -167,4 +168,4 @@ private:
     bool m_clear_fx = false;
 };
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

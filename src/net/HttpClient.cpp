@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/net/AndroidHttp.h>
 #include <tanh/net/HttpClient.h>
 
@@ -12,7 +13,7 @@
 
 namespace fs = std::filesystem;
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 
 #if !defined(THL_PLATFORM_ANDROID)
 // Android defines the real one in HttpClient_android.cpp. Everywhere else this
@@ -100,4 +101,4 @@ HttpResult HttpClient::get_to_string(const std::string& url,
     return detail::perform(request);
 }
 
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -8,7 +10,7 @@
 #include "ParameterDefinitions.h"
 #include "tanh/core/Exports.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @class StateKeyNotFoundException
@@ -112,4 +114,4 @@ private:
     ParameterType m_actual;
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

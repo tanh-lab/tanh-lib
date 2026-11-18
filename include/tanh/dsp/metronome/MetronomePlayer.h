@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/transport/TransportClock.h>
@@ -9,7 +10,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace thl::dsp::metronome {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::metronome {
 
 /**
  * @class MetronomePlayerImpl
@@ -128,4 +129,4 @@ inline int MetronomePlayerImpl::get_parameter<int>(Parameter p, uint32_t modulat
     return get_parameter_int(p, modulation_offset);
 }
 
-}  // namespace thl::dsp::metronome
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::metronome

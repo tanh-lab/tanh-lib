@@ -4,14 +4,40 @@ project (${PROJECT_NAME} VERSION ${PROJECT_VERSION})
 add_executable(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
+	test_AdaptivePeakPicker.cpp
 	test_Limiter.cpp
 	test_LinearSmootherBank.cpp
 	test_MorphFilter.cpp
+	test_EqDesign.cpp
+	test_ParametricEq.cpp
 	test_StereoFDN.cpp
+	test_ConstellationReverb.cpp
+	test_DelayProcessor.cpp
 	test_InternalTransportClock.cpp
 	test_MetronomePlayer.cpp
-	test_Granular.cpp
+	test_SamplePlayer.cpp
+	test_Slicing.cpp
+	test_PitchBank.cpp
+	test_GrainEngine.cpp
+	test_GrainProcessor.cpp
 	test_MorphWindow.cpp
+	test_IntellijelWavefolder.cpp
+	test_Butterworth.cpp
+	test_LinkwitzRiley.cpp
+	test_BandSplitter.cpp
+	test_MultibandLimiter.cpp
+	test_StereoWidener.cpp
+	test_Probes.cpp
+	test_RealFft.cpp
+	test_StftAnalyser.cpp
+	test_SpectrumAnalyser.cpp
+	test_GainComputer.cpp
+	test_LevelDetector.cpp
+	test_GainSmoother.cpp
+	test_DspHelpers.cpp
+	test_Compressor.cpp
+	test_LookaheadLimiter.cpp
+	test_Crossfade.cpp
 )
 
 if(TARGET tanh_resonator)

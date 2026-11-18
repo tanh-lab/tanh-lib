@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/BrownianNoise.h>
 #include <tanh/dsp/utils/Random.h>
@@ -6,7 +7,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 BrownianNoise::BrownianNoise() = default;
 
@@ -76,4 +77,4 @@ float BrownianNoise::calc_coeff(float rate, float sample_rate) {
     return 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> * (rate * 4.0f) / sample_rate);
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

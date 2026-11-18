@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/utils/MorphWindow.h>
 
@@ -7,7 +8,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 namespace {
 
@@ -145,4 +146,4 @@ const MorphWindow& MorphWindow::shared() {
     return k_shared;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

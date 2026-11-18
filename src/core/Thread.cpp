@@ -3,6 +3,7 @@
 // The priority mapping and the SCHED_FIFO / nice fallback were ported from anira's
 // HighPriorityThread (anira-project/anira, Apache-2.0).
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Logger.h>
 #include <tanh/core/threading/Thread.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -35,7 +36,7 @@
 #include <sys/resource.h>
 #endif
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 namespace {
 
@@ -229,4 +230,4 @@ bool Thread::set_current_name(const char* name) noexcept {
     return name != nullptr && apply_name(name);
 }
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

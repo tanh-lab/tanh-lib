@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <cstdint>
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * @brief A monotonic clock in nanoseconds for input events and audio callbacks.
@@ -17,4 +18,4 @@ namespace thl::core {
  */
 [[nodiscard]] TANH_API int64_t uptime_ns() TANH_NONBLOCKING_FUNCTION;
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

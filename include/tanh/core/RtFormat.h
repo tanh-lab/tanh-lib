@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -46,7 +47,7 @@
 #define THL_PRINTF_FORMAT(fmt_index, first_arg)
 #endif
 
-namespace thl::core {
+namespace thl::inline THL_ABI_NAMESPACE::core {
 
 int rt_vsnprintf(char* out,
                  size_t capacity,
@@ -629,4 +630,4 @@ inline int rt_snprintf(char* out,
     return n;
 }
 
-}  // namespace thl::core
+}  // namespace thl::inline THL_ABI_NAMESPACE::core

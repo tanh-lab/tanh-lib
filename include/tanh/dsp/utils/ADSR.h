@@ -1,8 +1,9 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * ADSR envelope generator class.
@@ -138,6 +139,11 @@ public:
     float get_current_level() const { return m_current_level; }
 
     /**
+     * Get the level the current (or last) release phase started from.
+     */
+    float get_release_level() const { return m_release_level; }
+
+    /**
      * Set the attack curve shape
      *
      * @param curve_blend Blend factor between linear (0.0) and exponential
@@ -196,4 +202,4 @@ private:
     float m_sample_rate{44100.0f};  // Sample rate for timing calculations
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

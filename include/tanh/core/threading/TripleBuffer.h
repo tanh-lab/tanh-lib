@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
@@ -8,7 +9,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /**
  * @brief Wait-free single-producer, single-consumer "latest value" mailbox.
@@ -104,4 +105,4 @@ private:
     alignas(64) uint8_t m_front = 2;  // reader only
 };
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

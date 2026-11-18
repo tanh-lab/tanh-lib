@@ -28,9 +28,11 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstdint>
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 const int32_t k_num_chords = 11;
 
@@ -46,4 +48,4 @@ struct RingsPerformanceState {
     int32_t m_chord;
 };
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

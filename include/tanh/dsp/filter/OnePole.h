@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/DspTypes.h>
 
 #include <cmath>
 
-namespace thl::dsp::filter {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::filter {
 
 enum class FilterMode {
     LowPass,
@@ -102,4 +103,4 @@ private:
     float m_state = 0.0f;
 };
 
-}  // namespace thl::dsp::filter
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::filter

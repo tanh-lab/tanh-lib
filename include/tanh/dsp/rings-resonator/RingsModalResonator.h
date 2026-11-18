@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/filter/Svf.h>
@@ -37,7 +38,7 @@
 #include <algorithm>
 #include <array>
 
-namespace thl::dsp::resonator {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator {
 
 const int32_t k_max_modes = 64;
 
@@ -99,4 +100,4 @@ private:
     std::array<thl::dsp::filter::Svf, k_max_modes> m_f;
 };
 
-}  // namespace thl::dsp::resonator
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::resonator

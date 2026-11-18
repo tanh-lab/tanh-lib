@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <tanh/core/AbiNamespace.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -15,7 +16,7 @@
 #include <string>
 #include <thread>
 
-namespace thl::net::test {
+namespace thl::inline THL_ABI_NAMESPACE::net::test {
 
 /// A tiny HTTP/1.1 server for the transfer tests.
 ///
@@ -294,4 +295,4 @@ private:
     std::thread m_thread;
 };
 
-}  // namespace thl::net::test
+}  // namespace thl::inline THL_ABI_NAMESPACE::net::test

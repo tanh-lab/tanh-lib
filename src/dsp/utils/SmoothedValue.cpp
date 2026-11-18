@@ -1,10 +1,12 @@
 #include "tanh/dsp/utils/SmoothedValue.h"
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 SmoothedValue::SmoothedValue() = default;
 
@@ -75,4 +77,4 @@ void SmoothedValue::recalc_step() {
     }
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils
