@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -489,4 +490,267 @@ TEST(RCU, DestroyedAfterItsThreadsRegistry) {
     });
     reader.join();
     EXPECT_EQ(seen, 7);
+}
+
+// Reader threads exit while another thread destroys the RCU they read. Whichever
+// of thread and RCU is second frees each node, once: ASan and LSan report a
+// double free, a use after free or a leak here, TSan an access that the
+// hand-over does not order.
+TEST(RCU, ThreadExitRacingDestructionFreesEachNodeOnce) {
+    constexpr int k_rounds = 200;
+    constexpr int k_readers = 4;
+    for (int round = 0; round < k_rounds; ++round) {
+        auto rcu = std::make_unique<RCU<int>>(round);
+        std::atomic<int> registered{0};
+        std::atomic<bool> leave{false};
+        std::vector<std::thread> readers;
+        readers.reserve(k_readers);
+        for (int r = 0; r < k_readers; ++r) {
+            readers.emplace_back([&] {
+                (void)rcu->read([](const int& v) { return v; });
+                registered.fetch_add(1);
+                while (!leave.load()) { std::this_thread::yield(); }
+            });  // the thread exits: its registry hands the node over or frees it
+        }
+        while (registered.load() < k_readers) { std::this_thread::yield(); }
+        leave.store(true);
+        rcu.reset();  // while the readers exit
+        for (auto& reader : readers) { reader.join(); }
+    }
+}
+
+// Reader threads come and go while a writer publishes: the writer unlinks and
+// frees the nodes of exited threads (cleanup_dead_nodes) while others exit.
+// Afterwards only the slot is left to count.
+TEST(RCU, ExitedReaderThreadsAreReclaimedByWriters) {
+    RCU<int> rcu(0);
+    const auto slot = rcu.add_reader();
+    std::atomic<bool> stop{false};
+    std::atomic<int> went_backwards{0};
+
+    std::thread writer([&] {
+        int next = 0;
+        while (!stop.load()) {
+            rcu.update([&next](int& v) { v = ++next; });
+        }
+    });
+
+    for (int batch = 0; batch < 100; ++batch) {
+        std::vector<std::thread> readers;
+        readers.reserve(4);
+        for (int r = 0; r < 4; ++r) {
+            readers.emplace_back([&] {
+                int last = -1;
+                for (int i = 0; i < 20; ++i) {
+                    const int v = rcu.read([](const int& x) { return x; });
+                    if (v < last) { went_backwards.fetch_add(1); }
+                    last = v;
+                }
+            });
+        }
+        for (auto& reader : readers) { reader.join(); }
+    }
+    stop.store(true);
+    writer.join();
+    rcu.update([](int&) {});  // a publication after the last exit unlinks the rest
+
+    EXPECT_EQ(went_backwards.load(), 0);
+    EXPECT_EQ(rcu.get_reader_count(), 1u);
+    EXPECT_TRUE(static_cast<bool>(slot));
+}
+
+// A thread inside a read scope of one RCU registers with others: the first of
+// those registrations sweeps what a destroyed RCU left in its registry, the
+// later ones rehash it. The open scope keeps its node and its version.
+TEST(RCU, RegisteringInsideAnotherRcusScopeKeepsItsVersion) {
+    constexpr size_t k_others = 64;
+    auto& table = fresh_version_table();
+    RCU<TrackedVersion> scoped;
+    auto stale = std::make_unique<RCU<int>>(1);
+    std::vector<std::unique_ptr<RCU<int>>> others;
+    others.reserve(k_others);
+    for (size_t i = 0; i < k_others; ++i) {
+        others.push_back(std::make_unique<RCU<int>>(static_cast<int>(i)));
+    }
+    bool kept = false;
+    size_t entries = 0;
+    {
+        StepThread reader({[&] {
+                               scoped.register_reader_thread();
+                               (void)stale->read([](const int& v) { return v; });
+                           },
+                           [&] {
+                               auto scope = scoped.read_scope();
+                               const uint64_t seq = scope.data().m_seq;
+                               for (auto& other : others) {
+                                   (void)other->read([](const int& v) { return v; });
+                               }
+                               for (int i = 0; i < 4; ++i) {
+                                   scoped.replace([](TrackedVersion&) {});
+                               }
+                               kept = !table.destroyed(seq);
+                               entries = detail::rcu_thread_state().m_nodes.size();
+                           }});
+        reader.step();
+        stale.reset();  // leaves its node in the reader's registry
+        reader.step();
+    }
+    EXPECT_TRUE(kept);
+    EXPECT_EQ(entries, 1 + k_others);  // the stale entry went, inside the scope
+}
+
+// A slot that is idle or was never used holds no version back, and
+// synchronize() does not wait for it.
+TEST(RCU, IdleSlotsDoNotHoldBackTheWriter) {
+    auto& table = fresh_version_table();
+    RCU<TrackedVersion> rcu;
+    const auto used = rcu.add_reader();
+    const auto unused = rcu.add_reader();
+    uint64_t seq = 0;
+    {
+        auto scope = rcu.read_scope(used);
+        seq = scope.data().m_seq;
+    }
+    rcu.replace([](TrackedVersion&) {});
+    EXPECT_TRUE(table.destroyed(seq));  // reclaimed by the publication that retired it
+    rcu.synchronize();                  // returns
+    EXPECT_TRUE(static_cast<bool>(unused));
+}
+
+// An open section on a slot holds synchronize() until it is closed, as one on a
+// registered thread does.
+TEST(RCU, OpenSlotSectionHoldsBackSynchronize) {
+    RCU<int> rcu(1);
+    const auto slot = rcu.add_reader();
+    std::atomic<bool> synchronized{false};
+    std::thread writer;
+    {
+        auto scope = rcu.read_scope(slot);
+        rcu.update([](int& v) { v = 2; });  // the scope now holds a retired version
+        writer = std::thread([&] {
+            rcu.synchronize();
+            synchronized.store(true);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        EXPECT_FALSE(synchronized.load());
+        EXPECT_EQ(scope.data(), 1);
+    }
+    writer.join();
+    EXPECT_TRUE(synchronized.load());
+}
+
+namespace {
+
+// A render callback that reads through a reader slot. Under RealtimeSanitizer an
+// allocation, a lock or a blocking call anywhere below aborts the test.
+int render_through_slot(const RCU<int>& rcu, RCU<int>::Reader reader) TANH_NONBLOCKING_FUNCTION {
+    int sum = 0;
+    for (int i = 0; i < 100; ++i) {
+        const auto outer = rcu.read_scope(reader);
+        const auto inner = rcu.read_scope(reader);  // nested, as in a callee of the callback
+        sum += outer.data() + inner.data();
+    }
+    return sum;
+}
+
+}  // namespace
+
+// The slot path is real-time safe on a thread that never registered with the
+// RCU (a host's render thread): it registers nothing, so it reaches no
+// allocation, no lock and no thread-local registry.
+TEST(RCU, SlotScopeIsRealtimeSafeOnAnUnregisteredThread) {
+    RCU<int> rcu(3);
+    const auto reader = rcu.add_reader();
+    const unsigned int readers_before = rcu.get_reader_count();
+    int sum = 0;
+    std::thread render_thread([&] { sum = render_through_slot(rcu, reader); });
+    render_thread.join();
+    EXPECT_EQ(sum, 100 * (3 + 3));
+    EXPECT_EQ(rcu.get_reader_count(), readers_before);  // the thread did not register
+}
+
+// A small pool of reader slots shared by more threads than slots, the way a
+// reader that is not bound to a thread uses them: a thread claims a free slot
+// (an atomic flag, acquire on the claim, release on the return), reads through
+// it and returns it after its scope has closed. Each slot has one user at a
+// time and the claim orders one user after the other, which is the contract of
+// add_reader(): every read stays protected.
+TEST(RCU, SlotPoolWithOneUserAtATimeProtects) {
+    constexpr size_t k_slots = 2;
+    constexpr int k_users = 6;
+    auto& table = fresh_version_table();
+    RCU<TrackedVersion> rcu;
+    struct PooledSlot {
+        RCU<TrackedVersion>::Reader m_reader;
+        std::atomic<bool> m_claimed{false};
+    };
+    std::array<PooledSlot, k_slots> pool;
+    for (auto& slot : pool) { slot.m_reader = rcu.add_reader(); }
+
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> violations{0};
+    std::atomic<uint64_t> reads{0};
+
+    std::thread writer([&]() {
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (table.m_next_seq.load(std::memory_order_relaxed) + 16 >= k_version_table_size) {
+                break;
+            }
+            rcu.replace([](TrackedVersion&) {});
+        }
+    });
+
+    std::vector<std::thread> users;
+    users.reserve(k_users);
+    for (int u = 0; u < k_users; ++u) {
+        users.emplace_back([&]() {
+            uint64_t local_reads = 0;
+            while (!stop.load(std::memory_order_relaxed)) {
+                for (auto& slot : pool) {
+                    if (slot.m_claimed.exchange(true, std::memory_order_acquire)) { continue; }
+                    {
+                        auto scope = rcu.read_scope(slot.m_reader);
+                        const uint64_t seq = scope.data().m_seq;
+                        for (volatile int spin = 0; spin < 20; spin = spin + 1) {}
+                        if (table.destroyed(seq)) {
+                            violations.fetch_add(1, std::memory_order_relaxed);
+                        }
+                    }
+                    slot.m_claimed.store(false, std::memory_order_release);  // after the scope
+                    ++local_reads;
+                }
+            }
+            reads.fetch_add(local_reads, std::memory_order_relaxed);
+        });
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    stop.store(true, std::memory_order_relaxed);
+    writer.join();
+    for (auto& user : users) { user.join(); }
+
+    EXPECT_EQ(violations.load(), 0U);
+    EXPECT_GT(reads.load(), 100U);
+    EXPECT_EQ(rcu.get_reader_count(), k_slots);  // no thread registered itself
+}
+
+// get_reader_count() counts the reader slots and the registered threads that
+// are still alive.
+TEST(RCU, ReaderCountCountsSlotsAndLiveThreads) {
+    RCU<int> rcu(0);
+    EXPECT_EQ(rcu.get_reader_count(), 0u);
+    const auto slot = rcu.add_reader();
+    EXPECT_EQ(rcu.get_reader_count(), 1u);
+    rcu.register_reader_thread();
+    rcu.register_reader_thread();  // a no-op the second time
+    EXPECT_EQ(rcu.get_reader_count(), 2u);
+    unsigned int with_other = 0;
+    std::thread other([&] {
+        (void)rcu.read([](const int& v) { return v; });
+        with_other = rcu.get_reader_count();
+    });
+    other.join();
+    EXPECT_EQ(with_other, 3u);
+    EXPECT_EQ(rcu.get_reader_count(), 2u);  // an exited thread no longer counts
+    EXPECT_TRUE(static_cast<bool>(slot));
 }
