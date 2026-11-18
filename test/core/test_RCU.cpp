@@ -711,7 +711,9 @@ TEST(RCU, SlotPoolWithOneUserAtATimeProtects) {
                     {
                         auto scope = rcu.read_scope(slot.m_reader);
                         const uint64_t seq = scope.data().m_seq;
-                        for (volatile int spin = 0; spin < 20; spin = spin + 1) {}
+                        // Stay inside for a moment, as the tests above do.
+                        volatile int sink = 0;
+                        for (int spin = 0; spin < 20; ++spin) { sink = spin; }
                         if (table.destroyed(seq)) {
                             violations.fetch_add(1, std::memory_order_relaxed);
                         }
