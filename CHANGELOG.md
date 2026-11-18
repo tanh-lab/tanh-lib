@@ -9,6 +9,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Sample playback as standalone components, usable without the granular voice
+  or any parameter system (design notes: `docs/sphinx/sampler.md`, `slicing.md`,
+  `pitch.md`):
+  - `dsp::sampler::SamplePlayer`: a varispeed player / looper over
+    `SampleView`s, with Start / End / Loop markers or an exact region. End before
+    Start plays backwards, and moving a marker never moves the audible head. A
+    loop wraps through a crossfade before End (or after the wrap when Loop has no
+    room behind it), equal-power, or equal-gain when both ends sit on zero
+    crossings. Other discontinuities (source switch, retrigger, one-shot end) are
+    crossfaded through a pool of outgoing heads. Tuning lives in
+    `PlayerSettings`; `render()` takes a span of alternative sources, and
+    `sources_changed()` must be called when the host loads new audio (snapped
+    markers are cached against a source's address and length).
+  - Its building blocks: `SampleView` with `read_clamped` / `read_wrapped`,
+    `LoopRegion`, `LoopMarkers` (minimum span, zero-crossing snap, cache),
+    `ZeroCrossing.h`, and `LoopCrossfade.h` (`FadeCurve`, `plan_loop_fade`).
+  - `dsp::slicing::SliceMap`: up to 64 slices in frames, trivially copyable for an
+    audio-thread handoff, rescaled for sources of another length; `SliceSteps.h`
+    for the slice-space mapping and `region_from_steps`;
+    `valid_normalized_bounds` for host edits.
+  - `dsp::slicing::TransientSlicer`: offline band-flux transient detection that
+    picks N slices, refines boundaries against the audio and falls back to the
+    grid; every threshold is in `Settings`.
+  - `dsp::pitch::PitchBank`: pitch-shifted, equal-length copies of a sample, one
+    slot per semitone, built across worker threads with Signalsmith Stretch.
+    `build()` / `shift()` take the sample rate explicitly and refuse a
+    non-positive one.
+    Signalsmith is fetched and linked privately, and `test/exports` forbids it
+    in the export table.
+  - `dsp::utils::mixdown`: mono average of a buffer, for offline analysis.
+- `dsp::granular::GrainEngine` is usable standalone: it takes a `GrainParams`
+  block, a `HeadMode` (`Spray` / `Scan`), a span of sources and planar output,
+  and reports to an optional `GrainVisualizer`.
+
 - `thl::dsp::analysis::SpectrumAnalyser`: the curve of a spectrum analyser display, on top of
   `StftAnalyser`, for a reader thread. Resolution (FFT 1024 to 8192, 75 % overlap), points spaced
   on a log axis (256 from 20 Hz to 20 kHz by default), channels averaged in power; without
@@ -366,6 +400,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   One `DISABLED_` test fetches over real TLS when run with
   `--gtest_also_run_disabled_tests`.
 
+### Fixed
+
+- `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.
+  `VoiceParams::m_volume` is a per-sub-block constant and was applied raw, so it
+  was the only unsmoothed term in the voice gain (the ADSR already moves per
+  sample) — a hard modulation step, such as a square LFO swinging both rails in
+  one sample, reached the output as a discontinuity. The voice gain now ramps
+  volume over `k_volume_smoothing_duration` (5 ms), seeded to the current level
+  in `prepare()` and again at note-on so a voice starts at its level instead of
+  sliding up to it.
+
+### Changed
+
+- **Breaking**, `dsp::granular`: the voice internals were split into the
+  components above. Hosts that subclass `GrainProcessorImpl` must change the
+  following:
+  - `SlicerEnabled`, `LoopEnabled` and `LoopSnap` moved to the end of the
+    `Parameter` enum. Hosts that serve parameters by name are unaffected; tables
+    indexed by the enum's numeric value must be reordered.
+  - `read_slice_map()` takes a `dsp::slicing::SliceMap`, which is frame-based,
+    instead of the old normalised 16-slice `granular::SliceMap`. Build it with
+    `SliceMap::from_normalized(bounds, total_frames)`.
+  - `prepare()`'s `samples_per_block` is now used: it sizes the player's scratch.
+  - `granular::SamplePlayer`, `SampleReader`, `SampleRegion` and `SliceMap` are
+    gone; use `sampler::SamplePlayer`, `sampler::SampleView`,
+    `sampler::LoopRegion` and `slicing::SliceMap`.
+  - `GrainEngine` no longer takes a `SampleReader` and `VoiceParams`: see the
+    new API above.
+  - `HeadPolicy` reads `HeadInputs`.
+  - The `k_player_*` and `k_*_varispeed` constants moved into
+    `sampler::PlayerSettings`.
+
+  The Sample head now renders source channels and the voice applies the channel
+  mode afterwards (`channel_mixer::mix_head`). Grain output is bit-identical
+  before and after the split; Sample-mode output differs by at most 1.2e-7 of
+  full scale, from floating-point reordering.
+- `TANH_WITH_DOCS` now does something — it adds the `sphinx-docs` target — and
+  therefore defaults to **OFF** (it was ON and inert). A docs-enabled configure
+  requires Doxygen and Python 3; consumers that already set it OFF are
+  unaffected.
+- `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
+  of calling `sin`/`cos` per frame — a block fading the live head plus four
+  outgoing tails wanted five transcendentals per frame. Because
+  `cos(t * pi/2) == sin((1 - t) * pi/2)`, one quarter-sine table sized to the
+  fade length in `prepare()` serves both directions, indexed straight by the
+  integer fade counter: exact at every index, so the crossfade values are
+  unchanged bit for bit.
+- `dsp::granular::GrainProcessorImpl`: the voice gain pass skips the mode-fade
+  ramp when the fade is already parked on its target, which is every block
+  outside a mode switch. Same output, two fewer compares and a store per frame.
+
+### Added
 
 - Documentation: a Doxygen → Breathe → Sphinx site under `docs/` (the same
   pipeline as anira), published to https://tanh-lab.github.io/tanh-lib/ by the
