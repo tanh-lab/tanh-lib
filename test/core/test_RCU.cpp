@@ -427,9 +427,12 @@ TEST(RCU, NewRcuAtADestroyedOnesAddressRegistersAnew) {
     unsigned int readers = 0;
     RCU<int>* second = nullptr;
     {
+        // read(), not read_scope(): this read registers the thread (it allocates
+        // and locks), which RealtimeSanitizer refuses inside read_scope(), a
+        // TANH_NONBLOCKING_FUNCTION.
         StepThread reader({[&] { (void)first->read([](const int& v) { return v; }); },
                            [&] {
-                               auto scope = second->read_scope();
+                               (void)second->read([](const int& v) { return v; });
                                readers = second->get_reader_count();
                            }});
         reader.step();
