@@ -11,12 +11,15 @@ name: coverage
 # preset, the suite, the export) shows on its own merge group instead of on
 # main afterwards.
 #
-# Codecov and the branch: an upload is filed under the branch of the run's ref,
-# which in the queue is gh-readonly-queue/main/pr-<n>-<sha>, not main, and the
-# README badge reads main. Codecov moves a commit to the default branch when it
-# is pushed there (its handler of the push webhook), so the queue's upload
-# becomes main's when the group lands. Should the badge ever stop following
-# main, a `push: branches: [main]` trigger here brings the old upload back.
+# Codecov and the branch: the README badge reads Codecov's branch main, and an
+# upload is filed under the branch the uploader reports. In the queue the ref
+# is gh-readonly-queue/main/pr-<n>-<sha>; the Codecov CLI (its GitHub Actions
+# adapter; codecov-action fetches the latest CLI) reports such a ref as the
+# queue's target branch, so the upload is filed under main, for the commit main
+# moves to. A merge group that is dropped after its upload leaves Codecov's
+# main one commit ahead of the repository until the next group lands. Should
+# the badge ever stop following main, a `push: branches: [main]` trigger here
+# brings the old upload back.
 
 on:
   merge_group:
