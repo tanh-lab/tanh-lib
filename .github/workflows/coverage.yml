@@ -1,14 +1,26 @@
 name: coverage
 
-# Full-suite coverage on every push to main — the pipeline is
-# tanh-lab/ci-actions' reusable coverage workflow; this file keeps tanh-lib's
-# facts. Not queue-gated: a coverage dip is information, never a merge blocker.
+# Full-suite coverage in the merge queue: the pipeline is tanh-lab/ci-actions'
+# reusable coverage workflow (instrumented build, the whole suite, llvm-cov
+# export, upload to Codecov); this file keeps tanh-lib's facts.
+#
+# Not a required check: a coverage dip is information, never a merge blocker,
+# and a red run here holds no merge group back. It used to run on every push to
+# main. A merge group's head is the commit main moves to, so the queue measures
+# the same commit before it lands, and a change that breaks the pipeline (the
+# preset, the suite, the export) shows on its own merge group instead of on
+# main afterwards.
+#
+# Codecov and the branch: an upload is filed under the branch of the run's ref,
+# which in the queue is gh-readonly-queue/main/pr-<n>-<sha>, not main, and the
+# README badge reads main. Codecov moves a commit to the default branch when it
+# is pushed there (its handler of the push webhook), so the queue's upload
+# becomes main's when the group lands. Should the badge ever stop following
+# main, a `push: branches: [main]` trigger here brings the old upload back.
 
 on:
+  merge_group:
   workflow_dispatch:
-  push:
-    branches:
-      - main
   # Self-validating: runs on a PR exactly when this workflow itself changes,
   # dormant on every other PR per the tier policy.
   pull_request:
