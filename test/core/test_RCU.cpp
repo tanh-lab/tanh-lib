@@ -191,10 +191,29 @@ struct VersionTable {
     std::unique_ptr<std::atomic<uint8_t>[]> m_destroyed =
         std::make_unique<std::atomic<uint8_t>[]>(k_version_table_size);
     std::atomic<uint64_t> m_next_seq{1};
+
+    /// True if the version was destroyed, or is not one this table can tell about.
+    [[nodiscard]] bool destroyed(uint64_t seq) const {
+        return seq >= k_version_table_size || m_destroyed[seq].load() != 0;
+    }
 };
 
 VersionTable& version_table() {
     static VersionTable table;
+    return table;
+}
+
+// The table, emptied for the calling test. The tests share one table; without
+// this a run of several of them in one process (--gtest_repeat) uses it up,
+// after which the writers stop and every version reads as destroyed. Call it
+// before the test creates its first version: none of an earlier test is alive.
+VersionTable& fresh_version_table() {
+    auto& table = version_table();
+    const uint64_t used = std::min(table.m_next_seq.load(), k_version_table_size);
+    for (uint64_t seq = 0; seq < used; ++seq) {
+        table.m_destroyed[seq].store(0, std::memory_order_relaxed);
+    }
+    table.m_next_seq.store(1);
     return table;
 }
 
@@ -222,8 +241,8 @@ struct TrackedVersion {
 // nanoseconds wide and only opened on some x86-64 hosts, so a pass here is
 // necessary rather than sufficient.
 TEST(RCU, ReadScopeNeverOutlivesItsVersion) {
+    auto& table = fresh_version_table();
     RCU<TrackedVersion> rcu;
-    auto& table = version_table();
 
     std::atomic<bool> stop{false};
     std::atomic<uint64_t> violations{0};
@@ -242,7 +261,7 @@ TEST(RCU, ReadScopeNeverOutlivesItsVersion) {
                     // Stay inside the section for a moment so a premature
                     // reclamation has time to land.
                     for (volatile int i = 0; i < 100; i = i + 1) {}
-                    if (seq >= k_version_table_size || table.m_destroyed[seq].load() != 0) {
+                    if (table.destroyed(seq)) {
                         violations.fetch_add(1, std::memory_order_relaxed);
                     }
                 }
@@ -277,8 +296,8 @@ TEST(RCU, ReadScopeNeverOutlivesItsVersion) {
 // from a fresh thread per batch must stay protected (no version reclaimed while
 // in a section) and must not register any thread (no per-thread node).
 TEST(RCU, OwnedReaderProtectsAcrossChangingThreads) {
+    auto& table = fresh_version_table();
     RCU<TrackedVersion> rcu;
-    auto& table = version_table();
     const auto reader = rcu.add_reader();
     const unsigned int readers_before = rcu.get_reader_count();
 
@@ -302,9 +321,7 @@ TEST(RCU, OwnedReaderProtectsAcrossChangingThreads) {
                 auto scope = rcu.read_scope(reader);
                 const uint64_t seq = scope.data().m_seq;
                 for (volatile int spin = 0; spin < 100; spin = spin + 1) {}
-                if (seq >= k_version_table_size || table.m_destroyed[seq].load() != 0) {
-                    violations.fetch_add(1, std::memory_order_relaxed);
-                }
+                if (table.destroyed(seq)) { violations.fetch_add(1, std::memory_order_relaxed); }
                 reads.fetch_add(1, std::memory_order_relaxed);
             }
         });
@@ -322,8 +339,8 @@ TEST(RCU, OwnedReaderProtectsAcrossChangingThreads) {
 // Read sections nest: closing an inner scope keeps the outer one's version
 // alive, on a reader slot and on a registered thread.
 TEST(RCU, NestedReadScopesKeepTheOuterVersion) {
+    auto& table = fresh_version_table();
     RCU<TrackedVersion> rcu;
-    auto& table = version_table();
     const auto reader = rcu.add_reader();
     {
         auto outer = rcu.read_scope(reader);
@@ -332,7 +349,7 @@ TEST(RCU, NestedReadScopesKeepTheOuterVersion) {
         for (int i = 0; i < 4; ++i) {
             rcu.replace([](TrackedVersion&) {});
         }
-        EXPECT_EQ(table.m_destroyed[seq].load(), 0) << "slot";
+        EXPECT_FALSE(table.destroyed(seq)) << "slot";
     }
     rcu.register_reader_thread();
     {
@@ -342,7 +359,7 @@ TEST(RCU, NestedReadScopesKeepTheOuterVersion) {
         for (int i = 0; i < 4; ++i) {
             rcu.replace([](TrackedVersion&) {});
         }
-        EXPECT_EQ(table.m_destroyed[seq].load(), 0) << "thread";
+        EXPECT_FALSE(table.destroyed(seq)) << "thread";
     }
 }
 
