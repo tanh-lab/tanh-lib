@@ -5,6 +5,11 @@ name: warm_caches
 # reusable workflow's header for why warming must happen on main's scope
 # (cmake-build injects the sccache launchers in preset mode, so every leg
 # compiles through the cache).
+#
+# Stays on push to main, unlike the checks that moved into the merge queue: a
+# cache entry is restorable from other branches only when it was written on the
+# default branch. What a merge group writes belongs to its own
+# gh-readonly-queue ref and no pull request or later group can restore it.
 
 on:
   workflow_dispatch:

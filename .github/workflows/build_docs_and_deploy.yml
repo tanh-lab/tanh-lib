@@ -41,6 +41,9 @@ jobs:
         with:
           path: build/docs/sphinx/html
 
+  # Publishing follows the merge, so this stays on push to main: the queue
+  # builds the same pages before the merge, but a merge group can still be
+  # dropped, and the site shows what main is.
   deploy:
     name: deploy
     needs: build_docs
