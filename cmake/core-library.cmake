@@ -86,6 +86,7 @@ function(tanh_add_core_library target)
         ${_src}/src/core/Logger.cpp
         ${_src}/src/core/Thread.cpp
         ${_src}/src/core/RCU.cpp
+        ${_src}/src/core/Clock.cpp
     )
     if(arg_ALIAS)
         add_library(${arg_ALIAS} ALIAS ${target})

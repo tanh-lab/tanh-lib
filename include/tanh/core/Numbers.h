@@ -2,10 +2,13 @@
 #pragma once
 
 /// Platform-portable std::numbers constants.
-/// Apple Clang ships the `<numbers>` header but does not expose std::numbers
-/// in C++20 mode.  Detect Apple Clang via __apple_build_version__ and
-/// provide a manual fallback.
-#if __has_include(<numbers>) && !defined(__apple_build_version__)
+/// Older Apple Clang ships the `<numbers>` header without exposing std::numbers
+/// in C++20 mode. Use the standard header whenever the library advertises it
+/// (__cpp_lib_math_constants), so this header and `<numbers>` can be included
+/// together; provide a manual fallback only where it is missing.
+#include <version>
+
+#if defined(__cpp_lib_math_constants)
 #include <numbers>  // IWYU pragma: export
 #else
 

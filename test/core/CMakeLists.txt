@@ -11,6 +11,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_RingBuffer.cpp
 	test_LockFreeQueue.cpp
 	test_SpscRingBuffer.cpp
+	test_TripleBuffer.cpp
+	test_SeqLock.cpp
 	test_RtFormat.cpp
 	test_Logger.cpp
 	test_Thread.cpp

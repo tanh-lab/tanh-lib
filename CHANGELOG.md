@@ -9,6 +9,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::RCU::add_reader()` / `read_scope(reader)` (`core/threading/RCU.h`): a reader slot
+  (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host rendering on changing
+  threads no longer allocates and locks on the audio thread. A slot has one user at a time, and
+  one user must be ordered before the next by happens-before (the host's own call order, a
+  mutex, an atomic claim flag with acquire / release): nothing checks it. Tests:
+  `RCU.OwnedReaderProtectsAcrossChangingThreads`, `RCU.SlotPoolWithOneUserAtATimeProtects`,
+  `RCU.SlotScopeIsRealtimeSafeOnAnUnregisteredThread`.
+- `thl::TripleBuffer<T>` (`core/threading/TripleBuffer.h`): a wait-free single-producer /
+  single-consumer latest-value mailbox. Its slots and the two sides' indices are
+  `k_cache_line_size` apart, so it is at least six cache lines (768 bytes). Tests:
+  `TripleBuffer.*`.
+- `thl::SeqLock` (`core/threading/SeqLock.h`): the sequence counter of a wait-free seqlock over
+  atomics. Tests: `SeqLock.*`.
+- `thl::core::uptime_ns()` (`core/Clock.h`): the uptime clock of UITouch, NSEvent and host times
+  on Apple platforms, `steady_clock` elsewhere.
 - Sample playback as standalone components, usable without the granular voice
   or any parameter system (design notes: `docs/sphinx/sampler.md`, `slicing.md`,
   `pitch.md`):
@@ -134,6 +149,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
+  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
 - `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
   `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
   Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`
@@ -146,6 +163,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `thl::RCU`: read scopes on one thread or reader slot nest; closing an inner one freed the
+  outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
+- `thl::RCU`: destroying an RCU while a thread that read it still runs no longer frees that
+  thread's reader node under it (the thread wrote into the freed node on exit, and a new RCU at
+  the same address reused it unseen by its writer). Whichever of thread and RCU goes second frees
+  the node; a thread's next registration frees what destroyed RCUs left in its registry. Tests:
+  `RCU.ThreadOutlivingTheRcuFreesItsNode`, `RCU.NewRcuAtADestroyedOnesAddressRegistersAnew`,
+  `RCU.ThreadRegistryDropsDestroyedRcus`.
+- `thl::RCU`: destroying an RCU on a thread whose reader registry was already destroyed (an RCU
+  with static storage duration that the main thread read, or one owned by a `thread_local`
+  constructed before the thread's first read) looked a node up in the destroyed registry:
+  undefined behaviour, a segmentation fault at exit with libc++ (macOS, iOS, Android). `~RCU` no
+  longer touches thread-local state; the destroying thread's own node is freed like any other
+  live thread's, at that thread's exit or its next registration. Test:
+  `RCU.DestroyedAfterItsThreadsRegistry` (fails without the fix on libc++ only).
 - `thl::dsp::utils::LimiterImpl`: a NaN threshold, attack or release made its gain, and so
   its output, NaN for good (and with it `MultibandLimiterImpl`'s bands). A NaN now keeps the
   parameter's last value; the threshold is clamped to [-120, 24] dB, the times to
