@@ -168,6 +168,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `thl::audio_io::AudioFileWriter::write_to_file()` takes its buffer view by `const` reference
   (was by value), like the other functions that only read a view. Calls compile unchanged; the
   exported symbol changes, so code linked against a shared `tanh_audio_io` has to be rebuilt.
+- CI: `clang_tidy result` is a required check, and the `clang_tidy` workflow reports on pull
+  requests too. A pull request gets clang-tidy over the `.cpp` files it changes (all of them
+  when it changes `.clang-tidy` or the workflow); the merge queue keeps the full sweep. Both
+  check the translation units of the Linux `desktop-debug` build, i.e. the entries of its
+  compile database under `src/` and `test/`, no longer every `.cpp` file there: a source of
+  another platform (`RealFftAccelerate.cpp`) was analysed with a borrowed compile command and
+  failed on a header Linux does not have. The sweep's findings on `main` are fixed (see the
+  two entries above; the rest changed no interface).
+- CI: the `coverage` workflow runs in the merge queue instead of on every push to `main`, so
+  the commit is measured before it lands. It stays a non-required check. Cache warming and
+  the docs deployment stay on push to `main`.
 
 ### Fixed
 
