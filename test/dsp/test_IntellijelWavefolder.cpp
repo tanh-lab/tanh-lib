@@ -306,7 +306,9 @@ TEST(IntellijelWavefolder, OffsetSymmetryNeverCancelsTheSignal) {
     };
     const float in_rms = rms(input, 12000);
     for (const float drive : {0.5f, 1.0f, std::numbers::pi_v<float>, 6.0f}) {
-        for (float symmetry = -1.0f; symmetry <= 1.0f; symmetry += 0.125f) {
+        // -1 to 1 in steps of 1/8, counted in integers (every value is exact in float).
+        for (int step = -8; step <= 8; ++step) {
+            const float symmetry = static_cast<float>(step) * 0.125f;
             TestWavefolder wf;
             wf.m_drive = drive;
             wf.m_symmetry = symmetry;
