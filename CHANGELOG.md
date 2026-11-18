@@ -17,7 +17,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `RCU.OwnedReaderProtectsAcrossChangingThreads`, `RCU.SlotPoolWithOneUserAtATimeProtects`,
   `RCU.SlotScopeIsRealtimeSafeOnAnUnregisteredThread`.
 - `thl::TripleBuffer<T>` (`core/threading/TripleBuffer.h`): a wait-free single-producer /
-  single-consumer latest-value mailbox. Tests: `TripleBuffer.*`.
+  single-consumer latest-value mailbox. Its slots and the two sides' indices are
+  `k_cache_line_size` apart, so it is at least six cache lines (768 bytes). Tests:
+  `TripleBuffer.*`.
 - `thl::SeqLock` (`core/threading/SeqLock.h`): the sequence counter of a wait-free seqlock over
   atomics. Tests: `SeqLock.*`.
 - `thl::core::uptime_ns()` (`core/Clock.h`): the uptime clock of UITouch, NSEvent and host times

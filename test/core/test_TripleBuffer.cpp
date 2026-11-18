@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tanh/core/threading/CacheLine.h>
 #include <tanh/core/threading/TripleBuffer.h>
 
 #include <array>
@@ -31,6 +32,16 @@ struct Frame {
 };
 
 }  // namespace
+
+// The writer's slot and index never share a cache line with the reader's: every
+// slot and both indices are core::k_cache_line_size apart (128 bytes, a line on
+// Apple Silicon; 64 would let two of them share one there).
+TEST(TripleBuffer, KeepsWriterAndReaderACacheLineApart) {
+    static_assert(alignof(TripleBuffer<int>) == thl::core::k_cache_line_size);
+    static_assert(sizeof(TripleBuffer<int>) == 6 * thl::core::k_cache_line_size);
+    EXPECT_EQ(alignof(TripleBuffer<Frame>), thl::core::k_cache_line_size);
+    EXPECT_EQ(sizeof(TripleBuffer<Frame>) % thl::core::k_cache_line_size, 0u);
+}
 
 TEST(TripleBuffer, NothingNewBeforeTheFirstWrite) {
     TripleBuffer<int> tb(7);

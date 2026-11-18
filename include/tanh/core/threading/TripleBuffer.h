@@ -2,10 +2,12 @@
 #pragma once
 
 #include <tanh/core/AbiNamespace.h>
+#include <tanh/core/threading/CacheLine.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -17,6 +19,9 @@ namespace thl::inline THL_ABI_NAMESPACE {
  * The reader always gets the most recent complete value; values it did not
  * pick up are overwritten. Exactly one writer thread and one reader thread,
  * which may be the same. T must be trivially copyable.
+ *
+ * The three slots and the two sides' indices each start a cache line of their
+ * own (core::k_cache_line_size), so a TripleBuffer is at least six of them.
  */
 template <typename T>
 class TripleBuffer {
@@ -94,15 +99,18 @@ private:
     // that byte, so plain copies of T never race.
     static constexpr uint8_t k_index_mask = 0x3;
     static constexpr uint8_t k_dirty = 0x4;
+    // Every slot and each side's index on cache lines of its own, so that the
+    // writer's stores never evict what the reader uses (and the reverse).
+    static constexpr std::size_t k_cache_line = core::k_cache_line_size;
 
-    struct alignas(64) Slot {
+    struct alignas(k_cache_line) Slot {
         T m_value{};
     };
 
     std::array<Slot, 3> m_slots{};
-    alignas(64) std::atomic<uint8_t> m_middle{1};
-    alignas(64) uint8_t m_back = 0;   // writer only
-    alignas(64) uint8_t m_front = 2;  // reader only
+    alignas(k_cache_line) std::atomic<uint8_t> m_middle{1};
+    alignas(k_cache_line) uint8_t m_back = 0;   // writer only
+    alignas(k_cache_line) uint8_t m_front = 2;  // reader only
 };
 
 }  // namespace thl::inline THL_ABI_NAMESPACE
