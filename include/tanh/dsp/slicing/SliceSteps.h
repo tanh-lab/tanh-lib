@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/sampler/LoopRegion.h>
 #include <tanh/dsp/slicing/SliceMap.h>
 
@@ -19,7 +20,7 @@
  * are helpers for hosts that want that mapping; a SliceMap does not require
  * it.
  */
-namespace thl::dsp::slicing {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing {
 
 /// The slice (0..N-1) a step value in [0, 1] picks. An empty map or a NaN
 /// picks slice 0.
@@ -81,4 +82,4 @@ inline sampler::LoopRegion region_from_steps(const SliceMap& map,
     return {.m_start = lo, .m_end = hi, .m_loop_point = lo, .m_reverse = reverse};
 }
 
-}  // namespace thl::dsp::slicing
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing

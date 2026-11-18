@@ -26,6 +26,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    components
    realtime_safety
    symbol_visibility
+   change_points
    modulation
    sampler
    slicing
@@ -44,6 +45,8 @@ package and running the tests.
 
 :doc:`components` describes the library targets and how they depend on each
 other; :doc:`realtime_safety` lists the rules every ``process()`` path follows.
+:doc:`change_points` shows, with an interactive figure, how a processor renders a
+block in pieces that start where its modulated parameters change.
 :doc:`symbol_visibility`, :doc:`modulation` and :doc:`audio_io` are the design
 notes that used to live in the README; :doc:`sampler`, :doc:`slicing` and
 :doc:`pitch` describe the sample playback components.

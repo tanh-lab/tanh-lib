@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/BrownianNoise.h>
@@ -10,8 +11,9 @@
 #include <tanh/dsp/utils/SineOscillator.h>
 
 #include <array>
+#include <cstdint>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 enum class ConstellationReverbChannelMode : int {
     MonoToStereo = 0,  // Read ch0 as mono input  → stereo out on ch0+ch1
@@ -49,6 +51,8 @@ enum class ConstellationReverbChannelMode : int {
  *   FreqShiftDetune    – asymmetric detune between L/R shifter [-1, 1]
  *   FreqShiftModDepth  – brownian freq-mod depth in Hz
  *   ChannelModeParam   – ConstellationReverbChannelMode (int)
+ *
+ * Where the shimmer pitch-shifts the tank is set_shimmer_position() (Feedback by default).
  */
 class TANH_API ConstellationReverbImpl : public thl::dsp::BaseProcessor {
 public:
@@ -60,6 +64,19 @@ public:
                  const size_t& num_channels) override;
 
     void process(thl::core::BufferView buffer, uint32_t modulation_offset = 0) override;
+
+    /// Where the shimmer pitch-shifts the tank.
+    enum class ShimmerPosition : uint8_t {
+        /// Each half's output, in the feedback only: heard after a round of decay, so it builds
+        /// with a long decay (as ValhallaShimmer). The default.
+        Feedback,
+        /// Each half's input, the fresh input and the feedback together: heard on the first pass,
+        /// also with a short decay (as hexefx's plate reverb).
+        Input,
+    };
+    /// Audio thread, or before prepare(): where the shimmer sits from the next sample.
+    void set_shimmer_position(ShimmerPosition position) { m_shimmer_position = position; }
+    [[nodiscard]] ShimmerPosition shimmer_position() const { return m_shimmer_position; }
 
 protected:
     enum Parameter {
@@ -122,6 +139,7 @@ private:
 
     // ── Audio state ───────────────────────────────────────────────────────
     double m_sample_rate = 48000.0;
+    ShimmerPosition m_shimmer_position = ShimmerPosition::Feedback;
     float m_sr_ratio = 1.0f;
     float m_hp_coeff = 0.0f;
     float m_bw_coeff = 0.9995f;
@@ -211,4 +229,4 @@ inline int ConstellationReverbImpl::get_parameter<int>(Parameter p, uint32_t mod
     return get_parameter_int(p, modulation_offset);
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/state/ModulationScope.h>
 
@@ -10,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 class TANH_API ModulationSource {
 public:
@@ -209,4 +210,4 @@ private:
     std::vector<uint8_t> m_voice_output_active_storage;
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/sampler/LoopRegion.h>
 #include <tanh/dsp/sampler/SampleView.h>
 #include <tanh/dsp/sampler/ZeroCrossing.h>
@@ -7,7 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 
-namespace thl::dsp::sampler {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler {
 
 /**
  * @brief Turns Start / End / Loop markers into a playable LoopRegion.
@@ -135,4 +136,4 @@ private:
     Cache m_cache{};
 };
 
-}  // namespace thl::dsp::sampler
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler

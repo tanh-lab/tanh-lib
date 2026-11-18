@@ -259,3 +259,79 @@ pre,
   border-bottom: 1px solid #30363d !important;
   font-family: var(--sy-f-mono) !important;
 }
+
+/* Change-point figure (change_points.md, _static/block-split.js). Shibuya's surface, text and
+   accent variables keep it in step with the light and dark modes; the change-point orange is
+   the figure's own. */
+.tanh-block-split {
+  --tbs-signal: #c2501b;
+  background: var(--sy-c-surface);
+  border: 1px solid var(--sy-c-border);
+  border-radius: 8px;
+  padding: 16px 16px 12px;
+  margin: 1rem 0;
+}
+html.dark .tanh-block-split {
+  --tbs-signal: #ff8a52;
+}
+.tanh-block-split .tbs-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.tanh-block-split label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--sy-c-light);
+}
+.tanh-block-split select {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--sy-c-text);
+  background: var(--sy-c-background);
+  border: 1px solid var(--sy-c-border);
+  border-radius: 5px;
+  padding: 4px 8px;
+}
+.tanh-block-split .tbs-readout,
+.tanh-block-split .tbs-calls {
+  font-family: var(--sy-f-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8rem;
+}
+.tanh-block-split .tbs-readout b {
+  color: var(--tbs-signal);
+  font-weight: 500;
+}
+.tanh-block-split .tbs-svg-wrap {
+  overflow-x: auto;
+}
+.tanh-block-split .tbs-svg {
+  display: block;
+  width: 100%;
+  min-width: 600px;
+  height: auto;
+}
+.tanh-block-split .tbs-svg text {
+  font-size: 12px;
+  fill: var(--sy-c-text);
+}
+.tanh-block-split .tbs-svg .tbs-muted { fill: var(--sy-c-light); }
+.tanh-block-split .tbs-lane,
+.tanh-block-split .tbs-axis { stroke: var(--sy-c-divider); stroke-width: 1; }
+.tanh-block-split .tbs-tick { stroke: var(--tbs-signal); stroke-width: 2; }
+.tanh-block-split .tbs-tick-idle { stroke: var(--sy-c-light); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.tanh-block-split .tbs-piece-a { fill: var(--accent-a4); }
+.tanh-block-split .tbs-piece-b { fill: var(--accent-a2); }
+.tanh-block-split .tbs-stair { fill: none; stroke: var(--accent-9); stroke-width: 2; }
+.tanh-block-split .tbs-smooth { fill: none; stroke: var(--tbs-signal); stroke-width: 1.5; }
+.tanh-block-split .tbs-calls {
+  color: var(--sy-c-light);
+  line-height: 1.7;
+  margin-top: 10px;
+  max-height: 12em;
+  overflow-y: auto;
+}
+.tanh-block-split .tbs-calls span { color: var(--sy-c-text); }

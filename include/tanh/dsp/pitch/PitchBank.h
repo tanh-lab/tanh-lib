@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/Exports.h>
 
@@ -7,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace thl::dsp::pitch {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::pitch {
 
 /**
  * @class PitchBank
@@ -93,4 +94,4 @@ private:
     Settings m_settings{};
 };
 
-}  // namespace thl::dsp::pitch
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::pitch

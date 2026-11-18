@@ -3,6 +3,7 @@
 // clang-format off
 #include <cstring>
 #include <signalsmith-stretch/signalsmith-stretch.h>
+#include <tanh/core/AbiNamespace.h>
 // clang-format on
 
 #include <tanh/core/Buffer.h>
@@ -17,7 +18,7 @@
 #include <thread>
 #include <vector>
 
-namespace thl::dsp::pitch {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::pitch {
 
 namespace {
 
@@ -184,4 +185,4 @@ bool PitchBank::build(std::vector<core::BufferF>& bank,
     return true;
 }
 
-}  // namespace thl::dsp::pitch
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::pitch

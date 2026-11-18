@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/net/Sha256.h>
 
 #include <algorithm>
@@ -12,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 namespace {
 
 constexpr std::array<std::uint32_t, 64> k_round_constants = {
@@ -229,4 +230,4 @@ bool Sha256::matches_hex(const Digest& digest, std::string_view hex) {
     return true;
 }
 
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net

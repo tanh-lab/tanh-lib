@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainVisualizer.h>
@@ -16,7 +17,7 @@
 #include <random>
 #include <span>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 /// Where grains start (see HeadPolicy).
 enum class HeadMode {
@@ -183,4 +184,4 @@ private:
     std::uniform_real_distribution<float> m_uni_dist;
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

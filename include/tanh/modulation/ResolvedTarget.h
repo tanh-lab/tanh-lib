@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -11,11 +13,11 @@
 #include "tanh/state/ModulationScope.h"
 #include "tanh/state/ParameterDefinitions.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 struct ParameterRecord;
 }
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // Per-voice modulation buffers. Owns flat contiguous storage for additive
 // and/or replace buffers across all voices, plus per-voice change-point state.
@@ -347,4 +349,4 @@ struct ResolvedTarget {
     }
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

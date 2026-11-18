@@ -1,4 +1,5 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <array>
@@ -8,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 
 /// SHA-256 (FIPS 180-4).
 ///
@@ -66,4 +67,4 @@ private:
     std::uint64_t m_total_bits = 0;
 };
 
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net

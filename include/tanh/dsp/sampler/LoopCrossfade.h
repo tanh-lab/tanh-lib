@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/sampler/LoopRegion.h>
 
@@ -8,7 +9,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::sampler {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler {
 
 /**
  * @brief Quarter-sine crossfade table.
@@ -120,4 +121,4 @@ inline LoopFadePlan plan_loop_fade(const LoopRegion& region,
     return plan;
 }
 
-}  // namespace thl::dsp::sampler
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler

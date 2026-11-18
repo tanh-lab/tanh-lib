@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/DspTypes.h>
@@ -13,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace thl::dsp::slicing {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing {
 
 namespace {
 
@@ -353,4 +354,4 @@ SliceMap TransientSlicer::pick(const TransientAnalysis& analysis,
     return SliceMap::from_frames(boundaries, num_frames);
 }
 
-}  // namespace thl::dsp::slicing
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing

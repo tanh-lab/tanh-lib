@@ -1,7 +1,8 @@
 #pragma once
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
-namespace thl::net {
+namespace thl::inline THL_ABI_NAMESPACE::net {
 
 /// Hand the Net component the process's JavaVM.
 ///
@@ -17,4 +18,4 @@ namespace thl::net {
 /// No-op on every other platform, so callers need no `#ifdef`.
 TANH_API void set_android_java_vm(void* java_vm);
 
-}  // namespace thl::net
+}  // namespace thl::inline THL_ABI_NAMESPACE::net

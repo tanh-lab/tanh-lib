@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/core/threading/RCU.h>
 #include <tanh/modulation/ModulationRouting.h>
@@ -19,11 +20,11 @@
 #include <variant>
 #include <vector>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 class State;
 }
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // Schedule step types for the processing schedule built by Tarjan SCC.
 struct BulkStep {
@@ -342,4 +343,4 @@ private:
                                                                     ModulationScope declared);
 };
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

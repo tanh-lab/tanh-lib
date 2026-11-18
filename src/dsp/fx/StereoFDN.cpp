@@ -1,5 +1,7 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/fx/StereoFDN.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <array>
@@ -11,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 namespace {
 
@@ -256,7 +258,7 @@ void StereoFDN::process(thl::core::BufferView buffer, uint32_t modulation_offset
     m_has_processed = true;
 }
 
-void StereoFDN::reset() {
+void StereoFDN::reset() TANH_NONBLOCKING_FUNCTION {
     clear_delay_state();
     m_delay_smoothers.snap_to_targets();
     m_scalar_smoothers.snap_to_targets();
@@ -303,7 +305,7 @@ void StereoFDN::set_delay_lines_per_channel(size_t delay_lines_per_channel) {
     } else {
         clamp_delay_samples();
     }
-    reset();
+    StereoFDN::reset();  // also from the constructor: this class's reset, not an override's
 }
 
 void StereoFDN::set_delay_samples(size_t left_delay_samples, size_t right_delay_samples) {
@@ -727,4 +729,4 @@ int StereoFDN::get_parameter_int(Parameter p, uint32_t /*modulation_offset*/) {
     return 0;
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

@@ -1,8 +1,9 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * ADSR envelope generator class.
@@ -201,4 +202,4 @@ private:
     float m_sample_rate{44100.0f};  // Sample rate for timing calculations
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

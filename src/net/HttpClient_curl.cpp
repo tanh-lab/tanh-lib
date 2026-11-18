@@ -1,6 +1,7 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <curl/system.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/net/HttpClient.h>
 
 #include <atomic>
@@ -14,7 +15,7 @@
 
 #include "HttpBackend.h"
 
-namespace thl::net::detail {
+namespace thl::inline THL_ABI_NAMESPACE::net::detail {
 namespace {
 
 /// State the curl callbacks write into. One per request.
@@ -213,4 +214,4 @@ bool backend_supported() {
     return true;
 }
 
-}  // namespace thl::net::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::net::detail

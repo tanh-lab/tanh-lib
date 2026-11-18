@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <memory>
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 /// Platform-portable atomic shared_ptr wrapper.
 /// Uses std::atomic<std::shared_ptr<T>> on libstdc++ (Linux/Android) and falls
@@ -41,4 +43,4 @@ void atomic_store(AtomicSharedPtr<T>& ptr, std::shared_ptr<T> desired) {
 
 #endif
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

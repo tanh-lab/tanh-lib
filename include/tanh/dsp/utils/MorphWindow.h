@@ -1,12 +1,13 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <array>
 #include <cstddef>
 #include <string_view>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /// The window shapes, in morph order: 0 = Rectangle ... 7 = Impulse.
 enum class WindowShape : int {
@@ -67,4 +68,4 @@ private:
     std::array<Table, k_num_shapes> m_tables{};
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

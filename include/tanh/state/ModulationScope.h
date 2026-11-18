@@ -1,8 +1,10 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
+
 #include <cstdint>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // Library-neutral scope handle for modulation. Identifies a polyphony domain
 // (e.g. "synth_voice", "lfo_bank") registered at runtime on ModulationMatrix
@@ -37,4 +39,4 @@ struct ModulationScope {
 
 inline constexpr ModulationScope k_global_scope{.m_id = 0, .m_name = k_global_scope_name};
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

@@ -3,6 +3,7 @@
 #include <jni.h>
 #include <sys/system_properties.h>
 #include <tanh/audio-io/AndroidAudioDevices.h>
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Logger.h>
 
 #include <algorithm>
@@ -12,7 +13,7 @@
 
 #include "miniaudio.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 static JavaVM* g_java_vm = nullptr;
 static std::atomic<bool> g_sco_enabled{false};
@@ -602,6 +603,6 @@ bool is_android_classic_bluetooth_connected() {
     return found;
 }
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE
 
 #endif  // THL_PLATFORM_ANDROID

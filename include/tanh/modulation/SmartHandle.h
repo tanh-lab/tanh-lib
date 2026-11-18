@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/modulation/ResolvedTarget.h>
 #include <tanh/state/Parameter.h>
 #include <tanh/utils/RealtimeSanitizer.h>
@@ -17,7 +18,7 @@
 #include <variant>
 #include <vector>
 
-namespace thl::modulation {
+namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 // SmartHandle<T> wraps a ParameterHandle<T> and adds per-sample modulation
 // buffer support. Holds a stable pointer to a ResolvedTarget in the matrix's
@@ -511,4 +512,4 @@ inline void collect_change_points(
     target_buffer.resize(write);
 }
 
-}  // namespace thl::modulation
+}  // namespace thl::inline THL_ABI_NAMESPACE::modulation

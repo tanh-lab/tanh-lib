@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
 #include <tanh/dsp/granular/GrainEngine.h>
@@ -11,7 +12,7 @@
 #include <cstddef>
 #include <span>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 GrainEngine::GrainEngine() : m_random_generator(std::random_device{}()), m_uni_dist(0.0f, 1.0f) {}
 
@@ -378,4 +379,4 @@ float GrainEngine::apply_temperature_ramp(float temperature, size_t elapsed_samp
     return ramped + (temperature - ramped) * temperature;
 }
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

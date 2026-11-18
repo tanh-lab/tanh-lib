@@ -41,7 +41,8 @@ set(_tanh_header_dirs
     "${PROJECT_NAME}_state=state"
     "${PROJECT_NAME}_dsp=dsp"
     "${PROJECT_NAME}_modulation=modulation"
-    "${PROJECT_NAME}_audio_io=audio-io")
+    "${PROJECT_NAME}_audio_io=audio-io"
+    "${PROJECT_NAME}_graph=graph")
 set(_tanh_umbrella_headers
     "${PROJECT_NAME}_core=core.h"
     "${PROJECT_NAME}_state=state.h"
@@ -60,6 +61,15 @@ foreach(target IN LISTS TANH_BUILT_COMPONENTS)
             )
         endif()
     endforeach()
+    # The core's generated tanh/core/AbiNamespace.h (cmake/core-library.cmake): an installed
+    # consumer compiles against the ABI namespace the library was built with.
+    if(target STREQUAL "${PROJECT_NAME}_core")
+        get_target_property(_abi_namespace_header ${target} TANH_ABI_NAMESPACE_HEADER)
+        install(FILES ${_abi_namespace_header}
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tanh/core
+            COMPONENT dev
+        )
+    endif()
     foreach(_entry IN LISTS _tanh_umbrella_headers)
         string(REPLACE "=" ";" _entry "${_entry}")
         list(GET _entry 0 _entry_target)

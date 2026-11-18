@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/BaseProcessor.h>
 #include <tanh/dsp/utils/SmoothedValue.h>
@@ -7,7 +8,7 @@
 #include <array>
 #include <vector>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 /**
  * Intellijel-style wavefolder processor.
@@ -93,4 +94,4 @@ inline float IntellijelWavefolderImpl::get_parameter<float>(Parameter p,
     return get_parameter_float(p, modulation_offset);
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

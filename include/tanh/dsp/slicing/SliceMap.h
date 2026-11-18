@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/sampler/LoopRegion.h>
 
 #include <algorithm>
@@ -10,7 +11,7 @@
 #include <span>
 #include <vector>
 
-namespace thl::dsp::slicing {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing {
 
 /// Most slices a SliceMap holds.
 inline constexpr size_t k_max_slices = 64;
@@ -145,4 +146,4 @@ inline bool valid_normalized_bounds(std::span<const float> bounds,
     return true;
 }
 
-}  // namespace thl::dsp::slicing
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing

@@ -28,13 +28,14 @@
 
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/rings-resonator/RingsDspFunctions.h>
 #include <tanh/dsp/rings-resonator/fx/RingsFxEngine.h>
 #include <tanh/dsp/utils/DspMath.h>
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 class RingsChorus {
 public:
@@ -117,4 +118,4 @@ private:
     float m_phase_2 = 0.0f;
 };
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

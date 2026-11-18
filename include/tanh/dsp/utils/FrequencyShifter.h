@@ -1,10 +1,11 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <array>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Single-sideband frequency shifter using a Hilbert-transform approximation.
@@ -47,4 +48,4 @@ private:
     std::array<State, 4> m_states_b;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/granular/GranularTypes.h>
 #include <tanh/dsp/sampler/LoopRegion.h>
 #include <tanh/dsp/slicing/SliceMap.h>
@@ -10,7 +11,7 @@
 #include <cstddef>
 #include <random>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 // pick_start's "trigger nothing" answer (a one-shot scan that is over).
 inline constexpr FramePos k_no_grain = -1;
@@ -235,4 +236,4 @@ private:
     }
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

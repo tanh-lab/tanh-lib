@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Numbers.h>
 #include <tanh/dsp/sampler/SampleView.h>
 
@@ -11,7 +12,7 @@
 
 // Shared constants and enums of the granular components (GrainEngine,
 // HeadPolicy, ChannelMixer, GrainProcessorImpl).
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 using sampler::FramePos;
 
@@ -111,4 +112,4 @@ struct Grain {
     }
 };
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

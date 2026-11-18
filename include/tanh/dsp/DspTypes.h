@@ -1,6 +1,8 @@
 #pragma once
 
-namespace thl::dsp {
+#include <tanh/core/AbiNamespace.h>
+
+namespace thl::inline THL_ABI_NAMESPACE::dsp {
 
 enum class Approximation {
     Exact,
@@ -9,4 +11,4 @@ enum class Approximation {
     Dirty,
 };
 
-}  // namespace thl::dsp
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp

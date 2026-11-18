@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <string>
 #include <vector>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 enum RootNote {
     C,
@@ -28,4 +29,4 @@ TANH_API std::string note_number_to_note_name(int note_number);
 
 TANH_API int get_note_offset(int scale_note_index, ScaleMode mode);
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

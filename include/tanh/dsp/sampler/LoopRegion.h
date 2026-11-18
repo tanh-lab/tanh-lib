@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/sampler/SampleView.h>
 
 #include <algorithm>
 #include <cstddef>
 
-namespace thl::dsp::sampler {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler {
 
 /**
  * @brief The part of a sample a play head may play, plus its direction.
@@ -92,4 +93,4 @@ struct LoopRegion {
     }
 };
 
-}  // namespace thl::dsp::sampler
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler

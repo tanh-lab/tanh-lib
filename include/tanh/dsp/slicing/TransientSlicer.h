@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/slicing/SliceMap.h>
@@ -7,7 +8,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::slicing {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing {
 
 /**
  * @brief Onset-strength curve of one sample, one value per hop.
@@ -85,4 +86,4 @@ private:
     Settings m_settings{};
 };
 
-}  // namespace thl::dsp::slicing
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::slicing

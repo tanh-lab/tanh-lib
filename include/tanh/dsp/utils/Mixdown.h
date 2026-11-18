@@ -1,11 +1,12 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 
 #include <cstddef>
 #include <vector>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * @brief Mono average of every channel of `buffer`.
@@ -29,4 +30,4 @@ inline std::vector<float> mixdown(const core::BufferF& buffer) {
     return mono;
 }
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

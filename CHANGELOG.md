@@ -43,6 +43,331 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   block, a `HeadMode` (`Spray` / `Scan`), a span of sources and planar output,
   and reports to an optional `GrainVisualizer`.
 
+- `thl::dsp::analysis::SpectrumAnalyser`: the curve of a spectrum analyser display, on top of
+  `StftAnalyser`, for a reader thread. Resolution (FFT 1024 to 8192, 75 % overlap), points spaced
+  on a log axis (256 from 20 Hz to 20 kHz by default), channels averaged in power; without
+  smoothing a point is its band's largest bin (a sine keeps its level), with fractional-octave
+  smoothing its band's mean power; tilt in dB per octave around 1 kHz (4.5 by default), speed
+  (rises at once, falls at most so many dB per second), freeze (holds the maximum), floor.
+  `read_from(SampleProbe&)` drains a probe of the same channel count and starts the frames
+  over after a discontinuity. A tilt change moves the held curve at once, a smoothing change
+  starts it over; a maximum above Nyquist is clamped to it; a rejected `prepare()` leaves it
+  unprepared. One thread for everything (the curve is a view). A full-scale sine reads 0 dB at
+  tilt 0. Tests: `SpectrumAnalyser.*`.
+- `thl::graph::Graph::add_probe<Probe>(node, ProbePoint, args...)` / `remove_probe(ProbeId)` /
+  `probe(ProbeId)`: a probe watches a node's input (its sources mixed) or output (after its
+  processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with the latency
+  of that point; it never changes the signal or the graph's latency. Live: no commit, no fade.
+  The graph owns its probes (so one probe can never watch two places): it prepares them when
+  added and with every `prepare()`, resets them with `reset()`; when a newly committed version
+  starts, the probes of its nodes, of the nodes that stopped running and of `graph_output()`
+  start over (`graph_input()`'s see a continuous signal and go on), and `remove_probe()` / `remove_node()` delete them once the audio thread no longer
+  uses them (at most the block in progress). The returned pointer is for reading. Up to
+  `k_max_probes_per_point` per point. Tests: `GraphProbes.*`, including probes added, used and
+  removed while the audio thread runs.
+- `thl::dsp::probe`: probes watch a signal without changing it. `ProbeBase` gets every block
+  read-only through `process(block, latency_samples)` (skipped while inactive,
+  `set_active()`); it is not a `BaseProcessor` and never a graph node. `LevelProbe`: peak per
+  channel (the highest since the reader last took it, `take_peak()`) and RMS over a one-pole
+  window (300 ms by default), as atomics. `SampleProbe`: copies every block into an
+  `SpscRingBuffer` for one reader thread (scope, analyser). Wherever the stream is not
+  continuous (a `reset()`, the probe coming back from inactive, samples dropped because the
+  reader fell behind), `read()` skips what came before and reports a discontinuity, so the
+  reader never joins samples across a gap. Readers must not read during `prepare()` (hosts call
+  it on the main thread). Tests: `LevelProbe.*`, `Probe.*`, `SampleProbe.*`.
+- `thl::core::SpscRingBuffer<T>` (`core/threading/SpscRingBuffer.h`): a multi-channel
+  lock-free single-producer / single-consumer ring of samples, e.g. from the audio thread to an
+  analyser. The writer appends blocks and never waits: what does not fit is dropped and counted
+  (`dropped()`); the reader reads what has arrived, oldest first, or only the newest
+  (`read_latest()`), or skips. Capacity rounded up to a power of two; real-time safe on both
+  sides (two atomic positions, no locks, no allocation after `prepare()`). Tests:
+  `SpscRingBuffer.*`, including one writer and one reader side by side.
+- `thl::dsp::fft::StftAnalyser`: the analysis half of a short-time Fourier transform. `push()`
+  takes samples in chunks of any size; every hop, once an FFT size has arrived, each channel's
+  newest frame is windowed (Hann, or 4-term Blackman-Harris for -92 dB sidelobes), transformed
+  (`RealFft`) and handed to the virtual `process_spectrum(channel, bins)`, scaled so a sine of
+  amplitude A reads A at its bin (0 dB for full scale). `reset()` drops what was collected, so no
+  frame spans a discontinuity. Allocation-free after `prepare()`. Tests: `StftAnalyser.*`.
+- `thl::dsp::fft::RealFft`: the FFT of a real signal of a power-of-two size (32 to 65536),
+  unscaled forward (as `numpy.fft.rfft`: N / 2 + 1 bins, a sine of amplitude A reads
+  A · N / 2), inverse scaled by 1 / N, real-time safe after `prepare()`. The backend is a
+  build option, `TANH_FFT_BACKEND` (`cmake/fft-backend.cmake`): `pffft` (default, every
+  platform; marton78/pffft v1.1.0 compiled in, BSD-like FFTPACK licence, NEON/SSE) or
+  `accelerate` (macOS, iOS: Apple's vDSP). Both give the same bins. Tests: `RealFft.*`
+  (against the DFT by its definition, round trip, Parseval), run on either backend.
+- `thl::dsp::utils` helpers, real-time safe: `Decibels.h` (`db_to_gain()`, `gain_to_db()`,
+  `power_to_db()`, float or double, floored at `k_min_db` = -120 dB or a given floor),
+  `TimeConstant.h` (`ms_to_samples()`, `one_pole_pole()`: exp(-1 / samples), 0 for no time)
+  and `ParameterValue.h` (`ParameterRange`, `sanitised()`: NaN to a fallback, the rest
+  clamped; `to_enum()`). `LimiterImpl`, `EqDesign`, `SvfCoefficients::magnitude_db()` and
+  the dynamics blocks use them. Tests: `Decibels.*`, `TimeConstant.*`, `ParameterValue.*`.
+- `thl::dsp::dynamics::CompressorImpl`: a compressor and expander on the dynamics
+  building blocks. Downward and upward compression and expansion (`Mode`), threshold, ratio
+  (infinity limits or gates), knee, range; peak or RMS detector, stereo link (linked, average,
+  dual mono), sidechain high-pass; attack, hold, release, auto release; lookahead up to 20 ms,
+  reported as `latency_samples()` (the gain moves before the delayed audio); makeup, auto
+  makeup, and an internal mix for parallel compression. `process_with_sidechain()` keys it by
+  an external signal. Meters: `gain_change_db()`, `input_peak_db()`, `output_peak_db()`.
+  Parameters through `get_parameter_float()`, read at every block position; their defaults
+  and ranges in `k_parameter_ranges` (a NaN reads as the default). A link change hands the
+  gain over, so no channel jumps to an old gain. Tests: `Compressor.*`.
+- `thl::dsp::dynamics::LookaheadLimiterImpl`: a brickwall lookahead limiter. The gain each
+  sample needs goes through a minimum over the lookahead, a release in dB and a moving
+  average over the lookahead, the audio delayed by the lookahead minus one: no output sample
+  above the ceiling, the gain alone gets it there (a hard clip catches rounding). Ceiling,
+  input gain, lookahead up to 10 ms, release, link (linked or dual mono), true peak (4x,
+  97-tap interpolator, +12 samples of latency; holds the ceiling for content up to 0.44 fs).
+  `latency_samples()` reports it. Meters: `gain_reduction_db()`, `input_peak_db()`,
+  `output_peak_db()`. Defaults and ranges in `k_parameter_ranges` (a NaN reads as the
+  default); a link change hands the gain over. Tests: `LookaheadLimiter.*`.
+- `thl::dsp::dynamics` (header-only, `include/tanh/dsp/dynamics/`): the building blocks
+  of a dynamics processor. `GainComputer`, the static curve in dB for the four modes
+  (`DynamicsMode`: downward and upward compression, downward and upward expansion) with
+  threshold, ratio (infinity limits or gates), quadratic soft knee and range;
+  `LevelDetector`, a peak or one-pole RMS level as a power (a non-finite sample reads as
+  silence; a mode change clears the window); `StereoLink.h`, `link_powers()`
+  (`StereoLink::Linked`, `Average`; `DualMono` links nothing);
+  `GainSmoother`, attack and release in the log domain (attack away from 0 dB, in either
+  direction), hold, and an auto release with a slow second stage (switched on, it starts
+  from the current gain). Tests: `GainComputer.*`,
+  `LevelDetector.*`, `GainSmoother.*`.
+
+### Changed
+
+- `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
+  `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
+  Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`
+  grows by up to 3 · 64 bytes. `SpscRingBuffer::read_latest()` takes its window from one snapshot
+  of the writer's position.
+- `thl::dsp::utils::BandSplitter` reads crossover parameters itself: the virtual
+  `get_crossover_parameter_float()` (non-finite by default: the crossover keeps what
+  `set_frequency()` gave it) and `read_crossover_parameters()`, which `MultibandLimiterImpl`
+  and `StereoWidenerImpl` now call instead of each repeating it. Overrides keep working.
+
+### Fixed
+
+- `thl::dsp::utils::LimiterImpl`: a NaN threshold, attack or release made its gain, and so
+  its output, NaN for good (and with it `MultibandLimiterImpl`'s bands). A NaN now keeps the
+  parameter's last value; the threshold is clamped to [-120, 24] dB, the times to
+  [0.01, 60000] ms. `process()` is `TANH_NONBLOCKING_FUNCTION`. Test:
+  `Limiter.NanParametersKeepTheirLastValue`.
+
+## [0.5.0] - 2026-11-01
+
+### Added
+
+- `tanh_add_core_library()` (`cmake/core-library.cmake`): the core component as a library
+  of the calling build, `tanh_add_core_library(<target> SOURCE_DIR <tanh-lib> ABI_NAMESPACE
+  <ns> [STATIC | SHARED] [LOG_COMPILED_MAX_LEVEL <AUTO | 1..4>] [WITH_JOURNALD] [ALIAS
+  <name>])`, with the sources, include directories, public definitions, platform libraries,
+  symbol policy and version properties of the core; tanh-lib's own `tanh_core` is defined
+  through it. An embedder that must not share a core with its host (anira) fetches tanh-lib
+  under its own FetchContent name, populate-only, includes that tree's
+  `cmake/core-library.cmake` and builds a private core in a namespace of its own, e.g.
+  `tanh_add_core_library(anira_tanh_core ... ABI_NAMESPACE anira STATIC)`: the host's
+  `tanh_core` and the private core coexist in one build and one process. The file has no
+  include guard; include the copy of the tree you build right before the call. Sanitizers and
+  install rules stay with the caller. See `docs/sphinx/symbol_visibility.md`.
+- `TANH_ABI_NAMESPACE` (default `AUTO`, which is `v<major>_<minor>` of the version from git):
+  the inline namespace of every declaration. `tanh_add_core_library()` writes it as
+  `THL_ABI_NAMESPACE` into a generated `tanh/core/AbiNamespace.h` in the library's build tree,
+  which is in the core's public include directories and is installed with the core, so every
+  consumer compiles against the value the library was built with.
+- `scripts/abi-namespace.py`: rewrites every `namespace thl...` opener and closing comment to
+  the ABI namespace and adds the include; idempotent, `--check` for CI. Re-run it after a
+  rebase that brings in new files.
+- `test/abi-namespace` (CTest, Linux, macOS, Windows): `abi_namespace_symbols_<library>`
+  checks with nm / dumpbin that every symbol a library defines in `thl` lies in its ABI
+  namespace and none of tanh-lib's lies at global scope (the toolchain's own, such as
+  libc++'s ABI-tagged `::abs`, MSVC's global `<cmath>` overloads or the sanitizers'
+  `__rtsan` helpers, are exempt);
+  `test_abi_namespace` links a second core library (`tanh_core_b`, namespace `test_b`)
+  beside `tanh_core` and shows separate logger levels, configurations and callbacks;
+  `abi_namespace_sources` runs the script's `--check`. The install consumer prints the
+  installed namespace.
+- `thl::dsp::fx::StereoWidenerImpl`: a multiband stereo widener. Mid and side are
+  split by Linkwitz-Riley crossovers (`BandSplitter`), each band's side scaled by
+  its width (0 mono, 1 unchanged, up to 2), the mid only through the crossovers'
+  all-passes, so mid and side stay in phase. Mono compatible whatever the widths
+  (L + R is the mid signal through the all-passes); two bands with band 0 at
+  width 0 is mono bass below the crossover. No latency; widths glide over 20 ms;
+  `process_with_dry()` gives the input through the same all-passes, phase-matched.
+  Widths through `get_band_parameter_float()`, crossovers through
+  `get_crossover_parameter_float()` (or `set_frequency()`), read at every block
+  position. Anything but stereo passes unchanged. Tests: `StereoWidener.*`.
+- `tanh::Graph` (`TANH_BUILD_GRAPH`, off by default, on in every preset but wasm; by
+  @jstolberg): `thl::graph::Graph`, a `BaseProcessor` of `BaseProcessor` nodes. Edits on the
+  control thread take effect at `commit()`, handed to the audio thread with a fade; nested
+  graphs, per-node input mix and wet mix, `collect_garbage()`. Latency compensation: the
+  faster inputs of every merge and a node's dry/bypass path are delayed, the graph holds
+  silence after a commit until every delay is ready. It never pads: its output has the least
+  latency its nodes allow (`max_latency_samples()` only sizes the delays), and
+  `committed_latency_samples()` gives the latency the committed version will have, for the
+  host right after `commit()` (a node whose maximum changed since the last commit counts at it
+  until it runs). A node whose latency rises above the maximum it had at the last commit (or a
+  nested graph that committed on its own) is compensated at that maximum until the graph
+  containing it commits. A bypassed node coming back is `reset()`. Merges sum their sources by
+  default (`InputMix::Sum`, or `Average`). Per node, `set_mix_law()` chooses how the wet mix
+  sets the dry and wet gains (`MixLaw::Linear`, the default, `ConstantPower`, `Compromise`
+  at -4.5 dB, `Parallel`, `DryHeld`), live, a change crossfading over 20 ms. Tests: `test_graph`
+  (including edits and commits against a running audio thread), `benchmark_graph`.
+- `BaseProcessor::latency_samples()` / `max_latency_samples()` / `set_latency_samples()` /
+  `set_max_latency_samples()`: a processor reports its latency (by @jstolberg).
+- `thl::dsp::utils::DelayProcessor`: an integer delay that crossfades linearly when the delay
+  changes, and can keep its history without changing its input (by @jstolberg). Tests:
+  `DelayProcessor.*`.
+- `BaseProcessor::process_modulated()` takes the buffer's position in the block
+  (`modulation_offset`, default 0), so a caller that runs a block in parts, such as a graph,
+  has its nodes read modulation at the block position.
+- `BaseProcessor::reset()`: clears what a processor holds from the audio it processed, keeping
+  its settings; real-time safe, does nothing by default. `LimiterImpl`, `ParametricEqImpl`,
+  `StereoFDN` and `DelayProcessor` implement it.
+- `thl::dsp::filter::ParametricEq`: a parametric equaliser of up to 8 bands in series for any
+  number of channels, each band a Peak, Notch, LowShelf, HighShelf, LowCut or HighCut
+  (12 dB/octave). One trapezoidal state-variable filter (Cytomic) per band and channel. Every
+  change of a band or of the design ramps its coefficients over 10 ms, so automation and a
+  dragged band do not click; a flat or disabled band costs nothing, also when a field it does not
+  use changes. Out-of-range and non-finite settings are clamped or replaced; `prepare()` keeps
+  the bands. `response_curve()` and `log_frequencies()` give the settled curve to plot, from
+  the caller's settings, on any thread. Real-time safe after `prepare()`. Tests:
+  `ParametricEq.*`.
+- `thl::dsp::filter::ParametricEqImpl`: `ParametricEq` as a `BaseProcessor`, its parameters
+  read through `get_parameter_float()` (the design) and `get_band_parameter_float()` (type,
+  frequency, gain, Q, enabled per band), so State and Modulation drive it. Tests:
+  `ParametricEqImpl.*`.
+- `EqDesign.h`: `EqBand`, `design_band()` and `analog_response()`. `EqDesign::Matched` (the
+  default) follows the analogue prototype up to Nyquist: poles by impulse invariance, zeros
+  fitted to the prototype's magnitude (Vicanek, "Matched Second Order Digital Filters", 2016,
+  for the peak and the cuts; the shelves fitted at DC, their frequency and Nyquist up to Q 2,
+  bilinear above, where the fit would miss a resonant shelf's bump). `EqDesign::Bilinear` gives
+  the RBJ cookbook's curves. Tests:
+  `EqDesign.*`.
+- `SvfCoefficients.h`: `SvfCoefficients` (Cytomic's g, k, m0 to m2, with the exact response
+  and the conversion to and from `BiquadCoefficients`), `SvfState`, `SvfTick` and `SvfRamp`
+  (click-free coefficient ramps), header-only, for any filter built on the trapezoidal SVF. The
+  coefficients, states and per-sample gains are double: low bands at high sample rates stay at
+  the float output's own noise floor.
+  Tests: `SvfCoefficients.*`.
+- `ConstellationReverbImpl::set_shimmer_position()`: where the shimmer pitch-shifts
+  the tank. `Feedback` (the default, unchanged) shifts each half's output, so the
+  shimmer is heard after a round of decay and builds with a long decay; `Input`
+  shifts each half's input, the fresh input and the feedback together, so it is
+  heard on the first pass, also with a short decay. Tests:
+  `ConstellationReverb.*`.
+- `thl::core::BufferOperations`: header-only static helpers on the samples of
+  buffer views, `copy(destination, source)` and `add(destination, source)`, in
+  every channel. `source` is a `ConstBufferView`, so writable views and
+  `Buffer`s work too. Both views must have the same channels and samples
+  (asserted) and must not overlap. Real-time safe. `BufferView` itself stays a
+  pure view. Tests: `BufferOperations*`.
+- `dsp::filter::Butterworth`: header-only, per-sample low-, high- or all-pass
+  (`Butterworth::Response`) of order 1–4: a 1st-order TPT section and
+  trapezoidal SVF sections (`SvfTick`), states in double, so a low cutoff at a
+  high sample rate stays at the float output's own noise floor. The static
+  `prewarp(f, fs)` limits the cutoff to [1 Hz, `k_max_frequency_ratio` (0.497)
+  · fs], a non-finite one to 1 Hz; `process(x, g)` takes the prewarped gain, so
+  filters at the same frequency share one `tan()`. Real-time safe after
+  `prepare()`. Tests: `Butterworth.*`.
+- `dsp::filter::LinkwitzRiley`: crossover of even order 2–8, two Butterworths of
+  half the order per band. `process_low()` and `process_high()` can be called
+  separately, also with `g`. LR2 and LR6 invert the high band, so low + high is
+  an all-pass at every order. Tests: `LinkwitzRiley.*`.
+- `dsp::utils::SmoothedValue::is_smoothing()`: whether a glide is in progress.
+- `dsp::utils::BandSplitter`: an abstract `BaseProcessor` that splits a signal
+  into N bands with N − 1 Linkwitz-Riley crossovers in series. A derived
+  processor calls the protected `process_band()` for bands 0 to N − 1, in order,
+  every block (asserted). The bands sum to the input through the all-passes of
+  every crossover, so their sum before processing is the dry signal.
+  `set_frequency()` clamps between the neighbouring crossovers and below
+  Nyquist, and glides per sample over 5 ms; the prewarped gain is computed once
+  per crossover and sample and shared by all its filters. The requested
+  frequencies are kept, so `prepare()` at another sample rate clamps from them
+  again; a non-finite one is ignored. `set_frequency()` blocks one crossover at
+  its neighbours; `set_frequencies()` sets them all at once, independent of any
+  order: crossing requests are sorted, so a crossover sweeping past another
+  hands over continuously. `reset()` clears the crossovers. Tests:
+  `BandSplitter*`.
+- `dsp::utils::MultibandLimiterImpl`: one `LimiterImpl` per `BandSplitter` band,
+  summed. Band count and order are constructor arguments; a derived class gives
+  every band its threshold, attack and release through
+  `get_band_parameter_float()`. `process_with_dry()` writes the sum of the bands
+  before limiting, which matches the output below the thresholds (the limiters
+  add no latency). `reset()` also releases the limiters. The crossover
+  frequencies can come from `get_crossover_parameter_float()`, read at every
+  block position and applied together with `set_frequencies()`, so State and
+  Modulation drive them like the bands' parameters (non-finite, the default:
+  `set_frequency()` decides). Tests: `MultibandLimiter.*`.
+- `BaseProcessor::process_with_dry(buffer, modulation_offset, dry)`: also writes
+  the dry signal, the input with the phase response of `process()` but without
+  its effect, so that wet and dry can be blended. It is computed in the same
+  pass, so it follows the same smoothing and modulation. `dry` is output-only;
+  an empty `dry` means no dry signal. It is undelayed: a processor with
+  `latency_samples()` leaves aligning it to whoever mixes it (a Graph delays a
+  node's dry path by it). The default copies the input into `dry` and calls
+  `process(buffer, modulation_offset)`: override it if `process()` changes the
+  phase. `process_modulated_with_dry(buffer, dry[, offset])` and
+  `process_modulated_with_dry(buffer, change_points, dry[, offset])` split both
+  at the same change points. Tests: `BaseProcessor.*`.
+- `TANH_LINK_COMPILE_COMMANDS` (default OFF; ON in the `desktop-*`, `macos-x64-*`,
+  `android-*` and `wasm-release` presets): a top-level configure links
+  `build/compile_commands.json` to its tree's database
+  (`tanh_link_compile_commands`, tanh-tooling v0.3.0), so clangd follows the tree
+  configured last, the wasm tree included.
+
+### Changed
+
+- **Breaking:** every declaration of every component lives in the inline namespace
+  `thl::<ns>`: `thl::v0_5` in this release, `v<major>_<minor>` of the version by default (each
+  opener reads `namespace thl::inline THL_ABI_NAMESPACE::core {`). Code keeps spelling `thl::...`,
+  but every mangled name changes (`_ZN3thl4v0_5...`, `...@v0_5@thl@@`), so everything built
+  against tanh-lib must be rebuilt. Two tanh-lib copies with different namespaces — a host's
+  and a plugin's, a host's and anira's private core — no longer share code or state in one
+  link; before, static archives on macOS, iOS and Windows gave both sides whichever copy the
+  link order picked, and the header-only code merged by name on every platform. Migration:
+  code that forward-declares a tanh-lib type itself (`namespace thl { class State; }`)
+  declares a second, different type, which is ambiguous next to the header and does not link
+  without it: include the tanh-lib header instead. A consumer built outside CMake needs the
+  installed `tanh/core/AbiNamespace.h` on its include path (it sits next to the other core
+  headers).
+- **Breaking:** the Net component's Objective-C download delegate is
+  `TanhDownloadDelegate_<ns>` (was `TanhDownloadDelegate`): Objective-C class names are
+  global to the process, so two copies of Net in one process no longer clash in the runtime.
+- The API reference is generated with the ABI namespace filtered out (a Doxygen
+  `INPUT_FILTER`), so it documents `thl::core::Logger` as before.
+- `Graph`: a node's wet/dry blend takes its dry signal from the node
+  (`process_modulated_with_dry()`), phase-matched to its output, and delays it by
+  the node's latency as before; a node that shifts the phase (a crossover, a
+  multiband processor) no longer combs at a partial wet mix. A nested graph's dry
+  signal is still its input. Tests:
+  `Graph.ABlendOfANodeThatShiftsThePhaseUsesItsPhaseMatchedDrySignal`.
+- `BaseProcessor` has the new virtual `process_with_dry()`, so its vtable
+  changed: code that derives from it or calls it across a shared library must be
+  recompiled.
+- `BaseProcessor` holds its latency (two atomics), has a copy constructor and copy assignment
+  and the virtual `reset()`: code that derives from it must be recompiled. `StereoFDN::reset()`
+  and `DelayProcessor::reset()` now override it.
+- `process_modulated()` no longer calls `process()` for an empty buffer.
+- Shared tooling pinned to tanh-tooling v0.3.0 (`.clangd`, `cmake/tanh/`,
+  `lint.yml`). `.clangd` now reads `build/compile_commands.json` instead of
+  `build/desktop/Debug/`: reconfigure a development preset once to create the link.
+  For the wasm tree, start clangd with `--query-driver=**/em++` (see
+  `docs/sphinx/contributing.rst`, "Shared tooling").
+
+## [0.4.0] - 2026-09-21
+
+### Added
+
+- `thl::core::RingBuffer<T>`: strided block calls, `push_block(channel, data, count,
+  stride)`, `pop_block(channel, data, count, stride)` and `peek_past_block(channel,
+  data, count, stride)`. They read or write `data[0]`, `data[stride]`, ... and are
+  exactly `count` per-sample calls over that run, so one channel of an interleaved
+  host buffer (`data = interleaved + c`, `stride = num_channels`, any channel count)
+  moves between the host and the ring without a de-interleaved copy in between. A
+  strided pop leaves the elements between the strided ones untouched and
+  value-initialises what the ring cannot deliver; an oversized strided push keeps the
+  tail of the run; `stride == 1` is the existing call (two `std::copy_n` segments).
+  None of them allocates. Tests: `RingBufferStrided.*` (differential against the
+  per-sample calls for 1, 2, 3 and 6 interleaved channels across the seam).
 - `Net` component (`tanh::Net`, `TANH_BUILD_NET`, **off by default**) — delivery
   of versioned file sets over HTTPS, for shipping model or sample packs that are
   too large to bundle.
@@ -170,6 +495,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `TANH_WITH_DOCS` now does something — it adds the `sphinx-docs` target — and
+  therefore defaults to **OFF** (it was ON and inert). A docs-enabled configure
+  requires Doxygen and Python 3; consumers that already set it OFF are
+  unaffected.
+- `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
+  of calling `sin`/`cos` per frame — a block fading the live head plus four
+  outgoing tails wanted five transcendentals per frame. Because
+  `cos(t * pi/2) == sin((1 - t) * pi/2)`, one quarter-sine table sized to the
+  fade length in `prepare()` serves both directions, indexed straight by the
+  integer fade counter: exact at every index, so the crossfade values are
+  unchanged bit for bit.
+- `dsp::granular::GrainProcessorImpl`: the voice gain pass skips the mode-fade
+  ramp when the fade is already parked on its target, which is every block
+  outside a mode switch. Same output, two fewer compares and a store per frame.
+
+
 - `dsp::granular::GrainEngine` render loop: bank pointers and pan gains are
   resolved once per block per grain, one channel-mode kernel is chosen per
   block, and the window comes from the new `dsp::utils::MorphWindow`.
@@ -193,6 +534,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   reset / silence; `prepare()` starts the voice from silence.
 
 ### Fixed
+
+- `thl::RCU`: a version could be reclaimed while a reader was still inside the
+  read scope that handed it out. A reader entering a section stores its
+  generation and then loads the data pointer; the writer stores the pointer and
+  then reads the generations. That store-load handshake needs sequential
+  consistency, but used `memory_order_release` / `acquire`, which leave a release
+  store free to sit in the core's store buffer while the following load runs —
+  so the writer could read generation 0 in `cleanup_safe_versions()`, free the
+  version, and leave the reader on freed memory. Seen as an intermittent
+  audio-thread SIGSEGV on a freed `ProcessingConfig` in
+  `ConcurrentRebuild.RepeatedAddRemoveSingleRouting`, reproducible only on some
+  x86-64 hosts (Intel Xeon Platinum 8573C). The four handshake operations are
+  now `memory_order_seq_cst`; the reader pays one locked exchange per section
+  entry, still wait-free. Leaving a section is unchanged.
+- `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.
+  `VoiceParams::m_volume` is a per-sub-block constant and was applied raw, so it
+  was the only unsmoothed term in the voice gain (the ADSR already moves per
+  sample) — a hard modulation step, such as a square LFO swinging both rails in
+  one sample, reached the output as a discontinuity. The voice gain now ramps
+  volume over `k_volume_smoothing_duration` (5 ms), seeded to the current level
+  in `prepare()` and again at note-on so a voice starts at its level instead of
+  sliding up to it.
+
 
 - `ModulationMatrix` / `RCU`: data race between a schedule rebuild and the audio
   thread. `RCU::update` is copy-on-write, so it deep-copies the live value —
@@ -262,5 +626,7 @@ First release with a changelog: earlier releases (v0.1.0, v0.2.0) are described 
   `m_dropped_before` (and in the rendered suffix), instead of
   `N real-time log message(s) dropped (queue full)` after every pass with drops.
 
-[Unreleased]: https://github.com/tanh-lab/tanh-lib/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tanh-lab/tanh-lib/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tanh-lab/tanh-lib/compare/v0.2.0...v0.3.0

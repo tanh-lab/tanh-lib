@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Buffer.h>
 
 #include <algorithm>
@@ -8,7 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace thl::dsp::sampler {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler {
 
 /// Signed frame position or offset in a sample. 64-bit everywhere (`long` is
 /// 32-bit on Windows); unsigned lengths are `size_t`.
@@ -102,4 +103,4 @@ inline float read_clamped(const SampleView& view, size_t channel, double positio
     return data[frame_a] * (1.0f - frac) + data[frame_b] * frac;
 }
 
-}  // namespace thl::dsp::sampler
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler

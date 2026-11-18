@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/fx/IntellijelWavefolder.h>
 
 #include <algorithm>
@@ -8,7 +9,7 @@
 
 #include "tanh/core/BufferView.h"
 
-namespace thl::dsp::fx {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::fx {
 
 namespace {
 // 30 ms linear ramp on every parameter. Each one sits inside the sine's phase,
@@ -159,4 +160,4 @@ float IntellijelWavefolderImpl::tone_coefficient(float tone) const {
     return g / (1.0f + g);
 }
 
-}  // namespace thl::dsp::fx
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::fx

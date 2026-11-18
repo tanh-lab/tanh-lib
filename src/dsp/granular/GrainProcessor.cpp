@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/audio/AudioDataStore.h>
 #include <tanh/dsp/granular/ChannelMixer.h>
@@ -18,7 +19,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace thl::dsp::granular {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 
 namespace {
 
@@ -449,4 +450,4 @@ void GrainProcessorImpl::update_envelope(const VoiceParams& p) {
                               p.m_env_release_curve);
 }
 
-}  // namespace thl::dsp::granular
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::granular

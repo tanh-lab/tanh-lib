@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/sampler/LoopCrossfade.h>
 #include <tanh/dsp/sampler/LoopRegion.h>
 #include <tanh/dsp/sampler/SamplePlayer.h>
@@ -9,7 +10,7 @@
 #include <cstddef>
 #include <span>
 
-namespace thl::dsp::sampler {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler {
 
 namespace {
 
@@ -393,4 +394,4 @@ void SamplePlayer::start_crossfade(size_t old_source, bool old_source_valid) {
     m_fade_remaining = m_curve.length();
 }
 
-}  // namespace thl::dsp::sampler
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler

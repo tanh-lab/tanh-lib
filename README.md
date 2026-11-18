@@ -52,14 +52,18 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_BUILD_MODULATION` | ON | Build the Modulation component |
 | `TANH_BUILD_AUDIO_IO` | ON | Build the AudioIO component |
 | `TANH_BUILD_NET` | OFF | Build the Net component (links a platform HTTP stack) |
+| `TANH_BUILD_GRAPH` | OFF | Build the Graph component (needs DSP) |
 | `TANH_WITH_TESTS` | ON | Build test targets |
 | `TANH_WITH_EXAMPLES` | ON | Build the example projects (iOS audio-io app) |
 | `TANH_WITH_DOCS` | OFF | Add the `sphinx-docs` target (Doxygen + Sphinx) |
 | `TANH_WITH_INSTALL` | ON | Add install targets and the `tanh` CMake package |
 | `TANH_WITH_PACKAGING` | OFF | Add CPack targets (top-level builds only) |
+| `TANH_LINK_COMPILE_COMMANDS` | OFF (ON in the development presets) | Link `build/compile_commands.json`, which clangd reads, to this tree's database (top-level builds only) |
 | `TANH_WITH_RTSAN` / `_ASAN` / `_USAN` / `_TSAN` / `_MSAN` / `_LSAN` | OFF | Enable the respective sanitizer (RTSan needs Clang 20+) |
 | `TANH_WITH_JOURNALD` | OFF | Linux: route platform logs to systemd-journald |
 | `TANH_LOG_COMPILED_MAX_LEVEL` | AUTO | Most verbose log level compiled in (1 Error .. 4 Debug) |
+| `TANH_ABI_NAMESPACE` | AUTO | Inline namespace of every declaration, `thl::<ns>`; AUTO is `v<major>_<minor>` of the version |
+| `TANH_FFT_BACKEND` | pffft | FFT behind `thl::dsp::fft::RealFft`: `pffft` (every platform, fetched at configure time) or `accelerate` (macOS, iOS) |
 
 ### Consume
 
@@ -107,6 +111,8 @@ tanh-lib is licensed per component:
   [anira](https://github.com/anira-project/anira)) can depend on it. These
   files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
+  The adaptive peak picker (`include/tanh/dsp/analysis/AdaptivePeakPicker.h`,
+  `src/dsp/analysis/AdaptivePeakPicker.cpp`) is also Apache-2.0.
 
 - **AGPL-3.0** — all other components (`state`, `dsp`, `resonator`,
   `modulation`, `audio-io`) and files (see [`LICENSE`](LICENSE)).

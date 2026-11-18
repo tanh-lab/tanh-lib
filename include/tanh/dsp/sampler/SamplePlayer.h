@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 #include <tanh/dsp/sampler/LoopCrossfade.h>
 #include <tanh/dsp/sampler/LoopMarkers.h>
@@ -11,7 +12,7 @@
 #include <cstddef>
 #include <span>
 
-namespace thl::dsp::sampler {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler {
 
 /// Tuning of a SamplePlayer, fixed at prepare().
 struct PlayerSettings {
@@ -262,4 +263,4 @@ private:
     bool m_finished{false};
 };
 
-}  // namespace thl::dsp::sampler
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::sampler

@@ -1,10 +1,11 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/utils/DelayLine.h>
 
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 template <typename T, size_t max_delay>
 class Allpass {
@@ -30,4 +31,4 @@ private:
     DelayLine<T, max_delay> m_line;
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils

@@ -1,8 +1,18 @@
+#include <tanh/core/AbiNamespace.h>
+
 #include "HttpBackend.h"
 
 #import <Foundation/Foundation.h>
 
 #include <cstdio>
+
+// Objective-C class names are global to the process, and a C++ namespace does not reach
+// them: two copies of this component (each in its own ABI namespace) would both define the
+// delegate class, and the runtime would use one of them for both. The ABI namespace is
+// pasted into the class name instead (TanhDownloadDelegate_v0_4).
+#define THL_OBJC_CLASS_NAME_IMPL(name, ns) name##_##ns
+#define THL_OBJC_CLASS_NAME(name, ns) THL_OBJC_CLASS_NAME_IMPL(name, ns)
+#define THL_DOWNLOAD_DELEGATE THL_OBJC_CLASS_NAME(TanhDownloadDelegate, THL_ABI_NAMESPACE)
 
 /// NSURLSession is asynchronous; the caller's thread blocks on a semaphore that
 /// the delegate signals from the session queue.
@@ -15,7 +25,7 @@
 // @property can be talked out of. The naming check expects `m_`, so it is off
 // for the block rather than reported on every property.
 // NOLINTBEGIN(readability-identifier-naming)
-@interface TanhDownloadDelegate : NSObject <NSURLSessionDataDelegate>
+@interface THL_DOWNLOAD_DELEGATE : NSObject <NSURLSessionDataDelegate>
 @property(nonatomic, assign) std::FILE* file;
 @property(nonatomic, assign) std::uint64_t received;
 @property(nonatomic, assign) std::uint64_t resumeOffset;
@@ -37,7 +47,7 @@
 @end
 // NOLINTEND(readability-identifier-naming)
 
-@implementation TanhDownloadDelegate
+@implementation THL_DOWNLOAD_DELEGATE
 
 - (void)URLSession:(NSURLSession*)session
               dataTask:(NSURLSessionDataTask*)data_task
@@ -123,7 +133,7 @@
 
 @end
 
-namespace thl::net::detail {
+namespace thl::inline THL_ABI_NAMESPACE::net::detail {
 
 HttpResult perform(const Request& request) {
     HttpResult result;
@@ -145,7 +155,7 @@ HttpResult perform(const Request& request) {
         const bool to_file = !request.m_destination.empty();
         const std::uint64_t resume_from = to_file ? request.m_resume_from : 0;
 
-        TanhDownloadDelegate* const delegate = [[TanhDownloadDelegate alloc] init];
+        THL_DOWNLOAD_DELEGATE* const delegate = [[THL_DOWNLOAD_DELEGATE alloc] init];
         delegate.cancelled = request.m_cancelled;
         delegate.onProgress = request.m_on_progress;
         delegate.resumeOffset = resume_from;
@@ -242,4 +252,4 @@ bool backend_supported() {
     return true;
 }
 
-}  // namespace thl::net::detail
+}  // namespace thl::inline THL_ABI_NAMESPACE::net::detail

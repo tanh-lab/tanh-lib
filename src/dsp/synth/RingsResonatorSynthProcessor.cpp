@@ -1,3 +1,4 @@
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/RingBuffer.h>
 #include <tanh/dsp/rings-resonator/RingsStringSynthPart.h>
@@ -19,7 +20,7 @@
 #include "tanh/dsp/rings-resonator/RingsPatch.h"
 #include "tanh/dsp/rings-resonator/RingsPerformanceState.h"
 
-namespace thl::dsp::synth {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::synth {
 
 struct RingsResonatorSynthProcessor::EngineState {
     RingsVoiceManager m_part;
@@ -235,4 +236,4 @@ int RingsResonatorSynthProcessor::get_latency() const {
     return m_engine->m_latency;
 }
 
-}  // namespace thl::dsp::synth
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::synth

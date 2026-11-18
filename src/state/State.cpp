@@ -1,5 +1,6 @@
 #include "tanh/state/State.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Logger.h>
 
 #include <atomic>
@@ -24,7 +25,7 @@
 #include "tanh/state/path_helpers.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
-namespace thl {
+namespace thl::inline THL_ABI_NAMESPACE {
 
 // ── Anonymous helpers ───────────────────────────────────────────────────────
 
@@ -734,4 +735,4 @@ template TANH_API void State::set_by_id(uint32_t id,
                                         const std::string& value,
                                         ParameterListener* source);
 
-}  // namespace thl
+}  // namespace thl::inline THL_ABI_NAMESPACE

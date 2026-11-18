@@ -1,10 +1,11 @@
 #pragma once
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
 
 #include <cstddef>
 
-namespace thl::dsp::utils {
+namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
 
 /**
  * Brownian motion (random walk) noise generator with one-pole smoothing.
@@ -51,4 +52,4 @@ private:
     float m_block_coeff = 0.0f;  // n-sample equivalent of m_smooth_coeff
 };
 
-}  // namespace thl::dsp::utils
+}  // namespace thl::inline THL_ABI_NAMESPACE::dsp::utils
