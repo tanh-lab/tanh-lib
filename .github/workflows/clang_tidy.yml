@@ -127,7 +127,7 @@ jobs:
       # Skipped on an empty list (the pull request's .cpp changes are outside
       # this build): the action would read an empty FILES as "sweep SOURCES".
       - uses: tanh-lab/ci-actions/clang-tidy-check@v0.3.16
-        if: steps.select.outputs.files != ''
+        if: steps.plan.outputs.work == 'true' && steps.select.outputs.files != ''
         with:
           SOURCES: ${{ env.TIDY_SOURCES }}
           PRESET: ${{ env.TIDY_PRESET }}
