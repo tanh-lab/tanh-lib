@@ -1,12 +1,29 @@
 name: clang_tidy
 
-# Full clang-tidy over the sources in the merge queue (the repo is small
-# enough for a full sweep). Advisory: "clang_tidy result" is not a required
-# status.
+# clang-tidy (.clang-tidy, every warning an error) over the translation units
+# of the Linux desktop-debug build under src/ and test/.
+#
+# "clang_tidy result" is a REQUIRED status of main's ruleset, so it reports
+# wherever the ruleset waits for it: on every pull request (no path filter: a
+# required check that never reports keeps a pull request out of the merge queue
+# for ever) and on every merge group.
+#
+# - pull_request: the .cpp files the pull request changes, so that its findings
+#   show before it is queued. One that changes none skips the tool setup and
+#   the build: the job is a checkout and one script, and reports green. A
+#   header change does not widen the set; what it breaks in a file the pull
+#   request did not touch fails in the queue. A change to .clang-tidy or to
+#   this workflow sweeps (TIDY_SWEEP_PATTERN).
+# - merge_group: the full sweep. With the result required, this is the
+#   enforcement point.
+# - workflow_dispatch: the full sweep of a branch, by hand.
 
 on:
   merge_group:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 concurrency:
   group: clang_tidy-${{ github.event_name }}-${{ github.ref }}
@@ -16,17 +33,109 @@ jobs:
   tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04
+    env:
+      TIDY_PRESET: desktop-debug
+      # The preset's binaryDir.
+      TIDY_DATABASE: build/desktop/Debug/compile_commands.json
+      TIDY_SOURCES: "src/ test/"
+      # What changes tidy's own verdicts sweeps: the rule set and this workflow
+      # (it pins the tool). Build files are not listed: the pattern meets the
+      # pull request's whole diff on every push, so a CMakeLists.txt in it would
+      # sweep every pull request that adds a source file, on every push.
+      TIDY_SWEEP_PATTERN: '^\.clang-tidy$|^\.github/workflows/clang_tidy\.yml$'
     steps:
+      # Depth 2: the pull request's merge commit with both parents, which is
+      # what changed-files diffs (from git alone: no token, no API call).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: tanh-lab/ci-actions/changed-files@v0.3.16
+        id: changed
+        with:
+          FULL_SWEEP_PATTERN: ${{ env.TIDY_SWEEP_PATTERN }}
+      # `sweep` is true unless changed-files says the list is the pull request's
+      # (the queue, a dispatch, the pattern, a diff that cannot be read: every
+      # doubt sweeps). `work` is true on a sweep and when the list holds a .cpp
+      # path; a false positive only builds for nothing.
+      - name: anything to check?
+        id: plan
+        env:
+          SWEEP: ${{ steps.changed.outputs.sweep != 'false' }}
+          WORK: ${{ steps.changed.outputs.sweep != 'false' || contains(steps.changed.outputs.files, '.cpp') }}
+          # Through the environment: the reason can carry a path of the pull request.
+          REASON: ${{ steps.changed.outputs.reason }}
+        run: |
+          echo "sweep=$SWEEP" >> "$GITHUB_OUTPUT"
+          echo "work=$WORK" >> "$GITHUB_OUTPUT"
+          echo "sweep=$SWEEP work=$WORK ($REASON)"
       - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.16
+        if: steps.plan.outputs.work == 'true'
+      # clang-tidy needs the compile database, the generated headers and the
+      # fetched dependencies, so the preset is configured and built first.
       - uses: tanh-lab/ci-actions/cmake-build@v0.3.16
+        if: steps.plan.outputs.work == 'true'
         with:
-          PRESET: desktop-debug
-      - uses: tanh-lab/ci-actions/clang-tidy-check@v0.3.16
-        with:
-          SOURCES: "src/ test/"
-          PRESET: desktop-debug
+          PRESET: ${{ env.TIDY_PRESET }}
+      # What is checked is what this build compiles: the compile database's
+      # translation units under TIDY_SOURCES, on a pull request those of them
+      # the pull request changes. clang-tidy-check selects by directory (find
+      # SOURCES -name '*.cpp'), which also finds the sources of other platforms
+      # (src/dsp/fft/RealFftAccelerate.cpp, the Android and Windows back ends)
+      # and the install consumer (test/install): they have no compile command
+      # here, clang-tidy borrows a neighbour's, and Apple's <Accelerate/Accelerate.h>
+      # is not on a Linux runner. The action has no input for it (an exclude list,
+      # or "the compile database's files only"), so the list is made here and
+      # goes in through FILES, which the action checks as given.
+      - name: select the translation units
+        id: select
+        if: steps.plan.outputs.work == 'true'
+        env:
+          SWEEP: ${{ steps.plan.outputs.sweep }}
+          CHANGED: ${{ steps.changed.outputs.files }}
+        run: |
+          python3 - <<'EOF'
+          import json
+          import os
 
+          root = os.getcwd()
+          scopes = tuple(os.environ["TIDY_SOURCES"].split())
+          with open(os.environ["TIDY_DATABASE"]) as database:
+              entries = json.load(database)
+          units = set()
+          for entry in entries:
+              path = os.path.relpath(os.path.join(entry["directory"], entry["file"]), root)
+              if path.startswith(scopes) and path.endswith(".cpp"):
+                  units.add(path)
+          if not units:
+              raise SystemExit(f"no translation unit under {scopes} in the compile database")
+
+          if os.environ["SWEEP"] == "true":
+              files = sorted(units)
+              print(f"sweep: the {len(files)} translation units of this build")
+          else:
+              changed = set(os.environ["CHANGED"].splitlines())
+              files = sorted(units & changed)
+              print(f"pull request: {len(files)} of its changed files are translation units of this build")
+          for path in files:
+              print(f"  {path}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("files<<TIDY_FILES_EOF\n")
+              output.writelines(f"{path}\n" for path in files)
+              output.write("TIDY_FILES_EOF\n")
+          EOF
+      # Skipped on an empty list (the pull request's .cpp changes are outside
+      # this build): the action would read an empty FILES as "sweep SOURCES".
+      - uses: tanh-lab/ci-actions/clang-tidy-check@v0.3.16
+        if: steps.select.outputs.files != ''
+        with:
+          SOURCES: ${{ env.TIDY_SOURCES }}
+          PRESET: ${{ env.TIDY_PRESET }}
+          FILES: ${{ steps.select.outputs.files }}
+
+  # The ruleset's required status for this workflow (the name is the context it
+  # waits for). The tidy job runs on every event, so there is no stub here: a
+  # pull request without a .cpp change gets its green from the job above.
   result:
     name: clang_tidy result
     needs: tidy
@@ -35,4 +144,5 @@ jobs:
     steps:
       - name: aggregate
         run: |
+          echo "tidy: ${{ needs.tidy.result }}"
           [ "${{ needs.tidy.result }}" = "success" ] || exit 1
