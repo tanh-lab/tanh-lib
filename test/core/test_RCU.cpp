@@ -468,3 +468,22 @@ TEST(RCU, ThreadRegistryDropsDestroyedRcus) {
     }
     EXPECT_EQ(max_entries, 1u);
 }
+
+// An RCU that outlives its thread's reader registry: a thread_local constructed
+// before the thread's first read is destroyed after the registry, and so is an
+// RCU with static storage duration that the main thread read. Its destructor
+// must not look into the registry. (libc++ crashes on a lookup in the destroyed
+// map; libstdc++ happens to survive it, so only a libc++ build shows a
+// regression here.)
+TEST(RCU, DestroyedAfterItsThreadsRegistry) {
+    int seen = 0;
+    std::thread reader([&seen] {
+        struct Owner {
+            RCU<int> m_rcu{7};
+        };
+        static thread_local Owner owner;  // constructed first, so destroyed last
+        seen = owner.m_rcu.read([](const int& v) { return v; });  // constructs the registry
+    });
+    reader.join();
+    EXPECT_EQ(seen, 7);
+}

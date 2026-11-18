@@ -147,21 +147,22 @@ public:
 
         // Free the reader nodes this instance owns. A live thread's node is
         // still in that thread's RcuThreadState: mark it, and the thread frees it
-        // (on exit, or when it next looks this address up).
+        // (on exit, or at its next registration with any RCU). The destroying
+        // thread's own node is no exception: this destructor never looks into
+        // the calling thread's registry, which is already destroyed when the RCU
+        // outlives it (an RCU with static storage duration read by the main
+        // thread, or one owned by a thread_local constructed before the
+        // thread's first read).
         const std::scoped_lock lock(m_writer_mutex);
 
-        auto& own_nodes = detail::rcu_thread_state().m_nodes;
         detail::RcuReaderNode* current = m_reader_head.load(std::memory_order_relaxed);
         while (current != nullptr) {
             detail::RcuReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
-            auto it = own_nodes.find(this);
-            if (it != own_nodes.end() && it->second.get() == current) {
-                own_nodes.erase(it);  // the destroying thread's own node
-            } else if (current->m_instance_owned ||
-                       current->m_state.exchange(detail::RcuNodeState::RcuGone,
-                                                 std::memory_order_acq_rel) ==
-                           detail::RcuNodeState::ThreadGone) {
+            if (current->m_instance_owned ||
+                current->m_state.exchange(detail::RcuNodeState::RcuGone,
+                                          std::memory_order_acq_rel) ==
+                    detail::RcuNodeState::ThreadGone) {
                 delete current;  // ours alone: a slot, or a node its thread left to us
             }
 

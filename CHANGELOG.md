@@ -166,6 +166,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the node; a thread's next registration frees what destroyed RCUs left in its registry. Tests:
   `RCU.ThreadOutlivingTheRcuFreesItsNode`, `RCU.NewRcuAtADestroyedOnesAddressRegistersAnew`,
   `RCU.ThreadRegistryDropsDestroyedRcus`.
+- `thl::RCU`: destroying an RCU on a thread whose reader registry was already destroyed (an RCU
+  with static storage duration that the main thread read, or one owned by a `thread_local`
+  constructed before the thread's first read) looked a node up in the destroyed registry:
+  undefined behaviour, a segmentation fault at exit with libc++ (macOS, iOS, Android). `~RCU` no
+  longer touches thread-local state; the destroying thread's own node is freed like any other
+  live thread's, at that thread's exit or its next registration. Test:
+  `RCU.DestroyedAfterItsThreadsRegistry` (fails without the fix on libc++ only).
 - `thl::dsp::utils::LimiterImpl`: a NaN threshold, attack or release made its gain, and so
   its output, NaN for good (and with it `MultibandLimiterImpl`'s bands). A NaN now keeps the
   parameter's last value; the threshold is clamped to [-120, 24] dB, the times to
