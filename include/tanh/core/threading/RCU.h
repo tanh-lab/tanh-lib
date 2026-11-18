@@ -37,9 +37,12 @@ enum class RcuNodeState : uint8_t {
 /// belongs to the RCU instance alone.
 struct RcuReaderNode {
     std::atomic<uint64_t> m_read_generation{0};
-    // Open read sections. Only the slot's one user at a time touches it; atomic
-    // (relaxed) so a slot handed between threads without other ordering is no
-    // data race.
+    // Open read sections of the node's one user at a time (its thread, or
+    // whoever holds the slot). Atomic so that two threads on one slot are never
+    // a data race on the counter itself; that is all the relaxed orderings
+    // give. They do not put one user's last store to m_read_generation before
+    // the next user's first one: the users of a slot must be ordered by
+    // happens-before (see RCU::add_reader()).
     std::atomic<uint32_t> m_depth{0};
     std::atomic<RcuReaderNode*> m_next{nullptr};
     std::atomic<RcuNodeState> m_state{RcuNodeState::Live};
@@ -96,7 +99,10 @@ TANH_API RcuThreadState& rcu_thread_state();
  *
  * IMPORTANT: For real-time threads, call register_reader_thread() before
  * entering the real-time context (e.g., during audio setup). This allocates
- * the reader node outside the real-time path.
+ * the reader node outside the real-time path. A reader that runs on changing
+ * threads (a plugin whose host moves the render callback from thread to
+ * thread) cannot register in advance: it reads through a reader slot,
+ * add_reader() and read_scope(Reader), which never registers.
  *
  * @tparam T The type of data to protect (e.g., std::map, std::vector)
  */
@@ -400,9 +406,24 @@ public:
      *
      * NOT real-time safe: call once per client during setup (e.g. in a
      * constructor, not in a host's prepareToPlay): slots are not removed, they
-     * stay valid until this RCU is destroyed and every writer scans them. A
-     * slot must not be used by two threads at the same time (one open read
-     * section per slot).
+     * stay valid until this RCU is destroyed and every writer scans them.
+     *
+     * A slot has one user at a time. That user's scopes on the slot nest (see
+     * ReadScope); two threads must never be inside read_scope(reader) for one
+     * slot at the same time. "One after the other" means ordered by
+     * happens-before, not merely by the clock: the hand-over from one thread to
+     * the next has to go through something that orders the two, such as a host
+     * that calls its render callback from one thread after the other, a mutex,
+     * a thread join, or an atomic flag that is claimed with at least
+     * std::memory_order_acquire and given back, after the scope has closed,
+     * with at least std::memory_order_release. Nothing checks this: a slot used
+     * by two threads at once, or passed on through a relaxed flag, can read a
+     * version that the writer has already freed.
+     *
+     * A section that is never closed (a leaked ReadScope, a thread killed
+     * inside one) blocks synchronize() for ever, and update() / replace() once
+     * enough versions are retired: a slot has no thread whose exit would
+     * release it.
      */
     [[nodiscard]] Reader add_reader() const {
         const std::scoped_lock lock(m_writer_mutex);
@@ -413,6 +434,12 @@ public:
         return Reader(*this, *node);
     }
 
+    /**
+     * @brief Number of readers a writer scans: the reader slots from
+     * add_reader() plus the registered threads that are still alive.
+     *
+     * Takes the writer mutex: not real-time safe.
+     */
     unsigned int get_reader_count() const {
         // Serialize with cleanup and registration
         const std::scoped_lock lock(m_writer_mutex);
@@ -425,6 +452,20 @@ public:
         return count;
     }
 
+    /**
+     * @brief Wait until no reader is inside a read section that began before
+     * the latest publication.
+     *
+     * When it returns, every reader (registered thread or reader slot) is
+     * outside a read section or inside one that sees the current version, so
+     * whatever only older versions referred to is no longer in use. Blocks (it
+     * polls) and takes the writer mutex: not real-time safe.
+     *
+     * A registered thread that has exited is skipped. A reader slot whose
+     * section is never closed is waited for indefinitely. Must not be called
+     * from inside a read section of this RCU that was opened before the latest
+     * update() / replace(): the caller would wait for itself.
+     */
     void synchronize() {
         const std::scoped_lock lock(m_writer_mutex);
         synchronize_rcu();
@@ -440,6 +481,8 @@ public:
      *
      * Non-copyable, non-movable. Must not outlive the RCU instance. Scopes on
      * the same thread or reader slot nest: the outermost one holds the section.
+     * An inner scope may see a newer version than the outer one; each scope's
+     * data() stays valid until the outermost scope is closed.
      *
      * Usage:
      * ```cpp
@@ -480,7 +523,10 @@ public:
 
     /**
      * @brief Open a read section on a reader slot from add_reader(). Real-time
-     * safe on any thread, as long as the slot is not used concurrently.
+     * safe on any thread: no registration, no allocation, no lock and no
+     * thread-local access.
+     *
+     * The slot must have one user at a time, ordered as add_reader() describes.
      *
      * @p reader must be this instance's (asserted). An empty one is a contract
      * violation too (asserted); a release build then falls back to the calling
@@ -550,8 +596,9 @@ private:
         return reader;
     }
 
-    // Push node onto the reader list (lock-free CAS, so readers walking the
-    // list never block). Must be called with m_writer_mutex held.
+    // Push node onto the reader list. Must be called with m_writer_mutex held,
+    // as every walk of the list is: readers never walk it, only writers, the
+    // count and the destructor do.
     void link_reader_with_lock(detail::RcuReaderNode& node) const {
         detail::RcuReaderNode* current_head = m_reader_head.load(std::memory_order_acquire);
         do {

@@ -11,8 +11,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - `thl::RCU::add_reader()` / `read_scope(reader)` (`core/threading/RCU.h`): a reader slot
   (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host rendering on changing
-  threads no longer allocates and locks on the audio thread. Tests:
-  `RCU.OwnedReaderProtectsAcrossChangingThreads`.
+  threads no longer allocates and locks on the audio thread. A slot has one user at a time, and
+  one user must be ordered before the next by happens-before (the host's own call order, a
+  mutex, an atomic claim flag with acquire / release): nothing checks it. Tests:
+  `RCU.OwnedReaderProtectsAcrossChangingThreads`, `RCU.SlotPoolWithOneUserAtATimeProtects`,
+  `RCU.SlotScopeIsRealtimeSafeOnAnUnregisteredThread`.
 - `thl::TripleBuffer<T>` (`core/threading/TripleBuffer.h`): a wait-free single-producer /
   single-consumer latest-value mailbox. Tests: `TripleBuffer.*`.
 - `thl::SeqLock` (`core/threading/SeqLock.h`): the sequence counter of a wait-free seqlock over
