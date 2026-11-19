@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a
+  gain from its weight. `Mode::Sum` takes the weights as the gains; `Mode::Mix` normalises them
+  to their p-norm (`set_p()`: `k_amplitude` 1 for correlated inputs, `k_compromise` 4/3,
+  `k_power` 2 for uncorrelated ones, `k_peak` infinity), so only their ratios matter and a mix
+  keeps its level while it glides. Weights (one at a time or `set_weights()`), p and the mode
+  glide over a ramp time (20 ms by default); `passes_only()` tells when a settled mix is one input
+  unchanged, so a caller can skip work. The output may be one of the inputs. Real-time safe
+  after `prepare()` (by @jstolberg). Tests: `Mixer.*`.
 - `thl::RCU::add_reader()` / `read_scope(reader)` (`core/threading/RCU.h`): a reader slot
   (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host rendering on changing
   threads no longer allocates and locks on the audio thread. A slot has one user at a time, and
@@ -163,6 +171,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `thl::graph::Graph` mixes with `dsp::utils::Mixer`: a node's sources (`InputMix`) and its dry
+  and wet signals (`MixLaw`); a wet mix glide stays on its law's curve, as before (by
+  @jstolberg). What changes: the pace along the curve follows the weights' linear glide instead
+  of the wet mix's (DryHeld a quarter of the way from 0 to 1: dry 1, wet 0.33 instead of 0.5);
+  `MixLaw::Compromise` is normalised to a 4/3-norm of 1, within 0.09 dB of before (still
+  -4.5 dB at 0.5); a change of mix law glides from the old law to the new one along the Mixer's
+  normalisation instead of crossfading the two laws' gains; a bypassed or fully wet node stays
+  so when its mix law changes (`Mixer::passes_only()` ignores glides that change nothing). A
+  delayed source now has a scratch buffer of its own (channels × block size), allocated at
+  `commit()`. Tests: `Graph.AWetMixGlideStaysOnTheMixLawsCurve`,
+  `Graph.AMixLawChangeLeavesABypassedNodeBypassed`.
 - `thl::RCU::update()` / `replace()` allocate the new version and, when the retired list is
   full, its growth, and nothing else. The sweep of exited threads' reader nodes at the end of
   every publication built two vectors, one allocation or more per publication as soon as the
@@ -207,6 +226,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
+  e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
+  the plain sources, while a blend's dry signal is the phase-matched one; the switch between the
+  two came at the end of the fade out and at the start of the fade in. The dry signal now glides
+  between them with the wet mix (before the dry delay, so its history stays continuous), and the
+  node is bypassed only once it has. Test: `Graph.ANodeThatShiftsThePhaseGlidesIntoBypassAndBack`.
 - `thl::RCU`: read scopes on one thread or reader slot nest; closing an inner one freed the
   outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
 - `thl::RCU`: destroying an RCU while a thread that read it still runs no longer frees that

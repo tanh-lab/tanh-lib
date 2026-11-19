@@ -330,6 +330,30 @@ TEST(Graph, InputMixAppliesToProcessorNodes) {
     expect_all(buffer, 0.75f * 2.0f);
 }
 
+// A merge that averages gets a new input Mixer when its number of sources changes (at commit());
+// it averages the new sources from there.
+TEST(Graph, AnAveragingMergeKeepsAveragingWhenItsSourcesChange) {
+    Graph graph;
+    const auto a = graph.add_node<ConstantProcessor>(0.5f);
+    const auto b = graph.add_node<ConstantProcessor>(0.25f);
+    const auto c = graph.add_node<ConstantProcessor>(0.0f);
+    ASSERT_TRUE(a && b && c);
+    ASSERT_TRUE(graph.connect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
+    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Average));
+    prepare(graph);
+    expect_all(process_blocks(graph, 0.0f, 1), 0.375f);
+
+    ASSERT_TRUE(graph.connect(*c, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    expect_all(process_blocks(graph, 0.0f, k_fade_blocks + k_ramp_blocks), 0.25f);
+
+    ASSERT_TRUE(graph.disconnect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    graph.collect_garbage();
+    expect_all(process_blocks(graph, 0.0f, k_fade_blocks + k_ramp_blocks), 0.125f);
+}
+
 TEST(Graph, InputMixChangeRampsWithoutCommit) {
     Graph graph;
     const auto a = graph.add_node<ConstantProcessor>(0.5f);
@@ -650,6 +674,31 @@ TEST(Graph, MergeInsideTheGraphIsAligned) {
     prepare(graph);
 
     expect_impulse_response(graph, k_latency);
+}
+
+// A source that two nodes delay (to meet a latent branch each), with a probe watching one of
+// them: every node, and the probe, sees its sources aligned.
+TEST(Graph, ADelayedSourceFannedOutReachesEveryNodeAligned) {
+    Graph graph;
+    const auto latent_a = graph.add_node<LatencyProcessor>(k_latency);
+    const auto latent_b = graph.add_node<LatencyProcessor>(k_latency);
+    const auto merge_a = graph.add_node<GainProcessor>(1.0f);
+    const auto merge_b = graph.add_node<GainProcessor>(1.0f);
+    ASSERT_TRUE(latent_a && latent_b && merge_a && merge_b);
+    for (const auto [latent, merge] : {std::pair{*latent_a, *merge_a}, {*latent_b, *merge_b}}) {
+        ASSERT_TRUE(graph.connect(graph.graph_input(), latent));
+        ASSERT_TRUE(graph.connect(latent, merge));
+        ASSERT_TRUE(graph.connect(graph.graph_input(), merge));  // the input, delayed
+        ASSERT_TRUE(graph.connect(merge, graph.graph_output()));
+    }
+    average_merges(graph);
+    const auto probe =
+        graph.add_probe<thl::dsp::probe::LevelProbe>(*merge_a, Graph::ProbePoint::Input);
+    ASSERT_TRUE(probe);
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+    EXPECT_FLOAT_EQ(probe->second->take_peak(0), 1.0f);  // both sources at once: aligned
 }
 
 TEST(Graph, BranchesAreAlignedToTheSlowest) {
@@ -1854,9 +1903,13 @@ Gains expected_gains(Graph::MixLaw law, double m) {
         case Graph::MixLaw::Linear: return {static_cast<float>(1.0 - m), static_cast<float>(m)};
         case Graph::MixLaw::ConstantPower:
             return {static_cast<float>(std::cos(q)), static_cast<float>(std::sin(q))};
-        case Graph::MixLaw::Compromise:
-            return {static_cast<float>(std::sqrt((1.0 - m) * std::cos(q))),
-                    static_cast<float>(std::sqrt(m * std::sin(q)))};
+        case Graph::MixLaw::Compromise: {  // the geometric mean of the two above, 4/3-norm 1
+            const double dry = std::sqrt((1.0 - m) * std::cos(q));
+            const double wet = std::sqrt(m * std::sin(q));
+            const double norm =
+                std::pow(std::pow(dry, 4.0 / 3.0) + std::pow(wet, 4.0 / 3.0), 3.0 / 4.0);
+            return {static_cast<float>(dry / norm), static_cast<float>(wet / norm)};
+        }
         case Graph::MixLaw::Parallel: return {1.0f, static_cast<float>(m)};
         case Graph::MixLaw::DryHeld:
             return {static_cast<float>(std::min(1.0, 2.0 * (1.0 - m))),
@@ -1867,6 +1920,50 @@ Gains expected_gains(Graph::MixLaw law, double m) {
 
 float db(float gain) {
     return 20.0f * std::log10(gain);
+}
+
+/// The gains of a node with @p law, sample by sample, while its wet mix glides from 0 to 1: one
+/// graph measures the dry gain, a second the wet gain, as measure().
+std::vector<Gains> measure_glide(Graph::MixLaw law) {
+    const auto run = [law](float dry, float wet) {
+        Graph graph;
+        const auto node = graph.add_node<ConstantProcessor>(wet);
+        EXPECT_TRUE(node);
+        EXPECT_TRUE(graph.connect(graph.graph_input(), *node));
+        EXPECT_TRUE(graph.connect(*node, graph.graph_output()));
+        EXPECT_TRUE(graph.set_mix_law(*node, law));
+        EXPECT_TRUE(graph.set_wet_mix(*node, 0.0f));
+        prepare(graph);
+        EXPECT_TRUE(graph.set_wet_mix(*node, 1.0f));
+        std::vector<float> gains;
+        for (size_t block = 0; block <= k_ramp_blocks; ++block) {
+            const Buffer<float> buffer = process_blocks(graph, dry, 1);
+            gains.insert(gains.end(),
+                         buffer.get_read_pointer(0),
+                         buffer.get_read_pointer(0) + k_block);
+        }
+        return gains;
+    };
+    const std::vector<float> dry = run(1.0f, 0.0f);
+    const std::vector<float> wet = run(0.0f, 1.0f);
+    std::vector<Gains> gains;
+    for (size_t i = 0; i < dry.size(); ++i) { gains.push_back({.m_dry = dry[i], .m_wet = wet[i]}); }
+    return gains;
+}
+
+/// What @p law keeps constant along its curve, 1 on it: the amplitude, the power, the 4/3-norm,
+/// the dry gain, the larger gain.
+double curve_level(Graph::MixLaw law, Gains gains) {
+    const double dry = gains.m_dry;
+    const double wet = gains.m_wet;
+    switch (law) {
+        case Graph::MixLaw::Linear: return dry + wet;
+        case Graph::MixLaw::ConstantPower: return (dry * dry) + (wet * wet);
+        case Graph::MixLaw::Compromise: return std::pow(dry, 4.0 / 3.0) + std::pow(wet, 4.0 / 3.0);
+        case Graph::MixLaw::Parallel: return dry;
+        case Graph::MixLaw::DryHeld: return std::max(dry, wet);
+    }
+    return 0.0;
 }
 
 }  // namespace
@@ -1900,6 +1997,52 @@ TEST(Graph, MixLawsMeetTheirLevelsAtHalf) {
     const Gains held = measure_gains(Graph::MixLaw::DryHeld, 0.5f);
     EXPECT_EQ(held.m_dry, 1.0f);
     EXPECT_EQ(held.m_wet, 1.0f);
+}
+
+TEST(Graph, AWetMixGlideStaysOnTheMixLawsCurve) {
+    for (const auto law : {Graph::MixLaw::Linear,
+                           Graph::MixLaw::ConstantPower,
+                           Graph::MixLaw::Compromise,
+                           Graph::MixLaw::Parallel,
+                           Graph::MixLaw::DryHeld}) {
+        SCOPED_TRACE(testing::Message() << "law " << static_cast<int>(law));
+        const std::vector<Gains> glide = measure_glide(law);  // a jump from 0 to 1, e.g. unbypass
+        EXPECT_GT(glide.front().m_wet, 0.0f);                 // glides, does not jump
+        EXPECT_LT(glide.front().m_wet, 0.01f);
+        for (size_t i = 0; i < glide.size(); ++i) {
+            EXPECT_NEAR(curve_level(law, glide[i]), 1.0, 1e-5) << "at " << i;
+            if (i > 0) {
+                EXPECT_GE(glide[i].m_wet, glide[i - 1].m_wet - 1e-6f) << "at " << i;
+                EXPECT_LE(glide[i].m_dry, glide[i - 1].m_dry + 1e-6f) << "at " << i;
+            }
+        }
+        EXPECT_EQ(glide.back().m_dry, law == Graph::MixLaw::Parallel ? 1.0f : 0.0f);
+        EXPECT_EQ(glide.back().m_wet, 1.0f);
+    }
+}
+
+// A change of mix law changes nothing at wet 0 (dry only, at gain 1 under every law): the node
+// stays bypassed, its processor is neither run nor reset, the input passes unchanged.
+TEST(Graph, AMixLawChangeLeavesABypassedNodeBypassed) {
+    int calls = 0;
+    Graph graph;
+    const auto node = graph.add_node<CountingDoubler>(calls);
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *node));
+    ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*node, 0.0f));
+    prepare(graph);
+    for (const auto law : {Graph::MixLaw::ConstantPower,
+                           Graph::MixLaw::Compromise,
+                           Graph::MixLaw::Parallel,
+                           Graph::MixLaw::DryHeld,
+                           Graph::MixLaw::Linear}) {
+        ASSERT_TRUE(graph.set_mix_law(*node, law));
+        for (size_t block = 0; block <= k_ramp_blocks; ++block) {
+            expect_all(process_blocks(graph, 0.5f, 1), 0.5f);
+        }
+    }
+    EXPECT_EQ(calls, 0);
 }
 
 TEST(Graph, ChangingTheMixLawGlides) {
@@ -2025,6 +2168,97 @@ TEST(Graph, ABlendOfANodeThatShiftsThePhaseUsesItsPhaseMatchedDrySignal) {
     // signal that is the plain input would leave (input + all-pass) / 2, which combs.
     for (size_t n = 0; n < wet.size(); ++n) { ASSERT_NEAR(half[n], wet[n], 1e-5f) << n; }
     EXPECT_GT(std::abs(wet[0] - 1.0f), 0.01f);  // the all-pass really is not the input
+}
+
+namespace {
+
+/// Inverts the polarity, @p latency samples late: the most a phase response can differ from the
+/// input. Its dry signal (process_with_dry()) is the input inverted, undelayed.
+class InvertingProcessor final : public BaseProcessor {
+public:
+    explicit InvertingProcessor(uint32_t latency) : m_latency(latency), m_delay(latency) {}
+
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override {
+        m_delay.prepare(sample_rate, samples_per_block, num_channels);
+        m_delay.set_delay_samples(m_latency);
+        set_max_latency_samples(m_latency);
+        set_latency_samples(m_latency);
+    }
+
+    void process(BufferView buffer,
+                 uint32_t /*modulation_offset*/) TANH_NONBLOCKING_FUNCTION override {
+        invert(buffer);
+        if (m_latency > 0) { m_delay.process(buffer); }
+    }
+
+    void process_with_dry(BufferView buffer,
+                          uint32_t modulation_offset,
+                          BufferView dry) TANH_NONBLOCKING_FUNCTION override {
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            std::copy_n(buffer.get_read_pointer(ch),
+                        buffer.get_num_samples(),
+                        dry.get_write_pointer(ch));
+        }
+        invert(dry);
+        process(buffer, modulation_offset);
+    }
+
+private:
+    static void invert(BufferView buffer) TANH_NONBLOCKING_FUNCTION {
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            float* samples = buffer.get_write_pointer(ch);
+            for (size_t i = 0; i < buffer.get_num_samples(); ++i) { samples[i] = -samples[i]; }
+        }
+    }
+
+    uint32_t m_latency;
+    thl::dsp::utils::DelayProcessor m_delay;
+};
+
+}  // namespace
+
+// A node that turns the phase glides into bypass and back: its dry signal, the input with its
+// phase response, turns into the plain input as the wet mix reaches 0, so the bypass (the plain
+// input) continues it; coming back it turns into the phase-matched dry signal again. Without
+// latency and with, where the dry delay holds the signal from before the switch.
+TEST(Graph, ANodeThatShiftsThePhaseGlidesIntoBypassAndBack) {
+    for (const uint32_t latency : {0U, k_latency}) {
+        Graph graph;
+        const auto node = graph.add_node<InvertingProcessor>(latency);
+        ASSERT_TRUE(node);
+        ASSERT_TRUE(graph.connect(graph.graph_input(), *node));
+        ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+        prepare(graph);
+
+        std::vector<float> out;
+        const auto run = [&](size_t num_blocks) {
+            for (size_t block = 0; block < num_blocks; ++block) {
+                auto buffer = make_buffer(0.5f);
+                graph.process(buffer);
+                out.insert(out.end(),
+                           buffer.get_read_pointer(0),
+                           buffer.get_read_pointer(0) + k_block);
+            }
+        };
+        run(10);
+        EXPECT_FLOAT_EQ(out.back(), -0.5f) << latency;  // inverted
+        ASSERT_TRUE(graph.set_wet_mix(*node, 0.0f));
+        run(4 * k_ramp_blocks);
+        EXPECT_FLOAT_EQ(out.back(), 0.5f) << latency;  // bypassed: the input
+        ASSERT_TRUE(graph.set_wet_mix(*node, 1.0f));
+        run(4 * k_ramp_blocks);
+        EXPECT_FLOAT_EQ(out.back(), -0.5f) << latency;
+
+        // A glide from -0.5 to 0.5 over the 20 ms ramp moves 1 / 960 per sample; a switch of the
+        // dry signal would jump by 1.
+        float steepest = 0.0f;
+        for (size_t i = 10 * k_block + 1; i < out.size(); ++i) {
+            steepest = std::max(steepest, std::abs(out[i] - out[i - 1]));
+        }
+        EXPECT_LT(steepest, 0.005f) << latency;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
