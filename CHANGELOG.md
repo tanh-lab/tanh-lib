@@ -173,12 +173,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - `thl::graph::Graph` mixes with `dsp::utils::Mixer`: a node's sources (`InputMix`) and its dry
   and wet signals (`MixLaw`); a wet mix glide stays on its law's curve, as before (by
-  @jstolberg). What changes: `MixLaw::Compromise` is normalised to a 4/3-norm of 1, within
-  0.09 dB of before (still -4.5 dB at 0.5); a change of mix law glides from the old law to the
-  new one along the Mixer's normalisation instead of crossfading the two laws' gains; a node
-  whose mix law changes while it is bypassed is `reset()` before it runs, as when its wet mix
-  leaves 0. A delayed source now has a scratch buffer of its own (channels × block size),
-  allocated at `commit()`. Tests: `Graph.AWetMixGlideStaysOnTheMixLawsCurve`.
+  @jstolberg). What changes: the pace along the curve follows the weights' linear glide instead
+  of the wet mix's (DryHeld a quarter of the way from 0 to 1: dry 1, wet 0.33 instead of 0.5);
+  `MixLaw::Compromise` is normalised to a 4/3-norm of 1, within 0.09 dB of before (still
+  -4.5 dB at 0.5); a change of mix law glides from the old law to the new one along the Mixer's
+  normalisation instead of crossfading the two laws' gains; a bypassed or fully wet node stays
+  so when its mix law changes (`Mixer::passes_only()` ignores glides that change nothing). A
+  delayed source now has a scratch buffer of its own (channels × block size), allocated at
+  `commit()`. Tests: `Graph.AWetMixGlideStaysOnTheMixLawsCurve`,
+  `Graph.AMixLawChangeLeavesABypassedNodeBypassed`.
 - `thl::RCU::update()` / `replace()` allocate the new version and, when the retired list is
   full, its growth, and nothing else. The sweep of exited threads' reader nodes at the end of
   every publication built two vectors, one allocation or more per publication as soon as the

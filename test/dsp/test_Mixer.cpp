@@ -261,6 +261,26 @@ TEST(Mixer, TheOutputMayBeOneOfTheInputs) {
     }
 }
 
+// Settled too, the output may be one of the inputs, also one that is not the first.
+TEST(Mixer, TheOutputMayBeOneOfTheInputsWhenSettled) {
+    const Buffer<float> first = dsp_test::noise(2, k_num_samples, 1.0f, 1);
+    const Buffer<float> second = dsp_test::noise(2, k_num_samples, 1.0f, 2);
+    Mixer apart = settled(Mixer::Mode::Mix, Mixer::k_power, 0.5f, 0.25f);
+    Mixer in_place = settled(Mixer::Mode::Mix, Mixer::k_power, 0.5f, 0.25f);
+
+    Buffer<float> output(2, k_num_samples);
+    apart.process(std::array<ConstBufferView, 2>{first, second}, output);
+    Buffer<float> wet = dsp_test::noise(2, k_num_samples, 1.0f, 2);
+    in_place.process(std::array<ConstBufferView, 2>{first, wet}, wet);
+
+    for (size_t ch = 0; ch < 2; ++ch) {
+        for (size_t i = 0; i < k_num_samples; ++i) {
+            EXPECT_NEAR(wet.get_read_pointer(ch)[i], output.get_read_pointer(ch)[i], 1e-6f)
+                << "channel " << ch << " at " << i;
+        }
+    }
+}
+
 TEST(Mixer, PassesOnlyWhenSettledAtOneInput) {
     Mixer mixer = settled(Mixer::Mode::Sum, Mixer::k_amplitude, 1.0f, 0.0f);
     EXPECT_TRUE(mixer.passes_only(0));
@@ -279,6 +299,49 @@ TEST(Mixer, PassesOnlyWhenSettledAtOneInput) {
     mixer.set_weight(1, 0.1f);
     mixer.reset();
     EXPECT_FALSE(mixer.passes_only(0));
+}
+
+// A glide that cannot change a mix of one input does not keep it from passing: p never matters
+// for one input, the mode not where its weight is 1. The mix it passes is that input exactly.
+TEST(Mixer, PassesOnlyThroughGlidesThatChangeNothing) {
+    Mixer mixer = settled(Mixer::Mode::Mix, Mixer::k_amplitude, 0.5f, 0.0f);
+    mixer.set_p(Mixer::k_power);
+    EXPECT_TRUE(mixer.passes_only(0));  // p glides: one input stays at gain 1
+    mixer.set_mode(Mixer::Mode::Sum);
+    EXPECT_FALSE(mixer.passes_only(0));  // the gain glides from 1 to the weight 0.5
+
+    mixer = settled(Mixer::Mode::Sum, Mixer::k_amplitude, 1.0f, 0.0f);
+    mixer.set_mode(Mixer::Mode::Mix);
+    mixer.set_p(Mixer::k_peak);
+    EXPECT_TRUE(mixer.passes_only(0));  // weight 1: gain 1 in both modes, at any p
+    const auto gains = measure_gains(mixer);
+    for (size_t i = 0; i < gains.m_first.size(); ++i) {
+        ASSERT_EQ(gains.m_first[i], 1.0f) << i;
+        ASSERT_EQ(gains.m_second[i], 0.0f) << i;
+    }
+
+    mixer.set_weight(1, 0.25f);
+    EXPECT_FALSE(mixer.passes_only(0));  // the other input glides in
+}
+
+// A ramp shorter than a sample, 0 included, glides over one sample.
+TEST(Mixer, ARampOfZeroGlidesOverOneSample) {
+    Mixer mixer;
+    mixer.prepare(k_sample_rate, 2, 0.0);
+    mixer.set_weight(0, 0.0f);
+    const auto gains = measure_gains(mixer, 2);
+    EXPECT_EQ(gains.m_first[0], 0.0f);
+    EXPECT_EQ(gains.m_first[1], 0.0f);
+}
+
+// Settled, the mix adds the inputs one after another (skipping the silent ones).
+TEST(Mixer, ASettledMixAddsTheInputs) {
+    Mixer mixer = prepared(3);
+    mixer.set_mode(Mixer::Mode::Mix);
+    mixer.set_weights(std::array{1.0f, 0.5f, 0.0f});
+    mixer.reset();
+    expect_all(mix_constants(mixer, {0.25f, -0.75f, 3.0f}),
+               (0.25f * 1.0f / 1.5f) + (-0.75f * 0.5f / 1.5f));
 }
 
 TEST(Mixer, PrepareKeepsTheWeightsAndEndsTheGlides) {

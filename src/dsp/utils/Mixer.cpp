@@ -33,6 +33,8 @@ float norm(std::span<const float> values, float inverse_p) TANH_NONBLOCKING_FUNC
 }  // namespace
 
 void Mixer::prepare(double sample_rate, size_t num_inputs, double ramp_seconds) {
+    // SmoothedValue needs a ramp: one sample at least.
+    if (sample_rate > 0.0) { ramp_seconds = std::max(ramp_seconds, 1.0 / sample_rate); }
     m_target_weights.resize(num_inputs, 1.0f);
     m_weights.resize(num_inputs);
     m_gains.resize(num_inputs);
@@ -65,6 +67,11 @@ void Mixer::set_weights(std::span<const float> weights) TANH_NONBLOCKING_FUNCTIO
     for (size_t input = 0; input < weights.size(); ++input) { set_weight(input, weights[input]); }
 }
 
+float Mixer::get_weight(size_t input) const {
+    assert(input < num_inputs() && "Mixer: no such input");
+    return m_target_weights[input];
+}
+
 void Mixer::reset() TANH_NONBLOCKING_FUNCTION {
     for (size_t input = 0; input < num_inputs(); ++input) {
         m_weights[input].set_current_and_target_value(m_target_weights[input]);
@@ -74,12 +81,16 @@ void Mixer::reset() TANH_NONBLOCKING_FUNCTION {
 }
 
 bool Mixer::passes_only(size_t input) const TANH_NONBLOCKING_FUNCTION {
-    if (input >= num_inputs() || is_gliding()) { return false; }
+    if (input >= num_inputs()) { return false; }
     for (size_t other = 0; other < num_inputs(); ++other) {
+        if (m_weights[other].is_smoothing()) { return false; }
         if (other != input && m_target_weights[other] != 0.0f) { return false; }
     }
+    // Only this input: its gain is its weight in Mode::Sum and 1 in Mode::Mix at any p (the
+    // weight over its own norm), so p never matters, and the mode only where the weight is not 1.
     const float weight = m_target_weights[input];
-    return m_mode == Mode::Sum ? weight == 1.0f : weight > 0.0f;
+    if (weight == 1.0f) { return true; }
+    return weight > 0.0f && m_mode == Mode::Mix && !m_mix_amount.is_smoothing();
 }
 
 void Mixer::process(std::span<const thl::core::ConstBufferView> inputs,
@@ -92,7 +103,18 @@ void Mixer::process(std::span<const thl::core::ConstBufferView> inputs,
                                }) &&
            "Mixer: inputs and output have different dimensions");
 
-    // Reads every input at sample i before writing it, so the output may be one of the inputs.
+    const size_t num_channels = output.get_num_channels();
+    const size_t num_samples = output.get_num_samples();
+    if (!is_gliding()) {
+        update_gains();
+        for (size_t channel = 0; channel < num_channels; ++channel) {
+            mix_channel(inputs, output.get_write_pointer(channel), channel, num_samples);
+        }
+        return;
+    }
+
+    // Gliding: the gains change every sample. Reads every input at sample i before writing it, so
+    // the output may be one of the inputs.
     const auto mix_sample = [&](size_t channel, size_t i) {
         float sum = 0.0f;
         for (size_t input = 0; input < inputs.size(); ++input) {
@@ -101,18 +123,52 @@ void Mixer::process(std::span<const thl::core::ConstBufferView> inputs,
         output.get_write_pointer(channel)[i] = sum;
     };
 
-    const size_t num_channels = output.get_num_channels();
-    const size_t num_samples = output.get_num_samples();
-    if (!is_gliding()) {
-        update_gains();
-        for (size_t channel = 0; channel < num_channels; ++channel) {
-            for (size_t i = 0; i < num_samples; ++i) { mix_sample(channel, i); }
-        }
-        return;
-    }
     for (size_t i = 0; i < num_samples; ++i) {
         update_gains();
         for (size_t channel = 0; channel < num_channels; ++channel) { mix_sample(channel, i); }
+    }
+}
+
+void Mixer::mix_channel(std::span<const thl::core::ConstBufferView> inputs,
+                        float* output,
+                        size_t channel,
+                        size_t num_samples) const TANH_NONBLOCKING_FUNCTION {
+    // Input by input, so the loops vectorise. The input that is the output (if any) comes first,
+    // scaled in place; else the first one that sounds is copied; then the others add.
+    size_t first = inputs.size();
+    for (size_t input = 0; input < inputs.size(); ++input) {
+        if (inputs[input].get_read_pointer(channel) == output) { first = input; }
+    }
+    if (first == inputs.size()) {
+        for (size_t input = 0; input < inputs.size(); ++input) {
+            if (m_gains[input] != 0.0f) {
+                first = input;
+                break;
+            }
+        }
+    }
+    if (first == inputs.size()) {
+        std::fill_n(output, num_samples, 0.0f);  // nothing sounds
+        return;
+    }
+    const float* first_samples = inputs[first].get_read_pointer(channel);
+    const float first_gain = m_gains[first];
+    if (first_gain == 0.0f) {
+        std::fill_n(output, num_samples, 0.0f);
+    } else if (first_gain == 1.0f) {
+        if (first_samples != output) { std::copy_n(first_samples, num_samples, output); }
+    } else {
+        for (size_t i = 0; i < num_samples; ++i) { output[i] = first_gain * first_samples[i]; }
+    }
+    for (size_t input = 0; input < inputs.size(); ++input) {
+        const float gain = m_gains[input];
+        if (input == first || gain == 0.0f) { continue; }
+        const float* samples = inputs[input].get_read_pointer(channel);
+        if (gain == 1.0f) {
+            for (size_t i = 0; i < num_samples; ++i) { output[i] += samples[i]; }
+        } else {
+            for (size_t i = 0; i < num_samples; ++i) { output[i] += gain * samples[i]; }
+        }
     }
 }
 

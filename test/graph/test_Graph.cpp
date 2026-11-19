@@ -1972,6 +1972,30 @@ TEST(Graph, AWetMixGlideStaysOnTheMixLawsCurve) {
     }
 }
 
+// A change of mix law changes nothing at wet 0 (dry only, at gain 1 under every law): the node
+// stays bypassed, its processor is neither run nor reset, the input passes unchanged.
+TEST(Graph, AMixLawChangeLeavesABypassedNodeBypassed) {
+    int calls = 0;
+    Graph graph;
+    const auto node = graph.add_node<CountingDoubler>(calls);
+    ASSERT_TRUE(node);
+    ASSERT_TRUE(graph.connect(graph.graph_input(), *node));
+    ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+    ASSERT_TRUE(graph.set_wet_mix(*node, 0.0f));
+    prepare(graph);
+    for (const auto law : {Graph::MixLaw::ConstantPower,
+                           Graph::MixLaw::Compromise,
+                           Graph::MixLaw::Parallel,
+                           Graph::MixLaw::DryHeld,
+                           Graph::MixLaw::Linear}) {
+        ASSERT_TRUE(graph.set_mix_law(*node, law));
+        for (size_t block = 0; block <= k_ramp_blocks; ++block) {
+            expect_all(process_blocks(graph, 0.5f, 1), 0.5f);
+        }
+    }
+    EXPECT_EQ(calls, 0);
+}
+
 TEST(Graph, ChangingTheMixLawGlides) {
     Graph graph;
     const auto node = graph.add_node<ConstantProcessor>(1.0f);
