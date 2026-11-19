@@ -16,6 +16,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   mutex, an atomic claim flag with acquire / release): nothing checks it. Tests:
   `RCU.OwnedReaderProtectsAcrossChangingThreads`, `RCU.SlotPoolWithOneUserAtATimeProtects`,
   `RCU.SlotScopeIsRealtimeSafeOnAnUnregisteredThread`.
+- `thl::RCU::stage_update()` / `stage_replace()` and `commit()` (`core/threading/RCU.h`): a
+  publication in two steps, for a change that spans several RCUs (or an RCU and state of the
+  caller) and must not stop half-way. A stage is the first half of `update()` / `replace()`: it
+  makes the next version and the room to retire the one it will replace, may throw, and then
+  has changed nothing. It returns a move-only `RCU<T>::Staged`, which frees the version when it
+  is dropped. `commit(Staged&&)` is the second half: `noexcept`, without an allocation, it
+  publishes, retires and reclaims as `update()` / `replace()` do and blocks only where they
+  block. Stage everything, then commit everything. Between a stage and its commit nothing else
+  may be published in that RCU (asserted in debug builds; a release build still publishes, but
+  may then allocate); the RCU holds no lock between the two calls, so that exclusion is the
+  caller's mutex. Tests: `RCU.StageThenCommitIsUpdateAndReplace`,
+  `RCU.ReadScopeAcrossCommitKeepsItsVersion`, `RCU.TwoRcusStagedThenBothCommitted`, and
+  `RCUAllocation.*` in a new executable, `test_core_allocation`, which replaces the global
+  `operator new` to count the allocations of a call and to fail each one in turn.
 - `thl::TripleBuffer<T>` (`core/threading/TripleBuffer.h`): a wait-free single-producer /
   single-consumer latest-value mailbox. Its slots and the two sides' indices are
   `k_cache_line_size` apart, so it is at least six cache lines (768 bytes). Tests:
@@ -149,6 +163,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `thl::RCU::update()` / `replace()` allocate the new version and, when the retired list is
+  full, its growth, and nothing else. The sweep of exited threads' reader nodes at the end of
+  every publication built two vectors, one allocation or more per publication as soon as the
+  RCU had a reader; it now unlinks the nodes in place.
 - `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
   (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
 - `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
@@ -204,6 +222,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   longer touches thread-local state; the destroying thread's own node is freed like any other
   live thread's, at that thread's exit or its next registration. Test:
   `RCU.DestroyedAfterItsThreadsRegistry` (fails without the fix on libc++ only).
+- `thl::RCU::update()` / `replace()` could throw `std::bad_alloc` with the new version already
+  published: the retired list grew, and the reader-node sweep allocated, behind the pointer
+  swap. They now make every allocation first, so they publish, or throw and nothing has
+  changed. An allocation failing in that sweep could also free the nodes of exited threads
+  while they were still linked in the reader list; the sweep no longer allocates. Tests:
+  `RCUAllocation.UpdateAndReplaceThatCannotAllocateChangeNothing`,
+  `RCU.DeadNodeSweepKeepsEveryLiveReader`.
 - `thl::dsp::utils::LimiterImpl`: a NaN threshold, attack or release made its gain, and so
   its output, NaN for good (and with it `MultibandLimiterImpl`'s bands). A NaN now keeps the
   parameter's last value; the threshold is clamped to [-120, 24] dB, the times to

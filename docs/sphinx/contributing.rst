@@ -92,7 +92,11 @@ Tests
 ``test/`` mirrors the components: ``test/core``, ``test/state``, ``test/dsp``,
 ``test/modulation`` and ``test/audio-io`` each build one ``test_*`` binary, and
 ``test/exports``, ``test/abi-namespace`` and ``test/install`` check the
-packaging contracts. Run one suite directly:
+packaging contracts. ``test/core`` builds a second binary,
+``test_core_allocation``: it replaces the global ``operator new`` and
+``operator delete`` to count the allocations of a call and to make each one fail
+in turn, and belongs to no ThreadSanitizer, LeakSanitizer or MemorySanitizer
+build, whose runtimes define those operators themselves. Run one suite directly:
 
 .. code-block:: bash
 
