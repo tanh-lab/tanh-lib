@@ -1,5 +1,7 @@
+#include <tanh/audio-io/AudioEncodingFormat.h>
 #include <tanh/audio-io/AudioFileWriter.h>
 #include <tanh/core/AbiNamespace.h>
+#include <tanh/core/BufferView.h>
 
 #include <algorithm>
 #include <array>
@@ -163,7 +165,7 @@ bool encode_to_file(std::FILE* file,
 }  // namespace
 
 bool AudioFileWriter::write_to_file(const std::string& file_path,
-                                    core::ConstBufferView buffer,
+                                    const core::ConstBufferView& buffer,
                                     double sample_rate,
                                     AudioEncodingFormat format) {
     const size_t num_channels = buffer.get_num_channels();

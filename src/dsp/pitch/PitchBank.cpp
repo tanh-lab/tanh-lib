@@ -62,6 +62,9 @@ void shift_into(core::BufferF& output,
         return;
     }
 
+    // signalsmith-stretch's public header (included above) forwards to the header that declares
+    // the class; that one is not on the include path, and include-cleaner accepts no other.
+    // NOLINTNEXTLINE(misc-include-cleaner): the public header is a forwarder
     signalsmith::stretch::SignalsmithStretch<float> stretch;
     stretch.presetCheaper(static_cast<int>(num_channels), static_cast<float>(sample_rate));
     stretch.setTransposeSemitones(semitones,

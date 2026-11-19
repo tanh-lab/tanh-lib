@@ -160,6 +160,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `get_crossover_parameter_float()` (non-finite by default: the crossover keeps what
   `set_frequency()` gave it) and `read_crossover_parameters()`, which `MultibandLimiterImpl`
   and `StereoWidenerImpl` now call instead of each repeating it. Overrides keep working.
+- **Breaking:** `thl::dsp::analysis::AdaptivePeakPickResult`'s members are `m_peak_indices` and
+  `m_threshold` (were `peak_indices` and `threshold`): public data members carry the `m_` prefix
+  like those of every other struct, which `.clang-tidy` asks for and the merge queue now
+  enforces. Migration: rename the two members where the result of `adaptive_peak_pick()` is
+  read.
+- Licence: the adaptive peak picker (`include/tanh/dsp/analysis/AdaptivePeakPicker.h`,
+  `src/dsp/analysis/AdaptivePeakPicker.cpp`) is under the dsp component's licence, AGPL-3.0
+  (`LICENSE`), not Apache-2.0. The two files were added to the dsp component with an
+  `SPDX-License-Identifier: Apache-2.0` header and a README sentence to match, but the library
+  is licensed per component and the dsp component never was Apache-2.0: only the core component
+  is. The header and the README sentence are removed; like every other dsp file, the two carry
+  no SPDX line.
+- `thl::audio_io::AudioFileWriter::write_to_file()` takes its buffer view by `const` reference
+  (was by value), like the other functions that only read a view. Calls compile unchanged; the
+  exported symbol changes, so code linked against a shared `tanh_audio_io` has to be rebuilt.
+- CI: `clang_tidy result` is a required check, and the `clang_tidy` workflow reports on pull
+  requests too. A pull request gets clang-tidy over the `.cpp` files it changes (all of them
+  when it changes `.clang-tidy` or the workflow); the merge queue keeps the full sweep. Both
+  check the translation units of the Linux `desktop-debug` build, i.e. the entries of its
+  compile database under `src/` and `test/`, no longer every `.cpp` file there: a source of
+  another platform (`RealFftAccelerate.cpp`) was analysed with a borrowed compile command and
+  failed on a header Linux does not have. The sweep's findings on `main` are fixed (see the
+  two entries above; the rest changed no interface).
+- CI: the `coverage` workflow runs in the merge queue instead of on every push to `main`, so
+  the commit is measured before it lands. It stays a non-required check. Cache warming and
+  the docs deployment stay on push to `main`.
 
 ### Fixed
 

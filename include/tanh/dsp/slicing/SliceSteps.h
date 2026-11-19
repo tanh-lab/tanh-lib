@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <utility>
 
 /**
  * @file SliceSteps.h
@@ -47,7 +48,7 @@ inline float step_to_norm(const SliceMap& map, double v) {
     auto const n = static_cast<double>(map.m_count);
     v = std::clamp(v, 0.0, n);
     auto k = static_cast<long>(std::floor(v));
-    if (k >= static_cast<long>(map.m_count)) { return 1.0f; }
+    if (std::cmp_greater_equal(k, map.m_count)) { return 1.0f; }
     k = std::max<long>(k, 0);
     auto const lo = static_cast<double>(map.normalized_bound(static_cast<size_t>(k)));
     auto const hi = static_cast<double>(map.normalized_bound(static_cast<size_t>(k) + 1));

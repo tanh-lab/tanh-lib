@@ -1,11 +1,14 @@
-// SPDX-License-Identifier: Apache-2.0
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/analysis/AdaptivePeakPicker.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <span>
 #include <stdexcept>
+#include <vector>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::analysis {
 namespace {
@@ -50,15 +53,13 @@ AdaptivePeakPickResult adaptive_peak_pick(std::span<const double> values,
     if (!eligible.empty() && eligible.size() != values.size()) {
         throw std::invalid_argument("eligible must have the same shape as values");
     }
-    if (!std::all_of(values.begin(), values.end(), [](double value) {
-            return std::isfinite(value);
-        })) {
+    if (!std::ranges::all_of(values, [](double value) { return std::isfinite(value); })) {
         throw std::invalid_argument("values must contain only finite values");
     }
 
     AdaptivePeakPickResult result;
-    result.threshold = trailing_mean(values, threshold_history_frames);
-    for (auto& value : result.threshold) { value += threshold_delta; }
+    result.m_threshold = trailing_mean(values, threshold_history_frames);
+    for (auto& value : result.m_threshold) { value += threshold_delta; }
 
     for (std::size_t index = 0; index < values.size(); ++index) {
         const auto history_start =
@@ -70,12 +71,12 @@ AdaptivePeakPickResult adaptive_peak_pick(std::span<const double> values,
             *std::max_element(values.begin() + static_cast<std::ptrdiff_t>(history_start),
                               values.begin() + static_cast<std::ptrdiff_t>(lookahead_end));
         const bool is_eligible = eligible.empty() || eligible[index] != 0;
-        const bool has_spacing = result.peak_indices.empty() ||
-                                 index - result.peak_indices.back() >= minimum_spacing_frames;
+        const bool has_spacing = result.m_peak_indices.empty() ||
+                                 index - result.m_peak_indices.back() >= minimum_spacing_frames;
 
-        if (values[index] == local_maximum && values[index] >= result.threshold[index] &&
+        if (values[index] == local_maximum && values[index] >= result.m_threshold[index] &&
             is_eligible && has_spacing) {
-            result.peak_indices.push_back(index);
+            result.m_peak_indices.push_back(index);
         }
     }
 

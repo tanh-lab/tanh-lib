@@ -207,7 +207,7 @@ private:
         auto const n = static_cast<double>(slices.m_count);
         auto const k = static_cast<double>(slicing::slice_of_step(slices, p.m_position));
         double const spray = static_cast<double>(p.m_spray) * n;  // width in slices
-        double const tilt = static_cast<double>(p.m_tilt);
+        auto const tilt = static_cast<double>(p.m_tilt);
         double window_lo = k + std::max(-1.0, tilt - 1.0) * spray;
         double window_hi = k + std::min(1.0, tilt + 1.0) * spray;
         double v = k;

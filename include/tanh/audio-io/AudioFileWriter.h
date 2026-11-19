@@ -40,7 +40,7 @@ public:
      * @return true on success, false otherwise.
      */
     bool write_to_file(const std::string& file_path,
-                       core::ConstBufferView buffer,
+                       const core::ConstBufferView& buffer,
                        double sample_rate,
                        AudioEncodingFormat format = AudioEncodingFormat::WAV);
 };

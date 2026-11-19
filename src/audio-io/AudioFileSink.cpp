@@ -1,3 +1,4 @@
+#include <tanh/audio-io/AudioEncodingFormat.h>
 #include <tanh/audio-io/AudioFileSink.h>
 #include <tanh/core/AbiNamespace.h>
 
