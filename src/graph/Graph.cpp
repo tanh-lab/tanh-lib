@@ -53,6 +53,11 @@ struct Graph::Node {
 
     // Audio thread: input 0 dry, input 1 wet. Never replaced, so a glide carries over commits.
     thl::dsp::utils::Mixer m_output_mixer;
+    // Audio thread: where the dry signal comes from, 1 the processor (phase-matched), 0 the
+    // sources: the processor while the node runs, the sources when it is bypassed, gliding
+    // between the two with the wet mix so the bypass continues what the blend ended on. Never
+    // replaced.
+    thl::dsp::utils::SmoothedValue m_dry_source;
 
     // Probes watching the node, per ProbePoint: set on the control thread, read by the audio
     // thread (seq_cst against Graph::m_audio_epoch, see remove_probe()).
@@ -98,9 +103,10 @@ struct Graph::ProcessingStep {
     uint32_t m_input_latency = 0;  // set by apply_latencies(): the sources' path latency
 
     /// Audio thread: runs the processor on @p buffer (its mixed inputs) and blends the result with
-    /// its dry signal by the node's wet mix and mix law. @p dry is scratch.
+    /// its dry signal by the node's wet mix and mix law. @p dry and @p sources are scratch.
     void process(const thl::core::BufferView& buffer,
                  const thl::core::BufferView& dry,
+                 const thl::core::BufferView& sources,
                  uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION;
 };
 
@@ -110,8 +116,9 @@ struct Graph::CompiledGraph {
     std::vector<thl::core::Buffer<float>> m_buffers;
     std::vector<uint32_t> m_path_latencies;  // per buffer, set by apply_latencies()
     uint32_t m_max_latency = 0;              // of the output
-    uint32_t m_expected_latency = 0;  // of the output, with the nodes' latencies when compiled
-    thl::core::Buffer<float> m_dry;   // scratch for a step's dry signal
+    uint32_t m_expected_latency = 0;     // of the output, with the nodes' latencies when compiled
+    thl::core::Buffer<float> m_dry;      // scratch for a step's dry signal
+    thl::core::Buffer<float> m_sources;  // scratch for a step's input while its dry signal glides
     std::optional<BufferIndex> m_input_buffer;  // empty if graph_input() reaches no output
     Inputs m_output_inputs;
     Node* m_output_node = nullptr;
@@ -174,6 +181,12 @@ void apply_mix_law(Mixer& mixer, Graph::MixLaw law, float wet_mix) TANH_NONBLOCK
     }
     mixer.set_mode(mode);
     mixer.set_weights(std::array{dry, wet});
+}
+
+/// Where a node's dry signal comes from (Node::m_dry_source): the processor while @p wet_mix runs
+/// it, the sources at 0, where the node is bypassed.
+float dry_source_of(float wet_mix) TANH_NONBLOCKING_FUNCTION {
+    return wet_mix > 0.0f ? 1.0f : 0.0f;
 }
 
 }  // namespace
@@ -398,6 +411,9 @@ void Graph::prepare_node(Node& node, bool prepare_processor) const {
     apply_mix_law(node.m_output_mixer,
                   node.m_mix_law.load(std::memory_order_relaxed),
                   node.m_wet_mix.load(std::memory_order_relaxed));
+    node.m_dry_source.reset(m_sample_rate, Node::k_ramp_seconds);
+    node.m_dry_source.set_current_and_target_value(
+        dry_source_of(node.m_wet_mix.load(std::memory_order_relaxed)));
     node.m_output_mixer.reset();
 }
 
@@ -497,6 +513,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
     compiled->m_num_channels = m_num_channels;
     compiled->m_max_block_size = m_max_block_size;
     compiled->m_dry = thl::core::Buffer<float>(m_num_channels, m_max_block_size);
+    compiled->m_sources = thl::core::Buffer<float>(m_num_channels, m_max_block_size);
 
     // `order` has every node after its sources, so a source's buffer always
     // exists by the time a node looks it up.
@@ -924,15 +941,22 @@ void Graph::Inputs::mix(std::span<thl::core::Buffer<float>> buffers,
 
 void Graph::ProcessingStep::process(const thl::core::BufferView& buffer,
                                     const thl::core::BufferView& dry,
+                                    const thl::core::BufferView& sources,
                                     uint32_t modulation_offset) {
     Node& node = *m_node;
     Mixer& mixer = node.m_output_mixer;
-    const bool was_bypassed = mixer.passes_only(0);
-    apply_mix_law(mixer,
-                  node.m_mix_law.load(std::memory_order_relaxed),
-                  node.m_wet_mix.load(std::memory_order_relaxed));
+    thl::dsp::utils::SmoothedValue& dry_source = node.m_dry_source;
+    // Settled at 0 or 1.
+    const auto dry_source_is = [&dry_source](float value) {
+        return !dry_source.is_smoothing() && dry_source.get_smoothed_value(0) == value;
+    };
+    const auto bypassed = [&] { return mixer.passes_only(0) && dry_source_is(0.0f); };
+    const bool was_bypassed = bypassed();
+    const float wet_mix = node.m_wet_mix.load(std::memory_order_relaxed);
+    apply_mix_law(mixer, node.m_mix_law.load(std::memory_order_relaxed), wet_mix);
+    dry_source.set_target_value(dry_source_of(wet_mix));
 
-    if (mixer.passes_only(0)) {
+    if (bypassed()) {
         m_dry_delay->process(buffer);  // bypassed: the sources, delayed by the node's latency
         return;
     }
@@ -941,10 +965,26 @@ void Graph::ProcessingStep::process(const thl::core::BufferView& buffer,
 
     // Whenever the processor runs, its dry signal comes from it (process_with_dry()): the input
     // with the processor's phase response but without its effect, so a blend of a node that
-    // shifts the phase (a crossover) does not comb. The dry delay then aligns it to the node's
-    // latency, which the dry signal never includes. Fully wet, the dry signal only keeps the
-    // delay's history current, so a blend starts from it.
+    // shifts the phase (a crossover) does not comb. Towards and back from bypass it glides from
+    // and to the sources themselves, which the bypass passes, so that no switch steps. The dry
+    // delay then aligns it to the node's latency, which the dry signal never includes; it takes
+    // the glide before the delay, so its history is continuous too. Fully wet, the dry signal
+    // only keeps the delay's history current, so a blend starts from it.
+    const bool own_dry = dry_source_is(1.0f);
+    if (!own_dry) { thl::core::BufferOperations::copy(sources, buffer); }
     node.m_processor->process_modulated_with_dry(buffer, dry, modulation_offset);
+    if (!own_dry) {
+        thl::core::BufferView glide = dry;
+        const size_t num_channels = glide.get_num_channels();
+        for (size_t i = 0; i < glide.get_num_samples(); ++i) {
+            const float own = dry_source.get_smoothed_value();
+            for (size_t ch = 0; ch < num_channels; ++ch) {
+                const float source = sources.get_read_pointer(ch)[i];
+                float& sample = glide.get_write_pointer(ch)[i];
+                sample = source + (own * (sample - source));  // exact where the two agree
+            }
+        }
+    }
     if (mixer.passes_only(1)) {
         m_dry_delay->write(dry);
         return;
@@ -998,6 +1038,9 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
     const thl::core::BufferView dry(compiled->m_dry.get_array_of_write_pointers(),
                                     compiled->m_num_channels,
                                     n);
+    const thl::core::BufferView sources(compiled->m_sources.get_array_of_write_pointers(),
+                                        compiled->m_num_channels,
+                                        n);
     for (ProcessingStep& step : compiled->m_steps) {
         auto& own = compiled->m_buffers[step.m_buffer];
         const thl::core::BufferView node_buffer(own.get_array_of_write_pointers(),
@@ -1007,7 +1050,7 @@ void Graph::process(thl::core::BufferView buffer, uint32_t modulation_offset) {
                           step.m_node->m_input_mix.load(std::memory_order_relaxed),
                           node_buffer);
         run_probes(*step.m_node, ProbePoint::Input, node_buffer, step.m_input_latency);
-        step.process(node_buffer, dry, modulation_offset);
+        step.process(node_buffer, dry, sources, modulation_offset);
         run_probes(*step.m_node,
                    ProbePoint::Output,
                    node_buffer,

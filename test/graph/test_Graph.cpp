@@ -2097,6 +2097,97 @@ TEST(Graph, ABlendOfANodeThatShiftsThePhaseUsesItsPhaseMatchedDrySignal) {
     EXPECT_GT(std::abs(wet[0] - 1.0f), 0.01f);  // the all-pass really is not the input
 }
 
+namespace {
+
+/// Inverts the polarity, @p latency samples late: the most a phase response can differ from the
+/// input. Its dry signal (process_with_dry()) is the input inverted, undelayed.
+class InvertingProcessor final : public BaseProcessor {
+public:
+    explicit InvertingProcessor(uint32_t latency) : m_latency(latency), m_delay(latency) {}
+
+    void prepare(const double& sample_rate,
+                 const size_t& samples_per_block,
+                 const size_t& num_channels) override {
+        m_delay.prepare(sample_rate, samples_per_block, num_channels);
+        m_delay.set_delay_samples(m_latency);
+        set_max_latency_samples(m_latency);
+        set_latency_samples(m_latency);
+    }
+
+    void process(BufferView buffer,
+                 uint32_t /*modulation_offset*/) TANH_NONBLOCKING_FUNCTION override {
+        invert(buffer);
+        if (m_latency > 0) { m_delay.process(buffer); }
+    }
+
+    void process_with_dry(BufferView buffer,
+                          uint32_t modulation_offset,
+                          BufferView dry) TANH_NONBLOCKING_FUNCTION override {
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            std::copy_n(buffer.get_read_pointer(ch),
+                        buffer.get_num_samples(),
+                        dry.get_write_pointer(ch));
+        }
+        invert(dry);
+        process(buffer, modulation_offset);
+    }
+
+private:
+    static void invert(BufferView buffer) TANH_NONBLOCKING_FUNCTION {
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            float* samples = buffer.get_write_pointer(ch);
+            for (size_t i = 0; i < buffer.get_num_samples(); ++i) { samples[i] = -samples[i]; }
+        }
+    }
+
+    uint32_t m_latency;
+    thl::dsp::utils::DelayProcessor m_delay;
+};
+
+}  // namespace
+
+// A node that turns the phase glides into bypass and back: its dry signal, the input with its
+// phase response, turns into the plain input as the wet mix reaches 0, so the bypass (the plain
+// input) continues it; coming back it turns into the phase-matched dry signal again. Without
+// latency and with, where the dry delay holds the signal from before the switch.
+TEST(Graph, ANodeThatShiftsThePhaseGlidesIntoBypassAndBack) {
+    for (const uint32_t latency : {0U, k_latency}) {
+        Graph graph;
+        const auto node = graph.add_node<InvertingProcessor>(latency);
+        ASSERT_TRUE(node);
+        ASSERT_TRUE(graph.connect(graph.graph_input(), *node));
+        ASSERT_TRUE(graph.connect(*node, graph.graph_output()));
+        prepare(graph);
+
+        std::vector<float> out;
+        const auto run = [&](size_t num_blocks) {
+            for (size_t block = 0; block < num_blocks; ++block) {
+                auto buffer = make_buffer(0.5f);
+                graph.process(buffer);
+                out.insert(out.end(),
+                           buffer.get_read_pointer(0),
+                           buffer.get_read_pointer(0) + k_block);
+            }
+        };
+        run(10);
+        EXPECT_FLOAT_EQ(out.back(), -0.5f) << latency;  // inverted
+        ASSERT_TRUE(graph.set_wet_mix(*node, 0.0f));
+        run(4 * k_ramp_blocks);
+        EXPECT_FLOAT_EQ(out.back(), 0.5f) << latency;  // bypassed: the input
+        ASSERT_TRUE(graph.set_wet_mix(*node, 1.0f));
+        run(4 * k_ramp_blocks);
+        EXPECT_FLOAT_EQ(out.back(), -0.5f) << latency;
+
+        // A glide from -0.5 to 0.5 over the 20 ms ramp moves 1 / 960 per sample; a switch of the
+        // dry signal would jump by 1.
+        float steepest = 0.0f;
+        for (size_t i = 10 * k_block + 1; i < out.size(); ++i) {
+            steepest = std::max(steepest, std::abs(out[i] - out[i - 1]));
+        }
+        EXPECT_LT(steepest, 0.005f) << latency;
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Probes
 // ─────────────────────────────────────────────────────────────────────────────

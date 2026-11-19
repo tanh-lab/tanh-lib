@@ -223,6 +223,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
+  e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
+  the plain sources, while a blend's dry signal is the phase-matched one; the switch between the
+  two came at the end of the fade out and at the start of the fade in. The dry signal now glides
+  between them with the wet mix (before the dry delay, so its history stays continuous), and the
+  node is bypassed only once it has. Test: `Graph.ANodeThatShiftsThePhaseGlidesIntoBypassAndBack`.
 - `thl::RCU`: read scopes on one thread or reader slot nest; closing an inner one freed the
   outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
 - `thl::RCU`: destroying an RCU while a thread that read it still runs no longer frees that

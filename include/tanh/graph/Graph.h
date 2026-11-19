@@ -128,9 +128,11 @@ public:
     bool set_input_mix(NodeId id, InputMix input_mix);
     /// Live (no commit): 1 runs the node, 0 bypasses it (its sources pass, delayed by its
     /// latency), between them a blend of its output with its dry signal (process_with_dry():
-    /// phase-matched, then delayed by its latency); ramps over 20 ms, clamped to [0, 1]. A node
-    /// coming back from 0 is reset() first. False for graph_input(), graph_output(), unknown ids
-    /// and NaN.
+    /// phase-matched, then delayed by its latency); ramps over 20 ms, clamped to [0, 1]. Towards
+    /// 0 the dry signal glides from the phase-matched one to the sources, and back from 0 the
+    /// other way, so a node that turns the phase goes into bypass and back without a step. A
+    /// node coming back from 0 is reset() first. False for graph_input(), graph_output(),
+    /// unknown ids and NaN.
     bool set_wet_mix(NodeId id, float wet_mix);
     /// Live (no commit): how node @p id's wet mix sets its dry and wet gains; a change crossfades
     /// from the old law over 20 ms. False for graph_input(), graph_output() and unknown ids.
