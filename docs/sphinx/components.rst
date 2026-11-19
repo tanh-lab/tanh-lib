@@ -20,7 +20,7 @@ tanh-lib in one process stay apart; code spells ``thl::`` (see
 
        core       [label="tanh::Core\nDispatcher, Logger, RCU,\nLockFreeQueue, Buffer, WavReader"];
        state      [label="tanh::State\nhierarchical parameters,\nRCU reads, JSON"];
-       dsp        [label="tanh::DSP\nprocessors, effects,\ngranular, Rings resonator"];
+       dsp        [label="tanh::DSP\nprocessors, effects, sampler,\nslicing, granular, Rings resonator"];
        modulation [label="tanh::Modulation\nmodulation matrix,\nchange-point sub-blocking"];
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
@@ -47,7 +47,11 @@ other components build on:
 - ``thl::Logger`` — leveled logging with pluggable sinks and a
   real-time path, ``thl::Logger::rt``, that never allocates or blocks
 - :cpp:class:`thl::RCU` — lock-free read-copy-update for data the audio thread
-  reads while another thread replaces it
+  reads while another thread replaces it. A writer publishes in one call
+  (``update()``, ``replace()``) or in two steps: ``stage_update()`` /
+  ``stage_replace()`` do everything that can fail, ``commit()`` cannot fail and
+  allocates nothing, so a change that spans several RCUs is staged in full and
+  then committed in full
 - :cpp:class:`thl::core::LockFreeQueue` — a bounded lock-free MPMC queue
 - :cpp:class:`thl::core::Buffer`, :cpp:class:`thl::core::BufferView`,
   :cpp:class:`thl::core::RingBuffer`, :cpp:class:`thl::core::MemoryBlock` —
@@ -75,12 +79,27 @@ DSP
 ---
 
 ``tanh::DSP`` (``include/tanh/dsp/``) holds the processors: synth voices,
-effects, filters, the granular engine, analysis helpers and the Rings resonator
-model, which is also available as the separate ``tanh::Resonator`` target for
-consumers that only need it. Every processor inherits
-:cpp:class:`thl::dsp::BaseProcessor` and follows the ``prepare()`` /
-``process()`` contract; ``process_modulated()`` splits a block at change points
-for sample-accurate automation. Depends on Core.
+effects, filters, analysis helpers and the Rings resonator model, which is also
+available as the separate ``tanh::Resonator`` target for consumers that only
+need it. Processors inherit :cpp:class:`thl::dsp::BaseProcessor` and follow the
+``prepare()`` / ``process()`` contract; ``process_modulated()`` splits a block
+at change points for sample-accurate automation.
+
+Sample playback is split into components usable on their own:
+
+- ``thl::dsp::sampler`` — :cpp:class:`thl::dsp::sampler::SamplePlayer`, a
+  varispeed player / looper with click-free loop crossfades, zero-crossing
+  snap and reverse playback, plus its building blocks (see :doc:`sampler`)
+- ``thl::dsp::slicing`` — :cpp:struct:`thl::dsp::slicing::SliceMap` and the
+  offline :cpp:class:`thl::dsp::slicing::TransientSlicer` (see :doc:`slicing`)
+- ``thl::dsp::pitch`` — :cpp:class:`thl::dsp::pitch::PitchBank`, pitch-shifted
+  copies of a sample (see :doc:`pitch`)
+- ``thl::dsp::granular`` — :cpp:class:`thl::dsp::granular::GrainEngine`, a
+  standalone granulator, and ``GrainProcessorImpl``, a voice that composes the
+  engine and the player behind a parameter enum
+
+Depends on Core; Signalsmith Stretch is fetched and linked privately for the
+pitch banks.
 
 Modulation
 ----------

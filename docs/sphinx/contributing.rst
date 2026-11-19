@@ -29,7 +29,8 @@ Code style
 ----------
 
 ``.clang-format`` (Google-based: 100-character lines, 4-space indent, K&R
-braces) and ``.clang-tidy`` are enforced in the merge queue.
+braces) and ``.clang-tidy`` are enforced in the merge queue; clang-tidy
+already checks the ``.cpp`` files a pull request changes (see `CI`_).
 
 Namespaces open with the ABI namespace (:doc:`symbol_visibility`), forward
 declarations included, and the file includes the header that defines it:
@@ -91,7 +92,11 @@ Tests
 ``test/`` mirrors the components: ``test/core``, ``test/state``, ``test/dsp``,
 ``test/modulation`` and ``test/audio-io`` each build one ``test_*`` binary, and
 ``test/exports``, ``test/abi-namespace`` and ``test/install`` check the
-packaging contracts. Run one suite directly:
+packaging contracts. ``test/core`` builds a second binary,
+``test_core_allocation``: it replaces the global ``operator new`` and
+``operator delete`` to count the allocations of a call and to make each one fail
+in turn, and belongs to no ThreadSanitizer, LeakSanitizer or MemorySanitizer
+build, whose runtimes define those operators themselves. Run one suite directly:
 
 .. code-block:: bash
 
@@ -106,12 +111,39 @@ Every ``process()`` path is covered by the RealtimeSanitizer preset; see
 CI
 --
 
-Pull requests run the fast desktop tier; the merge queue runs every leg:
-desktop build and test on Linux, macOS and Windows, iOS and Android, the
-WebAssembly build, the install-tree consumer, the sanitizer presets,
-clang-format, clang-tidy and the tanh-tooling drift check. All workflows call
-the shared actions in ``tanh-lab/ci-actions`` and must pin the same version;
-``build_test``'s result job asserts that.
+Pull requests run a fast tier, the merge queue runs every leg, and a change
+reaches ``main`` through the queue only:
+
+- **Pull request**: the ``"pr": true`` legs of the desktop build and test
+  matrix (``.github/build_test_matrix.json``), iOS and Android, the WebAssembly
+  build, and clang-tidy over the ``.cpp`` files the pull request changes. The
+  checks that only run in the queue (the install-tree consumer, the
+  sanitizers, clang-format, the tanh-tooling drift check, the docs build)
+  report an instant stub, so that every required status is there.
+- **Merge queue**: every desktop leg, iOS and Android, the WebAssembly build,
+  the install-tree consumer, the sanitizer presets, clang-format, the
+  tanh-tooling drift check, the docs build, the full clang-tidy sweep, and the
+  coverage run (uploaded to Codecov; not a required status).
+- **Push to main**: the docs are deployed and the compile caches warmed. Both
+  have to follow the merge: the site shows what ``main`` is, and a cache can be
+  restored from other branches only when it was written on the default branch.
+
+All workflows call the shared actions in ``tanh-lab/ci-actions`` and must pin
+the same version; ``build_test``'s result job asserts that.
+
+clang-tidy
+~~~~~~~~~~
+
+``clang_tidy result`` is a required status. CI runs clang-tidy 20 with every
+warning as an error over the translation units of the Linux ``desktop-debug``
+build under ``src/`` and ``test/`` (the entries of its
+``compile_commands.json``; a source that only another platform compiles is not
+checked there). A pull request checks the ``.cpp`` files it changes, and all of
+them when it changes ``.clang-tidy`` or the workflow; the merge queue always
+checks all of them. A header change does not widen a pull request's set, so
+what it breaks in a ``.cpp`` file the pull request did not touch fails in the
+queue: after a header change, run clang-tidy on the files that include it, or
+sweep the branch by starting the ``clang_tidy`` workflow by hand.
 
 Documentation
 -------------

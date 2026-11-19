@@ -223,6 +223,7 @@ if(TANH_BUILD_DSP)
 
     add_library(${PROJECT_NAME}_dsp
         src/dsp/BaseProcessor.cpp
+        src/dsp/analysis/AdaptivePeakPicker.cpp
         src/dsp/utils/ADSR.cpp
         src/dsp/utils/HannWindow.cpp
         src/dsp/utils/MorphWindow.cpp
@@ -246,9 +247,15 @@ if(TANH_BUILD_DSP)
 
 
         src/dsp/synth/SineProcessor.cpp
+
+        src/dsp/sampler/SamplePlayer.cpp
+
+        src/dsp/slicing/TransientSlicer.cpp
+
+        src/dsp/pitch/PitchBank.cpp
+
         src/dsp/granular/GrainProcessor.cpp
         src/dsp/granular/GrainEngine.cpp
-        src/dsp/granular/SamplePlayer.cpp
 
         src/dsp/fx/IntellijelWavefolder.cpp
         src/dsp/fx/ConstellationReverb.cpp
@@ -257,6 +264,7 @@ if(TANH_BUILD_DSP)
 
         src/dsp/fft/RealFft.cpp
         src/dsp/fft/StftAnalyser.cpp
+        src/dsp/analysis/SpectrumAnalyser.cpp
 
         src/dsp/dynamics/Compressor.cpp
         src/dsp/dynamics/LookaheadLimiter.cpp
@@ -283,6 +291,35 @@ if(TANH_BUILD_DSP)
     )
 
     target_link_libraries(${PROJECT_NAME}_dsp PUBLIC ${PROJECT_NAME}_core)
+
+    # Signalsmith Stretch (MIT, header-only) shifts the copies of
+    # pitch::PitchBank. Private: its headers and templates stay inside
+    # PitchBank.cpp and nothing of it is exported or installed. A parent
+    # project that already provides the targets is reused.
+    if(NOT TARGET signalsmith-stretch)
+        FetchContent_Declare(
+            signalsmith-stretch
+            GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+            GIT_TAG 57b93f4e9206a089a45387eaa39bdc9f310d3308
+            SYSTEM
+        )
+        FetchContent_MakeAvailable(signalsmith-stretch)
+    endif()
+    target_include_directories(${PROJECT_NAME}_dsp SYSTEM PRIVATE
+        $<TARGET_PROPERTY:signalsmith-stretch,INTERFACE_INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:signalsmith-linear,INTERFACE_INCLUDE_DIRECTORIES>
+    )
+    target_compile_definitions(${PROJECT_NAME}_dsp PRIVATE
+        $<TARGET_PROPERTY:signalsmith-linear,INTERFACE_COMPILE_DEFINITIONS>
+    )
+    if(APPLE)
+        target_link_libraries(${PROJECT_NAME}_dsp PRIVATE "-framework Accelerate")
+    endif()
+    # Shifting a bank is seconds of FFT work at load time: optimise it even in
+    # Debug builds. Not with MSVC in Debug: /O2 is rejected next to its /RTC1.
+    set_source_files_properties(src/dsp/pitch/PitchBank.cpp
+        PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,$<$<NOT:$<CONFIG:Debug>>:/O2>,-O3>"
+    )
 
     target_compile_definitions(${PROJECT_NAME}_dsp
         PUBLIC
@@ -440,6 +477,7 @@ if(TANH_BUILD_AUDIO_IO)
         src/audio-io/AudioDeviceManager.cpp
         src/audio-io/AudioFileLoader.cpp
         src/audio-io/AudioFileSink.cpp
+        src/audio-io/AudioFileWriter.cpp
         src/audio-io/AudioPlayerSource.cpp
         src/audio-io/DataSource.cpp
         src/audio-io/miniaudio_impl.cpp
@@ -759,7 +797,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_state test_dsp test_modulation test_audio_io test_net test_graph benchmark_state benchmark_graph benchmark_modulation benchmark_dsp)
+    foreach(_test test_core test_core_allocation test_state test_dsp test_modulation test_audio_io test_net test_graph benchmark_state benchmark_graph benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()

@@ -17,6 +17,80 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   glide over a ramp time (20 ms by default); `passes_only()` tells when a settled mix is one input
   unchanged, so a caller can skip work. The output may be one of the inputs. Real-time safe
   after `prepare()` (by @jstolberg). Tests: `Mixer.*`.
+- `thl::RCU::add_reader()` / `read_scope(reader)` (`core/threading/RCU.h`): a reader slot
+  (`RCU<T>::Reader`) owned by the RCU instance, not by a thread, so a host rendering on changing
+  threads no longer allocates and locks on the audio thread. A slot has one user at a time, and
+  one user must be ordered before the next by happens-before (the host's own call order, a
+  mutex, an atomic claim flag with acquire / release): nothing checks it. Tests:
+  `RCU.OwnedReaderProtectsAcrossChangingThreads`, `RCU.SlotPoolWithOneUserAtATimeProtects`,
+  `RCU.SlotScopeIsRealtimeSafeOnAnUnregisteredThread`.
+- `thl::RCU::stage_update()` / `stage_replace()` and `commit()` (`core/threading/RCU.h`): a
+  publication in two steps, for a change that spans several RCUs (or an RCU and state of the
+  caller) and must not stop half-way. A stage is the first half of `update()` / `replace()`: it
+  makes the next version and the room to retire the one it will replace, may throw, and then
+  has changed nothing. It returns a move-only `RCU<T>::Staged`, which frees the version when it
+  is dropped. `commit(Staged&&)` is the second half: `noexcept`, without an allocation, it
+  publishes, retires and reclaims as `update()` / `replace()` do and blocks only where they
+  block. Stage everything, then commit everything. Between a stage and its commit nothing else
+  may be published in that RCU (asserted in debug builds; a release build still publishes, but
+  may then allocate); the RCU holds no lock between the two calls, so that exclusion is the
+  caller's mutex. Tests: `RCU.StageThenCommitIsUpdateAndReplace`,
+  `RCU.ReadScopeAcrossCommitKeepsItsVersion`, `RCU.TwoRcusStagedThenBothCommitted`, and
+  `RCUAllocation.*` in a new executable, `test_core_allocation`, which replaces the global
+  `operator new` to count the allocations of a call and to fail each one in turn.
+- `thl::TripleBuffer<T>` (`core/threading/TripleBuffer.h`): a wait-free single-producer /
+  single-consumer latest-value mailbox. Its slots and the two sides' indices are
+  `k_cache_line_size` apart, so it is at least six cache lines (768 bytes). Tests:
+  `TripleBuffer.*`.
+- `thl::SeqLock` (`core/threading/SeqLock.h`): the sequence counter of a wait-free seqlock over
+  atomics. Tests: `SeqLock.*`.
+- `thl::core::uptime_ns()` (`core/Clock.h`): the uptime clock of UITouch, NSEvent and host times
+  on Apple platforms, `steady_clock` elsewhere.
+- Sample playback as standalone components, usable without the granular voice
+  or any parameter system (design notes: `docs/sphinx/sampler.md`, `slicing.md`,
+  `pitch.md`):
+  - `dsp::sampler::SamplePlayer`: a varispeed player / looper over
+    `SampleView`s, with Start / End / Loop markers or an exact region. End before
+    Start plays backwards, and moving a marker never moves the audible head. A
+    loop wraps through a crossfade before End (or after the wrap when Loop has no
+    room behind it), equal-power, or equal-gain when both ends sit on zero
+    crossings. Other discontinuities (source switch, retrigger, one-shot end) are
+    crossfaded through a pool of outgoing heads. Tuning lives in
+    `PlayerSettings`; `render()` takes a span of alternative sources, and
+    `sources_changed()` must be called when the host loads new audio (snapped
+    markers are cached against a source's address and length).
+  - Its building blocks: `SampleView` with `read_clamped` / `read_wrapped`,
+    `LoopRegion`, `LoopMarkers` (minimum span, zero-crossing snap, cache),
+    `ZeroCrossing.h`, and `LoopCrossfade.h` (`FadeCurve`, `plan_loop_fade`).
+  - `dsp::slicing::SliceMap`: up to 64 slices in frames, trivially copyable for an
+    audio-thread handoff, rescaled for sources of another length; `SliceSteps.h`
+    for the slice-space mapping and `region_from_steps`;
+    `valid_normalized_bounds` for host edits.
+  - `dsp::slicing::TransientSlicer`: offline band-flux transient detection that
+    picks N slices, refines boundaries against the audio and falls back to the
+    grid; every threshold is in `Settings`.
+  - `dsp::pitch::PitchBank`: pitch-shifted, equal-length copies of a sample, one
+    slot per semitone, built across worker threads with Signalsmith Stretch.
+    `build()` / `shift()` take the sample rate explicitly and refuse a
+    non-positive one.
+    Signalsmith is fetched and linked privately, and `test/exports` forbids it
+    in the export table.
+  - `dsp::utils::mixdown`: mono average of a buffer, for offline analysis.
+- `dsp::granular::GrainEngine` is usable standalone: it takes a `GrainParams`
+  block, a `HeadMode` (`Spray` / `Scan`), a span of sources and planar output,
+  and reports to an optional `GrainVisualizer`.
+
+- `thl::dsp::analysis::SpectrumAnalyser`: the curve of a spectrum analyser display, on top of
+  `StftAnalyser`, for a reader thread. Resolution (FFT 1024 to 8192, 75 % overlap), points spaced
+  on a log axis (256 from 20 Hz to 20 kHz by default), channels averaged in power; without
+  smoothing a point is its band's largest bin (a sine keeps its level), with fractional-octave
+  smoothing its band's mean power; tilt in dB per octave around 1 kHz (4.5 by default), speed
+  (rises at once, falls at most so many dB per second), freeze (holds the maximum), floor.
+  `read_from(SampleProbe&)` drains a probe of the same channel count and starts the frames
+  over after a discontinuity. A tilt change moves the held curve at once, a smoothing change
+  starts it over; a maximum above Nyquist is clamped to it; a rejected `prepare()` leaves it
+  unprepared. One thread for everything (the curve is a view). A full-scale sine reads 0 dB at
+  tilt 0. Tests: `SpectrumAnalyser.*`.
 - `thl::graph::Graph::add_probe<Probe>(node, ProbePoint, args...)` / `remove_probe(ProbeId)` /
   `probe(ProbeId)`: a probe watches a node's input (its sources mixed) or output (after its
   processor and wet mix), `graph_input()`'s output or `graph_output()`'s input, with the latency
@@ -105,6 +179,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   whose mix law changes while it is bypassed is `reset()` before it runs, as when its wet mix
   leaves 0. A delayed source now has a scratch buffer of its own (channels × block size),
   allocated at `commit()`. Tests: `Graph.AWetMixGlideStaysOnTheMixLawsCurve`.
+- `thl::RCU::update()` / `replace()` allocate the new version and, when the retired list is
+  full, its growth, and nothing else. The sweep of exited threads' reader nodes at the end of
+  every publication built two vectors, one allocation or more per publication as soon as the
+  RCU had a reader; it now unlinks the nodes in place.
+- `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
+  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
 - `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
   `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
   Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`
@@ -114,9 +194,57 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `get_crossover_parameter_float()` (non-finite by default: the crossover keeps what
   `set_frequency()` gave it) and `read_crossover_parameters()`, which `MultibandLimiterImpl`
   and `StereoWidenerImpl` now call instead of each repeating it. Overrides keep working.
+- **Breaking:** `thl::dsp::analysis::AdaptivePeakPickResult`'s members are `m_peak_indices` and
+  `m_threshold` (were `peak_indices` and `threshold`): public data members carry the `m_` prefix
+  like those of every other struct, which `.clang-tidy` asks for and the merge queue now
+  enforces. Migration: rename the two members where the result of `adaptive_peak_pick()` is
+  read.
+- Licence: the adaptive peak picker (`include/tanh/dsp/analysis/AdaptivePeakPicker.h`,
+  `src/dsp/analysis/AdaptivePeakPicker.cpp`) is under the dsp component's licence, AGPL-3.0
+  (`LICENSE`), not Apache-2.0. The two files were added to the dsp component with an
+  `SPDX-License-Identifier: Apache-2.0` header and a README sentence to match, but the library
+  is licensed per component and the dsp component never was Apache-2.0: only the core component
+  is. The header and the README sentence are removed; like every other dsp file, the two carry
+  no SPDX line.
+- `thl::audio_io::AudioFileWriter::write_to_file()` takes its buffer view by `const` reference
+  (was by value), like the other functions that only read a view. Calls compile unchanged; the
+  exported symbol changes, so code linked against a shared `tanh_audio_io` has to be rebuilt.
+- CI: `clang_tidy result` is a required check, and the `clang_tidy` workflow reports on pull
+  requests too. A pull request gets clang-tidy over the `.cpp` files it changes (all of them
+  when it changes `.clang-tidy` or the workflow); the merge queue keeps the full sweep. Both
+  check the translation units of the Linux `desktop-debug` build, i.e. the entries of its
+  compile database under `src/` and `test/`, no longer every `.cpp` file there: a source of
+  another platform (`RealFftAccelerate.cpp`) was analysed with a borrowed compile command and
+  failed on a header Linux does not have. The sweep's findings on `main` are fixed (see the
+  two entries above; the rest changed no interface).
+- CI: the `coverage` workflow runs in the merge queue instead of on every push to `main`, so
+  the commit is measured before it lands. It stays a non-required check. Cache warming and
+  the docs deployment stay on push to `main`.
 
 ### Fixed
 
+- `thl::RCU`: read scopes on one thread or reader slot nest; closing an inner one freed the
+  outer one's version. Test: `RCU.NestedReadScopesKeepTheOuterVersion`.
+- `thl::RCU`: destroying an RCU while a thread that read it still runs no longer frees that
+  thread's reader node under it (the thread wrote into the freed node on exit, and a new RCU at
+  the same address reused it unseen by its writer). Whichever of thread and RCU goes second frees
+  the node; a thread's next registration frees what destroyed RCUs left in its registry. Tests:
+  `RCU.ThreadOutlivingTheRcuFreesItsNode`, `RCU.NewRcuAtADestroyedOnesAddressRegistersAnew`,
+  `RCU.ThreadRegistryDropsDestroyedRcus`.
+- `thl::RCU`: destroying an RCU on a thread whose reader registry was already destroyed (an RCU
+  with static storage duration that the main thread read, or one owned by a `thread_local`
+  constructed before the thread's first read) looked a node up in the destroyed registry:
+  undefined behaviour, a segmentation fault at exit with libc++ (macOS, iOS, Android). `~RCU` no
+  longer touches thread-local state; the destroying thread's own node is freed like any other
+  live thread's, at that thread's exit or its next registration. Test:
+  `RCU.DestroyedAfterItsThreadsRegistry` (fails without the fix on libc++ only).
+- `thl::RCU::update()` / `replace()` could throw `std::bad_alloc` with the new version already
+  published: the retired list grew, and the reader-node sweep allocated, behind the pointer
+  swap. They now make every allocation first, so they publish, or throw and nothing has
+  changed. An allocation failing in that sweep could also free the nodes of exited threads
+  while they were still linked in the reader list; the sweep no longer allocates. Tests:
+  `RCUAllocation.UpdateAndReplaceThatCannotAllocateChangeNothing`,
+  `RCU.DeadNodeSweepKeepsEveryLiveReader`.
 - `thl::dsp::utils::LimiterImpl`: a NaN threshold, attack or release made its gain, and so
   its output, NaN for good (and with it `MultibandLimiterImpl`'s bands). A NaN now keeps the
   parameter's last value; the threshold is clamped to [-120, 24] dB, the times to
@@ -371,6 +499,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   One `DISABLED_` test fetches over real TLS when run with
   `--gtest_also_run_disabled_tests`.
 
+### Fixed
+
+- `dsp::granular::GrainProcessorImpl`: volume modulation stepped the output.
+  `VoiceParams::m_volume` is a per-sub-block constant and was applied raw, so it
+  was the only unsmoothed term in the voice gain (the ADSR already moves per
+  sample) — a hard modulation step, such as a square LFO swinging both rails in
+  one sample, reached the output as a discontinuity. The voice gain now ramps
+  volume over `k_volume_smoothing_duration` (5 ms), seeded to the current level
+  in `prepare()` and again at note-on so a voice starts at its level instead of
+  sliding up to it.
+
+### Changed
+
+- **Breaking**, `dsp::granular`: the voice internals were split into the
+  components above. Hosts that subclass `GrainProcessorImpl` must change the
+  following:
+  - `SlicerEnabled`, `LoopEnabled` and `LoopSnap` moved to the end of the
+    `Parameter` enum. Hosts that serve parameters by name are unaffected; tables
+    indexed by the enum's numeric value must be reordered.
+  - `read_slice_map()` takes a `dsp::slicing::SliceMap`, which is frame-based,
+    instead of the old normalised 16-slice `granular::SliceMap`. Build it with
+    `SliceMap::from_normalized(bounds, total_frames)`.
+  - `prepare()`'s `samples_per_block` is now used: it sizes the player's scratch.
+  - `granular::SamplePlayer`, `SampleReader`, `SampleRegion` and `SliceMap` are
+    gone; use `sampler::SamplePlayer`, `sampler::SampleView`,
+    `sampler::LoopRegion` and `slicing::SliceMap`.
+  - `GrainEngine` no longer takes a `SampleReader` and `VoiceParams`: see the
+    new API above.
+  - `HeadPolicy` reads `HeadInputs`.
+  - The `k_player_*` and `k_*_varispeed` constants moved into
+    `sampler::PlayerSettings`.
+
+  The Sample head now renders source channels and the voice applies the channel
+  mode afterwards (`channel_mixer::mix_head`). Grain output is bit-identical
+  before and after the split; Sample-mode output differs by at most 1.2e-7 of
+  full scale, from floating-point reordering.
+- `TANH_WITH_DOCS` now does something — it adds the `sphinx-docs` target — and
+  therefore defaults to **OFF** (it was ON and inert). A docs-enabled configure
+  requires Doxygen and Python 3; consumers that already set it OFF are
+  unaffected.
+- `dsp::granular::SamplePlayer`: the equal-power crossfade reads a table instead
+  of calling `sin`/`cos` per frame — a block fading the live head plus four
+  outgoing tails wanted five transcendentals per frame. Because
+  `cos(t * pi/2) == sin((1 - t) * pi/2)`, one quarter-sine table sized to the
+  fade length in `prepare()` serves both directions, indexed straight by the
+  integer fade counter: exact at every index, so the crossfade values are
+  unchanged bit for bit.
+- `dsp::granular::GrainProcessorImpl`: the voice gain pass skips the mode-fade
+  ramp when the fade is already parked on its target, which is every block
+  outside a mode switch. Same output, two fewer compares and a store per frame.
+
+### Added
 
 - Documentation: a Doxygen → Breathe → Sphinx site under `docs/` (the same
   pipeline as anira), published to https://tanh-lab.github.io/tanh-lib/ by the

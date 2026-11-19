@@ -67,10 +67,11 @@ protected:
     virtual void process_spectrum(size_t channel, std::span<const std::complex<float>> bins)
         TANH_NONBLOCKING_FUNCTION = 0;
 
+    /// Back to unprepared, everything freed (as after a rejected prepare()).
+    void clear();
+
 private:
     void run_frame() TANH_NONBLOCKING_FUNCTION;
-    /// Back to unprepared, everything freed.
-    void clear();
 
     RealFft m_fft;
     size_t m_hop_size = 0;

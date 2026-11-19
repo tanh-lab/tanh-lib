@@ -38,7 +38,7 @@ namespace WavefolderID {
 constexpr std::string_view k_drive = "wf.drive";
 constexpr std::string_view k_folds = "wf.folds";
 constexpr std::string_view k_symmetry = "wf.symmetry";
-constexpr std::string_view k_jfet = "wf.jfet";
+constexpr std::string_view k_tone = "wf.tone";
 }  // namespace WavefolderID
 
 // Test wrapper — mirrors the production WavefolderVoiceProcessor wiring, but
@@ -50,7 +50,7 @@ public:
         m_handles[Drive] = matrix.get_smart_handle<float>(WavefolderID::k_drive);
         m_handles[Folds] = matrix.get_smart_handle<float>(WavefolderID::k_folds);
         m_handles[Symmetry] = matrix.get_smart_handle<float>(WavefolderID::k_symmetry);
-        m_handles[JfetTone] = matrix.get_smart_handle<float>(WavefolderID::k_jfet);
+        m_handles[Tone] = matrix.get_smart_handle<float>(WavefolderID::k_tone);
     }
 
     void prepare(const double& sample_rate,
@@ -81,7 +81,7 @@ static void register_wavefolder_params(thl::State& state,
                                        float drive_default = 1.0f,
                                        float folds_default = 0.0f,
                                        float symmetry_default = 0.0f,
-                                       float jfet_default = 0.0f) {
+                                       float tone_default = 1.0f) {
     state.create(WavefolderID::k_drive,
                  thl::ParameterDefinition::make_float("drive",
                                                       thl::Range::linear(0.1f, 20.0f),
@@ -98,8 +98,8 @@ static void register_wavefolder_params(thl::State& state,
                                                       symmetry_default)
                      .modulatable(true));
     state.create(
-        WavefolderID::k_jfet,
-        thl::ParameterDefinition::make_float("jfet", thl::Range::linear(0.0f, 1.0f), jfet_default)
+        WavefolderID::k_tone,
+        thl::ParameterDefinition::make_float("tone", thl::Range::linear(0.0f, 1.0f), tone_default)
             .modulatable(true));
 }
 
@@ -154,7 +154,7 @@ TEST(DspFixtureWavefolder, SilenceInSilenceOutWithStaticOffset) {
                                /*drive*/ 5.0f,
                                /*folds*/ 1.0f,
                                /*symmetry*/ 0.3f,
-                               /*jfet*/ 0.0f);
+                               /*tone*/ 1.0f);
     ModulationMatrix matrix(state);
     TestWavefolder wf(matrix);
 
@@ -179,10 +179,10 @@ struct KnobLikeLfos {
     TestLFOSource drive;
     TestLFOSource folds;
     TestLFOSource symmetry;
-    TestLFOSource jfet;
+    TestLFOSource tone;
 
     KnobLikeLfos() {
-        for (auto* l : {&drive, &folds, &symmetry, &jfet}) {
+        for (auto* l : {&drive, &folds, &symmetry, &tone}) {
             l->m_waveform = LFOWaveform::Square;
             l->m_decimation = 1;
         }
@@ -191,18 +191,18 @@ struct KnobLikeLfos {
         drive.m_frequency = 5.0f;
         folds.m_frequency = 7.0f;
         symmetry.m_frequency = 11.0f;
-        jfet.m_frequency = 13.0f;
+        tone.m_frequency = 13.0f;
     }
 
     void wire(ModulationMatrix& matrix, float depth = 0.3f) {
         matrix.add_source("d", &drive);
         matrix.add_source("f", &folds);
         matrix.add_source("s", &symmetry);
-        matrix.add_source("j", &jfet);
+        matrix.add_source("j", &tone);
         matrix.add_routing({"d", WavefolderID::k_drive, depth, 0, DepthMode::Normalized});
         matrix.add_routing({"f", WavefolderID::k_folds, depth, 0, DepthMode::Normalized});
         matrix.add_routing({"s", WavefolderID::k_symmetry, depth, 0, DepthMode::Normalized});
-        matrix.add_routing({"j", WavefolderID::k_jfet, depth, 0, DepthMode::Normalized});
+        matrix.add_routing({"j", WavefolderID::k_tone, depth, 0, DepthMode::Normalized});
     }
 };
 
