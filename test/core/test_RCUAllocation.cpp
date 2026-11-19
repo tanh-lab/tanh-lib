@@ -5,17 +5,24 @@
 // one can be made to fail. Not built with ThreadSanitizer, LeakSanitizer or
 // MemorySanitizer, whose runtimes define these operators themselves (see
 // CMakeLists.txt); what the two steps do between threads is in test_RCU.cpp.
+//
+// An allocation that is made to fail inside a noexcept function ends in
+// std::terminate(). The tests keep such functions out of the way (see Table),
+// and when the process dies all the same it says where it was (report_death()).
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <exception>
+#include <memory>
 #include <new>
-#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -38,22 +45,33 @@ struct AllocationProbe {
     uint64_t m_requests = 0;  // calls of operator new, failed ones included
     uint64_t m_frees = 0;     // calls of operator delete with a block
     uint64_t m_fail_in = 0;   // > 0: the request that many from now fails
+
+    // For report_death(): what fail_each_allocation() is doing.
+    const char* m_sweep = nullptr;  // the operation it runs, null outside a sweep
+    uint64_t m_failing = 0;         // which of the operation's allocations fails in this attempt
+    uint64_t m_attempt_from = 0;    // m_requests when the attempt began
+    bool m_failed = false;          // the attempt's failure has happened
+    std::size_t m_failed_size = 0;  // the size of the request that was failed
+    bool m_reported = false;        // report_death() has spoken
 };
 
 constinit thread_local AllocationProbe t_probe;
 
-bool request_fails() noexcept {
+bool request_fails(std::size_t size) noexcept {
     ++t_probe.m_requests;
-    return t_probe.m_fail_in != 0 && --t_probe.m_fail_in == 0;
+    if (t_probe.m_fail_in == 0 || --t_probe.m_fail_in != 0) { return false; }
+    t_probe.m_failed = true;
+    t_probe.m_failed_size = size;
+    return true;
 }
 
 void* allocate(std::size_t size) noexcept {
-    if (request_fails()) { return nullptr; }
+    if (request_fails(size)) { return nullptr; }
     return std::malloc(std::max<std::size_t>(size, 1));
 }
 
 void* allocate(std::size_t size, std::align_val_t alignment) noexcept {
-    if (request_fails()) { return nullptr; }
+    if (request_fails(size)) { return nullptr; }
 #if defined(_WIN32)
     return _aligned_malloc(std::max<std::size_t>(size, 1), static_cast<std::size_t>(alignment));
 #else
@@ -181,18 +199,24 @@ Counts counted(Operation&& operation) {
 // so on until it gets through. Each time one failed, the operation must have
 // thrown std::bad_alloc and given back every block it had got until then, and
 // `unchanged(n)` checks the rest. Returns how many allocations were failed,
-// which is how many the operation makes when it gets through.
+// which is how many the operation makes when it gets through. `sweep` names the
+// operation for report_death().
 template <typename Operation, typename Unchanged>
-uint64_t fail_each_allocation(Operation&& operation, Unchanged&& unchanged) {
+uint64_t fail_each_allocation(const char* sweep, Operation&& operation, Unchanged&& unchanged) {
     for (uint64_t nth = 1;; ++nth) {
         const AllocationProbe before = t_probe;
         bool threw = false;
+        t_probe.m_sweep = sweep;
+        t_probe.m_failing = nth;
+        t_probe.m_attempt_from = before.m_requests;
+        t_probe.m_failed = false;
         t_probe.m_fail_in = nth;
         try {
             operation();
         } catch (const std::bad_alloc&) { threw = true; }
-        const bool failed = t_probe.m_fail_in == 0;
+        const bool failed = t_probe.m_failed;
         t_probe.m_fail_in = 0;
+        t_probe.m_sweep = nullptr;
         const uint64_t requests = t_probe.m_requests - before.m_requests;
         const uint64_t frees = t_probe.m_frees - before.m_frees;
 
@@ -206,27 +230,146 @@ uint64_t fail_each_allocation(Operation&& operation, Unchanged&& unchanged) {
     }
 }
 
-// A version that owns heap blocks of its own, so that building one and copying
-// one take several allocations.
-struct Table {
-    std::vector<int> m_rows;
-    std::string m_name;
+// Says where the process is when it dies: the test, the sweep of failing
+// allocations and the allocation that fails in it. A failed allocation whose
+// std::bad_alloc reaches a noexcept function ends in std::terminate(), and
+// googletest silences abort() on Windows: without this, such a death leaves
+// nothing behind the test's "[ RUN ]" line.
+void report_death(const char* how) noexcept {
+    const AllocationProbe probe = t_probe;
+    t_probe.m_fail_in = 0;  // whatever runs from here on may allocate
+    if (probe.m_reported) { return; }
+    t_probe.m_reported = true;
 
-    bool operator==(const Table&) const = default;
-};
-
-Table table_named(char letter) {
-    return {std::vector<int>(8, letter), std::string(64, letter)};  // 64: not in the string itself
+    const testing::TestInfo* const test = testing::UnitTest::GetInstance()->current_test_info();
+    std::fprintf(stderr,
+                 "\ntest_core_allocation: %s in %s.%s\n",
+                 how,
+                 test != nullptr ? test->test_suite_name() : "no",
+                 test != nullptr ? test->name() : "test");
+    const auto into_the_attempt =
+        static_cast<unsigned long long>(probe.m_requests - probe.m_attempt_from);
+    if (probe.m_sweep == nullptr) {
+        std::fprintf(stderr, "  outside a sweep of failing allocations\n");
+    } else if (probe.m_failed) {
+        std::fprintf(
+            stderr,
+            "  sweep: %s\n"
+            "  allocation %llu of the operation was failed (%zu bytes, request %llu of the "
+            "attempt) and its std::bad_alloc was not caught:\n"
+            "  a noexcept function between that allocation and the test allocates\n",
+            probe.m_sweep,
+            static_cast<unsigned long long>(probe.m_failing),
+            probe.m_failed_size,
+            into_the_attempt);
+    } else {
+        std::fprintf(
+            stderr,
+            "  sweep: %s\n"
+            "  allocation %llu of the operation is the one to fail; %llu requests into the "
+            "attempt, it has not been reached\n",
+            probe.m_sweep,
+            static_cast<unsigned long long>(probe.m_failing),
+            into_the_attempt);
+    }
+    std::fflush(stderr);
 }
 
+[[noreturn]] void on_terminate() noexcept {
+    report_death("std::terminate()");
+    std::abort();
+}
+
+void on_abort(int /*signal*/) noexcept {
+    report_death("abort()");
+}
+
+// The tests' fixture: installs the report for this executable, per test and on
+// the thread that runs it (Microsoft's runtime keeps the terminate handler per
+// thread).
+class RCUAllocation : public testing::Test {
+protected:
+    void SetUp() override {
+        t_probe.m_sweep = nullptr;
+        t_probe.m_reported = false;
+        std::set_terminate(on_terminate);
+        std::signal(SIGABRT, on_abort);
+    }
+};
+
+// A version that owns two heap blocks and holds no standard container, so that
+// every allocation it makes is made where it may throw. A std::vector or a
+// std::string member would not do: with the debug iterators of Microsoft's
+// standard library (_ITERATOR_DEBUG_LEVEL 2, what a Debug build has) those
+// allocate a proxy in their default and move constructors, which are noexcept
+// all the same. Making that allocation fail ends in std::terminate() inside the
+// payload's constructor, whatever the RCU does.
+class Table {
+public:
+    Table() = default;  // owns nothing yet, allocates nothing
+    explicit Table(char letter)
+        : m_rows(block_of<int>(k_rows, letter)), m_name(block_of<char>(k_name, letter)) {}
+    Table(const Table& other)
+        : m_rows(copy_of(other.m_rows, k_rows)), m_name(copy_of(other.m_name, k_name)) {}
+    Table(Table&&) noexcept = default;
+    Table& operator=(const Table&) = delete;
+    Table& operator=(Table&&) = delete;
+    ~Table() = default;
+
+    // For a fresh version: two allocations, the rows and the name.
+    void fill(char letter) {
+        m_rows = block_of<int>(k_rows, letter);
+        m_name = block_of<char>(k_name, letter);
+    }
+
+    // For a copy: the rows in place, and one allocation, the new name.
+    void rename(char letter) {
+        if (m_rows != nullptr) { std::fill_n(m_rows.get(), k_rows, letter); }
+        m_name = block_of<char>(k_name, letter);
+    }
+
+    bool operator==(const Table& other) const {
+        return same(m_rows, other.m_rows, k_rows) && same(m_name, other.m_name, k_name);
+    }
+
+private:
+    static constexpr std::size_t k_rows = 8;
+    static constexpr std::size_t k_name = 64;
+
+    template <typename Element>
+    static std::unique_ptr<Element[]> block_of(std::size_t count, char letter) {
+        auto block = std::make_unique<Element[]>(count);
+        std::fill_n(block.get(), count, static_cast<Element>(letter));
+        return block;
+    }
+
+    template <typename Element>
+    static std::unique_ptr<Element[]> copy_of(const std::unique_ptr<Element[]>& from,
+                                              std::size_t count) {
+        if (from == nullptr) { return nullptr; }
+        auto block = std::make_unique<Element[]>(count);
+        std::copy_n(from.get(), count, block.get());
+        return block;
+    }
+
+    template <typename Element>
+    static bool same(const std::unique_ptr<Element[]>& left,
+                     const std::unique_ptr<Element[]>& right,
+                     std::size_t count) {
+        if (left == nullptr || right == nullptr) { return left == right; }
+        return std::equal(left.get(), left.get() + count, right.get());
+    }
+
+    std::unique_ptr<int[]> m_rows;
+    std::unique_ptr<char[]> m_name;
+};
+
 void fill_b(Table& table) {
-    table.m_rows.assign(8, 'b');
-    table.m_name.assign(64, 'b');
+    table.fill('b');
 }
 
 void rename_b(Table& table) {
-    std::ranges::fill(table.m_rows, 'b');
-    table.m_name = std::string(64, 'b');
+    table.rename('b');
 }
 
 Table current(const RCU<Table>& rcu, RCU<Table>::Reader reader) {
@@ -242,7 +385,7 @@ void bump(int& value) {
 
 // commit() publishes, retires and reclaims without an allocation, with a slot
 // and a registered thread to scan and the node of an exited thread to unlink.
-TEST(RCUAllocation, CommitAllocatesNothing) {
+TEST_F(RCUAllocation, CommitAllocatesNothing) {
     RCU<int> rcu(1);
     const auto slot = rcu.add_reader();
     rcu.register_reader_thread();
@@ -259,29 +402,29 @@ TEST(RCUAllocation, CommitAllocatesNothing) {
 
     // Versions that own heap blocks, one of them held back by a reader for a
     // while: freed by the commit after the reader left, still without a request.
-    RCU<Table> tables(table_named('a'));
+    RCU<Table> tables(Table('a'));
     const auto table_slot = tables.add_reader();
     uint64_t requests = 0;
     {
         const auto held = tables.read_scope(table_slot);
         auto next = tables.stage_replace(fill_b);
         requests += counted([&] { tables.commit(std::move(next)); }).m_requests;
-        EXPECT_EQ(held.data(), table_named('a'));
+        EXPECT_EQ(held.data(), Table('a'));
     }
     auto next = tables.stage_update(rename_b);
     const Counts last = counted([&] { tables.commit(std::move(next)); });
     requests += last.m_requests;
     EXPECT_EQ(requests, 0u);
-    EXPECT_GE(last.m_frees, 6u);  // two versions: the Table, its rows, its name
-    EXPECT_EQ(current(tables, table_slot), table_named('b'));
+    EXPECT_EQ(last.m_frees, 2u * 3u);  // two versions: the Table, its rows, its name
+    EXPECT_EQ(current(tables, table_slot), Table('b'));
 }
 
 // None of a publication's reclamation tiers allocates in commit().
-TEST(RCUAllocation, CommitAllocatesNothingInAnyReclamationTier) {
+TEST_F(RCUAllocation, CommitAllocatesNothingInAnyReclamationTier) {
     // Tier 2, the threshold cleanup: a reader holds the versions back, so the
     // retired list passes a cleanup threshold of 2.
     {
-        RCU<Table> rcu(table_named('a'), 2, 1000);
+        RCU<Table> rcu(Table('a'), 2, 1000);
         const auto slot = rcu.add_reader();
         uint64_t requests = 0;
         {
@@ -294,13 +437,13 @@ TEST(RCUAllocation, CommitAllocatesNothingInAnyReclamationTier) {
         auto staged = rcu.stage_update(rename_b);
         const Counts last = counted([&] { rcu.commit(std::move(staged)); });
         EXPECT_EQ(requests + last.m_requests, 0u);
-        EXPECT_GE(last.m_frees, 7u * 3u);  // the seven versions held back until now
+        EXPECT_EQ(last.m_frees, 7u * 3u);  // the seven versions held back until now
     }
 
     // Tier 3, the emergency cleanup: with a threshold of 0 every publication
     // takes it. No reader is inside a section, so it has nothing to wait for.
     {
-        RCU<Table> rcu(table_named('a'), 8, 0);
+        RCU<Table> rcu(Table('a'), 8, 0);
         const auto slot = rcu.add_reader();
         uint64_t requests = 0;
         for (int i = 0; i < 4; ++i) {
@@ -308,7 +451,7 @@ TEST(RCUAllocation, CommitAllocatesNothingInAnyReclamationTier) {
             requests += counted([&] { rcu.commit(std::move(staged)); }).m_requests;
         }
         EXPECT_EQ(requests, 0u);
-        EXPECT_EQ(current(rcu, slot), table_named('b'));
+        EXPECT_EQ(current(rcu, slot), Table('b'));
     }
 
     // Tier 3 with a reader to wait for. The reader stays inside its section
@@ -342,7 +485,7 @@ TEST(RCUAllocation, CommitAllocatesNothingInAnyReclamationTier) {
 // What a stage allocates: the version, and room in the retired list when that
 // is full. The list grows as push_back() grows it, so a stage and its commit
 // ask for as many blocks as update() and replace() do, at the same publications.
-TEST(RCUAllocation, StageAllocatesTheVersionAndTheRoomToRetireOne) {
+TEST_F(RCUAllocation, StageAllocatesTheVersionAndTheRoomToRetireOne) {
     RCU<int> two_step(0);
     RCU<int> one_step(0);
     RCU<int>::Staged staged;
@@ -387,14 +530,21 @@ TEST(RCUAllocation, StageAllocatesTheVersionAndTheRoomToRetireOne) {
 // A stage throws std::bad_alloc whichever of its allocations fails: the
 // version, what the function allocates in it, the room in the retired list.
 // Then nothing has changed and nothing is left behind.
-TEST(RCUAllocation, StageThatCannotAllocateChangesNothing) {
+//
+// The allocations of a stage, in the order in which the sweep fails them.
+// stage_replace(): the Table (the RCU's make_unique), its rows and its name
+// (fill_b), the retired list's first entry (the RCU's reserve). stage_update():
+// the Table, its rows and its name (the copy), the new name (rename_b), the
+// entry.
+TEST_F(RCUAllocation, StageThatCannotAllocateChangesNothing) {
     for (const bool copy : {false, true}) {
-        RCU<Table> rcu(table_named('a'));
+        RCU<Table> rcu(Table('a'));
         const auto slot = rcu.add_reader();
         const Table* const version = &rcu.read_scope(slot).data();
         RCU<Table>::Staged staged;
 
         const uint64_t failed = fail_each_allocation(
+            copy ? "stage_update() of an RCU<Table>" : "stage_replace() of an RCU<Table>",
             [&] {
                 if (copy) {
                     staged = rcu.stage_update(rename_b);
@@ -406,26 +556,27 @@ TEST(RCUAllocation, StageThatCannotAllocateChangesNothing) {
                 EXPECT_FALSE(static_cast<bool>(staged)) << nth;
                 const auto scope = rcu.read_scope(slot);
                 EXPECT_EQ(&scope.data(), version) << nth;
-                EXPECT_EQ(scope.data(), table_named('a')) << nth;
+                EXPECT_EQ(scope.data(), Table('a')) << nth;
             });
-        EXPECT_GE(failed, 4u) << copy;  // the Table, its rows, its name, the retired list's entry
+        EXPECT_EQ(failed, copy ? 5u : 4u);
 
         ASSERT_TRUE(static_cast<bool>(staged));
-        EXPECT_EQ(staged.data(), table_named('b'));
+        EXPECT_EQ(staged.data(), Table('b'));
         EXPECT_EQ(counted([&] { rcu.commit(std::move(staged)); }).m_requests, 0u);
-        EXPECT_EQ(current(rcu, slot), table_named('b'));
+        EXPECT_EQ(current(rcu, slot), Table('b'));
     }
 }
 
-// update() and replace() make the same allocations, all of them before they
-// publish: they publish, or they throw and nothing has changed.
-TEST(RCUAllocation, UpdateAndReplaceThatCannotAllocateChangeNothing) {
+// update() and replace() make the same allocations in the same order, all of
+// them before they publish: they publish, or they throw and nothing has changed.
+TEST_F(RCUAllocation, UpdateAndReplaceThatCannotAllocateChangeNothing) {
     for (const bool copy : {false, true}) {
-        RCU<Table> rcu(table_named('a'));
+        RCU<Table> rcu(Table('a'));
         const auto slot = rcu.add_reader();
         const Table* const version = &rcu.read_scope(slot).data();
 
         const uint64_t failed = fail_each_allocation(
+            copy ? "update() of an RCU<Table>" : "replace() of an RCU<Table>",
             [&] {
                 if (copy) {
                     rcu.update(rename_b);
@@ -436,19 +587,19 @@ TEST(RCUAllocation, UpdateAndReplaceThatCannotAllocateChangeNothing) {
             [&](uint64_t nth) {
                 const auto scope = rcu.read_scope(slot);
                 EXPECT_EQ(&scope.data(), version) << nth;
-                EXPECT_EQ(scope.data(), table_named('a')) << nth;
+                EXPECT_EQ(scope.data(), Table('a')) << nth;
             });
-        EXPECT_GE(failed, 4u) << copy;
-        EXPECT_EQ(current(rcu, slot), table_named('b'));
+        EXPECT_EQ(failed, copy ? 5u : 4u);
+        EXPECT_EQ(current(rcu, slot), Table('b'));
     }
 }
 
 // The change the two steps are for, with an allocation failing anywhere in it:
 // two RCUs change together or not at all, and the tail that commits them asks
 // for no memory.
-TEST(RCUAllocation, TwoRcusChangeTogetherOrNotAtAll) {
-    RCU<Table> tables(table_named('a'));
-    RCU<std::vector<int>> rows(std::vector<int>{1});
+TEST_F(RCUAllocation, TwoRcusChangeTogetherOrNotAtAll) {
+    RCU<Table> tables(Table('a'));
+    RCU<Table> rows(Table('a'));
     const auto table_slot = tables.add_reader();
     const auto rows_slot = rows.add_reader();
     uint64_t tail_requests = 0;
@@ -457,24 +608,27 @@ TEST(RCUAllocation, TwoRcusChangeTogetherOrNotAtAll) {
     // entry: a list that grew in a stage keeps its room when a later step of
     // the change fails, and the sweep below counts every block that stays.
     tables.update([](Table& /*table*/) {});
-    rows.update([](std::vector<int>& /*values*/) {});
+    rows.update([](Table& /*table*/) {});
 
     const auto change_both = [&] {
         auto next_table = tables.stage_replace(fill_b);
-        auto next_rows = rows.stage_update([](std::vector<int>& values) { values.push_back(2); });
+        auto next_rows = rows.stage_update(rename_b);
         const AllocationProbe before = t_probe;
         tables.commit(std::move(next_table));
         rows.commit(std::move(next_rows));
         tail_requests += t_probe.m_requests - before.m_requests;
     };
 
-    const uint64_t failed = fail_each_allocation(change_both, [&](uint64_t nth) {
-        EXPECT_EQ(current(tables, table_slot), table_named('a')) << nth;
-        EXPECT_EQ(rows.read_scope(rows_slot).data(), (std::vector<int>{1})) << nth;
-    });
-    // The Table, its rows and its name; the vector, its elements and their growth.
-    EXPECT_GE(failed, 6u);
+    const uint64_t failed = fail_each_allocation(
+        "two RCU<Table>: stage_replace() of the first, stage_update() of the second, both commits",
+        change_both,
+        [&](uint64_t nth) {
+            EXPECT_EQ(current(tables, table_slot), Table('a')) << nth;
+            EXPECT_EQ(current(rows, rows_slot), Table('a')) << nth;
+        });
+    // The first's Table, rows and name; the second's Table, rows, name and new name.
+    EXPECT_EQ(failed, 7u);
     EXPECT_EQ(tail_requests, 0u);
-    EXPECT_EQ(current(tables, table_slot), table_named('b'));
-    EXPECT_EQ(rows.read_scope(rows_slot).data(), (std::vector<int>{1, 2}));
+    EXPECT_EQ(current(tables, table_slot), Table('b'));
+    EXPECT_EQ(current(rows, rows_slot), Table('b'));
 }
