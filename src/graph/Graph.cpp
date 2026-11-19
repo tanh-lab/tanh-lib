@@ -293,7 +293,7 @@ bool Graph::remove_node(NodeId id) {
 
     // Versions already handed to the audio thread may still run this node.
     m_retired_nodes.push_back(
-        {.m_node = std::move(it->second), .m_last_generation = m_next_generation - 1});
+        {.m_object = std::move(it->second), .m_last_generation = m_next_generation - 1});
     m_nodes.erase(it);
 
     std::erase_if(m_connections, [id](const Connection& connection) {
@@ -440,7 +440,7 @@ Graph::Inputs Graph::make_inputs(Node& node, std::vector<Source> sources) {
     const bool keep_mixer = node.m_input_mixer && node.m_input_mixer->num_inputs() == num_sources;
     if (!keep_mixer) {
         if (node.m_input_mixer) {
-            m_retired_mixers.push_back({.m_mixer = std::move(node.m_input_mixer),
+            m_retired_mixers.push_back({.m_object = std::move(node.m_input_mixer),
                                         .m_last_generation = m_next_generation - 1});
         }
         node.m_input_mixer = std::make_unique<Mixer>();
@@ -573,7 +573,7 @@ std::unique_ptr<Graph::CompiledGraph> Graph::compile() {
         const bool keep_delay = node.m_dry_delay && node.m_dry_delay->max_delay_samples() == max;
         if (!keep_delay) {
             if (node.m_dry_delay) {
-                m_retired_delays.push_back({.m_delay = std::move(node.m_dry_delay),
+                m_retired_delays.push_back({.m_object = std::move(node.m_dry_delay),
                                             .m_last_generation = m_next_generation - 1});
             }
             node.m_dry_delay = std::make_unique<thl::dsp::utils::DelayProcessor>(max);
@@ -669,15 +669,12 @@ void Graph::collect_own_garbage() {
 
     const uint64_t oldest_live = m_live_generations.empty() ? std::numeric_limits<uint64_t>::max()
                                                             : *m_live_generations.begin();
-    std::erase_if(m_retired_nodes, [oldest_live](const RetiredNode& retired) {
+    const auto unused = [oldest_live](const auto& retired) {
         return retired.m_last_generation < oldest_live;
-    });
-    std::erase_if(m_retired_delays, [oldest_live](const RetiredDelay& retired) {
-        return retired.m_last_generation < oldest_live;
-    });
-    std::erase_if(m_retired_mixers, [oldest_live](const RetiredMixer& retired) {
-        return retired.m_last_generation < oldest_live;
-    });
+    };
+    std::erase_if(m_retired_nodes, unused);
+    std::erase_if(m_retired_delays, unused);
+    std::erase_if(m_retired_mixers, unused);
 }
 
 void Graph::free_all_compiled() {

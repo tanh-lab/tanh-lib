@@ -244,18 +244,11 @@ private:
     struct ProcessingStep;
     struct CompiledGraph;
 
-    struct RetiredNode {
-        std::unique_ptr<Node> m_node;
-        uint64_t m_last_generation;  // newest compiled version that may still use it
-    };
-
-    struct RetiredDelay {
-        std::unique_ptr<thl::dsp::utils::DelayProcessor> m_delay;
-        uint64_t m_last_generation;  // newest compiled version that may still use it
-    };
-
-    struct RetiredMixer {
-        std::unique_ptr<thl::dsp::utils::Mixer> m_mixer;
+    // What a version may still use after the graph replaced it: freed once no version up to
+    // m_last_generation runs.
+    template <typename T>
+    struct Retired {
+        std::unique_ptr<T> m_object;
         uint64_t m_last_generation;  // newest compiled version that may still use it
     };
 
@@ -316,9 +309,9 @@ private:
     std::map<ProbeId, ProbeEntry> m_probes;
     uint64_t m_next_probe_id = 1;
     std::set<Connection> m_connections;
-    std::vector<RetiredNode> m_retired_nodes;
-    std::vector<RetiredDelay> m_retired_delays;
-    std::vector<RetiredMixer> m_retired_mixers;
+    std::vector<Retired<Node>> m_retired_nodes;
+    std::vector<Retired<thl::dsp::utils::DelayProcessor>> m_retired_delays;
+    std::vector<Retired<thl::dsp::utils::Mixer>> m_retired_mixers;
     double m_sample_rate = 0.0;
     size_t m_max_block_size = 0;
     size_t m_num_channels = 0;

@@ -330,6 +330,30 @@ TEST(Graph, InputMixAppliesToProcessorNodes) {
     expect_all(buffer, 0.75f * 2.0f);
 }
 
+// A merge that averages gets a new input Mixer when its number of sources changes (at commit());
+// it averages the new sources from there.
+TEST(Graph, AnAveragingMergeKeepsAveragingWhenItsSourcesChange) {
+    Graph graph;
+    const auto a = graph.add_node<ConstantProcessor>(0.5f);
+    const auto b = graph.add_node<ConstantProcessor>(0.25f);
+    const auto c = graph.add_node<ConstantProcessor>(0.0f);
+    ASSERT_TRUE(a && b && c);
+    ASSERT_TRUE(graph.connect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.connect(*b, graph.graph_output()));
+    ASSERT_TRUE(graph.set_input_mix(graph.graph_output(), Graph::InputMix::Average));
+    prepare(graph);
+    expect_all(process_blocks(graph, 0.0f, 1), 0.375f);
+
+    ASSERT_TRUE(graph.connect(*c, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    expect_all(process_blocks(graph, 0.0f, k_fade_blocks + k_ramp_blocks), 0.25f);
+
+    ASSERT_TRUE(graph.disconnect(*a, graph.graph_output()));
+    ASSERT_TRUE(graph.commit());
+    graph.collect_garbage();
+    expect_all(process_blocks(graph, 0.0f, k_fade_blocks + k_ramp_blocks), 0.125f);
+}
+
 TEST(Graph, InputMixChangeRampsWithoutCommit) {
     Graph graph;
     const auto a = graph.add_node<ConstantProcessor>(0.5f);
@@ -650,6 +674,31 @@ TEST(Graph, MergeInsideTheGraphIsAligned) {
     prepare(graph);
 
     expect_impulse_response(graph, k_latency);
+}
+
+// A source that two nodes delay (to meet a latent branch each), with a probe watching one of
+// them: every node, and the probe, sees its sources aligned.
+TEST(Graph, ADelayedSourceFannedOutReachesEveryNodeAligned) {
+    Graph graph;
+    const auto latent_a = graph.add_node<LatencyProcessor>(k_latency);
+    const auto latent_b = graph.add_node<LatencyProcessor>(k_latency);
+    const auto merge_a = graph.add_node<GainProcessor>(1.0f);
+    const auto merge_b = graph.add_node<GainProcessor>(1.0f);
+    ASSERT_TRUE(latent_a && latent_b && merge_a && merge_b);
+    for (const auto [latent, merge] : {std::pair{*latent_a, *merge_a}, {*latent_b, *merge_b}}) {
+        ASSERT_TRUE(graph.connect(graph.graph_input(), latent));
+        ASSERT_TRUE(graph.connect(latent, merge));
+        ASSERT_TRUE(graph.connect(graph.graph_input(), merge));  // the input, delayed
+        ASSERT_TRUE(graph.connect(merge, graph.graph_output()));
+    }
+    average_merges(graph);
+    const auto probe =
+        graph.add_probe<thl::dsp::probe::LevelProbe>(*merge_a, Graph::ProbePoint::Input);
+    ASSERT_TRUE(probe);
+    prepare(graph);
+
+    expect_impulse_response(graph, k_latency);
+    EXPECT_FLOAT_EQ(probe->second->take_peak(0), 1.0f);  // both sources at once: aligned
 }
 
 TEST(Graph, BranchesAreAlignedToTheSlowest) {

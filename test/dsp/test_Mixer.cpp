@@ -223,6 +223,33 @@ TEST(Mixer, ChangingPGlides) {
     }
 }
 
+// In Sum p does not matter: a p glide leaves the gains at the weights.
+TEST(Mixer, InSumAPGlideChangesNothing) {
+    Mixer mixer = settled(Mixer::Mode::Sum, Mixer::k_amplitude, 0.5f, 0.25f);
+    mixer.set_p(Mixer::k_power);
+    const Gains gains = measure_gains(mixer);
+    for (size_t i = 0; i < gains.m_first.size(); ++i) {
+        ASSERT_EQ(gains.m_first[i], 0.5f) << i;
+        ASSERT_EQ(gains.m_second[i], 0.25f) << i;
+    }
+}
+
+// All weights 0 stay silent through a change of mode (no 0 / 0).
+TEST(Mixer, AllWeightsZeroStaySilentThroughAModeChange) {
+    for (const auto mode : {Mixer::Mode::Mix, Mixer::Mode::Sum}) {
+        Mixer mixer = settled(mode == Mixer::Mode::Mix ? Mixer::Mode::Sum : Mixer::Mode::Mix,
+                              Mixer::k_power,
+                              0.0f,
+                              0.0f);
+        mixer.set_mode(mode);
+        const Gains gains = measure_gains(mixer);
+        for (size_t i = 0; i < gains.m_first.size(); ++i) {
+            ASSERT_EQ(gains.m_first[i], 0.0f) << i;
+            ASSERT_EQ(gains.m_second[i], 0.0f) << i;
+        }
+    }
+}
+
 TEST(Mixer, ProcessingInBlocksGivesTheSameGains) {
     Mixer whole = settled(Mixer::Mode::Sum, Mixer::k_amplitude, 1.0f, 0.0f);
     Mixer blocks = settled(Mixer::Mode::Sum, Mixer::k_amplitude, 1.0f, 0.0f);
@@ -353,6 +380,17 @@ TEST(Mixer, PrepareKeepsTheWeightsAndEndsTheGlides) {
     EXPECT_EQ(mixer.get_weight(1), 0.25f);
     EXPECT_EQ(mixer.get_weight(2), 1.0f);
     expect_all(mix_constants(mixer, {1.0f, 1.0f, 1.0f}), 2.25f);
+}
+
+// prepare() with fewer inputs keeps the weights of those that remain.
+TEST(Mixer, PrepareWithFewerInputsKeepsTheirWeights) {
+    Mixer mixer = prepared(3);
+    mixer.set_weights(std::array{0.5f, 0.25f, 2.0f});
+    mixer.prepare(k_sample_rate, 2);
+    EXPECT_EQ(mixer.num_inputs(), 2u);
+    EXPECT_EQ(mixer.get_weight(0), 0.5f);
+    EXPECT_EQ(mixer.get_weight(1), 0.25f);
+    expect_all(mix_constants(mixer, {1.0f, 1.0f}), 0.75f);
 }
 
 TEST(Mixer, InvalidValuesAreClampedOrIgnored) {
