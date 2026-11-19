@@ -5,6 +5,7 @@
 #include <tanh/core/Exports.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -103,6 +104,13 @@ TANH_API RcuThreadState& rcu_thread_state();
  * threads (a plugin whose host moves the render callback from thread to
  * thread) cannot register in advance: it reads through a reader slot,
  * add_reader() and read_scope(Reader), which never registers.
+ *
+ * A writer publishes with update() or replace(), or in two steps: stage_update()
+ * / stage_replace() make the next version and everything its publication needs
+ * (they may throw, and then nothing has changed), commit() publishes a staged
+ * version and cannot fail. The two steps are for a change that spans several
+ * RCUs, or an RCU and state of the caller: stage all of it, then commit all of
+ * it. See Staged and commit().
  *
  * @tparam T The type of data to protect (e.g., std::map, std::vector)
  */
@@ -239,6 +247,9 @@ public:
      * function, then atomically publishes the new version. This operation
      * may block and is not real-time safe.
      *
+     * When it throws (an allocation that fails, or update_func) nothing was
+     * published: everything that can fail comes before the publication.
+     *
      * @param update_func Function to modify the copied data
      *
      * Usage:
@@ -252,20 +263,7 @@ public:
     template <typename Func>
     void update(Func&& update_func) {
         const std::scoped_lock lock(m_writer_mutex);
-
-        // Load current data
-        const T* old_data = m_data_ptr.load(std::memory_order_acquire);
-
-        // Create copy for modification. Note this reads every byte of the live
-        // version: only safe when readers never mutate what they read. If the
-        // read side writes into T (mutable per-reader state, say), copying it
-        // here races with those writes — use replace() instead.
-        auto new_data = std::make_unique<T>(*old_data);
-
-        // Let user modify the copy
-        update_func(*new_data);
-
-        publish_with_lock(std::move(new_data), old_data);
+        publish_with_lock(stage_copy_with_lock(update_func));
     }
 
     /**
@@ -280,6 +278,8 @@ public:
      * example): update()'s copy would race with those writes, this does not.
      *
      * Requires T to be default-constructible. May block; not real-time safe.
+     * When it throws (an allocation that fails, or build_func) nothing was
+     * published.
      *
      * @param build_func Function that fills in the fresh, empty value
      *
@@ -293,19 +293,218 @@ public:
     template <typename Func>
     void replace(Func&& build_func) {
         const std::scoped_lock lock(m_writer_mutex);
+        publish_with_lock(stage_fresh_with_lock(build_func));
+    }
 
-        const T* old_data = m_data_ptr.load(std::memory_order_acquire);
+    /**
+     * @brief A version made by stage_update() / stage_replace() and not yet
+     * published: the first half of a publication in two steps.
+     *
+     * Move-only. It owns the version until commit() takes it. Destroyed without
+     * a commit it frees the version, on the destroying thread, and the RCU stays
+     * as it was; it does not touch the RCU then, so it may outlive it. No reader
+     * sees the version before commit(), so data() may still be changed.
+     *
+     * Default-constructed or moved-from it is empty.
+     */
+    class [[nodiscard]] Staged {
+    public:
+        Staged() = default;
+        ~Staged() = default;
+        Staged(Staged&&) noexcept = default;
+        Staged& operator=(Staged&&) noexcept = default;
+        Staged(const Staged&) = delete;
+        Staged& operator=(const Staged&) = delete;
 
-        auto new_data = std::make_unique<T>();
-        build_func(*new_data);
+        [[nodiscard]] explicit operator bool() const noexcept { return m_data != nullptr; }
 
-        publish_with_lock(std::move(new_data), old_data);
+        /// The staged version. Not for an empty Staged (asserted).
+        [[nodiscard]] T& data() const noexcept {
+            assert(m_data && "RCU::Staged::data: empty Staged");
+            return *m_data;
+        }
+        T* operator->() const noexcept {
+            assert(m_data && "RCU::Staged::operator->: empty Staged");
+            return m_data.get();
+        }
+
+    private:
+        friend class RCU;
+        Staged(const RCU& owner, std::unique_ptr<T> data, uint64_t publications)
+            : m_owner(&owner), m_data(std::move(data)), m_publications(publications) {}
+
+        const RCU* m_owner = nullptr;
+        std::unique_ptr<T> m_data;
+        // The owner's m_grace_period when this was staged; it moves with every
+        // publication. A member in every build, so that code built with and
+        // without NDEBUG agrees on the layout; only commit()'s check reads it.
+        uint64_t m_publications = 0;
+    };
+
+    /**
+     * @brief First half of update(): make the next version from a copy of the
+     * current one, publish nothing
+     *
+     * Copies the current version, lets update_func modify the copy and makes
+     * the room its publication needs. Everything of a publication that can fail
+     * happens here: when this throws (std::bad_alloc, or whatever update_func
+     * throws) the RCU is as it was, readers see what they saw, and nothing is
+     * leaked. commit() publishes the returned version and cannot fail.
+     *
+     * Like update() it reads the live version (see there) and holds the writer
+     * mutex while update_func runs; unlike update() it does not hold it
+     * afterwards. See commit() for what may happen between the two calls.
+     * May block; not real-time safe.
+     *
+     * @param update_func Function to modify the copied data
+     */
+    template <typename Func>
+    [[nodiscard]] Staged stage_update(Func&& update_func) {
+        const std::scoped_lock lock(m_writer_mutex);
+        return staged_with_lock(stage_copy_with_lock(update_func));
+    }
+
+    /**
+     * @brief First half of replace(): build the next version from scratch,
+     * publish nothing
+     *
+     * Default-constructs a T, lets build_func fill it in and makes the room its
+     * publication needs. Everything of a publication that can fail happens
+     * here: when this throws (std::bad_alloc, or whatever build_func throws)
+     * the RCU is as it was, readers see what they saw, and nothing is leaked.
+     * commit() publishes the returned version and cannot fail.
+     *
+     * Like replace() it never reads the live version and holds the writer mutex
+     * while build_func runs; unlike replace() it does not hold it afterwards.
+     * See commit() for what may happen between the two calls. Requires T to be
+     * default-constructible. May block; not real-time safe.
+     *
+     * @param build_func Function that fills in the fresh, empty value
+     *
+     * Usage, two RCUs that change together:
+     * ```cpp
+     * auto table = rcu_table.stage_replace([&](auto& t) { t = build_table(); });
+     * auto rows = rcu_rows.stage_replace([&](auto& r) { r = build_rows(); });
+     * // ... whatever else can fail. A throw up to here leaves both RCUs alone.
+     * rcu_table.commit(std::move(table));  // noexcept from here on
+     * rcu_rows.commit(std::move(rows));
+     * ```
+     */
+    template <typename Func>
+    [[nodiscard]] Staged stage_replace(Func&& build_func) {
+        const std::scoped_lock lock(m_writer_mutex);
+        return staged_with_lock(stage_fresh_with_lock(build_func));
+    }
+
+    /**
+     * @brief Second half of a publication in two steps: publish a staged version
+     *
+     * Publishes the version, retires the one it replaces and reclaims the
+     * retired versions no reader uses any more, exactly as update() / replace()
+     * do after they have built theirs. It cannot fail and allocates nothing:
+     * the retired version goes into the room its stage_update() /
+     * stage_replace() made. @p staged is empty afterwards.
+     *
+     * It blocks where update() / replace() block and nowhere else: on the
+     * writer mutex (another writer, a thread registering as a reader,
+     * add_reader(), get_reader_count(), a synchronize() in progress), and on
+     * readers only in the emergency tier, when the number of retired versions
+     * reaches the emergency threshold. Not real-time safe; like them, not to be
+     * called from inside a read section of this RCU, which that tier would wait
+     * for.
+     *
+     * One writer from stage to commit: between a stage_update() /
+     * stage_replace() and the commit() of its result nothing else may be
+     * published in this RCU, no update(), no replace() and no commit() of
+     * another staged version. The RCU does not hold its writer mutex between
+     * the two calls (readers register, add_reader() and synchronize() go on),
+     * so keeping other writers out is the caller's job: one writer thread, or
+     * a mutex of the caller's around stage and commit. Under that exclusion the
+     * two calls may run on different threads. Several versions may be staged
+     * at once as long as at most one of them is committed: drop the others and
+     * stage them again.
+     *
+     * commit() asserts the rule. A release build that breaks it still
+     * publishes @p staged, but the room the stage made may be used up, so the
+     * commit may allocate (and terminates when that fails), and a version from
+     * stage_update() replaces whatever was published in between with a copy
+     * that never contained it.
+     *
+     * @p staged must be this instance's (asserted; a release build publishes it
+     * here all the same, under the consequences above). An empty one is a
+     * contract violation too (asserted; a release build does nothing).
+     */
+    void commit(Staged&& staged) noexcept {
+        assert(staged && "RCU::commit: empty Staged");
+        assert((!staged || staged.m_owner == this) && "RCU::commit: another RCU's Staged");
+        if (!staged) { return; }
+
+        const std::scoped_lock lock(m_writer_mutex);
+        assert(staged.m_publications == m_grace_period.load(std::memory_order_relaxed) &&
+               "RCU::commit: a version was published since this one was staged");
+        publish_with_lock(std::move(staged.m_data));
     }
 
 private:
-    // Shared tail of update() / replace(): publish, retire the old version and
-    // run the reclamation tiers. Caller must hold m_writer_mutex.
-    void publish_with_lock(std::unique_ptr<T> new_data, const T* old_data) {
+    // First half of update() / stage_update(): a copy of the current version,
+    // modified by update_func, and room to retire the version it will replace.
+    // All of a publication that can fail. Caller must hold m_writer_mutex.
+    template <typename Func>
+    std::unique_ptr<T> stage_copy_with_lock(Func& update_func) {
+        // Load current data
+        const T* old_data = m_data_ptr.load(std::memory_order_acquire);
+
+        // Create copy for modification. Note this reads every byte of the live
+        // version: only safe when readers never mutate what they read. If the
+        // read side writes into T (mutable per-reader state, say), copying it
+        // here races with those writes — use replace() instead.
+        auto new_data = std::make_unique<T>(*old_data);
+
+        // Let user modify the copy
+        update_func(*new_data);
+
+        reserve_retired_with_lock();
+        return new_data;
+    }
+
+    // First half of replace() / stage_replace(): a fresh version filled in by
+    // build_func, and room to retire the version it will replace. All of a
+    // publication that can fail. Caller must hold m_writer_mutex.
+    template <typename Func>
+    std::unique_ptr<T> stage_fresh_with_lock(Func& build_func) {
+        auto new_data = std::make_unique<T>();
+        build_func(*new_data);
+
+        reserve_retired_with_lock();
+        return new_data;
+    }
+
+    // Room in the retired list for one more version, so that the publication
+    // that follows pushes without allocating. The last step of a stage: when it
+    // throws, the version just built is freed and nothing else was touched.
+    // Doubles the capacity when the list is full, so a writer allocates here as
+    // rarely as it did when the publication's push_back() grew the list.
+    // Nothing shrinks the capacity, so the room lasts until a publication uses
+    // it. Caller must hold m_writer_mutex.
+    void reserve_retired_with_lock() {
+        const size_t capacity = m_retired_list.capacity();
+        if (m_retired_list.size() < capacity) { return; }
+        m_retired_list.reserve(std::max<size_t>(1, 2 * capacity));
+    }
+
+    // The staged form of a version made by stage_*_with_lock(). Caller must
+    // hold m_writer_mutex.
+    Staged staged_with_lock(std::unique_ptr<T> new_data) const noexcept {
+        return Staged(*this, std::move(new_data), m_grace_period.load(std::memory_order_relaxed));
+    }
+
+    // Second half of update() / replace(), and commit(): publish, retire the old
+    // version into the room reserve_retired_with_lock() made and run the
+    // reclamation tiers. Allocates nothing and cannot fail. Caller must hold
+    // m_writer_mutex.
+    void publish_with_lock(std::unique_ptr<T> new_data) noexcept {
+        T* old_data = m_data_ptr.load(std::memory_order_acquire);
+
         // Atomically publish new version. seq_cst: first half of the writer's
         // handshake with rcu_read_lock() — the generation loads in
         // cleanup_safe_versions() / synchronize_rcu() are the second half.
@@ -314,7 +513,7 @@ private:
         // Retire old version with current grace period
         // Note: At 1 billion updates/sec, takes 584 years to overflow uint64_t
         const uint64_t retire_period = m_grace_period.fetch_add(1, std::memory_order_acq_rel);
-        m_retired_list.push_back({const_cast<T*>(old_data), retire_period});
+        m_retired_list.push_back({old_data, retire_period});
 
         // ═══════════════════════════════════════════════════
         // TIER 1: Opportunistic cleanup (always try, non-blocking)
@@ -346,7 +545,7 @@ private:
             m_retired_list.clear();
         }
 
-        // Clean up dead reader nodes periodically
+        // Unlink and free the reader nodes of exited threads
         cleanup_dead_nodes();
     }
 
@@ -650,9 +849,10 @@ private:
      * Finds the minimum grace period any reader is currently in, then batch
      * deletes all retired versions older than that period.
      *
-     * Must be called while holding s_writer_mutex.
+     * Allocates nothing (it frees, and erases in place). Must be called while
+     * holding m_writer_mutex.
      */
-    void cleanup_safe_versions() {
+    void cleanup_safe_versions() noexcept {
         if (m_retired_list.empty()) { return; }
 
         // Get current grace period - we can never delete data from current or
@@ -693,10 +893,10 @@ private:
     /**
      * @brief Blocking wait for all current readers to finish
      *
-     * Used as emergency cleanup when retired list grows too large.
-     * Must be called while holding s_writer_mutex.
+     * Used as emergency cleanup when retired list grows too large. Allocates
+     * nothing (it polls). Must be called while holding m_writer_mutex.
      */
-    void synchronize_rcu() {
+    void synchronize_rcu() noexcept {
         // Start new grace period
         const uint64_t current_period = m_grace_period.load(std::memory_order_acquire);
 
@@ -725,42 +925,28 @@ private:
         }
     }
 
-    // Clean up dead nodes from the linked list
-    // Must be called while holding m_writer_mutex
-    void cleanup_dead_nodes() {
-        // Rebuild the list without dead nodes
-        std::vector<detail::RcuReaderNode*> live_nodes;
-        std::vector<std::unique_ptr<detail::RcuReaderNode>> dead_nodes;
-
-        detail::RcuReaderNode* current =  // NOLINT(misc-const-correctness)
-            m_reader_head.load(std::memory_order_relaxed);
+    // Unlink and free the nodes of exited threads, in place: each dead node is
+    // taken out of the list before it is freed, and nothing is allocated, so the
+    // sweep cannot fail half-way and is part of commit(). The relaxed orderings
+    // are enough because every walk of the list holds m_writer_mutex (see
+    // link_reader_with_lock()). Must be called while holding m_writer_mutex.
+    void cleanup_dead_nodes() noexcept {
+        // The pointer that leads to `current`: the head, or the m_next of the
+        // last node kept.
+        std::atomic<detail::RcuReaderNode*>* link = &m_reader_head;
+        detail::RcuReaderNode* current = link->load(std::memory_order_relaxed);
         while (current != nullptr) {
             detail::RcuReaderNode* next = current->m_next.load(std::memory_order_relaxed);
 
-            if (!current->thread_gone()) {
-                live_nodes.push_back(current);
+            if (current->thread_gone()) {
+                link->store(next, std::memory_order_relaxed);
+                delete current;  // its thread left it to us
             } else {
-                // Its thread left it to us: transfer ownership to unique_ptr
-                dead_nodes.emplace_back(current);
+                link = &current->m_next;
             }
 
             current = next;
         }
-
-        // Rebuild the linked list with only live nodes
-        if (live_nodes.empty()) {
-            m_reader_head.store(nullptr, std::memory_order_relaxed);
-        } else {
-            for (size_t i = 0; i < live_nodes.size() - 1; ++i) {
-                live_nodes[i]->m_next.store(live_nodes[i + 1], std::memory_order_relaxed);
-            }
-            live_nodes.back()->m_next.store(nullptr, std::memory_order_relaxed);
-            m_reader_head.store(live_nodes[0], std::memory_order_relaxed);
-        }
-
-        // Dead nodes automatically cleaned up when unique_ptrs go out of scope
-        // Exception-safe: if vector reallocation throws, already-collected
-        // nodes are freed
     }
 };
 

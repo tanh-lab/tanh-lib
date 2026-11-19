@@ -47,7 +47,11 @@ other components build on:
 - ``thl::Logger`` — leveled logging with pluggable sinks and a
   real-time path, ``thl::Logger::rt``, that never allocates or blocks
 - :cpp:class:`thl::RCU` — lock-free read-copy-update for data the audio thread
-  reads while another thread replaces it
+  reads while another thread replaces it. A writer publishes in one call
+  (``update()``, ``replace()``) or in two steps: ``stage_update()`` /
+  ``stage_replace()`` do everything that can fail, ``commit()`` cannot fail and
+  allocates nothing, so a change that spans several RCUs is staged in full and
+  then committed in full
 - :cpp:class:`thl::core::LockFreeQueue` — a bounded lock-free MPMC queue
 - :cpp:class:`thl::core::Buffer`, :cpp:class:`thl::core::BufferView`,
   :cpp:class:`thl::core::RingBuffer`, :cpp:class:`thl::core::MemoryBlock` —
