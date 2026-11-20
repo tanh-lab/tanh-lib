@@ -14,7 +14,6 @@
 #include "dsp/slicing/TransientSlicer.h"
 #include "dsp/synth/SineProcessor.h"
 #include "dsp/transport/ContinuityTracker.h"
-#include "dsp/transport/HostTimeFilter.h"
 #include "dsp/transport/HostTransportClock.h"
 #include "dsp/transport/InternalTransportClock.h"
 #include "dsp/transport/TransportClock.h"

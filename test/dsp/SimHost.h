@@ -131,7 +131,7 @@ private:
     void apply(const Event& e) {
         switch (e.m_kind) {
             case Event::Kind::Seek: m_beat = e.m_a; break;
-            case Event::Kind::Shift: m_beat += e.m_a; break;  // Link phase realignment
+            case Event::Kind::Shift: m_beat += e.m_a; break;  // a phase realignment
             case Event::Kind::Tempo:
                 m_bpm = e.m_a;
                 m_ramp_length = 0;

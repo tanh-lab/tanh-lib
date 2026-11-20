@@ -72,7 +72,7 @@ void ContinuityTracker::resolve(TransportInfo& io,
         //   ramp inside that block moved the real position by at most
         //   prev_frames * (bps - prev_bps), in the direction of the change.
         // - w: a change dated up to the window before or after the block start
-        //   (Link: one timeline line, the change at a peer's output time) moves
+        //   (a shared session: the change at a peer's output time) moves
         //   the start by up to window * |bps - prev_bps| in either direction. The
         //   window and e cover the same lateness, so they are not added: a change
         //   dated more than the window in the past is still a jump.

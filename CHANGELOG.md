@@ -13,11 +13,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the flags `k_jumped`, `k_started`, `k_stopped`, `k_tempo_changed` and
   `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
   jitter and in-block tempo changes, so consumers react to flags and never compare
-  beats. `HostTransportClock` follows the host's playhead with fallbacks for omitted
-  fields; a block that continues the previous one starts exactly at its end, so a
-  division boundary on a block edge counts once. `HostTimeFilter` maps a callback's
-  sample time to host time. Tests: `TransportInfo.*`, `ContinuityTracker.*`,
-  `TransportClock.*`, `HostTransportClock*.*`, `HostTimeFilter.*`. Docs: `transport.md`.
+  beats. A block that continues the previous one starts exactly at its end, so a
+  division boundary on a block edge counts once; after a tempo drop the beat runs
+  on at no less than half the tempo and catches up, never holding or running
+  backwards; a non-finite beat or tempo holds the block. `HostTransportClock`
+  follows the host's playhead with fallbacks for omitted fields, ignores non-finite
+  host values, and takes the tempo from the host's beats when the host sends the
+  beat but no tempo. Tests: `TransportInfo.*`, `ContinuityTracker.*`,
+  `TransportClock.*`, `HostTransportClock*.*`. Docs: `transport.md`.
 - `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a
   gain from its weight. `Mode::Sum` takes the weights as the gains; `Mode::Mix` normalises them
   to their p-norm (`set_p()`: `k_amplitude` 1 for correlated inputs, `k_compromise` 4/3,
@@ -244,8 +247,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - `InternalTransportClock`: the time signature is set in one atomic, never seen half
   updated; a seek or tempo request is taken once (it could apply in two blocks);
-  `prepare()` keeps the beat, also at a new sample rate, and ignores an invalid sample
-  rate. Tests: `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate}`.
+  `prepare()` keeps the beat, also at a new sample rate, and with an invalid sample
+  rate keeps the rate but still flags the next block `k_timeline_reset`; a seek to a
+  huge beat no longer overflows; a non-finite tempo is ignored. Tests:
+  `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate,InvalidPrepareStillResets,HugeSeekIsSafe,NonFiniteTempoIsIgnored}`.
+- `MetronomePlayer` places its clicks on the clock's resolved beats (its slope, not
+  bpm / (60 · sample rate)), so a beat on a block edge clicks once. Test:
+  `MetronomePlayer.EveryBeatClicksOnceWithAJitteryHost`.
 - `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
   e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
   the plain sources, while a blend's dry signal is the phase-matched one; the switch between the

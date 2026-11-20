@@ -15,7 +15,7 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
  * Shared by every clock. The clock fills a TransportInfo with the raw start beat,
  * the tempo and the validity and play flags, then calls resolve() with the raw end
  * beat. A start close to the previous block's end is snapped onto it (host ppq
- * jitter, Link host-time jitter, in-block tempo changes); a start further away is
+ * jitter, in-block tempo changes); a start further away is
  * reported as k_jumped.
  */
 class TANH_API ContinuityTracker {
@@ -48,7 +48,8 @@ public:
      * @brief How far from the block start a tempo change may be dated (default 0).
      *
      * For a source whose tempo changes are dated away from the block that first
-     * sees them (a Link peer applies a change at its own output time). Hosts keep 0.
+     * sees them (a peer in a shared session applies a change at its own output
+     * time). Hosts keep 0.
      * Kept across prepare() and reset().
      */
     void set_tempo_window_samples(double samples);

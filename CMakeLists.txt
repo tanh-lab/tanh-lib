@@ -274,7 +274,6 @@ if(TANH_BUILD_DSP)
         src/dsp/probe/SampleProbe.cpp
 
         src/dsp/transport/ContinuityTracker.cpp
-        src/dsp/transport/HostTimeFilter.cpp
         src/dsp/transport/InternalTransportClock.cpp
         src/dsp/transport/HostTransportClock.cpp
 

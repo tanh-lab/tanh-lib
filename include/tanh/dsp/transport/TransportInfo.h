@@ -53,7 +53,7 @@ enum class Division {
 /**
  * @brief True if a boundary of @p div lies in the half-open beat interval [start, end).
  *
- * A boundary exactly at @p end belongs to the next block. Negative beats (a Link
+ * A boundary exactly at @p end belongs to the next block. Negative beats (a
  * count-in) are handled like positive ones. Returns false for an empty or reversed
  * interval.
  */
@@ -72,14 +72,14 @@ enum class Division {
 /**
  * @brief Per-block musical-time snapshot shared by every transport source.
  *
- * A TransportClock fills it in begin_block() from a host playhead, its internal
- * clock or Ableton Link, and consumers read it on the audio thread. It is
+ * A TransportClock fills it in begin_block() from a host playhead or its internal
+ * clock, and consumers read it on the audio thread. It is
  * trivially copyable, so it can be published to a UI thread by value.
  *
  * Beats are quarter notes (JUCE ppq, VST3 projectTimeMusic). The beat at sample
  * `i` of the block is beat_at(i). Derive musical position from the absolute beat
  * every block and never accumulate beats; use the discontinuity flags only to
- * reset internal state. A beat below zero (Link count-in) means "not started yet".
+ * reset internal state. A beat below zero (a count-in) means "not started yet".
  */
 struct TransportInfo {
     /// Validity: the source provided this field.
@@ -91,8 +91,8 @@ struct TransportInfo {
     static constexpr uint32_t k_is_playing = 1u << 8;
 
     /// The beat at the block start differs from the previous block's end beyond
-    /// what jitter and a tempo change explain (seek, host loop wrap, Link phase
-    /// realignment). Consumers react to this flag and never compare beats.
+    /// what jitter and a tempo change explain (seek, host loop wrap). Consumers react to this flag
+    /// and never compare beats.
     static constexpr uint32_t k_jumped = 1u << 16;
     /// Stopped in the previous block, playing in this one.
     static constexpr uint32_t k_started = 1u << 17;
@@ -100,8 +100,8 @@ struct TransportInfo {
     static constexpr uint32_t k_stopped = 1u << 18;
     /// The tempo differs from the previous block's. The beat stays continuous.
     static constexpr uint32_t k_tempo_changed = 1u << 19;
-    /// First block after prepare() or reset(), or a Link session join that moved
-    /// the beat. Treat it like k_jumped and also clear edge detectors.
+    /// First block after prepare() or reset(), or a source that started over (a
+    /// shared session joined). Treat it like k_jumped and also clear edge detectors.
     static constexpr uint32_t k_timeline_reset = 1u << 20;
 
     static constexpr uint32_t k_discontinuity_mask =
