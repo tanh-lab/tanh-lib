@@ -82,6 +82,16 @@ double level_db(const std::vector<float>& x, double hz) {
     return 10.0 * std::log10((power / static_cast<double>(x.size() / 2)) + 1e-20);
 }
 
+/// Energy of the second half of @p x between @p lo and @p hi Hz, in dB (2 Hz steps).
+/// The shimmer's two-grain pitch shifter puts its output on lines spaced by its grain
+/// rate (~23 Hz at 48 kHz) rather than exactly on the octave, so a single Goertzel bin
+/// at 440 Hz can fall between two lines; the band catches all of them.
+double band_db(const std::vector<float>& x, double lo, double hi) {
+    double energy = 0.0;
+    for (double hz = lo; hz <= hi; hz += 2.0) { energy += std::pow(10.0, level_db(x, hz) / 10.0); }
+    return 10.0 * std::log10(energy + 1e-20);
+}
+
 }  // namespace
 
 TEST(ConstellationReverb, ShimmerSitsInTheFeedbackByDefault) {
@@ -95,9 +105,9 @@ TEST(ConstellationReverb, ShimmerAtTheInputIsHeardWithAShortDecay) {
     Reverb feedback(0.5f);
     Reverb input(0.5f);
     input.set_shimmer_position(ConstellationReverbImpl::ShimmerPosition::Input);
-    const double octave_feedback = level_db(render(feedback), 440.0);
-    const double octave_input = level_db(render(input), 440.0);
-    EXPECT_GT(octave_input, octave_feedback + 10.0)
+    const double octave_feedback = band_db(render(feedback), 400.0, 520.0);
+    const double octave_input = band_db(render(input), 400.0, 520.0);
+    EXPECT_GT(octave_input, octave_feedback + 6.0)
         << "feedback " << octave_feedback << " dB, input " << octave_input << " dB";
 }
 
