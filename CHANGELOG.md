@@ -9,6 +9,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::transport::TransportInfo`: trivially copyable per-block snapshot with
+  the flags `k_jumped`, `k_started`, `k_stopped`, `k_tempo_changed` and
+  `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
+  jitter and in-block tempo changes, so consumers react to flags and never compare
+  beats. `HostTransportClock` follows the host's playhead with fallbacks for omitted
+  fields; a block that continues the previous one starts exactly at its end, so a
+  division boundary on a block edge counts once. `HostTimeFilter` maps a callback's
+  sample time to host time. Tests: `TransportInfo.*`, `ContinuityTracker.*`,
+  `TransportClock.*`, `HostTransportClock*.*`, `HostTimeFilter.*`. Docs: `transport.md`.
 - `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a
   gain from its weight. `Mode::Sum` takes the weights as the gains; `Mode::Mix` normalises them
   to their p-norm (`set_p()`: `k_amplitude` 1 for correlated inputs, `k_compromise` 4/3,
@@ -171,6 +180,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `TransportClock` keeps the block itself: a subclass implements `compute_block()` and
+  `on_prepare()`, and `prepare()`, `begin_block()`, `end_block()`, `block_info()` (now a
+  reference), `beat_at_sample()`, `division_in_block()` and the tempo, signature and
+  play getters are non-virtual in the base. `begin_block()` takes only the frame
+  count. `sample_position()` counts samples played since `prepare()` on every clock.
+  `Division` moved to `TransportInfo.h`. `InternalTransportClock`: a tempo change
+  keeps the beat continuous. An API and ABI change for subclasses.
 - `thl::graph::Graph` mixes with `dsp::utils::Mixer`: a node's sources (`InputMix`) and its dry
   and wet signals (`MixLaw`); a wet mix glide stays on its law's curve, as before (by
   @jstolberg). What changes: the pace along the curve follows the weights' linear glide instead
@@ -226,6 +242,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `InternalTransportClock`: the time signature is set in one atomic, never seen half
+  updated; a seek or tempo request is taken once (it could apply in two blocks);
+  `prepare()` keeps the beat, also at a new sample rate, and ignores an invalid sample
+  rate. Tests: `InternalTransportClock.{TimeSignatureIsNeverTorn,SeekAppliesOnce,PrepareKeepsTheBeatAtANewSampleRate}`.
 - `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
   e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
   the plain sources, while a blend's dry signal is the phase-matched one; the switch between the
@@ -259,6 +279,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   parameter's last value; the threshold is clamped to [-120, 24] dB, the times to
   [0.01, 60000] ms. `process()` is `TANH_NONBLOCKING_FUNCTION`. Test:
   `Limiter.NanParametersKeepTheirLastValue`.
+
+### Removed
+
+- The `host_time_micros` parameter of `TransportClock::begin_block()` (see Changed): a
+  clock that needs host time takes it through its own setter.
 
 ## [0.5.0] - 2026-11-01
 
