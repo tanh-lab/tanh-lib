@@ -88,7 +88,10 @@ double level_db(const std::vector<float>& x, double hz) {
 /// at 440 Hz can fall between two lines; the band catches all of them.
 double band_db(const std::vector<float>& x, double lo, double hi) {
     double energy = 0.0;
-    for (double hz = lo; hz <= hi; hz += 2.0) { energy += std::pow(10.0, level_db(x, hz) / 10.0); }
+    const auto steps = static_cast<int>((hi - lo) / 2.0);
+    for (int i = 0; i <= steps; ++i) {
+        energy += std::pow(10.0, level_db(x, lo + (2.0 * i)) / 10.0);
+    }
     return 10.0 * std::log10(energy + 1e-20);
 }
 
