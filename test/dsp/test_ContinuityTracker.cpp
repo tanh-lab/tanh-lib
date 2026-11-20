@@ -171,3 +171,54 @@ TEST(ContinuityTracker, NoTempoWindowAfterAHeldBlock) {
     EXPECT_TRUE(c.has(TransportInfo::k_jumped));
     EXPECT_TRUE(c.has(TransportInfo::k_started));
 }
+
+// A tempo drop right at the start of the previous block leaves the source behind
+// that block's end: the beat neither holds nor runs backwards, and catches up
+// with the source over the next blocks without a jump.
+TEST(ContinuityTracker, TempoDropNeverStallsOrRunsBackwards) {
+    ContinuityTracker tracker;
+    tracker.prepare(k_sr);
+    constexpr double k_slow = 60.0 / (60.0 * k_sr);
+
+    auto first = raw(0.0, true);
+    tracker.resolve(first, 512 * k_bps, 512);
+
+    // The host stepped to 60 bpm one sample into the first block.
+    double source = k_bps + (511 * k_slow);
+    double last_end = first.beat_end();
+    for (int b = 0; b < 200; ++b) {
+        auto info = raw(source, true, 60.0);
+        tracker.resolve(info, source + 32 * k_slow, 32);
+        EXPECT_FALSE(info.has(TransportInfo::k_jumped)) << "block " << b;
+        EXPECT_GT(info.m_beats_per_sample, 0.0) << "block " << b;
+        EXPECT_NEAR(info.m_beat_position, last_end, 1e-12) << "block " << b;
+        last_end = info.beat_end();
+        source += 32 * k_slow;
+    }
+    EXPECT_NEAR(last_end, source, tracker.tolerance_beats(60.0));
+}
+
+// A non-finite beat or tempo holds the beat for that block; the next finite block
+// continues, so one bad value never freezes the timeline.
+TEST(ContinuityTracker, NonFiniteBeatHoldsAndRecovers) {
+    ContinuityTracker tracker;
+    tracker.prepare(k_sr);
+    auto first = raw(4.0, true);
+    tracker.resolve(first, 4.0 + 512 * k_bps, 512);
+
+    auto bad = raw(std::nan(""), true, std::nan(""));
+    tracker.resolve(bad, std::nan(""), 512);
+    EXPECT_TRUE(std::isfinite(bad.m_beat_position));
+    EXPECT_DOUBLE_EQ(bad.m_beat_position, first.beat_end());
+    EXPECT_DOUBLE_EQ(bad.m_bpm, k_bpm);
+    EXPECT_FALSE(bad.has(TransportInfo::k_jumped));
+
+    auto later = raw(10.0, true);
+    tracker.resolve(later, 10.0 + 512 * k_bps, 512);
+    EXPECT_TRUE(later.has(TransportInfo::k_jumped));
+    EXPECT_DOUBLE_EQ(later.m_beat_position, 10.0);
+
+    auto next = raw(later.beat_end(), true);
+    tracker.resolve(next, later.beat_end() + 512 * k_bps, 512);
+    EXPECT_EQ(next.discontinuities(), 0u);
+}

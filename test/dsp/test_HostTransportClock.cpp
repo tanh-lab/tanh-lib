@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -288,8 +289,10 @@ INSTANTIATE_TEST_SUITE_P(Blocks,
                          [](const auto& info) { return "Block" + std::to_string(info.param); });
 
 // Steps up and down, one sample into a block and in the middle of one: the
-// block that reports the new tempo gets k_tempo_changed only, is re-sloped onto
-// the host's next start, and from the block after it the clock is the host.
+// block that reports the new tempo gets k_tempo_changed only and is re-sloped
+// towards the host. A step down leaves the host behind that block's start: the
+// clock never runs slower than half the tempo (no stall), so it is the host
+// again two blocks after the change.
 TEST_P(HostTransportClockTempoMap, NoJumpOnMidBlockTempoStep) {
     const uint32_t block = GetParam();
     for (const double to : {180.0, 60.0}) {
@@ -306,8 +309,11 @@ TEST_P(HostTransportClockTempoMap, NoJumpOnMidBlockTempoStep) {
                 const uint32_t want = b == changed ? TransportInfo::k_tempo_changed : 0u;
                 ASSERT_EQ(r.m_flags[b], want) << "block " << b;
             }
-            EXPECT_NEAR(r.m_end[changed], r.m_host_start[changed + 1], 1e-9);
-            for (size_t b = changed + 1; b < r.m_flags.size(); ++b) {
+            for (size_t b = 1; b < r.m_flags.size(); ++b) {
+                ASSERT_GE(r.m_end[b] - r.m_start[b], 0.5 * block * bps(r.m_bpm[b]) - 1e-12)
+                    << "block " << b;
+            }
+            for (size_t b = changed + 2; b < r.m_flags.size(); ++b) {
                 ASSERT_NEAR(r.m_start[b], r.m_host_start[b], 1e-9) << "block " << b;
             }
         }
@@ -460,4 +466,52 @@ TEST(HostTransportClock, DivisionsOnBlockEdgesCountOnce) {
             EXPECT_EQ(hits, expected) << bpm << " bpm, " << frames << " frames";
         }
     }
+}
+
+// A non-finite host beat or tempo counts as not sent, and a non-finite fallback is
+// ignored: the clock keeps a finite timeline throughout.
+TEST(HostTransportClock, NonFiniteHostValuesAreIgnored) {
+    HostTransportClock clk;
+    clk.prepare(k_sr);
+    clk.set_bpm(std::nan(""));
+    TransportInfo host;
+    host.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
+                   TransportInfo::k_is_playing;
+    host.m_bpm = 120.0;
+    host.m_beat_position = 8.0;
+    run(clk, &host, 512);
+
+    TransportInfo bad = host;
+    bad.m_beat_position = std::nan("");
+    bad.m_bpm = std::numeric_limits<double>::infinity();
+    const auto held = run(clk, &bad, 512);
+    EXPECT_TRUE(std::isfinite(held.m_beat_position));
+    EXPECT_DOUBLE_EQ(held.m_bpm, 120.0);  // the fallback, not NaN
+    EXPECT_FALSE(held.has(TransportInfo::k_jumped));
+
+    host.m_beat_position = 8.0 + (1024 * bps(120.0));
+    const auto back = run(clk, &host, 512);
+    EXPECT_EQ(back.discontinuities(), 0u);
+    EXPECT_DOUBLE_EQ(back.m_beat_position, 8.0 + (1024 * bps(120.0)));
+}
+
+// A host that sends its beat but no tempo: the clock takes the tempo the beat
+// moves at (the first block's fallback prediction reads as a tempo change), so a
+// seek is the only jump, not one per block.
+TEST(HostTransportClock, BeatWithoutTempoFollowsTheHostsTempo) {
+    HostTransportClock clk;
+    clk.prepare(k_sr);
+    TransportInfo host;
+    host.m_flags = TransportInfo::k_has_beat_position | TransportInfo::k_is_playing;
+    double beat = 0.0;
+    int jumps = 0;
+    for (int b = 0; b < 400; ++b) {
+        if (b == 200) { beat = 64.0; }  // the user seeks
+        host.m_beat_position = beat;
+        const auto info = run(clk, &host, 512);
+        if (info.has(TransportInfo::k_jumped)) { ++jumps; }
+        if (b > 0) { EXPECT_NEAR(info.m_bpm, 90.0, 1e-6) << b; }
+        beat += 512 * bps(90.0);
+    }
+    EXPECT_EQ(jumps, 1);  // the seek
 }

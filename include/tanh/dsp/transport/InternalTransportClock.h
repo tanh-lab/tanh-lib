@@ -51,7 +51,7 @@ private:
     [[nodiscard]] double raw_beat(uint32_t offset) const;
 
     // Audio thread only — never read or written from other threads.
-    // Timeline position in samples (moved by seeks); advances while playing.
+    // Samples played since prepare(); seeks re-anchor the beat, not this.
     uint64_t m_timeline_samples = 0;
     uint32_t m_advance = 0;  // samples the previous block played, added at the next block
     double m_sample_rate = 48000.0;

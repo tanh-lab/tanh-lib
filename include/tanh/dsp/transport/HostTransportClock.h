@@ -20,7 +20,9 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
  * come from the fallbacks set with set_bpm(), set_time_signature(), play(),
  * stop() and set_position_beats():
  *
- * - Tempo: the host's if valid, else the fallback.
+ * - Tempo: the host's if valid. A host that sends the beat but no tempo gets the
+ *   tempo its beat moved at over the previous block (the first such block, and
+ *   one right after a seek, use the last tempo). Else the fallback.
  * - Play state: the host's if it sent tempo, beat or time signature, else the
  *   fallback.
  * - Beat: the host's if valid, else free-running from the previous block's end.
@@ -29,7 +31,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
  * - Time signature: the host's if valid, else the fallback.
  *
  * Discontinuity flags come from a ContinuityTracker, never from the host. A block
- * without a set_host_info() call has no host data.
+ * without a set_host_info() call has no host data. A non-finite host beat or
+ * tempo counts as not sent; non-finite fallbacks are ignored.
  *
  * set_host_info(), begin_block(), end_block() and the getters are real-time
  * safe. The fallback setters are lock-free and callable from any thread.
@@ -54,7 +57,16 @@ protected:
     [[nodiscard]] TransportInfo compute_block(uint32_t frame_count) override;
 
 private:
+    /// The tempo of a host that sends the beat but no tempo, from its beats; 0: none yet.
+    [[nodiscard]] double estimate_tempo(double host_beat, bool playing) TANH_NONBLOCKING_FUNCTION;
+
     double m_sample_rate = 48000.0;
+
+    // Tempo estimate from consecutive host beats.
+    double m_estimated_bpm = 0.0;      // in use, 0: none
+    double m_last_estimate_bpm = 0.0;  // the previous block's measurement, 0: none
+    double m_last_host_beat = 0.0;
+    uint32_t m_last_host_frames = 0;  // 0: the previous block had no host beat while playing
 
     TransportInfo m_host{};
     ContinuityTracker m_tracker;

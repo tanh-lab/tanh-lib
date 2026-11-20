@@ -33,6 +33,11 @@ public:
      * resolved m_beat_position, m_beats_per_sample, m_num_samples (= @p frames),
      * m_jump_delta_beats and the discontinuity bits. @p raw_end_beat is the raw beat
      * at sample @p frames (equal to the start while the source holds).
+     *
+     * A snapped moving block never runs slower than half its nominal tempo: what
+     * the source is behind by then is caught up over the next blocks, never by
+     * holding or running the beat backwards. A non-finite raw beat holds at the
+     * previous block's end; a non-finite tempo keeps the previous one.
      */
     void resolve(TransportInfo& io, double raw_end_beat, uint32_t frames) TANH_NONBLOCKING_FUNCTION;
 
@@ -58,6 +63,7 @@ private:
     double m_prev_end = 0.0;
     double m_prev_bpm = 0.0;
     double m_prev_frames = 0.0;
+    double m_carry = 0.0;  // raw end - resolved end of a block slowed to the minimum slope (<= 0)
     bool m_prev_moving = false;
     bool m_prev_playing = false;
     bool m_reset_pending = true;

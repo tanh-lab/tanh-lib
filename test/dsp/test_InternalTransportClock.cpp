@@ -354,3 +354,41 @@ TEST(InternalTransportClock, SeekAppliesOnce) {
 }
 
 }  // namespace
+
+// A seek to a huge beat is no overflow: the beat goes there and runs on.
+TEST(InternalTransportClock, HugeSeekIsSafe) {
+    thl::dsp::transport::InternalTransportClock clk;
+    clk.prepare(k_sample_rate);
+    clk.play();
+    tick(clk);
+    clk.set_position_beats(1e300);
+    clk.begin_block(512);
+    EXPECT_DOUBLE_EQ(clk.beat_at_sample(0), 1e300);
+    EXPECT_TRUE(clk.block_info().has(thl::dsp::transport::TransportInfo::k_jumped));
+    clk.end_block();
+}
+
+// prepare() with an invalid sample rate still starts over: the next block is a
+// k_timeline_reset, as after every prepare().
+TEST(InternalTransportClock, InvalidPrepareStillResets) {
+    thl::dsp::transport::InternalTransportClock clk;
+    clk.prepare(k_sample_rate);
+    clk.play();
+    tick(clk);
+    tick(clk);
+    clk.prepare(0.0);
+    clk.begin_block(512);
+    EXPECT_TRUE(clk.block_info().has(thl::dsp::transport::TransportInfo::k_timeline_reset));
+    clk.end_block();
+}
+
+// A non-finite tempo is ignored.
+TEST(InternalTransportClock, NonFiniteTempoIsIgnored) {
+    thl::dsp::transport::InternalTransportClock clk;
+    clk.prepare(k_sample_rate);
+    clk.set_bpm(100.0);
+    clk.set_bpm(std::nan(""));
+    clk.begin_block(512);
+    EXPECT_DOUBLE_EQ(clk.bpm(), 100.0);
+    clk.end_block();
+}

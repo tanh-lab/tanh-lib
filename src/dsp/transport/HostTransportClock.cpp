@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
@@ -18,6 +19,10 @@ constexpr uint32_t k_musical_fields = TransportInfo::k_has_tempo |
                                       TransportInfo::k_has_beat_position |
                                       TransportInfo::k_has_time_signature;
 constexpr double k_min_bpm = 1.0;
+constexpr double k_max_bpm = 999.0;
+// Two consecutive measurements within this share of each other change the estimate;
+// one apart (across a seek or loop wrap) does not.
+constexpr double k_estimate_agreement = 0.01;
 
 }  // namespace
 
@@ -27,6 +32,29 @@ void HostTransportClock::on_prepare(double sample_rate) {
     m_free_valid = false;
     m_free_advance = 0;
     m_host.m_flags = 0;
+    m_estimated_bpm = 0.0;
+    m_last_estimate_bpm = 0.0;
+    m_last_host_frames = 0;
+}
+
+double HostTransportClock::estimate_tempo(double host_beat,
+                                          bool playing) TANH_NONBLOCKING_FUNCTION {
+    if (playing && m_last_host_frames > 0) {
+        const double measured = (host_beat - m_last_host_beat) * 60.0 * m_sample_rate /
+                                static_cast<double>(m_last_host_frames);
+        if (measured >= k_min_bpm && measured <= k_max_bpm) {
+            const bool agrees =
+                m_last_estimate_bpm > 0.0 &&
+                std::abs(measured - m_last_estimate_bpm) <= k_estimate_agreement * measured;
+            if (m_estimated_bpm == 0.0 || agrees) { m_estimated_bpm = measured; }
+            m_last_estimate_bpm = measured;
+        } else {
+            m_last_estimate_bpm = 0.0;
+        }
+    } else {
+        m_last_estimate_bpm = 0.0;
+    }
+    return m_estimated_bpm;
 }
 
 void HostTransportClock::set_host_info(const TransportInfo& info) TANH_NONBLOCKING_FUNCTION {
@@ -44,8 +72,25 @@ TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
     const bool playing =
         host_musical ? host.is_playing() : m_fallback_playing.load(std::memory_order_acquire);
 
+    const bool host_beat =
+        host.has(TransportInfo::k_has_beat_position) && std::isfinite(host.m_beat_position);
+    const bool host_tempo = host.has(TransportInfo::k_has_tempo) && std::isfinite(host.m_bpm) &&
+                            host.m_bpm >= k_min_bpm;
+
     double bpm = m_fallback_bpm.load(std::memory_order_acquire);
-    if (host.has(TransportInfo::k_has_tempo) && host.m_bpm >= k_min_bpm) { bpm = host.m_bpm; }
+    if (host_tempo) {
+        bpm = host.m_bpm;
+    } else if (host_beat) {
+        if (const double estimate = estimate_tempo(host.m_beat_position, playing); estimate > 0.0) {
+            bpm = estimate;
+        }
+    }
+    if (host_beat && playing) {
+        m_last_host_beat = host.m_beat_position;
+        m_last_host_frames = frame_count;
+    } else {
+        m_last_host_frames = 0;
+    }
 
     const auto fallback_sig = m_fallback_time_signature.load();
     int num = fallback_sig.m_num;
@@ -60,7 +105,7 @@ TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
 
     double start = 0.0;
     double end = 0.0;
-    if (host.has(TransportInfo::k_has_beat_position)) {
+    if (host_beat) {
         start = host.m_beat_position;
         // Predicted with the block-start tempo (all a per-block host reports). An
         // in-block tempo change is absorbed by the tracker at the next block.
@@ -101,6 +146,7 @@ TransportInfo HostTransportClock::compute_block(uint32_t frame_count) {
 }
 
 void HostTransportClock::set_bpm(double bpm) {
+    if (!std::isfinite(bpm)) { return; }
     m_fallback_bpm.store(std::max(bpm, k_min_bpm), std::memory_order_release);
 }
 

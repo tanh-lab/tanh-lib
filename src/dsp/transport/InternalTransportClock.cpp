@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
@@ -12,7 +13,10 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
 // ── Main thread ───────────────────────────────────────────────────────────────
 
 void InternalTransportClock::on_prepare(double sample_rate) {
-    if (!(sample_rate > 0.0)) { return; }
+    if (!(sample_rate > 0.0)) {
+        m_tracker.reset();  // starts over all the same: the next block is a k_timeline_reset
+        return;
+    }
     // Keep the beat: re-anchor where the next block would start, then count
     // samples at the new rate from there.
     m_anchor_beat =
@@ -45,10 +49,10 @@ TransportInfo InternalTransportClock::compute_block(uint32_t frame_count) {
     }
     m_active_beats_per_sample = m_active_bpm / (60.0 * m_sample_rate);
 
+    // A seek re-anchors the beat; the sample count runs on (no beat-to-sample
+    // conversion, which overflowed for a huge beat).
     if (const auto beats = m_pending_position.take()) {
-        const double clamped = std::max(0.0, *beats);
-        m_timeline_samples = static_cast<uint64_t>(clamped * 60.0 * m_sample_rate / m_active_bpm);
-        m_anchor_beat = clamped;
+        m_anchor_beat = std::max(0.0, *beats);
         m_anchor_sample = m_timeline_samples;
     }
     m_advance = m_active_playing ? frame_count : 0;
@@ -74,6 +78,7 @@ double InternalTransportClock::raw_beat(uint32_t offset) const {
 
 void InternalTransportClock::set_bpm(double bpm) {
     constexpr double k_min_bpm = 1.0;
+    if (!std::isfinite(bpm)) { return; }
     m_pending_bpm.store(std::max(bpm, k_min_bpm), std::memory_order_release);
 }
 
