@@ -15,13 +15,19 @@ target_sources(${PROJECT_NAME} PRIVATE
 # PortReader is the platform-independent part of the Android backend, a private header.
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/midi)
 
-# DeviceManager against the real CoreMIDI, through virtual ports of the test process.
-# macOS only: the iOS test bundles run in a simulator whose MIDI service is not ours to
-# rely on.
-if(TANH_OPERATING_SYSTEM STREQUAL "macOS")
+# DeviceManager against the real CoreMIDI, through virtual ports of the test process:
+# on macOS, and on iOS in the simulator's test bundle.
+if(TANH_OPERATING_SYSTEM STREQUAL "macOS" OR TANH_OPERATING_SYSTEM STREQUAL "iOS")
 	target_sources(${PROJECT_NAME} PRIVATE test_DeviceManager_coremidi.cpp)
 	target_link_libraries(${PROJECT_NAME} PRIVATE
 		"-framework CoreMIDI" "-framework CoreFoundation")
+endif()
+
+# iOS refuses virtual MIDI ports to an app that does not declare the audio background
+# mode, so the test bundle gets an Info.plist of its own that does.
+if(TANH_OPERATING_SYSTEM STREQUAL "iOS")
+	set_target_properties(${PROJECT_NAME} PROPERTIES
+		MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in)
 endif()
 
 target_link_libraries(${PROJECT_NAME}
