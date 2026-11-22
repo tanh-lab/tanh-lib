@@ -7,11 +7,14 @@
 #include <mach/mach_time.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/core/Clock.h>
-#include <tanh/midi/AudioMidiCallback.h>
 #include <tanh/midi/AudioMidiProcessor.h>
 #include <tanh/midi/DeviceManager.h>
 #include <tanh/midi/Midi1Converter.h>
 #include <unistd.h>
+
+#if defined(THL_TEST_WITH_AUDIO_IO)
+#include <tanh/midi/AudioMidiCallback.h>
+#endif
 
 #include <array>
 #include <atomic>
@@ -474,6 +477,17 @@ TEST_F(CoreMidi, VirtualInputReceivesFromOtherClients) {
     ASSERT_EQ(packets.size(), 1U);
     EXPECT_EQ(packets[0].m_ump,
               make_midi2_channel_voice(0, ChannelVoiceOpcode::NoteOn, 0, 60, 0, 0xFFFF0000U));
+
+    // It closes and opens like any other input; the port stays where other apps see it.
+    EXPECT_TRUE(manager.close_input(device->m_id));
+    EXPECT_FALSE(find_device(manager, name)->m_open);
+    ASSERT_EQ(MIDISendEventList(m_client.output_port(), destination, &list), noErr);
+    EXPECT_TRUE(receive(manager, device->m_source, 1, k_quiet).empty());
+
+    EXPECT_TRUE(manager.open_input(device->m_id));
+    EXPECT_TRUE(find_device(manager, name)->m_open);
+    ASSERT_EQ(MIDISendEventList(m_client.output_port(), destination, &list), noErr);
+    EXPECT_EQ(receive(manager, device->m_source, 1).size(), 1U);
 }
 
 // Destroying the manager while inputs are open and data is flowing must be clean.
@@ -486,6 +500,9 @@ TEST_F(CoreMidi, CanBeDestroyedWhileReceiving) {
         for (int i = 0; i < 50; ++i) { source.send({0x40903C00U, 0x80000000U}); }
     }
 }
+
+// AudioMidiCallback joins Midi and AudioIO; a build without AudioIO has no such test.
+#if defined(THL_TEST_WITH_AUDIO_IO)
 
 namespace {
 
@@ -568,3 +585,5 @@ TEST_F(CoreMidi, TimestampsLineUpWithTheAudioStream) {
         EXPECT_NEAR(distance, spacing_frames, 96.0) << "between notes " << i - 1 << " and " << i;
     }
 }
+
+#endif  // THL_TEST_WITH_AUDIO_IO

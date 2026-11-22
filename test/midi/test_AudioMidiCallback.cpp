@@ -214,16 +214,74 @@ TEST(AudioMidiCallback, PassesAudioThroughInPlace) {
     EXPECT_EQ(engine.m_blocks, 1);
 }
 
-// Without an output there is nothing to render; the MIDI is left alone.
+// Without an output there is nothing to render, and what is played meanwhile is not
+// played late when the output is back.
 TEST(AudioMidiCallback, WithoutOutputNothingRuns) {
     ClickEngine engine;
     InputQueue queue(64);
     AudioMidiCallback callback(engine, queue, 2);
     callback.prepare_to_play(48000, k_block);
-    queue.push(make_midi1_channel_voice(0, 0x90, 60, 100), k_t0, 0);
+    EXPECT_EQ(run(callback, 4).size(), 4U * k_block);
 
-    callback.process_at(k_t0, nullptr, nullptr, k_block, 0, 0);
-    EXPECT_EQ(engine.m_blocks, 0);
+    queue.push(make_midi1_channel_voice(0, 0x90, 60, 100), k_t0 + 4 * k_block_ns, 0);
+    callback.process_at(k_t0 + 5 * k_block_ns, nullptr, nullptr, k_block, 0, 0);
+    EXPECT_EQ(engine.m_blocks, 4);
+
+    // A second later the output is back: a new stream, without the old note.
+    std::vector<float> output(static_cast<std::size_t>(k_block) * 2, -1.0f);
+    callback.process_at(k_t0 + 1'000'000'000, output.data(), nullptr, k_block, 0, 2);
+    EXPECT_EQ(engine.m_blocks, 5);
+    for (const float sample : output) { EXPECT_EQ(sample, 0.0f); }
     TimedUmp packet;
-    EXPECT_TRUE(queue.pop(packet));
+    EXPECT_FALSE(queue.pop(packet));
+}
+
+// MIDI that piled up before the stream started is not fired at the engine in a burst.
+TEST(AudioMidiCallback, MidiFromBeforeTheStreamIsNotPlayed) {
+    ClickEngine engine;
+    InputQueue queue(1024);
+    AudioMidiCallback callback(engine, queue, 2);
+    callback.prepare_to_play(48000, k_block);
+
+    for (int i = 0; i < 600; ++i) {
+        queue.push(make_midi1_channel_voice(0, 0x90, 60, 100), k_t0 - 5'000'000'000 + i * 1000, 0);
+    }
+    queue.push(make_midi1_channel_voice(0, 0x90, 72, 100), time_of_frame(100), 0);
+
+    const std::vector<float> rendered = run(callback, 4);
+    for (std::size_t i = 0; i < rendered.size(); ++i) {
+        EXPECT_EQ(rendered[i], i == k_block + 100 ? 72.0f : 0.0f) << "sample " << i;
+    }
+    EXPECT_EQ(callback.dropped(), 0U);
+}
+
+// The engine gets the channels it was prepared for, also on a device with fewer.
+TEST(AudioMidiCallback, EngineKeepsItsChannelsOnASmallerDevice) {
+    class StereoEngine final : public AudioMidiProcessor {
+    public:
+        void prepare(double /*rate*/, std::size_t /*block*/, std::size_t /*channels*/) override {}
+        void process(core::BufferView audio, std::span<const BlockEvent> /*events*/) override {
+            m_channels = audio.get_num_channels();
+            // What the second channel holds on entry, then a marker in each.
+            m_second_on_entry = audio.get_write_pointer(1)[0];
+            audio.get_write_pointer(0)[0] = 1.0f;
+            audio.get_write_pointer(1)[0] = 2.0f;
+        }
+        std::size_t m_channels = 0;
+        float m_second_on_entry = -1.0f;
+    };
+
+    StereoEngine engine;
+    InputQueue queue(64);
+    AudioMidiCallback callback(engine, queue, 2);
+    callback.prepare_to_play(48000, k_block);
+
+    std::vector<float> mono(k_block, -1.0f);
+    callback.process_at(k_t0, mono.data(), nullptr, k_block, 0, 1);
+    callback.process_at(k_t0 + k_block_ns, mono.data(), nullptr, k_block, 0, 1);
+
+    EXPECT_EQ(engine.m_channels, 2U);
+    EXPECT_EQ(engine.m_second_on_entry, 0.0f);  // cleared, not last block's marker
+    EXPECT_EQ(mono[0], 1.0f);
+    EXPECT_EQ(mono[1], 0.0f);
 }

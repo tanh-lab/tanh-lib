@@ -7,6 +7,7 @@
 #include <tanh/midi/AudioMidiProcessor.h>
 #include <tanh/midi/BlockEventCollector.h>
 #include <tanh/midi/InputQueue.h>
+#include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -27,6 +28,9 @@ namespace thl::inline THL_ABI_NAMESPACE {
 ///  2. hands the engine the block: the input audio in place, and those events,
 ///  3. gives the device what the engine rendered.
 ///
+/// MIDI that was sent before the stream started, or while the device had no output, is
+/// discarded rather than played late in one burst (midi::BlockEventCollector).
+///
 /// Audio and MIDI are aligned to the sample: two notes keep their distance in the audio
 /// whatever the block size and however irregular the callbacks are, and every note is late
 /// by the same amount, one full-size block (midi_latency_ns()) — the least that exact
@@ -39,7 +43,8 @@ namespace thl::inline THL_ABI_NAMESPACE {
 class AudioMidiCallback final : public AudioIODeviceCallback {
 public:
     /// `processor` and `queue` must outlive the callback's registration. `num_channels` is
-    /// how many channels the engine gets; output channels beyond that stay silent.
+    /// how many channels the engine gets, whatever the device has: output channels beyond
+    /// that stay silent, and engine channels the device lacks are rendered and not played.
     AudioMidiCallback(AudioMidiProcessor& processor,
                       midi::InputQueue& queue,
                       std::size_t num_channels = 2,
@@ -61,7 +66,7 @@ public:
                  const float* input_buffer,
                  std::uint32_t frame_count,
                  std::uint32_t num_input_channels,
-                 std::uint32_t num_output_channels) override {
+                 std::uint32_t num_output_channels) TANH_NONBLOCKING_FUNCTION override {
         process_at(core::uptime_ns(),
                    output_buffer,
                    input_buffer,
@@ -78,14 +83,17 @@ public:
                     const float* input_buffer,
                     std::uint32_t frame_count,
                     std::uint32_t num_input_channels,
-                    std::uint32_t num_output_channels) {
-        // Without an output there is nothing to render into. The MIDI stays in its queue.
-        if (output_buffer == nullptr || num_output_channels == 0) { return; }
+                    std::uint32_t num_output_channels) TANH_NONBLOCKING_FUNCTION {
+        // Without an output there is nothing to render into: the stream pauses for the
+        // engine, and what is played meanwhile is not kept for when it resumes.
+        if (output_buffer == nullptr || num_output_channels == 0) {
+            m_collector.reset();
+            return;
+        }
 
-        const std::size_t channels = std::min<std::size_t>(num_output_channels, m_num_channels);
-
-        // The engine works in place: its buffer starts out as the input.
-        for (std::size_t ch = 0; ch < channels; ++ch) {
+        // The engine always gets the channels it was prepared for, and works in place:
+        // its buffer starts out as the input, silent where the device has no input.
+        for (std::size_t ch = 0; ch < m_num_channels; ++ch) {
             float* channel = m_channel_pointers[ch];
             if (input_buffer != nullptr && ch < num_input_channels) {
                 for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
@@ -98,9 +106,12 @@ public:
 
         const std::span<const BlockEvent> events =
             m_collector.collect(m_queue, now_ns, frame_count);
-        m_processor.process(core::BufferView(m_channel_pointers.data(), channels, frame_count),
-                            events);
+        m_processor.process(
+            core::BufferView(m_channel_pointers.data(), m_num_channels, frame_count),
+            events);
 
+        // The device gets as many of the engine's channels as it has; the rest is silence.
+        const std::size_t channels = std::min<std::size_t>(num_output_channels, m_num_channels);
         for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
             float* out = output_buffer + static_cast<std::size_t>(frame) * num_output_channels;
             for (std::size_t ch = 0; ch < channels; ++ch) {

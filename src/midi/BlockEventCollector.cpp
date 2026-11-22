@@ -21,12 +21,14 @@ void BlockEventCollector::prepare(double sample_rate, std::uint32_t max_block_fr
     m_events.assign(m_config.m_max_events_per_block, BlockEvent{});
     m_held_count = 0;
     m_event_count = 0;
+    m_first_block = true;
 }
 
 void BlockEventCollector::reset() noexcept {
     m_clock.reset();
     m_held_count = 0;
     m_event_count = 0;
+    m_first_block = true;
 }
 
 std::span<const BlockEvent> BlockEventCollector::collect(InputQueue& queue,
@@ -43,6 +45,16 @@ std::span<const BlockEvent> BlockEventCollector::collect(InputQueue& queue,
         } else {
             m_dropped.fetch_add(1, std::memory_order_relaxed);
         }
+    }
+
+    // What was sent before the stream started was meant for no block of it.
+    if (m_first_block) {
+        m_first_block = false;
+        std::size_t current = 0;
+        for (std::size_t i = 0; i < m_held_count; ++i) {
+            if (m_held[i].m_time_ns >= block.m_start_ns) { m_held[current++] = m_held[i]; }
+        }
+        m_held_count = current;
     }
 
     // Packets that fall into this block become events; the rest stay, in order.

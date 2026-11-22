@@ -12,8 +12,14 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_PortReader.cpp
 	test_StreamClock.cpp
 	test_BlockEventCollector.cpp
-	test_AudioMidiCallback.cpp
 )
+
+# AudioMidiCallback is an AudioIODeviceCallback: its tests need tanh::AudioIO as well.
+if(TARGET tanh::AudioIO)
+	target_sources(${PROJECT_NAME} PRIVATE test_AudioMidiCallback.cpp)
+	target_link_libraries(${PROJECT_NAME} PRIVATE tanh::AudioIO)
+	target_compile_definitions(${PROJECT_NAME} PRIVATE THL_TEST_WITH_AUDIO_IO=1)
+endif()
 
 # PortReader is the platform-independent part of the Android backend, a private header.
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/midi)

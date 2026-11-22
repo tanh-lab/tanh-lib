@@ -382,6 +382,7 @@ public:
 
     bool open_input(std::uint32_t id) {
         const std::scoped_lock lock(m_mutex);
+        if (set_virtual_open_locked(id, true)) { return true; }
         const auto it = find_locked(id);
         if (it == m_sources.end()) { return false; }
         return connect_locked(*it);
@@ -389,6 +390,7 @@ public:
 
     bool close_input(std::uint32_t id) {
         const std::scoped_lock lock(m_mutex);
+        if (set_virtual_open_locked(id, false)) { return true; }
         const auto it = find_locked(id);
         if (it == m_sources.end()) { return false; }
         if (it->m_open) {
@@ -413,6 +415,8 @@ public:
         const bool receive_sysex = m_context.m_receive_sysex;
         const TickScale scale = tick_scale();
         const std::uint16_t source = m_next_source++;
+        // The port exists for as long as the manager does; closing it only stops delivery.
+        const auto open = std::make_shared<std::atomic<bool>>(true);
 
         const CFStringRef cf_name =
             CFStringCreateWithCString(kCFAllocatorDefault, name.c_str(), kCFStringEncodingUTF8);
@@ -423,6 +427,7 @@ public:
             protocol_id(),
             &endpoint,
             ^(const MIDIEventList* list, void* /*ref_con*/) {
+                if (!open->load(std::memory_order_relaxed)) { return; }
                 deliver(*queue, list, source, receive_sysex, scale);
             });
         CFRelease(cf_name);
@@ -438,6 +443,7 @@ public:
         MIDIObjectSetIntegerProperty(endpoint, kMIDIPropertyUniqueID, stable_unique_id(name));
 
         m_virtual_endpoint = endpoint;
+        m_virtual_open = open;
         m_virtual_info = describe(endpoint);
         m_virtual_info.m_name = name;
         m_virtual_info.m_transport = Transport::Virtual;
@@ -495,6 +501,14 @@ private:
 
     [[nodiscard]] MIDIProtocolID protocol_id() const {
         return m_context.m_protocol == Protocol::Midi2 ? kMIDIProtocol_2_0 : kMIDIProtocol_1_0;
+    }
+
+    // Opens or closes the manager's own virtual input, if `id` is it.
+    bool set_virtual_open_locked(std::uint32_t id, bool open) {
+        if (m_virtual_endpoint == 0 || id != m_virtual_endpoint) { return false; }
+        m_virtual_open->store(open, std::memory_order_relaxed);
+        m_virtual_info.m_open = open;
+        return true;
     }
 
     [[nodiscard]] std::vector<DeviceInfo>::iterator find_locked(std::uint32_t id) {
@@ -559,6 +573,7 @@ private:
     mutable std::mutex m_mutex;
     std::vector<DeviceInfo> m_sources;
     DeviceInfo m_virtual_info;
+    std::shared_ptr<std::atomic<bool>> m_virtual_open;  // read by the virtual input's block
     dispatch_queue_t m_dispatch_queue = nullptr;
     MIDIClientRef m_client = 0;
     MIDIPortRef m_port = 0;

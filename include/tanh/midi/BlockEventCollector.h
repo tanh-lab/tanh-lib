@@ -51,6 +51,11 @@ struct BlockEventCollectorConfig {
 /// the same offset keep the order they arrived in. With EventPlacement::Immediate every
 /// packet whose time has come goes to offset 0 instead.
 ///
+/// A stream that starts does not play what was sent before it: the first block after
+/// prepare() or reset() discards the packets that are older than its window (one
+/// full-size block before the request). The queue fills whenever inputs are open, audio
+/// running or not, and would otherwise come out as one burst.
+///
 /// prepare() allocates; collect() and reset() are for the audio thread and neither
 /// allocate nor block.
 class TANH_API BlockEventCollector {
@@ -61,7 +66,8 @@ public:
     /// Control thread.
     void prepare(double sample_rate, std::uint32_t max_block_frames);
 
-    /// Drops what is waiting and starts a new stream.
+    /// Drops what is waiting and starts a new stream: of what is in the queue by the next
+    /// collect(), only the packets of that block's window and later are played.
     void reset() noexcept TANH_NONBLOCKING_FUNCTION;
 
     /// The events of the block of `frames` frames that is asked for at `now_ns` (the clock
@@ -91,6 +97,7 @@ private:
     std::vector<BlockEvent> m_events;  // this block's events; m_event_count valid
     std::size_t m_held_count = 0;
     std::size_t m_event_count = 0;
+    bool m_first_block = true;  // the next collect() starts a stream
     std::atomic<std::uint32_t> m_dropped{0};
 };
 

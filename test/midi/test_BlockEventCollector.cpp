@@ -219,3 +219,53 @@ TEST(MidiBlockEventCollector, ImmediatePlacement) {
     EXPECT_EQ(events[0].m_midi, note(61));
     EXPECT_EQ(events[0].m_sample_offset, 0U);
 }
+
+// What was sent before the stream started is not played when it starts: the first block
+// discards everything older than its window, and so does the first one after a reset().
+TEST(MidiBlockEventCollector, DiscardsWhatWasSentBeforeTheStream) {
+    BlockEventCollector collector = make();
+    collector.prepare(k_sample_rate, k_block);
+    InputQueue queue(64);
+
+    queue.push(note(50), k_t0 - 3'000'000'000, 0);   // seconds before the stream
+    queue.push(note(51), k_t0 - k_block_ns - 1, 0);  // just before the first window
+    queue.push(note(60), k_t0 - k_block_ns, 0);      // the first instant of the first window
+    queue.push(note(61), in_block(1, 100), 0);       // due in the second block
+    auto events = collect(collector, queue, 0);
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_EQ(events[0].m_midi, note(60));
+    EXPECT_EQ(events[0].m_sample_offset, 0U);
+
+    events = collect(collector, queue, 1);
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_EQ(events[0].m_midi, note(61));
+    EXPECT_EQ(events[0].m_sample_offset, 100U);
+
+    // Once the stream runs, a late packet is played at the block start, not discarded.
+    queue.push(note(62), in_block(0, 10), 0);
+    events = collect(collector, queue, 2);
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_EQ(events[0].m_midi, note(62));
+
+    // A new stream: the same again.
+    collector.reset();
+    queue.push(note(70), k_t0, 0);
+    EXPECT_TRUE(collector.collect(queue, k_t0 + 1'000'000'000, k_block).empty());
+    EXPECT_EQ(collector.dropped(), 0U);
+}
+
+// Immediate placement discards what is older than one block before the stream as well.
+TEST(MidiBlockEventCollector, ImmediatePlacementDiscardsWhatWasSentBeforeTheStream) {
+    BlockEventCollectorConfig config;
+    config.m_placement = EventPlacement::Immediate;
+    BlockEventCollector collector(config);
+    collector.prepare(k_sample_rate, k_block);
+    InputQueue queue(64);
+
+    queue.push(note(50), k_t0 - 2 * k_block_ns, 0);
+    queue.push(note(60), k_t0 - k_block_ns / 2, 0);
+    const auto events = collect(collector, queue, 0);
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_EQ(events[0].m_midi, note(60));
+    EXPECT_EQ(events[0].m_sample_offset, 0U);
+}

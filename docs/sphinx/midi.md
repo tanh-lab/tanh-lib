@@ -149,11 +149,16 @@ virtual devices need no permission; works from API 23.
   the Universal MIDI Packet transport as they send. A consumer handles both channel voice
   types, or converts with `convert_to_midi1()`.
 - Opening is asynchronous: `open_input()` returns once the request is made, and the
-  device change callback fires when `DeviceInfo::m_open` has changed.
+  device change callback fires when `DeviceInfo::m_open` has changed. A device can be
+  closed and requested again while the system is still opening it; only the last request
+  counts.
 - Packets are pushed from the thread Android runs per port, an ordinary thread, with the
   timestamp Android attached (`System.nanoTime()`, the clock of `uptime_ns()`).
 - Bluetooth LE devices are listed once something has connected them; scanning and
   connecting is not part of the backend yet. There is no virtual input.
+- Only one copy of tanh-lib in a process can use Midi on Android: `MidiBridge` has one
+  set of native methods, and a second copy (a library that embeds tanh-lib privately)
+  would take them over from the first.
 
 ## Testing without hardware
 
@@ -222,6 +227,9 @@ Who calls it is the host:
   audio.add_duplex_callback(&callback);
   ```
 
+  The engine always gets the channel count given here, whatever the device has: missing
+  inputs are silent, and channels the device cannot play are rendered and dropped.
+
 - **In a plugin**, a wrapper copies the host's events into `BlockEvent`s with the offsets
   the host gave them and calls `process()` itself.
 
@@ -248,6 +256,10 @@ What that guarantees:
   shortens the audio output delay and this one together.
 - A stall of more than 100 ms (a device that skipped, an app that was suspended) restarts
   the clock at once; a shorter one is absorbed within half a second.
+- A stream that starts does not play what was sent before it. The queue fills whenever
+  inputs are open, whether audio runs or not; the first block of a stream discards what
+  is older than its window (one full-size block), instead of firing it at the engine in
+  one burst. The same holds while the device has no output.
 
 The delay is measured against the timestamp the platform attached to the message. It
 does not include the audio output latency of the device, which is the same for everything

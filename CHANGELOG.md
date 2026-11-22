@@ -32,7 +32,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   callbacks and clock drift included) and `BlockEventCollector` gives every packet the sample
   offset of its timestamp, so MIDI and audio are aligned to the sample with a constant delay of
   one full-size block (`EventPlacement::Immediate` puts events at the block start instead, for
-  the shortest delay). Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
+  the shortest delay); MIDI sent before a stream started is discarded, not played late. Depends
+  on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
   `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`, `MidiDeviceManager.*`,
   `MidiPortReader.*`, `MidiStreamClock.*`, `MidiBlockEventCollector.*`, `AudioMidiCallback.*`,
   `CoreMidi.*` (macOS and the iOS simulator, through virtual ports);
@@ -255,6 +256,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `AudioDeviceManager::add_playback_callback()`, `add_capture_callback()` and
+  `add_duplex_callback()` call `prepare_to_play()` before the callback joins the list the audio
+  thread reads, as documented. On a running device the audio thread could call `process()` on a
+  callback that was not prepared yet.
 - `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
   e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
   the plain sources, while a blend's dry signal is the phase-matched one; the switch between the

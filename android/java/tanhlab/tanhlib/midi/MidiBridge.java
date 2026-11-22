@@ -37,8 +37,14 @@ import java.util.concurrent.Executor;
  */
 public final class MidiBridge {
     private static final class OpenDevice {
+        /** The open request this entry belongs to. */
+        final int token;
         MidiDevice device;
         final ArrayList<MidiOutputPort> ports = new ArrayList<MidiOutputPort>();
+
+        OpenDevice(int token) {
+            this.token = token;
+        }
     }
 
     private final long mHandle;
@@ -126,12 +132,17 @@ public final class MidiBridge {
         }
     }
 
-    /** Opens every output port of the device and delivers what it sends as `slot`. */
-    public void open(final int deviceId, final int slot) {
+    /**
+     * Opens every output port of the device and delivers what it sends as `slot`. The
+     * system opens a device asynchronously; `token` names this request and comes back
+     * with its result, so that the answer to a request that was closed and made again
+     * meanwhile is not taken for the answer to the new one.
+     */
+    public void open(final int deviceId, final int slot, final int token) {
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                doOpen(deviceId, slot);
+                doOpen(deviceId, slot, token);
             }
         });
     }
@@ -242,34 +253,40 @@ public final class MidiBridge {
         nativeOnDeviceRemoved(mHandle, id);
     }
 
-    private void doOpen(final int deviceId, final int slot) {
+    private void doOpen(final int deviceId, final int slot, final int token) {
         final MidiDeviceInfo info;
         synchronized (this) {
             info = mDevices.get(deviceId);
-            if (mStopped || info == null || mOpen.containsKey(deviceId)) {
+            if (mStopped || info == null) {
                 return;
             }
-            // Reserve the entry so that a second request does not open the device twice.
-            mOpen.put(deviceId, new OpenDevice());
+            // C++ asks only for a device it has closed, so an entry that is still here is
+            // out of date. The new one also marks the request that is now under way.
+            closeLocked(deviceId);
+            mOpen.put(deviceId, new OpenDevice(token));
         }
         mManager.openDevice(info, new MidiManager.OnDeviceOpenedListener() {
             @Override
             public void onDeviceOpened(MidiDevice device) {
-                opened(deviceId, slot, device);
+                opened(deviceId, slot, token, device);
             }
         }, mHandler);
     }
 
-    private synchronized void opened(int deviceId, int slot, MidiDevice device) {
+    private synchronized void opened(int deviceId, int slot, int token, MidiDevice device) {
         OpenDevice open = mOpen.get(deviceId);
+        if (mStopped || open == null || open.token != token) {
+            // Closed or unplugged while it was opening (and maybe requested again since):
+            // the answer to a request nobody waits for any more.
+            closeQuietly(device);
+            return;
+        }
         MidiDeviceInfo info = mDevices.get(deviceId);
-        if (mStopped || open == null || info == null || device == null) {
-            // Closed or unplugged while it was opening, or the system refused.
+        if (info == null || device == null) {
+            // The system refused.
             closeQuietly(device);
             mOpen.remove(deviceId);
-            if (!mStopped && info != null) {
-                nativeOnOpened(mHandle, deviceId, false);
-            }
+            nativeOnOpened(mHandle, deviceId, token, false);
             return;
         }
 
@@ -285,10 +302,10 @@ public final class MidiBridge {
         }
         if (open.ports.isEmpty()) {
             closeLocked(deviceId);
-            nativeOnOpened(mHandle, deviceId, false);
+            nativeOnOpened(mHandle, deviceId, token, false);
             return;
         }
-        nativeOnOpened(mHandle, deviceId, true);
+        nativeOnOpened(mHandle, deviceId, token, true);
     }
 
     private void closeLocked(int deviceId) {
@@ -318,7 +335,7 @@ public final class MidiBridge {
 
     private static native void nativeOnDeviceRemoved(long handle, int id);
 
-    private static native void nativeOnOpened(long handle, int id, boolean ok);
+    private static native void nativeOnOpened(long handle, int id, int token, boolean ok);
 
     private static native void nativeOnData(long handle, int slot, int port, boolean ump,
             byte[] data, int offset, int count, long timestamp);

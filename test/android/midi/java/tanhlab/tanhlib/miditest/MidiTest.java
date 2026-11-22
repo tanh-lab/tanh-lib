@@ -344,6 +344,22 @@ public final class MidiTest extends Instrumentation {
         }
         check(receive(device.source, 1, QUIET_MS).isEmpty(), "a closed device delivers nothing");
         check(!Native.open(0x7FFFFFF0), "open_input() rejects an unknown id");
+
+        // Closed and requested again while the system is still opening it: the answers to
+        // the abandoned requests must not be taken for the answer to the last one.
+        for (int i = 0; i < 8; ++i) {
+            Native.open(device.id);
+            Native.close(device.id);
+        }
+        check(Native.open(device.id), "open_input() accepts a request after open/close in a row");
+        Device reopened = waitOpen(MIDI1_NAME);
+        check(reopened != null && reopened.open, "the last request opens the device");
+        SystemClock.sleep(QUIET_MS);
+        Midi1Service.send(bytes(0x90, 74, 100), System.nanoTime());
+        check(receive(device.source, 2, 3 * QUIET_MS).size() == 1,
+                "and it delivers every message once");
+        Device settled = find(MIDI1_NAME);
+        check(settled != null && settled.open, "it stays open");
         Native.stop();
     }
 

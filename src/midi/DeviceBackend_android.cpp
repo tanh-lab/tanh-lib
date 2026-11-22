@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -217,7 +218,7 @@ public:
         const auto it = find_locked(id);
         if (it == m_devices.end()) { return false; }
         it->m_info.m_open = false;
-        it->m_opening = false;
+        it->m_open_token = 0;  // the answer to a request that is under way is void now
         if (m_bridge != nullptr && env != nullptr) {
             env->CallVoidMethod(m_bridge, jni().m_close, static_cast<jint>(id));
             failed(env, "MidiBridge.close");
@@ -261,13 +262,14 @@ public:
         if (m_context.m_on_change) { m_context.m_on_change(); }
     }
 
-    void on_opened(std::uint32_t id, bool ok) {
+    void on_opened(std::uint32_t id, jint token, bool ok) {
         {
             const std::scoped_lock lock(m_mutex);
             const auto it = find_locked(id);
-            // Closed again while it was opening: the close request is already on its way.
-            if (it == m_devices.end() || !it->m_opening) { return; }
-            it->m_opening = false;
+            // Only the answer to the request that is under way counts: the device may have
+            // been closed, and requested again, while an earlier request was being served.
+            if (it == m_devices.end() || token == 0 || it->m_open_token != token) { return; }
+            it->m_open_token = 0;
             it->m_info.m_open = ok;
             if (ok) {
                 for (PortReader& port : it->m_ports) { port.reset(); }
@@ -323,7 +325,7 @@ private:
     struct Device {
         DeviceInfo m_info;
         std::vector<PortReader> m_ports;  // one stream state per output port
-        bool m_opening = false;           // an open request is under way
+        jint m_open_token = 0;            // the open request that is under way, or 0
     };
 
     [[nodiscard]] std::vector<Device>::iterator find_locked(std::uint32_t id) {
@@ -335,14 +337,17 @@ private:
     // Asks Java to open the device. Opening is asynchronous: on_opened() reports the
     // result. Returns whether the device is open or being opened.
     bool request_open_locked(JNIEnv* env, Device& device) {
-        if (device.m_info.m_open || device.m_opening) { return true; }
+        if (device.m_info.m_open || device.m_open_token != 0) { return true; }
         if (m_bridge == nullptr || env == nullptr) { return false; }
+        const jint token = m_next_token;
+        m_next_token = m_next_token == std::numeric_limits<jint>::max() ? 1 : m_next_token + 1;
         env->CallVoidMethod(m_bridge,
                             jni().m_open,
                             static_cast<jint>(device.m_info.m_id),
-                            static_cast<jint>(device.m_info.m_source));
+                            static_cast<jint>(device.m_info.m_source),
+                            token);
         if (failed(env, "MidiBridge.open")) { return false; }
-        device.m_opening = true;
+        device.m_open_token = token;
         return true;
     }
 
@@ -351,6 +356,7 @@ private:
     std::vector<Device> m_devices;
     jobject m_bridge = nullptr;  // global reference
     std::uint16_t m_next_source = 0;
+    jint m_next_token = 1;  // names the next open request; never 0
     bool m_auto_open = true;
     bool m_starting = false;  // inside start(): the initial devices are not "changes"
 };
@@ -408,10 +414,14 @@ void JNICALL native_on_device_removed(JNIEnv* /*env*/, jclass /*clazz*/, jlong h
     }
 }
 
-void JNICALL
-    native_on_opened(JNIEnv* /*env*/, jclass /*clazz*/, jlong handle, jint id, jboolean ok) {
+void JNICALL native_on_opened(JNIEnv* /*env*/,
+                              jclass /*clazz*/,
+                              jlong handle,
+                              jint id,
+                              jint token,
+                              jboolean ok) {
     if (const auto state = find_state(handle)) {
-        state->on_opened(static_cast<std::uint32_t>(id), ok == JNI_TRUE);
+        state->on_opened(static_cast<std::uint32_t>(id), token, ok == JNI_TRUE);
     }
 }
 
@@ -522,16 +532,29 @@ void set_android_java_vm(void* java_vm) {
     j.m_bridge_class = static_cast<jclass>(env->NewGlobalRef(local));
     env->DeleteLocalRef(local);
 
-    // Signatures as javap -s prints them for MidiBridge.
+    // Signatures as javap -s prints them for MidiBridge. A lookup that fails leaves an
+    // exception pending, with which no further JNI call may be made: each one is checked.
+    const auto method = [env, &j](const char* name, const char* signature) -> jmethodID {
+        const jmethodID id = env->GetMethodID(j.m_bridge_class, name, signature);
+        return failed(env, name) ? nullptr : id;
+    };
     j.m_create =
         env->GetStaticMethodID(j.m_bridge_class,
                                "create",
                                "(Landroid/content/Context;JZ)Ltanhlab/tanhlib/midi/MidiBridge;");
-    j.m_start = env->GetMethodID(j.m_bridge_class, "start", "()V");
-    j.m_open = env->GetMethodID(j.m_bridge_class, "open", "(II)V");
-    j.m_close = env->GetMethodID(j.m_bridge_class, "close", "(I)V");
-    j.m_stop = env->GetMethodID(j.m_bridge_class, "stop", "()V");
-    if (failed(env, "MidiBridge method lookup")) { return; }
+    if (failed(env, "create")) { j.m_create = nullptr; }
+    j.m_start = j.m_create != nullptr ? method("start", "()V") : nullptr;
+    j.m_open = j.m_start != nullptr ? method("open", "(III)V") : nullptr;
+    j.m_close = j.m_open != nullptr ? method("close", "(I)V") : nullptr;
+    j.m_stop = j.m_close != nullptr ? method("stop", "()V") : nullptr;
+    if (j.m_stop == nullptr) {
+        Logger::logf(Logger::LogLevel::Warning,
+                     k_log_group,
+                     "%s lacks a method tanh-lib calls (kept from R8? see "
+                     "android/consumer-rules.pro); no MIDI input",
+                     k_bridge_class);
+        return;
+    }
 
     const std::array<JNINativeMethod, 4> natives = {{
         {.name = "nativeOnDeviceAdded",
@@ -541,7 +564,7 @@ void set_android_java_vm(void* java_vm) {
          .signature = "(JI)V",
          .fnPtr = reinterpret_cast<void*>(&native_on_device_removed)},
         {.name = "nativeOnOpened",
-         .signature = "(JIZ)V",
+         .signature = "(JIIZ)V",
          .fnPtr = reinterpret_cast<void*>(&native_on_opened)},
         {.name = "nativeOnData",
          .signature = "(JIIZ[BIIJ)V",

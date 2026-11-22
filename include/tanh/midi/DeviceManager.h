@@ -98,7 +98,8 @@ public:
     void set_device_change_callback(DeviceChangeCallback callback);
 
     /// Creates a virtual input with this name, to which other apps on the device can send.
-    /// It is listed among the inputs, open, with Transport::Virtual. Returns false where
+    /// It is listed among the inputs, open, with Transport::Virtual; close_input() stops
+    /// its delivery and open_input() resumes it, while the port stays. Returns false where
     /// the platform has no virtual ports or refuses (iOS requires the `audio` background
     /// mode), and when one already exists.
     bool create_virtual_input(const std::string& name);

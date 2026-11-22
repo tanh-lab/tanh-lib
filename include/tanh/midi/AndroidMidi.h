@@ -18,6 +18,10 @@ namespace thl::inline THL_ABI_NAMESPACE::midi {
 /// components are independent, so a consumer using several calls each. `java_vm` is the
 /// JavaVM*, passed as void* so that this header does not need <jni.h>. No-op on every
 /// other platform, so callers need no #ifdef.
+///
+/// One copy of tanh-lib per process can use Midi on Android: the Java class has one set
+/// of native methods, and a second copy that calls this (a library that embeds tanh-lib
+/// privately, next to the host's) would take them over from the first.
 TANH_API void set_android_java_vm(void* java_vm);
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::midi
