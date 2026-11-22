@@ -9,6 +9,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `THIRD_PARTY_NOTICES.md`: the third-party code the components embed (pffft, miniaudio,
+  nlohmann/json, readerwriterqueue and the zlib-licensed semaphore in it, Signalsmith Stretch
+  and Linear, and with `TANH_BUILD_LINK` Ableton Link, its Asio and LinkKit), with version,
+  source, component and licence text, installed to `share/doc/tanh`. A product that ships
+  tanh-lib carries these notices.
+- `tanh::Link` (`TANH_BUILD_LINK`, off by default for its licence):
+  `thl::link::LinkSession` over the Link 4.1 SDK (pinned commit) on macOS, Linux and
+  Windows and LinkKit 4.1.2 (pinned SHA256, CMake 3.28+) on iOS, with
+  `capabilities()` for what each SDK lets the app control. `LinkTransportClock` sits
+  in DSP behind the `LinkBackend` seam (`timeline_backend()`), takes the callback's
+  host time through `set_host_time_us()` (else a `HostTimeFilter` maps the sample
+  time to host time), compensates output latency and applies requests at the output
+  time with launches quantized to the session's quantum (`set_quantum()`). A peer's
+  tempo change dated within 50 ms of the block is `k_tempo_changed`, not `k_jumped`;
+  a stop dated ahead lands in its block; the first realignment within 1.5 s of an
+  epoch change is the `k_timeline_reset`, while our own play or seek right after it
+  is a plain jump. Link Audio: `audio_channels()`, `set_audio_input()` and the
+  `audio_backend()` seam (received buffers in, our output out, sent with the clock's
+  capture of the same block); `LinkAudioReceiver` plays the received channel on the
+  local beat grid a latency behind. Built and tested in every desktop and iOS
+  preset. Tests: `LinkTransportClock.*` (fake session), `HostTimeFilter.*`,
+  `LinkAudioReceiver.*`, `LinkSession.*`, `LinkAudioCodec.*`, and with the label
+  `link-peers` (excluded by the presets) `LinkPeers.*`, `LinkPeersAudio.*`. Docs:
+  `transport.md`.
 - `thl::dsp::transport::TransportInfo`: trivially copyable per-block snapshot with
   the flags `k_jumped`, `k_started`, `k_stopped`, `k_tempo_changed` and
   `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
@@ -16,8 +40,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   beats. A block that continues the previous one starts exactly at its end, so a
   division boundary on a block edge counts once, and a block lands on the source's
   end, so it is in phase with it (after a large tempo drop with a smaller block that
-  block holds or runs back to get there); a non-finite beat or tempo holds the block. `HostTransportClock`
-  follows the host's playhead with fallbacks for omitted fields, ignores non-finite
+  block holds or runs back to get there); a non-finite beat or tempo holds the
+  block. `HostTransportClock` follows the host's playhead with fallbacks for omitted fields, ignores non-finite
   host values, and takes the tempo from the host's beats when the host sends the
   beat but no tempo. Tests: `TransportInfo.*`, `ContinuityTracker.*`,
   `TransportClock.*`, `HostTransportClock*.*`. Docs: `transport.md`.

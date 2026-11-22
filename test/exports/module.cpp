@@ -3,8 +3,8 @@
 // A plugin-shaped shared object embedding every built tanh-lib component — what a
 // DAW plugin that uses tanh-lib looks like to the dynamic linker. test/exports checks
 // its export table: the one entry point below and nothing else (no thl::, nothing of
-// miniaudio, nlohmann::json, moodycamel or Signalsmith), in both the static and the
-// shared shape.
+// miniaudio, nlohmann::json, moodycamel, Signalsmith or the Ableton Link SDK and its asio),
+// in both the static and the shared shape.
 //
 // Each component is referenced by address so that its archive is pulled into the link
 // in a static build; nothing is executed.
@@ -23,6 +23,9 @@
 #endif
 #ifdef TANH_MODULATION_ENABLED
 #include <tanh/modulation/ModulationMatrix.h>
+#endif
+#ifdef TANH_LINK_ENABLED
+#include <tanh/link/LinkSession.h>
 #endif
 #ifdef TANH_AUDIO_IO_ENABLED
 #include <tanh/audio-io/AudioDeviceManager.h>
@@ -64,6 +67,12 @@ extern "C" TANH_EXPORTS_MODULE_API std::size_t tanh_exports_entry() {
         thl::modulation::ModulationMatrix matrix(state);
         (void)matrix;
 #endif
+    }
+#endif
+#ifdef TANH_LINK_ENABLED
+    if (references[0] == nullptr) {
+        thl::link::LinkSession session;
+        (void)session;
     }
 #endif
 #ifdef TANH_DSP_ENABLED

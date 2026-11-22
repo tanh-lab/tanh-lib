@@ -20,6 +20,15 @@ if(NOT TANH_BUILT_COMPONENTS)
     return()
 endif()
 
+# --- Third-party notices -------------------------------------------------------
+
+# What the components embed and the notices a product that ships them must carry.
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+    COMPONENT runtime
+)
+
 # --- Public headers ------------------------------------------------------------
 
 # Shared by every component (Logger.h pulls in the sanitizer macros).
@@ -42,12 +51,14 @@ set(_tanh_header_dirs
     "${PROJECT_NAME}_dsp=dsp"
     "${PROJECT_NAME}_modulation=modulation"
     "${PROJECT_NAME}_audio_io=audio-io"
+    "${PROJECT_NAME}_link=link"
     "${PROJECT_NAME}_graph=graph")
 set(_tanh_umbrella_headers
     "${PROJECT_NAME}_core=core.h"
     "${PROJECT_NAME}_state=state.h"
     "${PROJECT_NAME}_dsp=dsp.h"
-    "${PROJECT_NAME}_audio_io=audio_io.h")
+    "${PROJECT_NAME}_audio_io=audio_io.h"
+    "${PROJECT_NAME}_link=link.h")
 
 foreach(target IN LISTS TANH_BUILT_COMPONENTS)
     foreach(_entry IN LISTS _tanh_header_dirs)

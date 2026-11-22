@@ -26,7 +26,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
  * and the first block after prepare() as k_timeline_reset. prepare() keeps the
  * beat, also at a new sample rate.
  *
- * Drop-in replaceable with HostTransportClock via the TransportClock interface.
+ * Drop-in replaceable with HostTransportClock or LinkTransportClock via the
+ * TransportClock interface.
  *
  * @par Real-Time Safety
  *   begin_block() and end_block() are real-time safe (no allocation, no locks).
