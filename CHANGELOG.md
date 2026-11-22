@@ -386,6 +386,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and reads backwards. Sliced, the pick is mirrored inside its slice, so Spray 0 enters the slice
   on its last frame. Before, Position mode always played forwards. Tests:
   `PositionSprayHead.Reversed*`, `PositionSprayHead.SliceReversedSprayZeroStartsOnSliceEnd`,
+  `PositionSprayHead.SliceReversedPickNearTheNextBoundaryStaysInItsSlice`,
   `GrainEngine.PositionModeReversedMarkersReadBackwards`.
 - `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
   e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes

@@ -240,19 +240,28 @@ private:
                               static_cast<double>(temperature) * n;
         v = wrap_into(v + jitter, window_lo, window_hi);
         v = wrap_into(v, 0.0, n);  // past the last slice -> the first
-        // Reversed: mirror inside the slice, so its first frame becomes its
-        // last (the frame before the next boundary).
-        double const slice = std::floor(v);
-        double const step = region.m_reverse ? slice + 1.0 - (v - slice) : v;
         // Same rounding as SliceMap::boundary_frame, so Spray 0 lands on the
-        // very frame Sample / Loop mode's region starts on (or, reversed,
-        // the frame its reversed region enters on).
-        auto frame = static_cast<FramePos>(
-            std::llround(static_cast<double>(slicing::step_to_norm(slices, step)) *
-                         static_cast<double>(max_frames(region))));
-        if (region.m_reverse) { --frame; }
-        frame = std::clamp(frame, FramePos{0}, max_frames(region) - 1) +
-                static_cast<FramePos>(region.m_start);
+        // very frame Sample / Loop mode's region starts on.
+        auto const total = max_frames(region);
+        auto frame = static_cast<FramePos>(std::llround(
+            static_cast<double>(slicing::step_to_norm(slices, v)) * static_cast<double>(total)));
+        frame = std::clamp(frame, FramePos{0}, total - 1);
+        if (region.m_reverse) {
+            // Mirror inside the chosen slice, in frames: its first frame
+            // becomes its last (where a reversed region over it enters). The
+            // forward frame is clamped into the slice first, since rounding
+            // can put it on the next boundary.
+            auto const k_slice = static_cast<size_t>(
+                std::clamp(std::floor(v), 0.0, static_cast<double>(slices.m_count - 1)));
+            auto const lo =
+                static_cast<FramePos>(slices.boundary_frame(k_slice, static_cast<size_t>(total)));
+            auto const hi =
+                std::max(lo + 1,
+                         static_cast<FramePos>(
+                             slices.boundary_frame(k_slice + 1, static_cast<size_t>(total))));
+            frame = lo + (hi - 1) - std::clamp(frame, lo, hi - 1);
+        }
+        frame += static_cast<FramePos>(region.m_start);
         return region.physical(frame);
     }
 

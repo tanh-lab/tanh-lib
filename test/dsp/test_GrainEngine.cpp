@@ -178,6 +178,27 @@ TEST(PositionSprayHead, SliceReversedSprayZeroStartsOnSliceEnd) {
     }
 }
 
+TEST(PositionSprayHead, SliceReversedPickNearTheNextBoundaryStaysInItsSlice) {
+    // Two-frame slices make a pick just below the next boundary common: its
+    // forward frame rounds onto that boundary, and the reversed start must
+    // still be a frame of the chosen slice, never the previous slice's last.
+    PositionSprayHead head;
+    std::mt19937 rng(5);
+    HeadInputs params;
+    const std::vector<float> bounds{0.0f, 1.0f / 6, 2.0f / 6, 3.0f / 6, 4.0f / 6, 5.0f / 6, 1.0f};
+    auto const slices = SliceMap::from_normalized(bounds, 12);
+    ASSERT_TRUE(slices.valid());
+    params.m_slices = &slices;
+    params.m_position = 0.5f;  // slice 3 (0-based): frames 6, 7
+    params.m_spray = 0.0f;
+    auto region = LoopRegion::full(12);
+    region.m_reverse = true;
+    for (int i = 0; i < 500; ++i) {
+        FramePos const f = region.physical(head.pick_start(region, 1.0f, 0, params, rng));
+        EXPECT_EQ(slice_at(slices, f, 12), 3u) << "f=" << f << " i=" << i;
+    }
+}
+
 TEST(PositionSprayHead, SliceTiltRightCoversChosenAndNext) {
     PositionSprayHead head;
     std::mt19937 rng(5);
