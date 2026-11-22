@@ -156,8 +156,11 @@ gives code that only wants MIDI 1.0 plain short messages back, and
 :cpp:class:`thl::midi::InputQueue` carries timestamped packets from the receive
 threads to the audio thread without locks. :cpp:class:`thl::midi::DeviceManager`
 lists and opens the MIDI inputs of the machine and follows hot-plugging (CoreMIDI
-on macOS and iOS, ``android.media.midi`` on Android). See :doc:`midi`. Depends on
-Core.
+on macOS and iOS, ``android.media.midi`` on Android). :cpp:class:`thl::AudioMidiProcessor`
+is the engine interface a host calls with a block's audio and its events, and
+:cpp:class:`thl::AudioMidiCallback` is that host for an app: it runs an engine from the
+audio device and the MIDI inputs, the events aligned with the audio to the sample. See
+:doc:`midi`. Depends on Core.
 
 Platforms
 ---------

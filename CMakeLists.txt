@@ -668,6 +668,7 @@ if(TANH_BUILD_MIDI)
         src/midi/Midi1StreamParser.cpp
         src/midi/Midi1Converter.cpp
         src/midi/DeviceManager.cpp
+        src/midi/BlockEventCollector.cpp
     )
 
     # The device backend behind DeviceManager. Each platform is named explicitly, as

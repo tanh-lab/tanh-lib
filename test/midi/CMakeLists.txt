@@ -10,6 +10,9 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_InputQueue.cpp
 	test_DeviceManager.cpp
 	test_PortReader.cpp
+	test_StreamClock.cpp
+	test_BlockEventCollector.cpp
+	test_AudioMidiCallback.cpp
 )
 
 # PortReader is the platform-independent part of the Android backend, a private header.

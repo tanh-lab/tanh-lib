@@ -23,9 +23,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   run-loop thread of its own when the process has no CoreMIDI client yet); on Android by
   `android.media.midi` (API 23+, MIDI 1.0 devices and, from API 33, Universal MIDI Packet
   devices; the app compiles in `android/java` and calls `thl::midi::set_android_java_vm()` in
-  `JNI_OnLoad`); elsewhere `supported()` is false. Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
+  `JNI_OnLoad`); elsewhere `supported()` is false. `thl::AudioMidiProcessor` is the engine interface a host calls with a
+  block's audio and its events (`BlockEvent`, MIDI packets with a sample offset), and
+  `thl::AudioMidiCallback` runs such an engine from the audio device and the MIDI inputs:
+  `StreamClock` builds the stream's clock from the callback times (late, bursty or chunked
+  callbacks and clock drift included) and `BlockEventCollector` gives every packet the sample
+  offset of its timestamp, so MIDI and audio are aligned to the sample with a constant delay of
+  one full-size block plus 1 ms. Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
   `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`, `MidiDeviceManager.*`,
-  `MidiPortReader.*`, `CoreMidi.*` (macOS and the iOS simulator, through virtual ports);
+  `MidiPortReader.*`, `MidiStreamClock.*`, `MidiBlockEventCollector.*`, `AudioMidiCallback.*`,
+  `CoreMidi.*` (macOS and the iOS simulator, through virtual ports);
   `test/android/midi/run.sh` (`just test-android-midi`) runs the Android backend on a device or
   emulator against virtual MIDI devices, hot-plug included.
 - `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a

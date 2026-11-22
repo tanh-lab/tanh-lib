@@ -177,6 +177,63 @@ queue.drain([&](const thl::midi::TimedUmp& packet) { on_midi(packet); });
   sees the count change has missed messages, possibly note-offs, and should release its
   sounding notes.
 
-The arrival time travels with every packet so that a consumer can place it inside the
-block; the audio callback carries no timestamp of its own yet, so the mapping from
-arrival time to a sample offset is up to the consumer.
+The arrival time travels with every packet so that it can be placed inside the audio
+block it belongs to; the next section does that.
+
+## Audio and MIDI in one callback
+
+`thl::AudioMidiProcessor` is the top of an engine as a host sees it — the shape of a
+plugin's process callback:
+
+```cpp
+class MyEngine : public thl::AudioMidiProcessor {
+    void prepare(double sample_rate, std::size_t max_block_size, std::size_t num_channels) override;
+    void process(thl::core::BufferView audio, std::span<const thl::BlockEvent> events) override;
+};
+```
+
+`process()` gets one block: the audio, in place (input on entry, output on return), and
+the events that fall inside it, in ascending `m_sample_offset`. An event is a MIDI packet
+today; the type tag leaves room for parameter changes later without changing the
+signature. This is the interface of the whole engine, not of the DSP building blocks
+(`dsp::BaseProcessor`), which keep taking audio and modulation.
+
+Who calls it is the host:
+
+- **In an app**, `thl::AudioMidiCallback` (`tanh/midi/AudioMidiCallback.h`) is the host.
+  It is an `AudioIODeviceCallback`: register it with the `AudioDeviceManager`, give it the
+  `DeviceManager`'s input queue, and it runs the engine from the hardware.
+
+  ```cpp
+  thl::midi::DeviceManager midi;
+  thl::AudioMidiCallback callback(engine, midi.input_queue(), 2);
+  audio.add_duplex_callback(&callback);
+  ```
+
+- **In a plugin**, a wrapper copies the host's events into `BlockEvent`s with the offsets
+  the host gave them and calls `process()` itself.
+
+### Alignment
+
+The audio callback carries no timestamp, so `StreamClock` builds the stream's clock from
+the moments the blocks are asked for. Those are poor taken at face value — callbacks come
+late, in bursts, or as chunks of one device period — but a block is never asked for
+earlier than needed, so the earliest requests of the last half second lie on a straight
+line, which also follows the drift between the audio clock and the system clock. Each
+block gets the stretch of system time a fixed delay before it; a packet whose timestamp
+falls into that stretch gets the matching sample offset, one that is not due yet waits
+for its block (`BlockEventCollector`).
+
+What that guarantees:
+
+- Two events keep their distance in the audio to the sample, whatever the block size and
+  however irregular the callbacks.
+- Every event is late by the same amount: one full-size block plus
+  `BlockEventCollectorConfig::m_latency_ns` (1 ms by default, slack for the MIDI thread).
+  `AudioMidiCallback::midi_latency_ns()` reports it.
+- A stall of more than 100 ms (a device that skipped, an app that was suspended) restarts
+  the clock at once; a shorter one is absorbed within half a second.
+
+The delay is measured against the timestamp the platform attached to the message. It
+does not include the audio output latency of the device, which is the same for everything
+the engine renders.

@@ -4,7 +4,11 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreMIDI/CoreMIDI.h>
 #include <gtest/gtest.h>
+#include <mach/mach_time.h>
+#include <tanh/core/BufferView.h>
 #include <tanh/core/Clock.h>
+#include <tanh/midi/AudioMidiCallback.h>
+#include <tanh/midi/AudioMidiProcessor.h>
 #include <tanh/midi/DeviceManager.h>
 #include <tanh/midi/Midi1Converter.h>
 #include <unistd.h>
@@ -16,6 +20,7 @@
 #include <functional>
 #include <initializer_list>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -106,6 +111,23 @@ public:
     void send(std::initializer_list<std::uint32_t> words) const {
         MIDIEventList list{};
         fill_event_list(list, m_protocol, words);
+        ASSERT_EQ(MIDIReceivedEventList(m_endpoint, &list), noErr);
+    }
+
+    // One list, one two-word packet per entry, each with its own timestamp (host ticks).
+    void send_stamped(const std::vector<std::array<std::uint32_t, 2>>& messages,
+                      const std::vector<MIDITimeStamp>& timestamps) const {
+        MIDIEventList list{};
+        MIDIEventPacket* packet = MIDIEventListInit(&list, m_protocol);
+        for (std::size_t i = 0; i < messages.size(); ++i) {
+            packet = MIDIEventListAdd(&list,
+                                      sizeof(MIDIEventList),
+                                      packet,
+                                      timestamps[i],
+                                      messages[i].size(),
+                                      messages[i].data());
+            ASSERT_NE(packet, nullptr);
+        }
         ASSERT_EQ(MIDIReceivedEventList(m_endpoint, &list), noErr);
     }
 
@@ -413,5 +435,87 @@ TEST_F(CoreMidi, CanBeDestroyedWhileReceiving) {
         manager.set_device_change_callback([] {});
         ASSERT_TRUE(listed(manager, source.name()));
         for (int i = 0; i < 50; ++i) { source.send({0x40903C00U, 0x80000000U}); }
+    }
+}
+
+namespace {
+
+// Notes where it finds them in the stream: (note number, absolute frame).
+class NoteLogger final : public thl::AudioMidiProcessor {
+public:
+    void prepare(double /*sample_rate*/,
+                 std::size_t /*max_block_size*/,
+                 std::size_t /*num_channels*/) override {}
+
+    void process(thl::core::BufferView audio, std::span<const thl::BlockEvent> events) override {
+        for (const thl::BlockEvent& event : events) {
+            if (event.m_source == m_source) {
+                m_notes.emplace_back(event.m_midi.data1(), m_position + event.m_sample_offset);
+            }
+        }
+        m_position += audio.get_num_samples();
+    }
+
+    std::uint16_t m_source = 0;
+    std::uint64_t m_position = 0;
+    std::vector<std::pair<int, std::uint64_t>> m_notes;
+};
+
+}  // namespace
+
+// The whole chain on real clocks: CoreMIDI's own timestamps, the queue, and an audio
+// stream paced by the system clock (this thread plays the audio device). Notes stamped
+// 7.3 ms apart must come out of the engine 7.3 ms of samples apart.
+TEST_F(CoreMidi, TimestampsLineUpWithTheAudioStream) {
+    constexpr std::uint32_t k_block = 480;
+    constexpr double k_sample_rate = 48000.0;
+    constexpr double k_spacing_ms = 7.3;
+    constexpr int k_notes = 5;
+
+    const VirtualSource source(m_client, kMIDIProtocol_2_0);
+    DeviceManager manager;
+    ASSERT_TRUE(listed(manager, source.name()));
+
+    NoteLogger engine;
+    engine.m_source = find_device(manager, source.name())->m_source;
+    thl::AudioMidiCallback callback(engine, manager.input_queue(), 2);
+    callback.prepare_to_play(static_cast<std::uint32_t>(k_sample_rate), k_block);
+
+    mach_timebase_info_data_t timebase{};
+    ASSERT_EQ(mach_timebase_info(&timebase), KERN_SUCCESS);
+    const auto ticks_of_ms = [&](double ms) {
+        return static_cast<MIDITimeStamp>(ms * 1.0e6 * timebase.denom / timebase.numer);
+    };
+
+    std::vector<float> output(static_cast<std::size_t>(k_block) * 2);
+    const auto start = std::chrono::steady_clock::now();
+    for (int block = 0; block < 60; ++block) {
+        std::this_thread::sleep_until(start + block * 10ms);
+        if (block == 10) {
+            // Five notes, the first 30 ms from now: stamped ahead, as a sequencer would.
+            std::vector<std::array<std::uint32_t, 2>> messages;
+            std::vector<MIDITimeStamp> timestamps;
+            const MIDITimeStamp base = mach_absolute_time() + ticks_of_ms(30.0);
+            for (int i = 0; i < k_notes; ++i) {
+                messages.push_back(
+                    {0x40900000U | (static_cast<std::uint32_t>(60 + i) << 8U), 0x80000000U});
+                timestamps.push_back(base + ticks_of_ms(i * k_spacing_ms));
+            }
+            source.send_stamped(messages, timestamps);
+        }
+        callback.process(output.data(), nullptr, k_block, 0, 2);
+    }
+
+    ASSERT_EQ(engine.m_notes.size(), static_cast<std::size_t>(k_notes));
+    const double spacing_frames = k_spacing_ms * k_sample_rate / 1000.0;  // 350.4
+    for (int i = 0; i < k_notes; ++i) {
+        EXPECT_EQ(engine.m_notes[static_cast<std::size_t>(i)].first, 60 + i);
+        if (i == 0) { continue; }
+        const double distance =
+            static_cast<double>(engine.m_notes[static_cast<std::size_t>(i)].second) -
+            static_cast<double>(engine.m_notes[static_cast<std::size_t>(i - 1)].second);
+        // To the sample on a steady stream (MidiStreamClock.*); here the "device" is a
+        // sleeping thread, so allow for its wake-up jitter.
+        EXPECT_NEAR(distance, spacing_frames, 96.0) << "between notes " << i - 1 << " and " << i;
     }
 }
