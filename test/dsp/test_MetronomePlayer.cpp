@@ -357,7 +357,8 @@ TEST(MetronomePlayer, EveryBeatClicksOnceWithAJitteryHost) {
         host.m_beat_position = ((b * 480.0) + j) * bps;
         clk.set_host_info(host);
         StereoBuffer buf(480);
-        m.events.clear();
+        m.events.clear();  // within their reserve: the recording never allocates under RTSan
+        m.modulation_offsets.clear();
         clk.begin_block(480);
         m.process(buf.view, 0);
         clk.end_block();
