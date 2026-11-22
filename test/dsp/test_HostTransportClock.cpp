@@ -291,7 +291,7 @@ INSTANTIATE_TEST_SUITE_P(Blocks,
 // Steps up and down, one sample into a block and in the middle of one: the
 // block that reports the new tempo gets k_tempo_changed only and is re-sloped
 // towards the host. A step down leaves the host behind that block's start: the
-// clock never runs slower than half the tempo (no stall), so it is the host
+// clock never runs slower than 1 % of the tempo (no stall), so it is the host
 // again two blocks after the change.
 TEST_P(HostTransportClockTempoMap, NoJumpOnMidBlockTempoStep) {
     const uint32_t block = GetParam();
@@ -310,7 +310,7 @@ TEST_P(HostTransportClockTempoMap, NoJumpOnMidBlockTempoStep) {
                 ASSERT_EQ(r.m_flags[b], want) << "block " << b;
             }
             for (size_t b = 1; b < r.m_flags.size(); ++b) {
-                ASSERT_GE(r.m_end[b] - r.m_start[b], 0.5 * block * bps(r.m_bpm[b]) - 1e-12)
+                ASSERT_GE(r.m_end[b] - r.m_start[b], 0.01 * block * bps(r.m_bpm[b]) - 1e-12)
                     << "block " << b;
             }
             for (size_t b = changed + 2; b < r.m_flags.size(); ++b) {

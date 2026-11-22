@@ -34,7 +34,7 @@ public:
      * m_jump_delta_beats and the discontinuity bits. @p raw_end_beat is the raw beat
      * at sample @p frames (equal to the start while the source holds).
      *
-     * A snapped moving block never runs slower than half its nominal tempo: what
+     * A snapped moving block never runs slower than 1 % of its nominal tempo: what
      * the source is behind by then is caught up over the next blocks, never by
      * holding or running the beat backwards. A non-finite raw beat holds at the
      * previous block's end; a non-finite tempo keeps the previous one.

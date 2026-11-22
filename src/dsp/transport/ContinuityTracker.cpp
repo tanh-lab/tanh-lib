@@ -15,8 +15,10 @@ namespace {
 constexpr double k_min_tolerance = 1e-6;
 constexpr double k_tempo_epsilon = 1e-6;
 constexpr double k_default_bpm = 120.0;
-// A snapped moving block runs at least at this share of its nominal tempo.
-constexpr double k_min_slope_ratio = 0.5;
+// A snapped moving block runs at least at this share of its nominal tempo: never
+// backwards or frozen, and otherwise free to land on the source's end in this block,
+// so it is back in phase as soon as it can be (a larger share keeps it ahead longer).
+constexpr double k_min_slope_ratio = 0.01;
 
 }  // namespace
 
