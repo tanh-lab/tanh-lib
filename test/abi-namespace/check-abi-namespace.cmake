@@ -8,7 +8,7 @@
 # LIBRARY is a static archive or a shared library. Every defined symbol whose entity lies in
 # namespace thl must lie in thl::<NAMESPACE>, and none may lie at global scope; an entity in
 # another outermost namespace must be in ALLOW_SCOPES (the standard library and the
-# third-party code a component embeds), a global-scope one must start with one of
+# third-party code a component embeds; an entry ending in * allows a prefix), a global-scope one must start with one of
 # ALLOW_GLOBAL_PREFIXES (third-party C code compiled as C++). Internal names (anonymous
 # namespaces, `static` where the compiler marks it) are not linked across objects and are
 # skipped, and so is what the toolchain itself defines in a library: the entities of a
@@ -225,6 +225,24 @@ function(_tanh_has_prefix id out)
     set(${out} FALSE PARENT_SCOPE)
 endfunction()
 
+# An ALLOW_SCOPES entry names a namespace, or ends in * for every namespace starting so
+# (Asio's helper namespaces carry its version: asio_<version>_query_fn, ...).
+function(_tanh_scope_allowed scope out)
+    foreach(_allow IN LISTS ALLOW_SCOPES)
+        if(_allow MATCHES "^(.*)\\*$")
+            string(FIND "${scope}" "${CMAKE_MATCH_1}" _at)
+            if(_at EQUAL 0)
+                set(${out} TRUE PARENT_SCOPE)
+                return()
+            endif()
+        elseif(scope STREQUAL _allow)
+            set(${out} TRUE PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set(${out} FALSE PARENT_SCOPE)
+endfunction()
+
 # ------------------------------------------------------------------------------
 # The check.
 # ------------------------------------------------------------------------------
@@ -280,7 +298,8 @@ foreach(_symbol IN LISTS _symbols)
             list(APPEND _global "${_symbol}")
         endif()
     elseif(_scope MATCHES "^ns:(.*)$")
-        if(NOT CMAKE_MATCH_1 IN_LIST ALLOW_SCOPES)
+        _tanh_scope_allowed("${CMAKE_MATCH_1}" _allowed)
+        if(NOT _allowed)
             list(APPEND _foreign "${_symbol}")
         endif()
     endif()

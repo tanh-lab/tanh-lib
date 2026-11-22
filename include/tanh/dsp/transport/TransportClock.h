@@ -26,8 +26,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::transport {
  *   Call end_block()   once at the end   of every process() call.
  *   The getters are only valid between those two calls.
  *
- * Clock-specific inputs are set before begin_block(), e.g.
- * HostTransportClock::set_host_info().
+ * Clock-specific inputs are set before begin_block():
+ * HostTransportClock::set_host_info() and LinkTransportClock::set_host_time_us().
  */
 class TANH_API TransportClock {
 public:
