@@ -74,9 +74,10 @@ struct ParameterBinding {
      *   value: automation, a gesture in its UI, a preset recall. Changes the
      *   plugin makes itself must not change it.
      * - Any new value counts: the matrix only compares the stamp with the one
-     *   it saw last, never its size. A counter bumped with
-     *   `stamp.fetch_add(1, std::memory_order_relaxed)` (or a plain relaxed
-     *   store of a new value from a single writer) is enough. Lock-free, so
+     *   it saw last, never its size. Bump it after storing the base value, with
+     *   release: `stamp.fetch_add(1, std::memory_order_release)` (or a release
+     *   store of a new value from a single writer). The matrix loads it with
+     *   acquire, so the block that sees the stamp sees the value. Lock-free, so
      *   callable from any thread, the audio thread included.
      * - The matrix loads it once per block (relaxed), at the start of the hand-over
      *   pass: a change counts from sample 0 of the block that sees it, so the
@@ -107,6 +108,8 @@ public:
     ParameterBackend& operator=(ParameterBackend&&) = delete;
 
     /// Look up a parameter by key. Returns std::nullopt if the key is unknown.
+    /// Called on every resolution of the key: return the same pointers while
+    /// the parameter's storage is unchanged (new ones rebind the target).
     [[nodiscard]] virtual std::optional<ParameterBinding> find(std::string_view key) const = 0;
 
     /// Report an unknown @p key (find() returned std::nullopt) to a caller that

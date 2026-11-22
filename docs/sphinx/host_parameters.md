@@ -34,10 +34,15 @@ public:
 ```
 
 - `find()` is called only from non-real-time matrix methods
-  (`get_smart_handle()`, `add_routing()`, ...) under the matrix's writer mutex,
-  once per key; it may allocate and lock.
+  (`get_smart_handle()`, `add_routing()`, `from_json()`) under the matrix's
+  writer mutex, on every resolution of a key; it may allocate and lock.
 - The atomics must keep their address for the lifetime of the matrix (APVTS
-  atomics do).
+  atomics do), and `find()` returns the same pointers every time. If the store
+  is rebuilt (`State::clear()` and the keys created again), stop audio first and
+  resolve every key again (`get_smart_handle()`) before it restarts: until then
+  the matrix's targets point at the freed atomics. A key re-created with another
+  type, range or scope keeps its first definition (with a warning); build a new
+  matrix for that.
 - `m_def` needs a `Range`, the parameter type and `modulatable(true)` for every
   parameter that may be a routing target.
 - The `m_base` alternative is the type you request a handle for:
@@ -166,8 +171,11 @@ Sharing belongs to the target: one routing that opts in makes all Replace /
 ReplaceHold routings on the target one writer, composed by priority as usual,
 and `m_skip_during_gesture` is ignored there (a gesture is host activity). Only
 global targets fed by global sources are shared; a polyphonic target keeps
-plain Replace and logs a warning. The hand-over runs after all sources, so a
-source that reads a shared target mid-block sees it before the hand-over.
+plain Replace and logs a warning. Sharing follows the registered routings,
+enabled or not: a disabled sharing routing keeps its target shared (enable
+flags change nothing that a rebuild decides). The hand-over runs after all
+sources, so a source that reads a shared target mid-block sees it before the
+hand-over.
 
 ### Host changes
 

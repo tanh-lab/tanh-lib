@@ -235,8 +235,10 @@ public:
     // the first time a parameter key is requested. The returned SmartHandle
     // holds a stable pointer into the target map — no registration needed.
     // The backend is asked every time: a binding that moved (State::clear()
-    // and the key created again) rebinds the target. Handles from before the
-    // move are invalid, like the State's own.
+    // and the key created again) rebinds the target, keeping its first
+    // definition. Stop audio for that and resolve every key again before it
+    // restarts: until then targets point at the freed atomics. Handles from
+    // before the move are invalid, like the State's own.
     //
     // T must match the parameter's native type (the ParameterBinding::m_base
     // alternative: float, double, int, bool).
@@ -352,7 +354,7 @@ private:
     bool resolve_routing_target_with_lock(std::string_view id);
 
     // Publish m_block_processors to the audio thread; waits until it no longer
-    // reads the previous list. m_writer_mutex held.
+    // reads the previous list (or runs a removed processor). m_writer_mutex held.
     void publish_block_processors_with_lock();
 
     // Routing lookup helpers — must be called with m_writer_mutex held.
@@ -370,6 +372,7 @@ private:
                                                 float range_min,
                                                 float range_max);
     bool clear_routing_replace_range_with_lock(ModulationRouting& user_routing);
+    size_t set_routings_enabled_with_lock(std::span<const RoutingEnabled> changes);
     static void store_routing_enabled_with_lock(const ProcessingConfig& config,
                                                 uint32_t routing_id,
                                                 bool enabled);
@@ -437,15 +440,13 @@ private:
     // by m_writer_mutex.
     std::vector<BlockProcessor*> m_block_processors;
 
-    // The audio thread's copy of m_block_processors, published apart from the
-    // ProcessingConfig so that adding or removing one rebuilds nothing (a
-    // rebuild drops every ReplaceHold hold). Read inside an m_config read
-    // section; the writer swaps it and waits out m_config's readers before
-    // freeing the old list.
-    std::unique_ptr<const std::vector<BlockProcessor*>> m_block_processor_list =
-        std::make_unique<const std::vector<BlockProcessor*>>();
-    std::atomic<const std::vector<BlockProcessor*>*> m_audio_block_processors{
-        m_block_processor_list.get()};
+    // The audio thread's copy of m_block_processors, in its own RCU apart from
+    // the ProcessingConfig so that adding or removing one rebuilds nothing (a
+    // rebuild drops every ReplaceHold hold). Read by process_with_scope()
+    // through its own reader slot (the audio path runs on one thread at a time).
+    using BlockProcessorRCU = thl::RCU<std::vector<BlockProcessor*>>;
+    BlockProcessorRCU m_block_processor_rcu;
+    BlockProcessorRCU::Reader m_block_processor_reader = m_block_processor_rcu.add_reader();
 
     // Registered targets (owned) — protected by m_writer_mutex.
     // Pointer stability guaranteed by std::unordered_map.

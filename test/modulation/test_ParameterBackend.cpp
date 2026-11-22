@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/ModulationSource.h>
 #include <tanh/modulation/ParameterBackend.h>
@@ -379,6 +380,8 @@ TEST(ParameterBackend, AMovedBindingRebindsTheTarget) {
     EXPECT_EQ(after.target(), before.target());
     matrix.process(k_block_size);
     EXPECT_NEAR(after.load(0), 0.75f + 0.05f, 1e-6f);
+    // Nothing was skipped: every block counted.
+    EXPECT_EQ(matrix.get_num_processed_samples(), 2 * k_block_size);
     matrix.remove_source("src");
 }
 
@@ -400,7 +403,8 @@ TEST(ParameterBackend, ABindingWithoutBaseIsRejected) {
     routing.m_combine_mode = CombineMode::Replace;
     routing.m_share_with_host = true;
     EXPECT_EQ(matrix.add_routing(routing), k_invalid_routing_id);
-    EXPECT_THROW(matrix.get_smart_handle<float>("p"), thl::ParameterTypeMismatchException);
+    EXPECT_THROW(matrix.get_smart_handle<float>("p"), std::invalid_argument);
+    EXPECT_THROW(matrix.get_smart_handle<int>("p"), thl::ParameterTypeMismatchException);
 
     matrix.from_json(nlohmann::json::array({{{"source_id", "src"},
                                              {"target_id", "p"},
@@ -542,4 +546,39 @@ TEST(ParameterBackend, ProcessOnChangingThreadsNeedsNoRegistration) {
         });
         render.join();
     }
+}
+
+// remove_block_processor() returns only once the audio thread no longer runs the
+// processor: deleting it right after is safe while audio runs.
+TEST(ParameterBackend, RemovedBlockProcessorIsNoLongerRunning) {
+    class Busy : public BlockProcessor {
+    public:
+        void prepare(double /*sr*/, size_t /*spb*/) override {}
+        void process_block(const BlockContext& /*context*/) TANH_NONBLOCKING_FUNCTION override {
+            m_inside.store(true, std::memory_order_seq_cst);
+            for (int i = 0; i < 2000; ++i) { m_spin.fetch_add(1, std::memory_order_relaxed); }
+            m_inside.store(false, std::memory_order_seq_cst);
+        }
+        std::atomic<bool> m_inside{false};
+        std::atomic<int> m_spin{0};
+    };
+
+    FakeBackend backend;
+    ModulationMatrix matrix(backend);
+    matrix.prepare(k_sample_rate, k_block_size);
+    std::atomic<bool> run{true};
+    std::thread audio([&] {
+        while (run.load()) { matrix.process(k_block_size); }
+    });
+    int still_running = 0;
+    for (int k = 0; k < 300; ++k) {
+        Busy busy;
+        matrix.add_block_processor(busy);
+        while (busy.m_spin.load() == 0) { std::this_thread::yield(); }
+        matrix.remove_block_processor(busy);
+        if (busy.m_inside.load(std::memory_order_seq_cst)) { ++still_running; }
+    }
+    run = false;
+    audio.join();
+    EXPECT_EQ(still_running, 0);
 }

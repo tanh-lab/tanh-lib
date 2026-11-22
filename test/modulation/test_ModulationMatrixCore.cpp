@@ -1797,3 +1797,26 @@ TEST(ModulationMatrix, AddBeforePrepareWaitsForPrepare) {
     matrix.remove_block_processor(processor);
     matrix.remove_source("src");
 }
+
+// set_voice_count() before the first prepare() leaves the source to prepare().
+TEST(ModulationMatrix, SetVoiceCountBeforePrepareWaitsForPrepare) {
+    class CountingPolySource : public PolyTestSource {
+    public:
+        using PolyTestSource::PolyTestSource;
+        void prepare(double sr, size_t spb, uint32_t voice_count) override {
+            ++m_prepares;
+            PolyTestSource::prepare(sr, spb, voice_count);
+        }
+        int m_prepares = 0;
+    };
+    thl::State state;
+    ModulationMatrix matrix(state);
+    const auto scope = matrix.register_scope("voices", 4);
+    CountingPolySource source(scope);
+    matrix.add_source("src", &source);
+    matrix.set_voice_count(scope, 8);
+    EXPECT_EQ(source.m_prepares, 0);
+    matrix.prepare(44100.0, 128);
+    EXPECT_EQ(source.m_prepares, 1);
+    matrix.remove_source("src");
+}

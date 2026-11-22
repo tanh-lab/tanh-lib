@@ -442,3 +442,27 @@ TEST(RoutingEnabled, AudioPathIsRealtimeSafe) {
     EXPECT_GT(acc, 0.0f);
     matrix.remove_source("a");
 }
+
+// A disable undone before the next block still drops the hold: the audio thread
+// never saw the flag low, but it sees the disable count move.
+TEST(RoutingEnabled, DisableUndoneBeforeTheBlockStillDropsTheHold) {
+    FakeBackend backend;
+    backend.add("p", 0.1f);
+    ModulationMatrix matrix(backend);
+    ConstSource src(0.8f);
+    matrix.add_source("src", &src);
+    auto p = matrix.get_smart_handle<float>("p");
+    const uint32_t id = matrix.add_routing(routing("src", "p", CombineMode::ReplaceHold));
+    matrix.prepare(k_sr, k_bs);
+
+    matrix.process(k_bs);
+    src.m_active = false;
+    matrix.process(k_bs);
+    EXPECT_FLOAT_EQ(p.load(k_bs - 1), 0.8f);  // held
+
+    matrix.set_routing_enabled(id, false);
+    matrix.set_routing_enabled("src", "p", true);
+    matrix.process(k_bs);
+    EXPECT_FLOAT_EQ(p.load(k_bs - 1), 0.1f);  // the hold was dropped
+    matrix.remove_source("src");
+}

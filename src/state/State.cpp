@@ -167,9 +167,6 @@ void State::write_value(ParameterRecord* record, const T& value) {
                       std::is_same_v<T, bool> || std::is_same_v<T, std::string>,
                   "Unsupported type for write_value");
 
-    // Every write through State is a host change for a ModulationMatrix over it.
-    record->m_change_stamp.fetch_add(1, std::memory_order_relaxed);
-
     if constexpr (std::is_same_v<T, std::string>) {
         const double d_value = parse_string_as_double(value);
 
@@ -226,6 +223,11 @@ void State::write_value(ParameterRecord* record, const T& value) {
             default: break;
         }
     }
+
+    // Every write through State is a host change for a ModulationMatrix over
+    // it. After the value, with release: a reader that sees the new stamp
+    // (acquire) sees the new value.
+    record->m_change_stamp.fetch_add(1, std::memory_order_release);
 }
 
 template <typename T>

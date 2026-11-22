@@ -35,9 +35,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `thl::modulation::ParameterBackend`: `ModulationMatrix` reads parameters through a
   backend (`find(key)` returns definition, base atomic and gesture flag) instead of
   `thl::State`, so a host binds its own parameter store without mirroring it. A
-  binding that moved (`State::clear()` and the key created again) is taken up by the
-  next `get_smart_handle()` / `add_routing()` for that key; a binding without a base
-  atomic is rejected. `from_json()` resolves its routings' targets. An unknown key
+  binding that moved (`State::clear()` and the key created again, with audio stopped)
+  is taken up by the next `get_smart_handle()` / `add_routing()` for that key, which
+  keeps its first definition; a binding without a base atomic is rejected
+  (`std::invalid_argument`). `from_json()` resolves its routings' targets. An unknown key
   throws through `throw_not_found()` (`ParameterNotFoundException`, or State's
   subclasses for a State-backed matrix).
   `ModulationMatrix(thl::State&)` keeps working through `StateParameterBackend` and,
@@ -48,7 +49,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   routing writes nothing, Replace included (depth 0 does not silence it), and drops
   its hold. No rebuild: the audio thread reads the flags once per block through a
   wait-free seqlock, so a batch lands whole. Edges and the first block after a
-  rebuild flag offset 0; a zero-sample block keeps the edge. `"enabled": false` is
+  rebuild flag offset 0; a zero-sample block keeps the edge, and a disable undone
+  before the next block still drops the hold. `"enabled": false` is
   serialised only when disabled. Tests: `RoutingEnabled.*`.
 - `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
   before any source (`add_block_processor()`), given a `BlockContext` with the block
