@@ -14,6 +14,11 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_ConstellationReverb.cpp
 	test_DelayProcessor.cpp
 	test_InternalTransportClock.cpp
+	test_TransportInfo.cpp
+	test_TransportClock.cpp
+	test_ContinuityTracker.cpp
+	test_InternalTransportClockInfo.cpp
+	test_HostTransportClock.cpp
 	test_MetronomePlayer.cpp
 	test_SamplePlayer.cpp
 	test_Slicing.cpp

@@ -2,7 +2,9 @@
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/metronome/MetronomePlayer.h>
 #include <tanh/dsp/transport/TransportClock.h>
+#include <tanh/dsp/transport/TransportInfo.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -53,13 +55,16 @@ void MetronomePlayerImpl::process(thl::core::BufferView buffer, uint32_t modulat
     const auto frame_count = static_cast<uint32_t>(buffer.get_num_samples());
     const auto num_channels = buffer.get_num_channels();
     const bool enabled = get_parameter_bool(Enabled, modulation_offset);
-    const bool playing = enabled && m_clock.is_playing();
+    // The clock's resolved slope, not bpm / (60 * sample rate): a block the clock
+    // re-sloped onto the previous one's end places its clicks where its beats are,
+    // so a boundary on a block edge sounds once.
+    const double bps = m_clock.block_info().m_beats_per_sample;
+    const bool playing = enabled && m_clock.is_playing() && bps > 0.0;
 
     const auto sig_num = m_clock.sig_num();
     const auto sig_denom = m_clock.sig_denom();
     const double bar_size =
         transport::beats_per_division(transport::Division::Bar, sig_num, sig_denom);
-    const double bps = m_clock.bpm() / (60.0 * m_sample_rate);
     const double beat_start = m_clock.beat_at_sample(0);
 
     const auto rhythm = transport::division_from_int(get_parameter_int(Rhythm, modulation_offset));
@@ -73,9 +78,14 @@ void MetronomePlayerImpl::process(thl::core::BufferView buffer, uint32_t modulat
     double next_bar = std::ceil(beat_start / bar_size) * bar_size;
     double next_div = div_distinct ? std::ceil(beat_start / div_size) * div_size : 0.0;
 
+    // A boundary belongs to this block if it lies before the block's end beat
+    // (half-open, as division_in_block()), so rounding never puts it in both.
+    const double beat_end = beat_start + (static_cast<double>(frame_count) * bps);
     const auto offset_for = [&](double next_beat) -> uint32_t {
+        if (!(next_beat < beat_end)) { return frame_count; }
         const double s = (next_beat - beat_start) / bps;
-        return s < 0.0 ? 0u : static_cast<uint32_t>(s);
+        if (s < 0.0) { return 0u; }
+        return std::min(static_cast<uint32_t>(s), frame_count - 1);
     };
 
     uint32_t bar_off = playing ? offset_for(next_bar) : frame_count;

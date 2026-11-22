@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/metronome/MetronomePlayer.h>
+#include <tanh/dsp/transport/HostTransportClock.h>
 #include <tanh/dsp/transport/InternalTransportClock.h>
+#include <tanh/dsp/transport/TransportInfo.h>
 
 #include <array>
 #include <cstdint>
+#include <random>
 #include <unordered_map>
 #include <vector>
 
@@ -17,14 +20,17 @@ constexpr double k_bpm = 120.0;
 using thl::core::BufferView;
 using thl::dsp::metronome::MetronomePlayerImpl;
 using thl::dsp::transport::Division;
+using thl::dsp::transport::HostTransportClock;
 using thl::dsp::transport::InternalTransportClock;
+using thl::dsp::transport::TransportClock;
+using thl::dsp::transport::TransportInfo;
 
 // Test fixture: provides parameter values from a map and instruments
 // trigger_accent/trigger_click so we can assert sample-accurate scheduling
 // without relying on the audible voice rendering.
 class TestMetronome : public MetronomePlayerImpl {
 public:
-    explicit TestMetronome(InternalTransportClock& clock) : MetronomePlayerImpl(clock) {
+    explicit TestMetronome(TransportClock& clock) : MetronomePlayerImpl(clock) {
         // process()/trigger_*() run in a nonblocking context; reserve up front so
         // the recording push_backs below never allocate under RTSan.
         events.reserve(k_max_recorded);
@@ -326,3 +332,37 @@ TEST(MetronomePlayer, BarBoundaryFiresAccentSubBarFiresClick) {
 }
 
 }  // namespace
+
+// Clicks follow the clock's resolved beats: with a host whose ppq jitters by a
+// sample and blocks that end on beats, every beat clicks exactly once.
+TEST(MetronomePlayer, EveryBeatClicksOnceWithAJitteryHost) {
+    HostTransportClock clk;
+    clk.prepare(k_sample_rate);
+    TestMetronome m(clk);
+    m.prepare(k_sample_rate, 480, 2);
+    m.set_param_int(TestMetronome::Rhythm, static_cast<int>(Division::Beat));
+
+    const double bps = k_bpm / (60.0 * k_sample_rate);
+    std::mt19937 rng(3);
+    std::uniform_real_distribution<double> jitter(-1.0, 1.0);
+    TransportInfo host;
+    host.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position |
+                   TransportInfo::k_is_playing;
+    host.m_bpm = k_bpm;
+    size_t clicks = 0;
+    constexpr int k_blocks = 50 * 40;  // 480-sample blocks, 50 per beat: 40 beats
+    for (int b = 0; b < k_blocks; ++b) {
+        // The last block ends on beat 40 exactly, so that beat is the next block's.
+        const double j = b + 1 == k_blocks ? 0.0 : jitter(rng);
+        host.m_beat_position = ((b * 480.0) + j) * bps;
+        clk.set_host_info(host);
+        StereoBuffer buf(480);
+        m.events.clear();  // within their reserve: the recording never allocates under RTSan
+        m.modulation_offsets.clear();
+        clk.begin_block(480);
+        m.process(buf.view, 0);
+        clk.end_block();
+        clicks += m.events.size();
+    }
+    EXPECT_EQ(clicks, 40u);
+}
