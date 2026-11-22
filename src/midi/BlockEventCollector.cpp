@@ -48,9 +48,13 @@ std::span<const BlockEvent> BlockEventCollector::collect(InputQueue& queue,
     // Packets that fall into this block become events; the rest stay, in order.
     m_event_count = 0;
     std::size_t kept = 0;
+    const bool exact = m_config.m_placement == EventPlacement::Exact;
     for (std::size_t i = 0; i < m_held_count; ++i) {
         std::uint32_t offset = 0;
-        const bool due = block.offset_of(m_held[i].m_time_ns, offset);
+        // Exact: at its place in the block's window. Immediate: at the start, as soon as
+        // its time has come (a packet stamped ahead still waits for that).
+        const bool due =
+            exact ? block.offset_of(m_held[i].m_time_ns, offset) : m_held[i].m_time_ns <= now_ns;
         if (due && m_event_count < m_events.size()) {
             BlockEvent& event = m_events[m_event_count++];
             event.m_type = BlockEvent::Type::Midi;

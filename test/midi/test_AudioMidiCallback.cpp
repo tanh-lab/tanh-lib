@@ -22,7 +22,6 @@ constexpr double k_ns_per_frame = 1.0e9 / k_sample_rate;
 constexpr std::uint32_t k_block = 480;
 constexpr std::int64_t k_block_ns = 10'000'000;
 constexpr std::int64_t k_t0 = 7'000'000'000;
-constexpr std::int64_t k_latency_frames = 48;  // the collector's default 1 ms
 
 // An engine that passes its input through and adds a click of height (note number) at
 // every note-on's sample offset in channel 0.
@@ -91,11 +90,11 @@ TEST(AudioMidiCallback, PreparesTheEngine) {
     EXPECT_EQ(engine.m_sample_rate, 48000.0);
     EXPECT_EQ(engine.m_max_block_size, k_block);
     EXPECT_EQ(engine.m_num_channels, 2U);
-    EXPECT_EQ(callback.midi_latency_ns(), k_block_ns + 1'000'000);
+    EXPECT_EQ(callback.midi_latency_ns(), k_block_ns);  // one block, nothing on top
 }
 
-// The claim of the class: a MIDI event shows up in the audio exactly one block (plus the
-// configured millisecond) after the moment it arrived — every event, to the sample.
+// The claim of the class: a MIDI event shows up in the audio exactly one block after the
+// moment it arrived — every event, to the sample.
 TEST(AudioMidiCallback, MidiLandsInTheAudioAtItsSample) {
     ClickEngine engine;
     InputQueue queue(256);
@@ -116,7 +115,7 @@ TEST(AudioMidiCallback, MidiLandsInTheAudioAtItsSample) {
     for (const float sample : rendered) { clicks += sample != 0.0f ? 1 : 0; }
     EXPECT_EQ(clicks, frames.size());
     for (std::size_t i = 0; i < frames.size(); ++i) {
-        const auto at = static_cast<std::size_t>(frames[i] + k_block + k_latency_frames);
+        const auto at = static_cast<std::size_t>(frames[i] + k_block);
         ASSERT_LT(at, rendered.size());
         EXPECT_EQ(rendered[at], static_cast<float>(40 + i)) << "note " << i << " at frame " << at;
     }
@@ -142,9 +141,53 @@ TEST(AudioMidiCallback, AlignmentDoesNotDependOnBlockSizes) {
     const std::vector<float> rendered = run(callback, 200, {480, 64, 256, 480, 33, 128});
 
     for (std::size_t i = 0; i < frames.size(); ++i) {
-        const auto at = static_cast<std::size_t>(frames[i] + k_block + k_latency_frames);
+        const auto at = static_cast<std::size_t>(frames[i] + k_block);
         ASSERT_LT(at, rendered.size());
         EXPECT_EQ(rendered[at], static_cast<float>(40 + i)) << "note " << i << " at frame " << at;
+    }
+    EXPECT_TRUE(engine.m_in_order);
+}
+
+// Immediate placement: every event at the start of the first block after it arrived —
+// never later than one block, and never earlier than it happened.
+TEST(AudioMidiCallback, ImmediatePlacementPutsEventsAtBlockStarts) {
+    ClickEngine engine;
+    InputQueue queue(256);
+    BlockEventCollectorConfig config;
+    config.m_placement = EventPlacement::Immediate;
+    AudioMidiCallback callback(engine, queue, 2, config);
+    callback.prepare_to_play(48000, k_block);
+    EXPECT_EQ(callback.midi_latency_ns(), 0);
+
+    // The device, on time; each note is pushed when its moment has passed. The notes are
+    // more than a block apart, so that each block start holds one click at most.
+    std::vector<std::int64_t> frames;
+    for (int i = 0; i < 40; ++i) {
+        frames.push_back(static_cast<std::int64_t>(std::floor(1440.0 + i * 701.3)));
+    }
+    std::vector<float> rendered;
+    std::vector<float> output(static_cast<std::size_t>(k_block) * 2);
+    std::size_t next = 0;
+    for (int block = 0; block < 70; ++block) {
+        const std::int64_t now = k_t0 + block * k_block_ns;
+        while (next < frames.size() && time_of_frame(static_cast<double>(frames[next])) <= now) {
+            queue.push(make_midi1_channel_voice(0, 0x90, static_cast<std::uint8_t>(40 + next), 100),
+                       time_of_frame(static_cast<double>(frames[next])),
+                       0);
+            ++next;
+        }
+        callback.process_at(now, output.data(), nullptr, k_block, 0, 2);
+        for (std::uint32_t frame = 0; frame < k_block; ++frame) {
+            rendered.push_back(output[frame * 2]);
+        }
+    }
+
+    for (std::size_t i = 0; i < frames.size(); ++i) {
+        // The first block boundary at or after the note's frame.
+        const auto at = static_cast<std::size_t>((frames[i] / k_block + 1) * k_block);
+        ASSERT_LT(at, rendered.size());
+        EXPECT_EQ(rendered[at], static_cast<float>(40 + i)) << "note " << i;
+        EXPECT_LE(static_cast<std::int64_t>(at) - frames[i], static_cast<std::int64_t>(k_block));
     }
     EXPECT_TRUE(engine.m_in_order);
 }

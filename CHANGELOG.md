@@ -29,7 +29,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `StreamClock` builds the stream's clock from the callback times (late, bursty or chunked
   callbacks and clock drift included) and `BlockEventCollector` gives every packet the sample
   offset of its timestamp, so MIDI and audio are aligned to the sample with a constant delay of
-  one full-size block plus 1 ms. Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
+  one full-size block (`EventPlacement::Immediate` puts events at the block start instead, for
+  the shortest delay). Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
   `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`, `MidiDeviceManager.*`,
   `MidiPortReader.*`, `MidiStreamClock.*`, `MidiBlockEventCollector.*`, `AudioMidiCallback.*`,
   `CoreMidi.*` (macOS and the iOS simulator, through virtual ports);

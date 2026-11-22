@@ -228,12 +228,25 @@ What that guarantees:
 
 - Two events keep their distance in the audio to the sample, whatever the block size and
   however irregular the callbacks.
-- Every event is late by the same amount: one full-size block plus
-  `BlockEventCollectorConfig::m_latency_ns` (1 ms by default, slack for the MIDI thread).
-  `AudioMidiCallback::midi_latency_ns()` reports it.
+- Every event is late by the same amount: one full-size block
+  (`AudioMidiCallback::midi_latency_ns()`). That is the least exact placement allows — a
+  block is rendered as a whole, so what arrives while it is asked for can only go into
+  the next one — and it is what a plugin host gives a plugin and what JUCE's
+  `MidiMessageCollector` does. The way to less delay is a smaller audio buffer, which
+  shortens the audio output delay and this one together.
 - A stall of more than 100 ms (a device that skipped, an app that was suspended) restarts
   the clock at once; a shorter one is absorbed within half a second.
 
 The delay is measured against the timestamp the platform attached to the message. It
 does not include the audio output latency of the device, which is the same for everything
 the engine renders.
+
+Two settings in `BlockEventCollectorConfig` change the trade:
+
+- `m_latency_ns` (0 by default) adds slack on top of the block, for a platform whose
+  MIDI thread hands messages over later than their timestamps; such a message otherwise
+  lands at the start of the next block.
+- `m_placement = EventPlacement::Immediate` gives up exact placement for the shortest
+  delay: every event goes to the start of the first block after it arrived, so it is late
+  by anything between nothing and one block, and timing is quantised to the block. Worth
+  it only with very small blocks.

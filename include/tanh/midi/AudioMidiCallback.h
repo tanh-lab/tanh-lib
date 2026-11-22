@@ -29,8 +29,10 @@ namespace thl::inline THL_ABI_NAMESPACE {
 ///
 /// Audio and MIDI are aligned to the sample: two notes keep their distance in the audio
 /// whatever the block size and however irregular the callbacks are, and every note is late
-/// by the same amount, one full-size block plus the collector's latency
-/// (midi_latency_ns()).
+/// by the same amount, one full-size block (midi_latency_ns()) — the least that exact
+/// placement allows, and what a plugin host gives a plugin. The way to less is a smaller
+/// audio buffer; midi::EventPlacement::Immediate in the config trades the exact placement
+/// for the shortest delay instead.
 ///
 /// Header-only, because it joins two components: a target using it links tanh::AudioIO
 /// and tanh::Midi.
@@ -108,8 +110,9 @@ public:
         }
     }
 
-    /// How late MIDI is rendered against its arrival: one full-size block plus the
-    /// collector's latency. Valid after prepare_to_play().
+    /// How late MIDI is rendered against its arrival: with exact placement one full-size
+    /// block (plus the configured latency), with immediate placement 0 (see
+    /// midi::BlockEventCollector::latency_ns()). Valid after prepare_to_play().
     [[nodiscard]] std::int64_t midi_latency_ns() const noexcept { return m_collector.latency_ns(); }
 
     /// Packets the collector had to drop because too many were waiting.

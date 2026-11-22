@@ -16,16 +16,30 @@
 
 namespace thl::inline THL_ABI_NAMESPACE::midi {
 
+/// Where in a block the collector puts a packet.
+enum class EventPlacement : std::uint8_t {
+    /// At the sample offset of its timestamp. Every event is late by the same amount, one
+    /// full-size block (plus m_latency_ns), and events keep their distances to the sample.
+    /// What a plugin host does, and the default.
+    Exact,
+    /// At the start of the first block asked for after it arrived: the least delay there
+    /// is, between nothing and one block, at the price of timing that is quantised to the
+    /// block. For very small blocks, where that is too fine to hear.
+    Immediate,
+};
+
 /// Settings of a BlockEventCollector.
 struct BlockEventCollectorConfig {
+    EventPlacement m_placement = EventPlacement::Exact;
     /// The most events one block gets. More than that wait for the next block.
     std::size_t m_max_events_per_block = 256;
     /// The most packets that can wait: for the next block, or for their time to come.
     std::size_t m_max_held = 1024;
-    /// Added to the one (largest) block every event is late by (StreamClock): slack for the MIDI
-    /// thread, so that a message handed over a little after its timestamp still gets its
-    /// exact place instead of the start of the next block.
-    std::int64_t m_latency_ns = 1'000'000;
+    /// EventPlacement::Exact only: added to the one block every event is late by
+    /// (StreamClock). Slack for a MIDI thread that hands a message over later than its
+    /// timestamp; such a message otherwise lands at the start of the next block instead of
+    /// its exact place. 0 by default: the least delay exact placement allows.
+    std::int64_t m_latency_ns = 0;
 };
 
 /// Turns the MIDI input queue into the event list of each audio block, every packet at the
@@ -34,7 +48,8 @@ struct BlockEventCollectorConfig {
 /// Per block: take what has arrived, give every packet whose time falls into the block's
 /// window its offset, and keep the ones that are not due yet for a later block. A packet
 /// older than the window goes to offset 0. The list is in ascending offset; packets with
-/// the same offset keep the order they arrived in.
+/// the same offset keep the order they arrived in. With EventPlacement::Immediate every
+/// packet whose time has come goes to offset 0 instead.
 ///
 /// prepare() allocates; collect() and reset() are for the audio thread and neither
 /// allocate nor block.
@@ -62,9 +77,12 @@ public:
         return m_dropped.load(std::memory_order_relaxed);
     }
 
-    /// How late every event is rendered against its arrival, in nanoseconds: the largest
-    /// block plus the configured latency.
-    [[nodiscard]] std::int64_t latency_ns() const noexcept { return m_clock.latency_ns(); }
+    /// How late an event is rendered against its arrival, in nanoseconds. Exact placement:
+    /// the largest block plus the configured latency, for every event. Immediate: 0, the
+    /// least it can be — an event then waits for the next block, up to one block.
+    [[nodiscard]] std::int64_t latency_ns() const noexcept {
+        return m_config.m_placement == EventPlacement::Exact ? m_clock.latency_ns() : 0;
+    }
 
 private:
     BlockEventCollectorConfig m_config;

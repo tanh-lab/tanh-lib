@@ -191,3 +191,31 @@ TEST(MidiBlockEventCollector, ResetDropsWhatIsWaiting) {
         EXPECT_TRUE(collect(collector, queue, block).empty());
     }
 }
+
+// Immediate placement: what has arrived goes to the start of the block, in arrival order;
+// a packet stamped ahead of the present still waits until its time has come.
+TEST(MidiBlockEventCollector, ImmediatePlacement) {
+    BlockEventCollectorConfig config;
+    config.m_placement = EventPlacement::Immediate;
+    BlockEventCollector collector(config);
+    collector.prepare(k_sample_rate, k_block);
+    EXPECT_EQ(collector.latency_ns(), 0);
+    InputQueue queue(64);
+    (void)collect(collector, queue, 0);
+
+    queue.push(note(60), in_block(1, 400), 1);
+    queue.push(note(70), in_block(1, 100), 2);
+    queue.push(note(61), k_t0 + 2 * k_block_ns + 1, 1);  // just after block 2 is asked for
+    auto events = collect(collector, queue, 1);
+    ASSERT_EQ(events.size(), 2U);
+    EXPECT_EQ(events[0].m_midi, note(60));  // arrival order, not time order
+    EXPECT_EQ(events[1].m_midi, note(70));
+    EXPECT_EQ(events[0].m_sample_offset, 0U);
+    EXPECT_EQ(events[1].m_sample_offset, 0U);
+
+    EXPECT_TRUE(collect(collector, queue, 2).empty());
+    events = collect(collector, queue, 3);
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_EQ(events[0].m_midi, note(61));
+    EXPECT_EQ(events[0].m_sample_offset, 0U);
+}
