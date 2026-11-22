@@ -8,6 +8,10 @@ benchmark are used for tests only and are not part of any component.
 This file is generated from the licence files of the pinned versions; when a dependency or its
 version changes (`CMakeLists.txt`, `cmake/fft-backend.cmake`), update it with them.
 
+`TANH_BUILD_LINK` (off by default) adds Ableton Link, whose licence is a choice for the whole
+product: GPL (version 2 or later), or Ableton's proprietary Link licence; on iOS, LinkKit is
+proprietary only. See the Ableton Link and LinkKit sections.
+
 | Code | Version and source | In | Licence |
 |---|---|---|---|
 | pffft | v1.1.0, https://github.com/marton78/pffft | DSP, with `TANH_FFT_BACKEND=pffft` (the default; not with `accelerate`) | BSD-like (FFTPACK licence) |
@@ -15,6 +19,11 @@ version changes (`CMakeLists.txt`, `cmake/fft-backend.cmake`), update it with th
 | nlohmann/json | 3.12.0, https://github.com/nlohmann/json | State (header-only, also a public dependency) | MIT |
 | readerwriterqueue (moodycamel) | v1.0.6, https://github.com/cameron314/readerwriterqueue | Modulation (header-only) | Simplified BSD |
 | Jeff Preshing's semaphore (in readerwriterqueue's atomicops.h) | with readerwriterqueue v1.0.6 | Modulation (header-only) | zlib |
+| Signalsmith Stretch | commit 57b93f4 (1.3.0-21), https://github.com/Signalsmith-Audio/signalsmith-stretch | DSP (header-only, `PitchBank`) | MIT |
+| Signalsmith Linear | 0.3.1, https://github.com/Signalsmith-Audio/linear | DSP (header-only, fetched by Signalsmith Stretch) | MIT |
+| Ableton Link | Link-4.1, https://github.com/Ableton/link | Link, with `TANH_BUILD_LINK` on macOS, Linux and Windows (header-only) | GPLv2+ or Ableton's proprietary Link licence |
+| Asio (in Ableton Link) | asio-1-38-2, https://github.com/chriskohlhoff/asio | Link, with `TANH_BUILD_LINK` on macOS, Linux and Windows (header-only) | Boost Software License 1.0 |
+| LinkKit | 4.1.2, https://github.com/Ableton/LinkKit | Link, with `TANH_BUILD_LINK` on iOS (binary, fetched at configure time) | Ableton Link SDK License v2.0 (proprietary) |
 
 ## pffft
 
@@ -199,3 +208,124 @@ freely, subject to the following restrictions:
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
 ```
+
+## Signalsmith Stretch
+
+1.3.0-21-g57b93f4 (commit 57b93f4e9206a089a45387eaa39bdc9f310d3308), https://github.com/Signalsmith-Audio/signalsmith-stretch. Used in: DSP (header-only, the pitch shifting of `PitchBank`).
+
+```text
+MIT License
+
+Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Signalsmith Linear
+
+0.3.1, https://github.com/Signalsmith-Audio/linear. Used in: DSP (header-only, fetched by Signalsmith Stretch).
+
+```text
+MIT License
+
+Copyright (c) 2025 Signalsmith Audio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Ableton Link
+
+Link-4.1 (commit 9c9091275e707ab09d09a5a608fcdb84bf0dec85), https://github.com/Ableton/link. Used in: Link, with `TANH_BUILD_LINK` on macOS, Linux and Windows (header-only). Link is dual-licensed: a product built with it is either distributed under the GPL (version 2 or later, https://www.gnu.org/licenses/gpl-2.0.html) or holds Ableton's proprietary Link licence (link-devs@ableton.com).
+
+```text
+# License
+
+Copyright 2016, Ableton AG, Berlin. All rights reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+If you would like to incorporate Link into a proprietary software application,
+please contact <link-devs@ableton.com>.
+```
+
+## Asio (in Ableton Link)
+
+asio-1-38-2, https://github.com/chriskohlhoff/asio, as the submodule of Ableton Link Link-4.1. Used in: Link, with `TANH_BUILD_LINK` on macOS, Linux and Windows (header-only, in the namespace `link_asio_1_38_2`).
+
+```text
+Copyright (c) 2003-2026 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+
+Distributed under the Boost Software License, Version 1.0. (See accompanying
+file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
+Boost Software License - Version 1.0 - August 17th, 2003
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by
+this license (the "Software") to use, reproduce, display, distribute,
+execute, and transmit the Software, and to prepare derivative works of the
+Software, and to permit third-parties to whom the Software is furnished to
+do so, all subject to the following:
+
+The copyright notices in the Software and this entire statement, including
+the above license grant, this restriction and the following disclaimer,
+must be included in all copies of the Software, in whole or in part, and
+all derivative works of the Software, unless such copies or derivative
+works are solely in the form of machine-executable object code generated by
+a source language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+## LinkKit
+
+LinkKit 4.1.2 (release zip, SHA256 874665a33178403cb5051148467db73cab46397e73d2a0790b5725754df11e66), https://github.com/Ableton/LinkKit. Used in: Link, with `TANH_BUILD_LINK` on iOS (a binary `.xcframework`, fetched at configure time, never redistributed with tanh-lib). LinkKit is proprietary, under the Ableton Link SDK License v2.0 (`LICENSE.md` in the release zip). It is a licence agreement, not a notice to reproduce: among its terms, an app must follow the Link UI guidelines delivered with the SDK, may not redistribute the SDK itself, and may not sell Link support as an in-app purchase. Read the licence in the release before shipping.

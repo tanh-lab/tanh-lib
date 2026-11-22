@@ -10,9 +10,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Added
 
 - `THIRD_PARTY_NOTICES.md`: the third-party code the components embed (pffft, miniaudio,
-  nlohmann/json, readerwriterqueue and the zlib-licensed semaphore in it), with version, source,
-  component and licence text, installed to `share/doc/tanh`. A product that ships tanh-lib
-  carries these notices.
+  nlohmann/json, readerwriterqueue and the zlib-licensed semaphore in it, Signalsmith Stretch
+  and Linear, and with `TANH_BUILD_LINK` Ableton Link, its Asio and LinkKit), with version,
+  source, component and licence text, installed to `share/doc/tanh`. A product that ships
+  tanh-lib carries these notices.
 - `tanh::Link` (`TANH_BUILD_LINK`, off by default for its licence):
   `thl::link::LinkSession` over the Link 4.1 SDK (pinned commit) on macOS, Linux and
   Windows and LinkKit 4.1.2 (pinned SHA256, CMake 3.28+) on iOS, with
