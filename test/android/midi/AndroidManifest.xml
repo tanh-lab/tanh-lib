@@ -2,14 +2,14 @@
 <!-- Test app for tanh::Midi's Android backend: two virtual MIDI devices of its own and an
      instrumentation that drives thl::midi::DeviceManager against them (run.sh). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="io.github.tanhlab.miditest">
+    package="tanhlab.tanhlib.miditest">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
     <uses-feature android:name="android.software.midi" android:required="false" />
 
     <instrumentation
         android:name=".MidiTest"
-        android:targetPackage="io.github.tanhlab.miditest" />
+        android:targetPackage="tanhlab.tanhlib.miditest" />
 
     <application
         android:label="tanh midi test"

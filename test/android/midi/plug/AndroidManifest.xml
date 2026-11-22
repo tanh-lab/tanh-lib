@@ -2,7 +2,7 @@
 <!-- A second app that is nothing but a virtual MIDI device. Installing and uninstalling it
      while the test runs is a MIDI device being plugged in and pulled out (run.sh). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="io.github.tanhlab.miditest.plug">
+    package="tanhlab.tanhlib.miditest.plug">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
 

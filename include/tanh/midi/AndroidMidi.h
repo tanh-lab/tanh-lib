@@ -6,7 +6,7 @@
 namespace thl::inline THL_ABI_NAMESPACE::midi {
 
 /// Hands the process's JavaVM to the Android MIDI backend and binds its Java half, the
-/// class io.github.tanhlab.midi.MidiBridge (android/java/ in the tanh-lib sources, which
+/// class tanhlab.tanhlib.midi.MidiBridge (android/java/ in the tanh-lib sources, which
 /// the app compiles in).
 ///
 /// Call it from JNI_OnLoad — that is where the app's class loader is the current one, so

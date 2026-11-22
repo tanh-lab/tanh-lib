@@ -1,4 +1,4 @@
-package io.github.tanhlab.miditest;
+package tanhlab.tanhlib.miditest;
 
 import android.annotation.TargetApi;
 import android.media.midi.MidiReceiver;

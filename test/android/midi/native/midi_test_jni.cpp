@@ -1,5 +1,5 @@
 // JNI surface of the Android MIDI test app: thl::midi::DeviceManager as the Java test
-// (io.github.tanhlab.miditest.MidiTest) sees it.
+// (tanhlab.tanhlib.miditest.MidiTest) sees it.
 #include <jni.h>
 #include <tanh/core/Clock.h>
 #include <tanh/midi/AndroidMidi.h>
@@ -27,10 +27,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
     return JNI_VERSION_1_6;
 }
 
-JNIEXPORT jboolean JNICALL Java_io_github_tanhlab_miditest_Native_start(JNIEnv* /*env*/,
-                                                                        jclass /*clazz*/,
-                                                                        jboolean midi2,
-                                                                        jboolean auto_open) {
+JNIEXPORT jboolean JNICALL Java_tanhlab_tanhlib_miditest_Native_start(JNIEnv* /*env*/,
+                                                                      jclass /*clazz*/,
+                                                                      jboolean midi2,
+                                                                      jboolean auto_open) {
     thl::midi::DeviceManagerConfig config;
     config.m_protocol = midi2 == JNI_TRUE ? thl::midi::Protocol::Midi2 : thl::midi::Protocol::Midi1;
     config.m_auto_open = auto_open == JNI_TRUE;
@@ -39,13 +39,13 @@ JNIEXPORT jboolean JNICALL Java_io_github_tanhlab_miditest_Native_start(JNIEnv* 
     return g_manager->running() ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL Java_io_github_tanhlab_miditest_Native_stop(JNIEnv* /*env*/,
-                                                                   jclass /*clazz*/) {
+JNIEXPORT void JNICALL Java_tanhlab_tanhlib_miditest_Native_stop(JNIEnv* /*env*/,
+                                                                 jclass /*clazz*/) {
     g_manager.reset();
 }
 
-JNIEXPORT jstring JNICALL Java_io_github_tanhlab_miditest_Native_devices(JNIEnv* env,
-                                                                         jclass /*clazz*/) {
+JNIEXPORT jstring JNICALL Java_tanhlab_tanhlib_miditest_Native_devices(JNIEnv* env,
+                                                                       jclass /*clazz*/) {
     std::string text;
     if (g_manager) {
         for (const thl::midi::DeviceInfo& device : g_manager->input_devices()) {
@@ -60,22 +60,22 @@ JNIEXPORT jstring JNICALL Java_io_github_tanhlab_miditest_Native_devices(JNIEnv*
     return env->NewStringUTF(text.c_str());
 }
 
-JNIEXPORT jboolean JNICALL Java_io_github_tanhlab_miditest_Native_open(JNIEnv* /*env*/,
-                                                                       jclass /*clazz*/,
-                                                                       jint id) {
+JNIEXPORT jboolean JNICALL Java_tanhlab_tanhlib_miditest_Native_open(JNIEnv* /*env*/,
+                                                                     jclass /*clazz*/,
+                                                                     jint id) {
     return g_manager && g_manager->open_input(static_cast<std::uint32_t>(id)) ? JNI_TRUE
                                                                               : JNI_FALSE;
 }
 
-JNIEXPORT jboolean JNICALL Java_io_github_tanhlab_miditest_Native_close(JNIEnv* /*env*/,
-                                                                        jclass /*clazz*/,
-                                                                        jint id) {
+JNIEXPORT jboolean JNICALL Java_tanhlab_tanhlib_miditest_Native_close(JNIEnv* /*env*/,
+                                                                      jclass /*clazz*/,
+                                                                      jint id) {
     return g_manager && g_manager->close_input(static_cast<std::uint32_t>(id)) ? JNI_TRUE
                                                                                : JNI_FALSE;
 }
 
-JNIEXPORT jlongArray JNICALL Java_io_github_tanhlab_miditest_Native_drain(JNIEnv* env,
-                                                                          jclass /*clazz*/) {
+JNIEXPORT jlongArray JNICALL Java_tanhlab_tanhlib_miditest_Native_drain(JNIEnv* env,
+                                                                        jclass /*clazz*/) {
     std::vector<jlong> values;
     if (g_manager) {
         g_manager->input_queue().drain([&](const thl::midi::TimedUmp& packet) {
@@ -90,18 +90,18 @@ JNIEXPORT jlongArray JNICALL Java_io_github_tanhlab_miditest_Native_drain(JNIEnv
     return array;
 }
 
-JNIEXPORT jint JNICALL Java_io_github_tanhlab_miditest_Native_changes(JNIEnv* /*env*/,
-                                                                      jclass /*clazz*/) {
+JNIEXPORT jint JNICALL Java_tanhlab_tanhlib_miditest_Native_changes(JNIEnv* /*env*/,
+                                                                    jclass /*clazz*/) {
     return g_changes.load();
 }
 
-JNIEXPORT jlong JNICALL Java_io_github_tanhlab_miditest_Native_dropped(JNIEnv* /*env*/,
-                                                                       jclass /*clazz*/) {
+JNIEXPORT jlong JNICALL Java_tanhlab_tanhlib_miditest_Native_dropped(JNIEnv* /*env*/,
+                                                                     jclass /*clazz*/) {
     return g_manager ? static_cast<jlong>(g_manager->input_queue().dropped()) : 0;
 }
 
-JNIEXPORT jlong JNICALL Java_io_github_tanhlab_miditest_Native_uptimeNs(JNIEnv* /*env*/,
-                                                                        jclass /*clazz*/) {
+JNIEXPORT jlong JNICALL Java_tanhlab_tanhlib_miditest_Native_uptimeNs(JNIEnv* /*env*/,
+                                                                      jclass /*clazz*/) {
     return thl::core::uptime_ns();
 }
 

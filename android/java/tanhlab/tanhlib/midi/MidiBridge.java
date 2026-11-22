@@ -1,4 +1,4 @@
-package io.github.tanhlab.midi;
+package tanhlab.tanhlib.midi;
 
 import android.annotation.TargetApi;
 import android.content.Context;

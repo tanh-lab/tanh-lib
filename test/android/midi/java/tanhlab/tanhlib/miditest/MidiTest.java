@@ -1,4 +1,4 @@
-package io.github.tanhlab.miditest;
+package tanhlab.tanhlib.miditest;
 
 import android.app.Activity;
 import android.app.Instrumentation;
@@ -15,7 +15,7 @@ import java.util.List;
  * Drives thl::midi::DeviceManager on a device or emulator, without MIDI hardware: the
  * inputs are the app's own virtual devices (Midi1Service, UmpService).
  *
- * adb shell am instrument -w io.github.tanhlab.miditest/.MidiTest
+ * adb shell am instrument -w tanhlab.tanhlib.miditest/.MidiTest
  *
  * With "-e mode hotplug" it instead waits for a device to arrive and to leave again: the
  * plug app (plug/), which run.sh installs and uninstalls meanwhile.

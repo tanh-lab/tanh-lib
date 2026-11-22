@@ -24,7 +24,7 @@ NDK="${ANDROID_NDK_HOME:-$(ls -d "$SDK"/ndk/* | sort -V | tail -1)}"
 BUILD_TOOLS="$SDK/build-tools/36.0.0"
 PLATFORM_JAR="$SDK/platforms/android-36/android.jar"
 ADB="$SDK/platform-tools/adb"
-PACKAGE=io.github.tanhlab.miditest
+PACKAGE=tanhlab.tanhlib.miditest
 
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
@@ -72,10 +72,10 @@ if [ ! -f "$OUT/debug.keystore" ]; then
 fi
 # The library's own Java half is compiled in exactly as an app does it.
 build_apk miditest "$HERE/AndroidManifest.xml" "$HERE/res" "$OUT/native/libmiditest.so" \
-    "$ROOT"/android/java/io/github/tanhlab/midi/*.java \
-    "$HERE"/java/io/github/tanhlab/miditest/*.java
+    "$ROOT"/android/java/tanhlab/tanhlib/midi/*.java \
+    "$HERE"/java/tanhlab/tanhlib/miditest/*.java
 build_apk plug "$HERE/plug/AndroidManifest.xml" "$HERE/plug/res" "" \
-    "$HERE"/plug/java/io/github/tanhlab/miditest/plug/*.java
+    "$HERE"/plug/java/tanhlab/tanhlib/miditest/plug/*.java
 
 cleanup() {
     "$ADB" uninstall "$PACKAGE.plug" > /dev/null 2>&1 || true

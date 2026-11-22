@@ -1,4 +1,4 @@
-package io.github.tanhlab.miditest.plug;
+package tanhlab.tanhlib.miditest.plug;
 
 import android.media.midi.MidiDeviceService;
 import android.media.midi.MidiDeviceStatus;

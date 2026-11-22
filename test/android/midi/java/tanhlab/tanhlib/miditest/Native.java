@@ -1,4 +1,4 @@
-package io.github.tanhlab.miditest;
+package tanhlab.tanhlib.miditest;
 
 /** The test's window onto thl::midi::DeviceManager (native/midi_test_jni.cpp). */
 final class Native {

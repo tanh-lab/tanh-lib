@@ -21,7 +21,7 @@
 #include "PortReader.h"
 
 // Android backend: android.media.midi through the Java class MidiBridge
-// (android/java/io/github/tanhlab/midi/MidiBridge.java), which the app compiles in.
+// (android/java/tanhlab/tanhlib/midi/MidiBridge.java), which the app compiles in.
 //
 // Java only forwards; the state lives here. Each DeviceManager owns one State and one
 // MidiBridge. Java reaches its State through a handle that is looked up in a registry, not
@@ -37,7 +37,7 @@ namespace thl::inline THL_ABI_NAMESPACE::midi {
 namespace {
 
 constexpr const char* k_log_group = "thl.midi.device_manager";
-constexpr const char* k_bridge_class = "io/github/tanhlab/midi/MidiBridge";
+constexpr const char* k_bridge_class = "tanhlab/tanhlib/midi/MidiBridge";
 
 // android.media.midi.MidiDeviceInfo.TYPE_*
 constexpr jint k_type_usb = 1;
@@ -526,7 +526,7 @@ void set_android_java_vm(void* java_vm) {
     j.m_create =
         env->GetStaticMethodID(j.m_bridge_class,
                                "create",
-                               "(Landroid/content/Context;JZ)Lio/github/tanhlab/midi/MidiBridge;");
+                               "(Landroid/content/Context;JZ)Ltanhlab/tanhlib/midi/MidiBridge;");
     j.m_start = env->GetMethodID(j.m_bridge_class, "start", "()V");
     j.m_open = env->GetMethodID(j.m_bridge_class, "open", "(II)V");
     j.m_close = env->GetMethodID(j.m_bridge_class, "close", "(I)V");
