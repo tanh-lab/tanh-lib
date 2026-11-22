@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <thread>
+#include <vector>
 
 using thl::dsp::transport::LinkTransportClock;
 using thl::dsp::transport::TransportInfo;
@@ -56,19 +57,25 @@ TEST(LinkSession, DisabledSessionIsALocalTimeline) {
     }
 }
 
+// Enabling Link joins the network: a Link app running nearby (Live, a second
+// machine on the LAN) would be a peer to align to, so the test skips then.
 TEST(LinkSession, EnableWithoutPeersDoesNotMoveTheBeat) {  // BEATTIME-1
     LinkSession session(120.0);
     LinkTransportClock clk(session.timeline_backend());
     clk.prepare(k_sr);
     const int64_t t0 = session.timeline_backend().now_us();
+    std::vector<uint32_t> flags;
     for (int b = 0; b < 40; ++b) {
         if (b == 20) { session.set_enabled(true); }
         clk.set_host_time_us(block_start_us(t0, b));
         clk.begin_block(k_frames);
-        if (b > 0) { EXPECT_EQ(clk.block_info().discontinuities(), 0u) << "block " << b; }
+        flags.push_back(clk.block_info().discontinuities());
         clk.end_block();
     }
+    const size_t peers = session.num_peers();
     session.set_enabled(false);
+    if (peers > 0) { GTEST_SKIP() << peers << " Link peer(s) on the network: not alone"; }
+    for (size_t b = 1; b < flags.size(); ++b) { EXPECT_EQ(flags[b], 0u) << "block " << b; }
 }
 
 TEST(LinkSession, LocalStartAndTempoRequest) {
@@ -128,6 +135,9 @@ TEST(LinkSession, TwoPeers_Loopback) {
     }
     if (a.num_peers() == 0 || b.num_peers() == 0) {
         GTEST_SKIP() << "no Link peer discovered within 5 s (network/multicast unavailable)";
+    }
+    if (a.num_peers() > 1 || b.num_peers() > 1) {
+        GTEST_SKIP() << "another Link app on the network: the two are not alone";
     }
 
     LinkTransportClock ca(a.timeline_backend());

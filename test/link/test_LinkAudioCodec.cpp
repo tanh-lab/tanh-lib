@@ -42,10 +42,22 @@ TEST(LinkAudioCodec, InterleavesPlanarChannels) {
     ASSERT_TRUE(shape.has_value());
     std::array<int16_t, 4> out{};
     detail::interleave(channels.data(), *shape, out.data());
-    EXPECT_EQ(out[0], 16384);  // 0.5 * 32767, rounded
+    EXPECT_EQ(out[0], 16384);  // 0.5 * 32768
     EXPECT_EQ(out[1], 0);
-    EXPECT_EQ(out[2], -32767);
-    EXPECT_EQ(out[3], 32767);
+    EXPECT_EQ(out[2], -32768);
+    EXPECT_EQ(out[3], 32767);  // 1.0 clips to 1 - 1/32768
+}
+
+// Sent and received at the same scale (Ableton's): every 16-bit value round-trips exactly,
+// so a Link Audio loopback is at unity gain.
+TEST(LinkAudioCodec, SamplesRoundTripAtUnityGain) {
+    for (int v = -32768; v <= 32767; ++v) {
+        const auto sample = static_cast<int16_t>(v);
+        LinkAudioPacket p;
+        ASSERT_TRUE(detail::make_link_audio_packet(&sample, 1, 1, 0.0, 1.0, p));
+        ASSERT_EQ(detail::to_link_audio_sample(p.m_samples[0]), sample) << v;
+    }
+    EXPECT_FLOAT_EQ(0.5f, static_cast<float>(detail::to_link_audio_sample(0.5f)) / 32768.0f);
 }
 
 TEST(LinkAudioCodec, ACaptureIsTakenOnce) {

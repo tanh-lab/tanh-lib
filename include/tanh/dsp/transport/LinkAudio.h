@@ -127,8 +127,11 @@ private:
     [[nodiscard]] const LinkAudioPacket& packet(size_t i) const {
         return m_ring[(m_head + i) % k_capacity];
     }
+    /// Drops the oldest packet, keeping its last frame for the interpolation behind the read
+    /// position.
     void pop_front() TANH_NONBLOCKING_FUNCTION;
-    /// Sample @p channel of frame @p frame counted across the buffered packets (0 past the end).
+    /// Sample @p channel of frame @p frame counted across the buffered packets: frame -1 is the
+    /// popped packet's last (else frame 0 held), past the end the last buffered frame is held.
     [[nodiscard]] float sample(int64_t frame, uint32_t channel) const TANH_NONBLOCKING_FUNCTION;
     void stop(float* const* out,
               uint32_t num_channels,
@@ -139,7 +142,10 @@ private:
     size_t m_head = 0;
     size_t m_count = 0;
     bool m_playing = false;
-    double m_read_frame = 0.0;  // in the first packet, frames (fractional)
+    double m_read_frame = 0.0;      // in the first packet, frames (fractional)
+    std::array<float, 2> m_tail{};  // the last frame of the popped packet (Link Audio: mono or
+                                    // stereo)
+    uint32_t m_tail_channels = 0;   // 0: none (start over)
     double m_margin_beats = 0.0;
     uint64_t m_underruns = 0;
     uint64_t m_received = 0;

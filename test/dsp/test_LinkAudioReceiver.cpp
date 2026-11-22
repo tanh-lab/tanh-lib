@@ -258,3 +258,54 @@ TEST(LinkAudioReceiver, IgnoresEmptyOrOversizedPackets) {
     EXPECT_FALSE(render(r, s, b, 0.0));
     EXPECT_EQ(r.num_buffered(), 0u);
 }
+
+// Audio that starts inside the first block plays from its own beat: the frames before it are
+// silent, and the rest is read at the normal rate (not the packet squeezed over the whole block,
+// slower and lower).
+TEST(LinkAudioReceiver, AStartInsideTheBlockPlaysFromItsBeat) {
+    LinkAudioReceiver r;
+    FakeSharing s;
+    s.add_run(100 * k_beats_per_frame, 8);
+    Block b(256);
+    ASSERT_TRUE(render(r, s, b, 0.0));
+    for (uint32_t f = 0; f < b.m_frames; ++f) {
+        const double expected = f < 100 ? 0.0 : f * k_beats_per_frame;
+        EXPECT_NEAR(b.m_data[0][f], expected, 1e-7) << "frame " << f;
+    }
+    ASSERT_TRUE(render(r, s, b, 256 * k_beats_per_frame));
+    EXPECT_NEAR(b.m_data[0][0], 256 * k_beats_per_frame, 1e-7);
+}
+
+// Across packet boundaries the interpolation reads the real neighbours: each block starts
+// half a frame into a new packet, so its first output reads the last frame of the packet
+// already played; a linear ramp comes out exact.
+TEST(LinkAudioReceiver, InterpolatesAcrossPacketBoundariesWithTheRealNeighbours) {
+    LinkAudioReceiver r;
+    FakeSharing s;
+    s.add_run(0.0, 20);
+    Block b(256);
+    double beat = 0.5 * k_beats_per_frame;
+    ASSERT_TRUE(render(r, s, b, beat));  // the first block: nothing before its first frame
+    for (int block = 1; block < 18; ++block) {
+        beat += b.m_frames * k_beats_per_frame;
+        ASSERT_TRUE(render(r, s, b, beat)) << "block " << block;
+        for (uint32_t f = 0; f < b.m_frames; ++f) {
+            EXPECT_NEAR(b.m_data[0][f], beat + (f * k_beats_per_frame), 1e-7)
+                << "block " << block << " frame " << f;
+        }
+    }
+}
+
+// A range that ends right at the buffered audio's end reads its last frames next to the last
+// buffered one: held, not pulled to 0 (a click at a low latency).
+TEST(LinkAudioReceiver, HoldsTheLastBufferedFrameAtTheEnd) {
+    LinkAudioReceiver r;
+    FakeSharing s;
+    s.add_run(0.0, 4);  // 1024 frames
+    Block b(256);
+    const double beat = 767.5 * k_beats_per_frame;  // ends half a frame before the audio does
+    ASSERT_TRUE(render(r, s, b, beat));
+    for (uint32_t f = 0; f < b.m_frames; ++f) {
+        EXPECT_NEAR(b.m_data[0][f], beat + (f * k_beats_per_frame), 1e-5) << "frame " << f;
+    }
+}

@@ -51,8 +51,10 @@ namespace thl::inline THL_ABI_NAMESPACE::link {
  *
  * Construction, destruction and the setters run on the message thread and may
  * block. The getters are callable from any thread except the audio thread
- * (tempo() captures Link's app session state). timeline_backend()'s and
- * audio_backend()'s methods are for the audio thread only.
+ * (tempo() captures Link's app session state: on iOS LinkKit allows that on the
+ * main thread only). timeline_backend()'s and audio_backend()'s methods are for
+ * the audio thread only; received Link Audio is mapped to local beats there, with
+ * the session state the clock over timeline_backend() captured in that callback.
  *
  * Link is dual-licensed (GPLv2+ or a proprietary licence from Ableton). A product
  * that ships with TANH_BUILD_LINK must be GPL-compatible or hold the proprietary
@@ -107,7 +109,7 @@ public:
     /// iOS: the LinkKit settings view controller to present; nullptr elsewhere.
     [[nodiscard]] void* settings_view_controller();
 
-    /// Session tempo as seen by the application thread.
+    /// Session tempo as seen by the application thread (iOS: the main thread only).
     [[nodiscard]] double tempo() const;
 
     /// The quantum in beats (the phase unit shared with peers, default 4), any thread. The

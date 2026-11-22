@@ -8,6 +8,7 @@
 
 #import <ABLLink.h>
 #import <ABLLinkSettingsViewController.h>
+#import <Foundation/Foundation.h>
 #include <mach/mach_time.h>
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/dsp/transport/LinkAudio.h>
@@ -80,6 +81,9 @@ public:
         return m_captures.take() ? m_state : nullptr;
     }
 
+    /// Audio thread: the state of the clock's latest capture (this callback's), null before one.
+    [[nodiscard]] ABLLinkSessionStateRef audio_state() const { return m_state; }
+
 private:
     [[nodiscard]] uint64_t to_ticks(int64_t us) const {
         return us <= 0 ? 0 : static_cast<uint64_t>(static_cast<double>(us) * m_ticks_per_us);
@@ -96,22 +100,56 @@ private:
     std::atomic<uint64_t> m_epoch{0};
 };
 
+// A received buffer as the Link thread queues it: the samples, and LinkKit's info to map
+// it to local beats with. LinkKit's app session state is for the main thread only and its
+// audio session state for the audio thread only, so the Link thread maps nothing: the
+// audio thread does, with the state the clock captured in that callback.
+struct ReceivedBuffer {
+    dsp::transport::LinkAudioPacket m_packet;  // beats not yet set
+    ABLLinkAudioSourceBufferInfo m_info;
+};
+using ReceivedBufferQueue = core::LockFreeQueue<ReceivedBuffer, 256>;
+
 // Link Audio on the audio thread: received buffers out of the queue, our output into the sink.
 class LinkKitSharing final : public dsp::transport::LinkAudioBackend {
 public:
     LinkKitSharing(ABLLinkRef link,
                    LinkKitBackend& clock,
-                   detail::ReceivedQueue& received,
+                   const detail::SessionShared& shared,
+                   ReceivedBufferQueue& received,
                    const std::string& output_name)
         : m_link(link)
         , m_clock(clock)
+        , m_shared(shared)
         , m_received(received)
         , m_sink(ABLLinkAudioSinkNew(link, output_name.c_str(), 4096)) {}
     ~LinkKitSharing() override { ABLLinkAudioSinkDelete(m_sink); }
     LinkKitSharing(const LinkKitSharing&) = delete;
     LinkKitSharing& operator=(const LinkKitSharing&) = delete;
 
-    bool pop(dsp::transport::LinkAudioPacket& out) override { return m_received.try_pop(out); }
+    // Maps each buffer with this callback's capture; one from another session, or one before
+    // the clock captured anything, is dropped.
+    bool pop(dsp::transport::LinkAudioPacket& out) override {
+        auto* state = m_clock.audio_state();
+        const double quantum = m_shared.m_quantum.load(std::memory_order_relaxed);
+        while (m_received.try_pop(m_buffer)) {
+            double begin = 0.0;
+            double end = 0.0;
+            if (state == nullptr ||
+                !ABLLinkAudioSourceBufferInfoBeginBeats(&m_buffer.m_info, state, quantum, &begin) ||
+                !ABLLinkAudioSourceBufferInfoEndBeats(&m_buffer.m_info, state, quantum, &end) ||
+                end <= begin) {
+                continue;
+            }
+            out = m_buffer.m_packet;
+            out.m_begin_beat = begin;
+            // The packet may keep fewer frames than the buffer had: its end follows them.
+            out.m_end_beat = begin + ((end - begin) * static_cast<double>(out.m_num_frames) /
+                                      static_cast<double>(m_buffer.m_info.numFrames));
+            return true;
+        }
+        return false;
+    }
 
     bool send(const float* const* channels,
               uint32_t num_channels,
@@ -150,7 +188,9 @@ public:
 private:
     ABLLinkRef m_link;
     LinkKitBackend& m_clock;
-    detail::ReceivedQueue& m_received;
+    const detail::SessionShared& m_shared;
+    ReceivedBufferQueue& m_received;
+    ReceivedBuffer m_buffer;  // the one being taken (no copy on the audio thread's stack)
     ABLLinkAudioSinkRef m_sink;
 };
 
@@ -161,9 +201,11 @@ struct LinkSession::Impl {
         : m_link(ABLLinkNew(bpm))
         , m_shared(std::make_unique<detail::SessionShared>())
         , m_backend(m_link, *m_shared)
+        , m_received(std::make_unique<ReceivedBufferQueue>())
         , m_sharing(std::make_unique<LinkKitSharing>(m_link,
                                                      m_backend,
-                                                     m_shared->m_received,
+                                                     *m_shared,
+                                                     *m_received,
                                                      output_name)) {
         ABLLinkSetIsEnabledCallback(m_link, &Impl::on_enabled, this);
         ABLLinkSetIsConnectedCallback(m_link, &Impl::on_connected, this);
@@ -183,26 +225,24 @@ struct LinkSession::Impl {
         m_source_id.reset();
     }
 
-    // Link thread: a received buffer, to float on the local beat grid, for the audio thread.
+    // Link thread: a received buffer, to float, for the audio thread to map to local beats
+    // (no session state is ours to capture here: see ReceivedBuffer). A full queue drops it.
     static void on_buffer(const ABLLinkAudioSourceBuffer* buffer, void* context) {
         auto* impl = static_cast<Impl*>(context);
         const auto& info = buffer->info;
         if (info.numChannels == 0 || info.numFrames == 0) { return; }
-        const double quantum = impl->m_shared->m_quantum.load(std::memory_order_relaxed);
-        auto* state = ABLLinkCaptureAppSessionState(impl->m_link);
-        double begin = 0.0;
-        double end = 0.0;
-        if (!ABLLinkAudioSourceBufferInfoBeginBeats(&info, state, quantum, &begin) ||
-            !ABLLinkAudioSourceBufferInfoEndBeats(&info, state, quantum, &end)) {
-            return;  // from another session
+        ReceivedBuffer& received = impl->m_incoming;  // the Link thread's own, no stack copy
+        // Placeholder beats [0, 1): pop() maps the buffer on the audio thread.
+        if (!detail::make_link_audio_packet(buffer->samples,
+                                            info.numChannels,
+                                            info.numFrames,
+                                            0.0,
+                                            1.0,
+                                            received.m_packet)) {
+            return;
         }
-
-        detail::push_received(impl->m_shared->m_received,
-                              buffer->samples,
-                              info.numChannels,
-                              info.numFrames,
-                              begin,
-                              end);
+        received.m_info = info;
+        (void)impl->m_received->try_push(received);
     }
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
@@ -220,6 +260,8 @@ struct LinkSession::Impl {
     ABLLinkRef m_link;
     std::unique_ptr<detail::SessionShared> m_shared;
     LinkKitBackend m_backend;
+    std::unique_ptr<ReceivedBufferQueue> m_received;  // Link thread -> audio thread
+    ReceivedBuffer m_incoming;                        // Link thread only
     std::atomic<bool> m_connected{false};
     ABLLinkSettingsViewController* m_settings = nil;
     std::unique_ptr<LinkKitSharing> m_sharing;
@@ -273,7 +315,9 @@ void* LinkSession::settings_view_controller() {
     return (__bridge void*)m_impl->m_settings;
 }
 
+// LinkKit's app session state is for the main thread only (ABLLink.h).
 double LinkSession::tempo() const {
+    NSCAssert([NSThread isMainThread], @"LinkSession::tempo() is main thread only on iOS");
     return ABLLinkGetTempo(ABLLinkCaptureAppSessionState(m_impl->m_link));
 }
 

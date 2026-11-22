@@ -14,9 +14,14 @@
 
 namespace thl::inline THL_ABI_NAMESPACE::link::detail {
 
-/// A Link Audio sample from a float sample (clipped to -1..1).
+/// The scale of Link Audio's 16-bit samples, both ways (Ableton's util::floatToInt16 and
+/// int16ToFloat): a sample round-trips at unity gain.
+inline constexpr float k_link_audio_scale = 32768.0f;
+
+/// A Link Audio sample from a float sample (clipped to -1..1 - 1/32768, as Ableton's).
 [[nodiscard]] inline int16_t to_link_audio_sample(float sample) {
-    return static_cast<int16_t>(std::lround(std::clamp(sample, -1.0f, 1.0f) * 32767.0f));
+    constexpr float k_max = 1.0f - (1.0f / k_link_audio_scale);
+    return static_cast<int16_t>(std::lround(std::clamp(sample, -1.0f, k_max) * k_link_audio_scale));
 }
 
 /**
@@ -42,7 +47,7 @@ inline bool make_link_audio_packet(const int16_t* samples,
     for (size_t f = 0; f < frames; ++f) {
         for (size_t ch = 0; ch < out.m_num_channels; ++ch) {
             out.m_samples[(f * out.m_num_channels) + ch] =
-                static_cast<float>(samples[(f * num_channels) + ch]) / 32768.0f;
+                static_cast<float>(samples[(f * num_channels) + ch]) / k_link_audio_scale;
         }
     }
     out.m_begin_beat = begin_beat;

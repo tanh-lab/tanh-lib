@@ -37,15 +37,23 @@ void LinkAudioReceiver::reset() TANH_NONBLOCKING_FUNCTION {
     m_count = 0;
     m_playing = false;
     m_read_frame = 0.0;
+    m_tail_channels = 0;
 }
 
 void LinkAudioReceiver::pop_front() TANH_NONBLOCKING_FUNCTION {
+    const auto& p = packet(0);
+    m_tail_channels = std::min<uint32_t>(p.m_num_channels, m_tail.size());
+    const size_t last = static_cast<size_t>(p.m_num_frames - 1) * p.m_num_channels;
+    for (uint32_t c = 0; c < m_tail_channels; ++c) { m_tail[c] = p.m_samples[last + c]; }
     m_head = (m_head + 1) % k_capacity;
     --m_count;
 }
 
 float LinkAudioReceiver::sample(int64_t frame, uint32_t channel) const TANH_NONBLOCKING_FUNCTION {
-    frame = std::max<int64_t>(frame, 0);  // before the first frame: hold it
+    if (frame < 0) {
+        if (m_tail_channels > 0) { return m_tail[std::min(channel, m_tail_channels - 1)]; }
+        frame = 0;  // nothing before the first frame: hold it
+    }
     for (size_t i = 0; i < m_count; ++i) {
         const auto& p = packet(i);
         if (std::cmp_less(frame, p.m_num_frames)) {
@@ -54,7 +62,10 @@ float LinkAudioReceiver::sample(int64_t frame, uint32_t channel) const TANH_NONB
         }
         frame -= static_cast<int64_t>(p.m_num_frames);
     }
-    return 0.0f;
+    if (m_count == 0) { return 0.0f; }
+    const auto& p = packet(m_count - 1);  // past the end: hold the last frame, not 0
+    const uint32_t c = std::min(channel, p.m_num_channels - 1);
+    return p.m_samples[(static_cast<size_t>(p.m_num_frames - 1) * p.m_num_channels) + c];
 }
 
 void LinkAudioReceiver::stop(float* const* out,
@@ -63,6 +74,7 @@ void LinkAudioReceiver::stop(float* const* out,
     m_playing = false;
     m_margin_beats = 0.0;
     m_read_frame = 0.0;
+    m_tail_channels = 0;
     for (uint32_t ch = 0; ch < num_channels; ++ch) { std::fill_n(out[ch], num_frames, 0.0f); }
 }
 
@@ -119,16 +131,34 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
         if (begin_beat - read_beat > k_seek_tolerance * block_beats) { m_playing = false; }
     }
 
-    // Start at the first packet that reaches past the range's first beat (older ones go). A
-    // packet that only starts later in the range is played from its start: the hole before it
-    // was a lost packet. One that starts after the range has not arrived for it yet.
+    // Start at the first packet that reaches past the range's first beat (older ones go). One
+    // that only starts later in the range plays from its beat: the frames before it are silent
+    // (not the audio squeezed in). One that starts after the range has not arrived for it yet.
+    uint32_t lead = 0;  // silent output frames before the first packet's begin beat
     if (!m_playing) {
         while (m_count > 0 && packet(0).m_end_beat <= begin_beat) { pop_front(); }
         if (m_count == 0 || packet(0).m_begin_beat > end_beat) {
             stop(out, num_channels, num_frames);
             return false;
         }
-        m_read_frame = std::max(0.0, frame_at(packet(0), begin_beat));
+        const double first = packet(0).m_begin_beat;
+        if (first > begin_beat) {
+            // The first output frame at or after the packet's begin beat, read at its own beat.
+            const double frames_before =
+                ((first - begin_beat) / beats_per_sample) - k_frame_epsilon;
+            lead = std::min(num_frames, static_cast<uint32_t>(std::ceil(frames_before)));
+            m_read_frame = std::max(
+                0.0,
+                frame_at(packet(0), begin_beat + (static_cast<double>(lead) * beats_per_sample)));
+            m_tail_channels = 0;  // after a gap: nothing before the first frame
+        } else {
+            m_read_frame = std::max(0.0, frame_at(packet(0), begin_beat));
+        }
+    }
+    for (uint32_t ch = 0; ch < num_channels; ++ch) { std::fill_n(out[ch], lead, 0.0f); }
+    if (lead == num_frames) {  // the first packet starts at the block's end: from the next one
+        stop(out, num_channels, num_frames);
+        return false;
     }
 
     // The source frames up to the range's last beat. A beat in a hole (a packet the network
@@ -158,9 +188,9 @@ bool LinkAudioReceiver::render(LinkAudioBackend& backend,
     }
 
     // Read at the rate that maps the range onto the block (tempo and sample rate follow).
-    const double step = source_frames / static_cast<double>(num_frames);
-    for (uint32_t f = 0; f < num_frames; ++f) {
-        const double position = m_read_frame + (static_cast<double>(f) * step);
+    const double step = source_frames / static_cast<double>(num_frames - lead);
+    for (uint32_t f = lead; f < num_frames; ++f) {
+        const double position = m_read_frame + (static_cast<double>(f - lead) * step);
         const double whole = std::floor(position);
         const auto index = static_cast<int64_t>(whole);
         const auto t = static_cast<float>(position - whole);

@@ -273,6 +273,32 @@ TEST(LinkTransportClock, OwnSeekAfterTheEpochIsNotAReset) {
     }
 }
 
+// Our own tempo change in the block of the join's realignment places no timeline:
+// that block is still the reset (a tempo drag while a peer joins).
+TEST(LinkTransportClock, OwnTempoChangeKeepsTheJoinReset) {
+    fake::FakeLinkBackend link;
+    LinkTransportClock clk(link);
+    clk.prepare(k_sr);
+    link.m_session.m_playing = true;
+    for (int b = 0; b < 80; ++b) {
+        const int64_t t0 = b * k_block_us;
+        if (b == 5) { link.bump_epoch(); }
+        if (b == 60) {
+            clk.set_bpm(130.0);
+            link.realign(0.25, t0);
+        }
+        clk.set_host_time_us(t0);
+        clk.begin_block(k_frames);
+        if (b == 60) {
+            EXPECT_TRUE(clk.block_info().has(TransportInfo::k_timeline_reset));
+            EXPECT_TRUE(clk.block_info().has(TransportInfo::k_jumped));
+        } else if (b > 60) {
+            EXPECT_FALSE(clk.block_info().has(TransportInfo::k_timeline_reset)) << "block " << b;
+        }
+        clk.end_block();
+    }
+}
+
 // A peer stopping at its output time sends a stop dated ahead: we keep playing
 // until the block that contains it (STARTSTOPSTATE-1), like a start.
 TEST(LinkTransportClock, PeerStopDatedAheadLandsInItsBlock) {

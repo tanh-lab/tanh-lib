@@ -92,9 +92,10 @@ void LinkTransportClock::follow_epoch(int64_t t0) TANH_NONBLOCKING_FUNCTION {
 
 LinkState LinkTransportClock::apply_requests(int64_t t0,
                                              double quantum,
-                                             bool& committed) TANH_NONBLOCKING_FUNCTION {
+                                             bool& placed) TANH_NONBLOCKING_FUNCTION {
     LinkState state = m_backend.state();
     bool dirty = false;
+    placed = false;  // our own play or seek: we place the timeline (a tempo change does not)
     if (const auto bpm = m_pending_bpm.take()) {
         m_backend.set_tempo(*bpm, t0);
         dirty = true;
@@ -104,6 +105,7 @@ LinkState LinkTransportClock::apply_requests(int64_t t0,
         m_backend.set_playing(true, t0);
         m_backend.request_beat_at_start(0.0, quantum);  // quantized launch
         dirty = true;
+        placed = true;
     } else if (play_request < 0 && state.m_playing) {
         m_backend.set_playing(false, t0);
         dirty = true;
@@ -111,8 +113,8 @@ LinkState LinkTransportClock::apply_requests(int64_t t0,
     if (const auto beats = m_pending_position.take()) {
         m_backend.request_beat_at(*beats, t0, quantum);
         dirty = true;
+        placed = true;
     }
-    committed = dirty;
     if (!dirty) { return state; }
     m_backend.commit();
     return m_backend.state();
@@ -126,8 +128,8 @@ TransportInfo LinkTransportClock::compute_block(uint32_t frame_count) {
 
     // Capture, apply queued UI requests at the output time, commit if changed.
     m_backend.capture();
-    bool committed = false;
-    const LinkState state = apply_requests(t0, q, committed);
+    bool placed = false;
+    const LinkState state = apply_requests(t0, q, placed);
 
     const int64_t t1 =
         t0 + std::llround(static_cast<double>(frame_count) * k_micros_per_second / m_sample_rate);
@@ -153,9 +155,10 @@ TransportInfo LinkTransportClock::compute_block(uint32_t frame_count) {
     m_tracker.resolve(info, b1, frame_count);
     // The realignment after an epoch change is the reset. Our own play or seek
     // places the timeline itself: a plain jump, and it ends the wait (which keeps
-    // the tempo window off, so a peer's tempo change would read as a jump).
+    // the tempo window off, so a peer's tempo change would read as a jump). A
+    // tempo change of ours in the same block places nothing: the join stays the reset.
     if (m_epoch_armed && info.has(TransportInfo::k_jumped)) {
-        if (!committed) { info.m_flags |= TransportInfo::k_timeline_reset; }
+        if (!placed) { info.m_flags |= TransportInfo::k_timeline_reset; }
         m_epoch_armed = false;
     }
     return info;
