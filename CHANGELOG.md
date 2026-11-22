@@ -25,7 +25,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   devices; the app compiles in `android/java` and calls `thl::midi::set_android_java_vm()` in
   `JNI_OnLoad`); elsewhere `supported()` is false. Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
   `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`, `MidiDeviceManager.*`,
-  `MidiPortReader.*`, `CoreMidi.*` (macOS and the iOS simulator, through virtual ports).
+  `MidiPortReader.*`, `CoreMidi.*` (macOS and the iOS simulator, through virtual ports);
+  `test/android/midi/run.sh` (`just test-android-midi`) runs the Android backend on a device or
+  emulator against virtual MIDI devices, hot-plug included.
 - `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a
   gain from its weight. `Mode::Sum` takes the weights as the gains; `Mode::Mix` normalises them
   to their p-norm (`set_p()`: `k_amplitude` 1 for correlated inputs, `k_compromise` 4/3,

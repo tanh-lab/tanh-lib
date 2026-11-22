@@ -143,6 +143,22 @@ virtual devices need no permission; works from API 23.
 - Bluetooth LE devices are listed once something has connected them; scanning and
   connecting is not part of the backend yet. There is no virtual input.
 
+## Testing without hardware
+
+Both backends are tested against virtual MIDI devices, so no keyboard is needed:
+
+- **macOS and iOS**: the `CoreMidi.*` tests create virtual CoreMIDI ports in the test
+  process. They run with the desktop tests on macOS and in the iOS simulator test bundle.
+- **Android**: `test/android/midi/run.sh` (`just test-android-midi`) builds a small test
+  app and runs it on the connected device or emulator. The app declares a virtual MIDI
+  1.0 device and a virtual Universal MIDI Packet device (`MidiDeviceService`,
+  `MidiUmpDeviceService`; the latter needs Android 15) and drives a `DeviceManager`
+  against them; a second app that is only a virtual device is installed and uninstalled
+  meanwhile to play a device being plugged in and pulled out.
+
+What this leaves to real hardware: the timing of actual USB and Bluetooth devices,
+Bluetooth pairing, and how a USB MIDI 2.0 device presents itself on Android.
+
 ## To the audio thread
 
 `InputQueue` is a bounded lock-free queue of `TimedUmp`: the packet, its arrival time in

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test app for tanh::Midi's Android backend: two virtual MIDI devices of its own and an
+     instrumentation that drives thl::midi::DeviceManager against them (run.sh). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.tanhlab.miditest">
+
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
+    <uses-feature android:name="android.software.midi" android:required="false" />
+
+    <instrumentation
+        android:name=".MidiTest"
+        android:targetPackage="io.github.tanhlab.miditest" />
+
+    <application
+        android:label="tanh midi test"
+        android:hasCode="true"
+        android:extractNativeLibs="true">
+
+        <!-- A MIDI 1.0 virtual device with one output port: what it sends, clients receive. -->
+        <service
+            android:name=".Midi1Service"
+            android:exported="true"
+            android:permission="android.permission.BIND_MIDI_DEVICE_SERVICE">
+            <intent-filter>
+                <action android:name="android.media.midi.MidiDeviceService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.media.midi.MidiDeviceService"
+                android:resource="@xml/midi1_device" />
+        </service>
+
+        <!-- A Universal MIDI Packet virtual device (Android 15 and later). -->
+        <service
+            android:name=".UmpService"
+            android:exported="true"
+            android:permission="android.permission.BIND_MIDI_DEVICE_SERVICE">
+            <intent-filter>
+                <action android:name="android.media.midi.MidiUmpDeviceService" />
+            </intent-filter>
+            <property
+                android:name="android.media.midi.MidiUmpDeviceService"
+                android:resource="@xml/ump_device" />
+        </service>
+    </application>
+</manifest>

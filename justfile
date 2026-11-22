@@ -39,6 +39,11 @@ test-audio: build
 test-hardware: build
     ./build/desktop/Debug/test/audio-io/test_audio_io --gtest_also_run_disabled_tests --gtest_filter="HardwareTests.*"
 
+# Run the Android MIDI backend on the connected device or emulator, against virtual MIDI
+# devices (no hardware; needs ANDROID_HOME, an NDK and a JDK, see test/android/midi/run.sh)
+test-android-midi:
+    ./test/android/midi/run.sh
+
 # Run a specific test by name pattern
 test-filter PATTERN: build
     ctest --preset desktop-debug -R "{{ PATTERN }}"
