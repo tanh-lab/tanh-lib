@@ -37,6 +37,16 @@ inline float unit_random(std::mt19937& rng) {
     return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng);
 }
 
+// Start / End (or, slicing, their slice steps) as a region: End before
+// Start reverses. Loop mode scans it; Position mode takes only its
+// direction.
+inline LoopRegion marker_region(size_t total_frames, const HeadInputs& p) {
+    if (p.m_slices != nullptr) {
+        return slicing::region_from_steps(*p.m_slices, p.m_start, p.m_end, total_frames);
+    }
+    return LoopRegion::from_normalized(p.m_start, p.m_end, p.m_loop_point, total_frames);
+}
+
 // Where the grain scheduler's next grain comes from. The GrainEngine has no
 // idea which policy it runs; the voice hands it one per engine mode. Both
 // decisions a mode makes live here: the region (the slicer seam — a slice
@@ -87,10 +97,7 @@ protected:
 class LoopScanHead final : public HeadPolicy {
 public:
     LoopRegion region(size_t total_frames, const HeadInputs& p) const override {
-        if (p.m_slices != nullptr) {
-            return slicing::region_from_steps(*p.m_slices, p.m_start, p.m_end, total_frames);
-        }
-        return LoopRegion::from_normalized(p.m_start, p.m_end, p.m_loop_point, total_frames);
+        return marker_region(total_frames, p);
     }
 
     FramePos pick_start(const LoopRegion& region,
@@ -150,6 +157,13 @@ private:
 // this), never wrapped. Position temperature is applied on top exactly as
 // in Loop mode, so it can leave the window.
 //
+// Direction: End before Start reverses here too, exactly as in the other
+// modes (the markers keep their direction while dormant). The region stays
+// the whole sample, only reversed; a reversed grain starts on the picked
+// frame and reads backwards (pick_start hands back the virtual frame that
+// mirrors onto it). Slicing mirrors the pick inside its slice, so Spray 0
+// starts on the slice's last frame and plays the slice backwards.
+//
 // Slicing: the same formula in slice steps. Position picks a slice k, Spray
 // is a width S in slices (100 % = every slice), the window [k + lo·S,
 // k + hi·S) is anchored at the slice's start and Tilt leans it: Tilt right
@@ -161,8 +175,10 @@ private:
 // the boundaries, so short and long slices are picked equally often.
 class PositionSprayHead final : public HeadPolicy {
 public:
-    LoopRegion region(size_t total_frames, const HeadInputs& /*params*/) const override {
-        return LoopRegion::full(total_frames);
+    LoopRegion region(size_t total_frames, const HeadInputs& p) const override {
+        LoopRegion region = LoopRegion::full(total_frames);
+        region.m_reverse = marker_region(total_frames, p).m_reverse;
+        return region;
     }
 
     FramePos pick_start(const LoopRegion& region,
@@ -185,7 +201,9 @@ public:
                            static_cast<FramePos>(spray_offset * static_cast<float>(max_position)),
                        FramePos{0},
                        max_position - 1);
-        return jitter_and_wrap(start, temperature, region, rng);
+        // The region is the whole sample, so physical() is its own inverse:
+        // the virtual frame it returns mirrors back onto `picked`.
+        return region.physical(jitter_and_wrap(start, temperature, region, rng));
     }
 
     void reset() override {}
@@ -222,13 +240,20 @@ private:
                               static_cast<double>(temperature) * n;
         v = wrap_into(v + jitter, window_lo, window_hi);
         v = wrap_into(v, 0.0, n);  // past the last slice -> the first
+        // Reversed: mirror inside the slice, so its first frame becomes its
+        // last (the frame before the next boundary).
+        double const slice = std::floor(v);
+        double const step = region.m_reverse ? slice + 1.0 - (v - slice) : v;
         // Same rounding as SliceMap::boundary_frame, so Spray 0 lands on the
-        // very frame Sample / Loop mode's region starts on.
-        auto const frame = static_cast<FramePos>(
-            std::llround(static_cast<double>(slicing::step_to_norm(slices, v)) *
+        // very frame Sample / Loop mode's region starts on (or, reversed,
+        // the frame its reversed region enters on).
+        auto frame = static_cast<FramePos>(
+            std::llround(static_cast<double>(slicing::step_to_norm(slices, step)) *
                          static_cast<double>(max_frames(region))));
-        return std::clamp(frame, FramePos{0}, max_frames(region) - 1) +
-               static_cast<FramePos>(region.m_start);
+        if (region.m_reverse) { --frame; }
+        frame = std::clamp(frame, FramePos{0}, max_frames(region) - 1) +
+                static_cast<FramePos>(region.m_start);
+        return region.physical(frame);
     }
 
     static FramePos max_frames(const LoopRegion& region) {

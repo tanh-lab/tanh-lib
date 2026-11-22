@@ -381,6 +381,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   untouched); a change arriving mid-fade retargets it, and after a swap the next fade-out waits
   20 ms so a value flickering across a choice boundary can't chop the sound. The first render
   after `prepare()` takes the parameters directly. Tests: `RingsModelSwitch.*`.
+- Granular Position mode (`PositionSprayHead`) now honours End before Start like Loop and Sample
+  mode: the region stays the whole sample but reversed, and each grain starts on its picked frame
+  and reads backwards. Sliced, the pick is mirrored inside its slice, so Spray 0 enters the slice
+  on its last frame. Before, Position mode always played forwards. Tests:
+  `PositionSprayHead.Reversed*`, `PositionSprayHead.SliceReversedSprayZeroStartsOnSliceEnd`,
+  `GrainEngine.PositionModeReversedMarkersReadBackwards`.
 - `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
   e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
   the plain sources, while a blend's dry signal is the phase-matched one; the switch between the
