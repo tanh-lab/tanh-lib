@@ -25,7 +25,7 @@ tanh-lib in one process stay apart; code spells ``thl::`` (see
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
        graph_node [label="tanh::Graph\nprocessor graph,\nlatency compensation"];
-       midi       [label="tanh::Midi\nUniversal MIDI Packets,\nMIDI 1.0 parser, InputQueue"];
+       midi       [label="tanh::Midi\nUniversal MIDI Packets,\ndevice input, InputQueue"];
 
        state -> core;
        dsp -> core;
@@ -154,7 +154,9 @@ at its own resolution and MIDI 2.0 alike. :cpp:class:`thl::midi::Midi1StreamPars
 turns a MIDI 1.0 byte stream into packets, :cpp:func:`thl::midi::convert_to_midi1`
 gives code that only wants MIDI 1.0 plain short messages back, and
 :cpp:class:`thl::midi::InputQueue` carries timestamped packets from the receive
-threads to the audio thread without locks. See :doc:`midi`. Depends on Core.
+threads to the audio thread without locks. :cpp:class:`thl::midi::DeviceManager`
+lists and opens the MIDI inputs of the machine and follows hot-plugging (CoreMIDI
+on macOS and iOS). See :doc:`midi`. Depends on Core.
 
 Platforms
 ---------

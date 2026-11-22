@@ -61,6 +61,53 @@ and a registered or assignable controller becomes the RPN / NRPN sequence. What 
 cannot express — per-note controllers, per-note pitch bend, relative controllers — yields
 no message. System Exclusive is not a short message and is not converted.
 
+## Devices
+
+`DeviceManager` lists the MIDI inputs of the machine, opens them, follows hot-plugging and
+puts what they send into one `InputQueue`, each packet stamped with its arrival time and
+the slot of its input (`DeviceInfo::m_source`).
+
+```cpp
+thl::midi::DeviceManager midi;                       // opens every input, now and later
+midi.set_device_change_callback([&] { refresh_device_list(); });
+
+for (const thl::midi::DeviceInfo& device : midi.input_devices()) {
+    show(device.m_name, device.m_transport, device.m_open);
+}
+
+// audio thread
+midi.input_queue().drain([&](const thl::midi::TimedUmp& packet) { on_midi(packet); });
+```
+
+`DeviceManagerConfig` chooses the protocol to receive (`Protocol::Midi2` by default), the
+queue capacity, whether inputs are opened automatically, and whether System Exclusive is
+delivered (off by default: a dump would crowd the performance data out of the queue).
+`DeviceInfo::m_persistent_key` is the key under which to remember a device across
+reconnects; `m_id` is only valid while it is connected.
+
+The backend is CoreMIDI on macOS and iOS. Elsewhere `DeviceManager::supported()` is false,
+the list stays empty, and the queue carries what the application pushes itself.
+
+### macOS and iOS
+
+- The port is opened with the protocol asked for and CoreMIDI converts: with `Midi2`, a
+  MIDI 1.0 device arrives as MIDI 2.0 channel voice messages that scale back to exactly
+  the bytes it sent; with `Midi1`, a MIDI 2.0 device arrives as MIDI 1.0.
+- Packets are pushed from CoreMIDI's own high-priority receive thread, with CoreMIDI's
+  timestamp.
+- `create_virtual_input()` adds a destination other apps on the device can send to. On
+  iOS this needs the `audio` background mode.
+- Bluetooth and network MIDI devices appear as ordinary inputs once the system has
+  connected them. Connecting them is the application's job (on iOS,
+  `CABTMIDICentralViewController`).
+- CoreMIDI serves a whole process through the run loop of the thread that created the
+  process's first MIDI client. Without that run loop running, device changes are never
+  seen — not even by asking for the list again. If the application has no CoreMIDI client
+  of its own when the first `DeviceManager` is constructed, the backend starts a thread
+  that takes this role and runs until the process ends; a manager therefore works from
+  any thread and in a command-line tool. An application that wants CoreMIDI on its main
+  run loop creates its own client there before the first manager.
+
 ## To the audio thread
 
 `InputQueue` is a bounded lock-free queue of `TimedUmp`: the packet, its arrival time in

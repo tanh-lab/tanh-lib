@@ -667,7 +667,23 @@ if(TANH_BUILD_MIDI)
     add_library(${PROJECT_NAME}_midi
         src/midi/Midi1StreamParser.cpp
         src/midi/Midi1Converter.cpp
+        src/midi/DeviceManager.cpp
     )
+
+    # The device backend behind DeviceManager. Each platform is named explicitly, as
+    # for Net; anything without one gets the stub, so the component builds everywhere
+    # and DeviceManager::supported() tells a caller once.
+    if(TANH_OPERATING_SYSTEM STREQUAL "macOS" OR TANH_OPERATING_SYSTEM STREQUAL "iOS")
+        target_sources(${PROJECT_NAME}_midi PRIVATE src/midi/DeviceBackend_apple.mm)
+        # ARC for this file only: it owns a dispatch queue and hands blocks that capture
+        # C++ objects to CoreMIDI and libdispatch.
+        set_source_files_properties(src/midi/DeviceBackend_apple.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        target_link_libraries(${PROJECT_NAME}_midi PRIVATE
+            "-framework CoreMIDI" "-framework CoreFoundation" "-framework Foundation" "-lobjc")
+    else()
+        target_sources(${PROJECT_NAME}_midi PRIVATE src/midi/DeviceBackend_unsupported.cpp)
+    endif()
 
     set_target_properties(${PROJECT_NAME}_midi PROPERTIES
         VERSION ${PROJECT_VERSION}

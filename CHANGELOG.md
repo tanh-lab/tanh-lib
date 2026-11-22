@@ -17,8 +17,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   from big-endian bytes and from host-order words, `convert_to_midi1()` gives plain MIDI 1.0
   short messages back (MIDI 2.0 scaled down by the translation rules), and `InputQueue` carries
   timestamped packets from any number of receive threads to the audio thread without locks,
-  counting what it drops when full. Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
-  `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`.
+  counting what it drops when full. `DeviceManager` lists the MIDI inputs, opens them (all of
+  them by default), follows hot-plugging and delivers into one queue; on macOS and iOS it is
+  backed by CoreMIDI (MIDI 1.0 or 2.0 on request, a virtual input other apps can send to, a
+  run-loop thread of its own when the process has no CoreMIDI client yet), elsewhere
+  `supported()` is false. Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
+  `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`, `MidiDeviceManager.*`,
+  `CoreMidi.*` (macOS, through virtual ports).
 - `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a
   gain from its weight. `Mode::Sum` takes the weights as the gains; `Mode::Mix` normalises them
   to their p-norm (`set_p()`: `k_amplitude` 1 for correlated inputs, `k_compromise` 4/3,
