@@ -85,8 +85,9 @@ delivered (off by default: a dump would crowd the performance data out of the qu
 `DeviceInfo::m_persistent_key` is the key under which to remember a device across
 reconnects; `m_id` is only valid while it is connected.
 
-The backend is CoreMIDI on macOS and iOS. Elsewhere `DeviceManager::supported()` is false,
-the list stays empty, and the queue carries what the application pushes itself.
+The backend is CoreMIDI on macOS and iOS and `android.media.midi` on Android. Elsewhere
+`DeviceManager::supported()` is false, the list stays empty, and the queue carries what
+the application pushes itself.
 
 ### macOS and iOS
 
@@ -107,6 +108,40 @@ the list stays empty, and the queue carries what the application pushes itself.
   that takes this role and runs until the process ends; a manager therefore works from
   any thread and in a command-line tool. An application that wants CoreMIDI on its main
   run loop creates its own client there before the first manager.
+
+### Android
+
+Receiving from `android.media.midi` needs Java, which a CMake library cannot deliver, so
+the app provides three things:
+
+1. **The Java class.** Add tanh-lib's `android/java` folder to the app's sources:
+
+   ```groovy
+   android.sourceSets.main.java.srcDirs += "<tanh-lib>/android/java"
+   ```
+
+   and keep it from R8 with `android/consumer-rules.pro` (`proguardFiles`).
+2. **The JavaVM.** Call `thl::midi::set_android_java_vm(vm)` in `JNI_OnLoad`. It has to
+   be there: only on the thread that loads the library can the class be found.
+3. **The manifest entry**, if MIDI is optional for the app:
+
+   ```xml
+   <uses-feature android:name="android.software.midi" android:required="false"/>
+   ```
+
+Until the first two are in place `running()` is false and nothing is listed. USB and
+virtual devices need no permission; works from API 23.
+
+- Android does not convert between the protocols. A device arrives in its own: MIDI 1.0
+  bytes as type 2 packets, and — with `Protocol::Midi2`, on API 33 and later — devices of
+  the Universal MIDI Packet transport as they send. A consumer handles both channel voice
+  types, or converts with `convert_to_midi1()`.
+- Opening is asynchronous: `open_input()` returns once the request is made, and the
+  device change callback fires when `DeviceInfo::m_open` has changed.
+- Packets are pushed from the thread Android runs per port, an ordinary thread, with the
+  timestamp Android attached (`System.nanoTime()`, the clock of `uptime_ns()`).
+- Bluetooth LE devices are listed once something has connected them; scanning and
+  connecting is not part of the backend yet. There is no virtual input.
 
 ## To the audio thread
 

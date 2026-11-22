@@ -681,6 +681,12 @@ if(TANH_BUILD_MIDI)
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
         target_link_libraries(${PROJECT_NAME}_midi PRIVATE
             "-framework CoreMIDI" "-framework CoreFoundation" "-framework Foundation" "-lobjc")
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Android")
+        # android.media.midi over JNI. Receiving needs a Java class, which CMake cannot
+        # deliver: the app compiles android/java/ in (and keeps it from R8 with
+        # android/consumer-rules.pro) and calls thl::midi::set_android_java_vm() in
+        # JNI_OnLoad. Until then running() is false and no input is listed.
+        target_sources(${PROJECT_NAME}_midi PRIVATE src/midi/DeviceBackend_android.cpp)
     else()
         target_sources(${PROJECT_NAME}_midi PRIVATE src/midi/DeviceBackend_unsupported.cpp)
     endif()

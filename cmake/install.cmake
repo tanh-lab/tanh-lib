@@ -85,6 +85,15 @@ foreach(target IN LISTS TANH_BUILT_COMPONENTS)
     endforeach()
 endforeach()
 
+# The Java half of the Android MIDI backend and its R8 keep rules: an app that builds
+# against an installed tanh-lib compiles them in from here (docs/sphinx/midi.md).
+if(TARGET ${PROJECT_NAME}_midi AND TANH_OPERATING_SYSTEM STREQUAL "Android")
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/android/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/tanh/android
+        COMPONENT dev
+    )
+endif()
+
 # --- Targets -------------------------------------------------------------------
 
 set(TARGETS_TO_EXPORT ${TANH_BUILT_COMPONENTS})

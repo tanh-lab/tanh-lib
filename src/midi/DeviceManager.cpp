@@ -1,5 +1,6 @@
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/core/AtomicSharedPtr.h>
+#include <tanh/midi/AndroidMidi.h>
 #include <tanh/midi/DeviceInfo.h>
 #include <tanh/midi/DeviceManager.h>
 #include <tanh/midi/InputQueue.h>
@@ -83,5 +84,10 @@ bool DeviceManager::create_virtual_input(const std::string& name) {
 InputQueue& DeviceManager::input_queue() noexcept {
     return *m_impl->m_queue;
 }
+
+#if !defined(THL_PLATFORM_ANDROID)
+// The Android backend defines the real one (DeviceBackend_android.cpp).
+void set_android_java_vm(void* /*java_vm*/) {}
+#endif
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::midi

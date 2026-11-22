@@ -36,8 +36,10 @@ struct DeviceManagerConfig {
 /// MIDI inputs of the device: lists them, opens them, follows hot-plugging, and delivers
 /// what they send as timestamped Universal MIDI Packets into one InputQueue.
 ///
-/// Backed by CoreMIDI on macOS and iOS. On other platforms supported() is false, the list
-/// stays empty and the queue only carries what the application pushes itself.
+/// Backed by CoreMIDI on macOS and iOS and by android.media.midi on Android (see
+/// AndroidMidi.h for what the app has to provide). On other platforms supported() is
+/// false, the list stays empty and the queue only carries what the application pushes
+/// itself.
 ///
 /// CoreMIDI serves a whole process through the run loop of the thread that created the
 /// process's first MIDI client; without that run loop running, devices that come and go
@@ -50,8 +52,9 @@ struct DeviceManagerConfig {
 /// audio thread only touches input_queue().
 class TANH_API DeviceManager {
 public:
-    /// Called when an input appeared, went away or changed its name. Runs on a thread of
-    /// the backend: do not block it, and do not destroy the manager from inside it.
+    /// Called when an input appeared, went away, changed its name or (Android) finished
+    /// opening. Runs on a thread of the backend: do not block it, and do not destroy the
+    /// manager from inside it.
     using DeviceChangeCallback = std::function<void()>;
 
     explicit DeviceManager(const DeviceManagerConfig& config = {});
@@ -73,7 +76,9 @@ public:
     [[nodiscard]] std::vector<DeviceInfo> input_devices() const;
 
     /// Starts delivering the input with this DeviceInfo::m_id. True when it is open
-    /// afterwards.
+    /// afterwards — or, on Android, where the system opens a device asynchronously, when
+    /// it is being opened: the device change callback then tells when DeviceInfo::m_open
+    /// has changed.
     bool open_input(std::uint32_t id);
 
     /// Stops delivering it. True when it was present.

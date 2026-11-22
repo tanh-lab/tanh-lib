@@ -9,7 +9,11 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_Midi1Converter.cpp
 	test_InputQueue.cpp
 	test_DeviceManager.cpp
+	test_PortReader.cpp
 )
+
+# PortReader is the platform-independent part of the Android backend, a private header.
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/midi)
 
 # DeviceManager against the real CoreMIDI, through virtual ports of the test process.
 # macOS only: the iOS test bundles run in a simulator whose MIDI service is not ours to
