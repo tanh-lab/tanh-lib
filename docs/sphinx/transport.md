@@ -59,19 +59,9 @@ start. The widening is off while a Link epoch change is pending (see below).
 
 ### Block size
 
-A host may call with more samples than it announced. `ModulationMatrix::process()`
-and `MotionRecorder::process()` take at most the prepared size (debug builds
-assert, release builds clamp), so the engine splits the host block.
-
-```cpp
-for (size_t off = 0; off < num_samples; off += max_block) {
-    const auto n = static_cast<uint32_t>(std::min(max_block, num_samples - off));
-    clock.begin_block(n);
-    matrix.process_with_scope(scope.data(), n, &clock.block_info());
-    // DSP on samples [off, off + n) of the host buffer
-    clock.end_block();
-}
-```
+Every buffer holds the `samples_per_block` given to `prepare()`, the host's
+announced maximum. `ModulationMatrix::process()` trusts it: pass the host block
+as it comes.
 
 ## HostTransportClock
 

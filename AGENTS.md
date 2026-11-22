@@ -44,11 +44,16 @@ Run a single test binary directly:
 Library targets with inter-component dependencies:
 
 - **tanh_core** (`src/core/`, `include/tanh/core/`) — Dispatcher (event messaging), Logger (with RT-safe `Logger::rt` path), RCU (lock-free read-copy-update), `LockFreeQueue` (bounded lock-free MPMC), generic buffers, header-only WAV decoder (`WavReader.h`). Foundation for all other components.
-- **tanh_state** (`src/state/`, `include/tanh/state/`) — Hierarchical parameter storage with dot-separated paths (e.g. `"oscillator.frequency"`). RCU-protected reads for real-time safety. JSON serialization via nlohmann_json. Depends on core.
-- **tanh_dsp** (`src/dsp/`, `include/tanh/dsp/`) — DSP processors (synth, effects, granular, Rings resonator model). All processors inherit `BaseProcessor` with `prepare()`/`process()` interface. Modulation via change points for sample-accurate automation. Depends on core.
-- **tanh_modulation** (`src/modulation/`, `include/tanh/modulation/`) — Modulation matrix routing sources (LFO, etc.) to DSP parameters. Change-point-driven sub-blocking. Depends on core, state, dsp.
+- **tanh_parameters** (`src/parameters/`, `include/tanh/parameters/`) — What a parameter is (`ParameterDefinition`, `Range`, `ModulationScope`) and the lookup errors, shared by State and Modulation. No option: built with either. Depends on core.
+- **tanh_state** (`src/state/`, `include/tanh/state/`) — Hierarchical parameter storage with dot-separated paths (e.g. `"oscillator.frequency"`). RCU-protected reads for real-time safety. JSON serialization via nlohmann_json. Depends on core, parameters.
+- **tanh_dsp** (`src/dsp/`, `include/tanh/dsp/`) — DSP processors (synth, effects, granular, Rings resonator model). All processors inherit `BaseProcessor` with `prepare()`/`process()` interface. Modulation via change points for sample-accurate automation. Transport clocks (`TransportClock`, host, internal, Link over the `LinkBackend` seam) and `TransportInfo`. Depends on core.
+- **tanh_modulation** (`src/modulation/`, `include/tanh/modulation/`) — Modulation matrix routing sources (LFO, etc.) to DSP parameters. Change-point-driven sub-blocking. Reads parameters through a `ParameterBackend` (`StateParameterBackend` when State is built). `BlockProcessor`s run once per block with the transport. Depends on core, parameters, dsp; state optional.
 - **tanh_audio_io** (`src/audio-io/`, `include/tanh/audio-io/`) — Cross-platform audio device I/O over miniaudio. Platform-specific code for iOS (.mm) and Android. Depends on core.
+- **tanh_net** (`src/net/`, `include/tanh/net/`) — HTTPS asset delivery over the platform HTTP stack. Off by default (`TANH_BUILD_NET`). Depends on core.
+- **tanh_link** (`src/link/`, `include/tanh/link/`) — `LinkSession` over the Ableton Link C++ SDK (desktop) or LinkKit (iOS), with Link Audio. Off by default (`TANH_BUILD_LINK`, licence). Depends on dsp.
 - **tanh_graph** (`src/graph/`, `include/tanh/graph/`) — `Graph`: `BaseProcessor` nodes run as one processor, edited on the control thread and handed over at `commit()`; latency compensation from each node's `latency_samples()`; a bypassed node coming back is `reset()`. Off by default (`TANH_BUILD_GRAPH`). Depends on core, dsp.
+
+Private headers live next to their sources in `src/<component>/`. `include/tanh/<component>/detail/` holds only what public headers need (types of by-value members); it is not API.
 
 ## Documentation
 
@@ -101,8 +106,10 @@ Every declaration lives in the inline namespace `thl::THL_ABI_NAMESPACE` (`TANH_
 
 What the components embed, with each licence, is in `THIRD_PARTY_NOTICES.md` (installed to `share/doc/tanh`): adding a dependency or changing its version updates it in the same commit.
 
-- nlohmann_json 3.12.0 (State)
+- nlohmann_json 3.12.0 (State, Modulation)
 - miniaudio 0.11.24 (AudioIO)
+- readerwriterqueue 1.0.6 (Modulation)
+- Ableton Link 4.1 (Link, desktop; pinned commit) and LinkKit 4.1.2 (Link, iOS; pinned SHA256)
 - pffft v1.1.0, marton78/pffft (DSP, with `TANH_FFT_BACKEND=pffft`; BSD-like FFTPACK licence: binary distributions carry its notice)
 - googletest 1.14.0 (tests)
 - googlebenchmark 1.9.1 (benchmarks)

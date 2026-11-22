@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/state/State.h>
 
@@ -1749,4 +1750,50 @@ TEST(ModulationSource, DefaultPreProcessBlockIsNoOp) {
     ASSERT_NE(target, nullptr);
     // Modulation still occurred normally.
     EXPECT_TRUE(has_mono_additive(target));
+}
+
+namespace {
+
+class CountingProcessor : public BlockProcessor {
+public:
+    void prepare(double sample_rate, size_t samples_per_block) override {
+        ++m_prepares;
+        m_sample_rate = sample_rate;
+        m_samples_per_block = samples_per_block;
+    }
+    void process_block(const BlockContext& /*context*/) override {}
+
+    int m_prepares = 0;
+    double m_sample_rate = 0.0;
+    size_t m_samples_per_block = 0;
+};
+
+class CountingSource : public ConstSource {
+public:
+    void prepare(double sr, size_t spb, uint32_t voice_count) override {
+        ++m_prepares;
+        ConstSource::prepare(sr, spb, voice_count);
+    }
+    int m_prepares = 0;
+};
+
+}  // namespace
+
+// Added before prepare(), a block processor and a source are prepared once, by prepare().
+TEST(ModulationMatrix, AddBeforePrepareWaitsForPrepare) {
+    thl::State state;
+    ModulationMatrix matrix(state);
+    CountingProcessor processor;
+    CountingSource source;
+    matrix.add_block_processor(processor);
+    matrix.add_source("src", &source);
+    EXPECT_EQ(processor.m_prepares, 0);
+    EXPECT_EQ(source.m_prepares, 0);
+    matrix.prepare(44100.0, 128);
+    EXPECT_EQ(processor.m_prepares, 1);
+    EXPECT_EQ(source.m_prepares, 1);
+    EXPECT_DOUBLE_EQ(processor.m_sample_rate, 44100.0);
+    EXPECT_EQ(processor.m_samples_per_block, 128u);
+    matrix.remove_block_processor(processor);
+    matrix.remove_source("src");
 }

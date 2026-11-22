@@ -1,12 +1,14 @@
 #include "tanh/modulation/InputEventQueue.h"
 
 #include <tanh/core/AbiNamespace.h>
-#include <tanh/state/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "EventSpread.h"
 
 namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
@@ -111,8 +113,7 @@ size_t InputEventQueue::drain_spread(uint32_t block_size, const OnEvent& cb) {
         const size_t n = idx.size();
         if (n == 0) { return; }
         for (size_t i = 0; i < n; ++i) {
-            const auto offset = static_cast<uint32_t>((i * static_cast<size_t>(block_size)) / n);
-            cb(m_drain_buffer[idx[i]], offset);
+            cb(m_drain_buffer[idx[i]], detail::spread_offset(i, n, block_size));
         }
     };
 

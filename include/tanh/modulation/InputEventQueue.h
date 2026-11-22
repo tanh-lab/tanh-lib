@@ -3,7 +3,7 @@
 #include <readerwriterqueue.h>
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Exports.h>
-#include <tanh/state/ModulationScope.h>
+#include <tanh/parameters/ModulationScope.h>
 
 #include <cassert>
 #include <cstddef>

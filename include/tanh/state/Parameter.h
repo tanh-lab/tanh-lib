@@ -7,9 +7,9 @@
 #include <string>
 #include <string_view>
 
-#include "ParameterDefinitions.h"
 #include "ParameterListener.h"
 #include "tanh/core/Exports.h"
+#include "tanh/parameters/ParameterDefinitions.h"
 #include "tanh/utils/RealtimeSanitizer.h"
 
 namespace thl::inline THL_ABI_NAMESPACE {
@@ -80,6 +80,10 @@ struct ParameterRecord {
     std::string_view m_key;
 
     /// Mutable runtime state (non-RT only, separate cache line from m_cache)
+    /// Bumped by every write through State (set, set_by_id, from_json), not by
+    /// ParameterHandle::store(): the host-change stamp a ModulationMatrix over
+    /// this State reads (ParameterBinding::m_host_change_stamp).
+    std::atomic<uint64_t> m_change_stamp{0};
     std::atomic<bool> m_in_gesture{false};
     std::string m_string_value;  // mutex-protected for String-typed parameters
 

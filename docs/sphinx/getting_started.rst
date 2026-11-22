@@ -73,12 +73,13 @@ Install and ``find_package``
 
 .. code-block:: cmake
 
-   find_package(tanh REQUIRED COMPONENTS Core)   # Core State DSP Resonator Modulation AudioIO Net
+   find_package(tanh REQUIRED COMPONENTS Core)   # Core Parameters State DSP Resonator Modulation AudioIO Net Link
    target_link_libraries(app PRIVATE tanh::Core)
 
-``test/install`` is a minimal consumer of the installed package; CI builds it
-against a fresh install prefix in the merge queue (``just test-install``
-locally). The exported target names match the in-tree ``ALIAS`` targets, so
+``test/install`` is a minimal consumer of the installed package and
+``test/install-modulation`` one of Modulation without State; CI builds both
+against a fresh install prefix in the merge queue (``just test-install`` and
+``just test-install-modulation`` locally). The exported target names match the in-tree ``ALIAS`` targets, so
 consumers link the same ``tanh::<Component>`` whether they ``add_subdirectory``
 or ``find_package``. A parent project that embeds tanh-lib via FetchContent and
 installs its own package can leave ``TANH_WITH_INSTALL`` on: the components

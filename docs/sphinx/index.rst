@@ -1,19 +1,24 @@
 tanh-lib
 ========
 
-Modular, real-time-safe C++20 audio library. Six independently buildable
+Modular, real-time-safe C++20 audio library. Independently buildable
 components, all in namespace ``thl``:
 
 - **tanh::Core** — Dispatcher, Logger (with a real-time path), RCU, lock-free
   queue, generic buffers, header-only WAV decoder
+- **tanh::Parameters** — parameter definitions, ranges, modulation scopes and
+  lookup errors, shared by State and Modulation
 - **tanh::State** — hierarchical parameter storage with RCU lock-free reads and
   JSON serialization
 - **tanh::DSP** — processors, effects, filters, sample player / looper,
   slicing, pitch banks, granular engine, Rings resonator model (also available
   alone as ``tanh::Resonator``)
-- **tanh::Modulation** — modulation matrix with change-point sub-blocking
+- **tanh::Modulation** — modulation matrix with change-point sub-blocking; reads
+  any host's parameters
 - **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
+- **tanh::Link** — Ableton Link session and Link Audio (``TANH_BUILD_LINK``,
+  off by default)
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
 
@@ -28,6 +33,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    symbol_visibility
    change_points
    modulation
+   host_parameters
    transport
    sampler
    slicing
@@ -49,8 +55,11 @@ other; :doc:`realtime_safety` lists the rules every ``process()`` path follows.
 :doc:`change_points` shows, with an interactive figure, how a processor renders a
 block in pieces that start where its modulated parameters change.
 :doc:`symbol_visibility`, :doc:`modulation` and :doc:`audio_io` are the design
-notes that used to live in the README; :doc:`sampler`, :doc:`slicing` and
-:doc:`pitch` describe the sample playback components.
+notes that used to live in the README. :doc:`host_parameters` drives the
+matrix from a host's parameter store; :doc:`transport` covers musical time
+(``TransportInfo``, host/internal/Link clocks) and Ableton Link.
+:doc:`sampler`, :doc:`slicing` and :doc:`pitch` describe the sample playback
+components.
 
 The :doc:`api/index` is generated from the public headers under
 ``include/tanh/``.
