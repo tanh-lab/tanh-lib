@@ -372,6 +372,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `MetronomePlayer` places its clicks on the clock's resolved beats (its slope, not
   bpm / (60 · sample rate)), so a beat on a block edge clicks once. Test:
   `MetronomePlayer.EveryBeatClicksOnceWithAJitteryHost`.
+- `RingsResonatorSynthProcessor`: an out-of-range `Model` (e.g. a modulated read below 0 or at
+  `Last` and above) is clamped to the valid models instead of indexing the voice manager's
+  per-model gain table out of bounds, which crashed the audio thread. Test:
+  `RingsResonatorSynthProcessorTest.OutOfRangeModelIsClampedToValidRange`.
 - `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
   e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
   the plain sources, while a blend's dry signal is the phase-matched one; the switch between the

@@ -1,14 +1,15 @@
 #include <gtest/gtest.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/dsp/rings-resonator/RingsDsp.h>
 #include <tanh/dsp/synth/RingsResonatorSynthProcessor.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <vector>
 
 #ifdef RINGS_HAS_REFERENCE_FIXTURES
 #include <RingsTestFixtures.h>
-#include <tanh/dsp/rings-resonator/RingsDsp.h>
 #endif
 
 namespace {
@@ -55,6 +56,23 @@ float process_and_measure_energy(TestResonator& synth, int num_blocks = 4) {
     return energy;
 }
 
+std::vector<float> render_with_model(int model, int num_blocks = 8) {
+    TestResonator synth;
+    synth.prepare(48000.0, k_block_size);
+    synth.set_int(Parameter::Model, model);
+    std::vector<float> rendered;
+    rendered.reserve(static_cast<size_t>(num_blocks * k_block_size));
+    for (int b = 0; b < num_blocks; ++b) {
+        std::array<float, k_block_size> input = {};
+        std::array<float, k_block_size> output = {};
+        if (b == 0) { input[0] = 1.0f; }
+        synth.process(thl::core::ConstBufferView(input.data(), k_block_size),
+                      thl::core::BufferView(output.data(), k_block_size));
+        rendered.insert(rendered.end(), output.begin(), output.end());
+    }
+    return rendered;
+}
+
 class RingsResonatorSynthProcessorTest : public ::testing::Test {
 protected:
     TestResonator m_synth;
@@ -86,6 +104,20 @@ TEST_F(RingsResonatorSynthProcessorTest, PolyphonyClampedToValidRange) {
     m_synth.set_int(Parameter::Polyphony, 5);
     float energy = process_and_measure_energy(m_synth);
     EXPECT_TRUE(std::isfinite(energy));
+}
+
+// Modulated reads are unclamped, so Model can arrive below 0 or at/above Last.
+// It must render like the nearest valid model instead of indexing the
+// per-model gain table out of bounds (cosmos #77).
+TEST_F(RingsResonatorSynthProcessorTest, OutOfRangeModelIsClampedToValidRange) {
+    constexpr int k_last_valid = static_cast<int>(thl::dsp::resonator::Last) - 1;
+    auto const first = render_with_model(0);
+    auto const last = render_with_model(k_last_valid);
+
+    EXPECT_EQ(render_with_model(-1), first);
+    EXPECT_EQ(render_with_model(-1000), first);
+    EXPECT_EQ(render_with_model(k_last_valid + 1), last);
+    EXPECT_EQ(render_with_model(1000), last);
 }
 
 TEST_F(RingsResonatorSynthProcessorTest, OddEvenMixAffectsOutput) {

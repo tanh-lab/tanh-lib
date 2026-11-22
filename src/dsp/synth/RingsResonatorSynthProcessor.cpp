@@ -166,7 +166,10 @@ void RingsResonatorSynthProcessor::process(const thl::core::ConstBufferView& inp
     e.m_patch.m_position = position;
     e.m_odd_even_mix = odd_even_mix;
     e.m_dry_wet = dry_wet;
-    e.m_model = static_cast<resonator::ResonatorModel>(model);
+    // Modulated reads are unclamped: an out-of-range model indexes past the
+    // voice manager's per-model gain table.
+    e.m_model = static_cast<resonator::ResonatorModel>(
+        std::clamp(model, 0, static_cast<int>(resonator::Last) - 1));
 
     static constexpr std::array<int, 3> k_poly_voices = {1, 2, 4};
     int const poly_index = std::clamp(polyphony, 0, 2);
