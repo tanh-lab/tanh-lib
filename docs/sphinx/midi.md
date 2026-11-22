@@ -101,13 +101,25 @@ the application pushes itself.
 - Bluetooth and network MIDI devices appear as ordinary inputs once the system has
   connected them. Connecting them is the application's job (on iOS,
   `CABTMIDICentralViewController`).
-- CoreMIDI serves a whole process through the run loop of the thread that created the
-  process's first MIDI client. Without that run loop running, device changes are never
-  seen — not even by asking for the list again. If the application has no CoreMIDI client
-  of its own when the first `DeviceManager` is constructed, the backend starts a thread
-  that takes this role and runs until the process ends; a manager therefore works from
-  any thread and in a command-line tool. An application that wants CoreMIDI on its main
-  run loop creates its own client there before the first manager.
+- CoreMIDI serves a whole process through the run loop of the thread that makes the
+  process's first CoreMIDI call — any call, not only the creation of a client. Without
+  that run loop running, device changes are never seen — not even by asking for the list
+  again. If the application has not used CoreMIDI when the first `DeviceManager` is
+  constructed, the backend starts a thread that takes this role and runs until the
+  process ends; a manager therefore works from any thread and in a command-line tool. An
+  application that wants CoreMIDI on its main run loop makes a CoreMIDI call there before
+  the first manager.
+- CoreMIDI gives no sign when that run loop is not running: every call succeeds and
+  devices that come and go are silently missed. The backend therefore checks once, by
+  changing a private property of its own client and waiting for CoreMIDI to report it
+  back, and logs a warning (group `thl.midi.device_manager`) when nothing arrives within
+  five seconds — which means some other code made the process's first CoreMIDI call on a
+  thread without a run loop.
+- All managers of a process share one MIDI client, named by the first manager's
+  `m_client_name` and kept until the process ends: creating a client can start to fail
+  for good after clients have been disposed repeatedly, and Apple discourages disposing
+  all of an application's clients. A manager owns its input port and its virtual input,
+  and gives those back when it is destroyed.
 
 ### Android
 

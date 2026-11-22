@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -185,9 +186,10 @@ std::vector<std::uint8_t> to_midi1_bytes(const std::vector<TimedUmp>& packets) {
 
 class CoreMidi : public ::testing::Test {
 protected:
-    // CoreMIDI serves a process through the run loop of the thread that created its first
-    // client. The test thread runs none, so a manager goes first: its backend brings a
-    // run-loop thread of its own, and the test clients created afterwards ride on it.
+    // CoreMIDI serves a process through the run loop of the thread that makes its first
+    // CoreMIDI call. The test thread runs none, so a manager goes first: its backend
+    // brings a run-loop thread of its own, and the test clients created afterwards ride
+    // on it.
     static void SetUpTestSuite() { const DeviceManager first; }
 
     void SetUp() override {
@@ -313,6 +315,53 @@ TEST_F(CoreMidi, FollowsHotPlug) {
     const VirtualSource another(m_client, kMIDIProtocol_2_0);
     ASSERT_TRUE(listed(manager, another.name()));
     EXPECT_EQ(changes.load(), cleared);
+}
+
+// The managers of a process share one MIDI client, which stays when they go: each one
+// follows hot-plug and receives on its own, and the ones that are left go on working.
+TEST_F(CoreMidi, ManagersShareTheClientAndWorkOnTheirOwn) {
+    DeviceManager first;
+    auto second = std::make_unique<DeviceManager>();
+    std::atomic<int> first_changes{0};
+    std::atomic<int> second_changes{0};
+    first.set_device_change_callback([&] { first_changes.fetch_add(1); });
+    second->set_device_change_callback([&] { second_changes.fetch_add(1); });
+
+    const VirtualSource source(m_client, kMIDIProtocol_2_0);
+    ASSERT_TRUE(listed(first, source.name()));
+    ASSERT_TRUE(listed(*second, source.name()));
+    EXPECT_TRUE(wait_for([&] { return first_changes.load() >= 1 && second_changes.load() >= 1; }));
+
+    // Both are connected to the input, each with its own queue.
+    source.send({0x40903C00U, 0x80000000U});
+    EXPECT_EQ(receive(first, find_device(first, source.name())->m_source, 1).size(), 1U);
+    EXPECT_EQ(receive(*second, find_device(*second, source.name())->m_source, 1).size(), 1U);
+
+    // One goes; the other still follows hot-plug and receives.
+    second.reset();
+    const VirtualSource later(m_client, kMIDIProtocol_2_0);
+    ASSERT_TRUE(listed(first, later.name()));
+    later.send({0x40903E00U, 0x80000000U});
+    EXPECT_EQ(receive(first, find_device(first, later.name())->m_source, 1).size(), 1U);
+}
+
+// A manager can be created and destroyed any number of times (the client is not disposed
+// with it, which CoreMIDI does not take well when repeated).
+TEST_F(CoreMidi, ManagersCanComeAndGoManyTimes) {
+    const VirtualSource source(m_client, kMIDIProtocol_2_0);
+    for (int i = 0; i < 64; ++i) {
+        DeviceManager manager;
+        ASSERT_TRUE(manager.running()) << "manager " << i;
+        if (i % 16 == 0) { manager.create_virtual_input(unique_name("input")); }
+    }
+
+    DeviceManager manager;
+    ASSERT_TRUE(listed(manager, source.name()));
+    source.send({0x40903C00U, 0x80000000U});
+    EXPECT_EQ(receive(manager, find_device(manager, source.name())->m_source, 1).size(), 1U);
+
+    const VirtualSource later(m_client, kMIDIProtocol_2_0);
+    EXPECT_TRUE(listed(manager, later.name()));
 }
 
 TEST_F(CoreMidi, WithoutAutoOpenAnInputDeliversOnlyWhileOpen) {

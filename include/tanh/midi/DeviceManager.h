@@ -29,7 +29,9 @@ struct DeviceManagerConfig {
     /// Deliver System Exclusive (types 3 and 5). Off by default: a dump is thousands of
     /// packets and would crowd the performance data out of the queue.
     bool m_receive_sysex = false;
-    /// Name under which this app appears to the system's MIDI service.
+    /// Name under which this app appears to the system's MIDI service. On macOS and iOS
+    /// the managers of a process share one MIDI client, named by the first of them; each
+    /// manager's own name is that of its input port.
     std::string m_client_name = "tanh";
 };
 
@@ -41,12 +43,16 @@ struct DeviceManagerConfig {
 /// false, the list stays empty and the queue only carries what the application pushes
 /// itself.
 ///
-/// CoreMIDI serves a whole process through the run loop of the thread that created the
-/// process's first MIDI client; without that run loop running, devices that come and go
-/// are never seen. If the application has no CoreMIDI client of its own when the first
-/// manager is constructed, the backend starts a thread that takes that role and runs
-/// until the process ends, so the manager works from any thread. An application that
-/// wants CoreMIDI on its main run loop creates its own client there first.
+/// CoreMIDI serves a whole process through the run loop of the thread that makes the
+/// process's first CoreMIDI call (any call, not only creating a client); without that run
+/// loop running, devices that come and go are never seen. If the application has not
+/// used CoreMIDI when the first manager is constructed, the backend starts a thread that
+/// takes that role and runs until the process ends, so the manager works from any thread.
+/// An application that wants CoreMIDI on its main run loop makes a CoreMIDI call there
+/// first. Either way the backend checks once that notifications arrive and logs a warning
+/// (group thl.midi.device_manager) when they do not. All managers of a process share one
+/// MIDI client, which is kept until the process ends; a manager owns its input port and
+/// its virtual input.
 ///
 /// All methods are for control threads and may block briefly; none is real-time safe. The
 /// audio thread only touches input_queue().

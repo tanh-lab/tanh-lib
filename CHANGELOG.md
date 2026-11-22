@@ -20,7 +20,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   counting what it drops when full. `DeviceManager` lists the MIDI inputs, opens them (all of
   them by default), follows hot-plugging and delivers into one queue; on macOS and iOS it is
   backed by CoreMIDI (MIDI 1.0 or 2.0 on request, a virtual input other apps can send to, a
-  run-loop thread of its own when the process has no CoreMIDI client yet); on Android by
+  run-loop thread of its own when the process has not used CoreMIDI yet, one MIDI client
+  per process that is never disposed, and a warning when a startup check finds that device
+  changes would go unnoticed); on Android by
   `android.media.midi` (API 23+, MIDI 1.0 devices and, from API 33, Universal MIDI Packet
   devices; the app compiles in `android/java` and calls `thl::midi::set_android_java_vm()` in
   `JNI_OnLoad`); elsewhere `supported()` is false. `thl::AudioMidiProcessor` is the engine interface a host calls with a
