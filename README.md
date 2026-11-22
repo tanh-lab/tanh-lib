@@ -3,7 +3,7 @@
 [![codecov](https://codecov.io/gh/tanh-lab/tanh-lib/branch/main/graph/badge.svg)](https://codecov.io/gh/tanh-lab/tanh-lib)
 [![docs](https://github.com/tanh-lab/tanh-lib/actions/workflows/build_docs_and_deploy.yml/badge.svg)](https://tanh-lab.github.io/tanh-lib/)
 
-Modular, real-time-safe C++20 audio library. Six independently buildable
+Modular, real-time-safe C++20 audio library. Seven independently buildable
 components, all in namespace `thl`:
 
 - **tanh::Core** -- Dispatcher, Logger (with a real-time path), RCU, lock-free
@@ -16,6 +16,8 @@ components, all in namespace `thl`:
 - **tanh::Modulation** -- modulation matrix with change-point sub-blocking
 - **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)
+- **tanh::Midi** -- MIDI 1.0 and MIDI 2.0 as Universal MIDI Packets, with a
+  lock-free queue to the audio thread
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
 
@@ -53,6 +55,7 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_BUILD_AUDIO_IO` | ON | Build the AudioIO component |
 | `TANH_BUILD_NET` | OFF | Build the Net component (links a platform HTTP stack) |
 | `TANH_BUILD_GRAPH` | OFF | Build the Graph component (needs DSP) |
+| `TANH_BUILD_MIDI` | ON | Build the Midi component |
 | `TANH_WITH_TESTS` | ON | Build test targets |
 | `TANH_WITH_EXAMPLES` | ON | Build the example projects (iOS audio-io app) |
 | `TANH_WITH_DOCS` | OFF | Add the `sphinx-docs` target (Doxygen + Sphinx) |
@@ -74,7 +77,7 @@ set(TANH_WITH_EXAMPLES OFF)
 add_subdirectory(modules/tanh-lib)
 
 # or from an installed prefix
-find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core State DSP Resonator Modulation AudioIO Net
+find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core State DSP Resonator Modulation AudioIO Net Graph Midi
 
 target_link_libraries(app PRIVATE tanh::Core tanh::DSP)
 ```
@@ -113,4 +116,4 @@ tanh-lib is licensed per component:
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
 
 - **AGPL-3.0** — all other components (`state`, `dsp`, `resonator`,
-  `modulation`, `audio-io`) and files (see [`LICENSE`](LICENSE)).
+  `modulation`, `audio-io`, `net`, `graph`, `midi`) and files (see [`LICENSE`](LICENSE)).

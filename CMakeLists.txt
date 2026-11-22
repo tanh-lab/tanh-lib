@@ -50,6 +50,7 @@ option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 option(TANH_BUILD_GRAPH "Build Graph component" OFF)
+option(TANH_BUILD_MIDI "Build Midi component (MIDI 1.0 / MIDI 2.0 input as Universal MIDI Packets)" ON)
 # Off by default: this is the only component that links a network stack, and
 # consumers embedding tanh::Core (anira) must not inherit it implicitly.
 option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
@@ -655,6 +656,38 @@ if(TANH_BUILD_NET)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_net)
 endif()
 
+if(TANH_BUILD_MIDI)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Midi component requires Core component")
+    endif()
+
+    # The internal MIDI format: Universal MIDI Packets, the MIDI 1.0 byte-stream
+    # parser in front of them and the MIDI 1.0 view behind them. Plain C++ on every
+    # platform; the device backends (CoreMIDI, Android) attach here.
+    add_library(${PROJECT_NAME}_midi
+        src/midi/Midi1StreamParser.cpp
+        src/midi/Midi1Converter.cpp
+    )
+
+    set_target_properties(${PROJECT_NAME}_midi PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Midi ALIAS ${PROJECT_NAME}_midi)
+
+    target_include_directories(${PROJECT_NAME}_midi
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_midi PUBLIC ${PROJECT_NAME}_core)
+
+    target_compile_definitions(${PROJECT_NAME}_midi PUBLIC -DTANH_MIDI_ENABLED)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_midi)
+endif()
+
 # ==============================================================================
 # Symbol policy and common settings of every component (cmake/tanh/symbol-policy.cmake)
 # ==============================================================================
@@ -725,7 +758,8 @@ foreach(_pair
         "${PROJECT_NAME}_modulation=Modulation"
         "${PROJECT_NAME}_audio_io=AudioIO"
         "${PROJECT_NAME}_graph=Graph"
-        "${PROJECT_NAME}_net=Net")
+        "${PROJECT_NAME}_net=Net"
+        "${PROJECT_NAME}_midi=Midi")
     string(REPLACE "=" ";" _pair "${_pair}")
     list(GET _pair 0 _target)
     list(GET _pair 1 _export_name)
@@ -781,6 +815,9 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_GRAPH)
         add_subdirectory(test/graph)
     endif()
+    if (TANH_BUILD_MIDI)
+        add_subdirectory(test/midi)
+    endif()
 
     # The export-table invariant and the ABI namespace, on the desktop formats where the
     # binaries can be inspected.
@@ -797,7 +834,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_core_allocation test_state test_dsp test_modulation test_audio_io test_net test_graph benchmark_state benchmark_graph benchmark_modulation benchmark_dsp)
+    foreach(_test test_core test_core_allocation test_state test_dsp test_modulation test_audio_io test_net test_graph test_midi benchmark_state benchmark_graph benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()

@@ -9,6 +9,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `tanh::Midi` (`TANH_BUILD_MIDI`, on by default; `include/tanh/midi/`, namespace `thl::midi`): the
+  form MIDI has inside the library. Every message is a Universal MIDI Packet (`Ump`): MIDI 1.0
+  as type 2 (system type 1, System Exclusive type 3) at its own resolution, MIDI 2.0 as type 4.
+  `Midi1StreamParser` turns a MIDI 1.0 byte stream into packets (running status, real-time bytes
+  inside a message, messages split across calls), `UmpByteReader` and `for_each_ump()` read UMP
+  from big-endian bytes and from host-order words, `convert_to_midi1()` gives plain MIDI 1.0
+  short messages back (MIDI 2.0 scaled down by the translation rules), and `InputQueue` carries
+  timestamped packets from any number of receive threads to the audio thread without locks,
+  counting what it drops when full. Depends on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
+  `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`.
 - `thl::dsp::utils::Mixer`: mixes any number of buffer views into one, each input scaled by a
   gain from its weight. `Mode::Sum` takes the weights as the gains; `Mode::Mix` normalises them
   to their p-norm (`set_p()`: `k_amplitude` 1 for correlated inputs, `k_compromise` 4/3,

@@ -42,12 +42,14 @@ set(_tanh_header_dirs
     "${PROJECT_NAME}_dsp=dsp"
     "${PROJECT_NAME}_modulation=modulation"
     "${PROJECT_NAME}_audio_io=audio-io"
-    "${PROJECT_NAME}_graph=graph")
+    "${PROJECT_NAME}_graph=graph"
+    "${PROJECT_NAME}_midi=midi")
 set(_tanh_umbrella_headers
     "${PROJECT_NAME}_core=core.h"
     "${PROJECT_NAME}_state=state.h"
     "${PROJECT_NAME}_dsp=dsp.h"
-    "${PROJECT_NAME}_audio_io=audio_io.h")
+    "${PROJECT_NAME}_audio_io=audio_io.h"
+    "${PROJECT_NAME}_midi=midi.h")
 
 foreach(target IN LISTS TANH_BUILT_COMPONENTS)
     foreach(_entry IN LISTS _tanh_header_dirs)

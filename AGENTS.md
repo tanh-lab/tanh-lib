@@ -48,6 +48,7 @@ Library targets with inter-component dependencies:
 - **tanh_dsp** (`src/dsp/`, `include/tanh/dsp/`) — DSP processors (synth, effects, granular, Rings resonator model). All processors inherit `BaseProcessor` with `prepare()`/`process()` interface. Modulation via change points for sample-accurate automation. Depends on core.
 - **tanh_modulation** (`src/modulation/`, `include/tanh/modulation/`) — Modulation matrix routing sources (LFO, etc.) to DSP parameters. Change-point-driven sub-blocking. Depends on core, state, dsp.
 - **tanh_audio_io** (`src/audio-io/`, `include/tanh/audio-io/`) — Cross-platform audio device I/O over miniaudio. Platform-specific code for iOS (.mm) and Android. Depends on core.
+- **tanh_midi** (`src/midi/`, `include/tanh/midi/`) — MIDI inside the library is Universal MIDI Packets (`Ump`): MIDI 1.0 as type 2 at its own resolution, MIDI 2.0 as type 4. `Midi1StreamParser` (MIDI 1.0 bytes → packets), `UmpByteReader` (big-endian UMP bytes → packets), `convert_to_midi1()` (packets → MIDI 1.0 short messages) and `InputQueue` (lock-free, timestamped, receive threads → audio thread). Depends on core.
 - **tanh_graph** (`src/graph/`, `include/tanh/graph/`) — `Graph`: `BaseProcessor` nodes run as one processor, edited on the control thread and handed over at `commit()`; latency compensation from each node's `latency_samples()`; a bypassed node coming back is `reset()`. Off by default (`TANH_BUILD_GRAPH`). Depends on core, dsp.
 
 ## Documentation

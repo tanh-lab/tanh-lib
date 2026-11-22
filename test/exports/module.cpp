@@ -27,6 +27,9 @@
 #ifdef TANH_AUDIO_IO_ENABLED
 #include <tanh/audio-io/AudioDeviceManager.h>
 #endif
+#ifdef TANH_MIDI_ENABLED
+#include <tanh/midi/Midi1Converter.h>
+#endif
 
 #include <cstddef>
 
@@ -53,6 +56,9 @@ extern "C" TANH_EXPORTS_MODULE_API std::size_t tanh_exports_entry() {
 #endif
 #ifdef TANH_AUDIO_IO_ENABLED
         address_of(&thl::get_supported_bluetooth_profiles),
+#endif
+#ifdef TANH_MIDI_ENABLED
+        address_of(&thl::midi::convert_to_midi1),
 #endif
     };
 #ifdef TANH_STATE_ENABLED
