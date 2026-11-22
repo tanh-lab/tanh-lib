@@ -14,9 +14,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `k_timeline_reset`, derived for every clock by a `ContinuityTracker` that absorbs
   jitter and in-block tempo changes, so consumers react to flags and never compare
   beats. A block that continues the previous one starts exactly at its end, so a
-  division boundary on a block edge counts once; after a tempo drop the beat keeps
-  moving (at no less than 1 % of the tempo) and catches up, never holding or running
-  backwards; a non-finite beat or tempo holds the block. `HostTransportClock`
+  division boundary on a block edge counts once, and a block lands on the source's
+  end, so it is in phase with it (after a large tempo drop with a smaller block that
+  block holds or runs back to get there); a non-finite beat or tempo holds the block. `HostTransportClock`
   follows the host's playhead with fallbacks for omitted fields, ignores non-finite
   host values, and takes the tempo from the host's beats when the host sends the
   beat but no tempo. Tests: `TransportInfo.*`, `ContinuityTracker.*`,

@@ -15,10 +15,6 @@ namespace {
 constexpr double k_min_tolerance = 1e-6;
 constexpr double k_tempo_epsilon = 1e-6;
 constexpr double k_default_bpm = 120.0;
-// A snapped moving block runs at least at this share of its nominal tempo: never
-// backwards or frozen, and otherwise free to land on the source's end in this block,
-// so it is back in phase as soon as it can be (a larger share keeps it ahead longer).
-constexpr double k_min_slope_ratio = 0.01;
 
 }  // namespace
 
@@ -37,7 +33,6 @@ void ContinuityTracker::set_tempo_window_samples(double samples) {
 
 void ContinuityTracker::reset() TANH_NONBLOCKING_FUNCTION {
     m_reset_pending = true;
-    m_carry = 0.0;
 }
 
 double ContinuityTracker::tolerance_beats(double bpm) const {
@@ -60,7 +55,6 @@ void ContinuityTracker::resolve(TransportInfo& io,
         start = m_prev_end;  // hold: m_prev_end is always finite
         end = start;
     }
-    double carry = 0.0;
 
     if (m_reset_pending) {
         io.m_flags |= TransportInfo::k_timeline_reset;
@@ -78,16 +72,14 @@ void ContinuityTracker::resolve(TransportInfo& io,
         //   the start by up to window * |bps - prev_bps| in either direction. The
         //   window and e cover the same lateness, so they are not added: a change
         //   dated more than the window in the past is still a jump.
-        // - carry: how far the source was still behind the previous block's
-        //   resolved end when that block was held to the minimum slope.
         const double delta = start - m_prev_end;
         const double jitter = tolerance_beats(io.m_bpm);
         const double tempo_step = (io.m_bpm - m_prev_bpm) / (60.0 * m_sample_rate);
         const double tempo_extra = m_prev_moving ? m_prev_frames * tempo_step : 0.0;
         const double tempo_window =
             m_prev_moving ? m_tempo_window_samples * std::abs(tempo_step) : 0.0;
-        const double low = std::min({0.0, tempo_extra, -tempo_window, m_carry}) - jitter;
-        const double high = std::max({0.0, tempo_extra, tempo_window, m_carry}) + jitter;
+        const double low = std::min({0.0, tempo_extra, -tempo_window}) - jitter;
+        const double high = std::max({0.0, tempo_extra, tempo_window}) + jitter;
         if (!(delta >= low && delta <= high)) {
             io.m_flags |= TransportInfo::k_jumped;
             io.m_jump_delta_beats = delta;
@@ -97,23 +89,13 @@ void ContinuityTracker::resolve(TransportInfo& io,
             // the edge falls in one block only. A holding source holds at the
             // expected beat; a moving one is re-sloped to land on its raw end,
             // so the difference is caught up within this block and nothing
-            // accumulates.
-            // A source behind the previous end (a tempo drop inside the previous
-            // block) would hold or run backwards on the way: the block runs at
-            // least at k_min_slope_ratio of its tempo, and the rest is carried.
+            // accumulates. After a tempo drop the source can be behind the
+            // previous end by more than this block covers: the block then runs
+            // slowly, holds or even runs backwards to land on the source, so it is
+            // in phase again at its end (a shared session's peers stay in phase).
             const bool holding = end == start;
             start = m_prev_end;
-            if (holding) {
-                end = start;
-                carry = m_carry;  // still behind by as much when it moves again
-            } else if (frames > 0) {
-                const double min_end = start + (k_min_slope_ratio * static_cast<double>(frames) *
-                                                std::abs(io.m_bpm) / (60.0 * m_sample_rate));
-                if (end < min_end) {
-                    carry = end - min_end;
-                    end = min_end;
-                }
-            }
+            if (holding) { end = start; }
         }
         if (playing && !m_prev_playing) { io.m_flags |= TransportInfo::k_started; }
         if (!playing && m_prev_playing) { io.m_flags |= TransportInfo::k_stopped; }
@@ -125,7 +107,6 @@ void ContinuityTracker::resolve(TransportInfo& io,
     io.m_beat_position = start;
     io.m_beats_per_sample = frames > 0 ? (end - start) / static_cast<double>(frames) : 0.0;
 
-    m_carry = carry;
     m_prev_end = io.beat_end();
     m_prev_frames = static_cast<double>(frames);
     m_prev_moving = frames > 0 && end != start;

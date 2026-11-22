@@ -173,9 +173,10 @@ TEST(ContinuityTracker, NoTempoWindowAfterAHeldBlock) {
 }
 
 // A tempo drop right at the start of the previous block leaves the source behind
-// that block's end: the beat neither holds nor runs backwards, and catches up
-// with the source over the next blocks without a jump.
-TEST(ContinuityTracker, TempoDropNeverStallsOrRunsBackwards) {
+// that block's end by more than a short block covers. Not a jump: the block lands
+// on the source's end (its slope below zero), so it is in phase with the source
+// again at its end, and the next block continues it.
+TEST(ContinuityTracker, TempoDropLandsOnTheSourceWithinTheBlock) {
     ContinuityTracker tracker;
     tracker.prepare(k_sr);
     constexpr double k_slow = 60.0 / (60.0 * k_sr);
@@ -184,18 +185,18 @@ TEST(ContinuityTracker, TempoDropNeverStallsOrRunsBackwards) {
     tracker.resolve(first, 512 * k_bps, 512);
 
     // The host stepped to 60 bpm one sample into the first block.
-    double source = k_bps + (511 * k_slow);
-    double last_end = first.beat_end();
-    for (int b = 0; b < 200; ++b) {
-        auto info = raw(source, true, 60.0);
-        tracker.resolve(info, source + 32 * k_slow, 32);
-        EXPECT_FALSE(info.has(TransportInfo::k_jumped)) << "block " << b;
-        EXPECT_GT(info.m_beats_per_sample, 0.0) << "block " << b;
-        EXPECT_NEAR(info.m_beat_position, last_end, 1e-12) << "block " << b;
-        last_end = info.beat_end();
-        source += 32 * k_slow;
-    }
-    EXPECT_NEAR(last_end, source, tracker.tolerance_beats(60.0));
+    const double source = k_bps + (511 * k_slow);
+    auto info = raw(source, true, 60.0);
+    tracker.resolve(info, source + 32 * k_slow, 32);
+    EXPECT_EQ(info.discontinuities(), TransportInfo::k_tempo_changed);
+    EXPECT_DOUBLE_EQ(info.m_beat_position, first.beat_end());
+    EXPECT_NEAR(info.beat_end(), source + 32 * k_slow, 1e-12);
+    EXPECT_LT(info.m_beats_per_sample, 0.0);
+
+    auto next = raw(info.beat_end(), true, 60.0);
+    tracker.resolve(next, info.beat_end() + 32 * k_slow, 32);
+    EXPECT_EQ(next.discontinuities(), 0u);
+    EXPECT_NEAR(next.m_beats_per_sample, k_slow, 1e-15);
 }
 
 // A non-finite beat or tempo holds the beat for that block; the next finite block

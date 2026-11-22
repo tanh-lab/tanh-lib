@@ -289,10 +289,8 @@ INSTANTIATE_TEST_SUITE_P(Blocks,
                          [](const auto& info) { return "Block" + std::to_string(info.param); });
 
 // Steps up and down, one sample into a block and in the middle of one: the
-// block that reports the new tempo gets k_tempo_changed only and is re-sloped
-// towards the host. A step down leaves the host behind that block's start: the
-// clock never runs slower than 1 % of the tempo (no stall), so it is the host
-// again two blocks after the change.
+// block that reports the new tempo gets k_tempo_changed only, is re-sloped onto
+// the host's next start, and from the block after it the clock is the host.
 TEST_P(HostTransportClockTempoMap, NoJumpOnMidBlockTempoStep) {
     const uint32_t block = GetParam();
     for (const double to : {180.0, 60.0}) {
@@ -309,11 +307,8 @@ TEST_P(HostTransportClockTempoMap, NoJumpOnMidBlockTempoStep) {
                 const uint32_t want = b == changed ? TransportInfo::k_tempo_changed : 0u;
                 ASSERT_EQ(r.m_flags[b], want) << "block " << b;
             }
-            for (size_t b = 1; b < r.m_flags.size(); ++b) {
-                ASSERT_GE(r.m_end[b] - r.m_start[b], 0.01 * block * bps(r.m_bpm[b]) - 1e-12)
-                    << "block " << b;
-            }
-            for (size_t b = changed + 2; b < r.m_flags.size(); ++b) {
+            EXPECT_NEAR(r.m_end[changed], r.m_host_start[changed + 1], 1e-9);
+            for (size_t b = changed + 1; b < r.m_flags.size(); ++b) {
                 ASSERT_NEAR(r.m_start[b], r.m_host_start[b], 1e-9) << "block " << b;
             }
         }
