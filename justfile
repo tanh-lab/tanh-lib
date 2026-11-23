@@ -16,7 +16,7 @@ test: build
 
 # Install the core component into build/install-prefix and build test/install against it
 test-install:
-    cmake -S . -B build/install -DCMAKE_BUILD_TYPE=Release -DTANH_BUILD_STATE=OFF -DTANH_BUILD_DSP=OFF -DTANH_BUILD_MODULATION=OFF -DTANH_BUILD_AUDIO_IO=OFF -DTANH_WITH_TESTS=OFF -DTANH_WITH_EXAMPLES=OFF -DTANH_WITH_DOCS=OFF -DCMAKE_INSTALL_PREFIX=build/install-prefix
+    cmake -S . -B build/install -DCMAKE_BUILD_TYPE=Release -DTANH_BUILD_STATE=OFF -DTANH_BUILD_DSP=OFF -DTANH_BUILD_MODULATION=OFF -DTANH_BUILD_AUDIO_IO=OFF -DTANH_BUILD_MIDI=OFF -DTANH_WITH_TESTS=OFF -DTANH_WITH_EXAMPLES=OFF -DTANH_WITH_DOCS=OFF -DCMAKE_INSTALL_PREFIX=build/install-prefix
     cmake --build build/install --parallel && cmake --install build/install
     cmake -S test/install -B build/install-consumer -DCMAKE_PREFIX_PATH=$(pwd)/build/install-prefix
     cmake --build build/install-consumer --parallel && ./build/install-consumer/consumer
@@ -45,6 +45,11 @@ test-audio: build
 # Run hardware tests (requires audio devices)
 test-hardware: build
     ./build/desktop/Debug/test/audio-io/test_audio_io --gtest_also_run_disabled_tests --gtest_filter="HardwareTests.*"
+
+# Run the Android MIDI backend on the connected device or emulator, against virtual MIDI
+# devices (no hardware; needs ANDROID_HOME, an NDK and a JDK, see test/android/midi/run.sh)
+test-android-midi:
+    ./test/android/midi/run.sh
 
 # Run a specific test by name pattern
 test-filter PATTERN: build

@@ -3,7 +3,7 @@
 include(CMakeFindDependencyMacro)
 
 # Components built into this installation, by public component name
-# (Core, Parameters, State, DSP, Resonator, Modulation, AudioIO, Net, Link, Graph). Each maps to an
+# (Core, Parameters, State, DSP, Resonator, Modulation, AudioIO, Net, Link, Graph, Midi). Each maps to an
 # imported target tanh::<Component>.
 #
 # Net is off by default (TANH_BUILD_NET): it is the only component that links a

@@ -19,6 +19,8 @@ components, all in namespace ``thl``:
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
 - **tanh::Link** — Ableton Link session and Link Audio (``TANH_BUILD_LINK``,
   off by default)
+- **tanh::Midi** — MIDI 1.0 and MIDI 2.0 as Universal MIDI Packets, device
+  input (macOS, iOS, Android) and a lock-free queue to the audio thread
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
 
@@ -39,6 +41,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    slicing
    pitch
    audio_io
+   midi
    api/index
    changelog
    contributing
@@ -59,7 +62,7 @@ notes that used to live in the README. :doc:`host_parameters` drives the
 matrix from a host's parameter store; :doc:`transport` covers musical time
 (``TransportInfo``, host/internal/Link clocks) and Ableton Link.
 :doc:`sampler`, :doc:`slicing` and :doc:`pitch` describe the sample playback
-components.
+components, :doc:`midi` the internal MIDI format.
 
 The :doc:`api/index` is generated from the public headers under
 ``include/tanh/``.

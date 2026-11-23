@@ -1,0 +1,14 @@
+# Codecov's commit statuses report, they do not judge: coverage is information here,
+# never a merge blocker (.github/workflows/coverage.yml). Without this file a status
+# fails when a change's lines are covered less than the project as a whole, which is
+# the normal case for code CI cannot run: a Link session needs peers on the network,
+# a device callback needs an audio device. `informational` keeps the numbers, the
+# pull request comment and the badge, and reports the status as passed.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true

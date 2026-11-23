@@ -19,6 +19,8 @@ all in namespace `thl`:
   any host's parameters
 - **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)
+- **tanh::Midi** -- MIDI 1.0 and MIDI 2.0 as Universal MIDI Packets, device
+  input (macOS, iOS, Android) and a lock-free queue to the audio thread
 - **tanh::Link** -- Ableton Link session and Link Audio (off by default)
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
@@ -58,6 +60,7 @@ Windows, WebAssembly and sanitizer presets.
 | `TANH_BUILD_NET` | OFF | Build the Net component (links a platform HTTP stack) |
 | `TANH_BUILD_LINK` | OFF | Build the Link component (Ableton Link: C++ SDK on macOS/Linux/Windows, LinkKit on iOS (CMake 3.28+); other platforms are a configure error; GPLv2+/proprietary licence) |
 | `TANH_BUILD_GRAPH` | OFF | Build the Graph component (needs DSP) |
+| `TANH_BUILD_MIDI` | ON | Build the Midi component |
 | `TANH_WITH_TESTS` | ON | Build test targets |
 | `TANH_WITH_EXAMPLES` | ON | Build the example projects (iOS audio-io app) |
 | `TANH_WITH_DOCS` | OFF | Add the `sphinx-docs` target (Doxygen + Sphinx) |
@@ -79,7 +82,7 @@ set(TANH_WITH_EXAMPLES OFF)
 add_subdirectory(modules/tanh-lib)
 
 # or from an installed prefix
-find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core Parameters State DSP Resonator Modulation AudioIO Net Link
+find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core Parameters State DSP Resonator Modulation AudioIO Net Link Graph Midi
 
 target_link_libraries(app PRIVATE tanh::Core tanh::DSP)
 ```
@@ -118,7 +121,7 @@ tanh-lib is licensed per component:
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
 
 - **AGPL-3.0** — all other components (`parameters`, `state`, `dsp`, `resonator`,
-  `modulation`, `audio-io`, `net`, `link`) and files (see [`LICENSE`](LICENSE)).
+  `modulation`, `audio-io`, `net`, `link`, `graph`, `midi`) and files (see [`LICENSE`](LICENSE)).
 
 - **Ableton Link** — `TANH_BUILD_LINK` fetches the Link SDK (GPLv2+ or a
   proprietary licence from Ableton) on desktop and LinkKit (proprietary only) on
