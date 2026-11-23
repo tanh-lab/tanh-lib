@@ -12,7 +12,26 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_ResolvedTarget.cpp
 	test_RoutingEnabled.cpp
 	test_HostShare.cpp
+	test_MotionLane.cpp
+	test_MotionRecorder.cpp
+	test_MotionRecorderClock.cpp
+	test_MotionRecorderThreads.cpp
+	test_MotionRecorderTakes.cpp
+	test_MotionRecorderOverwrite.cpp
+	test_MotionTakeRecorder.cpp
+	test_MotionLaneStore.cpp
+	test_MotionLanePlayer.cpp
+	test_MotionCompositor.cpp
+	test_MotionRecorderFreeTakes.cpp
+	test_MotionRecorderSmoothing.cpp
+	test_MotionLaneProcessing.cpp
+	test_MotionClock.cpp
+	test_MotionHistory.cpp
 )
+
+# The motion helpers private to tanh::Modulation (src/modulation) are header-only;
+# the tests include them directly.
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../src/modulation)
 
 target_link_libraries(${PROJECT_NAME}
 	PRIVATE

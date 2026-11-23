@@ -60,8 +60,8 @@ start. The widening is off while a Link epoch change is pending (see below).
 ### Block size
 
 Every buffer holds the `samples_per_block` given to `prepare()`, the host's
-announced maximum. `ModulationMatrix::process()` trusts it: pass the host block
-as it comes.
+announced maximum. `ModulationMatrix::process()` and `MotionRecorder::process()`
+trust it: pass the host block as it comes.
 
 ## HostTransportClock
 
