@@ -3,17 +3,20 @@
 [![codecov](https://codecov.io/gh/tanh-lab/tanh-lib/branch/main/graph/badge.svg)](https://codecov.io/gh/tanh-lab/tanh-lib)
 [![docs](https://github.com/tanh-lab/tanh-lib/actions/workflows/build_docs_and_deploy.yml/badge.svg)](https://tanh-lab.github.io/tanh-lib/)
 
-Modular, real-time-safe C++20 audio library. Seven independently buildable
-components, all in namespace `thl`:
+Modular, real-time-safe C++20 audio library. Independently buildable components,
+all in namespace `thl`:
 
 - **tanh::Core** -- Dispatcher, Logger (with a real-time path), RCU, lock-free
   queue, generic buffers, header-only WAV decoder
+- **tanh::Parameters** -- what a parameter is (definition, range, modulation
+  scope) and the lookup errors, shared by State and Modulation (built with either)
 - **tanh::State** -- hierarchical parameter storage with RCU lock-free reads and
   JSON serialization
 - **tanh::DSP** -- processors, effects, filters, sample player / looper, slicing,
   pitch banks, granular engine, Rings resonator model (also available alone as
-  `tanh::Resonator`)
-- **tanh::Modulation** -- modulation matrix with change-point sub-blocking
+  `tanh::Resonator`), transport clocks
+- **tanh::Modulation** -- modulation matrix with change-point sub-blocking; reads
+  any host's parameters
 - **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)
 - **tanh::Midi** -- MIDI 1.0 and MIDI 2.0 as Universal MIDI Packets, device
@@ -79,7 +82,7 @@ set(TANH_WITH_EXAMPLES OFF)
 add_subdirectory(modules/tanh-lib)
 
 # or from an installed prefix
-find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core State DSP Resonator Modulation AudioIO Net Link Graph Midi
+find_package(tanh REQUIRED COMPONENTS Core DSP)   # Core Parameters State DSP Resonator Modulation AudioIO Net Link Graph Midi
 
 target_link_libraries(app PRIVATE tanh::Core tanh::DSP)
 ```
@@ -117,7 +120,7 @@ tanh-lib is licensed per component:
   files carry an `SPDX-License-Identifier: Apache-2.0` header; the license
   text is in [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0).
 
-- **AGPL-3.0** — all other components (`state`, `dsp`, `resonator`,
+- **AGPL-3.0** — all other components (`parameters`, `state`, `dsp`, `resonator`,
   `modulation`, `audio-io`, `net`, `link`, `graph`, `midi`) and files (see [`LICENSE`](LICENSE)).
 
 - **Ableton Link** — `TANH_BUILD_LINK` fetches the Link SDK (GPLv2+ or a

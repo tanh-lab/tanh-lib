@@ -44,6 +44,50 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and Linear, and with `TANH_BUILD_LINK` Ableton Link, its Asio and LinkKit), with version,
   source, component and licence text, installed to `share/doc/tanh`. A product that ships
   tanh-lib carries these notices.
+- Host hand-over, as a DAW's Touch mode: a Replace / ReplaceHold routing with
+  `ModulationRouting::m_share_with_host` shares
+  its target with the host. The last of the two writers to become active owns it;
+  when the owner stops, the other takes over if active, else the value stays. Every
+  hand-over crossfades (`HostShareTimes`: take 20 ms, return 50 ms, host hold 300 ms;
+  `ModulationMatrix::set_host_share_times()`), flagging change points at least every
+  32 samples while it moves. Host activity: `ParameterBinding::m_host_change_stamp`
+  (a counter the backend bumps on every host write; `StateParameterBackend` binds
+  `ParameterRecord::m_change_stamp`, bumped by every write through `State`) and the
+  gesture flag.
+  `ModulationSource::output_activity()` separates "driven" from "value valid" (an XY
+  pad's x / y: touch, playback or latch); `"share_with_host": true` is serialised.
+  Tests: `HostShare.*`. Docs: `host_parameters.md`.
+- `tanh::Parameters`: what a parameter is (`ParameterDefinition`, `Range`,
+  `ModulationScope`, `parameter_type_of<T>()`) and the lookup errors
+  (`ParameterNotFoundException`, `ParameterTypeMismatchException`), shared by State
+  and Modulation in `tanh/parameters/`. AGPL-3.0; built whenever State or Modulation
+  is (no option). Install test: `test/install-modulation`.
+- `thl::modulation::ParameterBackend`: `ModulationMatrix` reads parameters through a
+  backend (`find(key)` returns definition, base atomic and gesture flag) instead of
+  `thl::State`, so a host binds its own parameter store without mirroring it. A
+  binding that moved (`State::clear()` and the key created again, with audio stopped)
+  is taken up by the next `get_smart_handle()` / `add_routing()` for that key, which
+  keeps its first definition; a binding without a base atomic is rejected
+  (`std::invalid_argument`). `from_json()` resolves its routings' targets. An unknown key
+  throws through `throw_not_found()` (`ParameterNotFoundException`, or State's
+  subclasses for a State-backed matrix).
+  `ModulationMatrix(thl::State&)` keeps working through `StateParameterBackend` and,
+  with `state()`, is only declared when tanh is built with State. Modulation builds
+  with `TANH_BUILD_STATE=OFF` (CI job `modulation_without_state`). Tests:
+  `ParameterBackend.*`, `StateParameterBackend.*`. Docs: `host_parameters.md`.
+- `ModulationMatrix::set_routing_enabled()` / `set_routings_enabled()`: a disabled
+  routing writes nothing, Replace included (depth 0 does not silence it), and drops
+  its hold. No rebuild: the audio thread reads the flags once per block through a
+  wait-free seqlock, so a batch lands whole. Edges and the first block after a
+  rebuild flag offset 0; a zero-sample block keeps the edge, and a disable undone
+  before the next block still drops the hold. `"enabled": false` is
+  serialised only when disabled. Tests: `RoutingEnabled.*`.
+- `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
+  before any source (`add_block_processor()`), given a `BlockContext` with the block
+  length and the transport passed to `process()` / `process_with_scope()`. Like a
+  source, it lives in the `ProcessingConfig`: adding or removing one rebuilds the
+  schedule, which drops active ReplaceHold holds, and `remove_block_processor()`
+  returns once no block runs it.
 - `tanh::Link` (`TANH_BUILD_LINK`, off by default for its licence):
   `thl::link::LinkSession` over the Link 4.1 SDK (pinned commit) on macOS, Linux and
   Windows and LinkKit 4.1.2 (pinned SHA256, CMake 3.28+) on iOS, with
@@ -244,6 +288,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   count. `sample_position()` counts samples played since `prepare()` on every clock.
   `Division` moved to `TransportInfo.h`. `InternalTransportClock`: a tempo change
   keeps the beat continuous. An API and ABI change for subclasses.
+- `ParameterDefinitions.h` and `ModulationScope.h` moved from `tanh/state/` to
+  `tanh/parameters/` (the old headers forward, deprecated for one release), and
+  `ParameterTypeMismatchException` moved to `tanh/parameters/ParameterExceptions.h`.
+  `StateKeyNotFoundException` and `StateGroupNotFoundException` derive from
+  `ParameterNotFoundException`. State links `tanh::Parameters`.
+- `ModulationMatrix::process()` / `process_with_scope()` take the block's
+  `TransportInfo` (optional) for the block processors. Before the first `prepare()`
+  they do nothing (sources had no buffers yet).
+- `SmartHandle<T>` reads the base value through the backend's atomic: it is built
+  from `(std::atomic<T>*, ResolvedTarget*)`. A handle without a target reports a
+  default definition (range [0, 1], empty key).
+- `ModulationMatrix::prepare()` needs audio stopped, as a host's `prepareToPlay`
+  does: it re-prepares every source and block processor and resets the sample
+  counter. A same-size `prepare()` during audio was documented as safe but raced
+  that state. Sources and block processors added before the first `prepare()` are
+  prepared by it, not at once with a default rate and size.
 - `thl::graph::Graph` mixes with `dsp::utils::Mixer`: a node's sources (`InputMix`) and its dry
   and wet signals (`MixLaw`); a wet mix glide stays on its law's curve, as before (by
   @jstolberg). What changes: the pace along the curve follows the weights' linear glide instead
@@ -348,8 +408,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Removed
 
+- `SmartHandle<T>::raw_handle()`: a backend has no `ParameterHandle`. Use
+  `State::get_handle<T>(key)`; hosts write base values through their own API.
 - The `host_time_micros` parameter of `TransportClock::begin_block()` (see Changed): a
   clock that needs host time takes it through its own setter.
+
 
 ## [0.5.0] - 2026-11-01
 

@@ -28,7 +28,7 @@ inline void sink(float v) {
 // Concurrent stress: exercises the rebuild/publish race that the atomic-pointer
 // refactor fixes. An "audio" thread loops opening a ReadScope and calling
 // process_with_scope + SmartHandle::load while a "writer" thread concurrently
-// mutates routings and re-prepares the matrix with varying block sizes. Under
+// mutates routings. Under
 // the old design, the audio thread could dereference m_voice/m_mono mid-rebuild
 // and crash; under the new design those pointers are only swapped after a
 // synchronize() barrier, so readers always see either the old or the new

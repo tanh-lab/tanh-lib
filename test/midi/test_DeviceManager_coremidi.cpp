@@ -506,16 +506,21 @@ TEST_F(CoreMidi, CanBeDestroyedWhileReceiving) {
 
 namespace {
 
-// Notes where it finds them in the stream: (note number, absolute frame).
+// Notes where it finds them in the stream: (note number, absolute frame). process() runs
+// in the real-time context, so it only fills the room prepare() reserved.
 class NoteLogger final : public thl::AudioMidiProcessor {
 public:
+    static constexpr std::size_t k_max_notes = 64;
+
     void prepare(double /*sample_rate*/,
                  std::size_t /*max_block_size*/,
-                 std::size_t /*num_channels*/) override {}
+                 std::size_t /*num_channels*/) override {
+        m_notes.reserve(k_max_notes);
+    }
 
     void process(thl::core::BufferView audio, std::span<const thl::BlockEvent> events) override {
         for (const thl::BlockEvent& event : events) {
-            if (event.m_source == m_source) {
+            if (event.m_source == m_source && m_notes.size() < m_notes.capacity()) {
                 m_notes.emplace_back(event.m_midi.data1(), m_position + event.m_sample_offset);
             }
         }

@@ -3,6 +3,11 @@
 // wiring) and its own LFO setup, then uses these utilities to drive the
 // processor through the modulation matrix and assert on the output.
 //
+// Every driver takes a Host: the processor runs directly, or as one node of a
+// multi-node graph, or inside a nested graph whose block the host runs in parts
+// (the modulation offset). The graph hosts are identities around the processor,
+// so their output must match the direct one exactly.
+//
 // Universal properties asserted by the standard tests:
 //   1. Silence in → silence out under static (non-default) parameter values
 //      [for effects only; sources/synths have their own variant].
@@ -14,12 +19,20 @@
 
 #include <gtest/gtest.h>
 #include <tanh/core/BufferView.h>
+#include <tanh/dsp/BaseProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
+#if defined(TANH_GRAPH_ENABLED)
+#include <tanh/graph/Graph.h>
+#endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "TestHelpers.h"
@@ -42,12 +55,141 @@ inline void expect_all_finite(const std::vector<float>& v) {
     for (float s : v) { ASSERT_TRUE(std::isfinite(s)) << "non-finite sample"; }
 }
 
+// Where a driver runs the processor.
+enum class Host : uint8_t {
+    Direct,       ///< process_modulated() on the processor
+    Graph,        ///< a node of a graph with unity nodes around it and a silent parallel branch
+    NestedSplit,  ///< that graph nested in another one, every block run in three parts
+};
+
+inline std::vector<Host> hosts() {
+#if defined(TANH_GRAPH_ENABLED)
+    return {Host::Direct, Host::Graph, Host::NestedSplit};
+#else
+    return {Host::Direct};
+#endif
+}
+
+inline std::string host_name(const ::testing::TestParamInfo<Host>& info) {
+    switch (info.param) {
+        case Host::Direct: return "Direct";
+        case Host::Graph: return "Graph";
+        case Host::NestedSplit: return "NestedSplit";
+    }
+    return "Unknown";
+}
+
+#if defined(TANH_GRAPH_ENABLED)
+/// The test's processor as a graph node. The test owns and prepares it.
+class ProcessorRef final : public thl::dsp::BaseProcessor {
+public:
+    explicit ProcessorRef(thl::dsp::BaseProcessor& processor) : m_processor(processor) {}
+    void prepare(const double&, const size_t&, const size_t&) override {}
+    void process(thl::core::BufferView buffer,
+                 uint32_t modulation_offset) TANH_NONBLOCKING_FUNCTION override {
+        m_processor.process_modulated(buffer, modulation_offset);
+    }
+
+private:
+    thl::dsp::BaseProcessor& m_processor;
+};
+
+/// Leaves the buffer as it is.
+class Unity final : public thl::dsp::BaseProcessor {
+public:
+    void prepare(const double&, const size_t&, const size_t&) override {}
+    void process(thl::core::BufferView, uint32_t) TANH_NONBLOCKING_FUNCTION override {}
+};
+
+/// Writes silence: a parallel branch that adds nothing at a summing merge.
+class Silence final : public thl::dsp::BaseProcessor {
+public:
+    void prepare(const double&, const size_t&, const size_t&) override {}
+    void process(thl::core::BufferView buffer, uint32_t) TANH_NONBLOCKING_FUNCTION override {
+        for (size_t ch = 0; ch < buffer.get_num_channels(); ++ch) {
+            std::fill_n(buffer.get_write_pointer(ch), buffer.get_num_samples(), 0.0f);
+        }
+    }
+};
+
+/// input -> unity -> processor -> unity -> output, plus input -> silence -> output (summed).
+inline std::unique_ptr<thl::graph::Graph> make_graph(thl::dsp::BaseProcessor& processor) {
+    using thl::graph::Graph;
+    auto graph = std::make_unique<Graph>();
+    const auto pre = graph->add_node<Unity>();
+    const auto node = graph->add_node<ProcessorRef>(processor);
+    const auto post = graph->add_node<Unity>();
+    const auto silence = graph->add_node<Silence>();
+    EXPECT_TRUE(pre && node && post && silence);
+    EXPECT_TRUE(graph->connect(graph->graph_input(), *pre));
+    EXPECT_TRUE(graph->connect(*pre, *node));
+    EXPECT_TRUE(graph->connect(*node, *post));
+    EXPECT_TRUE(graph->connect(*post, graph->graph_output()));
+    EXPECT_TRUE(graph->connect(graph->graph_input(), *silence));
+    EXPECT_TRUE(graph->connect(*silence, graph->graph_output()));
+    EXPECT_TRUE(graph->set_input_mix(graph->graph_output(), Graph::InputMix::Sum));
+    return graph;
+}
+#endif
+
+/// Runs a prepared processor in @p host, one block per process() call.
+class Hosted {
+public:
+    Hosted(thl::dsp::BaseProcessor& processor, Host host, size_t num_channels)
+        : m_processor(processor), m_host(host) {
+#if defined(TANH_GRAPH_ENABLED)
+        if (host == Host::Graph) { m_graph = make_graph(processor); }
+        if (host == Host::NestedSplit) {
+            m_graph = std::make_unique<thl::graph::Graph>();
+            const auto inner = m_graph->add_node(make_graph(processor));
+            const auto post = m_graph->add_node<Unity>();
+            EXPECT_TRUE(inner && post);
+            EXPECT_TRUE(m_graph->connect(m_graph->graph_input(), *inner));
+            EXPECT_TRUE(m_graph->connect(*inner, *post));
+            EXPECT_TRUE(m_graph->connect(*post, m_graph->graph_output()));
+        }
+        if (m_graph) { m_graph->prepare(k_sample_rate, k_block_size, num_channels); }
+#else
+        (void)num_channels;
+#endif
+    }
+
+    void process(const thl::core::BufferView& view) {
+#if defined(TANH_GRAPH_ENABLED)
+        if (m_host == Host::Graph) {
+            m_graph->process(view, 0);
+            return;
+        }
+        if (m_host == Host::NestedSplit) {
+            // Three parts that cut across the processors' change points.
+            const size_t n = view.get_num_samples();
+            const size_t a = std::min<size_t>(n, 100);
+            const size_t b = std::min<size_t>(n, 333);
+            m_graph->process(view.sub_block(0, a), 0);
+            if (b > a) { m_graph->process(view.sub_block(a, b - a), static_cast<uint32_t>(a)); }
+            if (n > b) { m_graph->process(view.sub_block(b, n - b), static_cast<uint32_t>(b)); }
+            return;
+        }
+#endif
+        m_processor.process_modulated(view);
+    }
+
+private:
+    thl::dsp::BaseProcessor& m_processor;
+    Host m_host;
+#if defined(TANH_GRAPH_ENABLED)
+    std::unique_ptr<thl::graph::Graph> m_graph;
+#endif
+};
+
 // Mono driver. Runs N blocks of input through a processor while advancing
 // the modulation matrix once per block. Returns the (mutated) output flat.
 template <typename Processor>
 std::vector<float> run_blocks_mono(thl::modulation::ModulationMatrix& matrix,
                                    Processor& proc,
-                                   const std::vector<float>& input) {
+                                   const std::vector<float>& input,
+                                   Host host = Host::Direct) {
+    Hosted hosted(proc, host, 1);
     std::vector<float> output;
     output.reserve(input.size());
     const size_t num_blocks = input.size() / k_block_size;
@@ -58,7 +200,7 @@ std::vector<float> run_blocks_mono(thl::modulation::ModulationMatrix& matrix,
                   block.begin());
         matrix.process(k_block_size);
         thl::core::BufferView view(block.data(), k_block_size);
-        proc.process_modulated(view);
+        hosted.process(view);
         output.insert(output.end(), block.begin(), block.end());
     }
     return output;
@@ -70,7 +212,9 @@ template <typename Processor>
 std::pair<std::vector<float>, std::vector<float>> run_blocks_stereo(
     thl::modulation::ModulationMatrix& matrix,
     Processor& proc,
-    const std::vector<float>& input_mono) {
+    const std::vector<float>& input_mono,
+    Host host = Host::Direct) {
+    Hosted hosted(proc, host, 2);
     std::vector<float> out_l, out_r;
     out_l.reserve(input_mono.size());
     out_r.reserve(input_mono.size());
@@ -87,7 +231,7 @@ std::pair<std::vector<float>, std::vector<float>> run_blocks_stereo(
         }
         matrix.process(k_block_size);
         thl::core::BufferView view(channels.data(), 2, k_block_size);
-        proc.process_modulated(view);
+        hosted.process(view);
         out_l.insert(out_l.end(), l.begin(), l.end());
         out_r.insert(out_r.end(), r.begin(), r.end());
     }

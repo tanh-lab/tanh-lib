@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 #include <tanh/core/BufferView.h>
 #include <tanh/dsp/fx/ConstellationReverb.h>
+#include <tanh/dsp/utils/Random.h>
 #include <tanh/modulation/ModulationMatrix.h>
 #include <tanh/modulation/SmartHandle.h>
 #include <tanh/state/State.h>
@@ -194,12 +195,14 @@ struct KnobLfos {
 
 }  // namespace
 
+class DspFixtureReverb : public ::testing::TestWithParam<dsp_fixture::Host> {};
+
 // ── Test 1 — Silence in → silence out ────────────────────────────────────────
 //
 // Internal Brownian noise modulates delay-line read positions, but with a
 // zero input there's no audio in the tank for the modulators to act on.
 // Output should converge to ≈0 quickly.
-TEST(DspFixtureReverb, SilenceInSilenceOut) {
+TEST_P(DspFixtureReverb, SilenceInSilenceOut) {
     thl::State state;
     register_reverb_params(state);
     ModulationMatrix matrix(state);
@@ -209,7 +212,7 @@ TEST(DspFixtureReverb, SilenceInSilenceOut) {
     rv.prepare(k_sample_rate, k_block_size, 2);
 
     std::vector<float> in(20 * k_block_size, 0.0f);
-    auto [out_l, out_r] = run_blocks_stereo(matrix, rv, in);
+    auto [out_l, out_r] = run_blocks_stereo(matrix, rv, in, GetParam());
 
     expect_all_finite(out_l);
     expect_all_finite(out_r);
@@ -218,7 +221,7 @@ TEST(DspFixtureReverb, SilenceInSilenceOut) {
 }
 
 // ── Test 2 — No output with modulated silence ────────────────────────────────
-TEST(DspFixtureReverb, NoOutputWithModulatedSilence) {
+TEST_P(DspFixtureReverb, NoOutputWithModulatedSilence) {
     thl::State state;
     register_reverb_params(state);
     ModulationMatrix matrix(state);
@@ -231,7 +234,7 @@ TEST(DspFixtureReverb, NoOutputWithModulatedSilence) {
     rv.prepare(k_sample_rate, k_block_size, 2);
 
     std::vector<float> in(20 * k_block_size, 0.0f);
-    auto [out_l, out_r] = run_blocks_stereo(matrix, rv, in);
+    auto [out_l, out_r] = run_blocks_stereo(matrix, rv, in, GetParam());
 
     expect_all_finite(out_l);
     expect_all_finite(out_r);
@@ -251,7 +254,7 @@ TEST(DspFixtureReverb, NoOutputWithModulatedSilence) {
 // Skips the first 2 blocks to let the reverb tail build up; otherwise the
 // reference per-sample step is dominated by the impulse-response onset which
 // the modulated run also has.
-TEST(DspFixtureReverb, NoClicksWithModulatedSine) {
+TEST_P(DspFixtureReverb, NoClicksWithModulatedSine) {
     constexpr size_t k_num_blocks = 40;
     constexpr size_t k_skip_blocks = 2;
 
@@ -265,7 +268,7 @@ TEST(DspFixtureReverb, NoClicksWithModulatedSine) {
         TestReverb rv(matrix);
         matrix.prepare(k_sample_rate, k_block_size);
         rv.prepare(k_sample_rate, k_block_size, 2);
-        return run_blocks_stereo(matrix, rv, input);
+        return run_blocks_stereo(matrix, rv, input, GetParam());
     }();
 
     // Modulated run.
@@ -277,7 +280,7 @@ TEST(DspFixtureReverb, NoClicksWithModulatedSine) {
     lfos.wire(matrix);
     matrix.prepare(k_sample_rate, k_block_size);
     rv.prepare(k_sample_rate, k_block_size, 2);
-    auto [out_l, out_r] = run_blocks_stereo(matrix, rv, input);
+    auto [out_l, out_r] = run_blocks_stereo(matrix, rv, input, GetParam());
 
     expect_all_finite(out_l);
     expect_all_finite(out_r);
@@ -300,3 +303,41 @@ TEST(DspFixtureReverb, NoClicksWithModulatedSine) {
     EXPECT_LT(mod_step_r, ref_step_r * 5.0f + 0.05f)
         << "R: mod=" << mod_step_r << " ref=" << ref_step_r;
 }
+
+// The graph hosts are identities around the processor: under modulation their
+// output matches the direct one sample for sample (the modulation offset reaches
+// every part of a split block).
+TEST_P(DspFixtureReverb, HostMatchesDirect) {
+    const auto input = dsp_fixture::make_test_sine(40, 220.0f, 0.5f);
+    auto run = [&](dsp_fixture::Host host) {
+        // The reverb's random walks draw from the global generator. Seeding makes
+        // the runs equal where the test shares its state (Windows DLLs keep their own).
+        thl::dsp::utils::Random::seed(1);
+        thl::State state;
+        register_reverb_params(state);
+        ModulationMatrix matrix(state);
+        TestReverb rv(matrix);
+        KnobLfos lfos;
+        lfos.wire(matrix);
+        matrix.prepare(k_sample_rate, k_block_size);
+        rv.prepare(k_sample_rate, k_block_size, 2);
+        return run_blocks_stereo(matrix, rv, input, host);
+    };
+    const auto hosted = run(GetParam());
+    const auto direct = run(dsp_fixture::Host::Direct);
+    // Unseeded, two direct runs drift apart by ~3e-8; a wrong modulation offset
+    // moves the parameters by far more.
+    ASSERT_EQ(hosted.first.size(), direct.first.size());
+    float worst = 0.0f;
+    for (size_t i = 0; i < direct.first.size(); ++i) {
+        worst = std::max({worst,
+                          std::abs(hosted.first[i] - direct.first[i]),
+                          std::abs(hosted.second[i] - direct.second[i])});
+    }
+    EXPECT_LT(worst, 1e-4f);
+}
+
+INSTANTIATE_TEST_SUITE_P(Hosts,
+                         DspFixtureReverb,
+                         ::testing::ValuesIn(dsp_fixture::hosts()),
+                         dsp_fixture::host_name);
