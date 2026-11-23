@@ -12,6 +12,10 @@ target_sources(${PROJECT_NAME} PRIVATE
 	test_PortReader.cpp
 	test_StreamClock.cpp
 	test_BlockEventCollector.cpp
+	test_EventDecoder.cpp
+	test_VoiceAllocator.cpp
+	test_EventStream.cpp
+	test_Monitor.cpp
 )
 
 # AudioMidiCallback is an AudioIODeviceCallback: its tests need tanh::AudioIO as well.

@@ -9,6 +9,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- MIDI as notes, controllers and modulation sources, on top of the packets. `midi::EventStream`
+  turns a block's packets into `midi::Event`s once per block: `EventDecoder` gives MIDI 1.0 and
+  MIDI 2.0 one float form (7 to 32 bits scaled to 0 to 1, pitch bend to -1 to 1, an RPN / NRPN
+  one event in both protocols, MIDI 2.0 per-note pitch bend, pressure, timbre and pitch as
+  note expressions), and `VoiceAllocator` gives every note a voice (free voice released longest
+  ago, else the oldest note's) and resolves what reaches it into three expressions per voice:
+  `Tuning` in semitones, `Pressure` and `Timbre`. MPE is part of that: zones from the MPE
+  Configuration Message (RPN 6) or `set_zones()`, bend ranges of 48 / 2 semitones until RPN 0
+  changes them, member-channel bend, pressure and CC 74 as the note's own, the manager
+  channel's for the whole zone. The sustain and sostenuto pedals (CC 64, 66) keep voices
+  sounding after their keys are up, and pedal-held voices are stolen before held keys. All
+  Notes Off / All Sound Off and `EventStream::release_all()` end sounding notes. `midi::Monitor` keeps what a display needs without locks: the last value
+  of every controller, bend and pressure per channel, held keys, what each voice plays (key,
+  tuning, pressure, timbre), the controller that moved last (for MIDI learn) and a bounded log
+  of the events. With Modulation built,
+  `tanh/modulation/MidiSources.h` adds `MidiControllerSource` (one CC, NRPN, pitch bend or
+  channel pressure as a global source, inactive until it first moves, with optional smoothing
+  and soft takeover) and `MidiNoteSource`
+  (gate, pitch, velocity, pressure or timbre per voice), both sample-accurate; Modulation then
+  links `tanh::Midi`. Guide: `docs/sphinx/midi.md`. Tests: `MidiEventDecoder.*`,
+  `MidiVoiceAllocator.*`, `MidiEventStream.*`, `MidiMonitor.*`, `MidiControllerSource.*`,
+  `MidiNoteSource.*`.
 - `tanh::Midi` (`TANH_BUILD_MIDI`, on by default; `include/tanh/midi/`, namespace `thl::midi`): the
   form MIDI has inside the library. Every message is a Universal MIDI Packet (`Ump`): MIDI 1.0
   as type 2 (system type 1, System Exclusive type 3) at its own resolution, MIDI 2.0 as type 4.
