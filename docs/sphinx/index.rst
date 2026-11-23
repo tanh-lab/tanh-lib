@@ -30,6 +30,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    symbol_visibility
    change_points
    modulation
+   transport
    sampler
    slicing
    pitch
