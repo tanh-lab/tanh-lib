@@ -223,8 +223,9 @@ public:
 
     /// Block processors: run once per block before any source (BlockProcessor.h).
     /// add_block_processor() prepares @p processor if prepare() was called.
-    /// Both rebuild the schedule, like add_source() and remove_source();
-    /// remove_block_processor() blocks until the audio thread no longer uses it.
+    /// Both rebuild the schedule, like add_source() and remove_source(), which
+    /// drops active ReplaceHold holds; remove_block_processor() blocks until the
+    /// audio thread no longer uses it.
     /// The processor must stay alive while registered.
     void add_block_processor(BlockProcessor& processor);
     void remove_block_processor(BlockProcessor& processor);

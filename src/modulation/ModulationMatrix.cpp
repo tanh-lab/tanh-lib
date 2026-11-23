@@ -423,7 +423,7 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
     for (auto* source : config.m_all_sources) { source->clear_per_block(); }
 
     // 1b. Block processors render what their sources copy out below (e.g. an
-    //     an XY controller's dots), once per block and before the drain pass.
+    //     XY controller's dots), once per block and before the drain pass.
     const BlockContext context{.m_num_samples = num_samples, .m_transport = transport};
     for (auto* processor : config.m_block_processors) { processor->process_block(context); }
 
@@ -520,10 +520,9 @@ void ModulationMatrix::add_block_processor(BlockProcessor& processor) {
 void ModulationMatrix::remove_block_processor(BlockProcessor& processor) {
     std::scoped_lock const lock(m_writer_mutex);
     if (std::erase(m_block_processors, &processor) == 0) { return; }
-    rebuild_schedule_with_lock();
-    // As remove_source(): once synchronize() returns, no audio block runs the
+    // The rebuild synchronizes: once it returns, no audio block runs the
     // processor any more and the caller may destroy it.
-    m_config.synchronize();
+    rebuild_schedule_with_lock();
 }
 
 void ModulationMatrix::remove_source(const std::string_view id) {
