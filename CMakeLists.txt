@@ -50,6 +50,7 @@ option(TANH_BUILD_DSP "Build DSP component" ON)
 option(TANH_BUILD_MODULATION "Build Modulation component" ON)
 option(TANH_BUILD_AUDIO_IO "Build AudioIO component" ON)
 option(TANH_BUILD_GRAPH "Build Graph component" OFF)
+option(TANH_BUILD_MIDI "Build Midi component (MIDI 1.0 / MIDI 2.0 input as Universal MIDI Packets)" ON)
 # Off by default: this is the only component that links a network stack, and
 # consumers embedding tanh::Core (anira) must not inherit it implicitly.
 option(TANH_BUILD_NET "Build Net component (HTTP asset delivery)" OFF)
@@ -781,6 +782,61 @@ if(TANH_BUILD_LINK)
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_link)
 endif()
 
+if(TANH_BUILD_MIDI)
+    if(NOT TARGET ${PROJECT_NAME}_core)
+        message(FATAL_ERROR "Midi component requires Core component")
+    endif()
+
+    # The internal MIDI format: Universal MIDI Packets, the MIDI 1.0 byte-stream
+    # parser in front of them and the MIDI 1.0 view behind them. Plain C++ on every
+    # platform; the device backends (CoreMIDI, Android) attach here.
+    add_library(${PROJECT_NAME}_midi
+        src/midi/Midi1StreamParser.cpp
+        src/midi/Midi1Converter.cpp
+        src/midi/DeviceManager.cpp
+        src/midi/BlockEventCollector.cpp
+    )
+
+    # The device backend behind DeviceManager. Each platform is named explicitly, as
+    # for Net; anything without one gets the stub, so the component builds everywhere
+    # and DeviceManager::supported() tells a caller once.
+    if(TANH_OPERATING_SYSTEM STREQUAL "macOS" OR TANH_OPERATING_SYSTEM STREQUAL "iOS")
+        target_sources(${PROJECT_NAME}_midi PRIVATE src/midi/DeviceBackend_apple.mm)
+        # ARC for this file only: it owns a dispatch queue and hands blocks that capture
+        # C++ objects to CoreMIDI and libdispatch.
+        set_source_files_properties(src/midi/DeviceBackend_apple.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        target_link_libraries(${PROJECT_NAME}_midi PRIVATE
+            "-framework CoreMIDI" "-framework CoreFoundation" "-framework Foundation" "-lobjc")
+    elseif(TANH_OPERATING_SYSTEM STREQUAL "Android")
+        # android.media.midi over JNI. Receiving needs a Java class, which CMake cannot
+        # deliver: the app compiles android/java/ in (and keeps it from R8 with
+        # android/consumer-rules.pro) and calls thl::midi::set_android_java_vm() in
+        # JNI_OnLoad. Until then running() is false and no input is listed.
+        target_sources(${PROJECT_NAME}_midi PRIVATE src/midi/DeviceBackend_android.cpp)
+    else()
+        target_sources(${PROJECT_NAME}_midi PRIVATE src/midi/DeviceBackend_unsupported.cpp)
+    endif()
+
+    set_target_properties(${PROJECT_NAME}_midi PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+
+    add_library(${PROJECT_NAME}::Midi ALIAS ${PROJECT_NAME}_midi)
+
+    target_include_directories(${PROJECT_NAME}_midi
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(${PROJECT_NAME}_midi PUBLIC ${PROJECT_NAME}_core)
+
+    target_compile_definitions(${PROJECT_NAME}_midi PUBLIC -DTANH_MIDI_ENABLED)
+
+    list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_midi)
+endif()
+
 # ==============================================================================
 # Symbol policy and common settings of every component (cmake/tanh/symbol-policy.cmake)
 # ==============================================================================
@@ -852,7 +908,8 @@ foreach(_pair
         "${PROJECT_NAME}_audio_io=AudioIO"
         "${PROJECT_NAME}_graph=Graph"
         "${PROJECT_NAME}_net=Net"
-        "${PROJECT_NAME}_link=Link")
+        "${PROJECT_NAME}_link=Link"
+        "${PROJECT_NAME}_midi=Midi")
     string(REPLACE "=" ";" _pair "${_pair}")
     list(GET _pair 0 _target)
     list(GET _pair 1 _export_name)
@@ -911,6 +968,9 @@ if (TANH_WITH_TESTS)
     if (TANH_BUILD_GRAPH)
         add_subdirectory(test/graph)
     endif()
+    if (TANH_BUILD_MIDI)
+        add_subdirectory(test/midi)
+    endif()
 
     # The export-table invariant and the ABI namespace, on the desktop formats where the
     # binaries can be inspected.
@@ -927,7 +987,7 @@ if (TANH_WITH_TESTS)
     if(DEVELOPMENT_TEAM)
         set(_ios_team DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}")
     endif()
-    foreach(_test test_core test_core_allocation test_state test_dsp test_modulation test_audio_io test_net test_link test_graph benchmark_state benchmark_graph benchmark_modulation benchmark_dsp)
+    foreach(_test test_core test_core_allocation test_state test_dsp test_modulation test_audio_io test_net test_link test_graph test_midi benchmark_state benchmark_graph benchmark_modulation benchmark_dsp)
         if(TARGET ${_test})
             tanh_ios_test_bundle(${_test} BUNDLE_ID_PREFIX com.tanh ${_ios_team})
         endif()

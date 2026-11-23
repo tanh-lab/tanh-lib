@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<devices>
+    <device manufacturer="tanh-lab" product="tanh-virtual-ump">
+        <port name="port1" />
+    </device>
+</devices>

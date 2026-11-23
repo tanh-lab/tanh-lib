@@ -9,6 +9,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `tanh::Midi` (`TANH_BUILD_MIDI`, on by default; `include/tanh/midi/`, namespace `thl::midi`): the
+  form MIDI has inside the library. Every message is a Universal MIDI Packet (`Ump`): MIDI 1.0
+  as type 2 (system type 1, System Exclusive type 3) at its own resolution, MIDI 2.0 as type 4.
+  `Midi1StreamParser` turns a MIDI 1.0 byte stream into packets (running status, real-time bytes
+  inside a message, messages split across calls), `UmpByteReader` and `for_each_ump()` read UMP
+  from big-endian bytes and from host-order words, `convert_to_midi1()` gives plain MIDI 1.0
+  short messages back (MIDI 2.0 scaled down by the translation rules), and `InputQueue` carries
+  timestamped packets from any number of receive threads to the audio thread without locks,
+  counting what it drops when full. `DeviceManager` lists the MIDI inputs, opens them (all of
+  them by default), follows hot-plugging and delivers into one queue; on macOS and iOS it is
+  backed by CoreMIDI (MIDI 1.0 or 2.0 on request, a virtual input other apps can send to, a
+  run-loop thread of its own when the process has not used CoreMIDI yet, one MIDI client
+  per process that is never disposed, and a warning when a startup check finds that device
+  changes would go unnoticed); on Android by
+  `android.media.midi` (API 23+, MIDI 1.0 devices and, from API 33, Universal MIDI Packet
+  devices; the app compiles in `android/java` and calls `thl::midi::set_android_java_vm()` in
+  `JNI_OnLoad`); elsewhere `supported()` is false. `thl::AudioMidiProcessor` is the engine interface a host calls with a
+  block's audio and its events (`BlockEvent`, MIDI packets with a sample offset), and
+  `thl::AudioMidiCallback` runs such an engine from the audio device and the MIDI inputs:
+  `StreamClock` builds the stream's clock from the callback times (late, bursty or chunked
+  callbacks and clock drift included) and `BlockEventCollector` gives every packet the sample
+  offset of its timestamp, so MIDI and audio are aligned to the sample with a constant delay of
+  one full-size block (`EventPlacement::Immediate` puts events at the block start instead, for
+  the shortest delay); MIDI sent before a stream started is discarded, not played late. Depends
+  on Core. Tests: `MidiUmp.*`, `MidiUmpByteReader.*`,
+  `Midi1StreamParser.*`, `Midi1Converter.*`, `MidiInputQueue.*`, `MidiDeviceManager.*`,
+  `MidiPortReader.*`, `MidiStreamClock.*`, `MidiBlockEventCollector.*`, `AudioMidiCallback.*`,
+  `CoreMidi.*` (macOS and the iOS simulator, through virtual ports);
+  `test/android/midi/run.sh` (`just test-android-midi`) runs the Android backend on a device or
+  emulator against virtual MIDI devices, hot-plug included.
 - `THIRD_PARTY_NOTICES.md`: the third-party code the components embed (pffft, miniaudio,
   nlohmann/json, readerwriterqueue and the zlib-licensed semaphore in it, Signalsmith Stretch
   and Linear, and with `TANH_BUILD_LINK` Ableton Link, its Asio and LinkKit), with version,
@@ -269,6 +299,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `AudioDeviceManager::add_playback_callback()`, `add_capture_callback()` and
+  `add_duplex_callback()` call `prepare_to_play()` before the callback joins the list the audio
+  thread reads, as documented. On a running device the audio thread could call `process()` on a
+  callback that was not prepared yet.
 - `InternalTransportClock`: the time signature is set in one atomic, never seen half
   updated; a seek or tempo request is taken once (it could apply in two blocks);
   `prepare()` keeps the beat, also at a new sample rate, and with an invalid sample

@@ -1,7 +1,7 @@
 Components
 ==========
 
-tanh-lib is seven independently buildable library targets. Each is an
+tanh-lib is eight independently buildable library targets. Each is an
 ``add_library`` of its own, exported as ``tanh::<Component>`` both in-tree and
 from the installed package, and enabled by a ``TANH_BUILD_<COMPONENT>`` option.
 Everything lives in namespace ``thl``, inside the inline ABI namespace
@@ -25,12 +25,14 @@ tanh-lib in one process stay apart; code spells ``thl::`` (see
        audio_io   [label="tanh::AudioIO\ndevice I/O over miniaudio"];
        net        [label="tanh::Net\nHttpClient, Sha256,\nAssetStore"];
        graph_node [label="tanh::Graph\nprocessor graph,\nlatency compensation"];
+       midi       [label="tanh::Midi\nUniversal MIDI Packets,\ndevice input, InputQueue"];
        link       [label="tanh::Link\nLinkSession (Ableton Link)", style="rounded,dashed"];
 
        state -> core;
        dsp -> core;
        audio_io -> core;
        net -> core;
+       midi -> core;
        graph_node -> core;
        graph_node -> dsp;
        modulation -> core;
@@ -155,6 +157,23 @@ inputs of every node and a node's dry path are delayed to match each node's
 ``latency_samples()``, and the graph reports its own. A bypassed node coming
 back is ``reset()``. Off by default (``TANH_BUILD_GRAPH``). Depends on Core and
 DSP.
+
+Midi
+----
+
+``tanh::Midi`` (``include/tanh/midi/``) is the form MIDI has inside tanh-lib:
+every message is a Universal MIDI Packet (:cpp:struct:`thl::midi::Ump`), MIDI 1.0
+at its own resolution and MIDI 2.0 alike. :cpp:class:`thl::midi::Midi1StreamParser`
+turns a MIDI 1.0 byte stream into packets, :cpp:func:`thl::midi::convert_to_midi1`
+gives code that only wants MIDI 1.0 plain short messages back, and
+:cpp:class:`thl::midi::InputQueue` carries timestamped packets from the receive
+threads to the audio thread without locks. :cpp:class:`thl::midi::DeviceManager`
+lists and opens the MIDI inputs of the machine and follows hot-plugging (CoreMIDI
+on macOS and iOS, ``android.media.midi`` on Android). :cpp:class:`thl::AudioMidiProcessor`
+is the engine interface a host calls with a block's audio and its events, and
+:cpp:class:`thl::AudioMidiCallback` is that host for an app: it runs an engine from the
+audio device and the MIDI inputs, the events aligned with the audio to the sample. See
+:doc:`midi`. Depends on Core.
 
 Platforms
 ---------

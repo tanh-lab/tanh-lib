@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - uses: tanh-lab/ci-actions/changed-files@v0.3.16
+      - uses: tanh-lab/ci-actions/changed-files@v0.3.17
         id: changed
         with:
           FULL_SWEEP_PATTERN: ${{ env.TIDY_SWEEP_PATTERN }}
@@ -68,11 +68,11 @@ jobs:
           echo "sweep=$SWEEP" >> "$GITHUB_OUTPUT"
           echo "work=$WORK" >> "$GITHUB_OUTPUT"
           echo "sweep=$SWEEP work=$WORK ($REASON)"
-      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.16
+      - uses: tanh-lab/ci-actions/setup-cpp-build-tools@v0.3.17
         if: steps.plan.outputs.work == 'true'
       # clang-tidy needs the compile database, the generated headers and the
       # fetched dependencies, so the preset is configured and built first.
-      - uses: tanh-lab/ci-actions/cmake-build@v0.3.16
+      - uses: tanh-lab/ci-actions/cmake-build@v0.3.17
         if: steps.plan.outputs.work == 'true'
         with:
           PRESET: ${{ env.TIDY_PRESET }}
@@ -126,7 +126,7 @@ jobs:
           EOF
       # Skipped on an empty list (the pull request's .cpp changes are outside
       # this build): the action would read an empty FILES as "sweep SOURCES".
-      - uses: tanh-lab/ci-actions/clang-tidy-check@v0.3.16
+      - uses: tanh-lab/ci-actions/clang-tidy-check@v0.3.17
         if: steps.plan.outputs.work == 'true' && steps.select.outputs.files != ''
         with:
           SOURCES: ${{ env.TIDY_SOURCES }}

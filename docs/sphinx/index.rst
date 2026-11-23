@@ -1,7 +1,7 @@
 tanh-lib
 ========
 
-Modular, real-time-safe C++20 audio library. Six independently buildable
+Modular, real-time-safe C++20 audio library. Seven independently buildable
 components, all in namespace ``thl``:
 
 - **tanh::Core** — Dispatcher, Logger (with a real-time path), RCU, lock-free
@@ -14,6 +14,8 @@ components, all in namespace ``thl``:
 - **tanh::Modulation** — modulation matrix with change-point sub-blocking
 - **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android)
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
+- **tanh::Midi** — MIDI 1.0 and MIDI 2.0 as Universal MIDI Packets, device
+  input (macOS, iOS, Android) and a lock-free queue to the audio thread
 
 Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
 
@@ -33,6 +35,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    slicing
    pitch
    audio_io
+   midi
    api/index
    changelog
    contributing
@@ -50,7 +53,8 @@ other; :doc:`realtime_safety` lists the rules every ``process()`` path follows.
 block in pieces that start where its modulated parameters change.
 :doc:`symbol_visibility`, :doc:`modulation` and :doc:`audio_io` are the design
 notes that used to live in the README; :doc:`sampler`, :doc:`slicing` and
-:doc:`pitch` describe the sample playback components.
+:doc:`pitch` describe the sample playback components, :doc:`midi` the internal
+MIDI format.
 
 The :doc:`api/index` is generated from the public headers under
 ``include/tanh/``.

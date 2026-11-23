@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A second app that is nothing but a virtual MIDI device. Installing and uninstalling it
+     while the test runs is a MIDI device being plugged in and pulled out (run.sh). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="tanhlab.tanhlib.miditest.plug">
+
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
+
+    <application android:label="tanh midi plug" android:hasCode="true">
+        <service
+            android:name=".PlugService"
+            android:exported="true"
+            android:permission="android.permission.BIND_MIDI_DEVICE_SERVICE">
+            <intent-filter>
+                <action android:name="android.media.midi.MidiDeviceService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.media.midi.MidiDeviceService"
+                android:resource="@xml/plug_device" />
+        </service>
+    </application>
+</manifest>

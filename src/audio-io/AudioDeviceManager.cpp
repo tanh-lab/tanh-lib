@@ -146,6 +146,22 @@ ma_bool32 enum_callback(ma_context* /*pContext*/,
     return MA_TRUE;
 }
 
+using CallbackList = RCU<std::vector<AudioIODeviceCallback*>>;
+
+bool is_registered(const CallbackList& list, const AudioIODeviceCallback* callback) {
+    return list.read([callback](const auto& callbacks) {
+        return std::find(callbacks.begin(), callbacks.end(), callback) != callbacks.end();
+    });
+}
+
+void publish(CallbackList& list, AudioIODeviceCallback* callback) {
+    list.update([callback](auto& callbacks) {
+        if (std::find(callbacks.begin(), callbacks.end(), callback) == callbacks.end()) {
+            callbacks.push_back(callback);
+        }
+    });
+}
+
 }  // namespace
 
 uint32_t AudioDeviceManager::clamp_buffer_size_for_bluetooth_route(uint32_t buffer_size_in_frames,
@@ -877,54 +893,36 @@ void AudioDeviceManager::stop_duplex() {
 }
 
 void AudioDeviceManager::add_playback_callback(AudioIODeviceCallback* callback) {
-    if (!callback) { return; }
+    if (!callback || is_registered(m_playback_callbacks, callback)) { return; }
 
-    bool added = false;
-    m_playback_callbacks.update([&](auto& callbacks) {
-        if (std::find(callbacks.begin(), callbacks.end(), callback) == callbacks.end()) {
-            callbacks.push_back(callback);
-            added = true;
-        }
-    });
-
-    if (added && m_impl->m_playback_device_initialised) {
+    // Prepared before it joins the list: from then on the audio thread calls process().
+    if (m_impl->m_playback_device_initialised) {
         callback->prepare_to_play(m_impl->m_playback_device.sampleRate,
                                   m_impl->m_playback_prepared_period_size);
     }
+    publish(m_playback_callbacks, callback);
 }
 
 void AudioDeviceManager::add_capture_callback(AudioIODeviceCallback* callback) {
-    if (!callback) { return; }
+    if (!callback || is_registered(m_capture_callbacks, callback)) { return; }
 
-    bool added = false;
-    m_capture_callbacks.update([&](auto& callbacks) {
-        if (std::find(callbacks.begin(), callbacks.end(), callback) == callbacks.end()) {
-            callbacks.push_back(callback);
-            added = true;
-        }
-    });
-
-    if (added && m_impl->m_capture_device_initialised) {
+    // Prepared before it joins the list: from then on the audio thread calls process().
+    if (m_impl->m_capture_device_initialised) {
         callback->prepare_to_play(m_impl->m_capture_device.sampleRate,
                                   m_impl->m_capture_prepared_period_size);
     }
+    publish(m_capture_callbacks, callback);
 }
 
 void AudioDeviceManager::add_duplex_callback(AudioIODeviceCallback* callback) {
-    if (!callback) { return; }
+    if (!callback || is_registered(m_duplex_callbacks, callback)) { return; }
 
-    bool added = false;
-    m_duplex_callbacks.update([&](auto& callbacks) {
-        if (std::find(callbacks.begin(), callbacks.end(), callback) == callbacks.end()) {
-            callbacks.push_back(callback);
-            added = true;
-        }
-    });
-
-    if (added && m_impl->m_duplex_device_initialised) {
+    // Prepared before it joins the list: from then on the audio thread calls process().
+    if (m_impl->m_duplex_device_initialised) {
         callback->prepare_to_play(m_impl->m_duplex_device.sampleRate,
                                   m_impl->m_duplex_prepared_period_size);
     }
+    publish(m_duplex_callbacks, callback);
 }
 
 void AudioDeviceManager::remove_playback_callback(AudioIODeviceCallback* callback) {
