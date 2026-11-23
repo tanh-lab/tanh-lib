@@ -425,10 +425,7 @@ void ModulationMatrix::process_with_scope(const ProcessingConfig& config,
     // 1b. Block processors render what their sources copy out below (e.g. an
     //     an XY controller's dots), once per block and before the drain pass.
     const BlockContext context{.m_num_samples = num_samples, .m_transport = transport};
-    {
-        const auto processors = m_block_processor_rcu.read_scope(m_block_processor_reader);
-        for (auto* processor : processors.data()) { processor->process_block(context); }
-    }
+    for (auto* processor : config.m_block_processors) { processor->process_block(context); }
 
     // 2. Drain pass — every registered source consumes its event queue and
     //    freezes per-block input state (values + masks + CPs). Runs exactly
@@ -517,22 +514,16 @@ void ModulationMatrix::add_block_processor(BlockProcessor& processor) {
     // Prepared before it is published, like a source added after prepare().
     if (m_prepared) { processor.prepare(m_sample_rate, m_samples_per_block); }
     m_block_processors.push_back(&processor);
-    publish_block_processors_with_lock();
+    rebuild_schedule_with_lock();
 }
 
 void ModulationMatrix::remove_block_processor(BlockProcessor& processor) {
     std::scoped_lock const lock(m_writer_mutex);
     if (std::erase(m_block_processors, &processor) == 0) { return; }
-    publish_block_processors_with_lock();
-}
-
-void ModulationMatrix::publish_block_processors_with_lock() {
-    // No rebuild: that would drop every ReplaceHold hold. Once synchronize()
-    // returns, no audio block reads the previous list or runs a processor
-    // that is not in the new one.
-    m_block_processor_rcu.replace(
-        [&](std::vector<BlockProcessor*>& list) { list = m_block_processors; });
-    m_block_processor_rcu.synchronize();
+    rebuild_schedule_with_lock();
+    // As remove_source(): once synchronize() returns, no audio block runs the
+    // processor any more and the caller may destroy it.
+    m_config.synchronize();
 }
 
 void ModulationMatrix::remove_source(const std::string_view id) {
@@ -1229,6 +1220,7 @@ void ModulationMatrix::rebuild_schedule_with_lock() {
         config.m_active_targets = std::move(new_active_targets);
         config.m_host_share_targets = std::move(new_host_share_targets);
         config.m_all_sources = std::move(new_all_sources);
+        config.m_block_processors = m_block_processors;
         config.m_prepared = m_prepared;
         config.m_routings_by_source.clear();
         for (const auto& r : config.m_routings) {

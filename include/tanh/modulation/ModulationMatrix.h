@@ -70,6 +70,10 @@ struct ProcessingConfig {
     // via add_source(), including sources with no routings.
     std::vector<ModulationSource*> m_all_sources;
 
+    // Every registered block processor, in registration order. process() runs
+    // them once per block, after clear_per_block() and before the drain pass.
+    std::vector<BlockProcessor*> m_block_processors;
+
     // Built after prepare(): before it, sources have no buffers and
     // process_with_scope() does nothing.
     bool m_prepared = false;
@@ -219,6 +223,7 @@ public:
 
     /// Block processors: run once per block before any source (BlockProcessor.h).
     /// add_block_processor() prepares @p processor if prepare() was called.
+    /// Both rebuild the schedule, like add_source() and remove_source();
     /// remove_block_processor() blocks until the audio thread no longer uses it.
     /// The processor must stay alive while registered.
     void add_block_processor(BlockProcessor& processor);
@@ -353,10 +358,6 @@ private:
     // unknown, not modulatable or has no base atomic. m_writer_mutex held.
     bool resolve_routing_target_with_lock(std::string_view id);
 
-    // Publish m_block_processors to the audio thread; waits until it no longer
-    // reads the previous list (or runs a removed processor). m_writer_mutex held.
-    void publish_block_processors_with_lock();
-
     // Routing lookup helpers — must be called with m_writer_mutex held.
     ModulationRouting* find_user_routing_with_lock(std::string_view source_id,
                                                    std::string_view target_id);
@@ -439,14 +440,6 @@ private:
     // Registered block processors (not owned), in registration order — protected
     // by m_writer_mutex.
     std::vector<BlockProcessor*> m_block_processors;
-
-    // The audio thread's copy of m_block_processors, in its own RCU apart from
-    // the ProcessingConfig so that adding or removing one rebuilds nothing (a
-    // rebuild drops every ReplaceHold hold). Read by process_with_scope()
-    // through its own reader slot (the audio path runs on one thread at a time).
-    using BlockProcessorRCU = thl::RCU<std::vector<BlockProcessor*>>;
-    BlockProcessorRCU m_block_processor_rcu;
-    BlockProcessorRCU::Reader m_block_processor_reader = m_block_processor_rcu.add_reader();
 
     // Registered targets (owned) — protected by m_writer_mutex.
     // Pointer stability guaranteed by std::unordered_map.

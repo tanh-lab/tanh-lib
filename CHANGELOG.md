@@ -54,8 +54,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   serialised only when disabled. Tests: `RoutingEnabled.*`.
 - `thl::modulation::BlockProcessor`: work a `ModulationMatrix` runs once per block
   before any source (`add_block_processor()`), given a `BlockContext` with the block
-  length and the transport passed to `process()` / `process_with_scope()`. Adding or
-  removing one rebuilds nothing, so ReplaceHold holds stay.
+  length and the transport passed to `process()` / `process_with_scope()`. Like a
+  source, it lives in the `ProcessingConfig`: adding or removing one rebuilds the
+  schedule, and `remove_block_processor()` returns once no block runs it.
 - `tanh::Link` (`TANH_BUILD_LINK`, off by default for its licence):
   `thl::link::LinkSession` over the Link 4.1 SDK (pinned commit) on macOS, Linux and
   Windows and LinkKit 4.1.2 (pinned SHA256, CMake 3.28+) on iOS, with
