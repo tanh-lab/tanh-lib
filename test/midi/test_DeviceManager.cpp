@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
+#include <tanh/midi/AndroidMidi.h>
 #include <tanh/midi/DeviceManager.h>
 
+#include <cstdint>
 #include <vector>
+
+#include "DeviceBackend.h"
 
 using namespace thl::midi;
 
@@ -38,4 +42,46 @@ TEST(MidiDeviceManager, UnsupportedPlatformReportsNothing) {
     EXPECT_FALSE(manager.create_virtual_input("tanh"));
     manager.set_auto_open(true);
     manager.set_device_change_callback([] {});
+}
+
+// The change callback can be replaced and taken away again at any time.
+TEST(MidiDeviceManager, ChangeCallbackCanBeSetAndCleared) {
+    DeviceManager manager;
+    manager.set_device_change_callback([] {});
+    manager.set_device_change_callback([] {});
+    manager.set_device_change_callback({});
+}
+
+#if !defined(THL_PLATFORM_ANDROID)
+// Callers need no #ifdef: off Android the call does nothing.
+TEST(MidiDeviceManager, SetAndroidJavaVmIsANoOpElsewhere) {
+    set_android_java_vm(nullptr);
+    DeviceManager manager;
+    EXPECT_EQ(manager.running(), DeviceManager::supported());
+}
+#endif
+
+// What a backend lets into the queue: performance data always, System Exclusive on
+// request, transport housekeeping and reserved packets never.
+TEST(MidiDeviceBackend, AcceptsPerformanceDataOnly) {
+    const auto of_type = [](std::uint32_t type) {
+        Ump ump;
+        ump.m_words[0] = type << 28U;
+        ump.m_size = ump_word_count(ump.m_words[0]);
+        return ump;
+    };
+
+    for (const bool sysex : {false, true}) {
+        for (const std::uint32_t type : {0x1U, 0x2U, 0x4U}) {  // system, MIDI 1.0, MIDI 2.0
+            EXPECT_TRUE(accepts_packet(of_type(type), sysex)) << "message type " << type;
+        }
+        for (const std::uint32_t type : {0x3U, 0x5U}) {  // System Exclusive, 7 and 8 bit
+            EXPECT_EQ(accepts_packet(of_type(type), sysex), sysex) << "message type " << type;
+        }
+        // Utility, flex data, UMP stream, and the reserved types.
+        for (const std::uint32_t type :
+             {0x0U, 0xDU, 0xFU, 0x6U, 0x7U, 0x8U, 0x9U, 0xAU, 0xBU, 0xCU, 0xEU}) {
+            EXPECT_FALSE(accepts_packet(of_type(type), sysex)) << "message type " << type;
+        }
+    }
 }

@@ -169,3 +169,45 @@ TEST(Midi1Converter, DropsWhatMidi1CannotExpress) {
     stream.m_size = 4;
     EXPECT_TRUE(to_bytes(stream).empty());
 }
+
+// System messages come back at their own length: one, two or three bytes.
+TEST(Midi1Converter, SystemMessagesKeepTheirLength) {
+    EXPECT_EQ(to_bytes(make_system(0, 0xF1, 0x35)), (Bytes{0xF1, 0x35}));              // time code
+    EXPECT_EQ(to_bytes(make_system(0, 0xF2, 0x10, 0x20)), (Bytes{0xF2, 0x10, 0x20}));  // position
+    EXPECT_EQ(to_bytes(make_system(0, 0xF3, 0x07)), (Bytes{0xF3, 0x07}));  // song select
+    EXPECT_EQ(to_bytes(make_system(0, 0xF6)), (Bytes{0xF6}));              // tune request
+    EXPECT_EQ(to_bytes(make_system(0, 0xF8)), (Bytes{0xF8}));              // timing clock
+}
+
+// A status that is no short message gives nothing: System Exclusive start and end (their
+// data travels as type 3) and the statuses MIDI 1.0 leaves undefined.
+TEST(Midi1Converter, StatusesWithoutAShortMessageGiveNothing) {
+    for (const int status : {0xF0, 0xF4, 0xF5, 0xF7, 0xF9, 0xFD}) {
+        EXPECT_TRUE(to_bytes(make_system(0, static_cast<std::uint8_t>(status))).empty())
+            << "status " << status;
+    }
+
+    // A data byte where the status belongs: a malformed packet.
+    Ump no_status;
+    no_status.m_words[0] = 0x20003C40U;
+    no_status.m_size = 1;
+    EXPECT_TRUE(to_bytes(no_status).empty());
+}
+
+// Packets a sender may emit that MIDI 2.0 leaves reserved, or that carry no channel voice
+// or system message, give nothing either.
+TEST(Midi1Converter, ReservedAndDataPacketsGiveNothing) {
+    Ump reserved_opcode;  // MIDI 2.0 channel voice, opcode 0x7
+    reserved_opcode.m_words[0] = 0x40703C00U;
+    reserved_opcode.m_words[1] = 0x80000000U;
+    reserved_opcode.m_size = 2;
+    EXPECT_TRUE(to_bytes(reserved_opcode).empty());
+
+    // 0x5 data, 0xD flex data, the rest reserved.
+    for (const std::uint32_t type : {0x5U, 0x6U, 0x7U, 0x8U, 0x9U, 0xAU, 0xBU, 0xCU, 0xDU, 0xEU}) {
+        Ump ump;
+        ump.m_words[0] = type << 28U;
+        ump.m_size = ump_word_count(ump.m_words[0]);
+        EXPECT_TRUE(to_bytes(ump).empty()) << "message type " << type;
+    }
+}

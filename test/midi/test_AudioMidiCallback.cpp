@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -284,4 +285,38 @@ TEST(AudioMidiCallback, EngineKeepsItsChannelsOnASmallerDevice) {
     EXPECT_EQ(engine.m_second_on_entry, 0.0f);  // cleared, not last block's marker
     EXPECT_EQ(mono[0], 1.0f);
     EXPECT_EQ(mono[1], 0.0f);
+}
+
+// process() is process_at() with the current time: what the audio device calls.
+TEST(AudioMidiCallback, ProcessRendersABlockAtTheCurrentTime) {
+    ClickEngine engine;
+    InputQueue queue(64);
+    AudioMidiCallback callback(engine, queue, 2);
+    callback.prepare_to_play(48000, k_block);
+
+    std::vector<float> output(static_cast<std::size_t>(k_block) * 2, -1.0f);
+    callback.process(output.data(), nullptr, k_block, 0, 2);
+    EXPECT_EQ(engine.m_blocks, 1);
+    for (const float sample : output) { EXPECT_EQ(sample, 0.0f); }
+}
+
+// An output buffer without channels is no output either.
+TEST(AudioMidiCallback, AnOutputWithoutChannelsIsNoOutput) {
+    ClickEngine engine;
+    InputQueue queue(64);
+    AudioMidiCallback callback(engine, queue, 2);
+    callback.prepare_to_play(48000, k_block);
+
+    std::vector<float> output(static_cast<std::size_t>(k_block) * 2, -1.0f);
+    callback.process_at(k_t0, output.data(), nullptr, k_block, 0, 0);
+    EXPECT_EQ(engine.m_blocks, 0);
+    for (const float sample : output) { EXPECT_EQ(sample, -1.0f); }
+}
+
+// An engine without state to clear need not override reset().
+TEST(AudioMidiCallback, EngineNeedNotOverrideReset) {
+    const std::unique_ptr<AudioMidiProcessor> engine = std::make_unique<ClickEngine>();
+    engine->reset();
+    engine->prepare(k_sample_rate, k_block, 2);
+    EXPECT_EQ(static_cast<ClickEngine&>(*engine).m_blocks, 0);
 }
