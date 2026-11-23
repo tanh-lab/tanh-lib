@@ -45,8 +45,27 @@ struct RingsResonatorSynthProcessor::EngineState {
     float m_frequency = 440.0f;
     float m_odd_even_mix = 0.5f;
     float m_dry_wet = 1.0f;
+
+    // Model / polyphony switching. Swapping either one re-configures the
+    // resonators and jumps the wet signal (a click), so a change fades the wet
+    // output to zero, swaps at zero and fades back in. The targets are what the
+    // parameters ask for; the active pair is what renders. The dry path is
+    // untouched.
+    enum class SwitchPhase { Idle, FadingOut, FadingIn };
+    resonator::ResonatorModel m_target_model = resonator::Modal;
+    int m_target_polyphony = 1;
     resonator::ResonatorModel m_model = resonator::Modal;
     int m_polyphony_voices = 1;
+    SwitchPhase m_switch_phase = SwitchPhase::Idle;
+    float m_switch_gain = 1.0f;
+    float m_switch_step = 1.0f;
+    // After a swap, no new fade-out starts for this many samples, so a value
+    // flickering across a choice boundary can't chop the sound continuously.
+    int m_switch_hold_samples = 0;
+    int m_switch_hold_remaining = 0;
+    // The first render after prepare takes the targets directly (nothing is
+    // sounding yet, so there is nothing to fade).
+    bool m_switch_settled = false;
 
     utils::ParamSmoother m_frequency_smoother;
     utils::ParamSmoother m_structure_smoother;
@@ -79,6 +98,18 @@ struct RingsResonatorSynthProcessor::EngineState {
         m_output_fifo_odd.initialise_with_positions(1, max_block_size + k_block_size);
         m_output_fifo_even.initialise_with_positions(1, max_block_size + k_block_size);
 
+        // 10 ms each way: 5 ms still let the new model's first cycles through
+        // with an edge; 10 ms rounds them off without a long gap.
+        constexpr double k_switch_fade_seconds = 0.010;
+        constexpr double k_switch_hold_seconds = 0.02;
+        m_switch_step = static_cast<float>(
+            1.0 / std::max(1.0, std::round(k_switch_fade_seconds * sample_rate)));
+        m_switch_hold_samples = static_cast<int>(std::round(k_switch_hold_seconds * sample_rate));
+        m_switch_phase = SwitchPhase::Idle;
+        m_switch_gain = 1.0f;
+        m_switch_hold_remaining = 0;
+        m_switch_settled = false;
+
         constexpr float k_smooth_time = 0.05f;
         m_frequency_smoother.prepare(sample_rate, k_smooth_time);
         m_structure_smoother.prepare(sample_rate, k_smooth_time);
@@ -89,7 +120,60 @@ struct RingsResonatorSynthProcessor::EngineState {
         m_dry_wet_smoother.prepare(sample_rate, k_smooth_time);
     }
 
+    bool switch_pending() const {
+        return m_target_model != m_model || m_target_polyphony != m_polyphony_voices;
+    }
+
+    // Decides, once per Rings block, whether to start / cancel a fade or swap
+    // the active model and polyphony (only ever at zero wet gain).
+    void update_switch_phase() {
+        if (!m_switch_settled) {
+            m_model = m_target_model;
+            m_polyphony_voices = m_target_polyphony;
+            m_switch_settled = true;
+            return;
+        }
+        bool const pending = switch_pending();
+        switch (m_switch_phase) {
+            case SwitchPhase::Idle:
+                if (pending && m_switch_hold_remaining <= 0) {
+                    m_switch_phase = SwitchPhase::FadingOut;
+                }
+                break;
+            case SwitchPhase::FadingOut:
+                if (!pending) {
+                    // The target came back before the swap: just fade back in.
+                    m_switch_phase = SwitchPhase::FadingIn;
+                } else if (m_switch_gain <= 0.0f) {
+                    m_model = m_target_model;
+                    m_polyphony_voices = m_target_polyphony;
+                    m_switch_hold_remaining = m_switch_hold_samples;
+                    m_switch_phase = SwitchPhase::FadingIn;
+                }
+                break;
+            case SwitchPhase::FadingIn:
+                // Latest target wins: fade out again from the current gain.
+                if (pending && m_switch_hold_remaining <= 0) {
+                    m_switch_phase = SwitchPhase::FadingOut;
+                }
+                break;
+        }
+    }
+
+    // Per-sample wet gain for the current phase.
+    float next_switch_gain() {
+        if (m_switch_phase == SwitchPhase::FadingOut) {
+            m_switch_gain = std::max(0.0f, m_switch_gain - m_switch_step);
+        } else if (m_switch_phase == SwitchPhase::FadingIn) {
+            m_switch_gain = std::min(1.0f, m_switch_gain + m_switch_step);
+            if (m_switch_gain >= 1.0f) { m_switch_phase = SwitchPhase::Idle; }
+        }
+        return m_switch_gain;
+    }
+
     void render_block(const float* input, float* out_odd, float* out_even) {
+        update_switch_phase();
+
         float const midi_note = 12.0f * std::log2(m_frequency / 27.5f);
         m_performance_state.m_note = midi_note;
 
@@ -119,9 +203,12 @@ struct RingsResonatorSynthProcessor::EngineState {
         }
 
         for (size_t i = 0; i < k_block_size; ++i) {
-            out_odd[i] = std::clamp(out[i], -1.0f, 1.0f);
-            out_even[i] = std::clamp(aux[i], -1.0f, 1.0f);
+            float const gain = next_switch_gain();
+            out_odd[i] = std::clamp(out[i], -1.0f, 1.0f) * gain;
+            out_even[i] = std::clamp(aux[i], -1.0f, 1.0f) * gain;
         }
+        m_switch_hold_remaining =
+            std::max(0, m_switch_hold_remaining - static_cast<int>(k_block_size));
     }
 };
 
@@ -168,12 +255,13 @@ void RingsResonatorSynthProcessor::process(const thl::core::ConstBufferView& inp
     e.m_dry_wet = dry_wet;
     // Modulated reads are unclamped: an out-of-range model indexes past the
     // voice manager's per-model gain table.
-    e.m_model = static_cast<resonator::ResonatorModel>(
+    // The swap itself happens in render_block, behind a wet fade.
+    e.m_target_model = static_cast<resonator::ResonatorModel>(
         std::clamp(model, 0, static_cast<int>(resonator::Last) - 1));
 
     static constexpr std::array<int, 3> k_poly_voices = {1, 2, 4};
     int const poly_index = std::clamp(polyphony, 0, 2);
-    e.m_polyphony_voices = k_poly_voices[static_cast<size_t>(poly_index)];
+    e.m_target_polyphony = k_poly_voices[static_cast<size_t>(poly_index)];
 
     e.m_frequency_smoother.set_target(e.m_frequency);
     e.m_structure_smoother.set_target(e.m_patch.m_structure);
