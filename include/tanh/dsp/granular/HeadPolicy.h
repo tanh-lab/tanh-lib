@@ -17,7 +17,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 inline constexpr FramePos k_no_grain = -1;
 
 /// What a head policy reads each block. Markers and Position are normalised
-/// [0, 1]; Tilt is [-1, 1]. A non-null `m_slices` (a valid map) reads Start /
+/// [0, 1]; Tilt is [-1, 1]; Spray is [-1, 1] (width |Spray|, negative reads
+/// Position mode's grains backwards). A non-null `m_slices` (a valid map) reads Start /
 /// End / Position in slice space (see slicing/SliceSteps.h).
 struct HeadInputs {
     float m_start{0.0f};
@@ -35,16 +36,6 @@ using sampler::LoopRegion;
 // One draw in [0, 1).
 inline float unit_random(std::mt19937& rng) {
     return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng);
-}
-
-// Start / End (or, slicing, their slice steps) as a region: End before
-// Start reverses. Loop mode scans it; Position mode takes only its
-// direction.
-inline LoopRegion marker_region(size_t total_frames, const HeadInputs& p) {
-    if (p.m_slices != nullptr) {
-        return slicing::region_from_steps(*p.m_slices, p.m_start, p.m_end, total_frames);
-    }
-    return LoopRegion::from_normalized(p.m_start, p.m_end, p.m_loop_point, total_frames);
 }
 
 // Where the grain scheduler's next grain comes from. The GrainEngine has no
@@ -97,7 +88,10 @@ protected:
 class LoopScanHead final : public HeadPolicy {
 public:
     LoopRegion region(size_t total_frames, const HeadInputs& p) const override {
-        return marker_region(total_frames, p);
+        if (p.m_slices != nullptr) {
+            return slicing::region_from_steps(*p.m_slices, p.m_start, p.m_end, total_frames);
+        }
+        return LoopRegion::from_normalized(p.m_start, p.m_end, p.m_loop_point, total_frames);
     }
 
     FramePos pick_start(const LoopRegion& region,
@@ -157,12 +151,13 @@ private:
 // this), never wrapped. Position temperature is applied on top exactly as
 // in Loop mode, so it can leave the window.
 //
-// Direction: End before Start reverses here too, exactly as in the other
-// modes (the markers keep their direction while dormant). The region stays
-// the whole sample, only reversed; a reversed grain starts on the picked
-// frame and reads backwards (pick_start hands back the virtual frame that
-// mirrors onto it). Slicing mirrors the pick inside its slice, so Spray 0
-// starts on the slice's last frame and plays the slice backwards.
+// Direction: Spray is signed. Its magnitude is the window width, a negative
+// Spray reads every grain backwards (Position mode's counterpart of End
+// before Start in the other modes). The region stays the whole sample, only
+// reversed; a reversed grain starts on the picked frame and reads backwards
+// (pick_start hands back the virtual frame that mirrors onto it). Slicing
+// mirrors the pick inside its slice, so a reversed Spray near 0 starts on
+// the slice's last frame and plays the slice backwards.
 //
 // Slicing: the same formula in slice steps. Position picks a slice k, Spray
 // is a width S in slices (100 % = every slice), the window [k + lo·S,
@@ -177,7 +172,7 @@ class PositionSprayHead final : public HeadPolicy {
 public:
     LoopRegion region(size_t total_frames, const HeadInputs& p) const override {
         LoopRegion region = LoopRegion::full(total_frames);
-        region.m_reverse = marker_region(total_frames, p).m_reverse;
+        region.m_reverse = p.m_spray < 0.0f;
         return region;
     }
 
@@ -195,7 +190,7 @@ public:
         float const window_lo = std::max(-1.0f, p.m_tilt - 1.0f);
         float const window_hi = std::min(1.0f, p.m_tilt + 1.0f);
         float const u = unit_random(rng);  // [0, 1)
-        float const spray_offset = (window_lo + u * (window_hi - window_lo)) * p.m_spray;
+        float const spray_offset = (window_lo + u * (window_hi - window_lo)) * std::abs(p.m_spray);
         FramePos const start =
             std::clamp(static_cast<FramePos>(p.m_position * static_cast<float>(max_position - 1)) +
                            static_cast<FramePos>(spray_offset * static_cast<float>(max_position)),
@@ -224,7 +219,7 @@ private:
                               std::mt19937& rng) {
         auto const n = static_cast<double>(slices.m_count);
         auto const k = static_cast<double>(slicing::slice_of_step(slices, p.m_position));
-        double const spray = static_cast<double>(p.m_spray) * n;  // width in slices
+        double const spray = static_cast<double>(std::abs(p.m_spray)) * n;  // width in slices
         auto const tilt = static_cast<double>(p.m_tilt);
         double window_lo = k + std::max(-1.0, tilt - 1.0) * spray;
         double window_hi = k + std::min(1.0, tilt + 1.0) * spray;

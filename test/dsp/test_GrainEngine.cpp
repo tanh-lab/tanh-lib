@@ -116,14 +116,17 @@ TEST(PositionSprayHead, SliceSprayZeroStartsOnSliceStart) {
     }
 }
 
-TEST(PositionSprayHead, ReversedMarkersReverseTheRegion) {
-    // Start / End are dormant in Position mode but keep their direction:
-    // End before Start reverses, as in Loop and Sample mode.
+TEST(PositionSprayHead, NegativeSprayReversesTheRegion) {
+    // Spray is signed: a negative Spray reverses (Position mode's End before
+    // Start). Start / End are dormant and play no part.
     PositionSprayHead const head;
     HeadInputs params;
+    params.m_spray = 0.2f;
     EXPECT_FALSE(head.region(96000, params).m_reverse);
-    params.m_start = 0.75f;
+    params.m_start = 0.75f;  // reversed markers: still forwards
     params.m_end = 0.25f;
+    EXPECT_FALSE(head.region(96000, params).m_reverse);
+    params.m_spray = -0.2f;
     LoopRegion const region = head.region(96000, params);
     EXPECT_TRUE(region.m_reverse);
     EXPECT_EQ(region.m_start, 0u);  // still the whole sample
@@ -132,6 +135,27 @@ TEST(PositionSprayHead, ReversedMarkersReverseTheRegion) {
     auto const slices = six_slices(96000);
     params.m_slices = &slices;
     EXPECT_TRUE(head.region(96000, params).m_reverse);
+}
+
+TEST(PositionSprayHead, NegativeSprayKeepsTheWindowWidth) {
+    // -Spray draws from the same window as +Spray (same RNG stream), only
+    // mirrored into the reversed region's virtual frames.
+    HeadInputs forward_params;
+    forward_params.m_position = 0.3f;
+    forward_params.m_spray = 0.2f;
+    forward_params.m_tilt = 0.4f;
+    HeadInputs reversed_params = forward_params;
+    reversed_params.m_spray = -0.2f;
+    PositionSprayHead head;
+    auto const forward = head.region(96000, forward_params);
+    auto const reversed = head.region(96000, reversed_params);
+    std::mt19937 rng_forward(17);
+    std::mt19937 rng_reversed(17);
+    for (int i = 0; i < 200; ++i) {
+        FramePos const f = head.pick_start(forward, 0.3f, 0, forward_params, rng_forward);
+        FramePos const r = head.pick_start(reversed, 0.3f, 0, reversed_params, rng_reversed);
+        EXPECT_EQ(reversed.physical(r), f) << "i=" << i;
+    }
 }
 
 TEST(PositionSprayHead, ReversedPickMirrorsOntoTheSamePoint) {
@@ -363,9 +387,9 @@ TEST(GrainEngine, ReverseRegionGrainsReadBackwards) {
     }
 }
 
-TEST(GrainEngine, PositionModeReversedMarkersReadBackwards) {
-    // Position mode, Spray 0, End before Start: the grain starts on
-    // Position and its samples descend (forward markers: they ascend).
+TEST(GrainEngine, PositionModeNegativeSprayReadsBackwards) {
+    // Position mode, Spray just below 0 (no width): the grain starts on
+    // Position and its samples descend (Spray 0: they ascend).
     thl::dsp::audio::AudioDataStore store;
     load(store, [] {
         std::vector<thl::core::BufferF> b;
@@ -373,7 +397,7 @@ TEST(GrainEngine, PositionModeReversedMarkersReadBackwards) {
         return b;
     }());
     auto const views = views_of(store);
-    auto render_first_grain = [&](float start, float end) {
+    auto render_first_grain = [&](float spray) {
         GrainEngine engine;
         engine.prepare(k_sample_rate, 2);
         engine.reset_schedule(HeadMode::Spray);
@@ -383,20 +407,18 @@ TEST(GrainEngine, PositionModeReversedMarkersReadBackwards) {
         params.m_size = 0.0f;             // 96-frame grains
         params.m_window_shape = 0.0f;     // rectangle: output == source
         params.m_head.m_position = 0.5f;  // frame 47999
-        params.m_head.m_spray = 0.0f;
-        params.m_head.m_start = start;
-        params.m_head.m_end = end;
+        params.m_head.m_spray = spray;
         Block block(2, k_block);
         block.clear();
         engine.render(views, 0, params, HeadMode::Spray, block.out(), 2, k_block, 0);
         return block;
     };
 
-    Block const forward = render_first_grain(0.25f, 0.75f);
+    Block const forward = render_first_grain(0.0f);
     for (size_t i = 1; i < k_block; ++i) {
         ASSERT_NEAR(forward.m_data[0][i], static_cast<float>(47999 + i), 1e-2f) << "i=" << i;
     }
-    Block const reversed = render_first_grain(0.75f, 0.25f);
+    Block const reversed = render_first_grain(-1e-6f);
     for (size_t i = 1; i < k_block; ++i) {
         ASSERT_NEAR(reversed.m_data[0][i], static_cast<float>(47999 - i), 1e-2f) << "i=" << i;
     }
