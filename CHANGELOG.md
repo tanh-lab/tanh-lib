@@ -10,7 +10,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Added
 
 - `thl::modulation::MotionRecorder` and `MotionLane`: record a gesture of one or more
-  channels (`MotionRecorderConfig::m_num_channels`, up to 8: a slider, an XY pad) on the
+  channels (`MotionRecorder(num_channels)`, up to 8: a slider, an XY pad) on the
   audio thread into preallocated memory and loop it back synced to the transport,
   with touch override and a glide back. Every take is a Beats loop of whole bars:
   `Free` records one gesture from the touch to the release, drops its still ends and

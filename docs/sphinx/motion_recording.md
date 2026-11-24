@@ -2,9 +2,10 @@
 
 `thl::modulation::MotionRecorder` records a gesture on the audio thread and
 loops it back, synced to the transport. A gesture is one or more channels, each
-a value in [0, 1] (`MotionRecorderConfig::m_num_channels`, up to
-`k_motion_max_channels` = 8: one for a slider, two for an XY pad), and the touch
-gate. A live touch always overrides playback, and the output glides back to the
+a value in [0, 1] (given to the constructor, `MotionRecorder(num_channels)`, up
+to `k_motion_max_channels` = 8: one for a slider, two for an XY pad), and the
+touch gate. The count is fixed for the recorder's life, so a saved lane loads
+before the first `prepare()`. A live touch always overrides playback, and the output glides back to the
 running loop on release.
 
 - **Takes** are Beats loops of whole bars. *Free* records one gesture, from the
@@ -40,7 +41,7 @@ running loop on release.
 A control (a slider, an XY dot) owns one recorder, feeds it from its touch input
 (UI touches in, per-sample channel values and gate out) and exposes the result as
 matrix sources, e.g. as a `BlockProcessor`. Once per block on the audio thread,
-here for an XY pad (`m_num_channels = 2`):
+here for an XY pad (`MotionRecorder recorder(2)`):
 
 ```cpp
 const std::array<const float*, 2> channels{touch_x, touch_y};  // [0, 1] per sample
