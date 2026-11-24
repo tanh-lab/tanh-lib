@@ -32,15 +32,13 @@ double snap_bars(double bars) {
 
 }  // namespace
 
-void MotionTakeRecorder::prepare(const MotionRecorderConfig& config) {
+void MotionTakeRecorder::prepare(const MotionRecorderConfig& config, size_t num_channels) {
     m_config = config;
     m_config.m_max_points = std::max(m_config.m_max_points, k_min_capacity);
     m_config.m_min_tpb = std::max<uint32_t>(m_config.m_min_tpb, 1);
     m_config.m_max_tpb = std::max(m_config.m_max_tpb, m_config.m_min_tpb);
     if (!(m_config.m_rate > 0.0)) { m_config.m_rate = 200.0; }
-    m_config.m_num_channels =
-        std::clamp<uint32_t>(m_config.m_num_channels, 1, k_motion_max_channels);
-    m_num_channels = m_config.m_num_channels;
+    m_num_channels = std::clamp<size_t>(num_channels, 1, k_motion_max_channels);
     m_values.assign(m_num_channels * m_config.m_max_points, 0.0f);
     m_gate.assign(m_config.m_max_points, 0);
     m_out_values.assign(m_num_channels * m_config.m_max_points, 0.0f);

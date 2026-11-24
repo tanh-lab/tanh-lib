@@ -281,8 +281,8 @@ TEST(MotionRecorderClockFlags, OnlyTheFlagsDecideAboutAGlide) {
     constexpr uint32_t k_n = 256;
     const MotionLane lane = motion_test::beats_lane(k_lane_beats, k_tpb);
     auto run = [&](uint32_t flags, bool playing) {
-        MotionRecorder rec;
-        rec.prepare(k_sr, k_n, motion_test::xy_config());
+        MotionRecorder rec{2};
+        rec.prepare(k_sr, k_n);
         rec.load_lane(lane);
         TransportInfo t;
         t.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position;
@@ -517,7 +517,7 @@ TEST_P(MotionRecorderClock, PrepareAbortsTake) {
     r.run_until(2 * k_spb);
     ASSERT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     const MotionLane before = r.m_rec.lane();
-    r.m_rec.prepare(k_sr, 4096, motion_test::xy_config());
+    r.m_rec.prepare(k_sr, 4096);
     EXPECT_EQ(r.m_rec.lane().m_take_id, before.m_take_id);
     EXPECT_EQ(r.m_rec.lane().m_channels[0], before.m_channels[0]);
     r.m_pad.release(1);

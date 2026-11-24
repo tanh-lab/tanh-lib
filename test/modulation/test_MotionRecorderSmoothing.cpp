@@ -46,8 +46,8 @@ MotionLane saw_lane() {
 
 // Standard deviation in points of a smoothed impulse at index 200.
 double impulse_sigma(float amount) {
-    MotionRecorder rec;
-    rec.prepare(motion_test::k_sr, 256, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(motion_test::k_sr, 256);
     MotionLane lane = motion_test::beats_lane(4.0, 100);
     std::fill(lane.m_channels[0].begin(), lane.m_channels[0].end(), 0.2f);
     lane.m_channels[0][200] = 1.0f;
@@ -75,8 +75,8 @@ float wrap_span(const Rig& r) {
 }  // namespace
 
 TEST(MotionRecorderSmoothing, SmoothingIsZeroPhaseAndNonDestructive) {
-    MotionRecorder rec;
-    rec.prepare(motion_test::k_sr, 256, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(motion_test::k_sr, 256);
     const MotionLane raw = pulse_lane();
     rec.load_lane(raw);
     EXPECT_EQ(rec.played_lane().m_channels[0], raw.m_channels[0]);  // amount 0, continuous seam:
@@ -107,8 +107,8 @@ TEST(MotionRecorderSmoothing, SigmaFollowsTheSquaredAmount) {
     EXPECT_NEAR(impulse_sigma(1.0f), 50.0, 1.0);
 
     // A short Seconds lane: sigma is capped at a sixth of the loop.
-    MotionRecorder rec;
-    rec.prepare(motion_test::k_sr, 256, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(motion_test::k_sr, 256);
     MotionLane tiny = pulse_lane();
     tiny.m_timebase = MotionTimebase::Seconds;
     tiny.m_length = 0.1;
@@ -121,8 +121,8 @@ TEST(MotionRecorderSmoothing, SigmaFollowsTheSquaredAmount) {
 
 // Amount 0 closes the seam over 0.3 beat (30 points) and leaves the rest raw.
 TEST(MotionRecorderSmoothing, ZeroAmountClosesTheSeamOverTheBaseWindow) {
-    MotionRecorder rec;
-    rec.prepare(motion_test::k_sr, 256, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(motion_test::k_sr, 256);
     const MotionLane raw = saw_lane();
     rec.load_lane(raw);
     const MotionLane played = rec.played_lane();
@@ -138,8 +138,8 @@ TEST(MotionRecorderSmoothing, ZeroAmountClosesTheSeamOverTheBaseWindow) {
 
 // Amount 1 spreads the 0.6 seam jump over the whole loop: no bend at the end.
 TEST(MotionRecorderSmoothing, FullAmountSpreadsTheSeamOverTheLoop) {
-    MotionRecorder rec;
-    rec.prepare(motion_test::k_sr, 256, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(motion_test::k_sr, 256);
     const MotionLane raw = saw_lane();
     rec.set_smoothing(1.0f);
     rec.load_lane(raw);

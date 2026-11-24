@@ -43,9 +43,6 @@ struct LoopLength {
 }
 
 struct MotionRecorderConfig {
-    /// Channels of the gesture, clamped to [1, k_motion_max_channels]: 1 for a slider, 2 for an
-    /// XY pad.
-    uint32_t m_num_channels = 1;
     /// Points of a take (the take and two hand-over slots per recorder, 4 bytes per channel
     /// and 1 per point in each).
     size_t m_max_points = k_motion_default_max_points;

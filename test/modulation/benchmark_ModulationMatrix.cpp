@@ -503,10 +503,8 @@ BENCHMARK(bm_input_event_queue_drain_spread)
 
 static void bm_motion_recorder_playback(benchmark::State& state) {
     const auto n = static_cast<uint32_t>(state.range(0));
-    MotionRecorder rec;
-    MotionRecorderConfig config;
-    config.m_num_channels = 2;  // an XY pad
-    rec.prepare(k_sample_rate, n, config);
+    MotionRecorder rec(2);  // an XY pad
+    rec.prepare(k_sample_rate, n);
     MotionLane lane;
     lane.m_channels.resize(2);
     lane.m_timebase = MotionTimebase::Beats;

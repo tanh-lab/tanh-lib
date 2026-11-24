@@ -31,9 +31,9 @@ using motion_test::playing_info;
 TEST(MotionRecorderThreads, Stress) {
     constexpr uint32_t k_max_block = 256;
     constexpr int k_blocks = 200000;
-    MotionRecorder rec;
+    MotionRecorder rec{2};
     motion_test::TouchInput pad;
-    rec.prepare(k_sr, k_max_block, motion_test::xy_config());
+    rec.prepare(k_sr, k_max_block);
     pad.prepare(k_max_block);
 
     std::atomic<bool> done{false};
@@ -161,10 +161,10 @@ TEST(MotionRecorderThreads, ConcurrentServiceKeepsTheHandoffSilent) {
     constexpr int k_takes = 300;
     MotionRecorderConfig config;
     config.m_rate = 2000.0;
-    MotionRecorder raced;
-    MotionRecorder reference;
-    raced.prepare(k_sr, k_bs, motion_test::xy_config(config));
-    reference.prepare(k_sr, k_bs, motion_test::xy_config(config));
+    MotionRecorder raced{2};
+    MotionRecorder reference{2};
+    raced.prepare(k_sr, k_bs, config);
+    reference.prepare(k_sr, k_bs, config);
 
     std::atomic<int> publish_requests{0};
     std::atomic<bool> done{false};
@@ -242,9 +242,9 @@ float run_block(motion_test::TouchInput& pad,
 // jump, reverse and clear on one recorder. The RTSan preset checks the audio path.
 TEST(MotionRecorderThreads, FullScenario) {
     constexpr uint32_t k_bs = 256;
-    MotionRecorder rec;
+    MotionRecorder rec{2};
     motion_test::TouchInput pad;
-    rec.prepare(k_sr, k_bs, motion_test::xy_config());
+    rec.prepare(k_sr, k_bs);
     pad.prepare(k_bs);
     double beat = 0.0;
     float acc = 0.0f;

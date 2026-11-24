@@ -21,13 +21,13 @@
 
 namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
-MotionLaneStore::MotionLaneStore() {
+MotionLaneStore::MotionLaneStore(size_t num_channels)
+    : m_num_channels(std::clamp<size_t>(num_channels, 1, k_motion_max_channels)) {
     m_audio_reader = m_lanes.add_reader();
 }
 
-void MotionLaneStore::prepare(size_t max_points, size_t num_channels) {
+void MotionLaneStore::prepare(size_t max_points) {
     m_max_points = std::max<size_t>(max_points, k_motion_min_points);
-    m_num_channels = std::clamp<size_t>(num_channels, 1, k_motion_max_channels);
     for (auto& s : m_slots) {
         s.m_state.store(SlotState::Free, std::memory_order_relaxed);
         s.m_values.assign(m_num_channels * m_max_points, 0.0f);

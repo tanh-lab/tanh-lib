@@ -53,9 +53,10 @@ struct MotionLaneSource {
  */
 class TANH_API MotionLaneStore {
 public:
-    MotionLaneStore();
+    /// A store of lanes of @p num_channels channels (clamped to [1, k_motion_max_channels]).
+    explicit MotionLaneStore(size_t num_channels = 1);
 
-    void prepare(size_t max_points, size_t num_channels);
+    void prepare(size_t max_points);
 
     /// Audio thread: hand @p take over (copied), the revision of take @p serial; false when
     /// both slots wait for service().
@@ -73,7 +74,7 @@ public:
     /// Publish submitted takes; true if a lane was published.
     bool service();
     /// Publish @p lane (validated, clamped, resampled down to @p max_points); its id, or 0 if it
-    /// is malformed or has points and another number of channels than prepare() was given.
+    /// is malformed or has points and another number of channels. Also before prepare().
     uint32_t load(MotionLane lane, size_t max_points);
     /// Publish an empty lane; its id.
     uint32_t clear();

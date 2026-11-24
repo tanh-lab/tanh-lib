@@ -22,13 +22,6 @@ using thl::dsp::transport::TransportInfo;
 
 constexpr double k_sr = 48000.0;
 
-/// A recorder config of two channels (x, y), as the tests drive it with a TouchInput.
-inline thl::modulation::MotionRecorderConfig xy_config(
-    thl::modulation::MotionRecorderConfig cfg = {}) {
-    cfg.m_num_channels = 2;
-    return cfg;
-}
-
 /// Values of a two-channel point.
 inline thl::modulation::MotionValues xy(float x, float y) {
     thl::modulation::MotionValues v{};
@@ -48,7 +41,7 @@ struct Rig {
         : m_block(block), m_host(k_sr, bpm) {
         m_clock.prepare(k_sr);
         m_pad.prepare(4096);
-        m_rec.prepare(k_sr, 4096, xy_config(cfg));
+        m_rec.prepare(k_sr, 4096, cfg);
     }
 
     void play_at(uint64_t sample) { m_host.add({sample, sim::Event::Kind::Play}); }
@@ -111,8 +104,8 @@ struct Rig {
     sim::SimHost m_host;
     HostTransportClock m_clock;
     TouchInput m_pad;
-    thl::modulation::MotionRecorder m_rec;
-    uint32_t m_extra_flags = 0;  // OR'ed into the next block's TransportInfo (hints)
+    thl::modulation::MotionRecorder m_rec{2};  // x and y, as a TouchInput feeds it
+    uint32_t m_extra_flags = 0;                // OR'ed into the next block's TransportInfo (hints)
     /// Called with the block's TransportInfo before the pad drains its touches
     /// (a finger that follows the transport beat).
     std::function<void(const TransportInfo&)> m_before_pad;

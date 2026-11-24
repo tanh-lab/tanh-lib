@@ -34,10 +34,7 @@ struct Rec {
     double m_beat = 0.0;
     std::vector<Event> m_events;
 
-    explicit Rec(MotionRecorderConfig config = {}) {
-        config.m_num_channels = 2;
-        m_rec->prepare(config);
-    }
+    explicit Rec(const MotionRecorderConfig& config = {}) { m_rec->prepare(config, 2); }
 
     MotionTakeRecorder::Start start(LoopLength length,
                                     double beat,

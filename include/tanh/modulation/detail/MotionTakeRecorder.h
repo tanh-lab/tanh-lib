@@ -79,8 +79,9 @@ public:
         Cancelled,  ///< never touched: nothing kept; the take is over
     };
 
-    /// Allocate the working buffer and forget any take (message thread, audio stopped).
-    void prepare(const MotionRecorderConfig& config);
+    /// Allocate the working buffer for takes of @p num_channels channels and forget any take
+    /// (message thread, audio stopped).
+    void prepare(const MotionRecorderConfig& config, size_t num_channels);
     [[nodiscard]] size_t buffer_bytes() const;
 
     [[nodiscard]] Start start(const MotionTakeStart& start) TANH_NONBLOCKING_FUNCTION;

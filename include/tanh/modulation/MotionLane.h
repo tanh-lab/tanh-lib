@@ -22,7 +22,7 @@ enum class MotionTimebase : uint8_t {
 /// Default point capacity of one take (MotionRecorderConfig::m_max_points).
 inline constexpr size_t k_motion_default_max_points = 32768;
 
-/// Most channels a motion recorder and its lanes carry (MotionRecorderConfig::m_num_channels).
+/// Most channels a motion recorder and its lanes carry (MotionRecorder's constructor).
 inline constexpr size_t k_motion_max_channels = 8;
 
 /// One value per channel, in [0, 1]; only the first num_channels are used.

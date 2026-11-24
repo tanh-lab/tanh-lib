@@ -319,8 +319,8 @@ TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
 }
 
 TEST(MotionRecorder, MemoryPerRecorder) {
-    MotionRecorder rec;
-    rec.prepare(k_sr, 512, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(k_sr, 512);
     // The take (as recorded and as handed over) and two hand-over slots of 32768 points × (2 floats
     // + 1 gate byte), plus the slots' raw seam tails of a quarter of the points × 2 floats
     // = 1.25 MiB.
@@ -573,8 +573,8 @@ INSTANTIATE_TEST_SUITE_P(Blocks,
 // A tempo ramp 120 → 60 inside one block (slope changes within the block) causes
 // no step larger than the in-loop maximum.
 TEST(MotionRecorder, TempoRampInsideBlockHasNoStep) {
-    MotionRecorder rec;
-    rec.prepare(k_sr, 1024, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(k_sr, 1024);
     rec.load_lane(motion_test::beats_lane(4.0, 100));
     TransportInfo t;
     t.m_flags = TransportInfo::k_is_playing | TransportInfo::k_has_tempo |
@@ -804,7 +804,7 @@ TEST(MotionRecorder, PrepareDuringAReplacingTakeKeepsTheOldLane) {
     r.m_pad.touch(1, 0.9f, 0.9f);
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    r.m_rec.prepare(k_sr, 4096, motion_test::xy_config());
+    r.m_rec.prepare(k_sr, 4096);
     r.m_pad.release(1);
     r.run_until(r.now() + 2048);
     EXPECT_FALSE(r.m_rec.service());
@@ -900,8 +900,8 @@ TEST(MotionRecorder, JsonSaveAndLoadPlaysTheSame) {
 }
 
 TEST(MotionRecorder, LoadLaneValidates) {
-    MotionRecorder rec;
-    rec.prepare(k_sr, 256, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(k_sr, 256);
     MotionLane bad = motion_test::beats_lane(4.0, 24);
     bad.m_channels[1].pop_back();
     EXPECT_EQ(rec.load_lane(bad), 0u);
@@ -915,7 +915,7 @@ TEST(MotionRecorder, LoadLaneValidates) {
 
     MotionRecorderConfig cfg;
     cfg.m_max_points = 100;
-    rec.prepare(k_sr, 256, motion_test::xy_config(cfg));
+    rec.prepare(k_sr, 256, cfg);
     const uint32_t id = rec.load_lane(motion_test::beats_lane(4.0, 100));
     EXPECT_GT(id, 0u);
     EXPECT_EQ(rec.lane().num_points(), 100u);
@@ -923,8 +923,8 @@ TEST(MotionRecorder, LoadLaneValidates) {
 
 TEST(MotionRecorder, ReversePlayback) {
     constexpr uint32_t k_bs = 256;
-    MotionRecorder rec;
-    rec.prepare(k_sr, k_bs, motion_test::xy_config());
+    MotionRecorder rec{2};
+    rec.prepare(k_sr, k_bs);
     MotionLane lane = motion_test::beats_lane(4.0, 100);
     rec.load_lane(lane);
     double beat = 0.0;
@@ -958,10 +958,8 @@ TEST(MotionRecorder, ReversePlayback) {
 TEST(MotionRecorder, RecordsAndPlaysAnyNumberOfChannels) {
     constexpr uint32_t k_bs = 256;
     for (const uint32_t channels : {1u, 3u}) {
-        MotionRecorder rec;
-        MotionRecorderConfig config;
-        config.m_num_channels = channels;
-        rec.prepare(k_sr, k_bs, config);
+        MotionRecorder rec(channels);
+        rec.prepare(k_sr, k_bs);
         ASSERT_EQ(rec.num_channels(), channels);
 
         // Channel c holds 0.2 + 0.2 c during the first bar (finger down), then lifts.
@@ -1000,4 +998,23 @@ TEST(MotionRecorder, RecordsAndPlaysAnyNumberOfChannels) {
         other.m_channels.resize(channels + 1, other.m_channels[0]);
         EXPECT_EQ(rec.load_lane(other), 0u);
     }
+}
+
+// A host restores its state before it prepares: a lane loaded before prepare() plays after it.
+TEST(MotionRecorder, LoadsALaneBeforePrepare) {
+    constexpr uint32_t k_bs = 256;
+    MotionRecorder rec(2);
+    const MotionLane lane = motion_test::beats_lane(4.0, 100);
+    const uint32_t id = rec.load_lane(lane);
+    ASSERT_GT(id, 0u);
+    rec.prepare(k_sr, k_bs);
+    double beat = 0.0;
+    for (int b = 0; b < 20; ++b) {
+        const TransportInfo t = playing_info(beat, k_bs);
+        rec.process(t, MotionInput{}, k_bs);
+        beat = t.beat_end();
+    }
+    EXPECT_EQ(rec.snapshot().m_take_id, id);
+    EXPECT_EQ(rec.snapshot().m_state, MotionState::Playing);
+    EXPECT_NEAR(rec.out(1)[k_bs - 1], lane.sample(std::fmod(beat, 4.0)).m_values[1], 2e-3f);
 }

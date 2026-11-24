@@ -54,8 +54,8 @@ MotionLane lane_of(const Take& take) {
 }
 
 std::unique_ptr<MotionLaneStore> make_store() {
-    auto store = std::make_unique<MotionLaneStore>();
-    store->prepare(k_max_points, 2);
+    auto store = std::make_unique<MotionLaneStore>(2);
+    store->prepare(k_max_points);
     return store;
 }
 

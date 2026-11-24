@@ -6,6 +6,7 @@
 #include <tanh/modulation/detail/MotionGlide.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -44,6 +45,7 @@ public:
     [[nodiscard]] size_t num_channels() const { return m_num_channels; }
     /// The block's values of @p channel (< num_channels()).
     [[nodiscard]] const float* values(size_t channel) const {
+        assert(channel < m_num_channels);
         return m_values.data() + (channel * m_max_block);
     }
     [[nodiscard]] const uint8_t* gate() const { return m_gate.data(); }

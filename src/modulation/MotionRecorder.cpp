@@ -46,8 +46,6 @@ void MotionRecorder::prepare(double sample_rate,
     m_finish_pending = false;
 
     m_config = config;
-    m_config.m_num_channels =
-        std::clamp<uint32_t>(m_config.m_num_channels, 1, k_motion_max_channels);
     m_config.m_max_points = std::max(m_config.m_max_points, k_min_points);
     m_config.m_render_interval = std::max<uint32_t>(m_config.m_render_interval, 1);
     if (!(m_config.m_rate > 0.0)) { m_config.m_rate = 200.0; }
@@ -56,13 +54,10 @@ void MotionRecorder::prepare(double sample_rate,
     if (!(m_config.m_glide_ms >= 0.0)) { m_config.m_glide_ms = 25.0; }
     if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
 
-    m_takes.prepare(m_config);
-    m_store.prepare(m_config.m_max_points, m_config.m_num_channels);
-    m_player.prepare(m_sample_rate, m_config.m_render_interval, m_config.m_num_channels);
-    m_output.prepare(m_sample_rate,
-                     m_config.m_glide_ms,
-                     samples_per_block,
-                     m_config.m_num_channels);
+    m_takes.prepare(m_config, m_num_channels);
+    m_store.prepare(m_config.m_max_points);
+    m_player.prepare(m_sample_rate, m_config.m_render_interval, m_num_channels);
+    m_output.prepare(m_sample_rate, m_config.m_glide_ms, samples_per_block, m_num_channels);
     m_clock.reset();
     m_num_samples = 0;
 }
@@ -70,7 +65,7 @@ void MotionRecorder::prepare(double sample_rate,
 size_t MotionRecorder::take_buffer_bytes() const {
     // The take, plus two hand-over slots of the same points and their raw seam tails.
     const size_t points = m_config.m_max_points;
-    const size_t channels = m_config.m_num_channels;
+    const size_t channels = m_num_channels;
     return m_takes.buffer_bytes() + (2 * ((points * ((channels * sizeof(float)) + 1)) +
                                           ((points / 4) * channels * sizeof(float))));
 }
@@ -138,7 +133,7 @@ MotionLane MotionRecorder::played_path(size_t num_points) const {
                               m_transform,
                               transform_settings(),
                               num_points,
-                              m_config.m_num_channels);
+                              m_num_channels);
 }
 
 MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
@@ -307,7 +302,7 @@ void MotionRecorder::process(const TransportInfo& t,
 
     TransportInfo info = t;
     info.m_bpm = clock.m_bpm;
-    const size_t channels = m_config.m_num_channels;
+    const size_t channels = m_num_channels;
     bool has_input = in.m_active != nullptr && in.m_channels.size() >= channels;
     for (size_t c = 0; has_input && c < channels; ++c) { has_input = in.m_channels[c] != nullptr; }
     const uint32_t in_n = has_input ? in.m_num_samples : 0;
@@ -352,7 +347,7 @@ void MotionRecorder::process(const TransportInfo& t,
         }
 
         // Playback, then the output.
-        MotionValues played;  // render() writes the channels it plays
+        MotionValues played{};
         uint8_t pg = 0;
         const bool pb = m_player.playing();
         if (pb && m_player.render(i, played, pg)) { cp = true; }

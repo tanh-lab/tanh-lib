@@ -15,7 +15,9 @@
 #include <tanh/modulation/detail/MotionTakeRecorder.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -48,8 +50,8 @@ enum class StoppedTransport : uint8_t {
 /**
  * @brief Records a gesture of one or more channels and loops it back, synced to the transport.
  *
- * A channel is one value in [0, 1] (MotionRecorderConfig::m_num_channels): one for a slider,
- * two (x, y) for an XY pad.
+ * A channel is one value in [0, 1]; a recorder has a fixed number of them, given to its
+ * constructor: one for a slider, two (x, y) for an XY pad.
  *
  * Arm, touch, and the gesture is recorded on the audio thread into a preallocated take
  * (detail::MotionTakeRecorder). Every take is a Beats loop of bars:
@@ -73,6 +75,7 @@ enum class StoppedTransport : uint8_t {
  *
  * Threading:
  * - ctor, prepare, set_transform: message thread, audio stopped (prepare allocates).
+ *   load_lane works before the first prepare (a host restores state before it prepares).
  * - arm, record, disarm, play, stop, set_reverse, set_playback_length: one UI thread
  *   (lock-free queue).
  * - set_stopped_transport, smoothing, loop_end, set_transform_settings, transform_settings,
@@ -84,7 +87,9 @@ enum class StoppedTransport : uint8_t {
  */
 class TANH_API MotionRecorder {
 public:
-    MotionRecorder() = default;
+    /// A recorder of @p num_channels channels, clamped to [1, k_motion_max_channels].
+    explicit MotionRecorder(uint32_t num_channels = 1)
+        : m_store(clamp_channels(num_channels)), m_num_channels(clamp_channels(num_channels)) {}
     ~MotionRecorder() = default;
 
     MotionRecorder(const MotionRecorder&) = delete;
@@ -142,10 +147,12 @@ public:
                  const MotionInput& input,
                  uint32_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
-    [[nodiscard]] uint32_t num_channels() const { return m_config.m_num_channels; }
+    /// Channels of every input, output and lane (the constructor's, clamped).
+    [[nodiscard]] uint32_t num_channels() const { return m_num_channels; }
     /// Composed values of @p channel (< num_channels()) in the last block: live touch over
     /// playback, with glides.
     [[nodiscard]] const float* out(uint32_t channel) const TANH_NONBLOCKING_FUNCTION {
+        assert(channel < m_num_channels);
         return m_output.values(channel);
     }
     /// 1 while touched or while the playing lane's gate is open.
@@ -179,7 +186,7 @@ public:
 
     /// Replace the lane (preset load). Clamps the points, resamples down to the capacity and
     /// returns the new take id, or 0 if @p lane is malformed or has points and another number
-    /// of channels.
+    /// of channels. Also before prepare().
     uint32_t load_lane(MotionLane lane) {
         return m_store.load(std::move(lane), m_config.m_max_points);
     }
@@ -252,6 +259,9 @@ private:
     using Command = detail::MotionCommand;
     using TakeEvent = detail::MotionTakeRecorder::Event;
 
+    [[nodiscard]] static uint32_t clamp_channels(uint32_t n) {
+        return std::clamp<uint32_t>(n, 1, static_cast<uint32_t>(k_motion_max_channels));
+    }
     void apply_commands() TANH_NONBLOCKING_FUNCTION;
     void start_take(const dsp::transport::TransportInfo& transport,
                     double beat,
@@ -276,6 +286,7 @@ private:
     std::atomic<StoppedTransport> m_stopped_mode{StoppedTransport::FreeRun};
     double m_sample_rate = 48000.0;
     uint32_t m_num_samples = 0;
+    uint32_t m_num_channels = 1;             // set at construction
     std::atomic<uint32_t> m_take_serial{0};  // written by the audio thread, read by clear()
     std::atomic<bool> m_clear_takes{false};  // clear(): end the take at the next block
     // A take that kept nothing: the id of the lane it replaced, for service() to delete.
