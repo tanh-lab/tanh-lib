@@ -371,6 +371,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   real-time callers are unaffected unless they pass mismatched views. Tests:
   `BufferView.SubBlockPastTheEndThrows`, `BufferOperations.ThrowsWhenTheDimensionsDiffer`,
   `Crossfade.ThrowsWhenTheViewsDiffer`.
+- `thl::dsp::analysis::adaptive_peak_pick()` takes a frame as a peak only when it is strictly
+  above its threshold. With `threshold_delta` 0, a flat region (silence included) met its own
+  trailing mean and fired every `minimum_spacing_frames` frames, which could also push a real
+  onset that followed out of the spacing. Silence is now exact; a flat region away from zero can
+  still fire where the mean, taken from cumulative sums, rounds below it. Frame 0 has an infinite
+  threshold and is still never a peak. Test:
+  `AdaptivePeakPicker.FlatRegionAtItsTrailingMeanIsNoPeak`.
 - `AudioDeviceManager::add_playback_callback()`, `add_capture_callback()` and
   `add_duplex_callback()` call `prepare_to_play()` before the callback joins the list the audio
   thread reads, as documented. On a running device the audio thread could call `process()` on a

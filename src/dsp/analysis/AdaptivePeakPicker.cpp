@@ -74,7 +74,7 @@ AdaptivePeakPickResult adaptive_peak_pick(std::span<const double> values,
         const bool has_spacing = result.m_peak_indices.empty() ||
                                  index - result.m_peak_indices.back() >= minimum_spacing_frames;
 
-        if (values[index] == local_maximum && values[index] >= result.m_threshold[index] &&
+        if (values[index] == local_maximum && values[index] > result.m_threshold[index] &&
             is_eligible && has_spacing) {
             result.m_peak_indices.push_back(index);
         }

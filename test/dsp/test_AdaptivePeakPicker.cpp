@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tanh/dsp/analysis/AdaptivePeakPicker.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +45,16 @@ TEST(AdaptivePeakPicker, SelectsFirstEligiblePointOnPlateau) {
     const auto result = adaptive_peak_pick(values, 1, 2, 0.0, 2, 1);
 
     EXPECT_EQ(result.m_peak_indices, (std::vector<std::size_t>{1}));
+}
+
+TEST(AdaptivePeakPicker, FlatRegionAtItsTrailingMeanIsNoPeak) {
+    const std::vector<double> silence(16, 0.0);
+    std::vector<double> step_onto_plateau(16, 0.5);
+    std::fill_n(step_onto_plateau.begin(), 3, 0.0);
+
+    EXPECT_TRUE(adaptive_peak_pick(silence, 2, 4, 0.0, 3, 1).m_peak_indices.empty());
+    EXPECT_EQ(adaptive_peak_pick(step_onto_plateau, 2, 4, 0.0, 3, 1).m_peak_indices,
+              (std::vector<std::size_t>{3, 6}));
 }
 
 TEST(AdaptivePeakPicker, EmptyInputReturnsEmptyPeaksAndThreshold) {
