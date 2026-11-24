@@ -362,6 +362,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `thl::core::BufferView::sub_block()` throws `std::out_of_range` when the frames it asks for
+  reach past the end of the view; `BufferOperations::copy()` / `add()` and
+  `thl::dsp::utils::crossfade()` throw `std::invalid_argument` when the views' channel counts or
+  lengths differ. `sub_block()` did not check, and the others only asserted, so a release build
+  read and wrote past the buffers instead of reporting the caller's error. The checks run in
+  every build and cost a comparison or two per call; the throw happens only on that error, so
+  real-time callers are unaffected unless they pass mismatched views. Tests:
+  `BufferView.SubBlockPastTheEndThrows`, `BufferOperations.ThrowsWhenTheDimensionsDiffer`,
+  `Crossfade.ThrowsWhenTheViewsDiffer`.
 - `AudioDeviceManager::add_playback_callback()`, `add_capture_callback()` and
   `add_duplex_callback()` call `prepare_to_play()` before the callback joins the list the audio
   thread reads, as documented. On a running device the audio thread could call `process()` on a

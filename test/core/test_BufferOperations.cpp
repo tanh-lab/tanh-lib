@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <stdexcept>
 
 #include "tanh/core/Buffer.h"
 #include "tanh/core/BufferOperations.h"
@@ -85,24 +86,22 @@ TEST(BufferOperations, WorksOnMonoViews) {
     EXPECT_EQ(destination, (std::array<float, 4>{11.0f, 12.0f, 13.0f, 14.0f}));
 }
 
-#if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
-TEST(BufferOperationsDeathTest, AssertsTheDimensions) {
+TEST(BufferOperations, ThrowsWhenTheDimensionsDiffer) {
     const Buffer<float> source = ramp(2, 8);
     Buffer<float> fewer_channels = filled(1, 8, 0.0f);
     Buffer<float> fewer_samples = filled(2, 4, 0.0f);
 
-    // RTSan off for the call that asserts: its abort would be reported before the message.
-    EXPECT_DEATH(
+    // RTSan off for the calls that throw: it would report the exception's allocation.
+    EXPECT_THROW(
         {
             TANH_NONBLOCKING_SCOPED_DISABLER
             BufferOperations::copy(fewer_channels, source);
         },
-        "different dimensions");
-    EXPECT_DEATH(
+        std::invalid_argument);
+    EXPECT_THROW(
         {
             TANH_NONBLOCKING_SCOPED_DISABLER
             BufferOperations::add(fewer_samples, source);
         },
-        "different dimensions");
+        std::invalid_argument);
 }
-#endif

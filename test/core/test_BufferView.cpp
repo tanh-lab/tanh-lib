@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
+#include <limits>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -246,4 +249,20 @@ TEST(BufferView, SubBlockChained) {
     EXPECT_EQ(sub2.get_num_samples(), 50u);
     EXPECT_FLOAT_EQ(sub2.get_read_pointer(0)[0], 150.0f);
     EXPECT_FLOAT_EQ(sub2.get_read_pointer(0)[49], 199.0f);
+}
+
+TEST(BufferView, SubBlockPastTheEndThrows) {
+    std::vector<float> left(512), right(512);
+    std::array<float*, 2> channels = {left.data(), right.data()};
+    const BufferView stereo(channels.data(), 2, 512);
+    const BufferView mono(left.data(), 512);
+
+    for (const BufferView& view : {stereo, mono}) {
+        EXPECT_EQ(view.sub_block(500, 12).get_num_samples(), 12u);
+        EXPECT_EQ(view.sub_block(512, 0).get_num_samples(), 0u);
+        EXPECT_THROW(view.sub_block(500, 13), std::out_of_range);
+        EXPECT_THROW(view.sub_block(513, 0), std::out_of_range);
+        EXPECT_THROW(view.sub_block(1, std::numeric_limits<size_t>::max()), std::out_of_range);
+        EXPECT_THROW(view.sub_block(100, 200).sub_block(150, 51), std::out_of_range);
+    }
 }
