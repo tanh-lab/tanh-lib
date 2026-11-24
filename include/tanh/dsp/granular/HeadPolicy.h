@@ -17,7 +17,8 @@ namespace thl::inline THL_ABI_NAMESPACE::dsp::granular {
 inline constexpr FramePos k_no_grain = -1;
 
 /// What a head policy reads each block. Markers and Position are normalised
-/// [0, 1]; Tilt is [-1, 1]. A non-null `m_slices` (a valid map) reads Start /
+/// [0, 1]; Tilt is [-1, 1]; Spray is [-1, 1] (width |Spray|, negative reads
+/// Position mode's grains backwards). A non-null `m_slices` (a valid map) reads Start /
 /// End / Position in slice space (see slicing/SliceSteps.h).
 struct HeadInputs {
     float m_start{0.0f};
@@ -150,6 +151,14 @@ private:
 // this), never wrapped. Position temperature is applied on top exactly as
 // in Loop mode, so it can leave the window.
 //
+// Direction: Spray is signed. Its magnitude is the window width, a negative
+// Spray reads every grain backwards (Position mode's counterpart of End
+// before Start in the other modes). The region stays the whole sample, only
+// reversed; a reversed grain starts on the picked frame and reads backwards
+// (pick_start hands back the virtual frame that mirrors onto it). Slicing
+// mirrors the pick inside its slice, so a reversed Spray near 0 starts on
+// the slice's last frame and plays the slice backwards.
+//
 // Slicing: the same formula in slice steps. Position picks a slice k, Spray
 // is a width S in slices (100 % = every slice), the window [k + lo·S,
 // k + hi·S) is anchored at the slice's start and Tilt leans it: Tilt right
@@ -161,8 +170,10 @@ private:
 // the boundaries, so short and long slices are picked equally often.
 class PositionSprayHead final : public HeadPolicy {
 public:
-    LoopRegion region(size_t total_frames, const HeadInputs& /*params*/) const override {
-        return LoopRegion::full(total_frames);
+    LoopRegion region(size_t total_frames, const HeadInputs& p) const override {
+        LoopRegion region = LoopRegion::full(total_frames);
+        region.m_reverse = p.m_spray < 0.0f;
+        return region;
     }
 
     FramePos pick_start(const LoopRegion& region,
@@ -179,13 +190,15 @@ public:
         float const window_lo = std::max(-1.0f, p.m_tilt - 1.0f);
         float const window_hi = std::min(1.0f, p.m_tilt + 1.0f);
         float const u = unit_random(rng);  // [0, 1)
-        float const spray_offset = (window_lo + u * (window_hi - window_lo)) * p.m_spray;
+        float const spray_offset = (window_lo + u * (window_hi - window_lo)) * std::abs(p.m_spray);
         FramePos const start =
             std::clamp(static_cast<FramePos>(p.m_position * static_cast<float>(max_position - 1)) +
                            static_cast<FramePos>(spray_offset * static_cast<float>(max_position)),
                        FramePos{0},
                        max_position - 1);
-        return jitter_and_wrap(start, temperature, region, rng);
+        // The region is the whole sample, so physical() is its own inverse:
+        // the virtual frame it returns mirrors back onto `picked`.
+        return region.physical(jitter_and_wrap(start, temperature, region, rng));
     }
 
     void reset() override {}
@@ -206,7 +219,7 @@ private:
                               std::mt19937& rng) {
         auto const n = static_cast<double>(slices.m_count);
         auto const k = static_cast<double>(slicing::slice_of_step(slices, p.m_position));
-        double const spray = static_cast<double>(p.m_spray) * n;  // width in slices
+        double const spray = static_cast<double>(std::abs(p.m_spray)) * n;  // width in slices
         auto const tilt = static_cast<double>(p.m_tilt);
         double window_lo = k + std::max(-1.0, tilt - 1.0) * spray;
         double window_hi = k + std::min(1.0, tilt + 1.0) * spray;
@@ -224,11 +237,31 @@ private:
         v = wrap_into(v, 0.0, n);  // past the last slice -> the first
         // Same rounding as SliceMap::boundary_frame, so Spray 0 lands on the
         // very frame Sample / Loop mode's region starts on.
-        auto const frame = static_cast<FramePos>(
-            std::llround(static_cast<double>(slicing::step_to_norm(slices, v)) *
-                         static_cast<double>(max_frames(region))));
-        return std::clamp(frame, FramePos{0}, max_frames(region) - 1) +
-               static_cast<FramePos>(region.m_start);
+        auto const total = max_frames(region);
+        auto frame = static_cast<FramePos>(std::llround(
+            static_cast<double>(slicing::step_to_norm(slices, v)) * static_cast<double>(total)));
+        frame = std::clamp(frame, FramePos{0}, total - 1);
+        if (region.m_reverse) {
+            // Mirror inside the chosen slice, in frames: its first frame
+            // becomes its last (where a reversed region over it enters). The
+            // forward frame is clamped into the slice first, since rounding
+            // can put it on the next boundary.
+            auto const k_slice = static_cast<size_t>(
+                std::clamp(std::floor(v), 0.0, static_cast<double>(slices.m_count - 1)));
+            // A map rescaled to another source length can round the last
+            // boundaries onto `total`; keep the slice a real frame range.
+            auto const lo = std::min(
+                static_cast<FramePos>(slices.boundary_frame(k_slice, static_cast<size_t>(total))),
+                total - 1);
+            auto const hi =
+                std::clamp(static_cast<FramePos>(
+                               slices.boundary_frame(k_slice + 1, static_cast<size_t>(total))),
+                           lo + 1,
+                           total);
+            frame = lo + (hi - 1) - std::clamp(frame, lo, hi - 1);
+        }
+        frame += static_cast<FramePos>(region.m_start);
+        return region.physical(frame);
     }
 
     static FramePos max_frames(const LoopRegion& region) {

@@ -139,7 +139,7 @@ VoiceParams GrainProcessorImpl::read_params(uint32_t offset) {
                                            0,
                                            static_cast<int>(EngineMode::NumEngineModes) - 1));
     v.m_position = unit(Position);
-    v.m_spray = unit(Spray);
+    v.m_spray = std::clamp(finite(Spray, 0.0f), -1.0f, 1.0f);  // signed: < 0 reverses
     v.m_tilt = std::clamp(finite(Tilt, 0.0f), -1.0f, 1.0f);
     v.m_loop = get_parameter<bool>(LoopEnabled, offset);
     v.m_loop_snap = get_parameter<bool>(LoopSnap, offset);

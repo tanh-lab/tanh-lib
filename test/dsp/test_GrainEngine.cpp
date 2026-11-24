@@ -116,6 +116,138 @@ TEST(PositionSprayHead, SliceSprayZeroStartsOnSliceStart) {
     }
 }
 
+TEST(PositionSprayHead, NegativeSprayReversesTheRegion) {
+    // Spray is signed: a negative Spray reverses (Position mode's End before
+    // Start). Start / End are dormant and play no part.
+    PositionSprayHead const head;
+    HeadInputs params;
+    params.m_spray = 0.2f;
+    EXPECT_FALSE(head.region(96000, params).m_reverse);
+    params.m_start = 0.75f;  // reversed markers: still forwards
+    params.m_end = 0.25f;
+    EXPECT_FALSE(head.region(96000, params).m_reverse);
+    params.m_spray = -0.2f;
+    LoopRegion const region = head.region(96000, params);
+    EXPECT_TRUE(region.m_reverse);
+    EXPECT_EQ(region.m_start, 0u);  // still the whole sample
+    EXPECT_EQ(region.m_end, 96000u);
+
+    auto const slices = six_slices(96000);
+    params.m_slices = &slices;
+    EXPECT_TRUE(head.region(96000, params).m_reverse);
+}
+
+TEST(PositionSprayHead, NegativeSprayKeepsTheWindowWidth) {
+    // -Spray draws from the same window as +Spray (same RNG stream), only
+    // mirrored into the reversed region's virtual frames.
+    HeadInputs forward_params;
+    forward_params.m_position = 0.3f;
+    forward_params.m_spray = 0.2f;
+    forward_params.m_tilt = 0.4f;
+    HeadInputs reversed_params = forward_params;
+    reversed_params.m_spray = -0.2f;
+    PositionSprayHead head;
+    auto const forward = head.region(96000, forward_params);
+    auto const reversed = head.region(96000, reversed_params);
+    std::mt19937 rng_forward(17);
+    std::mt19937 rng_reversed(17);
+    for (int i = 0; i < 200; ++i) {
+        FramePos const f = head.pick_start(forward, 0.3f, 0, forward_params, rng_forward);
+        FramePos const r = head.pick_start(reversed, 0.3f, 0, reversed_params, rng_reversed);
+        EXPECT_EQ(reversed.physical(r), f) << "i=" << i;
+    }
+}
+
+TEST(PositionSprayHead, ReversedPickMirrorsOntoTheSamePoint) {
+    // A reversed grain starts on the picked frame: the virtual start it
+    // returns mirrors back onto the forward pick (same RNG stream).
+    HeadInputs params;
+    params.m_position = 0.3f;
+    params.m_spray = 0.2f;
+    params.m_tilt = 0.4f;
+    auto const forward = LoopRegion::full(96000);
+    auto reversed = forward;
+    reversed.m_reverse = true;
+    PositionSprayHead head;
+    std::mt19937 rng_forward(11);
+    std::mt19937 rng_reversed(11);
+    for (int i = 0; i < 200; ++i) {
+        FramePos const f = head.pick_start(forward, 0.3f, 0, params, rng_forward);
+        FramePos const r = head.pick_start(reversed, 0.3f, 0, params, rng_reversed);
+        EXPECT_EQ(reversed.physical(r), f) << "i=" << i;
+    }
+}
+
+TEST(PositionSprayHead, SliceReversedSprayZeroStartsOnSliceEnd) {
+    // Reversed, Spray 0 enters the chosen slice on its last frame — where a
+    // reversed Loop / Sample region over that slice enters — so the grain
+    // plays the slice backwards.
+    PositionSprayHead head;
+    std::mt19937 rng(3);
+    HeadInputs params;
+    auto const slices = six_slices(100000);
+    params.m_slices = &slices;
+    params.m_position = 0.4f;  // slice 3 (0-based 2): 0.29 .. 0.52
+    params.m_spray = 0.0f;
+    auto region = LoopRegion::full(100000);
+    region.m_reverse = true;
+    auto const expected = static_cast<FramePos>(slices.boundary_frame(3, 100000)) - 1;
+    for (int i = 0; i < 50; ++i) {
+        EXPECT_EQ(region.physical(head.pick_start(region, 0.0f, 0, params, rng)), expected);
+    }
+    // Temperature at Spray 0 still stays inside the chosen slice.
+    for (int i = 0; i < 500; ++i) {
+        FramePos const f = region.physical(head.pick_start(region, 1.0f, 0, params, rng));
+        EXPECT_EQ(slice_at(slices, f, 100000), 2u) << "f=" << f;
+    }
+}
+
+TEST(PositionSprayHead, SliceReversedPickNearTheNextBoundaryStaysInItsSlice) {
+    // Two-frame slices make a pick just below the next boundary common: its
+    // forward frame rounds onto that boundary, and the reversed start must
+    // still be a frame of the chosen slice, never the previous slice's last.
+    PositionSprayHead head;
+    std::mt19937 rng(5);
+    HeadInputs params;
+    const std::vector<float> bounds{0.0f, 1.0f / 6, 2.0f / 6, 3.0f / 6, 4.0f / 6, 5.0f / 6, 1.0f};
+    auto const slices = SliceMap::from_normalized(bounds, 12);
+    ASSERT_TRUE(slices.valid());
+    params.m_slices = &slices;
+    params.m_position = 0.5f;  // slice 3 (0-based): frames 6, 7
+    params.m_spray = 0.0f;
+    auto region = LoopRegion::full(12);
+    region.m_reverse = true;
+    for (int i = 0; i < 500; ++i) {
+        FramePos const f = region.physical(head.pick_start(region, 1.0f, 0, params, rng));
+        EXPECT_EQ(slice_at(slices, f, 12), 3u) << "f=" << f << " i=" << i;
+    }
+}
+
+TEST(PositionSprayHead, SliceReversedLastSliceRoundedOntoTheEndStillPicks) {
+    // A map made for a longer source, rescaled onto 12 frames: its thin last
+    // slice starts on the end frame. The reversed mirror must still land on
+    // a real frame, never k_no_grain.
+    PositionSprayHead head;
+    std::mt19937 rng(9);
+    HeadInputs params;
+    const std::vector<float> bounds{0.0f, 0.5f, 0.99f, 1.0f};
+    auto const slices = SliceMap::from_normalized(bounds, 1000);
+    ASSERT_TRUE(slices.valid());
+    ASSERT_EQ(slices.boundary_frame(2, 12), 12u);  // the last slice collapses onto the end
+    params.m_slices = &slices;
+    params.m_position = 0.999f;  // the last slice
+    params.m_spray = -1e-6f;
+    auto const region = head.region(12, params);
+    ASSERT_TRUE(region.m_reverse);
+    for (int i = 0; i < 200; ++i) {
+        FramePos const r = head.pick_start(region, 0.5f, 0, params, rng);
+        ASSERT_NE(r, k_no_grain) << "i=" << i;
+        FramePos const f = region.physical(r);
+        EXPECT_GE(f, 0) << "i=" << i;
+        EXPECT_LT(f, 12) << "i=" << i;
+    }
+}
+
 TEST(PositionSprayHead, SliceTiltRightCoversChosenAndNext) {
     PositionSprayHead head;
     std::mt19937 rng(5);
@@ -277,6 +409,43 @@ TEST(GrainEngine, ReverseRegionGrainsReadBackwards) {
     engine.render(views, 0, params, HeadMode::Scan, block.out(), 2, k_block, 0);
     for (size_t i = 1; i < k_block; ++i) {
         ASSERT_NEAR(block.m_data[0][i], static_cast<float>(47999 - i), 1e-2f) << "i=" << i;
+    }
+}
+
+TEST(GrainEngine, PositionModeNegativeSprayReadsBackwards) {
+    // Position mode, Spray just below 0 (no width): the grain starts on
+    // Position and its samples descend (Spray 0: they ascend).
+    thl::dsp::audio::AudioDataStore store;
+    load(store, [] {
+        std::vector<thl::core::BufferF> b;
+        b.push_back(make_ramp(1, 96000));
+        return b;
+    }());
+    auto const views = views_of(store);
+    auto render_first_grain = [&](float spray) {
+        GrainEngine engine;
+        engine.prepare(k_sample_rate, 2);
+        engine.reset_schedule(HeadMode::Spray);
+        GrainParams params;
+        params.m_channel_mode = ChannelMode::TrueStereo;
+        params.m_density = 0.0f;          // one grain per 24000 frames
+        params.m_size = 0.0f;             // 96-frame grains
+        params.m_window_shape = 0.0f;     // rectangle: output == source
+        params.m_head.m_position = 0.5f;  // frame 47999
+        params.m_head.m_spray = spray;
+        Block block(2, k_block);
+        block.clear();
+        engine.render(views, 0, params, HeadMode::Spray, block.out(), 2, k_block, 0);
+        return block;
+    };
+
+    Block const forward = render_first_grain(0.0f);
+    for (size_t i = 1; i < k_block; ++i) {
+        ASSERT_NEAR(forward.m_data[0][i], static_cast<float>(47999 + i), 1e-2f) << "i=" << i;
+    }
+    Block const reversed = render_first_grain(-1e-6f);
+    for (size_t i = 1; i < k_block; ++i) {
+        ASSERT_NEAR(reversed.m_data[0][i], static_cast<float>(47999 - i), 1e-2f) << "i=" << i;
     }
 }
 
