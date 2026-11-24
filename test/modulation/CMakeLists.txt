@@ -22,6 +22,12 @@ target_link_libraries(${PROJECT_NAME}
 		gtest
 )
 
+# MIDI as modulation sources: part of Modulation when the Midi component is built.
+if(TARGET tanh::Midi)
+	target_sources(${PROJECT_NAME} PRIVATE test_MidiSources.cpp)
+	target_link_libraries(${PROJECT_NAME} PRIVATE tanh::Midi)
+endif()
+
 if(TARGET tanh::State)
 	target_sources(${PROJECT_NAME} PRIVATE
 		test_ModulationMatrixCore.cpp
