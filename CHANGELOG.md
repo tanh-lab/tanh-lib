@@ -9,6 +9,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Multitrack recording. `audio_io::MultitrackRecorder` records several tracks at once (every
+  engine, every return channel, the mix) into one WAV file each, aligned to the sample: the
+  audio thread copies each block into a buffer per track and one writer thread moves them to
+  disk, so the audio thread does no file I/O. A block the buffers have no room for is left out
+  of every track and written as silence in every file, so a slow disk costs counted silence,
+  never alignment or length. Which of the prepared tracks a take records (all, only the mix,
+  only the stems) is chosen per take in `begin_take()`. A finished take is a directory with the files and a manifest
+  (`take.json`; `audio_io::Take`, `load_take()`, `save_take()`). `export_mixdown()` sums the
+  stems with a gain per track, `export_track()` and `export_tracks()` write tracks as they
+  were recorded; all three take a range, a format (16-bit with dither, 24-bit, float), an
+  optional peak level to normalise to, and a progress callback that can cancel.
+  `audio_io::WavStreamWriter` is the writer underneath: WAV block by block, staged and
+  renamed on close. `dsp::transport::RecordSchedule` (header-only) makes a take a whole
+  number of bars: it starts on the next bar line and ends on one, at the exact sample, after
+  `stop()` or after the number of bars given to `arm()`; an optional tail is recorded after
+  the last bar and kept apart from the musical length; `status()` gives a display the phase,
+  the count-in, the bars recorded and the bars left. Guide: `docs/sphinx/recording.md`.
+  Tests: `WavStreamWriter.*`, `MultitrackRecorder.*`, `Take.*`, `TakeExport.*`,
+  `RecordedTake.*`, `RecordSchedule.*`.
 - MIDI as notes, controllers and modulation sources, on top of the packets. `midi::EventStream`
   turns a block's packets into `midi::Event`s once per block: `EventDecoder` gives MIDI 1.0 and
   MIDI 2.0 one float form (7 to 32 bits scaled to 0 to 1, pitch bend to -1 to 1, an RPN / NRPN
@@ -303,6 +322,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- `AudioFileSink::process()` no longer writes to the file: it copies the block into a buffer
+  and a thread of the sink writes it, so the sink is real-time safe. The file is written
+  under a temporary name and appears at its path when `close_file()` has finished it
+  (before, a growing file was at the path from `open_file()` on). `get_frames_written()`
+  counts the frames accepted; they are in the file when `close_file()` returns.
+  `get_frames_dropped()` (new) counts frames the buffer had no room for. `close_file()` now
+  returns whether the file is complete at its path, and `has_failed()` (new) says that a
+  write failed (a full disk): such a file is not published, where before a part of it stayed
+  at the path. `open_file()` with `AudioEncodingFormat::FLAC` now fails at once instead of in
+  the encoder.
+- AudioIO uses nlohmann_json (already fetched for State and Modulation) for the take
+  manifest: build-tree only, the installed `tanh::AudioIO` does not depend on it.
 - `TransportClock` keeps the block itself: a subclass implements `compute_block()` and
   `on_prepare()`, and `prepare()`, `begin_block()`, `end_block()`, `block_info()` (now a
   reference), `beat_at_sample()`, `division_in_block()` and the tempo, signature and

@@ -141,7 +141,9 @@ AudioIO
 device layer over miniaudio: device enumeration, playback, capture and duplex
 streams through :cpp:class:`thl::AudioDeviceManager`, with
 platform-specific code for iOS and Android. See :doc:`audio_io` for the Android
-Bluetooth notes. Depends on Core.
+Bluetooth notes. It also records: ``audio_io::MultitrackRecorder`` writes several
+tracks to aligned WAV files without file I/O on the audio thread, and the take it
+leaves can be mixed down and exported; see :doc:`recording`. Depends on Core.
 
 Net
 ---

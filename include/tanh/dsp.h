@@ -20,6 +20,7 @@
 #include "dsp/transport/LinkAudio.h"
 #include "dsp/transport/LinkBackend.h"
 #include "dsp/transport/LinkTransportClock.h"
+#include "dsp/transport/RecordSchedule.h"
 #include "dsp/transport/TransportClock.h"
 #include "dsp/transport/TransportInfo.h"
 #include "dsp/utils/ADSR.h"

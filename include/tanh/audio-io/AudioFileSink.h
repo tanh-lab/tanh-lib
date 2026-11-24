@@ -32,17 +32,24 @@ namespace thl::inline THL_ABI_NAMESPACE {
  *
  * @par Real-Time Safety
  *
- * - open_file(), close_file(), start_recording(), and stop_recording() are NOT
- *   real-time safe and should only be called from the main thread.
- * - process() writes to the file which involves I/O. While the write itself
- *   may block, this is typically acceptable for recording scenarios. For
- *   strict real-time requirements, consider buffering to a lock-free queue.
+ * - open_file() and close_file() are NOT real-time safe and should only be
+ *   called from the main thread.
+ * - process() does no file I/O: it copies the block into a preallocated
+ *   buffer, and a writer thread of the sink moves it to the file. A disk that
+ *   stalls for longer than the buffer holds (two seconds) costs whole blocks,
+ *   counted in get_frames_dropped().
+ * - The file is written next to its path under a temporary name and appears
+ *   at the path when close_file() has finished it.
  *
  * @par Supported Formats
  *
  * The format parameter in open_file() controls the output file format:
- * - AudioEncodingFormat::WAV (default) - Uncompressed WAV
- * - AudioEncodingFormat::FLAC - FLAC lossless compression
+ * - AudioEncodingFormat::WAV (default) - Uncompressed WAV, 32-bit float
+ * - AudioEncodingFormat::FLAC - not supported by the bundled encoder:
+ *   open_file() fails
+ *
+ * For several tracks at once, other bit depths, or a recording that starts
+ * and stops on a bar line, see audio_io::MultitrackRecorder.
  *
  * @code
  * AudioFileSink recorder;
@@ -100,12 +107,28 @@ public:
     /**
      * @brief Closes the currently open file.
      *
-     * Stops recording if active and finalises the file. Safe to call
-     * even if no file is open.
+     * Stops recording if active, writes what is still buffered and finalises
+     * the file. Safe to call even if no file is open.
+     *
+     * @return true if the file is complete at its path. false if no file was
+     *         open, or if a write failed (a full disk): the file is then not
+     *         published, and has_failed() is true.
      *
      * @warning NOT real-time safe - performs file I/O.
      */
-    void close_file();
+    bool close_file();
+
+    /**
+     * @brief Checks whether the recording could not be written.
+     *
+     * @return true once a write to the open or last file failed. From then on
+     *         process() counts what it is handed as dropped. A file that
+     *         reached the 4 GiB WAV limit is not a failure: it ends there and
+     *         close_file() publishes it.
+     *
+     * @note Thread-safe - uses atomic operations.
+     */
+    bool has_failed() const;
 
     /**
      * @brief Begins recording audio to the open file.
@@ -144,13 +167,25 @@ public:
     bool is_open() const { return m_open; }
 
     /**
-     * @brief Gets the total number of frames written to the file.
+     * @brief Gets the total number of frames recorded.
      *
-     * @return Number of audio frames written since the file was opened.
+     * @return Number of audio frames accepted since the file was opened; they
+     *         are in the file when close_file() returns.
      *
      * @note Thread-safe - uses atomic operations.
      */
     uint64_t get_frames_written() const { return m_frames_written.load(std::memory_order_acquire); }
+
+    /**
+     * @brief Gets the number of frames that were left out.
+     *
+     * @return Frames since the file was opened that found no room in the
+     *         sink's buffer because the disk did not keep up, or that came
+     *         after the file stopped taking any (has_failed(), or full).
+     *
+     * @note Thread-safe - uses atomic operations.
+     */
+    uint64_t get_frames_dropped() const { return m_frames_dropped.load(std::memory_order_acquire); }
 
     /**
      * @brief Gets the peak amplitude of the most recent audio block.
@@ -173,7 +208,7 @@ public:
      * @param num_input_channels Number of input channels.
      * @param num_output_channels Number of output channels (unused).
      *
-     * @note This method performs file I/O and may block.
+     * @note Real-time safe: no file I/O, no allocation, no lock.
      */
     void process(float* output_buffer,
                  const float* input_buffer,
@@ -198,6 +233,7 @@ private:
     bool m_open = false;
     std::atomic<bool> m_recording{false};
     std::atomic<uint64_t> m_frames_written{0};
+    std::atomic<uint64_t> m_frames_dropped{0};
     std::atomic<float> m_peak_level{0.0f};
 };
 
