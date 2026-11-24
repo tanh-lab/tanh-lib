@@ -19,7 +19,8 @@ namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
 namespace {
 
-constexpr int k_json_version = 1;
+constexpr int k_json_version = 2;
+constexpr int k_json_version_xy = 1;  // x and y as two channels
 constexpr double k_quant = 65535.0;
 
 uint16_t quantise(float v) {
@@ -35,12 +36,11 @@ std::optional<double> finite_number(const nlohmann::json& j, const char* key) {
     return v;
 }
 
-bool read_channel(const nlohmann::json& j, const char* key, std::vector<float>& out) {
-    const auto it = j.find(key);
-    if (it == j.end() || !it->is_array()) { return false; }
+bool read_channel(const nlohmann::json& values, std::vector<float>& out) {
+    if (!values.is_array()) { return false; }
     out.clear();
-    out.reserve(it->size());
-    for (const auto& e : *it) {
+    out.reserve(values.size());
+    for (const auto& e : values) {
         if (!e.is_number_integer() && !e.is_number_unsigned()) { return false; }
         const int64_t q = e.get<int64_t>();
         if (q < 0 || q > 65535) { return false; }
@@ -82,11 +82,14 @@ MotionPoint MotionLane::sample(double phase) const {
     const double idx = detail::wrap_phase(phase, m_length) * static_cast<double>(n) / m_length;
     auto gi = static_cast<size_t>(idx);
     if (gi >= n) { gi = n - 1; }
-    return MotionPoint{
-        .m_x = detail::catmull_rom_wrap(m_x.data(), n, idx),
-        .m_y = detail::catmull_rom_wrap(m_y.data(), n, idx),
-        .m_gate = gi < m_gate.size() ? m_gate[gi] : uint8_t{0},
-    };
+    MotionPoint point{.m_gate = gi < m_gate.size() ? m_gate[gi] : uint8_t{0}};
+    const size_t channels = std::min(num_channels(), k_motion_max_channels);
+    for (size_t c = 0; c < channels; ++c) {
+        point.m_values[c] = m_channels[c].size() == n
+                                ? detail::catmull_rom_wrap(m_channels[c].data(), n, idx)
+                                : 0.0f;
+    }
+    return point;
 }
 
 nlohmann::json MotionLane::to_json() const {
@@ -98,20 +101,23 @@ nlohmann::json MotionLane::to_json() const {
     j["length"] = m_length;
     j["anchor"] = m_anchor;
     if (m_seam != 0) { j["seam"] = m_seam; }
-    auto xs = nlohmann::json::array();
-    auto ys = nlohmann::json::array();
-    auto gate = nlohmann::json::array();
     const size_t n = num_points();
+    auto channels = nlohmann::json::array();
+    for (const auto& channel : m_channels) {
+        auto values = nlohmann::json::array();
+        for (size_t i = 0; i < n; ++i) {
+            values.push_back(quantise(i < channel.size() ? channel[i] : 0.0f));
+        }
+        channels.push_back(std::move(values));
+    }
+    auto gate = nlohmann::json::array();
     uint8_t prev = 0;
     for (size_t i = 0; i < n; ++i) {
-        xs.push_back(quantise(m_x[i]));
-        ys.push_back(quantise(i < m_y.size() ? m_y[i] : 0.0f));
         const uint8_t g = (i < m_gate.size() && m_gate[i] != 0) ? 1 : 0;
         if (i == 0 || g != prev) { gate.push_back(nlohmann::json::array({i, g})); }
         prev = g;
     }
-    j["x"] = std::move(xs);
-    j["y"] = std::move(ys);
+    j["channels"] = std::move(channels);
     j["gate"] = std::move(gate);
     return j;
 }
@@ -120,17 +126,34 @@ std::optional<MotionLane> MotionLane::from_json(const nlohmann::json& json, size
     try {
         if (!json.is_object()) { return std::nullopt; }
         const auto version = json.find("version");
-        if (version == json.end() || !version->is_number_integer() ||
-            version->get<int64_t>() != k_json_version) {
-            return std::nullopt;
-        }
+        if (version == json.end() || !version->is_number_integer()) { return std::nullopt; }
+        const int64_t v = version->get<int64_t>();
+        if (v != k_json_version && v != k_json_version_xy) { return std::nullopt; }
 
         MotionLane lane;
-        if (!read_channel(json, "x", lane.m_x) || !read_channel(json, "y", lane.m_y)) {
-            return std::nullopt;
+        if (v == k_json_version_xy) {
+            const auto x = json.find("x");
+            const auto y = json.find("y");
+            if (x == json.end() || y == json.end()) { return std::nullopt; }
+            lane.m_channels.resize(2);
+            if (!read_channel(*x, lane.m_channels[0]) || !read_channel(*y, lane.m_channels[1])) {
+                return std::nullopt;
+            }
+        } else {
+            const auto channels = json.find("channels");
+            if (channels == json.end() || !channels->is_array() ||
+                channels->size() > k_motion_max_channels) {
+                return std::nullopt;
+            }
+            lane.m_channels.resize(channels->size());
+            for (size_t c = 0; c < channels->size(); ++c) {
+                if (!read_channel((*channels)[c], lane.m_channels[c])) { return std::nullopt; }
+            }
         }
-        if (lane.m_x.size() != lane.m_y.size()) { return std::nullopt; }
-        const size_t n = lane.m_x.size();
+        const size_t n = lane.num_points();
+        for (const auto& channel : lane.m_channels) {
+            if (channel.size() != n) { return std::nullopt; }
+        }
 
         const auto take_id = json.find("take_id");
         if (take_id != json.end()) {
@@ -141,7 +164,11 @@ std::optional<MotionLane> MotionLane::from_json(const nlohmann::json& json, size
             if (id < 0 || std::cmp_greater(id, UINT32_MAX)) { return std::nullopt; }
             lane.m_take_id = static_cast<uint32_t>(id);
         }
-        if (n == 0) { return MotionLane{.m_take_id = lane.m_take_id}; }
+        if (n == 0) {
+            MotionLane empty{.m_take_id = lane.m_take_id};
+            empty.m_channels.resize(lane.num_channels());
+            return empty;
+        }
 
         const auto timebase = json.find("timebase");
         if (timebase == json.end() || !timebase->is_string()) { return std::nullopt; }
@@ -175,8 +202,8 @@ std::optional<MotionLane> MotionLane::from_json(const nlohmann::json& json, size
                 return std::nullopt;
             }
             const int64_t index = edge[0].get<int64_t>();
-            const int64_t v = edge[1].get<int64_t>();
-            if (index <= prev_index || std::cmp_greater_equal(index, n) || (v != 0 && v != 1)) {
+            const int64_t g = edge[1].get<int64_t>();
+            if (index <= prev_index || std::cmp_greater_equal(index, n) || (g != 0 && g != 1)) {
                 return std::nullopt;
             }
             // Fill the previous run up to this edge.
@@ -184,7 +211,7 @@ std::optional<MotionLane> MotionLane::from_json(const nlohmann::json& json, size
                 std::fill(lane.m_gate.begin() + prev_index, lane.m_gate.begin() + index, value);
             }
             prev_index = index;
-            value = static_cast<uint8_t>(v);
+            value = static_cast<uint8_t>(g);
         }
         if (prev_index >= 0) {
             std::fill(lane.m_gate.begin() + prev_index, lane.m_gate.end(), value);
@@ -206,14 +233,16 @@ std::optional<MotionLane> MotionLane::from_json(const nlohmann::json& json, size
 void MotionLane::resample(size_t num_points) {
     const size_t n = this->num_points();
     if (n == 0 || num_points == 0 || num_points == n) { return; }
-    std::vector<float> x(num_points);
-    std::vector<float> y(num_points);
+    std::vector<std::vector<float>> channels(num_channels(), std::vector<float>(num_points));
     std::vector<uint8_t> gate(num_points);
     const double step = static_cast<double>(n) / static_cast<double>(num_points);
     for (size_t k = 0; k < num_points; ++k) {
         const double idx = static_cast<double>(k) * step;
-        x[k] = detail::catmull_rom_wrap(m_x.data(), n, idx);
-        y[k] = detail::catmull_rom_wrap(m_y.data(), n, idx);
+        for (size_t c = 0; c < channels.size(); ++c) {
+            channels[c][k] = m_channels[c].size() == n
+                                 ? detail::catmull_rom_wrap(m_channels[c].data(), n, idx)
+                                 : 0.0f;
+        }
         auto gi = static_cast<size_t>(idx);
         if (gi >= n) { gi = n - 1; }
         gate[k] = gi < m_gate.size() ? m_gate[gi] : uint8_t{0};
@@ -221,8 +250,7 @@ void MotionLane::resample(size_t num_points) {
     m_rate *= static_cast<double>(num_points) / static_cast<double>(n);
     const auto seam = static_cast<size_t>(std::llround(static_cast<double>(m_seam) / step));
     m_seam = seam % num_points;
-    m_x = std::move(x);
-    m_y = std::move(y);
+    m_channels = std::move(channels);
     m_gate = std::move(gate);
 }
 

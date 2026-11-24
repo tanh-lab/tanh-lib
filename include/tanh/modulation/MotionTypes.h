@@ -43,7 +43,11 @@ struct LoopLength {
 }
 
 struct MotionRecorderConfig {
-    /// Points of a take (the take and two hand-over slots per recorder, 11 bytes per point).
+    /// Channels of the gesture, clamped to [1, k_motion_max_channels]: 1 for a slider, 2 for an
+    /// XY pad.
+    uint32_t m_num_channels = 1;
+    /// Points of a take (the take and two hand-over slots per recorder, 4 bytes per channel
+    /// and 1 per point in each).
     size_t m_max_points = k_motion_default_max_points;
     /// Recording rate in points per second: round(rate * 60 / bpm) points per beat, clamped to
     /// [m_min_tpb, m_max_tpb].
@@ -65,8 +69,9 @@ enum class MotionState : uint8_t {
 
 /// One block of touch input for MotionRecorder::process().
 struct MotionInput {
-    const float* m_x = nullptr;  ///< [0, 1]
-    const float* m_y = nullptr;  ///< [0, 1]
+    /// One buffer per channel of the recorder, values in [0, 1]; fewer, or a null buffer, is
+    /// no input.
+    std::span<const float* const> m_channels;
     const uint8_t* m_active = nullptr;
     std::span<const uint32_t> m_change_points;  ///< sorted offsets where an input event landed
     uint32_t m_num_samples = 0;

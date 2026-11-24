@@ -33,8 +33,8 @@ struct Take {
         }
     }
     [[nodiscard]] MotionLoopView view() const {
-        return {.m_x = m_x.data(),
-                .m_y = m_y.data(),
+        return {.m_channels = {m_x.data(), m_y.data()},
+                .m_num_channels = 2,
                 .m_gate = m_gate.data(),
                 .m_num_points = m_x.size(),
                 .m_timebase = MotionTimebase::Beats,
@@ -44,18 +44,18 @@ struct Take {
 
 MotionLane lane_of(const Take& take) {
     MotionLane lane;
+    lane.m_channels.resize(2);
     lane.m_timebase = MotionTimebase::Beats;
     lane.m_rate = 100.0;
     lane.m_length = 4.0;
-    lane.m_x = take.m_x;
-    lane.m_y = take.m_y;
+    lane.m_channels = {take.m_x, take.m_y};
     lane.m_gate = take.m_gate;
     return lane;
 }
 
 std::unique_ptr<MotionLaneStore> make_store() {
     auto store = std::make_unique<MotionLaneStore>();
-    store->prepare(k_max_points);
+    store->prepare(k_max_points, 2);
     return store;
 }
 
@@ -76,13 +76,13 @@ TEST(MotionLaneStore, SubmittedTakePlaysAtOnceAndIsPublishedRaw) {
     EXPECT_GT(playing.m_id, 0u);
     ASSERT_EQ(playing.m_view.m_num_points, 400u);
     // The seam is closed where it plays: the last point leads back towards the first.
-    EXPECT_LT(playing.m_view.m_x[399], take.m_x[399] - 0.1f);
-    EXPECT_EQ(playing.m_view.m_x[100], take.m_x[100]);
+    EXPECT_LT(playing.m_view.m_channels[0][399], take.m_x[399] - 0.1f);
+    EXPECT_EQ(playing.m_view.m_channels[0][100], take.m_x[100]);
 
     EXPECT_TRUE(store->service());
     const MotionLane lane = store->lane();
     EXPECT_EQ(lane.m_take_id, playing.m_id);
-    EXPECT_EQ(lane.m_x, take.m_x);  // raw
+    EXPECT_EQ(lane.m_channels[0], take.m_x);  // raw
     EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
     const MotionLaneSource published = select(*store);
     EXPECT_EQ(published.m_id, playing.m_id);
@@ -138,11 +138,11 @@ TEST(MotionLaneStore, RevisionsOfOneTakeAreOneUndoStep) {
     (void)select(*store);
     ASSERT_TRUE(store->submit(second.view(), 7));
     EXPECT_TRUE(store->service());
-    EXPECT_EQ(store->lane().m_x, second.m_x);
+    EXPECT_EQ(store->lane().m_channels[0], second.m_x);
     ASSERT_TRUE(store->undo());
-    EXPECT_EQ(store->lane().m_x, before.m_x);
+    EXPECT_EQ(store->lane().m_channels[0], before.m_x);
     ASSERT_TRUE(store->redo());
-    EXPECT_EQ(store->lane().m_x, second.m_x);
+    EXPECT_EQ(store->lane().m_channels[0], second.m_x);
 
     // The next take is its own step.
     (void)select(*store);
@@ -150,7 +150,7 @@ TEST(MotionLaneStore, RevisionsOfOneTakeAreOneUndoStep) {
     ASSERT_TRUE(store->submit(next.view(), 8));
     EXPECT_TRUE(store->service());
     ASSERT_TRUE(store->undo());
-    EXPECT_EQ(store->lane().m_x, second.m_x);
+    EXPECT_EQ(store->lane().m_channels[0], second.m_x);
 }
 
 TEST(MotionLaneStore, SmoothedLanePlaysItsSmoothedCurve) {
@@ -163,9 +163,11 @@ TEST(MotionLaneStore, SmoothedLanePlaysItsSmoothedCurve) {
     const MotionLane lane = lane_of(take);
     const auto smoothed = thl::modulation::make_played_curve(lane, 0.6f, LoopEnd::Smooth);
     const MotionLaneSource source = select(*store);
-    for (size_t i = 0; i < 400; i += 13) { EXPECT_EQ(source.m_view.m_x[i], smoothed.m_x[i]) << i; }
-    EXPECT_EQ(store->played_lane().m_x, smoothed.m_x);
-    EXPECT_EQ(store->lane().m_x, take.m_x);
+    for (size_t i = 0; i < 400; i += 13) {
+        EXPECT_EQ(source.m_view.m_channels[0][i], smoothed.m_channels[0][i]) << i;
+    }
+    EXPECT_EQ(store->played_lane().m_channels[0], smoothed.m_channels[0]);
+    EXPECT_EQ(store->lane().m_channels[0], take.m_x);
 }
 
 TEST(MotionLaneStore, JumpLoopEndLeavesASubmittedTakeOpen) {
@@ -174,7 +176,7 @@ TEST(MotionLaneStore, JumpLoopEndLeavesASubmittedTakeOpen) {
     const Take take;
     ASSERT_TRUE(store->submit(take.view(), 1));
     const MotionLaneSource playing = select(*store);
-    EXPECT_EQ(playing.m_view.m_x[399], take.m_x[399]);
+    EXPECT_EQ(playing.m_view.m_channels[0][399], take.m_x[399]);
 }
 
 TEST(MotionLaneStore, LoadValidatesAndClamps) {
@@ -183,10 +185,10 @@ TEST(MotionLaneStore, LoadValidatesAndClamps) {
     bad.m_length = 0.0;
     EXPECT_EQ(store->load(bad, k_max_points), 0u);
     MotionLane loud = lane_of(Take());
-    loud.m_x[3] = 1.5f;
+    loud.m_channels[0][3] = 1.5f;
     loud.m_gate.clear();  // no gate: every point down
     ASSERT_GT(store->load(loud, k_max_points), 0u);
-    EXPECT_EQ(store->lane().m_x[3], 1.0f);
+    EXPECT_EQ(store->lane().m_channels[0][3], 1.0f);
     EXPECT_EQ(store->lane().m_gate.size(), 400u);
     MotionLane big = lane_of(Take(8000));
     ASSERT_GT(store->load(big, k_max_points), 0u);
@@ -202,7 +204,7 @@ TEST(MotionLaneStore, ClearIsAnUndoStep) {
     EXPECT_TRUE(store->lane().empty());
     EXPECT_TRUE(select(*store).empty());
     ASSERT_TRUE(store->undo());
-    EXPECT_EQ(store->lane().m_x, take.m_x);
+    EXPECT_EQ(store->lane().m_channels[0], take.m_x);
     EXPECT_GT(store->lane().m_take_id, id);
 }
 

@@ -19,11 +19,10 @@ namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// The RCU payload: the published lane and what plays of it.
 struct MotionPlayedLane {
-    MotionLane m_lane;       ///< raw, as published
-    std::vector<float> m_x;  ///< what plays: seam closed and smoothed
-    std::vector<float> m_y;
-    bool m_smoothed = false;  ///< m_x / m_y differ from the raw lane
-    uint32_t m_version = 0;   ///< per publication, also for a new curve of the same lane
+    MotionLane m_lane;                           ///< raw, as published
+    std::vector<std::vector<float>> m_channels;  ///< what plays: seam closed and smoothed
+    bool m_smoothed = false;                     ///< m_channels differ from the raw lane
+    uint32_t m_version = 0;  ///< per publication, also for a new curve of the same lane
 };
 
 /// What the audio thread plays in one block: the published lane or a submitted take.
@@ -56,7 +55,7 @@ class TANH_API MotionLaneStore {
 public:
     MotionLaneStore();
 
-    void prepare(size_t max_points);
+    void prepare(size_t max_points, size_t num_channels);
 
     /// Audio thread: hand @p take over (copied), the revision of take @p serial; false when
     /// both slots wait for service().
@@ -74,7 +73,7 @@ public:
     /// Publish submitted takes; true if a lane was published.
     bool service();
     /// Publish @p lane (validated, clamped, resampled down to @p max_points); its id, or 0 if it
-    /// is malformed.
+    /// is malformed or has points and another number of channels than prepare() was given.
     uint32_t load(MotionLane lane, size_t max_points);
     /// Publish an empty lane; its id.
     uint32_t clear();
@@ -115,11 +114,10 @@ private:
 
     struct Slot {
         std::atomic<SlotState> m_state{SlotState::Free};
-        std::vector<float> m_x;
-        std::vector<float> m_y;
+        std::vector<float> m_values;  // channel c at c * m_max_points
         std::vector<uint8_t> m_gate;
-        std::vector<float> m_raw_tail_x;  // the raw values of the points the seam closing moved
-        std::vector<float> m_raw_tail_y;
+        // The raw values of the points the seam closing moved, channel c at c * m_max_points / 4.
+        std::vector<float> m_raw_tail;
         // Written by the audio thread before Ready (release), read after (acquire).
         MotionLoopView m_view;
         size_t m_seam_window = 0;
@@ -136,6 +134,8 @@ private:
     std::array<Slot, 2> m_slots;
     MotionHistory m_history;
     std::atomic<uint32_t> m_next_id{1};
+    size_t m_max_points = 0;
+    size_t m_num_channels = 1;
     std::atomic<uint64_t> m_dropped{0};  // serials [from, to] as (from << 32) | to
 
     [[nodiscard]] bool dropped(uint32_t serial) const {

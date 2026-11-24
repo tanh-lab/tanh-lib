@@ -25,18 +25,15 @@ MotionLaneStore::MotionLaneStore() {
     m_audio_reader = m_lanes.add_reader();
 }
 
-void MotionLaneStore::prepare(size_t max_points) {
-    max_points = std::max<size_t>(max_points, k_motion_min_points);
+void MotionLaneStore::prepare(size_t max_points, size_t num_channels) {
+    m_max_points = std::max<size_t>(max_points, k_motion_min_points);
+    m_num_channels = std::clamp<size_t>(num_channels, 1, k_motion_max_channels);
     for (auto& s : m_slots) {
         s.m_state.store(SlotState::Free, std::memory_order_relaxed);
-        if (s.m_x.size() != max_points) {
-            s.m_x.assign(max_points, 0.0f);
-            s.m_y.assign(max_points, 0.0f);
-            s.m_gate.assign(max_points, 0);
-            // The seam window is at most a quarter of the loop.
-            s.m_raw_tail_x.assign(max_points / 4, 0.0f);
-            s.m_raw_tail_y.assign(max_points / 4, 0.0f);
-        }
+        s.m_values.assign(m_num_channels * m_max_points, 0.0f);
+        s.m_gate.assign(m_max_points, 0);
+        // The seam window is at most a quarter of the loop.
+        s.m_raw_tail.assign(m_num_channels * (m_max_points / 4), 0.0f);
     }
 }
 
@@ -49,10 +46,12 @@ bool MotionLaneStore::submit(const MotionLoopView& take,
             break;
         }
     }
-    const size_t n = std::min(take.m_num_points, slot != nullptr ? slot->m_x.size() : 0);
-    if (slot == nullptr || n == 0) { return false; }
-    std::copy_n(take.m_x, n, slot->m_x.begin());
-    std::copy_n(take.m_y, n, slot->m_y.begin());
+    const size_t n = std::min(take.m_num_points, m_max_points);
+    if (slot == nullptr || n == 0 || take.m_num_channels != m_num_channels) { return false; }
+    float* values = slot->m_values.data();
+    for (size_t c = 0; c < m_num_channels; ++c) {
+        std::copy_n(take.m_channels[c], n, values + (c * m_max_points));
+    }
     if (take.m_gate != nullptr) {
         std::copy_n(take.m_gate, n, slot->m_gate.begin());
     } else {
@@ -61,8 +60,9 @@ bool MotionLaneStore::submit(const MotionLoopView& take,
     slot->m_view = take;
     slot->m_view.m_num_points = n;
     slot->m_view.m_seam = take.m_seam < n ? take.m_seam : 0;
-    slot->m_view.m_x = slot->m_x.data();
-    slot->m_view.m_y = slot->m_y.data();
+    for (size_t c = 0; c < m_num_channels; ++c) {
+        slot->m_view.m_channels[c] = values + (c * m_max_points);
+    }
     slot->m_view.m_gate = slot->m_gate.data();
     slot->m_seam_window = 0;
 
@@ -71,17 +71,18 @@ bool MotionLaneStore::submit(const MotionLoopView& take,
     if (n >= k_motion_min_points && m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Smooth) {
         const size_t seam = slot->m_view.m_seam;
         const size_t window = motion_seam_window(n, take.m_length, take.m_timebase);
-        assert(window <= slot->m_raw_tail_x.size());
-        auto close = [&](std::vector<float>& p, std::vector<float>& tail) {
+        const size_t tail_size = m_max_points / 4;
+        assert(window <= tail_size);
+        for (size_t c = 0; c < m_num_channels; ++c) {
+            float* p = values + (c * m_max_points);
+            float* tail = slot->m_raw_tail.data() + (c * tail_size);
             auto at = [&](size_t i) -> float& {
                 const size_t q = seam + i;
                 return p[q >= n ? q - n : q];
             };
             for (size_t j = 0; j < window; ++j) { tail[j] = at(n - window + j); }
             motion_spread_seam(at, n, window, motion_seam_error(at, n));
-        };
-        close(slot->m_x, slot->m_raw_tail_x);
-        close(slot->m_y, slot->m_raw_tail_y);
+        }
         slot->m_seam_window = window;
     }
     slot->m_id = m_next_id.fetch_add(1, std::memory_order_relaxed);
@@ -115,22 +116,22 @@ MotionLaneSource MotionLaneStore::select(const MotionPlayedLane& published)
 
     const MotionLane& lane = published.m_lane;
     MotionLaneSource source;
-    const size_t n = std::min({lane.m_x.size(),
-                               lane.m_y.size(),
-                               lane.m_gate.size(),
-                               published.m_x.size(),
-                               published.m_y.size()});
+    size_t n = std::min(lane.num_points(), lane.m_gate.size());
+    for (const auto& channel : published.m_channels) { n = std::min(n, channel.size()); }
+    const size_t channels = std::min(published.m_channels.size(), k_motion_max_channels);
     source.m_id = lane_id;
     source.m_version = published.m_version;
     source.m_smoothed = published.m_smoothed;
-    source.m_view = {.m_x = published.m_x.data(),
-                     .m_y = published.m_y.data(),
+    source.m_view = {.m_num_channels = channels,
                      .m_gate = lane.m_gate.data(),
                      .m_num_points = n,
                      .m_timebase = lane.m_timebase,
                      .m_length = lane.m_length,
                      .m_anchor = lane.m_anchor,
                      .m_seam = lane.m_seam < n ? lane.m_seam : 0};
+    for (size_t c = 0; c < channels; ++c) {
+        source.m_view.m_channels[c] = published.m_channels[c].data();
+    }
     return source;
 }
 
@@ -156,15 +157,18 @@ bool MotionLaneStore::service() {
             lane.m_rate = static_cast<double>(n) / v.m_length;
             lane.m_seam = v.m_seam;
             const auto end = static_cast<std::ptrdiff_t>(n);
-            lane.m_x.assign(s.m_x.begin(), s.m_x.begin() + end);
-            lane.m_y.assign(s.m_y.begin(), s.m_y.begin() + end);
-            lane.m_gate.assign(s.m_gate.begin(), s.m_gate.begin() + end);
-            // The lane keeps the raw recording; what plays closes the seam again.
-            for (size_t j = 0; j < s.m_seam_window; ++j) {
-                const size_t i = (v.m_seam + n - s.m_seam_window + j) % n;
-                lane.m_x[i] = s.m_raw_tail_x[j];
-                lane.m_y[i] = s.m_raw_tail_y[j];
+            const size_t tail_size = m_max_points / 4;
+            lane.m_channels.resize(m_num_channels);
+            for (size_t c = 0; c < m_num_channels; ++c) {
+                const float* values = s.m_values.data() + (c * m_max_points);
+                lane.m_channels[c].assign(values, values + end);
+                // The lane keeps the raw recording; what plays closes the seam again.
+                for (size_t j = 0; j < s.m_seam_window; ++j) {
+                    const size_t i = (v.m_seam + n - s.m_seam_window + j) % n;
+                    lane.m_channels[c][i] = s.m_raw_tail[(c * tail_size) + j];
+                }
             }
+            lane.m_gate.assign(s.m_gate.begin(), s.m_gate.begin() + end);
             const bool first_revision = s.m_serial == 0 || s.m_serial != m_history_serial;
             m_history_serial = s.m_serial;
             publish(std::move(lane), first_revision);
@@ -182,8 +186,7 @@ void MotionLaneStore::publish_played(MotionLane lane) {
     PlayedCurve curve = make_played_curve(lane, smoothing, loop_end);
     const uint32_t version = ++m_played_version;
     m_lanes.replace([&](MotionPlayedLane& l) {
-        l.m_x = std::move(curve.m_x);
-        l.m_y = std::move(curve.m_y);
+        l.m_channels = std::move(curve.m_channels);
         l.m_smoothed = curve.m_smoothed;
         l.m_version = version;
         l.m_lane = std::move(lane);
@@ -199,7 +202,10 @@ void MotionLaneStore::publish(MotionLane lane, bool record_history) {
 
 uint32_t MotionLaneStore::load(MotionLane lane, size_t max_points) {
     const size_t n = lane.num_points();
-    if (lane.m_y.size() != n || (n > 0 && lane.m_seam >= n)) { return 0; }
+    if (n > 0 && (lane.num_channels() != m_num_channels || lane.m_seam >= n)) { return 0; }
+    for (const auto& channel : lane.m_channels) {
+        if (channel.size() != n) { return 0; }
+    }
     if (lane.m_gate.size() != n) {
         if (!lane.m_gate.empty()) { return 0; }
         lane.m_gate.assign(n, 1);
@@ -209,12 +215,13 @@ uint32_t MotionLaneStore::load(MotionLane lane, size_t max_points) {
             !std::isfinite(lane.m_anchor) || !std::isfinite(lane.m_rate) || !(lane.m_rate > 0.0)) {
             return 0;
         }
-        for (size_t i = 0; i < n; ++i) {
-            if (!std::isfinite(lane.m_x[i]) || !std::isfinite(lane.m_y[i])) { return 0; }
-            lane.m_x[i] = std::clamp(lane.m_x[i], 0.0f, 1.0f);
-            lane.m_y[i] = std::clamp(lane.m_y[i], 0.0f, 1.0f);
-            lane.m_gate[i] = lane.m_gate[i] != 0 ? 1 : 0;
+        for (auto& channel : lane.m_channels) {
+            for (float& v : channel) {
+                if (!std::isfinite(v)) { return 0; }
+                v = std::clamp(v, 0.0f, 1.0f);
+            }
         }
+        for (auto& g : lane.m_gate) { g = g != 0 ? 1 : 0; }
         lane.m_anchor = wrap_phase(lane.m_anchor, lane.m_length);
         if (n > max_points) { lane.resample(max_points); }
     }
@@ -272,8 +279,7 @@ MotionLane MotionLaneStore::played_lane() const {
     MotionLane copy;
     m_lanes.read([&](const MotionPlayedLane& l) {
         copy = l.m_lane;
-        copy.m_x = l.m_x;
-        copy.m_y = l.m_y;
+        copy.m_channels = l.m_channels;
     });
     return copy;
 }

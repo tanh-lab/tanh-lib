@@ -20,8 +20,8 @@ namespace {
 constexpr size_t k_min_capacity = 16;
 constexpr size_t k_free_bars = 16;
 constexpr double k_tick_eps = 1e-9;
-// A free take counts as still while x and y stay within this distance (pad units,
-// |dx| + |dy|) of its first or last point: finger jitter, no move.
+// A free take counts as still while its channels stay within this distance (the sum of the
+// channels' |d|) of its first or last point: finger jitter, no move.
 constexpr double k_still_distance = 0.002;
 
 // Nearest of 1, 2, 4, 8, 16 bars by ratio (log2), so the stretch is the smallest.
@@ -38,20 +38,20 @@ void MotionTakeRecorder::prepare(const MotionRecorderConfig& config) {
     m_config.m_min_tpb = std::max<uint32_t>(m_config.m_min_tpb, 1);
     m_config.m_max_tpb = std::max(m_config.m_max_tpb, m_config.m_min_tpb);
     if (!(m_config.m_rate > 0.0)) { m_config.m_rate = 200.0; }
-    m_x.assign(m_config.m_max_points, 0.0f);
-    m_y.assign(m_config.m_max_points, 0.0f);
+    m_config.m_num_channels =
+        std::clamp<uint32_t>(m_config.m_num_channels, 1, k_motion_max_channels);
+    m_num_channels = m_config.m_num_channels;
+    m_values.assign(m_num_channels * m_config.m_max_points, 0.0f);
     m_gate.assign(m_config.m_max_points, 0);
-    m_out_x.assign(m_config.m_max_points, 0.0f);
-    m_out_y.assign(m_config.m_max_points, 0.0f);
+    m_out_values.assign(m_num_channels * m_config.m_max_points, 0.0f);
     m_out_gate.assign(m_config.m_max_points, 0);
     m_active = false;
     m_num_points = 0;
 }
 
 size_t MotionTakeRecorder::buffer_bytes() const {
-    return ((m_x.capacity() + m_y.capacity() + m_out_x.capacity() + m_out_y.capacity()) *
-            sizeof(float)) +
-           m_gate.capacity() + m_out_gate.capacity();
+    return ((m_values.capacity() + m_out_values.capacity()) * sizeof(float)) + m_gate.capacity() +
+           m_out_gate.capacity();
 }
 
 float MotionTakeRecorder::progress() const {
@@ -63,14 +63,18 @@ float MotionTakeRecorder::progress() const {
 }
 
 MotionLoopView MotionTakeRecorder::take() const {
-    return {.m_x = m_bars ? m_out_x.data() : m_x.data(),
-            .m_y = m_bars ? m_out_y.data() : m_y.data(),
-            .m_gate = m_bars ? m_out_gate.data() : m_gate.data(),
-            .m_num_points = m_num_points,
-            .m_timebase = MotionTimebase::Beats,
-            .m_length = m_length,
-            .m_anchor = m_anchor,
-            .m_seam = m_seam};
+    MotionLoopView view{.m_num_channels = m_num_channels,
+                        .m_gate = m_bars ? m_out_gate.data() : m_gate.data(),
+                        .m_num_points = m_num_points,
+                        .m_timebase = MotionTimebase::Beats,
+                        .m_length = m_length,
+                        .m_anchor = m_anchor,
+                        .m_seam = m_seam};
+    const float* values = m_bars ? m_out_values.data() : m_values.data();
+    for (size_t c = 0; c < m_num_channels; ++c) {
+        view.m_channels[c] = values + (c * m_config.m_max_points);
+    }
+    return view;
 }
 
 MotionTakeRecorder::Start MotionTakeRecorder::start(const MotionTakeStart& s)
@@ -105,8 +109,7 @@ MotionTakeRecorder::Start MotionTakeRecorder::start(const MotionTakeStart& s)
     m_touched = false;
     m_full = false;
     m_last_live = false;
-    m_last_x = s.m_x;
-    m_last_y = s.m_y;
+    m_last = s.m_values;
     m_seam = 0;
     m_active = true;
 
@@ -124,13 +127,16 @@ MotionTakeRecorder::Start MotionTakeRecorder::start(const MotionTakeStart& s)
     // The ticks from the loop line to the start: the seed, or lifted at the start position.
     const double ticks = std::ceil(((s.m_beat - m_line) / m_tick_step) - k_tick_eps);
     const size_t lead = std::min(static_cast<size_t>(std::max(ticks, 0.0)), m_capacity - 1);
-    const bool seeded = !s.m_seed.empty() && s.m_seed.m_timebase == MotionTimebase::Beats &&
-                        s.m_seed.m_x != nullptr && s.m_seed.m_y != nullptr;
+    bool seeded = !s.m_seed.empty() && s.m_seed.m_timebase == MotionTimebase::Beats &&
+                  s.m_seed.m_num_channels == m_num_channels;
+    for (size_t c = 0; seeded && c < m_num_channels; ++c) {
+        seeded = s.m_seed.m_channels[c] != nullptr;
+    }
     if (seeded) {
         seed(s.m_seed);
         m_full = true;
     } else {
-        for (size_t i = 0; i < lead; ++i) { write(i, s.m_x, s.m_y, 0); }
+        for (size_t i = 0; i < lead; ++i) { write(i, s.m_values, 0); }
     }
     m_count = lead;
     return Start::Started;
@@ -143,23 +149,24 @@ void MotionTakeRecorder::seed(const MotionLoopView& s) TANH_NONBLOCKING_FUNCTION
         const double beat = m_line + (static_cast<double>(i) * m_tick_step);
         const double index = wrap_phase(beat - s.m_anchor, s.m_length) * n / s.m_length;
         const size_t g = std::min(static_cast<size_t>(index), s.m_num_points - 1);
-        m_x[i] = catmull_rom_wrap(s.m_x, s.m_num_points, index);
-        m_y[i] = catmull_rom_wrap(s.m_y, s.m_num_points, index);
+        for (size_t c = 0; c < m_num_channels; ++c) {
+            channel(c)[i] = catmull_rom_wrap(s.m_channels[c], s.m_num_points, index);
+        }
         m_gate[i] = s.m_gate != nullptr ? s.m_gate[g] : 1;
     }
 }
 
-void MotionTakeRecorder::write(size_t index, float x, float y, uint8_t gate)
-    TANH_NONBLOCKING_FUNCTION {
-    m_x[index] = x;
-    m_y[index] = y;
+void MotionTakeRecorder::write(size_t index,
+                               const MotionValues& values,
+                               uint8_t gate) TANH_NONBLOCKING_FUNCTION {
+    for (size_t c = 0; c < m_num_channels; ++c) { channel(c)[index] = values[c]; }
     m_gate[index] = gate;
-    m_last_x = x;
-    m_last_y = y;
+    m_last = values;
 }
 
-MotionTakeRecorder::Event MotionTakeRecorder::step(bool live, float x, float y, double slope)
-    TANH_NONBLOCKING_FUNCTION {
+MotionTakeRecorder::Event MotionTakeRecorder::step(bool live,
+                                                   const MotionValues& values,
+                                                   double slope) TANH_NONBLOCKING_FUNCTION {
     if (!m_active) { return Event::None; }
     Event event = Event::None;
 
@@ -176,7 +183,7 @@ MotionTakeRecorder::Event MotionTakeRecorder::step(bool live, float x, float y, 
         }
         const double next = m_tick_base + (static_cast<double>(m_count) * m_tick_step);
         if (m_clock >= next - k_tick_eps) {
-            write(m_count++, x, y, 1);
+            write(m_count++, values, 1);
             if (m_count >= m_target) {
                 if (m_count >= m_capacity) {
                     event = finish_free();
@@ -192,11 +199,11 @@ MotionTakeRecorder::Event MotionTakeRecorder::step(bool live, float x, float y, 
     const double next = m_tick_base + (static_cast<double>(m_count) * m_tick_step);
     if (m_clock >= next - k_tick_eps) {
         if (live) {
-            write(m_count, x, y, 1);
+            write(m_count, values, 1);
             m_touched = true;
             m_seam = (m_count + 1) % m_capacity;
         } else if (!m_full) {
-            write(m_count, m_last_x, m_last_y, 0);
+            write(m_count, m_last, 0);
         }
         if (++m_count >= m_capacity) {  // the loop line: the next pass writes over this one
             m_count = 0;
@@ -213,7 +220,7 @@ MotionTakeRecorder::Event MotionTakeRecorder::step(bool live, float x, float y, 
 // A BarsN take as a whole loop: the rest of a first pass is lifted at the last position.
 MotionTakeRecorder::Event MotionTakeRecorder::complete_loop(Event event) TANH_NONBLOCKING_FUNCTION {
     if (!m_full) {
-        for (size_t i = m_count; i < m_capacity; ++i) { write(i, m_last_x, m_last_y, 0); }
+        for (size_t i = m_count; i < m_capacity; ++i) { write(i, m_last, 0); }
         m_full = true;
     }
     fill_gaps();
@@ -225,8 +232,7 @@ MotionTakeRecorder::Event MotionTakeRecorder::complete_loop(Event event) TANH_NO
 // before it to the drawn point after it, around the loop line. Bounded: one pass over the loop.
 void MotionTakeRecorder::fill_gaps() TANH_NONBLOCKING_FUNCTION {
     const size_t n = m_capacity;
-    std::copy_n(m_x.begin(), n, m_out_x.begin());
-    std::copy_n(m_y.begin(), n, m_out_y.begin());
+    for (size_t c = 0; c < m_num_channels; ++c) { std::copy_n(channel(c), n, out_channel(c)); }
     std::copy_n(m_gate.begin(), n, m_out_gate.begin());
     size_t first = 0;
     while (first < n && m_gate[first] == 0) { ++first; }
@@ -240,8 +246,10 @@ void MotionTakeRecorder::fill_gaps() TANH_NONBLOCKING_FUNCTION {
         for (size_t j = 1; j < gap; ++j) {
             const size_t at = (last + j) % n;
             const float w = static_cast<float>(j) / static_cast<float>(gap);
-            m_out_x[at] = m_x[last] + ((m_x[i] - m_x[last]) * w);
-            m_out_y[at] = m_y[last] + ((m_y[i] - m_y[last]) * w);
+            for (size_t c = 0; c < m_num_channels; ++c) {
+                const float* v = channel(c);
+                out_channel(c)[at] = v[last] + ((v[i] - v[last]) * w);
+            }
             m_out_gate[at] = 1;
         }
         last = i;
@@ -255,8 +263,12 @@ MotionTakeRecorder::Event MotionTakeRecorder::finish_free() TANH_NONBLOCKING_FUN
     size_t n = m_count;
     if (n < k_motion_min_points) { return Event::Dropped; }
     auto distance = [&](size_t i, size_t j) {
-        return std::abs(static_cast<double>(m_x[i]) - m_x[j]) +
-               std::abs(static_cast<double>(m_y[i]) - m_y[j]);
+        double d = 0.0;
+        for (size_t c = 0; c < m_num_channels; ++c) {
+            const float* v = channel(c);
+            d += std::abs(static_cast<double>(v[i]) - v[j]);
+        }
+        return d;
     };
     size_t first = 0;
     while (first < n && distance(first, 0) <= k_still_distance) { ++first; }
@@ -268,8 +280,9 @@ MotionTakeRecorder::Event MotionTakeRecorder::finish_free() TANH_NONBLOCKING_FUN
         if (begin > 0) {
             const auto from = static_cast<std::ptrdiff_t>(begin);
             const auto to = static_cast<std::ptrdiff_t>(end);
-            std::copy(m_x.begin() + from, m_x.begin() + to, m_x.begin());
-            std::copy(m_y.begin() + from, m_y.begin() + to, m_y.begin());
+            for (size_t c = 0; c < m_num_channels; ++c) {
+                std::copy(channel(c) + from, channel(c) + to, channel(c));
+            }
             std::copy(m_gate.begin() + from, m_gate.begin() + to, m_gate.begin());
         }
         m_line += static_cast<double>(begin) * m_tick_step;

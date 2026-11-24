@@ -46,7 +46,10 @@ enum class StoppedTransport : uint8_t {
 };
 
 /**
- * @brief Records an XY gesture and loops it back, synced to the transport.
+ * @brief Records a gesture of one or more channels and loops it back, synced to the transport.
+ *
+ * A channel is one value in [0, 1] (MotionRecorderConfig::m_num_channels): one for a slider,
+ * two (x, y) for an XY pad.
  *
  * Arm, touch, and the gesture is recorded on the audio thread into a preallocated take
  * (detail::MotionTakeRecorder). Every take is a Beats loop of bars:
@@ -65,7 +68,7 @@ enum class StoppedTransport : uint8_t {
  * (set_smoothing()) and moved by the application's transform (set_transform()); a live touch
  * always overrides it, and the output glides back on release (detail::MotionCompositor).
  *
- * Its owner (an XY controller: one recorder per dot, fed by its touch input) calls process()
+ * Its owner (a control: one recorder per slider or per XY dot, fed by its input) calls process()
  * on the audio thread and gives the UI and message thread access to the rest.
  *
  * Threading:
@@ -114,7 +117,7 @@ public:
     [[nodiscard]] bool disarm();
     /// Enable playback (the default).
     [[nodiscard]] bool play();
-    /// Disable playback (gate 0, x and y hold). Ends a running take like disarm().
+    /// Disable playback (gate 0, the values hold). Ends a running take like disarm().
     [[nodiscard]] bool stop();
     /// Mirror the playback phase (Beats lanes glide to phase = length - phase).
     [[nodiscard]] bool set_reverse(bool reverse);
@@ -139,9 +142,12 @@ public:
                  const MotionInput& input,
                  uint32_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
-    /// Composed x of the last block: live touch over playback, with glides.
-    [[nodiscard]] const float* out_x() const TANH_NONBLOCKING_FUNCTION { return m_output.x(); }
-    [[nodiscard]] const float* out_y() const TANH_NONBLOCKING_FUNCTION { return m_output.y(); }
+    [[nodiscard]] uint32_t num_channels() const { return m_config.m_num_channels; }
+    /// Composed values of @p channel (< num_channels()) in the last block: live touch over
+    /// playback, with glides.
+    [[nodiscard]] const float* out(uint32_t channel) const TANH_NONBLOCKING_FUNCTION {
+        return m_output.values(channel);
+    }
     /// 1 while touched or while the playing lane's gate is open.
     [[nodiscard]] const uint8_t* out_gate() const TANH_NONBLOCKING_FUNCTION {
         return m_output.gate();
@@ -150,7 +156,7 @@ public:
     [[nodiscard]] const uint8_t* out_live() const TANH_NONBLOCKING_FUNCTION {
         return m_output.live();
     }
-    /// Sorted, unique offsets where the output changed. Shared by x, y and gate.
+    /// Sorted, unique offsets where the output changed. Shared by every channel and the gate.
     [[nodiscard]] std::span<const uint32_t> change_points() const TANH_NONBLOCKING_FUNCTION {
         return m_output.change_points();
     }
@@ -172,11 +178,12 @@ public:
     bool service();
 
     /// Replace the lane (preset load). Clamps the points, resamples down to the capacity and
-    /// returns the new take id, or 0 if @p lane is malformed.
+    /// returns the new take id, or 0 if @p lane is malformed or has points and another number
+    /// of channels.
     uint32_t load_lane(MotionLane lane) {
         return m_store.load(std::move(lane), m_config.m_max_points);
     }
-    /// Publish an empty lane: playback stops (gate 0, x and y hold). A running take ends with
+    /// Publish an empty lane: playback stops (gate 0, the values hold). A running take ends with
     /// it, keeping nothing, and arming is cancelled. Returns the new id.
     uint32_t clear();
 
@@ -194,7 +201,7 @@ public:
      * @brief Playback smoothing, 0 to 1; the published lane stays raw.
      *
      * What plays spreads the jump at the loop seam over a window that grows from 150 ms
-     * (0.3 beat) at 0 to the whole loop at 1, then smooths x and y with a zero-phase Gaussian
+     * (0.3 beat) at 0 to the whole loop at 1, then smooths every channel with a zero-phase Gaussian
      * of sigma = amount^2 * half a beat (250 ms for Seconds lanes). The gate is not smoothed.
      * Playback glides to the result.
      */
@@ -223,7 +230,7 @@ public:
 
     /// Copy of the published lane (raw, with the recorded seam; allocates).
     [[nodiscard]] MotionLane lane() const { return m_store.lane(); }
-    /// Copy of the published lane with the x and y that play: seam closed and smoothed
+    /// Copy of the published lane with the channels that play: seam closed and smoothed
     /// (allocates).
     [[nodiscard]] MotionLane played_lane() const { return m_store.played_lane(); }
     /// What plays over one loop: played_lane() moved by the transform, sampled at
@@ -248,8 +255,7 @@ private:
     void apply_commands() TANH_NONBLOCKING_FUNCTION;
     void start_take(const dsp::transport::TransportInfo& transport,
                     double beat,
-                    float x,
-                    float y,
+                    const MotionValues& values,
                     const detail::MotionLaneSource& playing) TANH_NONBLOCKING_FUNCTION;
     void on_take(TakeEvent event) TANH_NONBLOCKING_FUNCTION;
     void submit_finished() TANH_NONBLOCKING_FUNCTION;

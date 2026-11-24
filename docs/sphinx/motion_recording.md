@@ -1,9 +1,11 @@
 # Motion recording
 
-`thl::modulation::MotionRecorder` records an XY gesture (x, y and the touch
-gate) on the audio thread and loops it back, synced to the transport. A live
-touch always overrides playback, and the output glides back to the running
-loop on release.
+`thl::modulation::MotionRecorder` records a gesture on the audio thread and
+loops it back, synced to the transport. A gesture is one or more channels, each
+a value in [0, 1] (`MotionRecorderConfig::m_num_channels`, up to
+`k_motion_max_channels` = 8: one for a slider, two for an XY pad), and the touch
+gate. A live touch always overrides playback, and the output glides back to the
+running loop on release.
 
 - **Takes** are Beats loops of whole bars. *Free* records one gesture, from the
   touch to the release, and stretches it onto the nearest of 1, 2, 4, 8 or 16
@@ -18,8 +20,8 @@ loop on release.
   with it. With `LoopEnd::Smooth` (default) the copy spreads the seam step
   (beyond the expected velocity) over a raised-cosine window from 0.3 beat
   (150 ms for Seconds lanes) at amount 0 to the whole loop at 1, so a take that
-  did not quite end where it started still loops without a jump. Then x and y
-  run through a circular, zero-phase Gaussian with sigma = amount² × half a
+  did not quite end where it started still loops without a jump. Then every
+  channel runs through a circular, zero-phase Gaussian with sigma = amount² × half a
   beat (250 ms for Seconds lanes; 0.2 gives 0.02 beat, 10 ms at 120 bpm),
   capped at a sixth of the loop. The gate is not smoothed. The same curve comes from
   `make_played_curve(lane, amount, loop_end)` for any lane.
@@ -35,21 +37,21 @@ loop on release.
 
 ## Wiring
 
-An XY controller owns one recorder per dot, feeds it from its touch input
-(UI touches in, per-sample x, y and gate out) and exposes the result as matrix
-sources, e.g. as a `BlockProcessor`. Once per block on the
-audio thread:
+A control (a slider, an XY dot) owns one recorder, feeds it from its touch input
+(UI touches in, per-sample channel values and gate out) and exposes the result as
+matrix sources, e.g. as a `BlockProcessor`. Once per block on the audio thread,
+here for an XY pad (`m_num_channels = 2`):
 
 ```cpp
+const std::array<const float*, 2> channels{touch_x, touch_y};  // [0, 1] per sample
 thl::modulation::MotionInput in;
-in.m_x = touch_x;                  // [0, 1], one value per sample
-in.m_y = touch_y;
+in.m_channels = channels;          // one buffer per channel
 in.m_active = touch_gate;          // 1 while touched
 in.m_change_points = touch_changes;
 in.m_num_samples = n;
 
 recorder.process(clock.block_info(), in, n);  // n <= the prepared block size
-// read recorder.out_x() / out_y() / out_gate() / out_live() / change_points()
+// read recorder.out(c) / out_gate() / out_live() / change_points()
 ```
 
 Feed it the *pre-matrix* touch input, never a modulated value, so playback
@@ -57,7 +59,7 @@ cannot feed back as a fake touch.
 
 | Output | Meaning |
 |---|---|
-| `out_x()`, `out_y()` | live touch while touched; otherwise the playing lane (with glides); otherwise the last value |
+| `out(channel)` | live touch while touched; otherwise the playing lane (with glides); otherwise the last value |
 | `out_gate()` | 1 while touched or while the lane's gate is open |
 | `out_live()` | 1 where the sample came from the live touch |
 | `change_points()` | render ticks, touch and gate edges, glide starts |
@@ -106,7 +108,7 @@ cannot feed back as a fake touch.
 - `set_playback_length(len)`: play every lane as `len`. `BarsN` stretches it onto
   exactly N bars of the current time signature from a bar line, faster or slower
   than recorded; `Free` plays the recorded length. The lane itself is unchanged.
-- `stop()` / `play()`: playback off (gate 0, x and y hold) / on (with a glide).
+- `stop()` / `play()`: playback off (gate 0, the values hold) / on (with a glide).
   `stop()` also ends a running take like `disarm()`.
 - `set_reverse(true)`: Beats lanes play the mirrored phase (they stay
   bar-locked), Seconds lanes turn around in place.
@@ -176,7 +178,9 @@ drawing reads a whole, consistent setting. `MotionTransform::info(settings)` say
 what it does:
 
 - inactive: the lane plays as it is;
-- `m_uses_lane`: `place()` moves the lane's point at each position in the loop;
+- `m_uses_lane`: `place()` moves the lane's point (its channel values, as a
+  `std::span<float>`) at each position in the loop; `unplace()` maps the touch
+  back, so a take records what plays where the finger is;
 - `m_plays_alone`: without a lane it loops over the playback length (one bar
   while Free), from the bar line;
 - `m_opens_gate`: the gate stays open while it sounds;
@@ -193,11 +197,11 @@ A touch overrides it as it does the lane. `played_path(n)` (and
 A `MotionLane` holds a take id, a timebase (Seconds or Beats), the loop length,
 an anchor (Beats: index 0 sits at beat ≡ anchor mod length), the seam (index of
 the first recorded point, not 0 for a bar take started mid-loop; written only
-when not 0) and uniform x, y and gate arrays.
+when not 0) and uniform arrays: one per channel (`m_channels`) and the gate.
 
 ```json
-{"version":1,"take_id":7,"timebase":"beats","rate":96,"length":8.0,"anchor":0.0,
- "x":[0,1200,65535],"y":[32768,40000,51234],"gate":[[0,1],[2,0]]}
+{"version":2,"take_id":7,"timebase":"beats","rate":96,"length":8.0,"anchor":0.0,
+ "channels":[[0,1200,65535],[32768,40000,51234]],"gate":[[0,1],[2,0]]}
 ```
 
 ```cpp
@@ -207,18 +211,20 @@ if (auto lane = thl::modulation::MotionLane::from_json(state["motion"])) {
 }
 ```
 
-x and y are stored as uint16, the gate as `[index, value]` edges.
-`from_json()` never throws: it rejects a wrong version, missing or non-finite
+Channel values are stored as uint16, the gate as `[index, value]` edges.
+Version 1 (an XY lane with `"x"` and `"y"`) still loads, as two channels.
+`from_json()` never throws: it rejects another version, missing or non-finite
 fields and malformed arrays. `load_lane()` resamples a lane longer than the
-capacity.
+capacity and refuses one of another channel count.
 
 ## Pitfalls
 
 - **Block size.** `process()` takes at most the prepared `samples_per_block`,
   the host's announced maximum: pass the host block as it comes.
 - **Memory.** Each recorder allocates a take buffer and two hand-over slots of
-  `MotionRecorderConfig::m_max_points` (default 32768) points at 9 bytes each
-  (x, y and gate), plus a raw seam tail of a quarter of the points per slot.
+  `MotionRecorderConfig::m_max_points` (default 32768) points at 4 bytes per
+  channel plus 1 for the gate, plus a raw seam tail of a quarter of the points per
+  slot.
   A take that does not fit at 24 points per beat is refused
   (`MotionSnapshot::m_refused`).
 - **Still ends.** A free take drops the time the finger is down but not yet or

@@ -50,9 +50,9 @@ TEST(MotionRecorderOverwrite, TakeKeepsRecordingPastItsLoopUntilDisarm) {
     EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
     EXPECT_DOUBLE_EQ(lane.m_anchor, 0.0);
     ASSERT_EQ(lane.num_points(), 400u);
-    EXPECT_EQ(lane.m_x[50], 0.6f);   // second pass, then the third up to its release
-    EXPECT_EQ(lane.m_x[150], 0.3f);  // second pass, before the move
-    EXPECT_EQ(lane.m_x[350], 0.6f);  // second pass
+    EXPECT_EQ(lane.m_channels[0][50], 0.6f);   // second pass, then the third up to its release
+    EXPECT_EQ(lane.m_channels[0][150], 0.3f);  // second pass, before the move
+    EXPECT_EQ(lane.m_channels[0][350], 0.6f);  // second pass
     for (size_t i = 0; i < lane.num_points(); ++i) { ASSERT_EQ(lane.m_gate[i], 1) << i; }
 }
 
@@ -77,11 +77,11 @@ TEST(MotionRecorderOverwrite, MidLoopStartRecordsOverTheLoopLine) {
     EXPECT_DOUBLE_EQ(lane.m_anchor, 0.0);
     ASSERT_EQ(lane.num_points(), 800u);
     EXPECT_EQ(lane.m_gate[100], 1);
-    EXPECT_EQ(lane.m_x[100], 0.8f);
-    EXPECT_EQ(lane.m_gate[300], 1);           // never touched: a glide from 0.8 (199) to 0.2 (400)
-    EXPECT_NEAR(lane.m_x[300], 0.5f, 3e-3f);  // halfway, within a point
+    EXPECT_EQ(lane.m_channels[0][100], 0.8f);
+    EXPECT_EQ(lane.m_gate[300], 1);  // never touched: a glide from 0.8 (199) to 0.2 (400)
+    EXPECT_NEAR(lane.m_channels[0][300], 0.5f, 3e-3f);  // halfway, within a point
     EXPECT_EQ(lane.m_gate[500], 1);
-    EXPECT_EQ(lane.m_x[500], 0.2f);
+    EXPECT_EQ(lane.m_channels[0][500], 0.2f);
 }
 
 // A new take starts from nothing: the lane that played stops when it starts, and what the finger
@@ -106,14 +106,14 @@ TEST(MotionRecorderOverwrite, NewTakeStartsEmpty) {
     ASSERT_TRUE(r.m_rec.service());
     const MotionLane lane = r.m_rec.lane();
     ASSERT_EQ(lane.num_points(), 800u);
-    EXPECT_EQ(lane.m_x[250], 0.9f);
+    EXPECT_EQ(lane.m_channels[0][250], 0.9f);
     EXPECT_EQ(lane.m_gate[250], 1);
     EXPECT_EQ(lane.m_gate[500], 1);
-    EXPECT_EQ(lane.m_x[500], 0.9f);  // a glide from the release to the start: one point
+    EXPECT_EQ(lane.m_channels[0][500], 0.9f);  // a glide from the release to the start: one point
 
     // One take, one undo step: the old lane comes back.
     ASSERT_TRUE(r.m_rec.undo());
-    EXPECT_EQ(r.m_rec.lane().m_x, motion_test::beats_lane(8.0, 100).m_x);
+    EXPECT_EQ(r.m_rec.lane().m_channels[0], motion_test::beats_lane(8.0, 100).m_channels[0]);
 }
 
 // A take that keeps nothing still deleted the lane it replaced; undo brings it back.
@@ -142,12 +142,12 @@ public:
     [[nodiscard]] thl::modulation::MotionTransformInfo info(uint64_t settings) const override {
         return {.m_active = settings != 0, .m_uses_lane = true, .m_curve = 1};
     }
-    void place(uint64_t /*settings*/, double /*u*/, float& x, float& /*y*/) const override {
-        x = std::min(1.0f, x + 0.1f);
+    void place(uint64_t /*settings*/, double /*u*/, std::span<float> v) const override {
+        v[0] = std::min(1.0f, v[0] + 0.1f);
     }
-    bool unplace(uint64_t settings, float& x, float& /*y*/) const override {
+    bool unplace(uint64_t settings, std::span<float> v) const override {
         if (settings != 2) { return false; }  // 2: records through the shift
-        x = std::max(0.0f, x - 0.1f);
+        v[0] = std::max(0.0f, v[0] - 0.1f);
         return true;
     }
 };
@@ -179,11 +179,12 @@ TEST(MotionRecorderOverwrite, LiftedLooperPlaysSmoothedAndTransformed) {
     double raw_err = 0.0;
     for (size_t i = r.m_x.size() - k_bar; i < r.m_x.size(); i += 97) {
         const double phase = std::fmod(r.m_beat[i], 4.0);
-        smoothed_err =
-            std::max(smoothed_err,
-                     std::abs(static_cast<double>(r.m_x[i]) - (played.sample(phase).m_x + 0.1)));
-        raw_err = std::max(raw_err,
-                           std::abs(static_cast<double>(r.m_x[i]) - (raw.sample(phase).m_x + 0.1)));
+        smoothed_err = std::max(
+            smoothed_err,
+            std::abs(static_cast<double>(r.m_x[i]) - (played.sample(phase).m_values[0] + 0.1)));
+        raw_err = std::max(
+            raw_err,
+            std::abs(static_cast<double>(r.m_x[i]) - (raw.sample(phase).m_values[0] + 0.1)));
     }
     EXPECT_LT(smoothed_err, 2e-3);
     EXPECT_GT(raw_err, 0.1);
@@ -193,7 +194,7 @@ TEST(MotionRecorderOverwrite, LiftedLooperPlaysSmoothedAndTransformed) {
     EXPECT_EQ(r.m_rec.transform_version(), 2u);
     r.run_until(r.now() + k_bar);
     const size_t last = r.m_x.size() - 1;
-    EXPECT_NEAR(r.m_x[last], played.sample(std::fmod(r.m_beat[last], 4.0)).m_x, 2e-3);
+    EXPECT_NEAR(r.m_x[last], played.sample(std::fmod(r.m_beat[last], 4.0)).m_values[0], 2e-3);
 }
 
 // Clearing a looper that still records ends it with nothing kept: recording again starts from an
@@ -226,7 +227,7 @@ TEST(MotionRecorderOverwrite, ClearEndsARunningLooper) {
     r.step();
     ASSERT_TRUE(r.m_rec.service());
     const MotionLane lane = r.m_rec.lane();
-    for (size_t i = 0; i < lane.num_points(); ++i) { ASSERT_NE(lane.m_x[i], 0.2f) << i; }
+    for (size_t i = 0; i < lane.num_points(); ++i) { ASSERT_NE(lane.m_channels[0][i], 0.2f) << i; }
     r.run_until(r.now() + k_bar);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     EXPECT_GT(r.m_rec.snapshot().m_take_id, 0u);
@@ -264,7 +265,7 @@ TEST(MotionRecorderOverwrite, TakeRecordsThroughTheTransform) {
     r.m_pad.release(1);
     r.step();
     ASSERT_TRUE(r.m_rec.service());
-    EXPECT_NEAR(r.m_rec.lane().m_x[200], 0.5f, 1e-6);  // recorded under the shift
+    EXPECT_NEAR(r.m_rec.lane().m_channels[0][200], 0.5f, 1e-6);  // recorded under the shift
     r.run_until(r.now() + k_bar);
     EXPECT_NEAR(r.m_x.back(), 0.6f, 1e-5);  // plays where the finger was
 }

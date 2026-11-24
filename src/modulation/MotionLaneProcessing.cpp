@@ -74,7 +74,7 @@ PlayedCurve make_played_curve(const MotionLane& lane, float smoothing, LoopEnd l
     const bool jump = loop_end == LoopEnd::Jump;
     const size_t n = lane.num_points();
     const size_t seam = lane.m_seam < n ? lane.m_seam : 0;
-    PlayedCurve curve{.m_x = lane.m_x, .m_y = lane.m_y, .m_smoothed = amount > 0.0 || jump};
+    PlayedCurve curve{.m_channels = lane.m_channels, .m_smoothed = amount > 0.0 || jump};
     if (n < detail::k_motion_min_points || !(lane.m_length > 0.0)) { return curve; }
 
     if (!jump) {
@@ -83,8 +83,8 @@ PlayedCurve make_played_curve(const MotionLane& lane, float smoothing, LoopEnd l
         const size_t base = detail::motion_seam_window(n, lane.m_length, lane.m_timebase);
         const size_t window =
             base + static_cast<size_t>(std::round(amount * static_cast<double>(n - base)));
-        for (auto* p : {&curve.m_x, &curve.m_y}) {
-            auto at = [&](size_t i) -> float& { return (*p)[(seam + i) % n]; };
+        for (auto& channel : curve.m_channels) {
+            auto at = [&](size_t i) -> float& { return channel[(seam + i) % n]; };
             detail::motion_spread_seam(at, n, window, detail::motion_seam_error(at, n));
         }
     }
@@ -94,8 +94,9 @@ PlayedCurve make_played_curve(const MotionLane& lane, float smoothing, LoopEnd l
     const double sigma = std::min(max_sigma * amount * amount * points_per_unit,
                                   k_max_sigma_fraction * static_cast<double>(n));
     if (sigma >= k_min_smoothing_points) {
-        curve.m_x = smooth_gaussian(curve.m_x, sigma, seam, !jump);
-        curve.m_y = smooth_gaussian(curve.m_y, sigma, seam, !jump);
+        for (auto& channel : curve.m_channels) {
+            channel = smooth_gaussian(channel, sigma, seam, !jump);
+        }
     }
     return curve;
 }

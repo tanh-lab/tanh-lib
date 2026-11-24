@@ -62,7 +62,7 @@ block in pieces that start where its modulated parameters change.
 notes that used to live in the README. :doc:`host_parameters` drives the
 matrix from a host's parameter store; :doc:`transport` covers musical time
 (``TransportInfo``, host/internal/Link clocks) and Ableton Link;
-:doc:`motion_recording` records and loops XY gestures. :doc:`sampler`, :doc:`slicing` and :doc:`pitch` describe the sample playback
+:doc:`motion_recording` records and loops gestures (a slider, an XY pad). :doc:`sampler`, :doc:`slicing` and :doc:`pitch` describe the sample playback
 components, :doc:`midi` the internal MIDI format.
 
 The :doc:`api/index` is generated from the public headers under

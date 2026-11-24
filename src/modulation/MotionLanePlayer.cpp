@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "MotionInterpolation.h"
 
@@ -34,9 +35,10 @@ double circular_distance(double a, double b, double length) {
 
 }  // namespace
 
-void MotionLanePlayer::prepare(double sample_rate, uint32_t render_interval) {
+void MotionLanePlayer::prepare(double sample_rate, uint32_t render_interval, size_t num_channels) {
     if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
     m_interval = std::max<uint32_t>(render_interval, 1);
+    m_num_channels = std::clamp<size_t>(num_channels, 1, k_motion_max_channels);
     m_jump_glides = 0;
     m_phase = 0.0;
     m_length = 0.0;
@@ -67,9 +69,8 @@ MotionLanePlayer::View MotionLanePlayer::view_of(const MotionLaneSource& source,
     const double bars = loop_length_bars(settings.m_length);
     View v;
     const MotionLoopView& lane = source.m_view;
-    if (!lane.empty()) {
-        v.m_x = lane.m_x;
-        v.m_y = lane.m_y;
+    if (!lane.empty() && lane.m_num_channels == m_num_channels) {
+        v.m_channels = lane.m_channels;
         v.m_gate = lane.m_gate;
         v.m_num_points = lane.m_num_points;
         v.m_timebase = lane.m_timebase;
@@ -207,22 +208,24 @@ bool MotionLanePlayer::start(uint32_t offset,
     return glide;
 }
 
-void MotionLanePlayer::evaluate(double phase, float& x, float& y) const TANH_NONBLOCKING_FUNCTION {
+void MotionLanePlayer::evaluate(double phase,
+                                MotionValues& values) const TANH_NONBLOCKING_FUNCTION {
     const double index = phase * static_cast<double>(m_view.m_num_points) / m_view.m_length;
-    if (m_view.m_x != nullptr) {
-        x = catmull_rom_wrap(m_view.m_x, m_view.m_num_points, index);
-        y = catmull_rom_wrap(m_view.m_y, m_view.m_num_points, index);
-    } else {
-        x = 0.5f;
-        y = 0.5f;
+    for (size_t c = 0; c < m_num_channels; ++c) {
+        values[c] = m_view.m_channels[c] != nullptr
+                        ? catmull_rom_wrap(m_view.m_channels[c], m_view.m_num_points, index)
+                        : 0.5f;
     }
     if (m_view.m_transformed && m_transform != nullptr) {
-        m_transform->place(m_transform_settings, phase / m_view.m_length, x, y);
+        m_transform->place(m_transform_settings,
+                           phase / m_view.m_length,
+                           std::span<float>(values.data(), m_num_channels));
     }
 }
 
-bool MotionLanePlayer::render(uint32_t i, float& x, float& y, uint8_t& gate)
-    TANH_NONBLOCKING_FUNCTION {
+bool MotionLanePlayer::render(uint32_t i,
+                              MotionValues& values,
+                              uint8_t& gate) TANH_NONBLOCKING_FUNCTION {
     const double length = m_view.m_length;
     const auto k = static_cast<double>(i - m_segment_start);
     double p = m_segment_phase + (k * m_step);
@@ -240,20 +243,20 @@ bool MotionLanePlayer::render(uint32_t i, float& x, float& y, uint8_t& gate)
     bool tick = false;
     if (m_ramp_restart || m_ramp_position >= m_interval) {
         if (m_ramp_restart) {
-            evaluate(p, m_ramp_to_x, m_ramp_to_y);
+            evaluate(p, m_ramp_to);
             m_ramp_restart = false;
         }
-        m_ramp_from_x = m_ramp_to_x;
-        m_ramp_from_y = m_ramp_to_y;
+        m_ramp_from = m_ramp_to;
         double ahead = m_segment_phase + ((k + m_interval) * m_step);
         if (ahead < 0.0 || ahead >= length) { ahead = wrap_phase(ahead, length); }
-        evaluate(ahead, m_ramp_to_x, m_ramp_to_y);
+        evaluate(ahead, m_ramp_to);
         m_ramp_position = 0;
         tick = true;
     }
     const float w = static_cast<float>(m_ramp_position) / static_cast<float>(m_interval);
-    x = m_ramp_from_x + ((m_ramp_to_x - m_ramp_from_x) * w);
-    y = m_ramp_from_y + ((m_ramp_to_y - m_ramp_from_y) * w);
+    for (size_t c = 0; c < m_num_channels; ++c) {
+        values[c] = m_ramp_from[c] + ((m_ramp_to[c] - m_ramp_from[c]) * w);
+    }
     ++m_ramp_position;
     return tick;
 }

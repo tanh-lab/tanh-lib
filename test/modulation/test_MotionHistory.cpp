@@ -11,13 +11,14 @@ namespace {
 // One beat of a ramp from 0.2 to 0.8: a 0.6 step at the seam.
 MotionLane ramp_lane(size_t n = 200) {
     MotionLane lane;
+    lane.m_channels.resize(2);
     lane.m_timebase = MotionTimebase::Beats;
     lane.m_length = 1.0;
     lane.m_rate = static_cast<double>(n);
     for (size_t i = 0; i < n; ++i) {
         const float v = 0.2f + (0.6f * static_cast<float>(i) / static_cast<float>(n - 1));
-        lane.m_x.push_back(v);
-        lane.m_y.push_back(1.0f - v);
+        lane.m_channels[0].push_back(v);
+        lane.m_channels[1].push_back(1.0f - v);
         lane.m_gate.push_back(1);
     }
     return lane;

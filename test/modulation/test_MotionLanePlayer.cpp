@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 using thl::modulation::LoopLength;
@@ -45,8 +46,8 @@ struct Loop {
         }
         m_source.m_id = id;
         m_source.m_version = 1;
-        m_source.m_view = {.m_x = m_x.data(),
-                           .m_y = m_y.data(),
+        m_source.m_view = {.m_channels = {m_x.data(), m_y.data()},
+                           .m_num_channels = 2,
                            .m_gate = m_gate.data(),
                            .m_num_points = n,
                            .m_timebase = timebase,
@@ -70,7 +71,7 @@ struct Player {
     std::vector<double> m_beats;
     std::vector<size_t> m_ticks;
 
-    Player() { m_player->prepare(k_sr, 32); }
+    Player() { m_player->prepare(k_sr, 32, 2); }
 
     /// One block; true if it asked for a glide.
     bool block(const MotionLaneSource& source,
@@ -87,14 +88,12 @@ struct Player {
         clock.m_timeline_reset = reset;
         const bool glide = m_player->begin(clock, source, settings);
         for (uint32_t i = 0; i < k_block; ++i) {
-            float x = -1.0f;
-            float y = -1.0f;
+            thl::modulation::MotionValues v{};
+            v.fill(-1.0f);
             uint8_t g = 0;
-            if (m_player->playing() && m_player->render(i, x, y, g)) {
-                m_ticks.push_back(m_x.size());
-            }
-            m_x.push_back(x);
-            m_y.push_back(y);
+            if (m_player->playing() && m_player->render(i, v, g)) { m_ticks.push_back(m_x.size()); }
+            m_x.push_back(v[0]);
+            m_y.push_back(v[1]);
             m_gate.push_back(g);
             m_beats.push_back(clock.beat_at(i));
         }
@@ -118,13 +117,13 @@ public:
                 .m_opens_gate = settings >= 2,
                 .m_curve = static_cast<uint32_t>(settings)};
     }
-    void place(uint64_t settings, double u, float& x, float& y) const override {
+    void place(uint64_t settings, double u, std::span<float> v) const override {
         if (settings == 1) {
-            x += 0.1f;
+            v[0] += 0.1f;
             return;
         }
-        x = static_cast<float>(0.5 + (0.3 * std::sin(k_tau * u)));
-        y = static_cast<float>(0.5 + (0.3 * std::cos(k_tau * u)));
+        v[0] = static_cast<float>(0.5 + (0.3 * std::sin(k_tau * u)));
+        v[1] = static_cast<float>(0.5 + (0.3 * std::cos(k_tau * u)));
     }
 };
 

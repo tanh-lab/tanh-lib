@@ -9,6 +9,8 @@
 #include <tanh/modulation/detail/MotionTakeRecorder.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
@@ -38,7 +40,7 @@ struct MotionPlaySettings {
  */
 class TANH_API MotionLanePlayer {
 public:
-    void prepare(double sample_rate, uint32_t render_interval);
+    void prepare(double sample_rate, uint32_t render_interval, size_t num_channels);
     /// The next block re-locks to its beat, without a glide.
     void reset() TANH_NONBLOCKING_FUNCTION;
     /// The next block re-locks to its beat and glides (playback enabled again).
@@ -57,7 +59,7 @@ public:
     [[nodiscard]] bool playing() const { return !m_view.empty(); }
     /// The played point at offset @p i (in order, every sample of the block); true at a render
     /// tick (a change point of the output).
-    bool render(uint32_t i, float& x, float& y, uint8_t& gate) TANH_NONBLOCKING_FUNCTION;
+    bool render(uint32_t i, MotionValues& values, uint8_t& gate) TANH_NONBLOCKING_FUNCTION;
     /// End the block of @p num_samples.
     void end(uint32_t num_samples) TANH_NONBLOCKING_FUNCTION;
 
@@ -74,8 +76,7 @@ public:
 private:
     // What plays in a block: the lane's points (maybe stretched) and the transform over them.
     struct View {
-        const float* m_x = nullptr;
-        const float* m_y = nullptr;
+        std::array<const float*, k_motion_max_channels> m_channels{};  // null: no lane
         const uint8_t* m_gate = nullptr;
         size_t m_num_points = 0;
         MotionTimebase m_timebase = MotionTimebase::Seconds;
@@ -93,10 +94,11 @@ private:
     [[nodiscard]] bool start(uint32_t offset,
                              const MotionLaneSource& source,
                              const MotionPlaySettings& settings) TANH_NONBLOCKING_FUNCTION;
-    void evaluate(double phase, float& x, float& y) const TANH_NONBLOCKING_FUNCTION;
+    void evaluate(double phase, MotionValues& values) const TANH_NONBLOCKING_FUNCTION;
 
     double m_sample_rate = 48000.0;
     uint32_t m_interval = 32;
+    size_t m_num_channels = 1;
     View m_view;
     const MotionTransform* m_transform = nullptr;
     uint64_t m_transform_settings = 0;
@@ -113,10 +115,8 @@ private:
     uint32_t m_playing_id = 0;
     uint32_t m_version = 0;
     uint32_t m_curve = 0;
-    float m_ramp_from_x = 0.0f;
-    float m_ramp_from_y = 0.0f;
-    float m_ramp_to_x = 0.0f;
-    float m_ramp_to_y = 0.0f;
+    MotionValues m_ramp_from{};
+    MotionValues m_ramp_to{};
     MotionTimebase m_timebase = MotionTimebase::Seconds;
     LoopLength m_play_length = LoopLength::free();
     bool m_reverse = false;

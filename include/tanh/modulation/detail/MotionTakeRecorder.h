@@ -6,6 +6,7 @@
 #include <tanh/modulation/MotionTypes.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -14,15 +15,18 @@ namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
 /// A loop of points as it plays: what a take holds, or what a take starts from.
 struct MotionLoopView {
-    const float* m_x = nullptr;
-    const float* m_y = nullptr;
+    /// The first m_num_channels hold m_num_points values each.
+    std::array<const float*, k_motion_max_channels> m_channels{};
+    size_t m_num_channels = 0;
     const uint8_t* m_gate = nullptr;  ///< null: every point down
     size_t m_num_points = 0;
     MotionTimebase m_timebase = MotionTimebase::Beats;
     double m_length = 0.0;  ///< seconds or beats
     double m_anchor = 0.0;  ///< Beats: beat of point 0 (mod m_length)
     size_t m_seam = 0;      ///< index of the oldest point: the step closes before it
-    [[nodiscard]] bool empty() const { return m_num_points == 0 || !(m_length > 0.0); }
+    [[nodiscard]] bool empty() const {
+        return m_num_points == 0 || m_num_channels == 0 || !(m_length > 0.0);
+    }
 };
 
 /// Where and how a take starts.
@@ -32,8 +36,8 @@ struct MotionTakeStart {
     int m_sig_num = 4;
     int m_sig_denom = 4;
     double m_beat = 0.0;  ///< the recording clock's beat at the start sample
-    float m_x = 0.5f;     ///< where the output is: a lifted point holds it until the touch
-    float m_y = 0.5f;
+    /// Where the output is: a lifted point holds it until the touch.
+    MotionValues m_values{};
     /// bars(): what plays; the loop starts as it (a Beats loop; anything else is ignored).
     MotionLoopView m_seed;
 };
@@ -80,10 +84,11 @@ public:
     [[nodiscard]] size_t buffer_bytes() const;
 
     [[nodiscard]] Start start(const MotionTakeStart& start) TANH_NONBLOCKING_FUNCTION;
-    /// One sample: a finger is down (@p live) at (@p x, @p y); the recording clock then
+    /// One sample: a finger is down (@p live) at @p values; the recording clock then
     /// advances by @p beats_per_sample.
-    [[nodiscard]] Event step(bool live, float x, float y, double beats_per_sample)
-        TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] Event step(bool live,
+                             const MotionValues& values,
+                             double beats_per_sample) TANH_NONBLOCKING_FUNCTION;
     /// disarm() / stop(): a touched take ends where it is (Finished), or is Dropped or Cancelled.
     [[nodiscard]] Event end() TANH_NONBLOCKING_FUNCTION;
     /// Forget the take (prepare() during a take).
@@ -98,17 +103,19 @@ public:
 private:
     [[nodiscard]] Event finish_free() TANH_NONBLOCKING_FUNCTION;
     [[nodiscard]] Event complete_loop(Event event) TANH_NONBLOCKING_FUNCTION;
-    void write(size_t index, float x, float y, uint8_t gate) TANH_NONBLOCKING_FUNCTION;
+    void write(size_t index, const MotionValues& values, uint8_t gate) TANH_NONBLOCKING_FUNCTION;
+    [[nodiscard]] float* channel(size_t c) { return m_values.data() + (c * m_config.m_max_points); }
+    [[nodiscard]] float* out_channel(size_t c) {
+        return m_out_values.data() + (c * m_config.m_max_points);
+    }
     void seed(const MotionLoopView& seed) TANH_NONBLOCKING_FUNCTION;
     void fill_gaps() TANH_NONBLOCKING_FUNCTION;
 
     MotionRecorderConfig m_config;
-    std::vector<float> m_x;
-    std::vector<float> m_y;
+    std::vector<float> m_values;  // channel c at c * m_max_points
     std::vector<uint8_t> m_gate;
     // BarsN: the loop as handed over, the lifted stretches filled (fill_gaps()).
-    std::vector<float> m_out_x;
-    std::vector<float> m_out_y;
+    std::vector<float> m_out_values;
     std::vector<uint8_t> m_out_gate;
     // The running take.
     double m_clock = 0.0;      // recording clock, beats
@@ -125,8 +132,8 @@ private:
     size_t m_capacity = 0;  // BarsN: points per loop; Free: 16 bars
     size_t m_target = 0;    // Free: progress target
     size_t m_count = 0;     // Free: points written; BarsN: ticks into this pass
-    float m_last_x = 0.0f;
-    float m_last_y = 0.0f;
+    size_t m_num_channels = 1;
+    MotionValues m_last{};
     bool m_active = false;
     bool m_bars = false;
     bool m_touched = false;

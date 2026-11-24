@@ -22,6 +22,21 @@ using thl::dsp::transport::TransportInfo;
 
 constexpr double k_sr = 48000.0;
 
+/// A recorder config of two channels (x, y), as the tests drive it with a TouchInput.
+inline thl::modulation::MotionRecorderConfig xy_config(
+    thl::modulation::MotionRecorderConfig cfg = {}) {
+    cfg.m_num_channels = 2;
+    return cfg;
+}
+
+/// Values of a two-channel point.
+inline thl::modulation::MotionValues xy(float x, float y) {
+    thl::modulation::MotionValues v{};
+    v[0] = x;
+    v[1] = y;
+    return v;
+}
+
 /// A simulated host drives a HostTransportClock, whose per-block TransportInfo
 /// (with real discontinuity flags) drives the touch input and the recorder in the
 /// order an XY controller would: the input drains its touches, then the recorder renders.
@@ -33,7 +48,7 @@ struct Rig {
         : m_block(block), m_host(k_sr, bpm) {
         m_clock.prepare(k_sr);
         m_pad.prepare(4096);
-        m_rec.prepare(k_sr, 4096, cfg);
+        m_rec.prepare(k_sr, 4096, xy_config(cfg));
     }
 
     void play_at(uint64_t sample) { m_host.add({sample, sim::Event::Kind::Play}); }
@@ -74,8 +89,8 @@ struct Rig {
         m_pad.process_block(n);
         m_rec.process(info, m_pad.output(), n);
         for (uint32_t i = 0; i < n; ++i) {
-            m_x.push_back(m_rec.out_x()[i]);
-            m_y.push_back(m_rec.out_y()[i]);
+            m_x.push_back(m_rec.out(0)[i]);
+            m_y.push_back(m_rec.out(1)[i]);
             m_gate.push_back(m_rec.out_gate()[i]);
             m_beat.push_back(info.beat_at(i));
         }
@@ -161,8 +176,9 @@ inline thl::modulation::MotionLane beats_lane(double beats, uint32_t tpb, double
     for (size_t i = 0; i < n; ++i) {
         const double ph =
             2.0 * 3.14159265358979323846 * static_cast<double>(i) / static_cast<double>(n);
-        lane.m_x.push_back(static_cast<float>(0.5 + (0.4 * std::sin(ph))));
-        lane.m_y.push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
+        lane.m_channels.resize(2);
+        lane.m_channels[0].push_back(static_cast<float>(0.5 + (0.4 * std::sin(ph))));
+        lane.m_channels[1].push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
         lane.m_gate.push_back(1);
     }
     return lane;

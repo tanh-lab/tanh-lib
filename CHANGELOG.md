@@ -9,7 +9,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
-- `thl::modulation::MotionRecorder` and `MotionLane`: record an XY gesture on the
+- `thl::modulation::MotionRecorder` and `MotionLane`: record a gesture of one or more
+  channels (`MotionRecorderConfig::m_num_channels`, up to 8: a slider, an XY pad) on the
   audio thread into preallocated memory and loop it back synced to the transport,
   with touch override and a glide back. Every take is a Beats loop of whole bars:
   `Free` records one gesture from the touch to the release, drops its still ends and
@@ -28,14 +29,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that played. The published lane stays raw, seam included (`MotionLane::m_seam`,
   JSON `seam`); what plays (`played_lane()`, also `make_played_curve()` for any lane)
   closes the seam over 0.3 beat (150 ms), widening to the whole loop as
-  `set_smoothing()` goes to 1, then runs x and y through a zero-phase Gaussian of
+  `set_smoothing()` goes to 1, then runs every channel through a zero-phase Gaussian of
   sigma = amount² × half a beat (250 ms for Seconds lanes).
   `set_loop_end(LoopEnd::Jump)` keeps the end-to-start step as a hard edge and smooths
-  without crossing it. Trail points carry the take's loop position
-  (`XYPathPoint::m_position`) and the finger (`m_live`), so a UI can draw a looper as
-  it is overwritten. Tests: `MotionTakeRecorder.*`, `MotionLaneStore.*`,
+  without crossing it. Tests: `MotionTakeRecorder.*`, `MotionLaneStore.*`,
   `MotionLanePlayer.*`, `MotionCompositor.*`, `MotionLane.*`, `MotionRecorder*.*`,
-  `MotionLaneProcessing.*`. Docs: `motion_recording.md`.
+  `MotionLaneProcessing.*`. Lanes save as JSON version 2 (`channels`); version 1 (`x`,
+  `y`) loads as two channels. Docs: `motion_recording.md`.
 - `thl::modulation::MotionTransform`: the application's path over playback (shapes,
   scaling, rotation), stateless, with its setting as one 64-bit word
   (`MotionRecorder::set_transform()`, `set_transform_settings()`,

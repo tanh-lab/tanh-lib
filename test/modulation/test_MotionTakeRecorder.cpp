@@ -22,12 +22,22 @@ namespace {
 constexpr double k_slope = 1.0 / 24000.0;
 constexpr uint32_t k_beat = 24000;
 
+thl::modulation::MotionValues xy(float x, float y) {
+    thl::modulation::MotionValues v{};
+    v[0] = x;
+    v[1] = y;
+    return v;
+}
+
 struct Rec {
     std::unique_ptr<MotionTakeRecorder> m_rec = std::make_unique<MotionTakeRecorder>();
     double m_beat = 0.0;
     std::vector<Event> m_events;
 
-    explicit Rec(const MotionRecorderConfig& config = {}) { m_rec->prepare(config); }
+    explicit Rec(MotionRecorderConfig config = {}) {
+        config.m_num_channels = 2;
+        m_rec->prepare(config);
+    }
 
     MotionTakeRecorder::Start start(LoopLength length,
                                     double beat,
@@ -40,8 +50,7 @@ struct Rec {
                              .m_sig_num = 4,
                              .m_sig_denom = 4,
                              .m_beat = beat,
-                             .m_x = x,
-                             .m_y = y,
+                             .m_values = xy(x, y),
                              .m_seed = seed});
     }
 
@@ -50,7 +59,7 @@ struct Rec {
     Event run(uint32_t samples, bool live, float x = 0.5f, float y = 0.5f) {
         Event last = Event::None;
         for (uint32_t i = 0; i < samples; ++i) {
-            const Event e = m_rec->step(live, x, y, k_slope);
+            const Event e = m_rec->step(live, xy(x, y), k_slope);
             m_beat += k_slope;
             if (e != Event::None) {
                 last = e;
@@ -77,8 +86,8 @@ struct SeedLoop {
             m_y.push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
             m_gate.push_back(1);
         }
-        m_view = {.m_x = m_x.data(),
-                  .m_y = m_y.data(),
+        m_view = {.m_channels = {m_x.data(), m_y.data()},
+                  .m_num_channels = 2,
                   .m_gate = m_gate.data(),
                   .m_num_points = n,
                   .m_timebase = MotionTimebase::Beats,
@@ -104,11 +113,11 @@ TEST(MotionTakeRecorder, BarsTakeGlidesThroughTheTimeNotDrawn) {
     EXPECT_DOUBLE_EQ(take.m_anchor, 0.0);
     ASSERT_EQ(take.m_num_points, 400u);
     for (size_t i = 0; i < 400; ++i) { ASSERT_EQ(take.m_gate[i], 1) << i; }
-    EXPECT_EQ(take.m_x[120], 0.2f);  // drawn
-    EXPECT_EQ(take.m_x[180], 0.6f);
+    EXPECT_EQ(take.m_channels[0][120], 0.2f);  // drawn
+    EXPECT_EQ(take.m_channels[0][180], 0.6f);
     // From 0.6 at point 199 around the loop line to 0.2 at point 100: 301 steps.
-    EXPECT_NEAR(take.m_x[349], 0.6f - (0.4f * 150.0f / 301.0f), 1e-5f);
-    EXPECT_NEAR(take.m_x[50], 0.6f - (0.4f * 251.0f / 301.0f), 1e-5f);
+    EXPECT_NEAR(take.m_channels[0][349], 0.6f - (0.4f * 150.0f / 301.0f), 1e-5f);
+    EXPECT_NEAR(take.m_channels[0][50], 0.6f - (0.4f * 251.0f / 301.0f), 1e-5f);
     EXPECT_EQ(take.m_seam, 200u);  // where the newest point meets the oldest
     EXPECT_TRUE(r.m_rec->active());
 }
@@ -126,14 +135,14 @@ TEST(MotionTakeRecorder, BarsTakeLoopsAndOverwritesOnlyWhereTheFingerIsDown) {
     EXPECT_EQ(r.m_rec->end(), Event::Finished);
     EXPECT_FALSE(r.m_rec->active());
     const MotionLoopView take = r.m_rec->take();
-    EXPECT_EQ(take.m_x[25], 0.8f);  // the second pass
+    EXPECT_EQ(take.m_channels[0][25], 0.8f);  // the second pass
     EXPECT_EQ(take.m_gate[25], 1);
-    EXPECT_EQ(take.m_x[150], 0.3f);  // the first pass
+    EXPECT_EQ(take.m_channels[0][150], 0.3f);  // the first pass
     EXPECT_EQ(take.m_gate[150], 1);
     // Never drawn: from 0.8 (point 49) to 0.3 (point 100), and from 0.3 (199) to 0.8 (0).
-    EXPECT_NEAR(take.m_x[75], 0.8f - (0.5f * 26.0f / 51.0f), 1e-5f);
+    EXPECT_NEAR(take.m_channels[0][75], 0.8f - (0.5f * 26.0f / 51.0f), 1e-5f);
     EXPECT_EQ(take.m_gate[75], 1);
-    EXPECT_NEAR(take.m_x[250], 0.3f + (0.5f * 51.0f / 201.0f), 1e-5f);
+    EXPECT_NEAR(take.m_channels[0][250], 0.3f + (0.5f * 51.0f / 201.0f), 1e-5f);
     EXPECT_EQ(take.m_gate[250], 1);
 }
 
@@ -148,11 +157,12 @@ TEST(MotionTakeRecorder, BarsTakeHeldOverTheLoopLineRecordsIntoTheStart) {
     ASSERT_EQ(take.m_num_points, 800u);
     EXPECT_DOUBLE_EQ(take.m_length, 8.0);
     EXPECT_DOUBLE_EQ(take.m_anchor, 0.0);
-    EXPECT_EQ(take.m_x[100], 0.6f);
+    EXPECT_EQ(take.m_channels[0][100], 0.6f);
     EXPECT_EQ(take.m_gate[100], 1);
-    EXPECT_NEAR(take.m_x[300], 0.6f - (0.4f * 101.0f / 201.0f), 1e-5f);  // never drawn: a glide
+    EXPECT_NEAR(take.m_channels[0][300], 0.6f - (0.4f * 101.0f / 201.0f), 1e-5f);  // never drawn: a
+                                                                                   // glide
     EXPECT_EQ(take.m_gate[300], 1);
-    EXPECT_EQ(take.m_x[500], 0.2f);
+    EXPECT_EQ(take.m_channels[0][500], 0.2f);
     EXPECT_EQ(take.m_gate[500], 1);
     EXPECT_EQ(take.m_seam, 200u);
 }
@@ -168,10 +178,10 @@ TEST(MotionTakeRecorder, BarsTakeStartsAsItsSeed) {
     ASSERT_EQ(take.m_num_points, 800u);
     for (size_t i = 0; i < 800; ++i) {
         if (i >= 200 && i < 300) {
-            ASSERT_EQ(take.m_x[i], 0.9f) << i;
+            ASSERT_EQ(take.m_channels[0][i], 0.9f) << i;
         } else {
-            ASSERT_NEAR(take.m_x[i], seed.m_x[i], 1e-6) << i;
-            ASSERT_NEAR(take.m_y[i], seed.m_y[i], 1e-6) << i;
+            ASSERT_NEAR(take.m_channels[0][i], seed.m_x[i], 1e-6) << i;
+            ASSERT_NEAR(take.m_channels[1][i], seed.m_y[i], 1e-6) << i;
         }
         ASSERT_EQ(take.m_gate[i], 1) << i;
     }
@@ -187,8 +197,8 @@ TEST(MotionTakeRecorder, ShorterSeedRepeatsOverTheLoop) {
     const MotionLoopView take = r.m_rec->take();
     ASSERT_EQ(take.m_num_points, 800u);
     for (size_t i = 100; i < 400; i += 38) {  // even points sit on the seed's points
-        EXPECT_NEAR(take.m_x[i], take.m_x[i + 400], 1e-6) << i;
-        EXPECT_NEAR(take.m_x[i], seed.m_x[i / 2], 1e-6) << i;
+        EXPECT_NEAR(take.m_channels[0][i], take.m_channels[0][i + 400], 1e-6) << i;
+        EXPECT_NEAR(take.m_channels[0][i], seed.m_x[i / 2], 1e-6) << i;
     }
 }
 
@@ -286,8 +296,8 @@ TEST(MotionTakeRecorder, FreeTakeWaitsForTheTouchAndEndsOnRelease) {
     EXPECT_DOUBLE_EQ(take.m_length, 4.0);  // three beats: nearest is one bar
     EXPECT_DOUBLE_EQ(take.m_anchor, 0.0);  // the bar line nearest beat 1
     EXPECT_NEAR(static_cast<double>(take.m_num_points), 300.0, 2.0);
-    EXPECT_NEAR(take.m_x[0], 0.1f, 0.01f);
-    EXPECT_NEAR(take.m_x[take.m_num_points - 1], 0.8f, 0.01f);
+    EXPECT_NEAR(take.m_channels[0][0], 0.1f, 0.01f);
+    EXPECT_NEAR(take.m_channels[0][take.m_num_points - 1], 0.8f, 0.01f);
     for (size_t i = 0; i < take.m_num_points; ++i) { ASSERT_EQ(take.m_gate[i], 1) << i; }
 }
 

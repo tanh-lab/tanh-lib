@@ -33,7 +33,7 @@ TEST(MotionRecorderThreads, Stress) {
     constexpr int k_blocks = 200000;
     MotionRecorder rec;
     motion_test::TouchInput pad;
-    rec.prepare(k_sr, k_max_block);
+    rec.prepare(k_sr, k_max_block, motion_test::xy_config());
     pad.prepare(k_max_block);
 
     std::atomic<bool> done{false};
@@ -57,8 +57,8 @@ TEST(MotionRecorderThreads, Stress) {
             pad.process_block(n);
             rec.process(t, pad.output(), n);
             for (uint32_t i = 0; i < n; ++i) {
-                const float x = rec.out_x()[i];
-                const float y = rec.out_y()[i];
+                const float x = rec.out(0)[i];
+                const float y = rec.out(1)[i];
                 if (!(x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f)) {
                     bad_samples.fetch_add(1, std::memory_order_relaxed);
                 }
@@ -163,8 +163,8 @@ TEST(MotionRecorderThreads, ConcurrentServiceKeepsTheHandoffSilent) {
     config.m_rate = 2000.0;
     MotionRecorder raced;
     MotionRecorder reference;
-    raced.prepare(k_sr, k_bs, config);
-    reference.prepare(k_sr, k_bs, config);
+    raced.prepare(k_sr, k_bs, motion_test::xy_config(config));
+    reference.prepare(k_sr, k_bs, motion_test::xy_config(config));
 
     std::atomic<int> publish_requests{0};
     std::atomic<bool> done{false};
@@ -187,8 +187,8 @@ TEST(MotionRecorderThreads, ConcurrentServiceKeepsTheHandoffSilent) {
         std::fill(x.begin(), x.end(), position);
         std::fill(active.begin(), active.end(), touched ? 1 : 0);
         const std::array<uint32_t, 1> change_points{0};
-        const MotionInput input{.m_x = x.data(),
-                                .m_y = y.data(),
+        const std::array<const float*, 2> channels{x.data(), y.data()};
+        const MotionInput input{.m_channels = channels,
                                 .m_active = active.data(),
                                 .m_change_points = change_points,
                                 .m_num_samples = k_bs};
@@ -197,7 +197,7 @@ TEST(MotionRecorderThreads, ConcurrentServiceKeepsTheHandoffSilent) {
         reference.process(t, input, k_bs);
         beat = t.beat_end();
         for (uint32_t i = 0; i < k_bs; ++i) {
-            if (raced.out_x()[i] != reference.out_x()[i] ||
+            if (raced.out(0)[i] != reference.out(0)[i] ||
                 raced.out_gate()[i] != reference.out_gate()[i]) {
                 ++mismatches;
             }
@@ -230,7 +230,7 @@ float run_block(motion_test::TouchInput& pad,
     pad.process_block(n);
     rec.process(t, pad.output(), n);
     float acc = 0.0f;
-    for (uint32_t i = 0; i < n; ++i) { acc += rec.out_x()[i] + rec.out_y()[i] + rec.out_gate()[i]; }
+    for (uint32_t i = 0; i < n; ++i) { acc += rec.out(0)[i] + rec.out(1)[i] + rec.out_gate()[i]; }
     acc += static_cast<float>(rec.change_points().size());
     acc += static_cast<float>(rec.playback_phase());
     return acc;
@@ -244,7 +244,7 @@ TEST(MotionRecorderThreads, FullScenario) {
     constexpr uint32_t k_bs = 256;
     MotionRecorder rec;
     motion_test::TouchInput pad;
-    rec.prepare(k_sr, k_bs);
+    rec.prepare(k_sr, k_bs, motion_test::xy_config());
     pad.prepare(k_bs);
     double beat = 0.0;
     float acc = 0.0f;

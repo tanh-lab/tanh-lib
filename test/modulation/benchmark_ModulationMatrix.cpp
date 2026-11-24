@@ -504,17 +504,20 @@ BENCHMARK(bm_input_event_queue_drain_spread)
 static void bm_motion_recorder_playback(benchmark::State& state) {
     const auto n = static_cast<uint32_t>(state.range(0));
     MotionRecorder rec;
-    rec.prepare(k_sample_rate, n);
+    MotionRecorderConfig config;
+    config.m_num_channels = 2;  // an XY pad
+    rec.prepare(k_sample_rate, n, config);
     MotionLane lane;
+    lane.m_channels.resize(2);
     lane.m_timebase = MotionTimebase::Beats;
     lane.m_length = 4.0;
     for (int i = 0; i < 400; ++i) {
         const double ph = 2.0 * 3.14159265358979 * i / 400.0;
-        lane.m_x.push_back(static_cast<float>(0.5 + (0.4 * std::sin(ph))));
-        lane.m_y.push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
+        lane.m_channels[0].push_back(static_cast<float>(0.5 + (0.4 * std::sin(ph))));
+        lane.m_channels[1].push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
         lane.m_gate.push_back(1);
     }
-    rec.load_lane(lane);
+    if (rec.load_lane(lane) == 0) { state.SkipWithError("lane refused"); }
     dsp::transport::TransportInfo t;
     t.m_flags = dsp::transport::TransportInfo::k_is_playing;
     t.m_bpm = 120.0;
@@ -524,7 +527,7 @@ static void bm_motion_recorder_playback(benchmark::State& state) {
         t.m_beat_position = beat;
         t.m_num_samples = n;
         rec.process(t, MotionInput{}, n);
-        benchmark::DoNotOptimize(rec.out_x());
+        benchmark::DoNotOptimize(rec.out(0));
         beat += n * t.m_beats_per_sample;
     }
 }

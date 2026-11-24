@@ -15,10 +15,9 @@ enum class LoopEnd : uint8_t {
     Jump     ///< keep the step as a hard edge; smoothing does not cross it
 };
 
-/// The x and y a lane plays, after make_played_curve().
+/// The channels a lane plays, after make_played_curve().
 struct PlayedCurve {
-    std::vector<float> m_x;
-    std::vector<float> m_y;
+    std::vector<std::vector<float>> m_channels;
     /// Differs from the raw lane (smoothing > 0, or LoopEnd::Jump).
     bool m_smoothed = false;
 };
@@ -27,7 +26,7 @@ struct PlayedCurve {
  * @brief The curve @p lane plays with @p smoothing (0 to 1) and @p loop_end; the lane stays raw.
  *
  * LoopEnd::Smooth spreads the step at the seam (MotionLane::m_seam) over a window
- * that grows from 150 ms (0.3 beat) at 0 to the whole loop at 1. Then x and y go
+ * that grows from 150 ms (0.3 beat) at 0 to the whole loop at 1. Then every channel goes
  * through a zero-phase Gaussian of sigma = smoothing² × half a beat (250 ms for
  * Seconds lanes), at most a sixth of the loop: circular for Smooth, mirrored at
  * the seam for Jump. Values stay in [0, 1]. Allocates (message thread).

@@ -46,7 +46,7 @@ TEST(MotionRecorderTakes, BarTakeStartsOnTheBarLineAndFillsTheLoop) {
     // here the finger stood at 0.3, so the whole loop is 0.3.
     for (size_t i = 0; i < 400; ++i) {
         ASSERT_EQ(lane.m_gate[i], 1) << i;
-        ASSERT_EQ(lane.m_x[i], 0.3f) << i;
+        ASSERT_EQ(lane.m_channels[0][i], 0.3f) << i;
     }
 }
 
@@ -95,25 +95,25 @@ TEST(MotionRecorderTakes, UndoAndRedoATakeAndAClear) {
     r.step();
     ASSERT_TRUE(r.m_rec.undo());  // publishes the finished take first
     const MotionLane undone = r.m_rec.lane();
-    EXPECT_EQ(undone.m_x, loaded.m_x);
+    EXPECT_EQ(undone.m_channels[0], loaded.m_channels[0]);
     EXPECT_GT(undone.m_take_id, loaded.m_take_id + 1);
     EXPECT_FALSE(r.m_rec.can_undo());
     ASSERT_TRUE(r.m_rec.can_redo());
     ASSERT_TRUE(r.m_rec.redo());
     const MotionLane take = r.m_rec.lane();
-    EXPECT_EQ(take.m_x[200], 0.2f);
+    EXPECT_EQ(take.m_channels[0][200], 0.2f);
     EXPECT_GT(take.m_take_id, undone.m_take_id);
 
     // A clear is one undo step; a new publication drops the redo lane.
     r.m_rec.clear();
     EXPECT_TRUE(r.m_rec.lane().empty());
     ASSERT_TRUE(r.m_rec.undo());
-    EXPECT_EQ(r.m_rec.lane().m_x, take.m_x);
+    EXPECT_EQ(r.m_rec.lane().m_channels[0], take.m_channels[0]);
     EXPECT_TRUE(r.m_rec.can_redo());
     r.m_rec.clear();
     EXPECT_FALSE(r.m_rec.can_redo());
     ASSERT_TRUE(r.m_rec.undo());
-    EXPECT_EQ(r.m_rec.lane().m_x, take.m_x);
+    EXPECT_EQ(r.m_rec.lane().m_channels[0], take.m_channels[0]);
     const uint32_t version = r.m_rec.lane_version();
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_take_id, r.m_rec.lane().m_take_id);

@@ -145,6 +145,6 @@ TEST(MotionRecorderFreeTakes, RecordWaitsForTheFirstTouch) {
     const MotionLane lane = r.m_rec.lane();
     EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
     EXPECT_DOUBLE_EQ(lane.m_anchor, 0.0);
-    EXPECT_NEAR(lane.m_x[0], circle_x(0.0), 0.01);  // starts at the touch, not lifted
+    EXPECT_NEAR(lane.m_channels[0][0], circle_x(0.0), 0.01);  // starts at the touch, not lifted
     EXPECT_EQ(lane.m_gate[0], 1);
 }

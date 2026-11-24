@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
@@ -40,17 +41,18 @@ public:
 
     /// What @p settings do.
     [[nodiscard]] virtual MotionTransformInfo info(uint64_t settings) const = 0;
-    /// The point that plays at @p u (0..1 of the loop) where the lane is at (@p x, @p y), the
-    /// pad centre without a lane; written back into @p x and @p y, in [0, 1].
-    virtual void place(uint64_t settings, double u, float& x, float& y) const = 0;
+    /// The point that plays at @p u (0..1 of the loop) where the lane is at @p values (one per
+    /// channel of the recorder; 0.5 each without a lane), written back into @p values, in
+    /// [0, 1].
+    virtual void place(uint64_t settings, double u, std::span<float> values) const = 0;
     /**
-     * @brief The lane point that plays at the pad point (@p x, @p y), written back: what a take
+     * @brief The lane point that plays at the input point @p values, written back: what a take
      *        records, so it plays where the finger drew.
      *
      * False when there is none (another path is heard as well, or the lane is scaled to
-     * nothing): the take records the finger as it is. The default has none.
+     * nothing): the take records the input as it is. The default has none.
      */
-    virtual bool unplace(uint64_t /*settings*/, float& /*x*/, float& /*y*/) const { return false; }
+    virtual bool unplace(uint64_t /*settings*/, std::span<float> /*values*/) const { return false; }
 };
 
 /**
@@ -58,11 +60,13 @@ public:
  *
  * Inactive (or no transform): @p lane. Otherwise @p num_points points over the loop: the
  * transform over the lane's points, gate 1 where the transform opens it; or, without a lane,
- * the transform alone over one bar (nothing if it needs a lane). Allocates.
+ * the transform alone over one bar of @p num_channels channels (nothing if it needs a lane).
+ * Allocates.
  */
 [[nodiscard]] TANH_API MotionLane render_motion_path(const MotionLane& lane,
                                                      const MotionTransform* transform,
                                                      uint64_t settings,
-                                                     size_t num_points);
+                                                     size_t num_points,
+                                                     size_t num_channels);
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::modulation

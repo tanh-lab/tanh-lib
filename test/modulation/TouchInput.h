@@ -22,11 +22,10 @@ struct TouchEvent {
     float m_y = 0.0f;
 };
 
-/// One finger as a MotionRecorder input, for the recorder's tests: touch(), release()
-/// and release_all() on one thread, prepare() before, process_block() and output() on
-/// the audio thread. The events drained in a block are spread evenly over it (event i
-/// of n at i * block / n) and held, each with a change point, as an XY pad places
-/// untimed touches.
+/// One finger on a two-channel (x, y) MotionRecorder input, for the recorder's tests: touch(),
+/// release() and release_all() on one thread, prepare() before, process_block() and output() on the
+/// audio thread. The events drained in a block are spread evenly over it (event i of n at i * block
+/// / n) and held, each with a change point, as an XY pad places untimed touches.
 class TouchInput {
 public:
     using Event = TouchEvent;
@@ -87,11 +86,11 @@ public:
         render(position, n);
     }
 
-    [[nodiscard]] thl::modulation::MotionInput output() const TANH_NONBLOCKING_FUNCTION {
+    [[nodiscard]] thl::modulation::MotionInput output() TANH_NONBLOCKING_FUNCTION {
         if (m_x.empty()) { return {}; }
+        m_channels = {m_x.data(), m_y.data()};
         return thl::modulation::MotionInput{
-            .m_x = m_x.data(),
-            .m_y = m_y.data(),
+            .m_channels = m_channels,
             .m_active = m_active.data(),
             .m_change_points =
                 std::span<const uint32_t>(m_change_points.data(), m_num_change_points),
@@ -125,6 +124,7 @@ private:
     std::vector<float> m_y;
     std::vector<uint8_t> m_active;
     std::vector<uint32_t> m_change_points;
+    std::array<const float*, 2> m_channels{};
     size_t m_num_change_points = 0;
     uint32_t m_num_samples = 0;
 };

@@ -4,6 +4,7 @@
 #include <tanh/modulation/MotionRecorder.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -261,13 +262,14 @@ Figure8Result run_figure8(uint32_t block, uint32_t seed) {
 TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
     Rig r(256);
     MotionLane lane;
+    lane.m_channels.resize(2);
     lane.m_timebase = MotionTimebase::Seconds;
     lane.m_length = 1.0;
     lane.m_rate = 200.0;
     for (int i = 0; i < 200; ++i) {
         const double ph = 2.0 * k_pi * i / 200.0;
-        lane.m_x.push_back(static_cast<float>(0.5 + (0.4 * std::sin(ph))));
-        lane.m_y.push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
+        lane.m_channels[0].push_back(static_cast<float>(0.5 + (0.4 * std::sin(ph))));
+        lane.m_channels[1].push_back(static_cast<float>(0.5 + (0.4 * std::cos(ph))));
         lane.m_gate.push_back(i < 100 ? 1 : 0);
     }
     const uint32_t id = r.m_rec.load_lane(lane);
@@ -281,8 +283,8 @@ TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
     for (size_t s = 2400; s < r.m_x.size(); s += 7) {
         const double phase = std::fmod(static_cast<double>(s) / k_sr, 1.0);
         const MotionPoint p = lane.sample(phase);
-        ASSERT_NEAR(r.m_x[s], p.m_x, 2e-4) << s;
-        ASSERT_NEAR(r.m_y[s], p.m_y, 2e-4) << s;
+        ASSERT_NEAR(r.m_x[s], p.m_values[0], 2e-4) << s;
+        ASSERT_NEAR(r.m_y[s], p.m_values[1], 2e-4) << s;
     }
     // Gate edges per sample (±1 for the phase's float rounding): open for the
     // first half second of each loop.
@@ -302,7 +304,7 @@ TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
     ASSERT_TRUE(r.m_rec.stop());
     r.step();
     EXPECT_EQ(r.m_rec.out_gate()[0], 0);
-    EXPECT_EQ(r.m_rec.out_x()[255], r.m_rec.out_x()[0]);
+    EXPECT_EQ(r.m_rec.out(0)[255], r.m_rec.out(0)[0]);
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Idle);
     ASSERT_TRUE(r.m_rec.play());
     r.run_until(r.now() + 4800);
@@ -318,7 +320,7 @@ TEST(MotionRecorder, LoadedSecondsLanePlaysAndLoops) {
 
 TEST(MotionRecorder, MemoryPerRecorder) {
     MotionRecorder rec;
-    rec.prepare(k_sr, 512);
+    rec.prepare(k_sr, 512, motion_test::xy_config());
     // The take (as recorded and as handed over) and two hand-over slots of 32768 points × (2 floats
     // + 1 gate byte), plus the slots' raw seam tails of a quarter of the points × 2 floats
     // = 1.25 MiB.
@@ -469,10 +471,10 @@ TEST_P(MotionRecorderBars, BarModeAlignsToBars) {
     EXPECT_DOUBLE_EQ(lane.m_anchor, 0.0);
     EXPECT_EQ(lane.num_points(), 800u);  // 100 ticks per beat at 120 BPM
     // Index 0 = beat 16 ≡ 0 (mod 8): the second pass; 50 to 150 never drawn: a glide back.
-    EXPECT_EQ(lane.m_x[10], 0.7f);
-    EXPECT_GT(lane.m_x[100], 0.2f);
-    EXPECT_LT(lane.m_x[100], 0.7f);
-    EXPECT_EQ(lane.m_x[400], 0.2f);
+    EXPECT_EQ(lane.m_channels[0][10], 0.7f);
+    EXPECT_GT(lane.m_channels[0][100], 0.2f);
+    EXPECT_LT(lane.m_channels[0][100], 0.7f);
+    EXPECT_EQ(lane.m_channels[0][400], 0.2f);
 
     // Index 0 plays at beats 24, 32, 40: x steps up from 0.2 to 0.7 there (between points 799
     // and 0, half a point before the bar, within the render ramp).
@@ -572,7 +574,7 @@ INSTANTIATE_TEST_SUITE_P(Blocks,
 // no step larger than the in-loop maximum.
 TEST(MotionRecorder, TempoRampInsideBlockHasNoStep) {
     MotionRecorder rec;
-    rec.prepare(k_sr, 1024);
+    rec.prepare(k_sr, 1024, motion_test::xy_config());
     rec.load_lane(motion_test::beats_lane(4.0, 100));
     TransportInfo t;
     t.m_flags = TransportInfo::k_is_playing | TransportInfo::k_has_tempo |
@@ -587,7 +589,7 @@ TEST(MotionRecorder, TempoRampInsideBlockHasNoStep) {
         t.m_bpm = bpm;
         t.m_beats_per_sample = bpm / (60.0 * k_sr);
         rec.process(t, MotionInput{}, 1024);
-        for (uint32_t i = 0; i < 1024; ++i) { xs.push_back(rec.out_x()[i]); }
+        for (uint32_t i = 0; i < 1024; ++i) { xs.push_back(rec.out(0)[i]); }
         beat += 1024 * t.m_beats_per_sample;
     }
     const double in_loop = motion_test::max_sample_step(xs, 20000, 190 * 1024);
@@ -625,7 +627,7 @@ TEST_P(MotionRecorderTouch, TouchOverride) {
     for (size_t s = settle; s < settle + 4800; ++s) {
         const double phase = std::fmod(r.m_beat[s], 4.0);
         const MotionPoint p = motion_test::beats_lane(4.0, 100).sample(phase);
-        ASSERT_NEAR(r.m_x[s], p.m_x, 2e-4) << s - release;
+        ASSERT_NEAR(r.m_x[s], p.m_values[0], 2e-4) << s - release;
     }
     EXPECT_LE(motion_test::max_sample_step(r.m_x, release, settle), 0.01);
     EXPECT_LE(motion_test::max_sample_step(r.m_y, release, settle), 0.01);
@@ -745,7 +747,7 @@ TEST(MotionRecorder, DisarmKeepsATouchedTake) {
     EXPECT_TRUE(r.m_rec.disarm());  // still touching: the take ends, the touch stays live
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
-    EXPECT_NEAR(r.m_rec.out_x()[0], 0.398f, 1e-6f);
+    EXPECT_NEAR(r.m_rec.out(0)[0], 0.398f, 1e-6f);
     r.m_pad.release(1);
     r.step();
     r.m_rec.service();
@@ -802,7 +804,7 @@ TEST(MotionRecorder, PrepareDuringAReplacingTakeKeepsTheOldLane) {
     r.m_pad.touch(1, 0.9f, 0.9f);
     r.step();
     EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
-    r.m_rec.prepare(k_sr, 4096);
+    r.m_rec.prepare(k_sr, 4096, motion_test::xy_config());
     r.m_pad.release(1);
     r.run_until(r.now() + 2048);
     EXPECT_FALSE(r.m_rec.service());
@@ -891,20 +893,20 @@ TEST(MotionRecorder, JsonSaveAndLoadPlaysTheSame) {
         const double phase =
             detail::wrap_phase((static_cast<double>(s) / 24000.0) - orig.m_anchor, orig.m_length);
         const MotionPoint p = orig.sample(phase);
-        ASSERT_NEAR(b.m_x[s], p.m_x, 2e-4);
-        ASSERT_NEAR(b.m_y[s], p.m_y, 2e-4);
+        ASSERT_NEAR(b.m_x[s], p.m_values[0], 2e-4);
+        ASSERT_NEAR(b.m_y[s], p.m_values[1], 2e-4);
     }
     EXPECT_EQ(rec.snapshot().m_state, MotionState::Playing);
 }
 
 TEST(MotionRecorder, LoadLaneValidates) {
     MotionRecorder rec;
-    rec.prepare(k_sr, 256);
+    rec.prepare(k_sr, 256, motion_test::xy_config());
     MotionLane bad = motion_test::beats_lane(4.0, 24);
-    bad.m_y.pop_back();
+    bad.m_channels[1].pop_back();
     EXPECT_EQ(rec.load_lane(bad), 0u);
     MotionLane nan = motion_test::beats_lane(4.0, 24);
-    nan.m_x[3] = std::nanf("");
+    nan.m_channels[0][3] = std::nanf("");
     EXPECT_EQ(rec.load_lane(nan), 0u);
     MotionLane zero_len = motion_test::beats_lane(4.0, 24);
     zero_len.m_length = 0.0;
@@ -913,7 +915,7 @@ TEST(MotionRecorder, LoadLaneValidates) {
 
     MotionRecorderConfig cfg;
     cfg.m_max_points = 100;
-    rec.prepare(k_sr, 256, cfg);
+    rec.prepare(k_sr, 256, motion_test::xy_config(cfg));
     const uint32_t id = rec.load_lane(motion_test::beats_lane(4.0, 100));
     EXPECT_GT(id, 0u);
     EXPECT_EQ(rec.lane().num_points(), 100u);
@@ -922,7 +924,7 @@ TEST(MotionRecorder, LoadLaneValidates) {
 TEST(MotionRecorder, ReversePlayback) {
     constexpr uint32_t k_bs = 256;
     MotionRecorder rec;
-    rec.prepare(k_sr, k_bs);
+    rec.prepare(k_sr, k_bs, motion_test::xy_config());
     MotionLane lane = motion_test::beats_lane(4.0, 100);
     rec.load_lane(lane);
     double beat = 0.0;
@@ -930,7 +932,7 @@ TEST(MotionRecorder, ReversePlayback) {
         for (int b = 0; b < blocks; ++b) {
             rec.process(playing_info(beat, k_bs), MotionInput{}, k_bs);
             for (uint32_t i = 0; i < k_bs; ++i) {
-                xs.push_back(rec.out_x()[i]);
+                xs.push_back(rec.out(0)[i]);
                 beats.push_back(beat + (i * 120.0 / 60.0 / k_sr));
             }
             beat += k_bs * 120.0 / 60.0 / k_sr;
@@ -946,7 +948,56 @@ TEST(MotionRecorder, ReversePlayback) {
     // Mirrored phase: beat b plays lane phase (4 - b mod 4), after a 25 ms glide.
     for (size_t s = from + 1300; s < xs.size(); s += 37) {
         const double phase = 4.0 - std::fmod(beats[s], 4.0);
-        ASSERT_NEAR(xs[s], lane.sample(phase).m_x, 2e-4) << s;
+        ASSERT_NEAR(xs[s], lane.sample(phase).m_values[0], 2e-4) << s;
     }
     EXPECT_LE(motion_test::max_sample_step(xs, from, from + 1300), 0.01);
+}
+
+// Any number of channels: a one-channel recorder (a slider) and a three-channel one record a
+// bar loop from their input and play every channel back where it was drawn.
+TEST(MotionRecorder, RecordsAndPlaysAnyNumberOfChannels) {
+    constexpr uint32_t k_bs = 256;
+    for (const uint32_t channels : {1u, 3u}) {
+        MotionRecorder rec;
+        MotionRecorderConfig config;
+        config.m_num_channels = channels;
+        rec.prepare(k_sr, k_bs, config);
+        ASSERT_EQ(rec.num_channels(), channels);
+
+        // Channel c holds 0.2 + 0.2 c during the first bar (finger down), then lifts.
+        std::vector<std::vector<float>> input(channels, std::vector<float>(k_bs));
+        for (uint32_t c = 0; c < channels; ++c) {
+            std::fill(input[c].begin(), input[c].end(), 0.2f + (0.2f * static_cast<float>(c)));
+        }
+        std::vector<const float*> pointers;
+        for (const auto& v : input) { pointers.push_back(v.data()); }
+        std::vector<uint8_t> active(k_bs);
+        const std::array<uint32_t, 1> change_points{0};
+        ASSERT_TRUE(rec.record(LoopLength::bars(1)));
+        double beat = 0.0;
+        const auto bar_blocks = static_cast<int>(std::ceil(4.0 * 24000.0 / k_bs));
+        for (int b = 0; b < 3 * bar_blocks; ++b) {
+            std::fill(active.begin(), active.end(), b < bar_blocks ? 1 : 0);
+            const MotionInput in{.m_channels = pointers,
+                                 .m_active = active.data(),
+                                 .m_change_points = change_points,
+                                 .m_num_samples = k_bs};
+            const TransportInfo t = playing_info(beat, k_bs);
+            rec.process(t, in, k_bs);
+            beat = t.beat_end();
+            if (b == bar_blocks + 1) { ASSERT_TRUE(rec.disarm()); }
+            rec.service();
+        }
+        const MotionLane lane = rec.lane();
+        ASSERT_EQ(lane.num_channels(), channels);
+        ASSERT_FALSE(lane.empty());
+        EXPECT_EQ(rec.snapshot().m_state, MotionState::Playing);
+        for (uint32_t c = 0; c < channels; ++c) {
+            EXPECT_NEAR(rec.out(c)[k_bs - 1], 0.2f + (0.2f * static_cast<float>(c)), 1e-3f) << c;
+        }
+        // A lane of another channel count is refused.
+        MotionLane other = motion_test::beats_lane(4.0, 100);
+        other.m_channels.resize(channels + 1, other.m_channels[0]);
+        EXPECT_EQ(rec.load_lane(other), 0u);
+    }
 }

@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace thl::inline THL_ABI_NAMESPACE::modulation {
 
@@ -45,6 +46,8 @@ void MotionRecorder::prepare(double sample_rate,
     m_finish_pending = false;
 
     m_config = config;
+    m_config.m_num_channels =
+        std::clamp<uint32_t>(m_config.m_num_channels, 1, k_motion_max_channels);
     m_config.m_max_points = std::max(m_config.m_max_points, k_min_points);
     m_config.m_render_interval = std::max<uint32_t>(m_config.m_render_interval, 1);
     if (!(m_config.m_rate > 0.0)) { m_config.m_rate = 200.0; }
@@ -54,9 +57,12 @@ void MotionRecorder::prepare(double sample_rate,
     if (sample_rate > 0.0) { m_sample_rate = sample_rate; }
 
     m_takes.prepare(m_config);
-    m_store.prepare(m_config.m_max_points);
-    m_player.prepare(m_sample_rate, m_config.m_render_interval);
-    m_output.prepare(m_sample_rate, m_config.m_glide_ms, samples_per_block);
+    m_store.prepare(m_config.m_max_points, m_config.m_num_channels);
+    m_player.prepare(m_sample_rate, m_config.m_render_interval, m_config.m_num_channels);
+    m_output.prepare(m_sample_rate,
+                     m_config.m_glide_ms,
+                     samples_per_block,
+                     m_config.m_num_channels);
     m_clock.reset();
     m_num_samples = 0;
 }
@@ -64,8 +70,9 @@ void MotionRecorder::prepare(double sample_rate,
 size_t MotionRecorder::take_buffer_bytes() const {
     // The take, plus two hand-over slots of the same points and their raw seam tails.
     const size_t points = m_config.m_max_points;
-    return m_takes.buffer_bytes() +
-           (2 * ((points * ((2 * sizeof(float)) + 1)) + ((points / 4) * 2 * sizeof(float))));
+    const size_t channels = m_config.m_num_channels;
+    return m_takes.buffer_bytes() + (2 * ((points * ((channels * sizeof(float)) + 1)) +
+                                          ((points / 4) * channels * sizeof(float))));
 }
 
 bool MotionRecorder::arm(LoopLength length) {
@@ -127,7 +134,11 @@ void MotionRecorder::set_transform_settings(uint64_t settings) {
 }
 
 MotionLane MotionRecorder::played_path(size_t num_points) const {
-    return render_motion_path(played_lane(), m_transform, transform_settings(), num_points);
+    return render_motion_path(played_lane(),
+                              m_transform,
+                              transform_settings(),
+                              num_points,
+                              m_config.m_num_channels);
 }
 
 MotionSnapshot MotionRecorder::snapshot() const TANH_NONBLOCKING_FUNCTION {
@@ -183,8 +194,7 @@ void MotionRecorder::apply_commands() TANH_NONBLOCKING_FUNCTION {
 
 void MotionRecorder::start_take(const TransportInfo& t,
                                 double beat,
-                                float x,
-                                float y,
+                                const MotionValues& values,
                                 const detail::MotionLaneSource& playing) TANH_NONBLOCKING_FUNCTION {
     // A new take starts empty: the lane that played stops now and is replaced by the take, or
     // deleted if the take keeps nothing.
@@ -193,8 +203,7 @@ void MotionRecorder::start_take(const TransportInfo& t,
                                         .m_sig_num = m_sig_num,
                                         .m_sig_denom = m_sig_denom,
                                         .m_beat = beat,
-                                        .m_x = x,
-                                        .m_y = y};
+                                        .m_values = values};
     if (m_takes.start(start) == detail::MotionTakeRecorder::Start::Refused) {
         m_refused = true;  // the loop does not fit at the minimum resolution
         m_armed = false;
@@ -298,14 +307,19 @@ void MotionRecorder::process(const TransportInfo& t,
 
     TransportInfo info = t;
     info.m_bpm = clock.m_bpm;
-    const uint32_t in_n =
-        (in.m_x != nullptr && in.m_y != nullptr && in.m_active != nullptr) ? in.m_num_samples : 0;
+    const size_t channels = m_config.m_num_channels;
+    bool has_input = in.m_active != nullptr && in.m_channels.size() >= channels;
+    for (size_t c = 0; has_input && c < channels; ++c) { has_input = in.m_channels[c] != nullptr; }
+    const uint32_t in_n = has_input ? in.m_num_samples : 0;
+    const std::span<const float* const> in_channels = in.m_channels;
     size_t in_cp = 0;
     for (uint32_t i = 0; i < n; ++i) {
         const bool has_in = i < in_n;
         const bool live = has_in && in.m_active[i] != 0;
-        const float lx = has_in ? in.m_x[i] : m_output.last_x();
-        const float ly = has_in ? in.m_y[i] : m_output.last_y();
+        MotionValues touch = m_output.last();
+        if (has_in) {
+            for (size_t c = 0; c < channels; ++c) { touch[c] = in_channels[c][i]; }
+        }
         bool cp = false;
         while (in_cp < in.m_change_points.size() && in.m_change_points[in_cp] <= i) {
             cp = cp || in.m_change_points[in_cp] == i;
@@ -314,21 +328,23 @@ void MotionRecorder::process(const TransportInfo& t,
 
         // Recording: a take hands its loop over; it plays from the next block. It records what
         // plays at the finger through the transform, so the take plays where the finger drew.
-        float rx = lx;
-        float ry = ly;
-        if (has_in && m_transform != nullptr && !m_transform->unplace(transform_settings, rx, ry)) {
-            rx = lx;
-            ry = ly;
+        if (m_takes.active() || (m_armed && !m_finish_pending && (live || m_force_start))) {
+            MotionValues recorded = touch;
+            if (has_in && m_transform != nullptr &&
+                !m_transform->unplace(transform_settings,
+                                      std::span<float>(recorded.data(), channels))) {
+                recorded = touch;
+            }
+            if (!m_takes.active()) {
+                // Lifted before the touch, at the touch (record() without one: where the output
+                // is).
+                start_take(info,
+                           clock.m_beat + (static_cast<double>(i) * clock.m_rec_slope),
+                           recorded,
+                           playing);
+            }
+            if (m_takes.active()) { on_take(m_takes.step(live, recorded, clock.m_rec_slope)); }
         }
-        if (!m_takes.active() && m_armed && !m_finish_pending && (live || m_force_start)) {
-            // Lifted before the touch, at the touch (record() without one: where the output is).
-            start_take(info,
-                       clock.m_beat + (static_cast<double>(i) * clock.m_rec_slope),
-                       rx,
-                       ry,
-                       playing);
-        }
-        if (m_takes.active()) { on_take(m_takes.step(live, rx, ry, clock.m_rec_slope)); }
         if (m_handed_over) {  // plays from this sample
             m_handed_over = false;
             playing = m_store.select(scope.data());
@@ -336,12 +352,11 @@ void MotionRecorder::process(const TransportInfo& t,
         }
 
         // Playback, then the output.
-        float px = 0.0f;
-        float py = 0.0f;
+        MotionValues played;  // render() writes the channels it plays
         uint8_t pg = 0;
         const bool pb = m_player.playing();
-        if (pb && m_player.render(i, px, py, pg)) { cp = true; }
-        m_output.sample(i, live, lx, ly, pb, px, py, pg, cp);
+        if (pb && m_player.render(i, played, pg)) { cp = true; }
+        m_output.sample(i, live, touch, pb, played, pg, cp);
     }
     m_player.end(n);
     m_clock.end(clock, n);

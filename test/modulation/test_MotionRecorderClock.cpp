@@ -99,7 +99,7 @@ TEST_P(MotionRecorderClock, SeekWhilePlaying) {
     double prev = 1e9;
     for (size_t s = jump; s < jump + k_glide; s += 32) {
         const MotionPoint p = lane.sample(std::fmod(r.m_beat[s], k_lane_beats));
-        const double d = std::hypot(r.m_x[s] - p.m_x, r.m_y[s] - p.m_y);
+        const double d = std::hypot(r.m_x[s] - p.m_values[0], r.m_y[s] - p.m_values[1]);
         EXPECT_LE(d, prev + 2e-3) << s - jump;
         prev = d;
     }
@@ -282,7 +282,7 @@ TEST(MotionRecorderClockFlags, OnlyTheFlagsDecideAboutAGlide) {
     const MotionLane lane = motion_test::beats_lane(k_lane_beats, k_tpb);
     auto run = [&](uint32_t flags, bool playing) {
         MotionRecorder rec;
-        rec.prepare(k_sr, k_n);
+        rec.prepare(k_sr, k_n, motion_test::xy_config());
         rec.load_lane(lane);
         TransportInfo t;
         t.m_flags = TransportInfo::k_has_tempo | TransportInfo::k_has_beat_position;
@@ -390,7 +390,7 @@ void check_clock_lane(const MotionLane& lane, double start_beat, double tol) {
         if (from_start < 4 || from_start > n - 36) { continue; }  // take seam
         if (j < 3 || j > n - 3) { continue; }                     // x wraps 1 → 0 at index 0
         const double want = static_cast<double>(j) / static_cast<double>(n);
-        ASSERT_NEAR(lane.m_x[j], want, tol) << j;
+        ASSERT_NEAR(lane.m_channels[0][j], want, tol) << j;
         ASSERT_EQ(lane.m_gate[j], 1) << j;
     }
 }
@@ -429,7 +429,7 @@ TEST_P(MotionRecorderClock, JumpDuringBarRecording) {
         const double phase = std::fmod(r.m_beat[s], 8.0);
         if (phase < 0.05 || phase > 7.95) { continue; }
         const MotionPoint p = lane.sample(phase);
-        ASSERT_NEAR(r.m_x[s], p.m_x, 2e-3) << s;
+        ASSERT_NEAR(r.m_x[s], p.m_values[0], 2e-3) << s;
     }
     EXPECT_TRUE(motion_test::all_in_unit_range(r.m_x));
 }
@@ -475,8 +475,8 @@ TEST_P(MotionRecorderClock, TempoChangeDuringRecording) {
         const size_t from_seam = (j + n - seam) % n;
         if (from_seam < 4 || from_seam > n - 36) { continue; }
         const auto [x, y] = draw(static_cast<double>(j) / 100.0);
-        EXPECT_NEAR(lane.m_x[j], x, 0.005) << j;
-        EXPECT_NEAR(lane.m_y[j], y, 0.005) << j;
+        EXPECT_NEAR(lane.m_channels[0][j], x, 0.005) << j;
+        EXPECT_NEAR(lane.m_channels[1][j], y, 0.005) << j;
     }
     r.tempo_at(r.now(), 100.0);
     const size_t from = r.m_x.size() + k_glide + (2 * block);
@@ -517,9 +517,9 @@ TEST_P(MotionRecorderClock, PrepareAbortsTake) {
     r.run_until(2 * k_spb);
     ASSERT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
     const MotionLane before = r.m_rec.lane();
-    r.m_rec.prepare(k_sr, 4096);
+    r.m_rec.prepare(k_sr, 4096, motion_test::xy_config());
     EXPECT_EQ(r.m_rec.lane().m_take_id, before.m_take_id);
-    EXPECT_EQ(r.m_rec.lane().m_x, before.m_x);
+    EXPECT_EQ(r.m_rec.lane().m_channels[0], before.m_channels[0]);
     r.m_pad.release(1);
     r.run_until(3 * k_spb);
     EXPECT_NE(r.m_rec.snapshot().m_state, MotionState::Recording);
@@ -613,7 +613,8 @@ BarTakeResult bar_take_on_tempo_map(Rig& r) {
     for (int step = 5; step * 0.01 < k_lane_beats; ++step) {
         const double b = step * 0.01;
         const MotionPoint p = lane.sample(b);
-        worst = std::max(worst, circ(beat_of_circle(p.m_x, p.m_y), b, k_lane_beats));
+        worst =
+            std::max(worst, circ(beat_of_circle(p.m_values[0], p.m_values[1]), b, k_lane_beats));
     }
     res.m_lane_offset = worst;
     return res;
