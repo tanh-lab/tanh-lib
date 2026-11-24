@@ -16,7 +16,7 @@ proprietary only. See the Ableton Link and LinkKit sections.
 |---|---|---|---|
 | pffft | v1.1.0, https://github.com/marton78/pffft | DSP, with `TANH_FFT_BACKEND=pffft` (the default; not with `accelerate`) | BSD-like (FFTPACK licence) |
 | miniaudio | 0.11.24, https://github.com/mackron/miniaudio | AudioIO | Public domain or MIT No Attribution, at the user's choice |
-| nlohmann/json | 3.12.0, https://github.com/nlohmann/json | State (header-only, also a public dependency) | MIT |
+| nlohmann/json | 3.12.0, https://github.com/nlohmann/json | State (header-only, also a public dependency), AudioIO (header-only, the take manifest) | MIT |
 | readerwriterqueue (moodycamel) | v1.0.6, https://github.com/cameron314/readerwriterqueue | Modulation (header-only) | Simplified BSD |
 | Jeff Preshing's semaphore (in readerwriterqueue's atomicops.h) | with readerwriterqueue v1.0.6 | Modulation (header-only) | zlib |
 | Signalsmith Stretch | commit 57b93f4 (1.3.0-21), https://github.com/Signalsmith-Audio/signalsmith-stretch | DSP (header-only, `PitchBank`) | MIT |
@@ -124,7 +124,7 @@ SOFTWARE.
 
 ## nlohmann/json
 
-3.12.0, https://github.com/nlohmann/json. Used in: State (header-only, also a public dependency).
+3.12.0, https://github.com/nlohmann/json. Used in: State (header-only, also a public dependency), AudioIO (header-only, the take manifest).
 
 ```text
 MIT License 
