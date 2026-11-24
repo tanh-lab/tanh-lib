@@ -274,3 +274,168 @@ Two settings in `BlockEventCollectorConfig` change the trade:
   delay: every event goes to the start of the first block after it arrived, so it is late
   by anything between nothing and one block, and timing is quantised to the block. Worth
   it only with very small blocks.
+
+## From packets to notes and controllers
+
+Packets are the transport form. What an instrument wants is "voice 3 plays this pitch with
+this pressure" and "the mod wheel is at 0.7", the same whether the controller speaks
+MIDI 1.0, MPE or MIDI 2.0. `EventStream` (`tanh/midi/EventStream.h`) does that once per
+block:
+
+```cpp
+thl::midi::EventStream stream;
+stream.prepare({.m_max_events = 512, .m_voice_count = 10});
+
+// audio thread, at the top of the block:
+stream.process(events, num_samples);    // the block's BlockEvents and its length
+for (const thl::midi::Event& e : stream.events()) { ... }
+```
+
+`stream.events()` is the block as `Event`s in ascending sample offset: a type, a channel,
+a float value, and for the notes a key and a voice. Two stages make it:
+
+1. **`EventDecoder`**: one float form for both protocols. Values keep the resolution they
+   arrive with (7 and 14 bits from MIDI 1.0, 16 and 32 from MIDI 2.0) and are scaled to
+   0 to 1, pitch bend to -1 to 1 with the centre exactly at 0. An RPN or NRPN that
+   MIDI 1.0 sends as four control changes is one `RegisteredController` /
+   `AssignableController` event, as MIDI 2.0 sends it; a data entry MSB of 127 is the
+   value 1, so a knob that sends no LSB still reaches the top.
+2. **`VoiceAllocator`**: every note on gets a voice (a free one, the one released longest
+   ago; when all are busy, the voice of the oldest note), every note off names the voice
+   it frees. After each note on, and whenever one changes, each voice gets three
+   `NoteExpression` events:
+
+   | Expression | Value | Made of |
+   | --- | --- | --- |
+   | `Tuning` | semitones away from the key | channel bend × its range, the note's own bend and pitch (MIDI 2.0), the zone bend (MPE) |
+   | `Pressure` | 0 to 1 | the largest of key pressure, channel pressure and zone pressure |
+   | `Timbre` | 0 to 1, 0.5 at rest | the note's own (MIDI 2.0), or its channel's CC 74 (MPE) |
+
+   A voice's pitch is `key + tuning`, whatever produced the bend.
+
+Channel-wide events (control changes, pitch bend, channel pressure, program changes) are in
+the same list with no voice.
+
+### MPE
+
+In MPE (MIDI Polyphonic Expression) a controller puts every note on a channel of its own,
+so the channel's pitch bend, pressure and CC 74 belong to that one note. A zone is a
+manager channel (1 for the lower zone, 16 for the upper) and the member channels next to
+it.
+
+- The controller announces its zones with an MPE Configuration Message (RPN 6), and the
+  allocator follows it. `stream.voices().set_zones(15, 0)` sets them by hand, for a
+  controller that does not announce itself;
+  `set_follow_configuration_messages(false)` makes the hand setting final.
+- Bend ranges are 48 semitones on member channels and 2 on the manager, until RPN 0
+  changes them.
+- Messages on a member channel become that voice's `Tuning`, `Pressure` and `Timbre` and
+  are not reported as channel events. Messages on the manager channel reach every voice of
+  the zone and are reported as channel events too.
+
+An engine that reads `Tuning`, `Pressure` and `Timbre` per voice therefore plays MPE and
+MIDI 2.0 per-note expression without knowing either: a plain keyboard just leaves `Timbre`
+at rest and gives every note of a channel the same bend.
+
+Limits today: one allocator keeps its channel state per channel, not per input, so two
+MPE controllers at once need a stream each; and MIDI 2.0's own message for the per-note
+bend range is not read (`set_per_note_bend_range()`, 48 semitones by default).
+
+### Pedals
+
+While the sustain pedal (CC 64) is down, a key's note off does not free its voice: the
+note off passes with no voice, the voice sounds on, and its note off follows when the
+pedal comes up. The sostenuto pedal (CC 66) does the same for the notes whose keys were
+down when it was pressed, and only those. A pedal on an MPE manager channel holds the whole
+zone. When every voice is busy, voices that only a pedal holds are stolen before voices
+whose keys are down. Both control changes stay in the list as controllers;
+`stream.voices().set_follow_pedals(false)` leaves it at that.
+
+### Lost input and panic
+
+When `InputQueue::dropped()` or `stream.dropped()` rises, note offs may be among what was
+lost. `stream.release_all()` (any thread) sends a note off to every voice that has played
+and lifts both pedals, at the start of the next block. All Notes Off and All Sound Off
+from the controller end the notes of their channel.
+
+## MIDI in the modulation matrix
+
+With the Modulation component built, `tanh/modulation/MidiSources.h` makes the stream's
+events modulation sources, so MIDI is mapped with the routings everything else uses
+(range, depth, Replace or Additive, presets):
+
+```cpp
+// A controller, global: CC 74 on any channel.
+thl::modulation::MidiControllerSource cutoff_knob(
+    stream, {.m_type = thl::midi::EventType::Controller, .m_index = 74});
+matrix.add_source("midi.cc.74", &cutoff_knob);
+
+// Notes, per voice: one source per stream of a note.
+const auto voices = matrix.register_scope("voice", 10);
+thl::modulation::MidiNoteSource gate(stream, thl::modulation::MidiNoteStream::Gate, voices);
+thl::modulation::MidiNoteSource pitch(stream, thl::modulation::MidiNoteStream::Pitch, voices);
+thl::modulation::MidiNoteSource pressure(stream, thl::modulation::MidiNoteStream::Pressure, voices);
+matrix.add_source("midi.note.gate", &gate);
+matrix.add_source("midi.note.pitch", &pitch);
+matrix.add_source("midi.note.pressure", &pressure);
+
+// audio thread, every block:
+stream.process(events, num_samples);
+matrix.process(num_samples);
+```
+
+- **`MidiControllerSource`** follows one control change, NRPN, the pitch bend or the
+  channel pressure, on one channel or on all. It steps at the event's sample and holds.
+  Until its controller first moves it is inactive, so a Replace routing leaves the
+  parameter at its base value instead of jumping to 0. `MidiPolarity::Bipolar` gives -1 to
+  1 for an Additive routing.
+  - `set_smoothing_ms()` makes the output glide to each new value in a straight line
+    instead of stepping, which takes the staircase out of a 7-bit controller.
+  - `arm_pickup(position)` is soft takeover: the source stays inactive until the knob
+    reaches the given position (where the parameter stands) or moves across it, so the
+    parameter does not jump to wherever the knob happens to be. `waiting_for_pickup()`
+    tells the interface to show a hint.
+- **`MidiNoteSource`** puts out one stream of the notes per voice: `Gate`, `Pitch` (key
+  plus tuning, mapped to 0 to 1 by `set_pitch_range()`), `Velocity`, `Pressure`, `Timbre`.
+  Voice v of the scope is voice v of the allocator. A stream is active from the note on
+  to the note off and holds its last value, so `Replace` hands the parameter back when the
+  note ends and `ReplaceHold` keeps the last note's value. A note on for a voice that
+  still sounds closes the gate for one sample, so an envelope behind it starts again.
+
+**MIDI learn** is the monitor below plus a source: wait for
+`Monitor::last_controller().m_serial` to change, put the controller it names into a
+`MidiControllerSource` and add the routing to the parameter being learned. On an existing
+source, `bind(address, position)` sets the controller and arms the pickup in one step, so
+both take effect in the same block.
+
+Both sources render a block as long as `stream.process()` was told it is, so a host that
+sends blocks shorter than prepared for changes nothing about a glide's time.
+
+## Seeing what arrives
+
+`Monitor` (`tanh/midi/Monitor.h`) is the state behind a MIDI display. The audio thread
+shows it the block's events; any other thread reads, without locks:
+
+```cpp
+thl::midi::Monitor monitor;
+
+// audio thread, after stream.process():
+monitor.observe(stream.events());
+
+// UI thread, at its own rate:
+float wheel = monitor.controller(channel, 1);        // last value of CC 1
+float bend = monitor.pitch_bend(channel);
+float velocity = monitor.note_velocity(channel, 60);  // 0 while the key is up
+auto moved = monitor.last_controller();               // for MIDI learn
+auto voice = monitor.voice(3);                        // key, tuning, pressure, timbre
+monitor.drain([&](const thl::midi::Event& e) { log.push_back(e); });  // scrolling log
+```
+
+`voice()` is the view for MPE and MIDI 2.0 per-note expression: in an MPE zone the bend,
+pressure and CC 74 of a member channel belong to a note, so they are found there and not
+under the channel's `pitch_bend()` or `controller()`, and they are no candidates for
+`last_controller()`.
+
+The state (controllers, bend, pressure, held keys, voices) is always current. The log is bounded:
+when nobody drains it, new events are left out of it and `log_dropped()` counts them.
+How any of it is drawn is the application's business; the library only keeps the numbers.

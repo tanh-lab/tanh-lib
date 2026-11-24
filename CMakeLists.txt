@@ -840,6 +840,10 @@ if(TANH_BUILD_MIDI)
         src/midi/Midi1Converter.cpp
         src/midi/DeviceManager.cpp
         src/midi/BlockEventCollector.cpp
+        src/midi/EventDecoder.cpp
+        src/midi/VoiceAllocator.cpp
+        src/midi/EventStream.cpp
+        src/midi/Monitor.cpp
     )
 
     # The device backend behind DeviceManager. Each platform is named explicitly, as
@@ -878,6 +882,13 @@ if(TANH_BUILD_MIDI)
     target_link_libraries(${PROJECT_NAME}_midi PUBLIC ${PROJECT_NAME}_core)
 
     target_compile_definitions(${PROJECT_NAME}_midi PUBLIC -DTANH_MIDI_ENABLED)
+
+    # MIDI as modulation sources (tanh/modulation/MidiSources.h) belongs to Modulation and
+    # is compiled in when both components are built, as StateParameterBackend is with State.
+    if(TARGET ${PROJECT_NAME}_modulation)
+        target_sources(${PROJECT_NAME}_modulation PRIVATE src/modulation/MidiSources.cpp)
+        target_link_libraries(${PROJECT_NAME}_modulation PUBLIC ${PROJECT_NAME}_midi)
+    endif()
 
     list(APPEND TANH_BUILT_COMPONENTS ${PROJECT_NAME}_midi)
 endif()

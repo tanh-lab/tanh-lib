@@ -164,4 +164,5 @@ matrix reaches first.
 
 ## See also
 
+- [MIDI](midi.md): MIDI controllers and notes as modulation sources (`MidiControllerSource`, `MidiNoteSource`).
 - [Modulation with host parameters (JUCE)](host_parameters.md): drive the matrix from a host parameter store such as JUCE's AudioProcessorValueTreeState instead of `thl::State`.
