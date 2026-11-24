@@ -470,6 +470,7 @@ TEST_P(MotionRecorderClock, TempoChangeDuringRecording) {
     EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
     // Uniform in beats: point j is the drawing at beat j / 100 (away from the take seam).
     const size_t n = lane.num_points();
+    ASSERT_GT(n, 0u);
     const auto seam = static_cast<size_t>(std::ceil(std::fmod(start_beat, 4.0) * 100.0)) % n;
     for (size_t j = 0; j < n; ++j) {
         const size_t from_seam = (j + n - seam) % n;
