@@ -37,7 +37,7 @@ struct VoiceParams {
 
     EngineMode m_engine_mode{EngineMode::GranularLoop};
     float m_position{0.0f};  // [0, 1]
-    float m_spray{0.0f};     // [0, 1]
+    float m_spray{0.0f};     // [-1, 1]: width = |spray|, < 0 reads grains backwards
     float m_tilt{0.0f};      // [-1, 1]
 
     // Slicing (see slicing::SliceMap). m_slicer is only true with a valid
