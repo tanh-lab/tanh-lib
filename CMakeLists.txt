@@ -168,9 +168,11 @@ endif()
 
 # nlohmann_json is a PUBLIC dependency of State and Modulation: when tanh
 # installs, install its headers + CMake package too so tanhConfig.cmake's
-# find_dependency(nlohmann_json) resolves for consumers.
-if(TANH_BUILD_STATE OR TANH_BUILD_MODULATION)
-    if(TANH_WITH_INSTALL)
+# find_dependency(nlohmann_json) resolves for consumers. AudioIO uses it in one
+# source file only (the take manifest), so it needs the headers at build time
+# and nothing at install time.
+if(TANH_BUILD_STATE OR TANH_BUILD_MODULATION OR TANH_BUILD_AUDIO_IO)
+    if(TANH_WITH_INSTALL AND (TANH_BUILD_STATE OR TANH_BUILD_MODULATION))
         set(JSON_Install ON CACHE BOOL "Install nlohmann_json headers" FORCE)
     endif()
 
@@ -539,6 +541,10 @@ if(TANH_BUILD_AUDIO_IO)
         src/audio-io/AudioFileWriter.cpp
         src/audio-io/AudioPlayerSource.cpp
         src/audio-io/DataSource.cpp
+        src/audio-io/MultitrackRecorder.cpp
+        src/audio-io/Take.cpp
+        src/audio-io/TakeExport.cpp
+        src/audio-io/WavStreamWriter.cpp
         src/audio-io/miniaudio_impl.cpp
     )
 
@@ -575,6 +581,11 @@ if(TANH_BUILD_AUDIO_IO)
     )
 
     target_link_libraries(${PROJECT_NAME}_audio_io PUBLIC ${PROJECT_NAME}_core)
+
+    # nlohmann_json is header-only and used in src/audio-io/Take.cpp alone: build-tree
+    # only, so the exported target does not carry it.
+    target_link_libraries(${PROJECT_NAME}_audio_io PRIVATE
+        $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
 
     # Link platform-specific frameworks required by miniaudio
     if(TANH_OPERATING_SYSTEM STREQUAL "iOS")

@@ -17,7 +17,7 @@ all in namespace `thl`:
   `tanh::Resonator`), transport clocks
 - **tanh::Modulation** -- modulation matrix with change-point sub-blocking; reads
   any host's parameters; records and loops motion
-- **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android)
+- **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android), multitrack recording and export
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)
 - **tanh::Midi** -- MIDI 1.0 and MIDI 2.0 as Universal MIDI Packets, device
   input (macOS, iOS, Android) and a lock-free queue to the audio thread

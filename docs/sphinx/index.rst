@@ -15,7 +15,8 @@ components, all in namespace ``thl``:
   alone as ``tanh::Resonator``)
 - **tanh::Modulation** — modulation matrix with change-point sub-blocking; reads
   any host's parameters; records and loops motion
-- **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android)
+- **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android),
+  multitrack recording and export
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
 - **tanh::Link** — Ableton Link session and Link Audio (``TANH_BUILD_LINK``,
   off by default)
@@ -42,6 +43,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    slicing
    pitch
    audio_io
+   recording
    midi
    api/index
    changelog
