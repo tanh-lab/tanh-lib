@@ -52,8 +52,9 @@ struct MotionTakeStart {
  *   dropped (one point kept), and the take is stretched onto the nearest (by ratio) of 1, 2,
  *   4, 8 or 16 bars, point 0 on the bar line nearest the first kept point. Fewer than
  *   k_motion_min_points points: Dropped. FreeTake::UntilStopped records on through the lifts
- *   (the last position, gate 0) until end() and keeps every point from the first touch: the
- *   pause before end() is part of the loop.
+ *   (the last position, gate 0) until end() and keeps every point from the first touch to the
+ *   last release: the pauses between the strokes are part of the loop, of the one before end()
+ *   one lifted point is (the last stroke does not flow into the first).
  * - bars(n, division): a loop of n / division bars from the loop line (the multiple of its
  *   length at or before the start); refused below k_motion_min_points points.
  *   It starts as the seed, or lifted (gate 0) at the start position without one, and records
@@ -96,7 +97,8 @@ public:
     [[nodiscard]] Event step(bool live,
                              const MotionValues& values,
                              double beats_per_sample) TANH_NONBLOCKING_FUNCTION;
-    /// disarm() / stop(): a touched take ends where it is (Finished), or is Dropped or Cancelled.
+    /// disarm() / stop(): a touched take ends where it is (FreeTake::UntilStopped: at its last
+    /// release) and is Finished, or is Dropped or Cancelled.
     [[nodiscard]] Event end() TANH_NONBLOCKING_FUNCTION;
     /// Forget the take (prepare() during a take).
     void abort() TANH_NONBLOCKING_FUNCTION { m_active = false; }

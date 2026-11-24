@@ -68,7 +68,8 @@ enum class StoppedTransport : uint8_t {
  *
  * - Free: one gesture, from the touch to the release, stretched onto the nearest of 1, 2, 4,
  *   8 or 16 bars. With FreeTake::UntilStopped it records on through the lifts (gate closed)
- *   until disarm() or stop(): a drawing of several strokes, with its pauses.
+ *   until disarm() or stop(): a drawing of several strokes, with the pauses between them,
+ *   that ends where its last stroke ended.
  * - bars(n, division): a looper over n / division bars that records until disarm() or stop().
  *   It starts as what plays; the finger overwrites where it is down and the loop plays on where
  *   it is up. Every release hands the loop over as it is now, so it plays smoothed and

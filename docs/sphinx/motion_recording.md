@@ -23,7 +23,8 @@ running loop on release.
   with it. With `LoopEnd::Smooth` (default) the copy spreads the seam step
   (beyond the expected velocity) over a raised-cosine window from 0.3 beat
   (150 ms for Seconds lanes) at amount 0 to the whole loop at 1, so a take that
-  did not quite end where it started still loops without a jump. Then every
+  did not quite end where it started still loops without a jump (not where the
+  loop is lifted at the seam: a stroke starts there, as after any lift). Then every
   channel runs through a circular, zero-phase Gaussian with sigma = amount² × half a
   beat (250 ms for Seconds lanes; 0.2 gives 0.02 beat, 10 ms at 120 bpm),
   capped at a sixth of the loop. The gate is not smoothed. The same curve comes from
@@ -87,9 +88,10 @@ cannot feed back as a fake touch.
   on. `record(len, options)` starts at the next block without waiting (a free
   take still starts its points at the touch). `TakeOptions` says when a free
   take ends (`m_free`) and what a touch does to a bars take (`m_bars`).
-- `disarm()`: cancel arming; a running take ends there and plays.
-- A take that keeps nothing (never touched, or a free take too short) leaves the
-  lane that played: it plays on.
+- `disarm()`: cancel arming; a running take ends there (a free take until
+  stopped at its last release) and plays.
+- A take that keeps nothing (never touched, or a free take too short) deletes
+  the lane it replaced; undo brings it back.
 - **Free**: from the first touch to the release, 16 bars of the tempo at its
   start at most. The still ends (the finger down but not yet or no longer
   moving) are dropped and the take is stretched onto the nearest (by ratio) of
@@ -98,10 +100,12 @@ cannot feed back as a fake touch.
 - **Free, `FreeTake::UntilStopped`**: from the first touch to `disarm()` or
   `stop()` (16 bars at most), for a drawing of several strokes. A release does
   not end it: while the finger is up the take records where it left with the
-  gate closed, and nothing plays. Every point from the first touch is kept,
-  the pause before the stop too, and the take is stretched onto the nearest of
-  1, 2, 4, 8 or 16 bars. It plays with its pauses: the gate closes where the
-  finger was up.
+  gate closed, and nothing plays. Every point from the first touch to the last
+  release is kept; of the pause before the stop one lifted point is, so the
+  loop ends where the last stroke ended and that stroke does not flow into the
+  first (a loop lifted at its seam is not closed there). The take is stretched
+  onto the nearest of 1, 2, 4, 8 or 16 bars. It plays with the pauses between
+  its strokes: the gate closes where the finger was up.
 - **BarsN**: a loop of N bars from the loop line (the multiple of N bars at or
   before the start, where `set_playback_length(BarsN)` plays it). It starts empty
   (the lane that played stops when it starts; it is replaced, or deleted if the

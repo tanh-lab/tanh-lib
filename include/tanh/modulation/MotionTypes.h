@@ -46,8 +46,8 @@ struct LoopLength {
 enum class FreeTake : uint8_t {
     Gesture,  ///< one gesture: from the touch to the release
     /// From the first touch to disarm() or stop(): the lifts are recorded with the gate closed
-    /// (the values hold where the finger lifted), so a drawing of several strokes loops with its
-    /// pauses.
+    /// (the values hold where the finger lifted), so a drawing of several strokes loops with the
+    /// pauses between them. The loop ends where the last stroke ended, lifted for one point.
     UntilStopped,
 };
 

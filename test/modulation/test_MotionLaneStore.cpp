@@ -170,6 +170,18 @@ TEST(MotionLaneStore, SmoothedLanePlaysItsSmoothedCurve) {
     EXPECT_EQ(store->lane().m_channels[0], take.m_x);
 }
 
+// A take that ends lifted: its first point is the start of a stroke, nothing bends towards it.
+TEST(MotionLaneStore, ATakeThatEndsLiftedKeepsItsSeamOpen) {
+    auto store = make_store();
+    Take take;
+    take.m_gate.back() = 0;
+    ASSERT_TRUE(store->submit(take.view(), 1));
+    const MotionLaneSource playing = select(*store);
+    for (size_t i = 300; i < 400; ++i) {
+        ASSERT_EQ(playing.m_view.m_channels[0][i], take.m_x[i]) << i;
+    }
+}
+
 TEST(MotionLaneStore, JumpLoopEndLeavesASubmittedTakeOpen) {
     auto store = make_store();
     store->set_loop_end(LoopEnd::Jump);

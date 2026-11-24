@@ -67,9 +67,11 @@ bool MotionLaneStore::submit(const MotionLoopView& take,
     slot->m_seam_window = 0;
 
     // LoopEnd::Smooth: close the seam in place so the slot plays without a jump until service()
-    // publishes it; the raw values of the moved points go to the raw tail.
-    if (n >= k_motion_min_points && m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Smooth) {
-        const size_t seam = slot->m_view.m_seam;
+    // publishes it; the raw values of the moved points go to the raw tail. A loop that ends
+    // lifted has no seam to close: its next stroke starts where it starts.
+    const size_t seam = slot->m_view.m_seam;
+    if (n >= k_motion_min_points && motion_seam_is_down(slot->m_gate.data(), n, seam) &&
+        m_loop_end.load(std::memory_order_relaxed) == LoopEnd::Smooth) {
         const size_t window = motion_seam_window(n, take.m_length, take.m_timebase);
         const size_t tail_size = m_max_points / 4;
         assert(window <= tail_size);

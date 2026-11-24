@@ -293,11 +293,15 @@ void MotionTakeRecorder::fill_gaps() TANH_NONBLOCKING_FUNCTION {
 
 // A free take loops without a pause: drop the points before the finger first moves and after
 // it last moved (each run kept down to one point), then stretch it onto whole bars. A take that
-// recorded until it was stopped keeps every point from the touch: its pauses are the drawing's.
+// recorded until it was stopped keeps every point from the touch to its last release (the pauses
+// between its strokes are the drawing's) and one lifted point of the pause before the stop.
 MotionTakeRecorder::Event MotionTakeRecorder::finish_free() TANH_NONBLOCKING_FUNCTION {
     m_active = false;
     size_t n = m_count;
+    // Until stopped: it ends where its last stroke ended, not after the pause before the stop.
+    while (m_until_stopped && n > 0 && m_gate[n - 1] == 0) { --n; }
     if (n < k_motion_min_points) { return Event::Dropped; }
+    if (n < m_count) { ++n; }  // one lifted point: the last stroke does not flow into the first
     auto distance = [&](size_t i, size_t j) {
         double d = 0.0;
         for (size_t c = 0; c < m_num_channels; ++c) {

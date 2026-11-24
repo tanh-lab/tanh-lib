@@ -77,7 +77,10 @@ PlayedCurve make_played_curve(const MotionLane& lane, float smoothing, LoopEnd l
     PlayedCurve curve{.m_channels = lane.m_channels, .m_smoothed = amount > 0.0 || jump};
     if (n < detail::k_motion_min_points || !(lane.m_length > 0.0)) { return curve; }
 
-    if (!jump) {
+    // A loop that ends lifted has no seam to close: its next stroke starts where it starts.
+    const bool down =
+        lane.m_gate.size() != n || detail::motion_seam_is_down(lane.m_gate.data(), n, seam);
+    if (!jump && down) {
         // Close the seam over a window from the base (amount 0, as a take buffer
         // plays) to the whole loop (amount 1, a smooth detrend).
         const size_t base = detail::motion_seam_window(n, lane.m_length, lane.m_timebase);
