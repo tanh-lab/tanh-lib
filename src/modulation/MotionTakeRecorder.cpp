@@ -99,6 +99,11 @@ MotionTakeRecorder::Start MotionTakeRecorder::start(const MotionTakeStart& s)
     }
 
     m_bars = bars > 0.0;
+    m_until_stopped = !m_bars && s.m_options.m_free == FreeTake::UntilStopped;
+    m_replace = m_bars && s.m_options.m_bars == BarsTake::Replace;
+    m_stroke_open = false;
+    m_stroke_start = 0;
+    m_stroke_points = 0;
     m_points_per_bar = static_cast<size_t>(per_bar);
     m_capacity = static_cast<size_t>(points);
     m_tick_step = loop_bars * m_bar_beats / points;
@@ -169,7 +174,8 @@ MotionTakeRecorder::Event MotionTakeRecorder::step(bool live,
     Event event = Event::None;
 
     if (!m_bars) {
-        if (m_touched && !live) { return finish_free(); }  // the release ends it
+        // The release ends it, unless it records until it is stopped.
+        if (m_touched && !live && !m_until_stopped) { return finish_free(); }
         if (!m_touched) {
             if (!live) {
                 m_clock += slope;  // waits for the touch
@@ -181,7 +187,11 @@ MotionTakeRecorder::Event MotionTakeRecorder::step(bool live,
         }
         const double next = m_tick_base + (static_cast<double>(m_count) * m_tick_step);
         if (m_clock >= next - k_tick_eps) {
-            write(m_count++, values, 1);
+            if (live) {
+                write(m_count++, values, 1);
+            } else {
+                write(m_count++, m_last, 0);  // lifted: where the finger left
+            }
             if (m_count >= m_target) {
                 if (m_count >= m_capacity) {
                     event = finish_free();
@@ -197,9 +207,15 @@ MotionTakeRecorder::Event MotionTakeRecorder::step(bool live,
     const double next = m_tick_base + (static_cast<double>(m_count) * m_tick_step);
     if (m_clock >= next - k_tick_eps) {
         if (live) {
+            if (m_replace && !m_stroke_open) {  // a new stroke: the loop starts over here
+                m_stroke_open = true;
+                m_stroke_start = m_count;
+                m_stroke_points = 0;
+            }
             write(m_count, values, 1);
             m_touched = true;
             m_seam = (m_count + 1) % m_capacity;
+            if (m_stroke_open) { m_stroke_points = std::min(m_stroke_points + 1, m_capacity); }
         } else if (!m_full) {
             write(m_count, m_last, 0);
         }
@@ -209,10 +225,31 @@ MotionTakeRecorder::Event MotionTakeRecorder::step(bool live,
             m_full = true;
         }
     }
-    if (m_last_live && !live) { event = complete_loop(Event::Revision); }
+    if (m_last_live && !live) {
+        if (!m_replace) {
+            event = complete_loop(Event::Revision);
+        } else if (m_stroke_open) {  // a touch too short for a point changes nothing
+            hold_rest();
+            event = complete_loop(Event::Revision);
+        }
+    }
     m_last_live = live;
     m_clock += slope;
     return event;
+}
+
+// Replace: the stroke that just ended is the loop. Every point it did not draw holds its last
+// position, down; the step back to its first point is the seam. Bounded: one pass over the loop.
+void MotionTakeRecorder::hold_rest() TANH_NONBLOCKING_FUNCTION {
+    m_stroke_open = false;
+    m_full = true;
+    if (m_stroke_points >= m_capacity) { return; }  // it drew the whole loop
+    for (size_t k = m_stroke_points; k < m_capacity; ++k) {
+        const size_t i = (m_stroke_start + k) % m_capacity;
+        for (size_t ch = 0; ch < m_num_channels; ++ch) { channel(ch)[i] = m_last[ch]; }
+        m_gate[i] = 1;
+    }
+    m_seam = m_stroke_start;
 }
 
 // A BarsN take as a whole loop: the rest of a first pass is lifted at the last position.
@@ -255,7 +292,8 @@ void MotionTakeRecorder::fill_gaps() TANH_NONBLOCKING_FUNCTION {
 }
 
 // A free take loops without a pause: drop the points before the finger first moves and after
-// it last moved (each run kept down to one point), then stretch it onto whole bars.
+// it last moved (each run kept down to one point), then stretch it onto whole bars. A take that
+// recorded until it was stopped keeps every point from the touch: its pauses are the drawing's.
 MotionTakeRecorder::Event MotionTakeRecorder::finish_free() TANH_NONBLOCKING_FUNCTION {
     m_active = false;
     size_t n = m_count;
@@ -268,7 +306,7 @@ MotionTakeRecorder::Event MotionTakeRecorder::finish_free() TANH_NONBLOCKING_FUN
         }
         return d;
     };
-    size_t first = 0;
+    size_t first = m_until_stopped ? n : 0;
     while (first < n && distance(first, 0) <= k_still_distance) { ++first; }
     if (first < n) {  // it moved; a held position is kept as it is
         size_t last = n - 1;
@@ -302,6 +340,7 @@ MotionTakeRecorder::Event MotionTakeRecorder::end() TANH_NONBLOCKING_FUNCTION {
         return Event::Cancelled;
     }
     if (!m_bars) { return finish_free(); }
+    if (m_stroke_open) { hold_rest(); }  // Replace, the finger still down: the stroke ends here
     return complete_loop(Event::Finished);
 }
 

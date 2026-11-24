@@ -10,8 +10,10 @@ running loop on release.
 
 - **Takes** are Beats loops of whole bars. *Free* records one gesture, from the
   touch to the release, and stretches it onto the nearest of 1, 2, 4, 8 or 16
-  bars. *BarsN* is a looper over N bars that records until `disarm()`: the
-  finger overwrites where it is down, the loop plays on where it is up.
+  bars; with `FreeTake::UntilStopped` it records the strokes and the pauses
+  between them until `disarm()`. *BarsN* is a looper over N bars that records
+  until `disarm()`: the finger overwrites where it is down, the loop plays on
+  where it is up; with `BarsTake::Replace` every touch starts the loop over.
 - **Recording** runs at control rate into preallocated memory:
   `round(200 · 60 / bpm)` points per beat (24 to 512), on the transport's beat
   while it plays, else on the recorder's own free-running beat. Points are stored
@@ -80,10 +82,11 @@ cannot feed back as a fake touch.
 
 ## Commands
 
-- `arm(len)`: the take starts on the first touch (or at once if a finger is
-  down); until then, and while it records, the lane that played plays on.
-  `record(len)` starts at the next block without waiting (a free take still
-  starts its points at the touch).
+- `arm(len, options)`: the take starts on the first touch (or at once if a
+  finger is down); until then, and while it records, the lane that played plays
+  on. `record(len, options)` starts at the next block without waiting (a free
+  take still starts its points at the touch). `TakeOptions` says when a free
+  take ends (`m_free`) and what a touch does to a bars take (`m_bars`).
 - `disarm()`: cancel arming; a running take ends there and plays.
 - A take that keeps nothing (never touched, or a free take too short) leaves the
   lane that played: it plays on.
@@ -92,6 +95,13 @@ cannot feed back as a fake touch.
   moving) are dropped and the take is stretched onto the nearest (by ratio) of
   1, 2, 4, 8 or 16 bars, point 0 on the bar line nearest its first point: it
   loops as one continuous movement, without a pause.
+- **Free, `FreeTake::UntilStopped`**: from the first touch to `disarm()` or
+  `stop()` (16 bars at most), for a drawing of several strokes. A release does
+  not end it: while the finger is up the take records where it left with the
+  gate closed, and nothing plays. Every point from the first touch is kept,
+  the pause before the stop too, and the take is stretched onto the nearest of
+  1, 2, 4, 8 or 16 bars. It plays with its pauses: the gate closes where the
+  finger was up.
 - **BarsN**: a loop of N bars from the loop line (the multiple of N bars at or
   before the start, where `set_playback_length(BarsN)` plays it). It starts empty
   (the lane that played stops when it starts; it is replaced, or deleted if the
@@ -102,6 +112,13 @@ cannot feed back as a fake touch.
   open), so the loop never stands still and between touches it plays smoothed and
   transformed like any lane; the whole take is one undo step. Its seam is where the newest point
   meets the oldest.
+- **BarsN, `BarsTake::Replace`**: the same loop, but every touch starts it
+  over. The stroke is written from the point where the finger came down;
+  released before the loop is full, every other point holds where it left, gate
+  open, and the step back to the stroke's first point is the seam (`LoopEnd`
+  smooths it or keeps it). Held longer than the loop, the stroke overwrites
+  itself and the loop is its last N bars. A touch too short for a point changes
+  nothing.
 - `undo()` / `redo()` (message thread): one level. Every publication (take,
   load, clear) keeps the previous lane, except the later revisions of one take;
   `undo()` republishes it under a new take id and enables `redo()`; a new

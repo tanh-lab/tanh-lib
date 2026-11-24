@@ -70,12 +70,16 @@ size_t MotionRecorder::take_buffer_bytes() const {
                                           ((points / 4) * channels * sizeof(float))));
 }
 
-bool MotionRecorder::arm(LoopLength length) {
-    return m_commands.try_push({.m_kind = CommandKind::Arm, .m_length = length});
+bool MotionRecorder::arm(LoopLength length, TakeOptions options) {
+    return m_commands.try_push({.m_kind = CommandKind::Arm,
+                                .m_arg = detail::pack_take_options(options),
+                                .m_length = length});
 }
 
-bool MotionRecorder::record(LoopLength length) {
-    return m_commands.try_push({.m_kind = CommandKind::Record, .m_length = length});
+bool MotionRecorder::record(LoopLength length, TakeOptions options) {
+    return m_commands.try_push({.m_kind = CommandKind::Record,
+                                .m_arg = detail::pack_take_options(options),
+                                .m_length = length});
 }
 
 bool MotionRecorder::disarm() {
@@ -170,6 +174,7 @@ void MotionRecorder::apply_commands() TANH_NONBLOCKING_FUNCTION {
                 m_armed = true;
                 m_force_start = c.m_kind == CommandKind::Record;
                 m_arm_length = c.m_length;
+                m_arm_options = detail::unpack_take_options(c.m_arg);
                 m_refused = false;
                 m_aborted = false;
                 break;
@@ -194,6 +199,7 @@ void MotionRecorder::start_take(const TransportInfo& t,
     // A new take starts empty: the lane that played stops now and is replaced by the take, or
     // deleted if the take keeps nothing.
     const detail::MotionTakeStart start{.m_length = m_arm_length,
+                                        .m_options = m_arm_options,
                                         .m_bpm = t.m_bpm,
                                         .m_sig_num = m_sig_num,
                                         .m_sig_denom = m_sig_denom,

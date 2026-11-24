@@ -42,6 +42,32 @@ struct LoopLength {
     return static_cast<double>(length.m_bars) / static_cast<double>(length.m_division);
 }
 
+/// When a free take ends (arm, record).
+enum class FreeTake : uint8_t {
+    Gesture,  ///< one gesture: from the touch to the release
+    /// From the first touch to disarm() or stop(): the lifts are recorded with the gate closed
+    /// (the values hold where the finger lifted), so a drawing of several strokes loops with its
+    /// pauses.
+    UntilStopped,
+};
+
+/// What a touch does to a bars take (arm, record).
+enum class BarsTake : uint8_t {
+    /// The finger overwrites where it is down and the loop keeps what it holds where it is up:
+    /// several strokes build the loop up.
+    Overdub,
+    /// Every touch starts the loop over: what it draws from where it came down and, released
+    /// before the loop is full, its last position held (gate open) for the rest. Held longer
+    /// than the loop, it overwrites itself.
+    Replace,
+};
+
+/// How a take records, beside its length.
+struct TakeOptions {
+    FreeTake m_free = FreeTake::Gesture;
+    BarsTake m_bars = BarsTake::Overdub;
+};
+
 struct MotionRecorderConfig {
     /// Points of a take (the take and two hand-over slots per recorder, 4 bytes per channel
     /// and 1 per point in each).

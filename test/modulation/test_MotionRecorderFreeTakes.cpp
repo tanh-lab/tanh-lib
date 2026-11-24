@@ -148,3 +148,44 @@ TEST(MotionRecorderFreeTakes, RecordWaitsForTheFirstTouch) {
     EXPECT_NEAR(lane.m_channels[0][0], circle_x(0.0), 0.01);  // starts at the touch, not lifted
     EXPECT_EQ(lane.m_gate[0], 1);
 }
+
+// FreeTake::UntilStopped: the strokes and the pauses between them, until disarm().
+TEST(MotionRecorderFreeTakes, UntilStoppedRecordsThePausesUntilDisarm) {
+    Rig r(256, 120.0);
+    r.play_at(0);
+    r.step();
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::free(), {.m_free = FreeTake::UntilStopped}));
+    const uint64_t start = r.now();
+    r.m_pad.touch(1, 0.2f, 0.3f);
+    r.run_until(start + (k_bar / 4));
+    r.m_pad.release(1);
+    r.run_until(start + (k_bar / 2));  // lifted: the take goes on, nothing plays
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);
+    EXPECT_EQ(r.m_gate.back(), 0);
+    EXPECT_FLOAT_EQ(r.m_x.back(), 0.2f);
+    r.m_pad.touch(1, 0.8f, 0.6f);
+    r.run_until(start + (k_bar * 3 / 4));
+    r.m_pad.release(1);
+    r.run_until(start + k_bar);
+    ASSERT_TRUE(r.m_rec.disarm());
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+    ASSERT_TRUE(r.m_rec.service());
+    const MotionLane lane = r.m_rec.lane();
+    EXPECT_DOUBLE_EQ(lane.m_length, 4.0);  // one bar
+    const size_t n = lane.num_points();
+    ASSERT_GT(n, 300u);
+    EXPECT_EQ(lane.m_gate[n / 8], 1);  // first stroke
+    EXPECT_NEAR(lane.m_channels[0][n / 8], 0.2f, 1e-3f);
+    EXPECT_EQ(lane.m_gate[n * 3 / 8], 0);  // the pause, where the finger left
+    EXPECT_NEAR(lane.m_channels[0][n * 3 / 8], 0.2f, 1e-3f);
+    EXPECT_EQ(lane.m_gate[n * 5 / 8], 1);  // second stroke
+    EXPECT_NEAR(lane.m_channels[0][n * 5 / 8], 0.8f, 1e-3f);
+    EXPECT_EQ(lane.m_gate[n * 7 / 8], 0);  // the pause before the stop
+    // It plays with its pauses: the gate closes where the finger was up.
+    const size_t from = r.m_gate.size();
+    r.run_until(r.now() + k_bar);
+    size_t open = 0;
+    for (size_t i = from; i < r.m_gate.size(); ++i) { open += r.m_gate[i]; }
+    EXPECT_NEAR(static_cast<double>(open) / static_cast<double>(r.m_gate.size() - from), 0.5, 0.05);
+}
