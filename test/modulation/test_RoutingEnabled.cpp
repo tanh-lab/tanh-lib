@@ -362,15 +362,31 @@ TEST(RoutingEnabled, ToggleNeedsNoRebuildConcurrentWithAudio) {
     matrix.prepare(k_sr, k_bs);
     const ProcessingConfig* before = live_config(matrix);
 
+    // The first sample that was neither routing's value, for the failure message: which
+    // block and sample it was, what it held, and what the block held around it. Written by
+    // the audio thread, read after it has been joined.
+    struct BadSample {
+        int m_block = -1;
+        uint32_t m_index = 0;
+        float m_value = 0.0f;
+        float m_block_first = 0.0f;
+        float m_block_last = 0.0f;
+        float m_previous_block_last = 0.0f;
+        int m_bad_in_block = 0;
+    };
+    BadSample first_bad;
+
     std::atomic<bool> stop{false};
     std::atomic<int> bad{0};
     std::atomic<int> blocks{0};
     std::atomic<int> saw_a{0};
     std::atomic<int> saw_b{0};
     std::thread audio([&] {
+        float previous_block_last = 0.0f;
         while (!stop.load(std::memory_order_acquire)) {
             const auto scope = matrix.audio_read_scope();
             matrix.process_with_scope(scope.data(), k_bs);
+            int bad_in_block = 0;
             for (uint32_t i = 0; i < k_bs; ++i) {
                 const float v = p.load(i);
                 if (v == 0.9f) {
@@ -379,8 +395,21 @@ TEST(RoutingEnabled, ToggleNeedsNoRebuildConcurrentWithAudio) {
                     saw_b.fetch_add(1, std::memory_order_relaxed);
                 } else {
                     bad.fetch_add(1);
+                    ++bad_in_block;
+                    if (first_bad.m_block < 0) {
+                        first_bad = {.m_block = blocks.load(std::memory_order_relaxed),
+                                     .m_index = i,
+                                     .m_value = v,
+                                     .m_block_first = p.load(0),
+                                     .m_block_last = p.load(static_cast<uint32_t>(k_bs - 1)),
+                                     .m_previous_block_last = previous_block_last};
+                    }
                 }
             }
+            if (first_bad.m_block == blocks.load(std::memory_order_relaxed)) {
+                first_bad.m_bad_in_block = bad_in_block;
+            }
+            previous_block_last = p.load(static_cast<uint32_t>(k_bs - 1));
             blocks.fetch_add(1, std::memory_order_release);
         }
     });
@@ -399,7 +428,13 @@ TEST(RoutingEnabled, ToggleNeedsNoRebuildConcurrentWithAudio) {
     }
     stop.store(true, std::memory_order_release);
     audio.join();
-    EXPECT_EQ(bad.load(), 0);
+    EXPECT_EQ(bad.load(), 0) << "first in block " << first_bad.m_block << " of " << blocks.load()
+                             << ", sample " << first_bad.m_index << ": " << first_bad.m_value
+                             << " (" << first_bad.m_bad_in_block
+                             << " such samples in that block; its first sample "
+                             << first_bad.m_block_first << ", its last " << first_bad.m_block_last
+                             << ", the last of the block before " << first_bad.m_previous_block_last
+                             << ")";
     EXPECT_GT(saw_a.load(), 0);
     EXPECT_GT(saw_b.load(), 0);
     EXPECT_EQ(live_config(matrix), before);
