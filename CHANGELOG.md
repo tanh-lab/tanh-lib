@@ -320,7 +320,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   every publication built two vectors, one allocation or more per publication as soon as the
   RCU had a reader; it now unlinks the nodes in place.
 - `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
-  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
+  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`. It no longer
+  declares fallback constants in `namespace std` where the macro is missing: every standard
+  library that builds the rest of tanh-lib's C++20 code has `std::numbers`, and one without it
+  now fails at this header with an `#error` naming the feature.
 - `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
   `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
   Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`
