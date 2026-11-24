@@ -18,7 +18,8 @@ public:
      * @param grain_index  Index in the grain pool (0..k_max_grains-1)
      * @param position     Normalized start position in sample (0-1)
      * @param size         Normalized grain size relative to sample length (0-1)
-     * @param velocity     Playback speed factor
+     * @param velocity     Playback speed factor, negative for a grain reading
+     *                     backwards (it covers [position - size, position])
      * @param duration_ms  Grain duration in milliseconds
      */
     virtual void on_grain_triggered(int grain_index,

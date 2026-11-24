@@ -281,6 +281,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Granular Position mode (`PositionSprayHead`) can play backwards: Spray is signed
+  ([-1, 1]), its magnitude is the window width and a negative Spray reads every grain
+  backwards, Position mode's counterpart of End before Start in Loop and Sample mode. The
+  region stays the whole sample but reversed, and each grain starts on its picked frame and
+  reads backwards. Sliced, the pick is mirrored inside its slice, so a reversed Spray near 0
+  enters the slice on its last frame. Before, Position mode always played forwards and
+  `GrainProcessor` clamped Spray to [0, 1]. Tests: `PositionSprayHead.NegativeSpray*`,
+  `PositionSprayHead.Reversed*`, `PositionSprayHead.SliceReversed*`,
+  `GrainEngine.PositionModeNegativeSprayReadsBackwards`.
 - `TransportClock` keeps the block itself: a subclass implements `compute_block()` and
   `on_prepare()`, and `prepare()`, `begin_block()`, `end_block()`, `block_info()` (now a
   reference), `beat_at_sample()`, `division_in_block()` and the tempo, signature and
@@ -381,15 +390,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   untouched); a change arriving mid-fade retargets it, and after a swap the next fade-out waits
   20 ms so a value flickering across a choice boundary can't chop the sound. The first render
   after `prepare()` takes the parameters directly. Tests: `RingsModelSwitch.*`.
-- Granular Position mode (`PositionSprayHead`) can play backwards: Spray is signed
-  ([-1, 1]), its magnitude is the window width and a negative Spray reads every grain
-  backwards, Position mode's counterpart of End before Start in Loop and Sample mode. The
-  region stays the whole sample but reversed, and each grain starts on its picked frame and
-  reads backwards. Sliced, the pick is mirrored inside its slice, so a reversed Spray near 0
-  enters the slice on its last frame. Before, Position mode always played forwards and
-  `GrainProcessor` clamped Spray to [0, 1]. Tests: `PositionSprayHead.NegativeSpray*`,
-  `PositionSprayHead.Reversed*`, `PositionSprayHead.SliceReversed*`,
-  `GrainEngine.PositionModeNegativeSprayReadsBackwards`.
 - `Graph`: a node that turns the phase (its `process_with_dry()` dry signal is not its input,
   e.g. a crossover) no longer steps when its wet mix reaches 0 or leaves it. The bypass passes
   the plain sources, while a blend's dry signal is the phase-matched one; the switch between the

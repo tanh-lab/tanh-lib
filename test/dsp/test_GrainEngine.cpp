@@ -223,6 +223,31 @@ TEST(PositionSprayHead, SliceReversedPickNearTheNextBoundaryStaysInItsSlice) {
     }
 }
 
+TEST(PositionSprayHead, SliceReversedLastSliceRoundedOntoTheEndStillPicks) {
+    // A map made for a longer source, rescaled onto 12 frames: its thin last
+    // slice starts on the end frame. The reversed mirror must still land on
+    // a real frame, never k_no_grain.
+    PositionSprayHead head;
+    std::mt19937 rng(9);
+    HeadInputs params;
+    const std::vector<float> bounds{0.0f, 0.5f, 0.99f, 1.0f};
+    auto const slices = SliceMap::from_normalized(bounds, 1000);
+    ASSERT_TRUE(slices.valid());
+    ASSERT_EQ(slices.boundary_frame(2, 12), 12u);  // the last slice collapses onto the end
+    params.m_slices = &slices;
+    params.m_position = 0.999f;  // the last slice
+    params.m_spray = -1e-6f;
+    auto const region = head.region(12, params);
+    ASSERT_TRUE(region.m_reverse);
+    for (int i = 0; i < 200; ++i) {
+        FramePos const r = head.pick_start(region, 0.5f, 0, params, rng);
+        ASSERT_NE(r, k_no_grain) << "i=" << i;
+        FramePos const f = region.physical(r);
+        EXPECT_GE(f, 0) << "i=" << i;
+        EXPECT_LT(f, 12) << "i=" << i;
+    }
+}
+
 TEST(PositionSprayHead, SliceTiltRightCoversChosenAndNext) {
     PositionSprayHead head;
     std::mt19937 rng(5);

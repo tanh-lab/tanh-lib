@@ -283,10 +283,11 @@ void GrainEngine::trigger_grain(const Source& src,
     auto const total = static_cast<float>(src.m_frames);
     float const duration_ms =
         static_cast<float>(grain_size) / static_cast<float>(m_sample_rate) * 1000.0f;
+    // Signed like the grain itself: a reversed grain covers [start - length, start].
     m_viz->grain_triggered(static_cast<int>(grain - m_grains.data()),
                            static_cast<float>(region.physical(start)) / total,
                            static_cast<float>(covered) / total,
-                           velocity,
+                           region.m_reverse ? -velocity : velocity,
                            duration_ms);
 }
 

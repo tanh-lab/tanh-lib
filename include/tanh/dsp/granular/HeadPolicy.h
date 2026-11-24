@@ -248,12 +248,16 @@ private:
             // can put it on the next boundary.
             auto const k_slice = static_cast<size_t>(
                 std::clamp(std::floor(v), 0.0, static_cast<double>(slices.m_count - 1)));
-            auto const lo =
-                static_cast<FramePos>(slices.boundary_frame(k_slice, static_cast<size_t>(total)));
+            // A map rescaled to another source length can round the last
+            // boundaries onto `total`; keep the slice a real frame range.
+            auto const lo = std::min(
+                static_cast<FramePos>(slices.boundary_frame(k_slice, static_cast<size_t>(total))),
+                total - 1);
             auto const hi =
-                std::max(lo + 1,
-                         static_cast<FramePos>(
-                             slices.boundary_frame(k_slice + 1, static_cast<size_t>(total))));
+                std::clamp(static_cast<FramePos>(
+                               slices.boundary_frame(k_slice + 1, static_cast<size_t>(total))),
+                           lo + 1,
+                           total);
             frame = lo + (hi - 1) - std::clamp(frame, lo, hi - 1);
         }
         frame += static_cast<FramePos>(region.m_start);
