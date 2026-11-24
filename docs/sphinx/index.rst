@@ -14,7 +14,7 @@ components, all in namespace ``thl``:
   slicing, pitch banks, granular engine, Rings resonator model (also available
   alone as ``tanh::Resonator``)
 - **tanh::Modulation** — modulation matrix with change-point sub-blocking; reads
-  any host's parameters
+  any host's parameters; records and loops motion
 - **tanh::AudioIO** — audio device I/O over miniaudio (desktop, iOS, Android),
   multitrack recording and export
 - **tanh::Net** — verified HTTPS asset delivery (off by default)
@@ -38,6 +38,7 @@ Platforms: macOS 12+, iOS 14+, Android, Linux, Windows, WebAssembly.
    modulation
    host_parameters
    transport
+   motion_recording
    sampler
    slicing
    pitch
@@ -62,8 +63,8 @@ block in pieces that start where its modulated parameters change.
 :doc:`symbol_visibility`, :doc:`modulation` and :doc:`audio_io` are the design
 notes that used to live in the README. :doc:`host_parameters` drives the
 matrix from a host's parameter store; :doc:`transport` covers musical time
-(``TransportInfo``, host/internal/Link clocks) and Ableton Link.
-:doc:`sampler`, :doc:`slicing` and :doc:`pitch` describe the sample playback
+(``TransportInfo``, host/internal/Link clocks) and Ableton Link;
+:doc:`motion_recording` records and loops gestures (a slider, an XY pad). :doc:`sampler`, :doc:`slicing` and :doc:`pitch` describe the sample playback
 components, :doc:`midi` the internal MIDI format.
 
 The :doc:`api/index` is generated from the public headers under

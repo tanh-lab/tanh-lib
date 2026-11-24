@@ -16,7 +16,7 @@ all in namespace `thl`:
   pitch banks, granular engine, Rings resonator model (also available alone as
   `tanh::Resonator`), transport clocks
 - **tanh::Modulation** -- modulation matrix with change-point sub-blocking; reads
-  any host's parameters
+  any host's parameters; records and loops motion
 - **tanh::AudioIO** -- audio device I/O over miniaudio (desktop, iOS, Android), multitrack recording and export
 - **tanh::Net** -- verified HTTPS asset delivery (off by default)
 - **tanh::Midi** -- MIDI 1.0 and MIDI 2.0 as Universal MIDI Packets, device

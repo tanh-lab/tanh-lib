@@ -9,6 +9,52 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::modulation::MotionRecorder` and `MotionLane`: record a gesture of one or more
+  channels (`MotionRecorder(num_channels)`, up to 8: a slider, an XY pad) on the
+  audio thread into preallocated memory and loop it back synced to the transport,
+  with touch override and a glide back. Every take is a Beats loop of whole bars:
+  `Free` records one gesture from the touch to the release, drops its still ends and
+  is stretched onto the nearest of 1, 2, 4, 8 or 16 bars; `BarsN` is a looper over N
+  bars from the loop line that records until `disarm()`, starts as what plays,
+  overwrites only where the finger is down and hands the loop over at every release,
+  so it plays smoothed and transformed between touches (one undo step per take). The
+  recorder is a facade over tested parts: `detail::MotionTakeRecorder`,
+  `detail::MotionLaneStore` (hand-over slots, RCU publication, undo),
+  `detail::MotionLanePlayer` (phase, playback length, reverse, jumps, render ramp) and
+  `detail::MotionCompositor` (touch over playback over hold). The transport flags are
+  the only jump detector; a jump never aborts a running take. UI commands are
+  `[[nodiscard]]` (false when the 32-entry queue is full); `service()` publishes
+  takes; lanes save as validated JSON. `set_playback_length(BarsN)` plays any lane
+  stretched onto N bars from a bar line. A take that keeps nothing leaves the lane
+  that played. The published lane stays raw, seam included (`MotionLane::m_seam`,
+  JSON `seam`); what plays (`played_lane()`, also `make_played_curve()` for any lane)
+  closes the seam over 0.3 beat (150 ms), widening to the whole loop as
+  `set_smoothing()` goes to 1, then runs every channel through a zero-phase Gaussian of
+  sigma = amount² × half a beat (250 ms for Seconds lanes).
+  `set_loop_end(LoopEnd::Jump)` keeps the end-to-start step as a hard edge and smooths
+  without crossing it. Tests: `MotionTakeRecorder.*`, `MotionLaneStore.*`,
+  `MotionLanePlayer.*`, `MotionCompositor.*`, `MotionLane.*`, `MotionRecorder*.*`,
+  `MotionLaneProcessing.*`. Lanes save as JSON version 2 (`channels`); version 1 (`x`,
+  `y`) loads as two channels. Docs: `motion_recording.md`.
+- `MotionRecorder::arm()` and `record()` take `TakeOptions`. `FreeTake::UntilStopped`: a free
+  take that records the strokes and the pauses between them (gate closed, the values where the
+  finger left) from the first touch until `disarm()` or `stop()`, keeps every point up to the
+  last release (of the pause before the stop one lifted point) and is stretched onto the
+  nearest of 1, 2, 4, 8 or 16 bars; a loop lifted at its seam is not closed there
+  (`LoopEnd::Smooth`). `BarsTake::Replace`: a bars take where every touch starts the loop
+  over: the stroke, then its last position held (gate open) over the rest, the seam where the
+  stroke began; held longer than the loop it overwrites itself. The defaults (`Gesture`,
+  `Overdub`) record as before. Tests: `MotionTakeRecorder.Replace*`,
+  `MotionTakeRecorder.UntilStopped*`, `MotionRecorderFreeTakes.UntilStopped*`,
+  `MotionRecorderOverwrite.ReplaceTake*`. Docs: `motion_recording.md`.
+- `thl::modulation::MotionTransform`: the application's path over playback (shapes,
+  scaling, rotation), stateless, with its setting as one 64-bit word
+  (`MotionRecorder::set_transform()`, `set_transform_settings()`,
+  `transform_version()`); it moves the lane's points, or loops alone over the playback
+  length, and can hold the gate open. `render_motion_path()` samples what plays for
+  drawing. Tests: `MotionLanePlayer.Transform*`,
+  `MotionRecorderOverwrite.LiftedLooperPlaysSmoothedAndTransformed`. Docs:
+  `motion_recording.md`.
 - Multitrack recording. `audio_io::MultitrackRecorder` records several tracks at once (every
   engine, every return channel, the mix) into one WAV file each, aligned to the sample: the
   audio thread copies each block into a buffer per track and one writer thread moves them to
