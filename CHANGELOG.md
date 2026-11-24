@@ -36,6 +36,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `MotionLanePlayer.*`, `MotionCompositor.*`, `MotionLane.*`, `MotionRecorder*.*`,
   `MotionLaneProcessing.*`. Lanes save as JSON version 2 (`channels`); version 1 (`x`,
   `y`) loads as two channels. Docs: `motion_recording.md`.
+- `MotionRecorder::arm()` and `record()` take `TakeOptions`. `FreeTake::UntilStopped`: a free
+  take that records the strokes and the pauses between them (gate closed, the values where the
+  finger left) from the first touch until `disarm()` or `stop()`, keeps every point up to the
+  last release (of the pause before the stop one lifted point) and is stretched onto the
+  nearest of 1, 2, 4, 8 or 16 bars; a loop lifted at its seam is not closed there
+  (`LoopEnd::Smooth`). `BarsTake::Replace`: a bars take where every touch starts the loop
+  over: the stroke, then its last position held (gate open) over the rest, the seam where the
+  stroke began; held longer than the loop it overwrites itself. The defaults (`Gesture`,
+  `Overdub`) record as before. Tests: `MotionTakeRecorder.Replace*`,
+  `MotionTakeRecorder.UntilStopped*`, `MotionRecorderFreeTakes.UntilStopped*`,
+  `MotionRecorderOverwrite.ReplaceTake*`. Docs: `motion_recording.md`.
 - `thl::modulation::MotionTransform`: the application's path over playback (shapes,
   scaling, rotation), stateless, with its setting as one 64-bit word
   (`MotionRecorder::set_transform()`, `set_transform_settings()`,

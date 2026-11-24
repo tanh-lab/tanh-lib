@@ -50,6 +50,15 @@ TEST(MotionLaneProcessing, SmoothLoopEndClosesTheSeam) {
     EXPECT_FALSE(curve.m_smoothed);
 }
 
+// Lifted at its end, the loop's first point is the start of a stroke: nothing bends towards it.
+TEST(MotionLaneProcessing, ALoopThatEndsLiftedKeepsItsSeamOpen) {
+    MotionLane lane = ramp_lane();
+    lane.m_gate.back() = 0;
+    const auto curve = make_played_curve(lane, 0.0f, LoopEnd::Smooth);
+    EXPECT_EQ(curve.m_channels[0], lane.m_channels[0]);
+    EXPECT_EQ(curve.m_channels[1], lane.m_channels[1]);
+}
+
 TEST(MotionLaneProcessing, SmoothingStaysInRangeAndAverages) {
     MotionLane lane = ramp_lane();
     for (size_t i = 0; i < lane.num_points(); ++i) {

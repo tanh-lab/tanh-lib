@@ -36,6 +36,16 @@ struct MotionCommand {
     LoopLength m_length;  ///< Arm, Record, PlaybackLength
 };
 
+/// TakeOptions in a command's m_arg (Arm, Record).
+[[nodiscard]] constexpr uint8_t pack_take_options(TakeOptions options) {
+    return static_cast<uint8_t>((options.m_free == FreeTake::UntilStopped ? 1U : 0U) |
+                                (options.m_bars == BarsTake::Replace ? 2U : 0U));
+}
+[[nodiscard]] constexpr TakeOptions unpack_take_options(uint8_t arg) {
+    return {.m_free = (arg & 1U) != 0 ? FreeTake::UntilStopped : FreeTake::Gesture,
+            .m_bars = (arg & 2U) != 0 ? BarsTake::Replace : BarsTake::Overdub};
+}
+
 }  // namespace detail
 
 /// Capacity of a recorder's UI to audio command queue.
@@ -57,11 +67,14 @@ enum class StoppedTransport : uint8_t {
  * (detail::MotionTakeRecorder). Every take is a Beats loop of bars:
  *
  * - Free: one gesture, from the touch to the release, stretched onto the nearest of 1, 2, 4,
- *   8 or 16 bars.
+ *   8 or 16 bars. With FreeTake::UntilStopped it records on through the lifts (gate closed)
+ *   until disarm() or stop(): a drawing of several strokes, with the pauses between them,
+ *   that ends where its last stroke ended.
  * - bars(n, division): a looper over n / division bars that records until disarm() or stop().
  *   It starts as what plays; the finger overwrites where it is down and the loop plays on where
  *   it is up. Every release hands the loop over as it is now, so it plays smoothed and
- *   transformed between touches; the whole take is one undo step.
+ *   transformed between touches; the whole take is one undo step. With BarsTake::Replace every
+ *   touch starts the loop over: what it draws, then its last position held for the rest.
  *
  * A take hands its loop over (detail::MotionLaneStore) and it plays from the next block;
  * service() publishes it as a MotionLane through RCU on the message thread. Until then, and
@@ -111,13 +124,14 @@ public:
     /// Bytes allocated for the take and the two hand-over slots.
     [[nodiscard]] size_t take_buffer_bytes() const;
 
-    /// Arm a take; it starts on the first touch, or at once if a touch is held.
+    /// Arm a take; it starts on the first touch, or at once if a touch is held. @p options: when
+    /// a free take ends and what a touch does to a bars take.
     /// UI-thread commands return false when the command queue (k_motion_command_capacity) is
     /// full; the command is then dropped.
-    [[nodiscard]] bool arm(LoopLength length);
+    [[nodiscard]] bool arm(LoopLength length, TakeOptions options = {});
     /// Start a take at the next block without waiting for a touch (a free take still starts
     /// its points at the first touch).
-    [[nodiscard]] bool record(LoopLength length);
+    [[nodiscard]] bool record(LoopLength length, TakeOptions options = {});
     /// Cancel arming. A running take ends there and plays (a take never touched keeps nothing).
     [[nodiscard]] bool disarm();
     /// Enable playback (the default).
@@ -295,6 +309,7 @@ private:
     int m_sig_num = 4;
     int m_sig_denom = 4;
     LoopLength m_arm_length = LoopLength::free();
+    TakeOptions m_arm_options;
     LoopLength m_playback_length = LoopLength::free();
     bool m_armed = false;
     bool m_force_start = false;

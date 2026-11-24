@@ -269,3 +269,41 @@ TEST(MotionRecorderOverwrite, TakeRecordsThroughTheTransform) {
     r.run_until(r.now() + k_bar);
     EXPECT_NEAR(r.m_x.back(), 0.6f, 1e-5);  // plays where the finger was
 }
+
+// BarsTake::Replace: every touch starts the loop over, and the rest holds where it ended.
+TEST(MotionRecorderOverwrite, ReplaceTakeStartsOverWithEveryTouch) {
+    Rig r(256, 120.0);
+    r.play_at(0);
+    r.step();
+    ASSERT_TRUE(r.m_rec.arm(LoopLength::bars(1), {.m_bars = BarsTake::Replace}));
+    r.run_until(k_bar / 4);
+    r.m_pad.touch(1, 0.2f, 0.3f);
+    r.run_until(k_bar / 2);
+    r.m_pad.release(1);
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Recording);  // until disarm
+    ASSERT_TRUE(r.m_rec.service());
+    {
+        const MotionLane lane = r.m_rec.lane();
+        EXPECT_DOUBLE_EQ(lane.m_length, 4.0);
+        for (size_t i = 0; i < lane.num_points(); ++i) {
+            ASSERT_EQ(lane.m_gate[i], 1) << i;
+            ASSERT_NEAR(lane.m_channels[0][i], 0.2f, 1e-6f) << i;  // drawn, then held
+        }
+    }
+    // A second touch a bar later: the loop is the new stroke and its hold.
+    r.run_until(k_bar + (k_bar / 2));
+    r.m_pad.touch(1, 0.9f, 0.9f);
+    r.run_until(k_bar + (k_bar * 3 / 4));
+    r.m_pad.release(1);
+    r.step();
+    ASSERT_TRUE(r.m_rec.disarm());
+    r.step();
+    EXPECT_EQ(r.m_rec.snapshot().m_state, MotionState::Playing);
+    ASSERT_TRUE(r.m_rec.service());
+    const MotionLane lane = r.m_rec.lane();
+    for (size_t i = 0; i < lane.num_points(); ++i) {
+        ASSERT_NEAR(lane.m_channels[0][i], 0.9f, 1e-6f) << i;
+        ASSERT_EQ(lane.m_gate[i], 1) << i;
+    }
+}

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 namespace thl::inline THL_ABI_NAMESPACE::modulation::detail {
 
@@ -27,6 +28,14 @@ inline constexpr size_t k_motion_min_points = 4;
     return static_cast<size_t>(std::max(
         1.0,
         std::min(std::floor(static_cast<double>(n) / 4.0), std::round(units * points_per_unit))));
+}
+
+/// Whether the finger is down on both sides of the seam: the loop flows from its last point
+/// (the one before @p seam) into its first. Lifted there, the step is the start of a stroke
+/// like any other and nothing closes it. @p gate null: every point down.
+[[nodiscard]] inline bool motion_seam_is_down(const uint8_t* gate, size_t n, size_t seam) {
+    if (gate == nullptr || n == 0) { return true; }
+    return gate[(seam + n - 1) % n] != 0 && gate[seam % n] != 0;
 }
 
 /// The step from the last point to the first beyond the expected step, which is

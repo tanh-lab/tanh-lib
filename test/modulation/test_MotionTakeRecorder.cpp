@@ -8,9 +8,12 @@
 #include <memory>
 #include <vector>
 
+using thl::modulation::BarsTake;
+using thl::modulation::FreeTake;
 using thl::modulation::LoopLength;
 using thl::modulation::MotionRecorderConfig;
 using thl::modulation::MotionTimebase;
+using thl::modulation::TakeOptions;
 using thl::modulation::detail::MotionLoopView;
 using thl::modulation::detail::MotionTakeRecorder;
 using thl::modulation::detail::MotionTakeStart;
@@ -40,9 +43,11 @@ struct Rec {
                                     double beat,
                                     float x = 0.5f,
                                     float y = 0.5f,
-                                    MotionLoopView seed = {}) {
+                                    MotionLoopView seed = {},
+                                    TakeOptions options = {}) {
         m_beat = beat;
         return m_rec->start({.m_length = length,
+                             .m_options = options,
                              .m_bpm = 120.0,
                              .m_sig_num = 4,
                              .m_sig_denom = 4,
@@ -273,6 +278,209 @@ TEST(MotionTakeRecorder, LoopLengthsCompareByValue) {
     static_assert(LoopLength::bars(1) != LoopLength::free());
     static_assert(LoopLength::bars(3, 2) != LoopLength::bars(2, 3));
     EXPECT_DOUBLE_EQ(thl::modulation::loop_length_bars(LoopLength::bars(3, 4)), 0.75);
+}
+
+// --- BarsN, BarsTake::Replace: every touch starts the loop over ------------------------------
+
+namespace {
+constexpr TakeOptions k_replace{.m_bars = BarsTake::Replace};
+constexpr TakeOptions k_until_stopped{.m_free = FreeTake::UntilStopped};
+}  // namespace
+
+// Released before the loop is full, the rest holds where the finger left, down; the step back
+// to the stroke's first point is the seam.
+TEST(MotionTakeRecorder, ReplaceTakeHoldsTheLastPositionForTheRest) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::bars(1), 1.0, 0.5f, 0.5f, {}, k_replace),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(k_beat / 2, true, 0.2f, 0.7f);                    // beats 1 to 1.5 at 0.2
+    EXPECT_EQ(r.run(k_beat / 2, true, 0.6f, 0.7f), Event::None);  // 1.5 to 2 at 0.6
+    EXPECT_EQ(r.run(1, false), Event::Revision);
+    const MotionLoopView take = r.m_rec->take();
+    ASSERT_EQ(take.m_num_points, 400u);
+    for (size_t i = 0; i < 400; ++i) { ASSERT_EQ(take.m_gate[i], 1) << i; }
+    EXPECT_EQ(take.m_channels[0][120], 0.2f);  // the stroke: points 100 to 199
+    EXPECT_EQ(take.m_channels[0][180], 0.6f);
+    EXPECT_EQ(take.m_channels[0][200], 0.6f);  // held to the loop line
+    EXPECT_EQ(take.m_channels[0][399], 0.6f);
+    EXPECT_EQ(take.m_channels[0][0], 0.6f);  // and around it, up to the stroke
+    EXPECT_EQ(take.m_channels[0][99], 0.6f);
+    EXPECT_EQ(take.m_channels[1][50], 0.7f);
+    EXPECT_EQ(take.m_seam, 100u);
+    EXPECT_TRUE(r.m_rec->active());  // until end()
+}
+
+TEST(MotionTakeRecorder, ReplaceTakeStartsOverWithEveryTouch) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::bars(1), 1.0, 0.5f, 0.5f, {}, k_replace),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(k_beat, true, 0.3f, 0.3f);  // beat 1 to 2
+    EXPECT_EQ(r.run(1, false), Event::Revision);
+    EXPECT_EQ(r.run((2 * k_beat) - 1, false), Event::None);  // lifted to the loop line: no change
+    (void)r.run(k_beat / 2, true, 0.8f, 0.8f);               // beat 4 to 4.5: points 0 to 49
+    EXPECT_EQ(r.run(1, false), Event::Revision);
+    const MotionLoopView take = r.m_rec->take();
+    for (size_t i = 0; i < 400; ++i) {
+        ASSERT_EQ(take.m_channels[0][i], 0.8f) << i;  // nothing of the first stroke is left
+        ASSERT_EQ(take.m_gate[i], 1) << i;
+    }
+    EXPECT_EQ(take.m_seam, 0u);
+    EXPECT_EQ(r.m_rec->end(), Event::Finished);
+    EXPECT_EQ(r.m_rec->take().m_channels[0][150], 0.8f);
+}
+
+TEST(MotionTakeRecorder, ReplaceTakeHeldLongerThanTheLoopOverwritesItself) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::bars(1), 0.0, 0.5f, 0.5f, {}, k_replace),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(4 * k_beat, true, 0.3f, 0.3f);  // a whole loop
+    (void)r.run(k_beat, true, 0.7f, 0.7f);      // and its first beat again
+    EXPECT_EQ(r.run(1, false), Event::Revision);
+    const MotionLoopView take = r.m_rec->take();
+    EXPECT_EQ(take.m_channels[0][50], 0.7f);   // the second pass
+    EXPECT_EQ(take.m_channels[0][150], 0.3f);  // the first, not held over
+    EXPECT_EQ(take.m_channels[0][399], 0.3f);
+    EXPECT_EQ(take.m_seam, 100u);  // where the newest point meets the oldest
+}
+
+TEST(MotionTakeRecorder, ReplaceTakeEndsWithTheFingerDown) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::bars(1), 0.0, 0.5f, 0.5f, {}, k_replace),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(k_beat, false);  // waits lifted
+    (void)r.run(k_beat, true, 0.4f, 0.6f);
+    EXPECT_EQ(r.m_rec->end(), Event::Finished);
+    const MotionLoopView take = r.m_rec->take();
+    for (size_t i = 0; i < 400; ++i) {
+        ASSERT_EQ(take.m_channels[0][i], 0.4f) << i;
+        ASSERT_EQ(take.m_gate[i], 1) << i;
+    }
+    EXPECT_EQ(take.m_seam, 100u);
+}
+
+TEST(MotionTakeRecorder, ReplaceTakeNeverTouchedIsCancelled) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::bars(1), 0.0, 0.5f, 0.5f, {}, k_replace),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(5 * k_beat, false);
+    EXPECT_EQ(r.m_rec->end(), Event::Cancelled);
+}
+
+// --- Free, FreeTake::UntilStopped: strokes and their pauses, until end() ---------------------
+
+TEST(MotionTakeRecorder, UntilStoppedTakeRecordsThroughTheLifts) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    EXPECT_EQ(r.run(k_beat / 2, false), Event::None);  // waits for the touch
+    (void)r.run(k_beat, true, 0.2f, 0.3f);             // a stroke
+    EXPECT_EQ(r.run(k_beat, false), Event::None);      // a pause: the release does not end it
+    (void)r.run(2 * k_beat, true, 0.8f, 0.6f);         // another stroke, still down at the stop
+    EXPECT_TRUE(r.m_rec->active());
+    EXPECT_EQ(r.m_rec->end(), Event::Finished);
+    const MotionLoopView take = r.m_rec->take();
+    EXPECT_DOUBLE_EQ(take.m_length, 4.0);
+    EXPECT_DOUBLE_EQ(take.m_anchor, 0.0);
+    ASSERT_EQ(take.m_num_points, 400u);  // every point to the stop: nothing still is dropped
+    EXPECT_EQ(take.m_channels[0][50], 0.2f);
+    EXPECT_EQ(take.m_gate[50], 1);
+    EXPECT_EQ(take.m_channels[0][150], 0.2f);  // lifted: where the finger left
+    EXPECT_EQ(take.m_channels[1][150], 0.3f);
+    EXPECT_EQ(take.m_gate[150], 0);
+    EXPECT_EQ(take.m_channels[0][250], 0.8f);
+    EXPECT_EQ(take.m_gate[250], 1);
+    EXPECT_EQ(take.m_channels[0][399], 0.8f);
+    EXPECT_EQ(take.m_gate[399], 1);
+    EXPECT_EQ(take.m_seam, 0u);
+}
+
+// The pause between the last release and the stop is no part of the loop.
+TEST(MotionTakeRecorder, UntilStoppedTakeEndsWithItsLastStroke) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(k_beat, true, 0.2f, 0.3f);
+    (void)r.run(k_beat, false);  // a pause between the strokes: kept
+    (void)r.run(k_beat, true, 0.8f, 0.6f);
+    EXPECT_EQ(r.run(6 * k_beat, false), Event::None);  // the pause before the stop: dropped
+    EXPECT_EQ(r.m_rec->end(), Event::Finished);
+    const MotionLoopView take = r.m_rec->take();
+    EXPECT_DOUBLE_EQ(take.m_length, 4.0);  // three beats, not nine
+    ASSERT_EQ(take.m_num_points, 301u);
+    EXPECT_EQ(take.m_gate[150], 0);
+    EXPECT_EQ(take.m_channels[0][299], 0.8f);
+    EXPECT_EQ(take.m_gate[299], 1);  // the last stroke's last point
+    EXPECT_EQ(take.m_channels[0][300], 0.8f);
+    EXPECT_EQ(take.m_gate[300], 0);  // and one lifted point: it does not flow into the first
+}
+
+// Stopped with the finger down, it ends on that point.
+TEST(MotionTakeRecorder, UntilStoppedTakeStoppedWithTheFingerDownEndsThere) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(3 * k_beat, true, 0.2f, 0.3f);
+    EXPECT_EQ(r.m_rec->end(), Event::Finished);
+    const MotionLoopView take = r.m_rec->take();
+    ASSERT_EQ(take.m_num_points, 300u);
+    EXPECT_EQ(take.m_gate[299], 1);
+}
+
+TEST(MotionTakeRecorder, UntilStoppedTakeSnapsToTheNearestBarCount) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(2 * k_beat, true, 0.2f, 0.3f);
+    (void)r.run(3 * k_beat, false);
+    (void)r.run(2 * k_beat, true, 0.6f, 0.3f);  // seven beats with the pause
+    EXPECT_EQ(r.m_rec->end(), Event::Finished);
+    EXPECT_DOUBLE_EQ(r.m_rec->take().m_length, 8.0);
+    EXPECT_EQ(r.m_rec->take().m_num_points, 700u);
+}
+
+TEST(MotionTakeRecorder, UntilStoppedTakeEndsAfterSixteenBars) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(k_beat, true, 0.2f, 0.3f);
+    Event e = Event::None;
+    for (int i = 0; i < 70 && e == Event::None; ++i) {  // a beat down, a beat up
+        e = r.run(k_beat, i % 2 == 0, 0.2f, 0.3f);
+    }
+    EXPECT_EQ(e, Event::Finished);
+    EXPECT_DOUBLE_EQ(r.m_rec->take().m_length, 64.0);
+    EXPECT_EQ(r.m_rec->take().m_num_points, 6400u);
+}
+
+// Sixteen bars reached in a pause: the same loop as stopped by hand.
+TEST(MotionTakeRecorder, UntilStoppedTakeThatFillsUpInAPauseEndsWithItsLastStroke) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(k_beat, true, 0.2f, 0.3f);
+    Event e = Event::None;
+    for (int i = 0; i < 70 && e == Event::None; ++i) { e = r.run(k_beat, false); }
+    EXPECT_EQ(e, Event::Finished);
+    EXPECT_DOUBLE_EQ(r.m_rec->take().m_length, 4.0);  // one beat: one bar
+    EXPECT_EQ(r.m_rec->take().m_num_points, 101u);
+}
+
+// A touch too short for a loop is nothing, however long the stop waits.
+TEST(MotionTakeRecorder, UntilStoppedTakeOfOneShortTouchIsDropped) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(1, true, 0.2f, 0.3f);
+    (void)r.run(4 * k_beat, false);
+    EXPECT_EQ(r.m_rec->end(), Event::Dropped);
+}
+
+TEST(MotionTakeRecorder, UntilStoppedTakeNeverTouchedIsCancelled) {
+    Rec r;
+    ASSERT_EQ(r.start(LoopLength::free(), 0.0, 0.5f, 0.5f, {}, k_until_stopped),
+              MotionTakeRecorder::Start::Started);
+    (void)r.run(3 * k_beat, false);
+    EXPECT_EQ(r.m_rec->end(), Event::Cancelled);
 }
 
 // --- Free: one gesture, snapped onto bars

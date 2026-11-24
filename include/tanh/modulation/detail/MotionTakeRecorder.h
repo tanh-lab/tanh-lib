@@ -32,6 +32,7 @@ struct MotionLoopView {
 /// Where and how a take starts.
 struct MotionTakeStart {
     LoopLength m_length = LoopLength::free();
+    TakeOptions m_options;
     double m_bpm = 120.0;
     int m_sig_num = 4;
     int m_sig_denom = 4;
@@ -50,7 +51,10 @@ struct MotionTakeStart {
  * - Free: points from the first touch to the release, at most 16 bars. The still ends are
  *   dropped (one point kept), and the take is stretched onto the nearest (by ratio) of 1, 2,
  *   4, 8 or 16 bars, point 0 on the bar line nearest the first kept point. Fewer than
- *   k_motion_min_points points: Dropped.
+ *   k_motion_min_points points: Dropped. FreeTake::UntilStopped records on through the lifts
+ *   (the last position, gate 0) until end() and keeps every point from the first touch to the
+ *   last release: the pauses between the strokes are part of the loop, of the one before end()
+ *   one lifted point is (the last stroke does not flow into the first).
  * - bars(n, division): a loop of n / division bars from the loop line (the multiple of its
  *   length at or before the start); refused below k_motion_min_points points.
  *   It starts as the seed, or lifted (gate 0) at the start position without one, and records
@@ -60,6 +64,9 @@ struct MotionTakeStart {
  *   over (take()) glides through those lifted stretches instead, from where the finger lifted
  *   to where the recording goes on (around the loop line), gate open, so the loop never stands
  *   still; the take itself keeps them lifted, so a later stroke splits a stretch cleanly.
+ *   BarsTake::Replace starts the loop over with every touch instead: the stroke from the point
+ *   where the finger came down and, released before the loop is full, its last position held
+ *   (gate 1) over every other point; the seam is where the stroke began.
  *
  * A take never touched is Cancelled. take() is valid from a Revision or Finished until the
  * next start(). Real-time safe after prepare().
@@ -90,7 +97,8 @@ public:
     [[nodiscard]] Event step(bool live,
                              const MotionValues& values,
                              double beats_per_sample) TANH_NONBLOCKING_FUNCTION;
-    /// disarm() / stop(): a touched take ends where it is (Finished), or is Dropped or Cancelled.
+    /// disarm() / stop(): a touched take ends where it is (FreeTake::UntilStopped: at its last
+    /// release) and is Finished, or is Dropped or Cancelled.
     [[nodiscard]] Event end() TANH_NONBLOCKING_FUNCTION;
     /// Forget the take (prepare() during a take).
     void abort() TANH_NONBLOCKING_FUNCTION { m_active = false; }
@@ -111,6 +119,7 @@ private:
     }
     void seed(const MotionLoopView& seed) TANH_NONBLOCKING_FUNCTION;
     void fill_gaps() TANH_NONBLOCKING_FUNCTION;
+    void hold_rest() TANH_NONBLOCKING_FUNCTION;
 
     MotionRecorderConfig m_config;
     std::vector<float> m_values;  // channel c at c * m_max_points
@@ -130,9 +139,11 @@ private:
     size_t m_num_points = 0;
     size_t m_seam = 0;
     size_t m_points_per_bar = 0;
-    size_t m_capacity = 0;  // BarsN: points per loop; Free: 16 bars
-    size_t m_target = 0;    // Free: progress target
-    size_t m_count = 0;     // Free: points written; BarsN: ticks into this pass
+    size_t m_capacity = 0;       // BarsN: points per loop; Free: 16 bars
+    size_t m_target = 0;         // Free: progress target
+    size_t m_count = 0;          // Free: points written; BarsN: ticks into this pass
+    size_t m_stroke_start = 0;   // Replace: the point where the finger came down
+    size_t m_stroke_points = 0;  // Replace: points of the stroke, at most the loop
     size_t m_num_channels = 1;
     MotionValues m_last{};
     bool m_active = false;
@@ -140,6 +151,9 @@ private:
     bool m_touched = false;
     bool m_full = false;  // BarsN: every point holds motion
     bool m_last_live = false;
+    bool m_until_stopped = false;  // Free: the release does not end it
+    bool m_replace = false;        // BarsN: every touch starts the loop over
+    bool m_stroke_open = false;    // Replace: the finger is down and has written a point
 };
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::modulation::detail
