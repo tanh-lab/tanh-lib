@@ -113,8 +113,10 @@ set(_tanh_c_library_overloads
 #     __static_initialization_and_destruction_0, MSVC's ?__empty_global_delete@@ helpers of
 #     the sized and aligned operator delete;
 #   * libc++'s _LIBCPP_HIDE_FROM_ABI functions, whose ABI tag is the libc++ version behind one
-#     or two letters (hardening mode and exceptions: B8ne190102, B8nn200100; libc++ 15 and 16:
-#     B7v160006), e.g. Apple's global ::abs overloads __Z3absB8ne190102d;
+#     to three letters (configuration flags such as the hardening mode and exceptions:
+#     B8ne190102, B8nn200100, libc++ 22: B9nqe220108; libc++ 15 and 16: B7v160006), e.g.
+#     Apple's global ::abs overloads __Z3absB8ne190102d, Homebrew LLVM 22's ::strchr
+#     __Z6strchrB9nqe220108...;
 #   * the C++ overloads of the C library above.
 function(_tanh_toolchain_global id after out)
     set(${out} FALSE PARENT_SCOPE)
@@ -122,7 +124,7 @@ function(_tanh_toolchain_global id after out)
         set(${out} TRUE PARENT_SCOPE)
     elseif(after MATCHES "^B([0-9]+)(.*)$")
         string(SUBSTRING "${CMAKE_MATCH_2}" 0 ${CMAKE_MATCH_1} _tag)
-        if(_tag MATCHES "^[a-z][a-z]?[0-9][0-9][0-9][0-9][0-9]+$")
+        if(_tag MATCHES "^[a-z][a-z]?[a-z]?[0-9][0-9][0-9][0-9][0-9]+$")
             set(${out} TRUE PARENT_SCOPE)
         endif()
     endif()
