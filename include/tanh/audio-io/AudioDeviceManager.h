@@ -652,8 +652,15 @@ public:
      * - iOS: the route's output latency plus the IO buffer duration
      *   (AVAudioSession `outputLatency + IOBufferDuration`), queried live, so call
      *   it again after a route change;
+     * - Android (AAudio): measured from the stream's presentation timestamp, how long
+     *   until the frames written so far are heard (device latency included, within
+     *   a burst); the buffered frames while the stream gives no timestamp yet (right
+     *   after a start), so call it again once audio runs;
      * - other platforms: the buffered frames ahead of the callback
      *   (get_buffer_size()); the device's own latency is not included.
+     *
+     * Where the device reports block timestamps (iOS, macOS), callbacks also get
+     * AudioIODeviceCallback::set_block_host_time_us(), consistent with this latency.
      *
      * Message thread (on iOS it queries AVAudioSession).
      *

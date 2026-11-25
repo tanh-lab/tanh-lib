@@ -19,11 +19,17 @@
 #include "tanh/core/threading/RCU.h"
 
 #if defined(THL_PLATFORM_ANDROID)
+#include <dlfcn.h>
 #include <tanh/audio-io/AndroidAudioDevices.h>
+#include <time.h>
 #endif
 
 #if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+#include <AudioToolbox/AudioToolbox.h>
+#include <CoreAudioTypes/CoreAudioTypes.h>
+#include <MacTypes.h>
 #include <TargetConditionals.h>
+#include <mach/mach_time.h>
 #endif
 
 #if defined(THL_PLATFORM_IOS)
@@ -83,6 +89,15 @@ struct AudioDeviceManager::Impl {
     DeviceUserData m_capture_user_data;
     DeviceUserData m_duplex_user_data;
 
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+    // The output AudioUnit's render timestamp (`mHostTime`, mach ticks), stored by a
+    // render notification right before miniaudio renders, taken by process_callbacks()
+    // on the same thread. 0: none (a unit miniaudio re-created has no notification).
+    std::atomic<uint64_t> m_playback_render_ticks{0};
+    std::atomic<uint64_t> m_duplex_render_ticks{0};
+    double m_ticks_to_us = 0.0;  // mach_timebase_info, as Ableton Link converts it
+#endif
+
     LogCallback m_log_callback;
 
     // Device names passed to initialise()
@@ -91,6 +106,71 @@ struct AudioDeviceManager::Impl {
 };
 
 namespace {
+
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+// Audio thread, before each render of the output unit: its timestamp for the block.
+OSStatus store_render_host_time(void* ref,
+                                AudioUnitRenderActionFlags* flags,
+                                const AudioTimeStamp* time_stamp,
+                                UInt32 /*bus*/,
+                                UInt32 /*frames*/,
+                                AudioBufferList* /*data*/) {
+    if (flags != nullptr && (*flags & kAudioUnitRenderAction_PreRender) != 0 &&
+        time_stamp != nullptr && (time_stamp->mFlags & kAudioTimeStampHostTimeValid) != 0) {
+        static_cast<std::atomic<uint64_t>*>(ref)->store(time_stamp->mHostTime,
+                                                        std::memory_order_relaxed);
+    }
+    return noErr;
+}
+#endif
+
+#if defined(THL_PLATFORM_ANDROID)
+// AAudio's timestamp functions, loaded at run time as miniaudio loads AAudio.
+struct AAudioTimestampApi {
+    using GetTimestamp = int32_t (*)(void*, clockid_t, int64_t*, int64_t*);
+    using GetFramesWritten = int64_t (*)(void*);
+    GetTimestamp m_get_timestamp = nullptr;
+    GetFramesWritten m_get_frames_written = nullptr;
+};
+
+const AAudioTimestampApi& aaudio_timestamp_api() {
+    static const AAudioTimestampApi api = [] {
+        AAudioTimestampApi loaded;
+        if (void* lib = dlopen("libaaudio.so", RTLD_NOW)) {
+            loaded.m_get_timestamp = reinterpret_cast<AAudioTimestampApi::GetTimestamp>(
+                dlsym(lib, "AAudioStream_getTimestamp"));
+            loaded.m_get_frames_written = reinterpret_cast<AAudioTimestampApi::GetFramesWritten>(
+                dlsym(lib, "AAudioStream_getFramesWritten"));
+        }
+        return loaded;
+    }();
+    return api;
+}
+
+// The output latency AAudio measures: how long until the last frame written so far is
+// presented (from the stream's presentation timestamp), in frames. 0 when the stream
+// gives no timestamp yet (not fully started) or the value is implausible.
+uint32_t aaudio_measured_latency_frames(void* stream, double sample_rate) {
+    const auto& api = aaudio_timestamp_api();
+    if (stream == nullptr || api.m_get_timestamp == nullptr ||
+        api.m_get_frames_written == nullptr || sample_rate <= 0.0) {
+        return 0;
+    }
+    int64_t frame_position = 0;
+    int64_t time_ns = 0;
+    if (api.m_get_timestamp(stream, CLOCK_MONOTONIC, &frame_position, &time_ns) != 0) { return 0; }
+    const int64_t written = api.m_get_frames_written(stream);
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    const double now_ns =
+        (static_cast<double>(now.tv_sec) * 1e9) + static_cast<double>(now.tv_nsec);
+    const double presented_ns = static_cast<double>(time_ns) +
+                                (static_cast<double>(written - frame_position) * 1e9 / sample_rate);
+    const double latency_s = (presented_ns - now_ns) / 1e9;
+    if (latency_s <= 0.0 || latency_s > 1.0) { return 0; }
+    return static_cast<uint32_t>(std::lround(latency_s * sample_rate));
+}
+#endif
 
 DeviceNotificationType to_notification_type(ma_device_notification_type type) {
     switch (type) {
@@ -539,6 +619,24 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
 
     // --- Open device ---
     if (ma_device_init(&m_impl->m_context, &dev_config, device) != MA_SUCCESS) { return false; }
+
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+    // The render timestamp of the output unit, for set_block_host_time_us().
+    if (role != DeviceRole::Capture && m_impl->m_context.backend == ma_backend_coreaudio) {
+        if (m_impl->m_ticks_to_us == 0.0) {
+            mach_timebase_info_data_t info{};
+            mach_timebase_info(&info);
+            m_impl->m_ticks_to_us =
+                static_cast<double>(info.numer) / (static_cast<double>(info.denom) * 1000.0);
+        }
+        auto& ticks = role == DeviceRole::Playback ? m_impl->m_playback_render_ticks
+                                                   : m_impl->m_duplex_render_ticks;
+        ticks.store(0, std::memory_order_relaxed);
+        if (auto* unit = static_cast<AudioUnit>(device->coreaudio.audioUnitPlayback)) {
+            AudioUnitAddRenderNotify(unit, &store_render_host_time, &ticks);
+        }
+    }
+#endif
 
     // --- Resolve actual period size ---
     uint32_t resolved_period_size = 0;
@@ -1197,6 +1295,16 @@ uint32_t AudioDeviceManager::get_output_latency_samples() const {
         return static_cast<uint32_t>(std::lround(seconds * static_cast<double>(get_sample_rate())));
     }
 #endif
+#if defined(THL_PLATFORM_ANDROID)
+    if (m_impl->m_context.backend == ma_backend_aaudio) {
+        const ma_device& device = m_impl->m_playback_device_initialised ? m_impl->m_playback_device
+                                                                        : m_impl->m_duplex_device;
+        const uint32_t measured =
+            aaudio_measured_latency_frames(device.aaudio.pStreamPlayback,
+                                           static_cast<double>(device.sampleRate));
+        if (measured > 0) { return measured; }
+    }
+#endif
     return m_impl->m_playback_device_initialised ? get_buffer_size(DeviceRole::Playback)
                                                  : get_buffer_size(DeviceRole::Duplex);
 }
@@ -1503,6 +1611,28 @@ void AudioDeviceManager::process_callbacks(DeviceRole role,
     float* safe_output = output_channels > 0 ? output : nullptr;
     const float* safe_input = input_channels > 0 ? input : nullptr;
 
+    // The block's host time (Apple: the render timestamp), minus one block so that
+    // adding get_output_latency_samples() (iOS: outputLatency + IOBufferDuration) gives
+    // `mHostTime + outputLatency`, the time its first frame is heard (LinkKit).
+    bool has_host_time = false;
+    int64_t block_host_us = 0;
+    const double us_per_frame =
+        device->sampleRate > 0 ? 1e6 / static_cast<double>(device->sampleRate) : 0.0;
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+    if (role != DeviceRole::Capture && us_per_frame > 0.0) {
+        auto& render_ticks = role == DeviceRole::Playback ? m_impl->m_playback_render_ticks
+                                                          : m_impl->m_duplex_render_ticks;
+        // Taken, so a unit miniaudio re-created without our notification gives none
+        // instead of a stale time.
+        if (const uint64_t ticks = render_ticks.exchange(0, std::memory_order_relaxed);
+            ticks != 0) {
+            has_host_time = true;
+            block_host_us = std::llround(static_cast<double>(ticks) * m_impl->m_ticks_to_us) -
+                            std::llround(static_cast<double>(frame_count) * us_per_frame);
+        }
+    }
+#endif
+
     // Process in chunks no larger than preparedPeriodSize to avoid overflowing
     // internal DSP buffers allocated by prepare_to_play().
     uint32_t frames_remaining = frame_count;
@@ -1517,8 +1647,11 @@ void AudioDeviceManager::process_callbacks(DeviceRole role,
         const float* chunk_in =
             safe_input ? safe_input + static_cast<size_t>(offset) * input_channels : nullptr;
 
+        const int64_t chunk_host_us =
+            block_host_us + std::llround(static_cast<double>(offset) * us_per_frame);
         callbacks->read([&](const auto& list) {
             for (auto* cb : list) {
+                if (has_host_time) { cb->set_block_host_time_us(chunk_host_us); }
                 cb->process(chunk_out, chunk_in, chunk, input_channels, output_channels);
             }
         });

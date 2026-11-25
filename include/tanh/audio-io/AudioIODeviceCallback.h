@@ -94,6 +94,24 @@ public:
                          uint32_t num_output_channels) = 0;
 
     /**
+     * @brief The host time of the block the next process() call renders.
+     *
+     * Called on the audio thread right before process(), for each block, where the
+     * device reports when its audio leaves for the hardware (iOS and macOS, from the
+     * render's `AudioTimeStamp`); not called elsewhere. The time is in microseconds of
+     * the host clock (`mach_absolute_time`, the clock Ableton Link uses there), chosen
+     * so that adding AudioDeviceManager::get_output_latency_samples() gives the time
+     * the block's first frame is heard: pass it on to
+     * dsp::transport::LinkTransportClock::set_host_time_us().
+     *
+     * @param host_time_us Host time in microseconds.
+     *
+     * @warning **MUST BE REAL-TIME SAFE** - Called from the audio thread.
+     * @note Default implementation does nothing.
+     */
+    virtual void set_block_host_time_us(int64_t host_time_us) { (void)host_time_us; }
+
+    /**
      * @brief Called before audio processing begins to allow resource
      * preparation.
      *
