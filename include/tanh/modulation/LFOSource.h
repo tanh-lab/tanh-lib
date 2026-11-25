@@ -56,6 +56,14 @@ protected:
         NumParameters = 10
     };
 
+    /// Sets the phase that the next process() starts from, for an LFO that follows an
+    /// external timeline (a tempo-synced LFO locked to the transport's beat, so it
+    /// follows tempo changes and jumps). @p phase is unwrapped (cycles, e.g. beat /
+    /// beats per cycle): its integer part is the cycle, so a Sample & Hold value is
+    /// latched once per cycle even when the snap lands across a wrap that process()
+    /// missed (or already took). Audio thread.
+    void set_phase(double phase) noexcept;
+
 private:
     template <typename T>
     T get_parameter(Parameter parameter, uint32_t modulation_offset = 0);
@@ -75,6 +83,9 @@ private:
     double m_sample_rate = 48000.0;
     float m_phase = 0.0f;
     float m_phase_increment = 0.0f;
+    // Cycle count for set_phase(): advanced by process() on a wrap.
+    int64_t m_cycle = 0;
+    bool m_cycle_valid = false;
     uint32_t m_samples_until_update = 0;
 
     // S&H state — latched on phase wrap.

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -1184,6 +1185,20 @@ uint32_t AudioDeviceManager::get_buffer_size(DeviceRole role) const {
             break;
     }
     return get_buffer_size();
+}
+
+uint32_t AudioDeviceManager::get_output_latency_samples() const {
+    if (!m_impl->m_playback_device_initialised && !m_impl->m_duplex_device_initialised) {
+        return 0;
+    }
+#if defined(THL_PLATFORM_IOS)
+    const double seconds = get_ios_output_latency_seconds();
+    if (seconds > 0.0) {
+        return static_cast<uint32_t>(std::lround(seconds * static_cast<double>(get_sample_rate())));
+    }
+#endif
+    return m_impl->m_playback_device_initialised ? get_buffer_size(DeviceRole::Playback)
+                                                 : get_buffer_size(DeviceRole::Duplex);
 }
 
 uint32_t AudioDeviceManager::get_period_size() const {

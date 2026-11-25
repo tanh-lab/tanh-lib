@@ -644,6 +644,25 @@ public:
     uint32_t get_burst_size() const;
 
     /**
+     * @brief Estimated output latency of the playback (or duplex) device in frames.
+     *
+     * Frames from the start of a playback callback until its first frame is heard,
+     * for clocks that time a block at callback entry (e.g.
+     * dsp::transport::LinkTransportClock::set_output_latency_samples()):
+     * - iOS: the route's output latency plus the IO buffer duration
+     *   (AVAudioSession `outputLatency + IOBufferDuration`), queried live, so call
+     *   it again after a route change;
+     * - other platforms: the buffered frames ahead of the callback
+     *   (get_buffer_size()); the device's own latency is not included.
+     *
+     * Message thread (on iOS it queries AVAudioSession).
+     *
+     * @return The latency in frames at get_sample_rate(), or 0 if no playback or
+     *         duplex device is initialised.
+     */
+    uint32_t get_output_latency_samples() const;
+
+    /**
      * @brief Gets the current number of input (capture) channels.
      *
      * @return The actual capture channel count if initialised, otherwise the

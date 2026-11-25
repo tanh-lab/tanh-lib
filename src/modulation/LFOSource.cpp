@@ -21,6 +21,7 @@ void LFOSourceImpl::prepare(double sample_rate, size_t samples_per_block, uint32
     m_fade_in_value = 1.0f;
     m_held_initialized = false;
     m_smoothed_value = 0.0f;
+    m_cycle_valid = false;
 
     m_phase_atomic.store(m_phase, std::memory_order_relaxed);
     m_fade_in_atomic.store(m_fade_in_value, std::memory_order_relaxed);
@@ -64,6 +65,26 @@ float LFOSourceImpl::generate_sample_basic(float phase, LFOWaveform waveform, fl
         // SampleAndHold is handled in process() via m_held_value, not here.
         default: return 0.0f;
     }
+}
+
+void LFOSourceImpl::set_phase(double phase) noexcept {
+    double cycle = std::floor(phase);
+    double wrapped = phase - cycle;
+    if (wrapped >= 1.0) {  // floor() rounding just below an integer
+        wrapped = 0.0;
+        cycle += 1.0;
+    }
+    const auto target_cycle = static_cast<int64_t>(cycle);
+    // A new cycle that process() did not wrap into (the snap crossed the wrap, or the
+    // timeline jumped) latches the S&H value. One cycle back is process() having
+    // wrapped just before the snap: that value was latched already.
+    if (m_cycle_valid && target_cycle != m_cycle && target_cycle != m_cycle - 1) {
+        m_held_value = next_random();
+        m_held_initialized = true;
+    }
+    m_cycle = target_cycle;
+    m_cycle_valid = true;
+    m_phase = static_cast<float>(wrapped);
 }
 
 void LFOSourceImpl::process(size_t num_samples, size_t offset) {
@@ -157,10 +178,12 @@ void LFOSourceImpl::process(size_t num_samples, size_t offset) {
             m_phase -= 1.0f;
             m_held_value = next_random();
             m_held_initialized = true;
+            ++m_cycle;
         } else if (m_phase < prev_phase) {
             // Defensive: handle negative-frequency wrap.
             m_held_value = next_random();
             m_held_initialized = true;
+            --m_cycle;
         }
     }
 

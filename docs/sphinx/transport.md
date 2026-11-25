@@ -95,9 +95,9 @@ free-run, and a seek made while the host supplies the beat is dropped.
 ## Ableton Link
 
 `TANH_BUILD_LINK=ON` (default OFF) adds the `tanh::Link` component: the Link
-C++ SDK 4.1 (FetchContent, pinned to the `Link-4.1` commit) on macOS, Linux
-and Windows, the LinkKit 4.1.2 release zip (pinned SHA256) on iOS; other
-platforms are a configure error. Link is GPLv2+ or proprietary, LinkKit
+C++ SDK 4.1 (FetchContent, pinned to the `Link-4.1` commit) on macOS, Linux,
+Windows and Android (the SDK's Linux platform), the LinkKit 4.1.2 release zip
+(pinned SHA256) on iOS; other platforms are a configure error. Link is GPLv2+ or proprietary, LinkKit
 proprietary only: a product built with the option must meet Link's terms. Use
 Link in standalone apps; plugins follow the host's transport.
 
@@ -136,6 +136,11 @@ clock.end_block();
   realignment as `k_jumped` only.
 - **Tempo.** The clock never pushes the local tempo on its own; do not push a
   preset tempo while `num_peers() > 0`.
+
+Android apps call `thl::link::set_android_java_vm()` from `JNI_OnLoad` and
+declare `INTERNET`, `ACCESS_WIFI_STATE` and `CHANGE_WIFI_MULTICAST_STATE`: Android
+drops incoming multicast on Wi-Fi unless a `WifiManager.MulticastLock` is held,
+and an enabled session holds one so that peers are found.
 
 iOS apps also bundle LinkKit's resources, present
 `session.settings_view_controller()` (enabling Link and start/stop sync are
