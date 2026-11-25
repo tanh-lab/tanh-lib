@@ -337,10 +337,12 @@ public:
     // include_state=false returns just the routings array.
     nlohmann::json to_json(bool include_state = true);
 
-    // Deserialize from JSON. Reads "modulation_routings" if present, replaces
-    // all user routings, and rebuilds the schedule. Forwards "parameters" to
-    // State::from_json() if present and the matrix has a State (ignored
-    // otherwise).
+    // Deserialize from JSON. Forwards "parameters" to State::from_json() if
+    // present and the matrix has a State (ignored otherwise): first, so when
+    // that throws (a key that is no parameter, a value that does not fit)
+    // nothing has changed, and outside the writer mutex, so the State's
+    // listeners may call the matrix. Then reads "modulation_routings" if
+    // present, replaces all user routings, and rebuilds the schedule.
     void from_json(const nlohmann::json& json);
 
 private:

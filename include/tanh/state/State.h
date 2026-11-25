@@ -2,9 +2,16 @@
 
 #include <tanh/core/AbiNamespace.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <string>
+#include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "StateGroup.h"
 #include "tanh/utils/RealtimeSanitizer.h"
@@ -268,23 +275,87 @@ public:
 
     // ── Serialization ────────────────────────────────────────────────────
 
-    /**
-     * @brief Updates multiple parameters from a JSON object.
-     *
-     * Recursively processes the JSON structure and updates corresponding
-     * parameters. Parameters must already exist in the state.
-     *
-     * @param json_data JSON object containing parameter updates
-     * @param source Source listener for strategy-based notification filtering
-     *
-     * @throws StateKeyNotFoundException if a parameter key doesn't exist
-     *
-     * @warning NOT real-time safe - performs JSON parsing and memory allocation
-     */
-    void from_json(const nlohmann::json& json_data, ParameterListener* source = nullptr);
+    /// What from_json() does with an entry it cannot apply: a key that is no parameter, or
+    /// a value that does not fit its parameter.
+    enum class JsonMode : uint8_t {
+        Strict,  ///< It throws, and nothing is written.
+        Lenient  ///< It is skipped, logged and listed in JsonReadReport::m_skipped.
+    };
+
+    /// What a from_json() call did.
+    struct JsonReadReport {
+        /// Entries written. A parameter the JSON names twice (the forms mixed, or two
+        /// records of the array) is written, and notifies, once per entry.
+        size_t m_applied = 0;
+        /// Keys of the JSON that were not written: every `null`, in JsonMode::Lenient the
+        /// entries that could not be applied, and a parameter that a listener removed
+        /// while the call was writing. In the order of the JSON.
+        std::vector<std::string> m_skipped;
+    };
 
     /**
-     * @brief Generates a JSON dump of the entire state.
+     * @brief Writes the values in @p json_data to parameters that exist.
+     *
+     * Reads what values_to_json(), to_json() and group_to_json() write, so a State (or a
+     * part of one) is saved with any of them and restored here. Three shapes:
+     * - a nested object, one level per path segment: `{"eq": {"bass": 7}}`
+     * - an object with whole paths as keys: `{"eq.bass": 7}` (the two may be mixed)
+     * - an array of records: `[{"key": "eq.bass", "value": 7}]`; other fields of a record
+     *   (`definition`) are ignored
+     *
+     * Parameters that are not named keep their value. Every entry is checked before the
+     * first one is written, so a call that throws leaves the State as it was. After that
+     * each parameter is written and notifies its listeners, in the order of the JSON.
+     *
+     * A value is converted to the type of its parameter. A numeric or bool parameter takes
+     * a number (an int parameter: truncated and clamped to the range of int), a bool, or a
+     * string that is a number or one of "true", "false", "yes", "no", "on", "off"; a string
+     * parameter takes a string. Anything else does not fit: other text for a numeric
+     * parameter ("saw"), an array, an object where a parameter is. A `null` is never
+     * written, its parameter keeps its value: JSON text has no NaN and no infinity, so that
+     * is how such a value comes back.
+     *
+     * @param json_data What to apply; `null` applies nothing.
+     * @param source Source listener for strategy-based notification filtering
+     * @param mode What happens to an entry that cannot be applied.
+     * @return How many parameters were written and which keys were not.
+     *
+     * @throws StateKeyNotFoundException (JsonMode::Strict) for a key that is no parameter
+     * @throws StateJsonException (JsonMode::Strict) for a value that does not fit; in both
+     *         modes when @p json_data has none of the three shapes
+     *
+     * @warning NOT real-time safe - allocates, and listeners run on the calling thread
+     */
+    JsonReadReport from_json(const nlohmann::json& json_data,
+                             ParameterListener* source = nullptr,
+                             JsonMode mode = JsonMode::Strict);
+
+    /**
+     * @brief The values as a nested object, one level per path segment.
+     *
+     * `{"eq": {"bass": 7, "treble": 3}, "volume": 0.5}`: the form to save and to restore
+     * with from_json(). Paths start at the root also when @p group_prefix selects a part,
+     * so the result goes back into the same State unchanged.
+     *
+     * A NaN or an infinity is in the result as a number and becomes `null` once it is
+     * written as text (see from_json()).
+     *
+     * @param group_prefix Group to write (e.g. "parameter.engine0"); empty: everything.
+     *        Matches as in group_to_json().
+     *
+     * @throws StateJsonException when a parameter lies below another one ("a" and "a.b"):
+     *         the nested form cannot hold both. to_json() can.
+     *
+     * @warning NOT real-time safe - allocates and locks
+     */
+    nlohmann::json values_to_json(std::string_view group_prefix = "") const;
+
+    /**
+     * @brief Describes every parameter: an array with one record per parameter.
+     *
+     * `[{"key": "eq.bass", "value": 7, "definition": {...}}]`, sorted by key. This is the
+     * form for a user interface that builds its controls from the definitions; to save
+     * values, values_to_json() is the smaller one. from_json() reads both.
      *
      * @param include_definitions Whether to include parameter definitions
      * @return JSON array of parameter objects
@@ -294,9 +365,11 @@ public:
     nlohmann::json to_json(bool include_definitions = true) const;
 
     /**
-     * @brief Generates a JSON dump of parameters matching a group prefix.
+     * @brief to_json() for the parameters of one group.
      *
-     * @param group_prefix Prefix to filter by (e.g., "parameter.engine0")
+     * @param group_prefix The group (e.g. "parameter.engine0"): its own key and every key
+     *        below it, so "engine1" does not select "engine10.volume". A prefix that ends
+     *        with a dot selects every key that starts with it. Empty: everything.
      * @param include_definitions Whether to include parameter definitions
      * @return JSON array of matching parameter objects
      *

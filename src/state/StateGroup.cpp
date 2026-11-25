@@ -261,8 +261,7 @@ std::map<std::string, Parameter> StateGroup::get_parameters() const {
         }
 
         for (const auto& [key, record] : idx) {
-            if (key.find(full_path) == 0 &&
-                (key.length() == full_path.length() || key[full_path.length()] == '.')) {
+            if (detail::in_group(key, full_path)) {
                 params.emplace(key, Parameter(m_root_state, record));
             }
         }
@@ -396,7 +395,7 @@ void StateGroup::clear() {
         {
             std::scoped_lock const lock(m_root_state->m_storage_mutex);
             for (const auto& [key, record] : m_root_state->m_storage) {
-                if (key.starts_with(full_path)) { keys_to_delete.push_back(key); }
+                if (detail::in_group(key, full_path)) { keys_to_delete.push_back(key); }
             }
         }
 
@@ -433,7 +432,7 @@ bool StateGroup::is_empty() const TANH_NONBLOCKING_FUNCTION {
     bool has_parameters = false;
     m_root_state->m_string_index_rcu.read([&](const auto& idx) {
         for (const auto& [key, record] : idx) {
-            if (key.find(full_path) == 0) {
+            if (detail::in_group(key, full_path)) {
                 has_parameters = true;
                 return;
             }

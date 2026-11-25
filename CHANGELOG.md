@@ -369,6 +369,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   direction), hold, and an auto release with a slow second stage (switched on, it starts
   from the current gain). Tests: `GainComputer.*`,
   `LevelDetector.*`, `GainSmoother.*`.
+- `State::values_to_json(group_prefix = "")`: the values as a nested object, one level
+  per path segment (`{"eq": {"bass": 7}}`), the form to save and to give back to
+  `from_json()`. Paths start at the root also for one group. A parameter below another
+  parameter ("a" and "a.b") cannot be written this way and throws `StateJsonException`;
+  `to_json()` holds both.
+- `State::from_json()` takes a `State::JsonMode` and returns a `State::JsonReadReport`
+  (`m_applied`, `m_skipped`). `Lenient` skips, logs and lists a key that is no parameter
+  or a value that does not fit, so a state saved by another version of a program still
+  loads; `Strict` (the default) throws as before. `StateJsonException` (with `key()`)
+  for a value that does not fit and for a document of no known shape.
 
 ### Changed
 
@@ -468,6 +478,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - CI: the `coverage` workflow runs in the merge queue instead of on every push to `main`, so
   the commit is measured before it lands. It stays a non-required check. Cache warming and
   the docs deployment stay on push to `main`.
+- `State::from_json()` checks every entry before it writes the first: a call that throws
+  leaves the State as it was (it used to keep the keys before the error). A value is
+  converted by the type of its parameter, so an integer outside the range of `int` reaches
+  a `double` or `float` parameter intact and is clamped for an `int` parameter (both used
+  to wrap). A number or bool for a string parameter, an array as a value, and text that is
+  no number for a numeric parameter (`"saw"`, which used to be read as 0) now count as
+  "does not fit" (`StateJsonException` in `Strict`).
+- `ModulationMatrix::from_json()` applies `"parameters"` first and outside its writer
+  mutex: when the State refuses them nothing has changed, and the State's listeners may
+  call the matrix.
+- `State::group_to_json("engine1")` selects the group, its own key and what lies below it,
+  and no longer `engine10.*`. A prefix that ends with a dot still selects every key that
+  starts with it.
 
 ### Fixed
 
@@ -526,6 +549,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   parameter's last value; the threshold is clamped to [-120, 24] dB, the times to
   [0.01, 60000] ms. `process()` is `TANH_NONBLOCKING_FUNCTION`. Test:
   `Limiter.NanParametersKeepTheirLastValue`.
+- `State::from_json()` reads what `State::to_json()` and `group_to_json()` write (an array
+  of `{"key", "value"}` records, other fields ignored), so
+  `state.from_json(state.to_json())` restores a State instead of throwing (#53). The
+  nested object and an object with whole paths as keys are read as before. With it
+  `matrix.from_json(matrix.to_json())` restores the parameters of a `ModulationMatrix`
+  on a State. Tests: `StateJsonRoundTrip.*`.
+- `StateGroup::clear()` of `engine1` no longer removes the parameters of `engine10`, and
+  `is_empty()` no longer counts them.
 
 ### Removed
 

@@ -3,17 +3,23 @@
 #include <tanh/core/AbiNamespace.h>
 #include <tanh/core/Logger.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <exception>
-#include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
+#include <vector>
 
 #include "tanh/core/Exports.h"
 #include "tanh/parameters/ModulationScope.h"
@@ -40,6 +46,133 @@ double parse_string_as_double(const std::string& value) {
     const double result = std::strtod(end_init, const_cast<char**>(&end));
     if (end == end_init) { return 0.0; }  // no conversion performed
     return result;
+}
+
+// ── JSON ────────────────────────────────────────────────────────────────────
+
+// A value from JSON in the type it is written with.
+using JsonValue = std::variant<double, int, bool, std::string>;
+
+const char* type_name(ParameterType type) {
+    switch (type) {
+        case ParameterType::Double: return "double";
+        case ParameterType::Float: return "float";
+        case ParameterType::Int: return "int";
+        case ParameterType::Bool: return "bool";
+        case ParameterType::String: return "string";
+    }
+    return "unknown";
+}
+
+// A double as an int: truncated, and clamped where it lies outside the range.
+int double_to_int(double value) {
+    constexpr int k_min = std::numeric_limits<int>::min();
+    constexpr int k_max = std::numeric_limits<int>::max();
+    if (std::isnan(value)) { return 0; }
+    if (value <= static_cast<double>(k_min)) { return k_min; }
+    if (value >= static_cast<double>(k_max)) { return k_max; }
+    return static_cast<int>(value);
+}
+
+// A JSON number as an int: truncated, and clamped where it lies outside the range.
+int json_number_to_int(const nlohmann::json& number) {
+    constexpr int k_min = std::numeric_limits<int>::min();
+    constexpr int k_max = std::numeric_limits<int>::max();
+    if (number.is_number_unsigned()) {
+        const auto value = number.get<uint64_t>();
+        return value > static_cast<uint64_t>(k_max) ? k_max : static_cast<int>(value);
+    }
+    if (number.is_number_integer()) {
+        const auto value = number.get<int64_t>();
+        return static_cast<int>(std::clamp<int64_t>(value, k_min, k_max));
+    }
+    return double_to_int(number.get<double>());
+}
+
+// The number a string holds: a number in text, or a word for a bool. Empty when the
+// whole string is neither, unlike parse_string_as_double(), which then reads 0.
+std::optional<double> string_to_number(const std::string& text) {
+    if (text == "true" || text == "yes" || text == "on") { return 1.0; }
+    if (text == "false" || text == "no" || text == "off") { return 0.0; }
+    const char* const begin = text.c_str();
+    char* end = nullptr;
+    const double result = std::strtod(begin, &end);
+    if (end == begin || end != begin + text.size()) { return std::nullopt; }
+    return result;
+}
+
+// `value` as a value for a parameter of `type`; empty when it does not fit.
+std::optional<JsonValue> json_to_value(const nlohmann::json& value, ParameterType type) {
+    if (type == ParameterType::String) {
+        if (!value.is_string()) { return std::nullopt; }
+        return value.get<std::string>();
+    }
+    if (value.is_boolean()) { return value.get<bool>(); }
+
+    const bool is_text = value.is_string();
+    if (!is_text && !value.is_number()) { return std::nullopt; }
+    const std::optional<double> number =
+        is_text ? string_to_number(value.get_ref<const std::string&>()) : value.get<double>();
+    if (!number) { return std::nullopt; }
+
+    switch (type) {
+        case ParameterType::Double:
+        case ParameterType::Float: return *number;
+        case ParameterType::Int:
+            return is_text ? double_to_int(*number) : json_number_to_int(value);
+        case ParameterType::Bool: return *number != 0.0;
+        case ParameterType::String: break;
+    }
+    return std::nullopt;
+}
+
+// The value of `record`. The caller holds the storage mutex (string values).
+nlohmann::json value_to_json(const ParameterRecord& record) {
+    switch (record.m_def.m_type) {
+        case ParameterType::Double:
+            return record.m_cache.m_atomic_double.load(std::memory_order_relaxed);
+        case ParameterType::Float:
+            return record.m_cache.m_atomic_float.load(std::memory_order_relaxed);
+        case ParameterType::Int: return record.m_cache.m_atomic_int.load(std::memory_order_relaxed);
+        case ParameterType::Bool:
+            return record.m_cache.m_atomic_bool.load(std::memory_order_relaxed);
+        case ParameterType::String: return record.m_string_value;
+    }
+    return nullptr;
+}
+
+// Calls `leaf(path, value)` for every value of a nested object that is not an object
+// itself, and for every empty object, in the order of the JSON. A key that holds dots is
+// a path as it stands, so the flat form is the nested form with one level.
+template <typename Leaf>
+void for_each_leaf(const nlohmann::json& root, Leaf&& leaf) {
+    struct Level {
+        const nlohmann::json* m_object;
+        nlohmann::json::const_iterator m_next;
+        std::string m_path;  // of m_object; unused for the root
+        bool m_is_root;
+    };
+    std::vector<Level> levels;
+    levels.push_back({.m_object = &root, .m_next = root.cbegin(), .m_path = {}, .m_is_root = true});
+    while (!levels.empty()) {
+        Level& level = levels.back();
+        if (level.m_next == level.m_object->cend()) {
+            levels.pop_back();
+            continue;
+        }
+        const auto member = level.m_next++;
+        std::string path = level.m_is_root ? member.key() : level.m_path + '.' + member.key();
+        if (member.value().is_object() && !member.value().empty()) {
+            const nlohmann::json& child = member.value();
+            // Ends `level`: the vector may move.
+            levels.push_back({.m_object = &child,
+                              .m_next = child.cbegin(),
+                              .m_path = std::move(path),
+                              .m_is_root = false});
+        } else {
+            leaf(path, member.value());
+        }
+    }
 }
 }  // namespace
 
@@ -491,63 +624,90 @@ void State::set_gesture_from_root(std::string_view key, bool gesture) {
 
 // ── JSON update ─────────────────────────────────────────────────────────────
 
-void State::from_json(const nlohmann::json& json_data, ParameterListener* source) {
+State::JsonReadReport State::from_json(const nlohmann::json& json_data,
+                                       ParameterListener* source,
+                                       JsonMode mode) {
     ensure_thread_registered();
 
-    auto check_parameter_exists = [this](std::string_view key) {
-        bool const exists = m_string_index_rcu.read(
-            [&](const StringIndexMap& idx) { return idx.find(key) != idx.end(); });
-        if (!exists) { throw StateKeyNotFoundException(key); }
+    struct Write {
+        std::string m_path;
+        JsonValue m_value;
     };
+    std::vector<Write> writes;
+    JsonReadReport report;
 
-    std::function<void(const nlohmann::json&, std::string_view)> update_parameters;
-
-    update_parameters = [this, &check_parameter_exists, &update_parameters, &source](
-                            const nlohmann::json& json,
-                            std::string_view prefix) {
-        for (auto it = json.begin(); it != json.end(); ++it) {
-            const std::string& key = it.key();
-            std::string path;
-            if (prefix.empty()) {
-                path = key;
-            } else {
-                m_root_state->m_temp_buffer_0().clear();
-                detail::join_path(prefix, key, m_root_state->m_temp_buffer_0());
-                path = m_root_state->m_temp_buffer_0();
-            }
-
-            if (it.value().is_object()) {
-                update_parameters(it.value(), path);
-            } else {
-                check_parameter_exists(path);
-
-                if (it.value().is_number_float()) {
-                    set(path, it.value().get<double>(), source);
-                } else if (it.value().is_number_integer()) {
-                    set(path, it.value().get<int>(), source);
-                } else if (it.value().is_boolean()) {
-                    set(path, it.value().get<bool>(), source);
-                } else if (it.value().is_string()) {
-                    set(path, it.value().get<std::string>(), source);
-                } else if (it.value().is_null()) {
-                    thl::Logger::logf(thl::Logger::LogLevel::Warning,
-                                      "thl.state.state",
-                                      "Ignoring null value for key '%s'",
-                                      path.c_str());
-                }
-            }
-        }
-    };
-
-    try {
-        update_parameters(json_data, "");
-    } catch (const StateKeyNotFoundException& e) { throw; } catch (const std::exception& e) {
-        thl::Logger::logf(thl::Logger::LogLevel::Error,
+    // First every entry is resolved and converted; nothing is written before the last one
+    // passed.
+    auto skip = [&report](const std::string& path, const char* reason) {
+        thl::Logger::logf(thl::Logger::LogLevel::Warning,
                           "thl.state.state",
-                          "Error updating state from JSON: %s",
-                          e.what());
-        throw;
+                          "from_json: skipping '%s': %s",
+                          path.c_str(),
+                          reason);
+        report.m_skipped.push_back(path);
+    };
+
+    auto add = [&](const std::string& path, const nlohmann::json& value) {
+        const ParameterRecord* const record = get_record(path);
+        if (!record) {
+            if (mode == JsonMode::Strict) { throw StateKeyNotFoundException(path); }
+            skip(path, "not a parameter");
+            return;
+        }
+        if (value.is_null()) {
+            skip(path, "null value");
+            return;
+        }
+        std::optional<JsonValue> converted = json_to_value(value, record->m_def.m_type);
+        if (!converted) {
+            const std::string reason = std::string("a JSON ") + value.type_name() +
+                                       " does not fit a " + type_name(record->m_def.m_type) +
+                                       " parameter";
+            if (mode == JsonMode::Strict) {
+                throw StateJsonException(path, "Cannot apply '" + path + "': " + reason);
+            }
+            skip(path, reason.c_str());
+            return;
+        }
+        writes.push_back({.m_path = path, .m_value = std::move(*converted)});
+    };
+
+    if (json_data.is_object()) {
+        for_each_leaf(json_data, [&](const std::string& path, const nlohmann::json& value) {
+            // An empty object is a group without values, unless its path is a parameter.
+            if (value.is_object() && !get_record(path)) { return; }
+            add(path, value);
+        });
+    } else if (json_data.is_array()) {
+        static const nlohmann::json k_null;
+        for (const nlohmann::json& entry : json_data) {
+            const auto key = entry.is_object() ? entry.find("key") : entry.end();
+            if (key == entry.end() || !key->is_string()) {
+                throw StateJsonException(
+                    "",
+                    "State JSON: a record of the array has no \"key\" that is a string");
+            }
+            const auto value = entry.find("value");
+            add(key->get_ref<const std::string&>(), value != entry.end() ? *value : k_null);
+        }
+    } else if (!json_data.is_null()) {
+        throw StateJsonException("",
+                                 std::string("State JSON: expected an object or an array, got ") +
+                                     json_data.type_name());
     }
+
+    // Looked up again: a listener of an earlier write may have removed the parameter.
+    for (const Write& write : writes) {
+        ParameterRecord* const record = get_record(write.m_path);
+        if (!record) {
+            skip(write.m_path, "removed by a listener during the call");
+            continue;
+        }
+        std::visit([&](const auto& value) { write_value(record, value); }, write.m_value);
+        notify_after_write(record, source);
+        ++report.m_applied;
+    }
+    return report;
 }
 
 // ── State dump ──────────────────────────────────────────────────────────────
@@ -556,36 +716,46 @@ nlohmann::json State::to_json(bool include_definitions) const {
     return group_to_json("", include_definitions);
 }
 
+nlohmann::json State::values_to_json(std::string_view group_prefix) const {
+    nlohmann::json root = nlohmann::json::object();
+
+    auto clash = [](const std::string& key) {
+        return StateJsonException(key,
+                                  "Cannot write '" + key +
+                                      "' as a nested object: a parameter lies below another "
+                                      "parameter. Use to_json().");
+    };
+
+    std::scoped_lock const lock(m_storage_mutex);
+    for (const auto& [key, record] : m_storage) {
+        if (!detail::in_group(key, group_prefix)) { continue; }
+
+        nlohmann::json* node = &root;
+        std::string_view rest = key;
+        for (size_t dot = rest.find('.'); dot != std::string_view::npos; dot = rest.find('.')) {
+            node = &(*node)[std::string(rest.substr(0, dot))];
+            if (node->is_null()) { *node = nlohmann::json::object(); }
+            if (!node->is_object()) { throw clash(key); }
+            rest.remove_prefix(dot + 1);
+        }
+        nlohmann::json& leaf = (*node)[std::string(rest)];
+        if (leaf.is_object()) { throw clash(key); }
+        leaf = value_to_json(*record);
+    }
+
+    return root;
+}
+
 nlohmann::json State::group_to_json(std::string_view group_prefix, bool include_definitions) const {
     nlohmann::json root = nlohmann::json::array();
 
     std::scoped_lock const lock(m_storage_mutex);
     for (const auto& [key, record] : m_storage) {
-        if (!group_prefix.empty() &&
-            (key.size() < group_prefix.size() || !key.starts_with(group_prefix))) {
-            continue;
-        }
+        if (!detail::in_group(key, group_prefix)) { continue; }
 
         nlohmann::json param_obj = nlohmann::json::object();
         param_obj["key"] = key;
-
-        switch (record->m_def.m_type) {
-            case ParameterType::Double:
-                param_obj["value"] =
-                    record->m_cache.m_atomic_double.load(std::memory_order_relaxed);
-                break;
-            case ParameterType::Float:
-                param_obj["value"] = record->m_cache.m_atomic_float.load(std::memory_order_relaxed);
-                break;
-            case ParameterType::Int:
-                param_obj["value"] = record->m_cache.m_atomic_int.load(std::memory_order_relaxed);
-                break;
-            case ParameterType::Bool:
-                param_obj["value"] = record->m_cache.m_atomic_bool.load(std::memory_order_relaxed);
-                break;
-            case ParameterType::String: param_obj["value"] = record->m_string_value; break;
-            default: break;
-        }
+        param_obj["value"] = value_to_json(*record);
 
         // Include definition if requested and the parameter has a named definition
         // (parameters created with just a value have empty m_name)

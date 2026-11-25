@@ -91,8 +91,32 @@ State
 addressed by dot-separated paths such as ``"oscillator.frequency"``. Reads are
 RCU-protected, so the audio thread can look a value up without taking a lock;
 numeric parameter types (``double``, ``float``, ``int``, ``bool``) are fully
-real-time safe. Serialization to and from JSON goes through nlohmann_json.
-Depends on Core and Parameters.
+real-time safe. Depends on Core and Parameters.
+
+Saving and restoring goes through nlohmann_json. Two writers, one reader:
+
+- :cpp:func:`thl::State::values_to_json` writes the values as a nested object,
+  one level per path segment (``{"eq": {"bass": 7}}``): the form to save.
+- :cpp:func:`thl::State::to_json` writes an array with one record per parameter
+  (``[{"key": "eq.bass", "value": 7, "definition": {...}}]``): the form for a
+  user interface that builds its controls from the definitions.
+- :cpp:func:`thl::State::from_json` reads both back, and an object with whole
+  paths as keys. It writes only the parameters that are named, so one group is
+  restored the same way (``values_to_json("engine0")``), and it checks every
+  entry before it writes the first: a call that throws changes nothing.
+
+.. code-block:: cpp
+
+   const std::string saved = state.values_to_json().dump();
+   // ... later, in a version of the program that may have other parameters
+   const auto report = state.from_json(nlohmann::json::parse(saved), nullptr,
+                                       thl::State::JsonMode::Lenient);
+   // report.m_skipped: keys that are no parameter any more
+
+``JsonMode::Strict`` (the default) throws for a key that is no parameter and for
+a value that does not fit; ``Lenient`` skips those and lists them. JSON text has
+no NaN and no infinity: such a value is written as ``null``, and a ``null``
+leaves its parameter as it is.
 
 DSP
 ---

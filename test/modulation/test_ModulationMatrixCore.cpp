@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include <tanh/modulation/BlockProcessor.h>
 #include <tanh/modulation/ModulationMatrix.h>
+#include <tanh/state/Exceptions.h>
+#include <tanh/state/Parameter.h>
+#include <tanh/state/ParameterListener.h>
 #include <tanh/state/State.h>
 
 #include <array>
@@ -654,6 +657,50 @@ TEST(ModulationMatrix, Serialization_ReplaceRangeRoundTrip) {
     ASSERT_EQ(json2.size(), 1u);
     EXPECT_FLOAT_EQ(json2[0]["replace_range_min"].get<float>(), 100.0f);
     EXPECT_FLOAT_EQ(json2[0]["replace_range_max"].get<float>(), 900.0f);
+}
+
+// to_json(true) is read back with its parameters. The State's listeners run without the
+// matrix's writer mutex (this one asks the matrix), and a parameter the State does not
+// have fails the load before the routings change.
+TEST(ModulationMatrix, Serialization_ParametersRoundTrip) {
+    thl::State state;
+    state.create("freq", modulatable_float(0.5f));
+    state.create("gain", modulatable_float(0.25f));
+    ModulationMatrix matrix(state);
+
+    ConstSource src;
+    matrix.add_source("src", &src);
+    matrix.get_smart_handle<float>("freq");
+    ASSERT_NE(matrix.add_routing({"src", "freq", 0.5f}), k_invalid_routing_id);
+
+    const nlohmann::json saved = nlohmann::json::parse(matrix.to_json(true).dump());
+    ASSERT_EQ(saved["parameters"].size(), 2u);
+    state.set("freq", 0.0f);
+    state.set("gain", 0.0f);
+
+    size_t routings_seen = 0;
+    int calls = 0;
+    thl::CallbackListener listener([&](const thl::Parameter& /*param*/) {
+        routings_seen = matrix.to_json(false).size();
+        ++calls;
+    });
+    state.add_listener(&listener);
+    matrix.from_json(saved);
+    state.remove_listener(&listener);
+
+    EXPECT_EQ(calls, 2);
+    EXPECT_EQ(routings_seen, 1u);
+    EXPECT_FLOAT_EQ(state.get<float>("freq"), 0.5f);
+    EXPECT_FLOAT_EQ(state.get<float>("gain"), 0.25f);
+    EXPECT_EQ(matrix.to_json(false).size(), 1u);
+
+    nlohmann::json other = saved;
+    other["parameters"].push_back({{"key", "retired"}, {"value", 1.0}});
+    other["modulation_routings"] = nlohmann::json::array();
+    state.set("freq", 0.0f);
+    EXPECT_THROW(matrix.from_json(other), thl::StateKeyNotFoundException);
+    EXPECT_FLOAT_EQ(state.get<float>("freq"), 0.0f);
+    EXPECT_EQ(matrix.to_json(false).size(), 1u);
 }
 
 // ── ReplaceHold divergent active/hold priority ──────────────────────────────
