@@ -2306,6 +2306,15 @@ nlohmann::json  // NOLINT(misc-include-cleaner)
 }
 
 void ModulationMatrix::from_json(const nlohmann::json& json) {
+    // Parameters first and without the writer mutex: State::from_json() runs the State's
+    // listeners, which may call back into the matrix, and when it throws the routings are
+    // still the old ones.
+#if defined(TANH_STATE_ENABLED)
+    if (m_state != nullptr && json.contains("parameters") && json["parameters"].is_array()) {
+        m_state->from_json(json["parameters"]);
+    }
+#endif
+
     std::scoped_lock const lock(m_writer_mutex);
 
     // Helper: parse a single routing JSON object into a ModulationRouting.
@@ -2374,11 +2383,4 @@ void ModulationMatrix::from_json(const nlohmann::json& json) {
         resolve_targets();
         rebuild_schedule_with_lock();
     }
-
-    // Forward parameters to State
-#if defined(TANH_STATE_ENABLED)
-    if (m_state != nullptr && json.contains("parameters") && json["parameters"].is_array()) {
-        m_state->from_json(json["parameters"]);
-    }
-#endif
 }

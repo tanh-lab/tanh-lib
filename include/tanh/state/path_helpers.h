@@ -42,4 +42,13 @@ constexpr size_t join_path_size(std::string_view parent, std::string_view child)
     return parent.size() + 1 + child.size();  // +1 for dot
 }
 
+// True when `key` is the group `prefix` or lies below it: "engine1" holds "engine1" and
+// "engine1.volume", not "engine10.volume". A prefix that ends with a dot selects every
+// key that starts with it; an empty one selects all.
+constexpr bool in_group(std::string_view key, std::string_view prefix) {
+    if (prefix.empty()) { return true; }
+    if (!key.starts_with(prefix)) { return false; }
+    return prefix.back() == '.' || key.size() == prefix.size() || key[prefix.size()] == '.';
+}
+
 }  // namespace thl::inline THL_ABI_NAMESPACE::detail

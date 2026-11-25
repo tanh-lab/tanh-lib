@@ -36,6 +36,25 @@ public:
 };
 
 /**
+ * @class StateJsonException
+ * @brief Exception thrown when JSON cannot be applied to a State, or a State cannot be
+ * written in the form that was asked for.
+ *
+ * key() names the parameter the problem is at; it is empty when the document as a whole
+ * has the wrong shape.
+ */
+class TANH_API StateJsonException : public std::runtime_error {
+public:
+    StateJsonException(std::string_view key, const std::string& message)
+        : std::runtime_error(message), m_key(key) {}
+
+    const std::string& key() const { return m_key; }
+
+private:
+    std::string m_key;
+};
+
+/**
  * @class BlockingException
  * @brief Exception thrown when attempting a blocking operation without
  * allow_blocking flag.

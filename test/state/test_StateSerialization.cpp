@@ -1,7 +1,12 @@
 #include <gtest/gtest.h>
 #include <tanh/core/Numbers.h>
 
+#include <limits>
+#include <map>
 #include <nlohmann/json.hpp>
+#include <numbers>
+#include <string>
+#include <vector>
 
 #include "tanh/state/Exceptions.h"
 #include "tanh/state/State.h"
@@ -62,8 +67,8 @@ TEST(StateTests, UpdateFromJsonNonExistentKey) {
     // Set up initial state
     state.create("volume", 0.5);
 
-    // JSON with non-existent key
-    nlohmann::json invalid_update = {{"volume", 0.8}, {"non_existent", 42}};
+    // JSON with a non-existent key. It sorts after "volume", so the known key comes first.
+    nlohmann::json invalid_update = {{"volume", 0.8}, {"z_non_existent", 42}};
 
     // The update should throw StateKeyNotFoundException
     EXPECT_THROW(
@@ -72,8 +77,8 @@ TEST(StateTests, UpdateFromJsonNonExistentKey) {
                 state.from_json(invalid_update);
             } catch (const StateKeyNotFoundException& e) {
                 // Verify the error message contains the key name
-                EXPECT_TRUE(std::string(e.what()).find("non_existent") != std::string::npos);
-                EXPECT_EQ("non_existent", e.key());
+                EXPECT_TRUE(std::string(e.what()).find("z_non_existent") != std::string::npos);
+                EXPECT_EQ("z_non_existent", e.key());
                 throw;
             }
         },
@@ -606,6 +611,486 @@ TEST(StateTests, GetGroupStateDumpWithoutDefinitions) {
     EXPECT_FALSE(json[0].contains("definition"));
 }
 
+// =============================================================================
+// Save and restore: what the writers write, from_json() reads back
+// =============================================================================
+
+namespace {
+
+// One parameter of every type, in groups, away from its initial value.
+void fill_all_types(State& state) {
+    state.create(
+        "synth.osc.freq",
+        ParameterDefinition::make_float("Frequency", Range::linear(20.0f, 20000.0f, 1.0f), 440.0f));
+    state.create("synth.osc.detune", 0.1);
+    state.create("synth.voices", 4);
+    state.create("synth.enabled", false);
+    state.create("synth.name", std::string("init"));
+    state.create("volume", 0.5f);
+
+    state.set("synth.osc.freq", 0.1f);  // not exact in binary: must survive the text form
+    state.set("synth.osc.detune", std::numbers::pi);
+    state.set("synth.voices", 7);
+    state.set("synth.enabled", true);
+    state.set("synth.name", std::string("lead \"one\""));
+    state.set("volume", 0.8f);
+}
+
+void reset_all_types(State& state) {
+    state.set("synth.osc.freq", 1.0f);
+    state.set("synth.osc.detune", 0.0);
+    state.set("synth.voices", 0);
+    state.set("synth.enabled", false);
+    state.set("synth.name", std::string(""));
+    state.set("volume", 0.0f);
+}
+
+void expect_all_types_restored(State& state) {
+    EXPECT_EQ(0.1f, state.get<float>("synth.osc.freq"));
+    EXPECT_EQ(std::numbers::pi, state.get<double>("synth.osc.detune"));
+    EXPECT_EQ(7, state.get<int>("synth.voices"));
+    EXPECT_TRUE(state.get<bool>("synth.enabled"));
+    EXPECT_EQ("lead \"one\"", state.get<std::string>("synth.name", true));
+    EXPECT_EQ(0.8f, state.get<float>("volume"));
+}
+
+// Counts the notifications a restore sends.
+class CountingListener : public ParameterListener {
+public:
+    void on_parameter_changed(const Parameter& /*param*/) override { ++m_count; }
+    int m_count = 0;
+};
+
+}  // namespace
+
+// The call from issue #53.
+TEST(StateJsonRoundTrip, ToJsonIsReadBack) {
+    for (const bool with_definitions : {false, true}) {
+        State state;
+        fill_all_types(state);
+        const nlohmann::json saved = state.to_json(with_definitions);
+        ASSERT_TRUE(saved.is_array());
+
+        reset_all_types(state);
+        const State::JsonReadReport report = state.from_json(saved);
+
+        expect_all_types_restored(state);
+        EXPECT_EQ(6u, report.m_applied);
+        EXPECT_TRUE(report.m_skipped.empty());
+    }
+}
+
+// Through text, as a file or a plugin state chunk holds it.
+TEST(StateJsonRoundTrip, ToJsonIsReadBackThroughText) {
+    State state;
+    fill_all_types(state);
+    const std::string text = state.to_json(false).dump();
+
+    reset_all_types(state);
+    state.from_json(nlohmann::json::parse(text));
+
+    expect_all_types_restored(state);
+}
+
+TEST(StateJsonRoundTrip, ValuesToJsonIsNested) {
+    State state;
+    state.create("volume", 0.5);
+    state.create("muted", true);
+    state.create("eq.bass", 5);
+    state.create("eq.mid.gain", 0.25);
+    state.create("name", std::string("device"));
+
+    const nlohmann::json expected = {{"eq", {{"bass", 5}, {"mid", {{"gain", 0.25}}}}},
+                                     {"muted", true},
+                                     {"name", "device"},
+                                     {"volume", 0.5}};
+    EXPECT_EQ(expected, state.values_to_json());
+}
+
+TEST(StateJsonRoundTrip, ValuesToJsonIsReadBackThroughText) {
+    State state;
+    fill_all_types(state);
+    const std::string text = state.values_to_json().dump();
+
+    reset_all_types(state);
+    const State::JsonReadReport report = state.from_json(nlohmann::json::parse(text));
+
+    expect_all_types_restored(state);
+    EXPECT_EQ(6u, report.m_applied);
+    EXPECT_TRUE(report.m_skipped.empty());
+}
+
+TEST(StateJsonRoundTrip, EmptyStateWritesAnEmptyObject) {
+    State state;
+    const nlohmann::json values = state.values_to_json();
+    EXPECT_TRUE(values.is_object());
+    EXPECT_TRUE(values.empty());
+    EXPECT_EQ(0u, state.from_json(values).m_applied);
+}
+
+// One group is saved with its paths from the root and restored without touching the rest.
+TEST(StateJsonRoundTrip, GroupIsRestoredAlone) {
+    for (const bool nested : {true, false}) {
+        State state;
+        state.create("engine0.volume", 0.25f);
+        state.create("engine0.grain.size", 0.5f);
+        state.create("engine1.volume", 0.75f);
+        state.create("mixer.volume", 1.0f);
+
+        const nlohmann::json saved =
+            nested ? state.values_to_json("engine0") : state.group_to_json("engine0", false);
+        if (nested) {
+            const nlohmann::json expected = {
+                {"engine0", {{"grain", {{"size", 0.5f}}}, {"volume", 0.25f}}}};
+            EXPECT_EQ(expected, saved);
+        }
+
+        state.set("engine0.volume", 0.0f);
+        state.set("engine0.grain.size", 0.0f);
+        state.set("engine1.volume", 0.0f);
+        state.set("mixer.volume", 0.0f);
+
+        EXPECT_EQ(2u, state.from_json(saved).m_applied);
+
+        EXPECT_EQ(0.25f, state.get<float>("engine0.volume"));
+        EXPECT_EQ(0.5f, state.get<float>("engine0.grain.size"));
+        EXPECT_EQ(0.0f, state.get<float>("engine1.volume"));
+        EXPECT_EQ(0.0f, state.get<float>("mixer.volume"));
+    }
+}
+
+TEST(StateJsonRoundTrip, FlatKeysAndMixedForms) {
+    State state;
+    state.create("eq.bass", 5);
+    state.create("eq.mid.gain", 0.0);
+    state.create("volume", 0.0);
+
+    state.from_json(nlohmann::json{{"eq.bass", 7}, {"eq", {{"mid.gain", 0.5}}}, {"volume", 1.0}});
+
+    EXPECT_EQ(7, state.get<int>("eq.bass"));
+    EXPECT_DOUBLE_EQ(0.5, state.get<double>("eq.mid.gain"));
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("volume"));
+}
+
+// A record carries more than key and value (a definition, what a consumer added): ignored.
+TEST(StateJsonRoundTrip, RecordsWithExtraFields) {
+    State state;
+    state.create("gain", 0.0f);
+
+    nlohmann::json records = nlohmann::json::array();
+    records.push_back({{"key", "gain"},
+                       {"value", 0.5},
+                       {"value_normalized", 0.25},
+                       {"definition", {{"name", "Gain"}}}});
+    EXPECT_EQ(1u, state.from_json(records).m_applied);
+    EXPECT_FLOAT_EQ(0.5f, state.get<float>("gain"));
+}
+
+// Restoring notifies once per parameter that was written, and passes the source on.
+TEST(StateJsonRoundTrip, NotifiesOncePerParameter) {
+    State state;
+    state.create("a", 0.0);
+    state.create("b.c", 0.0);
+    state.create("untouched", 0.0);
+
+    CountingListener listener;
+    state.add_listener(&listener);
+    state.from_json(nlohmann::json{{"a", 1.0}, {"b", {{"c", 2.0}}}});
+    EXPECT_EQ(2, listener.m_count);
+    state.remove_listener(&listener);
+}
+
+// A document with no known shape, and records without a key, are refused in both modes.
+TEST(StateJsonRoundTrip, RefusesOtherShapes) {
+    State state;
+    state.create("a", 1.0);
+
+    for (const State::JsonMode mode : {State::JsonMode::Strict, State::JsonMode::Lenient}) {
+        EXPECT_THROW(state.from_json(nlohmann::json(42), nullptr, mode), StateJsonException);
+        EXPECT_THROW(state.from_json(nlohmann::json("a"), nullptr, mode), StateJsonException);
+        EXPECT_THROW(state.from_json(nlohmann::json::array({1, 2}), nullptr, mode),
+                     StateJsonException);
+        EXPECT_THROW(state.from_json(nlohmann::json::array({{{"value", 2.0}}}), nullptr, mode),
+                     StateJsonException);
+        EXPECT_THROW(
+            state.from_json(nlohmann::json::array({{{"key", 7}, {"value", 2.0}}}), nullptr, mode),
+            StateJsonException);
+        // A record that is refused must not let the ones before it through.
+        nlohmann::json half = nlohmann::json::array();
+        half.push_back({{"key", "a"}, {"value", 5.0}});
+        half.push_back({{"value", 6.0}});
+        EXPECT_THROW(state.from_json(half, nullptr, mode), StateJsonException);
+        EXPECT_DOUBLE_EQ(1.0, state.get<double>("a"));
+    }
+    // Nothing to apply is not an error.
+    EXPECT_EQ(0u, state.from_json(nlohmann::json()).m_applied);
+    EXPECT_EQ(0u, state.from_json(nlohmann::json::array()).m_applied);
+}
+
+// Strict: nothing is written when one entry cannot be applied, wherever it sits.
+TEST(StateJsonRoundTrip, StrictWritesNothingOnAnError) {
+    State state;
+    state.create("a", 1.0);
+    state.create("m.x", 1.0);
+    state.create("z", 1.0);
+    state.create("name", std::string("keep"));
+
+    CountingListener listener;
+    state.add_listener(&listener);
+
+    // Unknown key in the middle, known keys before and after it.
+    EXPECT_THROW(state.from_json(nlohmann::json{{"a", 2.0}, {"m", {{"unknown", 5}}}, {"z", 2.0}}),
+                 StateKeyNotFoundException);
+    // A value that does not fit, after a key that could be written.
+    try {
+        state.from_json(nlohmann::json{{"a", 2.0}, {"name", 42}});
+        ADD_FAILURE() << "a number was accepted for a string parameter";
+    } catch (const StateJsonException& e) { EXPECT_EQ("name", e.key()); }
+    EXPECT_THROW(state.from_json(nlohmann::json{{"a", 2.0}, {"z", nlohmann::json::array({1})}}),
+                 StateJsonException);
+
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("a"));
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("m.x"));
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("z"));
+    EXPECT_EQ("keep", state.get<std::string>("name", true));
+    EXPECT_EQ(0, listener.m_count);
+    state.remove_listener(&listener);
+}
+
+// Lenient: a state saved by another version loads as far as it still applies.
+TEST(StateJsonRoundTrip, LenientSkipsWhatItCannotApply) {
+    State state;
+    state.create("a", 1.0);
+    state.create("m.x", 1.0);
+    state.create("name", std::string("keep"));
+    state.create("z", 1.0);
+
+    const nlohmann::json saved = {{"a", 2.0},
+                                  {"m", {{"retired", 5}, {"x", 3.0}}},
+                                  {"name", 42},
+                                  {"z", 4.0}};
+    const State::JsonReadReport report = state.from_json(saved, nullptr, State::JsonMode::Lenient);
+
+    EXPECT_EQ(3u, report.m_applied);
+    EXPECT_EQ((std::vector<std::string>{"m.retired", "name"}), report.m_skipped);
+    EXPECT_DOUBLE_EQ(2.0, state.get<double>("a"));
+    EXPECT_DOUBLE_EQ(3.0, state.get<double>("m.x"));
+    EXPECT_EQ("keep", state.get<std::string>("name", true));
+    EXPECT_DOUBLE_EQ(4.0, state.get<double>("z"));
+
+    // The same for the array form.
+    nlohmann::json records = nlohmann::json::array();
+    records.push_back({{"key", "gone"}, {"value", 1}});
+    records.push_back({{"key", "a"}, {"value", 9.0}});
+    const State::JsonReadReport second =
+        state.from_json(records, nullptr, State::JsonMode::Lenient);
+    EXPECT_EQ(1u, second.m_applied);
+    EXPECT_EQ((std::vector<std::string>{"gone"}), second.m_skipped);
+    EXPECT_DOUBLE_EQ(9.0, state.get<double>("a"));
+}
+
+// JSON text has no NaN and no infinity: they are written as null, and a null leaves the
+// parameter alone instead of failing the restore.
+TEST(StateJsonRoundTrip, NonFiniteValuesComeBackAsNull) {
+    State state;
+    state.create("x", 0.5f);
+    state.create("y", 0.5);
+    state.create("ok", 1.0);
+    state.set("x", std::numeric_limits<float>::quiet_NaN());
+    state.set("y", std::numeric_limits<double>::infinity());
+
+    const std::string text = state.values_to_json().dump();
+    state.set("x", 0.25f);
+    state.set("y", 0.25);
+    state.set("ok", 0.0);
+
+    const State::JsonReadReport report = state.from_json(nlohmann::json::parse(text));
+    EXPECT_EQ(1u, report.m_applied);
+    EXPECT_EQ((std::vector<std::string>{"x", "y"}), report.m_skipped);
+    EXPECT_FLOAT_EQ(0.25f, state.get<float>("x"));
+    EXPECT_DOUBLE_EQ(0.25, state.get<double>("y"));
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("ok"));
+
+    // A record without a value is the same as a null.
+    nlohmann::json records = nlohmann::json::array();
+    records.push_back({{"key", "ok"}});
+    EXPECT_EQ((std::vector<std::string>{"ok"}), state.from_json(records).m_skipped);
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("ok"));
+}
+
+// Numbers are converted by the parameter's type. JavaScript writes 3000000000.0 as
+// 3000000000: an integer in JSON that does not fit an int.
+TEST(StateJsonRoundTrip, NumbersBeyondInt) {
+    State state;
+    state.create("d", 0.0);
+    state.create("f", 0.0f);
+    state.create("i", 0);
+    state.create("b", false);
+
+    state.from_json(
+        nlohmann::json::parse(R"({"d": 3000000000, "f": 5000000000, "i": 3000000000})"));
+    EXPECT_DOUBLE_EQ(3000000000.0, state.get<double>("d"));
+    EXPECT_FLOAT_EQ(5000000000.0f, state.get<float>("f"));
+    EXPECT_EQ(std::numeric_limits<int>::max(), state.get<int>("i"));
+
+    state.from_json(
+        nlohmann::json::parse(R"({"d": -5000000000, "i": -5000000000, "b": 4294967296})"));
+    EXPECT_DOUBLE_EQ(-5000000000.0, state.get<double>("d"));
+    EXPECT_EQ(std::numeric_limits<int>::min(), state.get<int>("i"));
+    EXPECT_TRUE(state.get<bool>("b"));
+
+    state.from_json(nlohmann::json::parse(R"({"i": 1e300})"));
+    EXPECT_EQ(std::numeric_limits<int>::max(), state.get<int>("i"));
+    state.from_json(nlohmann::json::parse(R"({"i": -1e300})"));
+    EXPECT_EQ(std::numeric_limits<int>::min(), state.get<int>("i"));
+    state.from_json(nlohmann::json::parse(R"({"i": -2.9, "b": 0.0})"));
+    EXPECT_EQ(-2, state.get<int>("i"));
+    EXPECT_FALSE(state.get<bool>("b"));
+}
+
+// What set() accepts for a numeric parameter, from_json() accepts too.
+TEST(StateJsonRoundTrip, BoolsAndStringsForNumericParameters) {
+    State state;
+    state.create("d", 0.0);
+    state.create("i", 0);
+    state.create("b", false);
+
+    state.from_json(nlohmann::json{{"d", "0.5"}, {"i", true}, {"b", "true"}});
+    EXPECT_DOUBLE_EQ(0.5, state.get<double>("d"));
+    EXPECT_EQ(1, state.get<int>("i"));
+    EXPECT_TRUE(state.get<bool>("b"));
+}
+
+// Text that is no number does not fit a numeric parameter (set() would read it as 0), and
+// a number in text is clamped like a JSON number.
+TEST(StateJsonRoundTrip, TextThatIsNoNumberDoesNotFit) {
+    State state;
+    state.create("mode", 3);
+    state.create("d", 0.25);
+
+    for (const char* text : {"saw", "", "0.5x", "1 2"}) {
+        try {
+            state.from_json(nlohmann::json{{"mode", text}});
+            ADD_FAILURE() << "'" << text << "' was applied";
+        } catch (const StateJsonException& e) { EXPECT_EQ("mode", e.key()); }
+    }
+    EXPECT_EQ(3, state.get<int>("mode"));
+
+    const State::JsonReadReport report =
+        state.from_json(nlohmann::json{{"d", "0.5"}, {"mode", "saw"}},
+                        nullptr,
+                        State::JsonMode::Lenient);
+    EXPECT_EQ(1u, report.m_applied);
+    EXPECT_EQ((std::vector<std::string>{"mode"}), report.m_skipped);
+    EXPECT_EQ(3, state.get<int>("mode"));
+    EXPECT_DOUBLE_EQ(0.5, state.get<double>("d"));
+
+    state.from_json(nlohmann::json{{"mode", "3000000000"}});
+    EXPECT_EQ(std::numeric_limits<int>::max(), state.get<int>("mode"));
+    state.from_json(nlohmann::json{{"mode", "-7.9"}});
+    EXPECT_EQ(-7, state.get<int>("mode"));
+}
+
+// An object where a parameter is does not fit; an empty object anywhere else is a group
+// without values.
+TEST(StateJsonRoundTrip, AnObjectDoesNotFitAParameter) {
+    State state;
+    state.create("gain", 0.5);
+
+    try {
+        state.from_json(nlohmann::json{{"gain", nlohmann::json::object()}});
+        ADD_FAILURE() << "an object was applied to a parameter";
+    } catch (const StateJsonException& e) { EXPECT_EQ("gain", e.key()); }
+
+    const State::JsonReadReport lenient =
+        state.from_json(nlohmann::json{{"gain", nlohmann::json::object()}},
+                        nullptr,
+                        State::JsonMode::Lenient);
+    EXPECT_EQ((std::vector<std::string>{"gain"}), lenient.m_skipped);
+
+    const State::JsonReadReport empty_group =
+        state.from_json(nlohmann::json{{"eq", nlohmann::json::object()}});
+    EXPECT_EQ(0u, empty_group.m_applied);
+    EXPECT_TRUE(empty_group.m_skipped.empty());
+    EXPECT_DOUBLE_EQ(0.5, state.get<double>("gain"));
+}
+
+// A listener may remove parameters while a restore is writing: what is gone is skipped.
+TEST(StateJsonRoundTrip, AListenerMayRemoveParameters) {
+    State state;
+    state.create("a", 0.0);
+    state.create("voices.gain", 0.0);
+    state.create("z", 0.0);
+
+    CallbackListener listener([&](const Parameter& param) {
+        if (param.key() == "a") { state.get_group("voices")->clear(); }
+    });
+    state.add_listener(&listener);
+    const State::JsonReadReport report =
+        state.from_json(nlohmann::json{{"a", 1.0}, {"voices", {{"gain", 0.5}}}, {"z", 2.0}});
+    state.remove_listener(&listener);
+
+    EXPECT_EQ(2u, report.m_applied);
+    EXPECT_EQ((std::vector<std::string>{"voices.gain"}), report.m_skipped);
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("a"));
+    EXPECT_DOUBLE_EQ(2.0, state.get<double>("z"));
+}
+
+// Both forms in one document can name a parameter twice: every entry is written.
+TEST(StateJsonRoundTrip, AParameterNamedTwiceIsWrittenTwice) {
+    State state;
+    state.create("eq.bass", 0.0);
+
+    CountingListener listener;
+    state.add_listener(&listener);
+    const State::JsonReadReport report =
+        state.from_json(nlohmann::json{{"eq", {{"bass", 8.0}}}, {"eq.bass", 7.0}});
+    state.remove_listener(&listener);
+
+    EXPECT_EQ(2u, report.m_applied);
+    EXPECT_EQ(2, listener.m_count);
+    EXPECT_DOUBLE_EQ(7.0, state.get<double>("eq.bass"));
+}
+
+// The nested form has no place for a parameter below another parameter.
+TEST(StateJsonRoundTrip, ValuesToJsonRefusesAParameterBelowAParameter) {
+    State state;
+    state.create("a", 1.0);
+    state.create("a-b", 1.0);  // sorts between "a" and "a.b"
+    state.create("a.b", 2.0);
+    state.create("c.d", 3.0);
+
+    try {
+        (void)state.values_to_json();
+        ADD_FAILURE() << "two parameters in one place";
+    } catch (const StateJsonException& e) { EXPECT_EQ("a.b", e.key()); }
+
+    // A part without the clash is written, and the array form holds everything.
+    EXPECT_EQ((nlohmann::json{{"c", {{"d", 3.0}}}}), state.values_to_json("c"));
+    const nlohmann::json all = state.to_json(false);
+    state.set("a", 0.0);
+    state.set("a.b", 0.0);
+    state.from_json(all);
+    EXPECT_DOUBLE_EQ(1.0, state.get<double>("a"));
+    EXPECT_DOUBLE_EQ(2.0, state.get<double>("a.b"));
+}
+
+// A group is its own key and what lies below it, not every key that starts the same.
+TEST(StateTests, GetGroupStateDumpMatchesWholeSegments) {
+    State state;
+    state.create("engine1", 1.0f);
+    state.create("engine1.volume", 1.0f);
+    state.create("engine10.volume", 0.5f);
+    state.create("engine1x", 0.5f);
+
+    const nlohmann::json dump = state.group_to_json("engine1", false);
+    ASSERT_EQ(2u, dump.size());
+    EXPECT_EQ("engine1", dump[0]["key"].get<std::string>());
+    EXPECT_EQ("engine1.volume", dump[1]["key"].get<std::string>());
+
+    EXPECT_EQ((nlohmann::json{{"engine10", {{"volume", 0.5f}}}}), state.values_to_json("engine10"));
+}
+
 TEST(StateTests, GetGroupStateDumpPrefixBoundary) {
     State state;
     state.create("engine0.volume", 1.0f);
@@ -616,4 +1101,21 @@ TEST(StateTests, GetGroupStateDumpPrefixBoundary) {
 
     EXPECT_EQ(1u, json.size());
     EXPECT_EQ("engine0.volume", json[0]["key"].get<std::string>());
+}
+
+// The same for a group that is cleared or asked whether it is empty.
+TEST(StateTests, GroupClearMatchesWholeSegments) {
+    State state;
+    state.create("engine1.volume", 1.0f);
+    state.create("engine10.volume", 0.5f);
+
+    StateGroup* const engine1 = state.get_group("engine1");
+    ASSERT_NE(nullptr, engine1);
+    engine1->clear();
+
+    EXPECT_TRUE(engine1->is_empty());
+    const auto left = state.get_parameters();
+    ASSERT_EQ(1u, left.size());
+    EXPECT_EQ("engine10.volume", left.begin()->first);
+    EXPECT_FLOAT_EQ(0.5f, state.get<float>("engine10.volume"));
 }
