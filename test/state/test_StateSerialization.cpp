@@ -1114,6 +1114,8 @@ TEST(StateTests, GroupClearMatchesWholeSegments) {
     engine1->clear();
 
     EXPECT_TRUE(engine1->is_empty());
-    EXPECT_THROW((void)state.get<float>("engine1.volume"), StateKeyNotFoundException);
+    const auto left = state.get_parameters();
+    ASSERT_EQ(1u, left.size());
+    EXPECT_EQ("engine10.volume", left.begin()->first);
     EXPECT_FLOAT_EQ(0.5f, state.get<float>("engine10.volume"));
 }
