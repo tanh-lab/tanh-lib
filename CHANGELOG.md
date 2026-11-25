@@ -78,6 +78,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the count-in, the bars recorded and the bars left. Guide: `docs/sphinx/recording.md`.
   Tests: `WavStreamWriter.*`, `MultitrackRecorder.*`, `Take.*`, `TakeExport.*`,
   `RecordedTake.*`, `RecordSchedule.*`.
+- Link on Android: `TANH_BUILD_LINK` builds the Link C++ SDK's Linux platform there, and an
+  enabled `LinkSession` holds a Wi-Fi `MulticastLock` so peers are found; the app calls
+  `thl::link::set_android_java_vm()` from `JNI_OnLoad` and declares
+  `CHANGE_WIFI_MULTICAST_STATE`.
+- `LFOSourceImpl::set_phase()` (protected): the phase the next `process()` starts from, for an
+  LFO that follows an external timeline such as a tempo-synced LFO locked to the transport's beat.
+- `AudioDeviceManager::get_output_latency_samples()`: the playback device's estimated output
+  latency in frames, for `LinkTransportClock::set_output_latency_samples()`. On iOS it is the
+  route's `outputLatency` plus `IOBufferDuration`, queried live (call it again after a route
+  change); elsewhere the buffered frames ahead of the callback.
 - MIDI as notes, controllers and modulation sources, on top of the packets. `midi::EventStream`
   turns a block's packets into `midi::Event`s once per block: `EventDecoder` gives MIDI 1.0 and
   MIDI 2.0 one float form (7 to 32 bits scaled to 0 to 1, pitch bend to -1 to 1, an RPN / NRPN

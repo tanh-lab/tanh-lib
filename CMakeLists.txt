@@ -781,7 +781,7 @@ if(TANH_BUILD_LINK)
             "-lobjc"
         )
     elseif(TANH_OPERATING_SYSTEM STREQUAL "macOS" OR TANH_OPERATING_SYSTEM STREQUAL "Linux"
-           OR TANH_OPERATING_SYSTEM STREQUAL "Windows")
+           OR TANH_OPERATING_SYSTEM STREQUAL "Windows" OR TANH_OPERATING_SYSTEM STREQUAL "Android")
         # Header-only C++ SDK pinned to the commit of tag Link-4.1; asio-standalone is
         # a submodule. SOURCE_SUBDIR points nowhere so Link's own examples and
         # tests are not added. Unlike the other pins: no GIT_SHALLOW (a shallow
@@ -803,7 +803,11 @@ if(TANH_BUILD_LINK)
         endfunction()
         tanh_include_ableton_link("${abletonlink_SOURCE_DIR}")
 
-        target_sources(${PROJECT_NAME}_link PRIVATE src/link/LinkSession_ableton.cpp)
+        # Android: the SDK's Linux platform (its CMake lists Android there); the app
+        # declares CHANGE_WIFI_MULTICAST_STATE and the session holds a multicast lock.
+        target_sources(${PROJECT_NAME}_link PRIVATE
+            src/link/LinkSession_ableton.cpp
+            src/link/AndroidMulticastLock.cpp)
         target_link_libraries(${PROJECT_NAME}_link PRIVATE $<BUILD_INTERFACE:Ableton::Link>)
         # The system libraries Ableton::Link adds, named again so that an installed
         # static tanh_link still carries them (BUILD_INTERFACE drops them from the
@@ -815,10 +819,9 @@ if(TANH_BUILD_LINK)
             link_pin_win32_winnt(${PROJECT_NAME}_link)  # uniform _WIN32_WINNT (Link README)
         endif()
     else()
-        # Android: the C++ SDK documents only macOS/Linux/Windows; unverified.
         message(FATAL_ERROR
-            "TANH_BUILD_LINK is not supported on ${TANH_OPERATING_SYSTEM} (Link is verified on "
-            "macOS, Linux, Windows and iOS only)")
+            "TANH_BUILD_LINK is not supported on ${TANH_OPERATING_SYSTEM} (Link runs on "
+            "macOS, Linux, Windows, Android and iOS)")
     endif()
 
     set_target_properties(${PROJECT_NAME}_link PROPERTIES

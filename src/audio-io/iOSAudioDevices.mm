@@ -196,6 +196,11 @@ std::string get_ios_current_output_route_name() {
     return {};
 }
 
+double get_ios_output_latency_seconds() {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    return session.outputLatency + session.IOBufferDuration;
+}
+
 }  // namespace thl::inline THL_ABI_NAMESPACE
 
 #endif  // THL_PLATFORM_IOS

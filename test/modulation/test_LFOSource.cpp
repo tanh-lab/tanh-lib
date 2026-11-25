@@ -280,3 +280,39 @@ TEST(LFOSource, CurrentPhaseAdvances) {
     lfo.process(k_block_size);
     EXPECT_GT(lfo.current_phase(), 0.0f);
 }
+
+namespace {
+/// Exposes set_phase() (protected: for sources that follow a timeline).
+class PhaseLockedLFOSource : public TestLFOSource {
+public:
+    using LFOSourceImpl::set_phase;
+};
+}  // namespace
+
+TEST(LFOSource, SetPhaseAfterAnEarlyWrapLatchesOnce) {
+    // process() ran a hair ahead of the timeline and wrapped (new S&H value) just before
+    // the next snap, which still lands at the end of the old cycle: no second value.
+    PhaseLockedLFOSource lfo;
+    lfo.m_frequency = 480.0f;  // 100 samples per cycle
+    lfo.m_waveform = LFOWaveform::SampleAndHold;
+    lfo.prepare(k_sample_rate, k_block_size, /*voice_count=*/1);
+    lfo.set_phase(0.985);
+    lfo.process(4);  // wraps into cycle 1
+    const float latched = lfo.get_output_buffer()[3];
+    lfo.set_phase(0.9999);  // the timeline is still just inside cycle 0
+    lfo.process(8);
+    for (size_t i = 0; i < 8; ++i) { EXPECT_FLOAT_EQ(lfo.get_output_buffer()[i], latched); }
+}
+
+TEST(LFOSource, SetPhaseIntoALaterCycleLatches) {
+    PhaseLockedLFOSource lfo;
+    lfo.m_frequency = 1.0f;
+    lfo.m_waveform = LFOWaveform::SampleAndHold;
+    lfo.prepare(k_sample_rate, k_block_size, /*voice_count=*/1);
+    lfo.set_phase(0.2);
+    lfo.process(4);
+    const float before = lfo.get_output_buffer()[3];
+    lfo.set_phase(7.5);  // a jump several cycles ahead
+    lfo.process(4);
+    EXPECT_NE(lfo.get_output_buffer()[0], before);
+}

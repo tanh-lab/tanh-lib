@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "AndroidMulticastLock.h"
 #include "LinkSharing.h"
 #include "tanh/link/LinkSession.h"
 
@@ -219,13 +220,22 @@ LinkSession::~LinkSession() {
     m_impl->m_source.reset();
     m_impl->m_link.enableLinkAudio(false);
     m_impl->m_link.setNumPeersCallback([](std::size_t) {});
-    m_impl->m_link.enable(false);
+    if (m_impl->m_link.isEnabled()) {
+        m_impl->m_link.enable(false);
+        detail::release_multicast_lock();
+    }
 }
 
 void LinkSession::set_enabled(bool enabled) {
     if (enabled == m_impl->m_link.isEnabled()) { return; }
+    // Android filters incoming multicast without the lock: take it before discovery.
+    if (enabled) { detail::acquire_multicast_lock(); }
     m_impl->m_link.enable(enabled);
-    if (enabled) { m_impl->m_backend.bump_epoch(); }
+    if (enabled) {
+        m_impl->m_backend.bump_epoch();
+    } else {
+        detail::release_multicast_lock();
+    }
 }
 
 bool LinkSession::is_enabled() const {

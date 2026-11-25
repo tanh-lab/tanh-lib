@@ -52,6 +52,9 @@ std::string get_ios_current_input_route_name();
 /// Returns the name of the currently active output route.
 std::string get_ios_current_output_route_name();
 
+/// Output latency of the active route plus the IO buffer duration, in seconds.
+double get_ios_output_latency_seconds();
+
 }  // namespace thl::inline THL_ABI_NAMESPACE
 
 #endif  // THL_PLATFORM_IOS
