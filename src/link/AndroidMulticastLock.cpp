@@ -1,11 +1,14 @@
 #include "AndroidMulticastLock.h"
 
+#include <tanh/core/AbiNamespace.h>
 #include <tanh/link/AndroidLink.h>
 
 #if defined(THL_PLATFORM_ANDROID)
 
 #include <jni.h>
 #include <tanh/core/Logger.h>
+
+#include <mutex>
 
 namespace thl::inline THL_ABI_NAMESPACE::link {
 namespace {
@@ -120,8 +123,12 @@ void set_android_java_vm(void* java_vm) {
 
 namespace detail {
 
-void AndroidMulticastLock::acquire() {
-    if (m_lock != nullptr) { return; }
+namespace {
+std::mutex g_lock_mutex;
+int g_lock_users = 0;      // sessions holding the lock
+jobject g_lock = nullptr;  // global reference while held
+
+void take_lock() {
     const ScopedJNIEnv scoped;
     JNIEnv* env = scoped.m_env;
     if (env == nullptr) {
@@ -140,19 +147,31 @@ void AndroidMulticastLock::acquire() {
     }
     jboolean counted = JNI_FALSE;
     call(env, lock, "setReferenceCounted", "(Z)V", &counted);
-    if (call(env, lock, "acquire", "()V", nullptr)) { m_lock = env->NewGlobalRef(lock); }
+    if (call(env, lock, "acquire", "()V", nullptr)) { g_lock = env->NewGlobalRef(lock); }
     env->DeleteLocalRef(lock);
 }
 
-void AndroidMulticastLock::release() {
-    if (m_lock == nullptr) { return; }
+void drop_lock() {
+    if (g_lock == nullptr) { return; }
     const ScopedJNIEnv scoped;
     JNIEnv* env = scoped.m_env;
-    if (env == nullptr) { return; }  // the VM is gone: nothing to release
-    auto* lock = static_cast<jobject>(m_lock);
-    call(env, lock, "release", "()V", nullptr);
-    env->DeleteGlobalRef(lock);
-    m_lock = nullptr;
+    if (env != nullptr) {  // else the VM is gone: nothing to release
+        call(env, g_lock, "release", "()V", nullptr);
+        env->DeleteGlobalRef(g_lock);
+    }
+    g_lock = nullptr;
+}
+}  // namespace
+
+void acquire_multicast_lock() {
+    const std::lock_guard<std::mutex> guard(g_lock_mutex);
+    if (g_lock_users++ == 0) { take_lock(); }
+}
+
+void release_multicast_lock() {
+    const std::lock_guard<std::mutex> guard(g_lock_mutex);
+    if (g_lock_users == 0) { return; }
+    if (--g_lock_users == 0) { drop_lock(); }
 }
 
 }  // namespace detail
@@ -165,8 +184,8 @@ namespace thl::inline THL_ABI_NAMESPACE::link {
 void set_android_java_vm(void* /*java_vm*/) {}
 
 namespace detail {
-void AndroidMulticastLock::acquire() {}
-void AndroidMulticastLock::release() {}
+void acquire_multicast_lock() {}
+void release_multicast_lock() {}
 }  // namespace detail
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::link

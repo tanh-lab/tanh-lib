@@ -204,7 +204,6 @@ struct LinkSession::Impl {
     std::atomic<size_t> m_peers{0};
     AbletonSharing m_sharing;
     // Message thread.
-    detail::AndroidMulticastLock m_multicast_lock;     // held while enabled (Android)
     std::optional<ableton::LinkAudioSource> m_source;  // last: gone before what it feeds
     std::optional<uint64_t> m_source_id;
 };
@@ -221,18 +220,21 @@ LinkSession::~LinkSession() {
     m_impl->m_source.reset();
     m_impl->m_link.enableLinkAudio(false);
     m_impl->m_link.setNumPeersCallback([](std::size_t) {});
-    m_impl->m_link.enable(false);
+    if (m_impl->m_link.isEnabled()) {
+        m_impl->m_link.enable(false);
+        detail::release_multicast_lock();
+    }
 }
 
 void LinkSession::set_enabled(bool enabled) {
     if (enabled == m_impl->m_link.isEnabled()) { return; }
     // Android filters incoming multicast without the lock: take it before discovery.
-    if (enabled) { m_impl->m_multicast_lock.acquire(); }
+    if (enabled) { detail::acquire_multicast_lock(); }
     m_impl->m_link.enable(enabled);
     if (enabled) {
         m_impl->m_backend.bump_epoch();
     } else {
-        m_impl->m_multicast_lock.release();
+        detail::release_multicast_lock();
     }
 }
 

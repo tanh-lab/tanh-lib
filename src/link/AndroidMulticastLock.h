@@ -4,24 +4,11 @@
 
 namespace thl::inline THL_ABI_NAMESPACE::link::detail {
 
-/// A WifiManager.MulticastLock held while Link is enabled on Android (incoming
-/// multicast is filtered otherwise, so peers are not discovered). No-op elsewhere.
-/// Message thread.
-class AndroidMulticastLock {
-public:
-    AndroidMulticastLock() = default;
-    ~AndroidMulticastLock() { release(); }
-
-    AndroidMulticastLock(const AndroidMulticastLock&) = delete;
-    AndroidMulticastLock& operator=(const AndroidMulticastLock&) = delete;
-    AndroidMulticastLock(AndroidMulticastLock&&) = delete;
-    AndroidMulticastLock& operator=(AndroidMulticastLock&&) = delete;
-
-    void acquire();
-    void release();
-
-private:
-    void* m_lock = nullptr;  // jobject global reference (Android)
-};
+/// A process-wide WifiManager.MulticastLock, held while any LinkSession is enabled on
+/// Android (incoming multicast is filtered otherwise, so peers are not discovered).
+/// Each acquire is matched by one release; the lock goes when the last one is released.
+/// Thread-safe. No-ops elsewhere.
+void acquire_multicast_lock();
+void release_multicast_lock();
 
 }  // namespace thl::inline THL_ABI_NAMESPACE::link::detail
