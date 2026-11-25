@@ -75,10 +75,16 @@ void LFOSourceImpl::set_phase(double phase) noexcept {
         cycle += 1.0;
     }
     const auto target_cycle = static_cast<int64_t>(cycle);
+    if (m_cycle_valid && target_cycle == m_cycle - 1) {
+        // process() wrapped just before the target (its phase ran a hair ahead) and
+        // latched the new cycle's value already: stay at the new cycle's start rather
+        // than rewind, or the next sample would wrap and latch a second value.
+        m_phase = 0.0f;
+        return;
+    }
     // A new cycle that process() did not wrap into (the snap crossed the wrap, or the
-    // timeline jumped) latches the S&H value. One cycle back is process() having
-    // wrapped just before the snap: that value was latched already.
-    if (m_cycle_valid && target_cycle != m_cycle && target_cycle != m_cycle - 1) {
+    // timeline jumped) latches the S&H value.
+    if (m_cycle_valid && target_cycle != m_cycle) {
         m_held_value = next_random();
         m_held_initialized = true;
     }
