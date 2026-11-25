@@ -9,6 +9,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `thl::dsp::utils::Resampler`: streaming sample-rate conversion, any ratio (windowed sinc
+  from a polyphase table), real-time safe after `prepare()`. Tests: `Resampler.*`.
+- DSP is licensed per file: `BaseProcessor` and `utils/Resampler` are Apache-2.0 (their SPDX
+  header, as `utils/RealtimeSanitizer.h` now carries too); the rest stays AGPL-3.0.
 - `thl::modulation::MotionRecorder` and `MotionLane`: record a gesture of one or more
   channels (`MotionRecorder(num_channels)`, up to 8: a slider, an XY pad) on the
   audio thread into preallocated memory and loop it back synced to the transport,
