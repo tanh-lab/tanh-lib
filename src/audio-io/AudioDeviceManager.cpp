@@ -20,9 +20,7 @@
 #include "tanh/core/threading/RCU.h"
 
 #if defined(THL_PLATFORM_ANDROID)
-#include <dlfcn.h>
 #include <tanh/audio-io/AndroidAudioDevices.h>
-#include <time.h>
 #endif
 
 #if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
@@ -43,6 +41,24 @@ struct AudioDeviceManager::DeviceUserData {
     AudioDeviceManager* m_manager = nullptr;
     AudioDeviceManager::DeviceRole m_role = AudioDeviceManager::DeviceRole::Playback;
 };
+
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+namespace {
+/// The output AudioUnit's renders, for the data callbacks' host times.
+struct RenderClock {
+    // Render notification (audio thread) -> process_callbacks() (same thread).
+    std::atomic<uint64_t> m_ticks{0};   ///< the render's `mHostTime` (mach ticks); 0: taken
+    std::atomic<uint32_t> m_frames{0};  ///< the render's frame count
+    // process_callbacks() only: the render the data callbacks are in.
+    uint64_t m_base_ticks = 0;
+    uint32_t m_base_frames = 0;
+    uint64_t m_delivered = 0;  ///< frames delivered to the data callbacks since that render
+    bool m_valid = false;
+    // Message / notification thread: the unit the notification is registered on.
+    void* m_attached_unit = nullptr;
+};
+}  // namespace
+#endif
 
 struct AudioDeviceManager::Impl {
     ma_context m_context;
@@ -91,11 +107,8 @@ struct AudioDeviceManager::Impl {
     DeviceUserData m_duplex_user_data;
 
 #if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
-    // The output AudioUnit's render timestamp (`mHostTime`, mach ticks), stored by a
-    // render notification right before miniaudio renders, taken by process_callbacks()
-    // on the same thread. 0: none (a unit miniaudio re-created has no notification).
-    std::atomic<uint64_t> m_playback_render_ticks{0};
-    std::atomic<uint64_t> m_duplex_render_ticks{0};
+    RenderClock m_playback_render_clock;
+    RenderClock m_duplex_render_clock;
     double m_ticks_to_us = 0.0;  // mach_timebase_info, as Ableton Link converts it
 #endif
 
@@ -114,62 +127,26 @@ OSStatus store_render_host_time(void* ref,
                                 AudioUnitRenderActionFlags* flags,
                                 const AudioTimeStamp* time_stamp,
                                 UInt32 /*bus*/,
-                                UInt32 /*frames*/,
+                                UInt32 frames,
                                 AudioBufferList* /*data*/) {
     if (flags != nullptr && (*flags & kAudioUnitRenderAction_PreRender) != 0 &&
         time_stamp != nullptr && (time_stamp->mFlags & kAudioTimeStampHostTimeValid) != 0) {
-        static_cast<std::atomic<uint64_t>*>(ref)->store(time_stamp->mHostTime,
-                                                        std::memory_order_relaxed);
+        auto* clock = static_cast<RenderClock*>(ref);
+        clock->m_frames.store(frames, std::memory_order_relaxed);
+        clock->m_ticks.store(time_stamp->mHostTime, std::memory_order_relaxed);
     }
     return noErr;
 }
-#endif
 
-#if defined(THL_PLATFORM_ANDROID)
-// AAudio's timestamp functions, loaded at run time as miniaudio loads AAudio.
-struct AAudioTimestampApi {
-    using GetTimestamp = int32_t (*)(void*, clockid_t, int64_t*, int64_t*);
-    using GetFramesWritten = int64_t (*)(void*);
-    GetTimestamp m_get_timestamp = nullptr;
-    GetFramesWritten m_get_frames_written = nullptr;
-};
-
-const AAudioTimestampApi& aaudio_timestamp_api() {
-    static const AAudioTimestampApi api = [] {
-        AAudioTimestampApi loaded;
-        if (void* lib = dlopen("libaaudio.so", RTLD_NOW)) {
-            loaded.m_get_timestamp = reinterpret_cast<AAudioTimestampApi::GetTimestamp>(
-                dlsym(lib, "AAudioStream_getTimestamp"));
-            loaded.m_get_frames_written = reinterpret_cast<AAudioTimestampApi::GetFramesWritten>(
-                dlsym(lib, "AAudioStream_getFramesWritten"));
-        }
-        return loaded;
-    }();
-    return api;
-}
-
-// The output latency AAudio measures: how long until the last frame written so far is
-// presented (from the stream's presentation timestamp), in frames. 0 when the stream
-// gives no timestamp yet (not fully started) or the value is implausible.
-uint32_t aaudio_measured_latency_frames(void* stream, double sample_rate) {
-    const auto& api = aaudio_timestamp_api();
-    if (stream == nullptr || api.m_get_timestamp == nullptr ||
-        api.m_get_frames_written == nullptr || sample_rate <= 0.0) {
-        return 0;
+/// Registers the render notification on the device's current output unit, once per
+/// unit (a reroute on macOS re-creates the unit without it). Removing a notification
+/// to re-add it stops the unit's renders, so a unit is only ever added to.
+void attach_render_clock(ma_device& device, RenderClock& clock) {
+    auto* unit = static_cast<AudioUnit>(device.coreaudio.audioUnitPlayback);
+    if (unit == nullptr || unit == clock.m_attached_unit) { return; }
+    if (AudioUnitAddRenderNotify(unit, &store_render_host_time, &clock) == noErr) {
+        clock.m_attached_unit = unit;
     }
-    int64_t frame_position = 0;
-    int64_t time_ns = 0;
-    if (api.m_get_timestamp(stream, CLOCK_MONOTONIC, &frame_position, &time_ns) != 0) { return 0; }
-    const int64_t written = api.m_get_frames_written(stream);
-    timespec now{};
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    const double now_ns =
-        (static_cast<double>(now.tv_sec) * 1e9) + static_cast<double>(now.tv_nsec);
-    const double presented_ns = static_cast<double>(time_ns) +
-                                (static_cast<double>(written - frame_position) * 1e9 / sample_rate);
-    const double latency_s = (presented_ns - now_ns) / 1e9;
-    if (latency_s <= 0.0 || latency_s > 1.0) { return 0; }
-    return static_cast<uint32_t>(std::lround(latency_s * sample_rate));
 }
 #endif
 
@@ -630,12 +607,12 @@ bool AudioDeviceManager::try_initialise_device(DeviceRole role,
             m_impl->m_ticks_to_us =
                 static_cast<double>(info.numer) / (static_cast<double>(info.denom) * 1000.0);
         }
-        auto& ticks = role == DeviceRole::Playback ? m_impl->m_playback_render_ticks
-                                                   : m_impl->m_duplex_render_ticks;
-        ticks.store(0, std::memory_order_relaxed);
-        if (auto* unit = static_cast<AudioUnit>(device->coreaudio.audioUnitPlayback)) {
-            AudioUnitAddRenderNotify(unit, &store_render_host_time, &ticks);
-        }
+        auto& clock = role == DeviceRole::Playback ? m_impl->m_playback_render_clock
+                                                   : m_impl->m_duplex_render_clock;
+        clock.m_ticks.store(0, std::memory_order_relaxed);
+        clock.m_valid = false;            // the device is not running yet
+        clock.m_attached_unit = nullptr;  // a new device: its unit may reuse an old address
+        attach_render_clock(*device, clock);
     }
 #endif
 
@@ -1296,16 +1273,6 @@ uint32_t AudioDeviceManager::get_output_latency_samples() const {
         return static_cast<uint32_t>(std::lround(seconds * static_cast<double>(get_sample_rate())));
     }
 #endif
-#if defined(THL_PLATFORM_ANDROID)
-    if (m_impl->m_context.backend == ma_backend_aaudio) {
-        const ma_device& device = m_impl->m_playback_device_initialised ? m_impl->m_playback_device
-                                                                        : m_impl->m_duplex_device;
-        const uint32_t measured =
-            aaudio_measured_latency_frames(device.aaudio.pStreamPlayback,
-                                           static_cast<double>(device.sampleRate));
-        if (measured > 0) { return measured; }
-    }
-#endif
     return m_impl->m_playback_device_initialised ? get_buffer_size(DeviceRole::Playback)
                                                  : get_buffer_size(DeviceRole::Duplex);
 }
@@ -1620,14 +1587,30 @@ void AudioDeviceManager::process_callbacks(DeviceRole role,
     const std::optional<int64_t> block_host_us = [&]() -> std::optional<int64_t> {
 #if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
         if (role == DeviceRole::Capture || us_per_frame <= 0.0) { return std::nullopt; }
-        auto& render_ticks = role == DeviceRole::Playback ? m_impl->m_playback_render_ticks
-                                                          : m_impl->m_duplex_render_ticks;
-        // Taken, so a unit miniaudio re-created without our notification gives none
-        // instead of a stale time.
-        const uint64_t ticks = render_ticks.exchange(0, std::memory_order_relaxed);
-        if (ticks == 0) { return std::nullopt; }
-        return std::llround(static_cast<double>(ticks) * m_impl->m_ticks_to_us) -
-               std::llround(static_cast<double>(frame_count) * us_per_frame);
+        RenderClock& clock = role == DeviceRole::Playback ? m_impl->m_playback_render_clock
+                                                          : m_impl->m_duplex_render_clock;
+        // A new render: its frames start at its timestamp. miniaudio may call back more
+        // than once per render (duplex, deinterleaving), so later calls in the same
+        // render are dated by the frames delivered since.
+        if (const uint64_t ticks = clock.m_ticks.exchange(0, std::memory_order_relaxed);
+            ticks != 0) {
+            clock.m_base_ticks = ticks;
+            clock.m_base_frames = clock.m_frames.load(std::memory_order_relaxed);
+            clock.m_delivered = 0;
+            clock.m_valid = true;
+        }
+        // No render seen for several renders' worth of frames: the unit that carried the
+        // notification is gone. Give no time rather than a stale one.
+        if (clock.m_valid &&
+            clock.m_delivered > 4ULL * std::max<uint64_t>(clock.m_base_frames, frame_count)) {
+            clock.m_valid = false;
+        }
+        const uint64_t delivered = clock.m_delivered;
+        clock.m_delivered += frame_count;
+        if (!clock.m_valid) { return std::nullopt; }
+        return std::llround(static_cast<double>(clock.m_base_ticks) * m_impl->m_ticks_to_us) -
+               std::llround(static_cast<double>(clock.m_base_frames) * us_per_frame) +
+               std::llround(static_cast<double>(delivered) * us_per_frame);
 #else
         return std::nullopt;
 #endif
@@ -1680,6 +1663,19 @@ void AudioDeviceManager::notification_callback(const void* p_notification_void) 
     auto* p_notification = static_cast<const ma_device_notification*>(p_notification_void);
     auto* user_data = static_cast<DeviceUserData*>(p_notification->pDevice->pUserData);
     if (!user_data || !user_data->m_manager) { return; }
+
+#if defined(THL_PLATFORM_MACOS) || defined(THL_PLATFORM_IOS)
+    // A reroute may re-create the output unit (macOS): put the render notification back.
+    auto* impl = user_data->m_manager->m_impl.get();
+    if (p_notification->type == ma_device_notification_type_rerouted &&
+        user_data->m_role != DeviceRole::Capture &&
+        impl->m_context.backend == ma_backend_coreaudio) {
+        attach_render_clock(*p_notification->pDevice,
+                            user_data->m_role == DeviceRole::Playback
+                                ? impl->m_playback_render_clock
+                                : impl->m_duplex_render_clock);
+    }
+#endif
 
     auto cb = atomic_load(user_data->m_manager->m_notification_callback);
     if (cb) { (*cb)(to_notification_type(p_notification->type)); }

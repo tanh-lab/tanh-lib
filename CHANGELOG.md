@@ -83,10 +83,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (`mHostTime`), for `LinkTransportClock::set_host_time_us()` instead of its wall-clock
   filter. Chosen so that adding `get_output_latency_samples()` gives when the block's first
   frame is heard (`mHostTime + outputLatency` on iOS, as LinkKit dates it). Not called where
-  the device gives no timestamp.
-- `AudioDeviceManager::get_output_latency_samples()` on Android (AAudio) measures the
-  latency from the stream's presentation timestamp, device latency included, instead of
-  the buffered frames alone (still the fallback until the stream gives a timestamp).
+  the device gives no timestamp. Every data callback of a render is dated (by the frames
+  delivered since), and a reroute that re-creates the output unit (macOS) re-registers the
+  render notification.
 - Link on Android: `TANH_BUILD_LINK` builds the Link C++ SDK's Linux platform there, and an
   enabled `LinkSession` holds a Wi-Fi `MulticastLock` so peers are found; the app calls
   `thl::link::set_android_java_vm()` from `JNI_OnLoad` and declares
