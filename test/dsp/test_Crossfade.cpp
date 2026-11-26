@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstddef>
+#include <stdexcept>
 
 using thl::core::BufferF;
 using thl::core::BufferView;
@@ -63,4 +64,26 @@ TEST(Crossfade, TwoChannelLinearIntoSubBlockWritesOnlyThatRange) {
                 << "channel=" << channel << " i=" << i;
         }
     }
+}
+
+TEST(Crossfade, ThrowsWhenTheViewsDiffer) {
+    BufferF from(2, 4);
+    BufferF to(2, 4);
+    BufferF more_channels(3, 4);
+    BufferF longer(2, 5);
+    BufferF out(2, 4);
+
+    // RTSan off for the calls that throw: it would report the exception's allocation.
+    EXPECT_THROW(
+        {
+            TANH_NONBLOCKING_SCOPED_DISABLER
+            crossfade(more_channels, to, out, CrossfadeShape::Linear);
+        },
+        std::invalid_argument);
+    EXPECT_THROW(
+        {
+            TANH_NONBLOCKING_SCOPED_DISABLER
+            crossfade(from, longer, out, CrossfadeShape::EqualPower);
+        },
+        std::invalid_argument);
 }

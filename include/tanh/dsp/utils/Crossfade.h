@@ -5,9 +5,9 @@
 #include <tanh/core/Numbers.h>
 #include <tanh/utils/RealtimeSanitizer.h>
 
-#include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <stdexcept>
 #include <utility>
 
 namespace thl::inline THL_ABI_NAMESPACE::dsp::utils {
@@ -36,7 +36,8 @@ inline std::pair<float, float> crossfade_gains(float position,
  *
  * Sample i uses position i / (n - 1), so the first sample is fully @p from and the last fully
  * @p to; a single sample is fully @p to. All three views must have the same number of channels
- * and samples (asserted in debug builds). @p out may alias @p from or @p to sample for sample.
+ * and samples, else it throws std::invalid_argument. @p out may alias @p from or @p to sample for
+ * sample.
  */
 inline void crossfade(core::ConstBufferView from,
                       core::ConstBufferView to,
@@ -44,10 +45,12 @@ inline void crossfade(core::ConstBufferView from,
                       CrossfadeShape shape) TANH_NONBLOCKING_FUNCTION {
     const size_t num_channels = out.get_num_channels();
     const size_t num_samples = out.get_num_samples();
-    assert(from.get_num_channels() == num_channels && to.get_num_channels() == num_channels &&
-           "crossfade: views have different channel counts");
-    assert(from.get_num_samples() == num_samples && to.get_num_samples() == num_samples &&
-           "crossfade: views have different lengths");
+    if (from.get_num_channels() != num_channels || to.get_num_channels() != num_channels) {
+        throw std::invalid_argument("crossfade: views have different channel counts");
+    }
+    if (from.get_num_samples() != num_samples || to.get_num_samples() != num_samples) {
+        throw std::invalid_argument("crossfade: views have different lengths");
+    }
 
     const float position_step = num_samples > 1 ? 1.0f / static_cast<float>(num_samples - 1) : 0.0f;
     const float first_position = num_samples > 1 ? 0.0f : 1.0f;

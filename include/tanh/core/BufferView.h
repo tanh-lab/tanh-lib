@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 
 namespace thl::inline THL_ABI_NAMESPACE::core {
@@ -127,7 +128,12 @@ public:
 
     bool is_mono_inline() const { return m_channels == &m_inline_channel; }
 
+    /// The @p num_frames frames from @p start_frame on, in every channel.
+    /// @throws std::out_of_range if they reach past the end of this view.
     BasicBufferView sub_block(size_t start_frame, size_t num_frames) const {
+        if (start_frame > m_num_frames || num_frames > m_num_frames - start_frame) {
+            throw std::out_of_range("BufferView::sub_block: frames past the end of the view");
+        }
         if (is_mono_inline()) {
             return BasicBufferView(m_inline_channel + m_frame_offset + start_frame, num_frames);
         }

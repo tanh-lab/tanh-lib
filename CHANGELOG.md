@@ -452,7 +452,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   every publication built two vectors, one allocation or more per publication as soon as the
   RCU had a reader; it now unlinks the nodes in place.
 - `tanh/core/Numbers.h` includes `<numbers>` wherever the standard library has it
-  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`.
+  (`__cpp_lib_math_constants`), so it can be included next to `<numbers>`. It no longer
+  declares fallback constants in `namespace std` where the macro is missing: every standard
+  library that builds the rest of tanh-lib's C++20 code has `std::numbers`, and one without it
+  now fails at this header with an `#error` naming the feature.
 - `thl::core::LockFreeQueue` and `SpscRingBuffer` keep their writer's and reader's positions
   `k_cache_line_size` (128 bytes, `core/threading/CacheLine.h`) apart instead of 64: Apple
   Silicon's cache lines are 128 bytes, so 64 still let them share one. `sizeof(LockFreeQueue)`
@@ -504,6 +507,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `thl::core::BufferView::sub_block()` throws `std::out_of_range` when the frames it asks for
+  reach past the end of the view; `BufferOperations::copy()` / `add()` and
+  `thl::dsp::utils::crossfade()` throw `std::invalid_argument` when the views' channel counts or
+  lengths differ. `sub_block()` did not check, and the others only asserted, so a release build
+  read and wrote past the buffers instead of reporting the caller's error. The checks run in
+  every build and cost a comparison or two per call; the throw happens only on that error, so
+  real-time callers are unaffected unless they pass mismatched views. Tests:
+  `BufferView.SubBlockPastTheEndThrows`, `BufferOperations.ThrowsWhenTheDimensionsDiffer`,
+  `Crossfade.ThrowsWhenTheViewsDiffer`.
+- `thl::dsp::analysis::adaptive_peak_pick()` takes a frame as a peak only when it is strictly
+  above its threshold. With `threshold_delta` 0, a flat region (silence included) met its own
+  trailing mean and fired every `minimum_spacing_frames` frames, which could also push a real
+  onset that followed out of the spacing. Silence is now exact; a flat region away from zero can
+  still fire where the mean, taken from cumulative sums, rounds below it. Frame 0 has an infinite
+  threshold and is still never a peak. Test:
+  `AdaptivePeakPicker.FlatRegionAtItsTrailingMeanIsNoPeak`.
 - `AudioDeviceManager::add_playback_callback()`, `add_capture_callback()` and
   `add_duplex_callback()` call `prepare_to_play()` before the callback joins the list the audio
   thread reads, as documented. On a running device the audio thread could call `process()` on a

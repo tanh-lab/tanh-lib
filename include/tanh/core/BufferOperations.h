@@ -6,24 +6,26 @@
 #include <tanh/utils/RealtimeSanitizer.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
+#include <stdexcept>
 
 namespace thl::inline THL_ABI_NAMESPACE::core {
 
 /**
  * Operations on the samples of buffer views, sample by sample in every channel.
  *
- * @p destination and @p source must have the same number of channels and samples (asserted in
- * debug builds) and must not overlap.
+ * @p destination and @p source must have the same number of channels and samples, else the
+ * operation throws std::invalid_argument, and must not overlap.
  */
 struct BufferOperations {
     BufferOperations() = delete;
 
     static void copy(BufferView destination,
                      const ConstBufferView& source) TANH_NONBLOCKING_FUNCTION {
-        assert(same_dimensions(destination, source) &&
-               "BufferOperations: cannot copy, views have different dimensions");
+        if (!same_dimensions(destination, source)) {
+            throw std::invalid_argument(
+                "BufferOperations: cannot copy, views have different dimensions");
+        }
         for (size_t channel = 0; channel < destination.get_num_channels(); ++channel) {
             std::copy_n(source.get_read_pointer(channel),
                         destination.get_num_samples(),
@@ -33,8 +35,10 @@ struct BufferOperations {
 
     static void add(BufferView destination,
                     const ConstBufferView& source) TANH_NONBLOCKING_FUNCTION {
-        assert(same_dimensions(destination, source) &&
-               "BufferOperations: cannot add, views have different dimensions");
+        if (!same_dimensions(destination, source)) {
+            throw std::invalid_argument(
+                "BufferOperations: cannot add, views have different dimensions");
+        }
         for (size_t channel = 0; channel < destination.get_num_channels(); ++channel) {
             float* output = destination.get_write_pointer(channel);
             const float* input = source.get_read_pointer(channel);
